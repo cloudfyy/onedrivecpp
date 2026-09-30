@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-`onedrive-cpp` 是一个面向 Ubuntu 22.04 及以上版本的 C++26 OneDrive
+`onedrive-cpp` 是一个面向 Ubuntu 24.04 LTS 及以上版本的 C++26 OneDrive
 同步客户端项目骨架。它参考
 [abraunegg/onedrive](https://github.com/abraunegg/onedrive) 的职责拆分方式，
 但不复制其 D 语言实现。
@@ -38,46 +38,23 @@ CLI / Application
 
 ## 支持范围
 
-- Ubuntu 22.04 LTS、24.04 LTS 及更新版本。
+- Ubuntu 24.04 LTS 及更新版本。
 - x86_64 或 arm64（取决于 LLVM 和 Ubuntu 构建环境）。
 - Clang 20，使用 `-std=c++2c`/CMake `CXX_STANDARD 26`。
-- CMake 3.25 或更高版本。
+- CMake 3.28 或更高版本。
 - 使用 vcpkg manifest 模式管理 C++ 依赖。
 
-Ubuntu 22.04 自带的 GCC 和 CMake 版本不足以完成此项目的 C++26 配置，
-因此下面使用 LLVM 官方仓库和 Kitware 官方 APT 仓库。
+Ubuntu 24.04 的官方仓库已经提供项目所需的 CMake、Ninja 和 Clang 20。
+项目不使用默认的 GCC 13，因为它的 C++26 支持不足以满足当前配置。
 
 ## 配置构建环境
 
-安装基础工具：
+从 Ubuntu 24.04 官方仓库安装构建工具：
 
 ```bash
 sudo apt update
-sudo apt install -y ca-certificates curl gnupg lsb-release software-properties-common wget
-```
-
-安装 Clang 20：
-
-```bash
-wget https://apt.llvm.org/llvm.sh
-chmod +x llvm.sh
-sudo ./llvm.sh 20
-rm llvm.sh
-```
-
-安装新版 CMake（Ubuntu 22.04/24.04 均适用）：
-
-```bash
-curl -fsSL https://apt.kitware.com/keys/kitware-archive-latest.asc \
-  | gpg --dearmor \
-  | sudo tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
-
-echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] \
-https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main" \
-  | sudo tee /etc/apt/sources.list.d/kitware.list
-
-sudo apt update
-sudo apt install -y cmake ninja-build clang-20
+sudo apt install -y build-essential ca-certificates curl git \
+  cmake ninja-build clang-20 zip unzip tar pkg-config
 ```
 
 确认版本：

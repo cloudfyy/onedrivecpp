@@ -3,7 +3,7 @@
 English | [简体中文](README.zh-CN.md)
 
 `onedrive-cpp` is a C++26 OneDrive synchronization client scaffold for
-Ubuntu 22.04 and later. Its separation of responsibilities is inspired by
+Ubuntu 24.04 LTS and later. Its separation of responsibilities is inspired by
 [abraunegg/onedrive](https://github.com/abraunegg/onedrive), but it does not
 copy the reference project's D implementation.
 
@@ -40,47 +40,24 @@ The directories correspond to the responsibilities of
 
 ## Supported Platforms
 
-- Ubuntu 22.04 LTS, 24.04 LTS, and later.
+- Ubuntu 24.04 LTS and later.
 - x86_64 or arm64, depending on the LLVM and Ubuntu build environment.
 - Clang 20 with `-std=c++2c` / CMake `CXX_STANDARD 26`.
-- CMake 3.25 or later.
+- CMake 3.28 or later.
 - vcpkg in manifest mode for C++ dependencies.
 
-The GCC and CMake versions included with Ubuntu 22.04 are not sufficient for
-this project's C++26 configuration. The following instructions therefore use
-the official LLVM and Kitware APT repositories.
+Ubuntu 24.04 provides the required CMake, Ninja, and Clang 20 packages through
+its official repositories. GCC 13 is not used because its C++26 support is not
+sufficient for this project configuration.
 
 ## Set Up the Build Environment
 
-Install the base tools:
+Install the build tools from the Ubuntu 24.04 repositories:
 
 ```bash
 sudo apt update
-sudo apt install -y ca-certificates curl gnupg lsb-release software-properties-common wget
-```
-
-Install Clang 20:
-
-```bash
-wget https://apt.llvm.org/llvm.sh
-chmod +x llvm.sh
-sudo ./llvm.sh 20
-rm llvm.sh
-```
-
-Install a recent CMake version on Ubuntu 22.04 or 24.04:
-
-```bash
-curl -fsSL https://apt.kitware.com/keys/kitware-archive-latest.asc \
-  | gpg --dearmor \
-  | sudo tee /usr/share/keyrings/kitware-archive-keyring.gpg >/dev/null
-
-echo "deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] \
-https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main" \
-  | sudo tee /etc/apt/sources.list.d/kitware.list
-
-sudo apt update
-sudo apt install -y cmake ninja-build clang-20
+sudo apt install -y build-essential ca-certificates curl git \
+  cmake ninja-build clang-20 zip unzip tar pkg-config
 ```
 
 Verify the installed versions:
