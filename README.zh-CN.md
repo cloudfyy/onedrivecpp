@@ -72,12 +72,27 @@ git clone https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
 export VCPKG_ROOT="$HOME/vcpkg"
 ```
 
-建议将 `VCPKG_ROOT` 的导出命令加入 shell 配置文件，使其永久生效。
+持久化 `VCPKG_ROOT`，并在当前 Shell 中加载：
+
+```bash
+echo 'export VCPKG_ROOT="$HOME/vcpkg"' >> "$HOME/.profile"
+source "$HOME/.profile"
+```
+
 仓库中的 `vcpkg.json` manifest 固定了 registry baseline，是 C++ 库依赖的
 唯一事实来源。当前依赖列表为空，因为项目骨架尚未链接第三方库。CMake
 配置项目时，vcpkg 会自动安装 manifest 中声明的依赖。
 
 ## 本地构建与测试
+
+所有构建命令均在项目根目录执行：
+
+```bash
+cd /home/yingying/onedrivecpp
+source "$HOME/.profile"
+```
+
+### Release 构建
 
 ```bash
 cmake --preset release
@@ -85,14 +100,55 @@ cmake --build --preset release
 ctest --preset release
 ```
 
-运行安全的配置演练：
+生成的程序位于 `build/release/onedrive-cpp`。使用以下命令验证：
 
 ```bash
+./build/release/onedrive-cpp --version
 ./build/release/onedrive-cpp sync --dry-run
 ./build/release/onedrive-cpp --help
 ```
 
-也可以用 CPack 快速生成未经过完整 Debian 策略检查的包：
+### 完整 Release 重编译
+
+仅删除 Release 构建目录，使 CMake、vcpkg 和 Ninja 从空白状态重新配置和
+编译：
+
+```bash
+rm -rf build/release
+cmake --preset release
+cmake --build --preset release
+ctest --preset release
+./build/release/onedrive-cpp sync --dry-run
+```
+
+Ninja 默认自动并行编译。如需明确指定并行任务数：
+
+```bash
+cmake --build --preset release --parallel 4
+```
+
+### Debug 构建
+
+Debug 与 Release 使用相互独立的构建目录：
+
+```bash
+rm -rf build/debug
+cmake --preset debug
+cmake --build --preset debug
+ctest --preset debug
+```
+
+Debug 程序位于 `build/debug/onedrive-cpp`。
+
+每个构建目录都有独立的 `vcpkg_installed` 目录。因此，删除
+`build/release` 或 `build/debug` 后，vcpkg 会在下次 CMake 配置时重新安装
+对应配置的依赖。
+
+## 构建 DEB 包
+
+### 快速生成 CPack 包
+
+使用 CPack 快速生成未经过完整 Debian 策略检查的包：
 
 ```bash
 cpack --config build/release/CPackConfig.cmake -G DEB
@@ -100,7 +156,7 @@ cpack --config build/release/CPackConfig.cmake -G DEB
 
 生成的文件位于当前目录。
 
-## 构建正式 DEB 包
+### 构建正式 Debian 包
 
 安装打包依赖：
 
@@ -111,7 +167,7 @@ sudo apt install -y build-essential devscripts debhelper ninja-build clang-20
 在项目根目录执行：
 
 ```bash
-export VCPKG_ROOT="$HOME/vcpkg"
+source "$HOME/.profile"
 chmod +x debian/rules
 dpkg-buildpackage --build=binary --no-sign
 ```

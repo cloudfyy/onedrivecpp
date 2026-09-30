@@ -75,7 +75,13 @@ git clone https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
 export VCPKG_ROOT="$HOME/vcpkg"
 ```
 
-Add the `VCPKG_ROOT` export to your shell profile to make it persistent.
+Persist `VCPKG_ROOT` and load it in the current shell:
+
+```bash
+echo 'export VCPKG_ROOT="$HOME/vcpkg"' >> "$HOME/.profile"
+source "$HOME/.profile"
+```
+
 The committed `vcpkg.json` manifest pins the registry baseline and is the
 single source of truth for C++ library dependencies. Its dependency list is
 currently empty because the scaffold does not yet link third-party libraries.
@@ -84,21 +90,71 @@ project.
 
 ## Build and Test Locally
 
+Run all build commands from the project root:
+
+```bash
+cd /home/yingying/onedrivecpp
+source "$HOME/.profile"
+```
+
+### Release build
+
 ```bash
 cmake --preset release
 cmake --build --preset release
 ctest --preset release
 ```
 
-Run a safe configuration dry run:
+The executable is generated at `build/release/onedrive-cpp`. Verify it with:
 
 ```bash
+./build/release/onedrive-cpp --version
 ./build/release/onedrive-cpp sync --dry-run
 ./build/release/onedrive-cpp --help
 ```
 
-You can also use CPack to quickly create a package that has not undergone full
-Debian policy checks:
+### Clean Release rebuild
+
+Delete only the Release build tree to force CMake, vcpkg, and Ninja to
+reconfigure and rebuild it from scratch:
+
+```bash
+rm -rf build/release
+cmake --preset release
+cmake --build --preset release
+ctest --preset release
+./build/release/onedrive-cpp sync --dry-run
+```
+
+Ninja builds in parallel automatically. To set an explicit job count:
+
+```bash
+cmake --build --preset release --parallel 4
+```
+
+### Debug build
+
+The Debug tree is independent of the Release tree:
+
+```bash
+rm -rf build/debug
+cmake --preset debug
+cmake --build --preset debug
+ctest --preset debug
+```
+
+The Debug executable is generated at `build/debug/onedrive-cpp`.
+
+Each build tree has its own `vcpkg_installed` directory. Removing
+`build/release` or `build/debug` therefore also forces vcpkg to restore that
+configuration's dependencies during the next CMake configure step.
+
+## Build DEB Packages
+
+### Quick CPack package
+
+Use CPack to quickly create a package that has not undergone full Debian
+policy checks:
 
 ```bash
 cpack --config build/release/CPackConfig.cmake -G DEB
@@ -106,7 +162,7 @@ cpack --config build/release/CPackConfig.cmake -G DEB
 
 The generated package is placed in the current directory.
 
-## Build an Official DEB Package
+### Official Debian package
 
 Install the packaging dependencies:
 
@@ -117,7 +173,7 @@ sudo apt install -y build-essential devscripts debhelper ninja-build clang-20
 Run the following commands from the project root:
 
 ```bash
-export VCPKG_ROOT="$HOME/vcpkg"
+source "$HOME/.profile"
 chmod +x debian/rules
 dpkg-buildpackage --build=binary --no-sign
 ```
