@@ -160,44 +160,6 @@ sudo apt install -y lintian
 lintian ../onedrive-cpp_0.1.0_*.changes
 ```
 
-## 复制源码到远程构建服务器
-
-Windows 10/11 安装 OpenSSH Client 后，可以在项目根目录通过 PowerShell
-运行部署脚本：
-
-```powershell
-.\scripts\deploy.ps1
-```
-
-脚本会将项目源码复制到：
-
-```text
-yingying@mydoor.eastasia.cloudapp.azure.com:/home/yingying/onedrivecpp
-```
-
-它会排除 `build/`、`.git/`、`.cache/` 和 `compile_commands.json`，并覆盖远端
-的同名文件，但不会删除远端存在而本地不存在的文件。首次连接时需确认服务器
-指纹；身份验证使用 SSH Agent、默认 SSH 密钥或交互式密码，不会在脚本中保存
-凭据。
-
-如需指定私钥：
-
-```powershell
-.\scripts\deploy.ps1 -IdentityFile "$HOME\.ssh\id_ed25519"
-```
-
-上传完成后，可登录服务器并按前述步骤构建：
-
-```powershell
-ssh yingying@mydoor.eastasia.cloudapp.azure.com
-```
-
-```bash
-cd /home/yingying/onedrivecpp
-chmod +x debian/rules
-dpkg-buildpackage --build=binary --no-sign
-```
-
 ## 配置与 systemd
 
 默认优先读取 `~/.config/onedrive-cpp/config`；文件不存在时使用内置默认值。

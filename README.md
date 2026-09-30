@@ -167,46 +167,6 @@ sudo apt install -y lintian
 lintian ../onedrive-cpp_0.1.0_*.changes
 ```
 
-## Copy the Source to a Remote Build Server
-
-After installing OpenSSH Client on Windows 10 or 11, run the deployment script
-from the project root in PowerShell:
-
-```powershell
-.\scripts\deploy.ps1
-```
-
-The script copies the project source to:
-
-```text
-yingying@mydoor.eastasia.cloudapp.azure.com:/home/yingying/onedrivecpp
-```
-
-It excludes `build/`, `.git/`, `.cache/`, and `compile_commands.json`. Files
-with the same names on the remote server are overwritten, but remote files
-that do not exist locally are not deleted. On the first connection, you must
-confirm the server fingerprint. Authentication uses SSH Agent, a default SSH
-key, or an interactive password; the script does not store credentials.
-
-To specify a private key:
-
-```powershell
-.\scripts\deploy.ps1 -IdentityFile "$HOME\.ssh\id_ed25519"
-```
-
-After the upload completes, connect to the server and build as described
-above:
-
-```powershell
-ssh yingying@mydoor.eastasia.cloudapp.azure.com
-```
-
-```bash
-cd /home/yingying/onedrivecpp
-chmod +x debian/rules
-dpkg-buildpackage --build=binary --no-sign
-```
-
 ## Configuration and systemd
 
 By default, the application first reads `~/.config/onedrive-cpp/config`. If
