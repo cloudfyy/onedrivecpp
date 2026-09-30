@@ -1,59 +1,64 @@
 # onedrive-cpp
 
-`onedrive-cpp` 是一个面向 Ubuntu 22.04 及以上版本的 C++26 OneDrive
-同步客户端项目骨架。它参考
-[abraunegg/onedrive](https://github.com/abraunegg/onedrive) 的职责拆分方式，
-但不复制其 D 语言实现。
+English | [简体中文](README.zh-CN.md)
 
-> 当前版本提供可编译的架构骨架、配置加载、CLI、dry-run、本地状态抽象、
-> systemd 用户服务和 Debian 打包。Microsoft Graph OAuth、网络传输、SQLite
-> 持久化和真实文件同步尚未实现；非 dry-run 同步会明确报错。
+`onedrive-cpp` is a C++26 OneDrive synchronization client scaffold for
+Ubuntu 22.04 and later. Its separation of responsibilities is inspired by
+[abraunegg/onedrive](https://github.com/abraunegg/onedrive), but it does not
+copy the reference project's D implementation.
 
-## 架构
+> The current version provides a buildable architecture scaffold,
+> configuration loading, a CLI, dry-run support, a local state abstraction, a
+> systemd user service, and Debian packaging. Microsoft Graph OAuth, network
+> transport, SQLite persistence, and actual file synchronization have not yet
+> been implemented. Non-dry-run synchronization exits with an explicit error.
+
+## Architecture
 
 ```text
 CLI / Application
        |
        +-- Config
-       +-- Monitor (文件系统事件入口)
-       +-- SyncEngine (同步编排)
+       +-- Monitor (file system event entry point)
+       +-- SyncEngine (synchronization orchestration)
                |
-               +-- GraphClient (Microsoft Graph 边界)
-               +-- ItemDatabase (本地状态边界)
+               +-- GraphClient (Microsoft Graph boundary)
+               +-- ItemDatabase (local state boundary)
 ```
 
-目录与参考项目中的 `main/config/curlEngine/onedrive/sync/itemdb/monitor`
-职责相对应：
+The directories correspond to the responsibilities of
+`main/config/curlEngine/onedrive/sync/itemdb/monitor` in the reference project:
 
-- `src/app`：CLI 解析和应用生命周期。
-- `src/config`：配置文件加载和校验。
-- `src/graph`：Microsoft Graph API 访问边界。
-- `src/storage`：远端 ID、ETag 与本地路径状态。
-- `src/sync`：差异计算和同步流程编排入口。
-- `src/monitor`：长驻监控模式入口。
-- `packaging/systemd`：systemd 用户服务。
-- `debian`：Ubuntu/Debian 原生包元数据。
+- `src/app`: CLI parsing and application lifecycle.
+- `src/config`: Configuration file loading and validation.
+- `src/graph`: Microsoft Graph API boundary.
+- `src/storage`: Remote ID, ETag, and local path state.
+- `src/sync`: Difference calculation and synchronization orchestration.
+- `src/monitor`: Long-running monitor mode entry point.
+- `packaging/systemd`: systemd user service.
+- `debian`: Native Ubuntu/Debian package metadata.
 
-## 支持范围
+## Supported Platforms
 
-- Ubuntu 22.04 LTS、24.04 LTS 及更新版本。
-- x86_64 或 arm64（取决于 LLVM 和 Ubuntu 构建环境）。
-- Clang 20，使用 `-std=c++2c`/CMake `CXX_STANDARD 26`。
-- CMake 3.25 或更高版本。
+- Ubuntu 22.04 LTS, 24.04 LTS, and later.
+- x86_64 or arm64, depending on the LLVM and Ubuntu build environment.
+- Clang 20 with `-std=c++2c` / CMake `CXX_STANDARD 26`.
+- CMake 3.25 or later.
 
-Ubuntu 22.04 自带的 GCC 和 CMake 版本不足以完成此项目的 C++26 配置，
-因此下面使用 LLVM 官方仓库和 Kitware 官方 APT 仓库。
+The GCC and CMake versions included with Ubuntu 22.04 are not sufficient for
+this project's C++26 configuration. The following instructions therefore use
+the official LLVM and Kitware APT repositories.
 
-## 配置构建环境
+## Set Up the Build Environment
 
-安装基础工具：
+Install the base tools:
 
 ```bash
 sudo apt update
 sudo apt install -y ca-certificates curl gnupg lsb-release software-properties-common wget
 ```
 
-安装 Clang 20：
+Install Clang 20:
 
 ```bash
 wget https://apt.llvm.org/llvm.sh
@@ -62,7 +67,7 @@ sudo ./llvm.sh 20
 rm llvm.sh
 ```
 
-安装新版 CMake（Ubuntu 22.04/24.04 均适用）：
+Install a recent CMake version on Ubuntu 22.04 or 24.04:
 
 ```bash
 curl -fsSL https://apt.kitware.com/keys/kitware-archive-latest.asc \
@@ -77,14 +82,14 @@ sudo apt update
 sudo apt install -y cmake ninja-build clang-20
 ```
 
-确认版本：
+Verify the installed versions:
 
 ```bash
 clang++-20 --version
 cmake --version
 ```
 
-## 本地构建与测试
+## Build and Test Locally
 
 ```bash
 cmake -S . -B build -G Ninja \
@@ -94,85 +99,89 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-运行安全的配置演练：
+Run a safe configuration dry run:
 
 ```bash
 ./build/onedrive-cpp sync --dry-run
 ./build/onedrive-cpp --help
 ```
 
-也可以用 CPack 快速生成未经过完整 Debian 策略检查的包：
+You can also use CPack to quickly create a package that has not undergone full
+Debian policy checks:
 
 ```bash
 cd build
 cpack -G DEB
 ```
 
-生成的文件位于 `build/`。
+The generated package is placed in `build/`.
 
-## 构建正式 DEB 包
+## Build an Official DEB Package
 
-安装打包依赖：
+Install the packaging dependencies:
 
 ```bash
 sudo apt install -y build-essential devscripts debhelper ninja-build clang-20
 ```
 
-在项目根目录执行：
+Run the following commands from the project root:
 
 ```bash
 chmod +x debian/rules
 dpkg-buildpackage --build=binary --no-sign
 ```
 
-`dpkg-buildpackage` 会执行 CMake 配置、编译和测试。生成的 `.deb` 位于项目
-目录的上一级，例如：
+`dpkg-buildpackage` configures the project with CMake, builds it, and runs the
+tests. The generated `.deb` is placed in the parent directory of the project,
+for example:
 
 ```text
 ../onedrive-cpp_0.1.0_amd64.deb
 ```
 
-安装并检查：
+Install and verify the package:
 
 ```bash
 sudo apt install ../onedrive-cpp_0.1.0_$(dpkg --print-architecture).deb
 onedrive-cpp --version
 ```
 
-如需检查 Debian 策略问题：
+To check for Debian policy issues:
 
 ```bash
 sudo apt install -y lintian
 lintian ../onedrive-cpp_0.1.0_*.changes
 ```
 
-## 复制源码到远程构建服务器
+## Copy the Source to a Remote Build Server
 
-Windows 10/11 安装 OpenSSH Client 后，可以在项目根目录通过 PowerShell
-运行部署脚本：
+After installing OpenSSH Client on Windows 10 or 11, run the deployment script
+from the project root in PowerShell:
 
 ```powershell
 .\scripts\deploy.ps1
 ```
 
-脚本会将项目源码复制到：
+The script copies the project source to:
 
 ```text
 yingying@mydoor.eastasia.cloudapp.azure.com:/home/yingying/onedrivecpp
 ```
 
-它会排除 `build/`、`.git/`、`.cache/` 和 `compile_commands.json`，并覆盖远端
-的同名文件，但不会删除远端存在而本地不存在的文件。首次连接时需确认服务器
-指纹；身份验证使用 SSH Agent、默认 SSH 密钥或交互式密码，不会在脚本中保存
-凭据。
+It excludes `build/`, `.git/`, `.cache/`, and `compile_commands.json`. Files
+with the same names on the remote server are overwritten, but remote files
+that do not exist locally are not deleted. On the first connection, you must
+confirm the server fingerprint. Authentication uses SSH Agent, a default SSH
+key, or an interactive password; the script does not store credentials.
 
-如需指定私钥：
+To specify a private key:
 
 ```powershell
 .\scripts\deploy.ps1 -IdentityFile "$HOME\.ssh\id_ed25519"
 ```
 
-上传完成后，可登录服务器并按前述步骤构建：
+After the upload completes, connect to the server and build as described
+above:
 
 ```powershell
 ssh yingying@mydoor.eastasia.cloudapp.azure.com
@@ -184,10 +193,12 @@ chmod +x debian/rules
 dpkg-buildpackage --build=binary --no-sign
 ```
 
-## 配置与 systemd
+## Configuration and systemd
 
-默认优先读取 `~/.config/onedrive-cpp/config`；文件不存在时使用内置默认值。
-系统示例位于 `/etc/onedrive-cpp/onedrive-cpp.conf`。首次使用可执行：
+By default, the application first reads `~/.config/onedrive-cpp/config`. If
+that file does not exist, built-in defaults are used. A system-wide example is
+installed at `/etc/onedrive-cpp/onedrive-cpp.conf`. To create a user
+configuration:
 
 ```bash
 mkdir -p ~/.config/onedrive-cpp
@@ -195,7 +206,7 @@ cp /etc/onedrive-cpp/onedrive-cpp.conf ~/.config/onedrive-cpp/config
 sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config
 ```
 
-安装 DEB 后启用用户服务：
+After installing the DEB package, enable the user service:
 
 ```bash
 systemctl --user daemon-reload
@@ -203,16 +214,20 @@ systemctl --user enable --now onedrive-cpp.service
 journalctl --user -u onedrive-cpp.service -f
 ```
 
-当前服务运行 monitor 骨架，不会访问 OneDrive 或修改同步目录。
+The service currently runs the monitor scaffold. It does not access OneDrive
+or modify the synchronization directory.
 
-## 后续实现建议
+## Suggested Next Steps
 
-1. 使用 libcurl 实现 Graph HTTP 传输和设备代码 OAuth。
-2. 使用 SQLite 替换内存 `ItemDatabase`。
-3. 实现 delta API、冲突策略和安全的原子文件替换。
-4. 使用 inotify 接入 monitor，并为 Graph 和文件系统边界增加集成测试。
+1. Implement Graph HTTP transport and device-code OAuth with libcurl.
+2. Replace the in-memory `ItemDatabase` with SQLite.
+3. Implement the delta API, conflict policies, and safe atomic file
+   replacement.
+4. Connect the monitor to inotify and add integration tests for the Graph and
+   file system boundaries.
 
-## 许可证
+## License
 
-GPL-3.0-or-later。参考项目同样采用 GPLv3，因此该许可证也便于未来在满足
-许可证要求的前提下复用或改写其设计。
+GPL-3.0-or-later. The reference project also uses GPLv3, which makes this
+license suitable for future reuse or adaptation of its design in compliance
+with the license terms.
