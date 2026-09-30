@@ -40,6 +40,13 @@ Config Config::defaults() {
     return {
         .sync_directory = std::filesystem::path{home} / "OneDrive",
         .state_directory = std::filesystem::path{home} / ".local/state/onedrive-cpp",
+        .drive_id = "me",
+        .application_id = {},
+        .azure_tenant_id = "common",
+        .auth_endpoint = "https://login.microsoftonline.com",
+        .auth_scope =
+            "Files.ReadWrite Files.ReadWrite.All Sites.ReadWrite.All offline_access",
+        .dry_run = false,
     };
 }
 
@@ -78,6 +85,14 @@ Config Config::load(const std::filesystem::path& path) {
             config.state_directory = value;
         } else if (key == "drive_id") {
             config.drive_id = value;
+        } else if (key == "application_id") {
+            config.application_id = value;
+        } else if (key == "azure_tenant_id") {
+            config.azure_tenant_id = value;
+        } else if (key == "auth_endpoint") {
+            config.auth_endpoint = value;
+        } else if (key == "auth_scope") {
+            config.auth_scope = value;
         } else if (key == "dry_run") {
             config.dry_run = parse_bool(value, line_number);
         } else {

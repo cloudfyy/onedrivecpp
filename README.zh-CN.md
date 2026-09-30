@@ -7,9 +7,10 @@
 [abraunegg/onedrive](https://github.com/abraunegg/onedrive) 的职责拆分方式，
 但不复制其 D 语言实现。
 
-> 当前版本提供可编译的架构骨架、配置加载、CLI、dry-run、SQLite 状态持久化、
-> systemd 用户服务和 Debian 打包。Microsoft Graph OAuth、网络传输和真实文件
-> 同步尚未实现；非 dry-run 同步会明确报错。
+> 当前版本提供可编译的架构骨架、配置加载、CLI、Microsoft 设备代码认证、
+> HTTP 传输层、SQLite 状态持久化、dry-run、systemd 用户服务和 Debian 打包。
+> Microsoft Graph 文件操作和真实文件同步尚未实现；非 dry-run 同步会明确
+> 报错。
 
 ## 架构
 
@@ -17,6 +18,8 @@
 CLI / Application
        |
        +-- Config
+       +-- DeviceAuth / TokenStore
+       +-- HttpTransport (libcurl)
        +-- Monitor (文件系统事件入口)
        +-- SyncEngine (同步编排)
                |
@@ -28,8 +31,10 @@ CLI / Application
 职责相对应：
 
 - `src/app`：CLI 解析和应用生命周期。
+- `src/auth`：设备代码 OAuth、Token 刷新和安全持久化。
 - `src/config`：配置文件加载和校验。
 - `src/graph`：Microsoft Graph API 访问边界。
+- `src/http`：强类型 libcurl HTTP 传输层。
 - `src/storage`：使用 SQLite 持久化远端 ID、ETag 与本地路径状态。
 - `src/sync`：差异计算和同步流程编排入口。
 - `src/monitor`：长驻监控模式入口。
@@ -80,8 +85,8 @@ source "$HOME/.profile"
 ```
 
 仓库中的 `vcpkg.json` manifest 固定了 registry baseline，是 C++ 库依赖的
-唯一事实来源。目前它提供本地项目状态数据库所需的 SQLite。CMake 配置项目
-时，vcpkg 会自动安装 manifest 中声明的依赖。
+唯一事实来源。目前它提供 libcurl、OpenSSL、nlohmann/json 和 SQLite。
+CMake 配置项目时，vcpkg 会自动安装 manifest 中声明的依赖。
 
 ## 本地构建与测试
 
@@ -208,6 +213,125 @@ sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config
 `<state_directory>/items.sqlite3`。数据库使用 SQLite WAL 模式，并在程序
 启动时加载。
 
+### Microsoft 认证
+
+客户端使用 OAuth 2.0 设备授权流程。必须在 Microsoft Entra 中注册自己的公共
+客户端应用；不要创建客户端密钥。
+
+#### 注册应用
+
+Microsoft 当前要求账号具有有效的 Azure 订阅、可访问的 Microsoft Entra 租户，
+并拥有注册应用的权限。如果只有 Outlook.com/Hotmail 个人账号且无法打开
+**App registrations**，请先创建
+[免费 Azure 账号](https://azure.microsoft.com/zh-cn/pricing/purchase-options/azure-account)，
+使用其 **Default Directory**，或者请租户管理员分配 Application Developer
+角色。
+
+1. 登录 [Microsoft Entra 管理中心](https://entra.microsoft.com/)。
+2. 打开 **Entra ID > 应用注册（App registrations）> 新注册
+   （New registration）**。
+3. 输入应用名称，例如 `onedrive-cpp`。
+4. 选择支持的账号类型：
+   - 如果同时支持工作/学校账号和个人 Microsoft 账号，选择
+     **Any Entra ID Tenant + Personal Microsoft accounts**，并在配置中使用
+     `azure_tenant_id=common`。
+   - 如果只支持个人 Microsoft 账号，选择 **Personal accounts only**，并使用
+     `azure_tenant_id=consumers`。
+   - 如果只供一个组织使用，选择 **Single tenant**，并使用该目录的 Tenant ID。
+5. 点击 **注册（Register）**。
+6. 在应用的 **概述（Overview）** 页面复制 **Application (client) ID**。
+   `application_id` 不应填写 Object ID 或 Directory ID。
+7. 打开 **身份验证（Authentication）> 高级设置（Advanced settings）**，
+   将 **Allow public client flows** 设置为 **Yes** 并保存。
+
+设备代码流不需要 Redirect URI。公共客户端中也不要添加 Client Secret，因为
+桌面或命令行程序无法安全保存嵌入的客户端密钥。
+
+对应的 Microsoft 官方文档：
+
+- [在 Microsoft Entra ID 中注册应用](https://learn.microsoft.com/zh-cn/entra/identity-platform/quickstart-register-app)
+- [配置桌面和公共客户端应用](https://learn.microsoft.com/zh-cn/entra/identity-platform/scenario-desktop-app-configuration)
+- [OAuth 2.0 设备授权流程](https://learn.microsoft.com/zh-cn/entra/identity-platform/v2-oauth2-device-code)
+
+#### 配置权限
+
+打开 **API 权限（API permissions）> 添加权限（Add a permission）>
+Microsoft Graph > 委托的权限（Delegated permissions）**。
+
+个人 OneDrive 账号建议从最小权限开始：
+
+```text
+Files.ReadWrite
+```
+
+客户端还会请求 `offline_access`，以便 Microsoft 返回 refresh token。只有在
+组织版 OneDrive、共享文档库或 SharePoint 场景确实需要时，才添加更广泛的
+委托权限：
+
+```text
+Files.ReadWrite.All
+Sites.ReadWrite.All
+```
+
+组织租户的策略可能要求管理员批准权限。个人 Microsoft 账号通常在设备登录时
+由用户自行同意。最新权限定义请参阅
+[Microsoft Graph 权限参考](https://learn.microsoft.com/zh-cn/graph/permissions-reference)。
+
+#### 配置 onedrive-cpp
+
+如果用户配置文件尚不存在，先创建：
+
+```bash
+mkdir -p ~/.config/onedrive-cpp
+cp /etc/onedrive-cpp/onedrive-cpp.conf ~/.config/onedrive-cpp/config
+sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config
+```
+
+个人 Microsoft 账号使用：
+
+```ini
+application_id=YOUR_APPLICATION_CLIENT_ID
+azure_tenant_id=consumers
+auth_endpoint=https://login.microsoftonline.com
+auth_scope=Files.ReadWrite offline_access
+```
+
+如果同一个应用注册需要同时支持个人账号和工作/学校账号，则使用 `common`：
+
+```ini
+application_id=YOUR_APPLICATION_CLIENT_ID
+azure_tenant_id=common
+auth_endpoint=https://login.microsoftonline.com
+auth_scope=Files.ReadWrite Files.ReadWrite.All Sites.ReadWrite.All offline_access
+```
+
+单租户组织应用应将 `common` 替换为 Directory (tenant) ID。
+
+#### 授权客户端
+
+使用以下命令启动设备授权：
+
+```bash
+onedrive-cpp auth
+```
+
+打开终端显示的网址，输入用户代码，使用与应用支持账号类型相符的账号登录，
+并确认所请求的权限。成功后，refresh token 会以原子方式保存到
+`<state_directory>/refresh_token`，权限限制为仅文件所有者可读写的 `0600`。
+
+如果 Microsoft 提示账号类型不受支持，请检查应用注册中的
+**Supported account types**：仅个人账号注册应使用 `consumers`，同时支持个人
+和组织账号的注册应使用 `common`。
+
+使用以下命令删除已保存的认证：
+
+```bash
+onedrive-cpp logout
+```
+
+OAuth 客户端已经实现 refresh token 轮换，但尚未将取得的访问令牌接入 Graph
+文件操作。
+
 安装 DEB 后启用用户服务：
 
 ```bash
@@ -220,7 +344,8 @@ journalctl --user -u onedrive-cpp.service -f
 
 ## 后续实现建议
 
-1. 使用 libcurl 实现 Graph HTTP 传输和设备代码 OAuth。
+1. 使用 OAuth access token 发起经过认证的 Microsoft Graph Drive 和 Item
+   请求。
 2. 实现 delta API、冲突策略和安全的原子文件替换。
 3. 使用 inotify 接入 monitor，并为 Graph 和文件系统边界增加集成测试。
 

@@ -1,7 +1,10 @@
 #include "onedrive/app/application.hpp"
 
+#include "onedrive/auth/device_auth.hpp"
+#include "onedrive/auth/token_store.hpp"
 #include "onedrive/config/config.hpp"
 #include "onedrive/graph/graph_client.hpp"
+#include "onedrive/http/http_client.hpp"
 #include "onedrive/monitor/monitor.hpp"
 #include "onedrive/storage/item_database.hpp"
 #include "onedrive/sync/sync_engine.hpp"
@@ -23,6 +26,45 @@ std::filesystem::path default_config_path() {
         return std::filesystem::path{home} / ".config/onedrive-cpp/config";
     }
     return "/etc/onedrive-cpp/onedrive-cpp.conf";
+}
+
+int authenticate(const config::Config& config) {
+    http::CurlHttpClient transport;
+    auth::DeviceAuthClient client{
+        transport,
+        auth::DeviceAuthOptions{
+            .application_id = config.application_id,
+            .tenant_id = config.azure_tenant_id,
+            .auth_endpoint = config.auth_endpoint,
+            .scope = config.auth_scope,
+        },
+    };
+
+    auto device_code = client.request_device_code();
+    if (!device_code) {
+        std::cerr << "Authentication failed: " << device_code.error().message << '\n';
+        return 1;
+    }
+
+    if (!device_code->message.empty()) {
+        std::cout << device_code->message << '\n';
+    } else {
+        std::cout << "Open " << device_code->verification_uri
+                  << " and enter code " << device_code->user_code << '\n';
+    }
+    std::cout << "Waiting for authorization...\n";
+
+    auto tokens = client.poll_for_token(*device_code);
+    if (!tokens) {
+        std::cerr << "Authentication failed: " << tokens.error().message << '\n';
+        return 1;
+    }
+
+    auth::TokenStore token_store{config.state_directory};
+    token_store.save_refresh_token(tokens->refresh_token);
+    std::cout << "Authentication succeeded. Refresh token saved to "
+              << token_store.path() << '\n';
+    return 0;
 }
 
 }  // namespace
@@ -58,6 +100,16 @@ int Application::run(int argc, char* argv[]) {
         auto config = config::Config::load(config_path);
         config.dry_run = config.dry_run || force_dry_run;
 
+        if (command == "auth") {
+            return authenticate(config);
+        }
+        if (command == "logout") {
+            const bool removed =
+                auth::TokenStore{config.state_directory}.remove_refresh_token();
+            std::cout << (removed ? "Saved authentication removed.\n" :
+                                   "No saved authentication was present.\n");
+            return 0;
+        }
         if (command == "monitor") {
             return monitor::Monitor{config.sync_directory}.run();
         }
@@ -80,10 +132,12 @@ int Application::run(int argc, char* argv[]) {
 void Application::print_help(std::string_view program) {
     std::cout
         << "Usage:\n"
+        << "  " << program << " auth [--config PATH]\n"
+        << "  " << program << " logout [--config PATH]\n"
         << "  " << program << " sync [--config PATH] [--dry-run]\n"
         << "  " << program << " monitor [--config PATH]\n"
         << "  " << program << " --version\n\n"
-        << "The current milestone provides the architecture and local dry-run flow.\n";
+        << "Use 'auth' to authorize with Microsoft using the device code flow.\n";
 }
 
 }  // namespace onedrive::app
