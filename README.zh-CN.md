@@ -42,6 +42,7 @@ CLI / Application
 - x86_64 或 arm64（取决于 LLVM 和 Ubuntu 构建环境）。
 - Clang 20，使用 `-std=c++2c`/CMake `CXX_STANDARD 26`。
 - CMake 3.25 或更高版本。
+- 使用 vcpkg manifest 模式管理 C++ 依赖。
 
 Ubuntu 22.04 自带的 GCC 和 CMake 版本不足以完成此项目的 C++26 配置，
 因此下面使用 LLVM 官方仓库和 Kitware 官方 APT 仓库。
@@ -86,31 +87,41 @@ clang++-20 --version
 cmake --version
 ```
 
+安装并引导 vcpkg：
+
+```bash
+git clone https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
+"$HOME/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+export VCPKG_ROOT="$HOME/vcpkg"
+```
+
+建议将 `VCPKG_ROOT` 的导出命令加入 shell 配置文件，使其永久生效。
+仓库中的 `vcpkg.json` manifest 固定了 registry baseline，是 C++ 库依赖的
+唯一事实来源。当前依赖列表为空，因为项目骨架尚未链接第三方库。CMake
+配置项目时，vcpkg 会自动安装 manifest 中声明的依赖。
+
 ## 本地构建与测试
 
 ```bash
-cmake -S . -B build -G Ninja \
-  -DCMAKE_CXX_COMPILER=clang++-20 \
-  -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-ctest --test-dir build --output-on-failure
+cmake --preset release
+cmake --build --preset release
+ctest --preset release
 ```
 
 运行安全的配置演练：
 
 ```bash
-./build/onedrive-cpp sync --dry-run
-./build/onedrive-cpp --help
+./build/release/onedrive-cpp sync --dry-run
+./build/release/onedrive-cpp --help
 ```
 
 也可以用 CPack 快速生成未经过完整 Debian 策略检查的包：
 
 ```bash
-cd build
-cpack -G DEB
+cpack --config build/release/CPackConfig.cmake -G DEB
 ```
 
-生成的文件位于 `build/`。
+生成的文件位于当前目录。
 
 ## 构建正式 DEB 包
 
@@ -123,6 +134,7 @@ sudo apt install -y build-essential devscripts debhelper ninja-build clang-20
 在项目根目录执行：
 
 ```bash
+export VCPKG_ROOT="$HOME/vcpkg"
 chmod +x debian/rules
 dpkg-buildpackage --build=binary --no-sign
 ```

@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "onedrive-cpp",
+  "version-semver": "0.1.0",
+  "description": "A modern C++ OneDrive synchronization client scaffold",
+  "license": "GPL-3.0-or-later",
+  "builtin-baseline": "b3ae22aef2b857af6e80d756c13f15db12be4e8a",
+  "dependencies": []
+}

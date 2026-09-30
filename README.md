@@ -44,6 +44,7 @@ The directories correspond to the responsibilities of
 - x86_64 or arm64, depending on the LLVM and Ubuntu build environment.
 - Clang 20 with `-std=c++2c` / CMake `CXX_STANDARD 26`.
 - CMake 3.25 or later.
+- vcpkg in manifest mode for C++ dependencies.
 
 The GCC and CMake versions included with Ubuntu 22.04 are not sufficient for
 this project's C++26 configuration. The following instructions therefore use
@@ -89,32 +90,44 @@ clang++-20 --version
 cmake --version
 ```
 
+Install and bootstrap vcpkg:
+
+```bash
+git clone https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
+"$HOME/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+export VCPKG_ROOT="$HOME/vcpkg"
+```
+
+Add the `VCPKG_ROOT` export to your shell profile to make it persistent.
+The committed `vcpkg.json` manifest pins the registry baseline and is the
+single source of truth for C++ library dependencies. Its dependency list is
+currently empty because the scaffold does not yet link third-party libraries.
+vcpkg automatically installs declared dependencies while CMake configures the
+project.
+
 ## Build and Test Locally
 
 ```bash
-cmake -S . -B build -G Ninja \
-  -DCMAKE_CXX_COMPILER=clang++-20 \
-  -DCMAKE_BUILD_TYPE=Release
-cmake --build build
-ctest --test-dir build --output-on-failure
+cmake --preset release
+cmake --build --preset release
+ctest --preset release
 ```
 
 Run a safe configuration dry run:
 
 ```bash
-./build/onedrive-cpp sync --dry-run
-./build/onedrive-cpp --help
+./build/release/onedrive-cpp sync --dry-run
+./build/release/onedrive-cpp --help
 ```
 
 You can also use CPack to quickly create a package that has not undergone full
 Debian policy checks:
 
 ```bash
-cd build
-cpack -G DEB
+cpack --config build/release/CPackConfig.cmake -G DEB
 ```
 
-The generated package is placed in `build/`.
+The generated package is placed in the current directory.
 
 ## Build an Official DEB Package
 
@@ -127,6 +140,7 @@ sudo apt install -y build-essential devscripts debhelper ninja-build clang-20
 Run the following commands from the project root:
 
 ```bash
+export VCPKG_ROOT="$HOME/vcpkg"
 chmod +x debian/rules
 dpkg-buildpackage --build=binary --no-sign
 ```
