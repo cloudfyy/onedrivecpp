@@ -1,0 +1,13 @@
+/build/
+/.cache/
+/compile_commands.json
+/*.deb
+/*.build
+/*.buildinfo
+/*.changes
+/*.dsc
+/*.tar.*
+/debian/.debhelper/
+/debian/debhelper-build-stamp
+/debian/files
+/debian/onedrive-cpp/

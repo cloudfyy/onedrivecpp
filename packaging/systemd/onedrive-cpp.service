@@ -1,0 +1,12 @@
+[Unit]
+Description=OneDrive C++ synchronization client
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/onedrive-cpp monitor
+RemainAfterExit=yes
+
+[Install]
+WantedBy=default.target

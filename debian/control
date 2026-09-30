@@ -1,0 +1,18 @@
+Source: onedrive-cpp
+Section: net
+Priority: optional
+Maintainer: onedrive-cpp maintainers <maintainers@example.invalid>
+Build-Depends:
+ debhelper-compat (= 13),
+ cmake (>= 3.25),
+ ninja-build,
+ clang-20
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+
+Package: onedrive-cpp
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: modern C++ OneDrive synchronization client scaffold
+ A modular C++26 client scaffold with configuration, Microsoft Graph,
+ local-state, synchronization, monitoring, and systemd integration layers.
