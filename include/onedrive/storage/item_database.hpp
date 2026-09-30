@@ -1,6 +1,7 @@
 #pragma once
 
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <unordered_map>
 
@@ -15,6 +16,10 @@ struct ItemState {
 class ItemDatabase {
 public:
     explicit ItemDatabase(std::filesystem::path state_directory);
+    ~ItemDatabase();
+
+    ItemDatabase(const ItemDatabase&) = delete;
+    ItemDatabase& operator=(const ItemDatabase&) = delete;
 
     void open();
     void upsert(ItemState item);
@@ -22,8 +27,11 @@ public:
     [[nodiscard]] std::size_t size() const noexcept;
 
 private:
+    struct Impl;
+
     std::filesystem::path state_directory_;
     std::unordered_map<std::string, ItemState> items_;
+    std::unique_ptr<Impl> impl_;
 };
 
 }  // namespace onedrive::storage

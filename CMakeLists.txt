@@ -10,6 +10,8 @@ project(
 include(GNUInstallDirs)
 include(CTest)
 
+find_package(unofficial-sqlite3 CONFIG REQUIRED)
+
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -29,6 +31,8 @@ target_include_directories(onedrive_core
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
+
+target_link_libraries(onedrive_core PRIVATE unofficial::sqlite3::sqlite3)
 
 target_compile_options(onedrive_core PRIVATE
     $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall;-Wextra;-Wpedantic;-Wconversion;-Wshadow>
@@ -52,6 +56,10 @@ if(BUILD_TESTING)
     add_executable(config_tests tests/config_tests.cpp)
     target_link_libraries(config_tests PRIVATE onedrive_core)
     add_test(NAME config_tests COMMAND config_tests)
+
+    add_executable(item_database_tests tests/item_database_tests.cpp)
+    target_link_libraries(item_database_tests PRIVATE onedrive_core)
+    add_test(NAME item_database_tests COMMAND item_database_tests)
 endif()
 
 set(CPACK_GENERATOR "DEB")

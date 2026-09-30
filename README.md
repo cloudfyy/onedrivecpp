@@ -8,10 +8,10 @@ Ubuntu 24.04 LTS and later. Its separation of responsibilities is inspired by
 copy the reference project's D implementation.
 
 > The current version provides a buildable architecture scaffold,
-> configuration loading, a CLI, dry-run support, a local state abstraction, a
+> configuration loading, a CLI, dry-run support, SQLite state persistence, a
 > systemd user service, and Debian packaging. Microsoft Graph OAuth, network
-> transport, SQLite persistence, and actual file synchronization have not yet
-> been implemented. Non-dry-run synchronization exits with an explicit error.
+> transport, and actual file synchronization have not yet been implemented.
+> Non-dry-run synchronization exits with an explicit error.
 
 ## Architecture
 
@@ -32,7 +32,7 @@ The directories correspond to the responsibilities of
 - `src/app`: CLI parsing and application lifecycle.
 - `src/config`: Configuration file loading and validation.
 - `src/graph`: Microsoft Graph API boundary.
-- `src/storage`: Remote ID, ETag, and local path state.
+- `src/storage`: SQLite-persisted remote ID, ETag, and local path state.
 - `src/sync`: Difference calculation and synchronization orchestration.
 - `src/monitor`: Long-running monitor mode entry point.
 - `packaging/systemd`: systemd user service.
@@ -83,10 +83,9 @@ source "$HOME/.profile"
 ```
 
 The committed `vcpkg.json` manifest pins the registry baseline and is the
-single source of truth for C++ library dependencies. Its dependency list is
-currently empty because the scaffold does not yet link third-party libraries.
-vcpkg automatically installs declared dependencies while CMake configures the
-project.
+single source of truth for C++ library dependencies. It currently provides
+SQLite for the persistent local item database. vcpkg automatically installs
+declared dependencies while CMake configures the project.
 
 ## Build and Test Locally
 
@@ -213,6 +212,10 @@ cp /etc/onedrive-cpp/onedrive-cpp.conf ~/.config/onedrive-cpp/config
 sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config
 ```
 
+Tracked remote IDs, ETags, and local paths are stored in
+`<state_directory>/items.sqlite3`. The database uses SQLite WAL mode and is
+loaded when the application starts.
+
 After installing the DEB package, enable the user service:
 
 ```bash
@@ -227,10 +230,9 @@ or modify the synchronization directory.
 ## Suggested Next Steps
 
 1. Implement Graph HTTP transport and device-code OAuth with libcurl.
-2. Replace the in-memory `ItemDatabase` with SQLite.
-3. Implement the delta API, conflict policies, and safe atomic file
+2. Implement the delta API, conflict policies, and safe atomic file
    replacement.
-4. Connect the monitor to inotify and add integration tests for the Graph and
+3. Connect the monitor to inotify and add integration tests for the Graph and
    file system boundaries.
 
 ## License

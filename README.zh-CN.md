@@ -7,9 +7,9 @@
 [abraunegg/onedrive](https://github.com/abraunegg/onedrive) 的职责拆分方式，
 但不复制其 D 语言实现。
 
-> 当前版本提供可编译的架构骨架、配置加载、CLI、dry-run、本地状态抽象、
-> systemd 用户服务和 Debian 打包。Microsoft Graph OAuth、网络传输、SQLite
-> 持久化和真实文件同步尚未实现；非 dry-run 同步会明确报错。
+> 当前版本提供可编译的架构骨架、配置加载、CLI、dry-run、SQLite 状态持久化、
+> systemd 用户服务和 Debian 打包。Microsoft Graph OAuth、网络传输和真实文件
+> 同步尚未实现；非 dry-run 同步会明确报错。
 
 ## 架构
 
@@ -30,7 +30,7 @@ CLI / Application
 - `src/app`：CLI 解析和应用生命周期。
 - `src/config`：配置文件加载和校验。
 - `src/graph`：Microsoft Graph API 访问边界。
-- `src/storage`：远端 ID、ETag 与本地路径状态。
+- `src/storage`：使用 SQLite 持久化远端 ID、ETag 与本地路径状态。
 - `src/sync`：差异计算和同步流程编排入口。
 - `src/monitor`：长驻监控模式入口。
 - `packaging/systemd`：systemd 用户服务。
@@ -80,8 +80,8 @@ source "$HOME/.profile"
 ```
 
 仓库中的 `vcpkg.json` manifest 固定了 registry baseline，是 C++ 库依赖的
-唯一事实来源。当前依赖列表为空，因为项目骨架尚未链接第三方库。CMake
-配置项目时，vcpkg 会自动安装 manifest 中声明的依赖。
+唯一事实来源。目前它提供本地项目状态数据库所需的 SQLite。CMake 配置项目
+时，vcpkg 会自动安装 manifest 中声明的依赖。
 
 ## 本地构建与测试
 
@@ -204,6 +204,10 @@ cp /etc/onedrive-cpp/onedrive-cpp.conf ~/.config/onedrive-cpp/config
 sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config
 ```
 
+远端 ID、ETag 和本地路径状态保存在
+`<state_directory>/items.sqlite3`。数据库使用 SQLite WAL 模式，并在程序
+启动时加载。
+
 安装 DEB 后启用用户服务：
 
 ```bash
@@ -217,9 +221,8 @@ journalctl --user -u onedrive-cpp.service -f
 ## 后续实现建议
 
 1. 使用 libcurl 实现 Graph HTTP 传输和设备代码 OAuth。
-2. 使用 SQLite 替换内存 `ItemDatabase`。
-3. 实现 delta API、冲突策略和安全的原子文件替换。
-4. 使用 inotify 接入 monitor，并为 Graph 和文件系统边界增加集成测试。
+2. 实现 delta API、冲突策略和安全的原子文件替换。
+3. 使用 inotify 接入 monitor，并为 Graph 和文件系统边界增加集成测试。
 
 ## 许可证
 
