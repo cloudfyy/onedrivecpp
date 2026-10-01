@@ -17,29 +17,39 @@ copy the reference project's D implementation.
 ## Architecture
 
 ```text
-CLI / Application
+main (composition root)
        |
-       +-- Config
-       +-- DeviceAuth / TokenStore
-       +-- HttpTransport (libcurl)
-       +-- Monitor (file system event entry point)
-       +-- SyncEngine (synchronization orchestration)
+       +-- ProductionRuntimeFactory
                |
-               +-- GraphClient (Microsoft Graph boundary)
-               +-- ItemDatabase (local state boundary)
+               +-- Application (CLI and command orchestration)
+                       |
+                       +-- HttpTransport / TokenStore
+                       +-- FileMonitor / Metrics
+                       +-- SyncEngine
+                               |
+                               +-- GraphClient
+                               +-- ItemStore
 ```
+
+The application uses constructor injection and explicit port interfaces rather
+than a service locator. `main` is the only composition root. The production
+runtime factory creates the libcurl, file-token, SQLite, monitor, Graph, and
+metrics adapters after configuration is loaded; tests inject in-memory fakes.
+This keeps business orchestration independent of infrastructure and leaves a
+stable metrics port for a future Linux metrics exporter.
 
 The directories correspond to the responsibilities of
 `main/config/curlEngine/onedrive/sync/itemdb/monitor` in the reference project:
 
-- `src/app`: CLI parsing and application lifecycle.
+- `src/app`: CLI parsing, application lifecycle, and runtime dependency factory.
 - `src/auth`: Device-code OAuth, token refresh, and secure token persistence.
 - `src/config`: Configuration file loading and validation.
 - `src/graph`: Microsoft Graph API boundary.
 - `src/http`: Typed libcurl HTTP transport.
-- `src/storage`: SQLite-persisted remote ID, ETag, and local path state.
+- `src/storage`: Item-store port and SQLite-persisted remote ID, ETag, and local path adapter.
 - `src/sync`: Difference calculation and synchronization orchestration.
 - `src/monitor`: Long-running monitor mode entry point.
+- `src/metrics`: Metrics port and no-op production adapter.
 - `packaging/systemd`: systemd user service.
 - `debian`: Native Ubuntu/Debian package metadata.
 

@@ -42,12 +42,14 @@ set(
 
 add_library(onedrive_core
     src/app/application.cpp
+    src/app/runtime_factory.cpp
     src/auth/device_auth.cpp
     src/auth/token_store.cpp
     src/config/config.cpp
     src/graph/graph_client.cpp
     src/http/http_client.cpp
     src/logging/logging.cpp
+    src/metrics/metrics.cpp
     src/monitor/monitor.cpp
     src/storage/item_database.cpp
     src/sync/sync_engine.cpp

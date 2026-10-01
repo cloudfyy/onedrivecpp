@@ -1,13 +1,15 @@
 #include "onedrive/app/application.hpp"
 
+#include "onedrive/app/runtime_factory.hpp"
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
 #include "onedrive/config/config.hpp"
 #include "onedrive/graph/graph_client.hpp"
 #include "onedrive/http/http_client.hpp"
 #include "onedrive/logging/logging.hpp"
+#include "onedrive/metrics/metrics.hpp"
 #include "onedrive/monitor/monitor.hpp"
-#include "onedrive/storage/item_database.hpp"
+#include "onedrive/storage/item_store.hpp"
 #include "onedrive/sync/sync_engine.hpp"
 #include "onedrive/version.hpp"
 
@@ -30,19 +32,14 @@ std::filesystem::path default_config_path() {
     return "/etc/onedrive-cpp/onedrive-cpp.conf";
 }
 
-int authenticate(const config::Config& config) {
-    http::CurlHttpClient transport;
-    auth::DeviceAuthClient client{
-        transport,
-        auth::DeviceAuthOptions{
-            .application_id = config.application_id,
-            .tenant_id = config.azure_tenant_id,
-            .auth_endpoint = config.auth_endpoint,
-            .scope = config.auth_scope,
-        },
-    };
+int authenticate(
+    const config::Config& config,
+    const RuntimeFactory& runtime_factory
+) {
+    auto transport = runtime_factory.create_http_transport();
+    auto client = runtime_factory.create_device_auth_client(config, *transport);
 
-    auto device_code = client.request_device_code();
+    auto device_code = client->request_device_code();
     if (!device_code) {
         spdlog::error(
             "Microsoft device authorization request failed: {}",
@@ -59,7 +56,7 @@ int authenticate(const config::Config& config) {
     }
     std::cout << "Waiting for authorization...\n";
 
-    auto tokens = client.poll_for_token(*device_code);
+    auto tokens = client->poll_for_token(*device_code);
     if (!tokens) {
         spdlog::error(
             "Microsoft device authorization failed: {}",
@@ -68,15 +65,18 @@ int authenticate(const config::Config& config) {
         return 1;
     }
 
-    auth::TokenStore token_store{config.state_directory};
-    token_store.save_refresh_token(tokens->refresh_token);
+    auto token_store = runtime_factory.create_token_store(config);
+    token_store->save_refresh_token(tokens->refresh_token);
     spdlog::info("Microsoft authentication succeeded");
     std::cout << "Authentication succeeded. Refresh token saved to "
-              << token_store.path() << '\n';
+              << token_store->path() << '\n';
     return 0;
 }
 
 }  // namespace
+
+Application::Application(const RuntimeFactory& runtime_factory)
+    : runtime_factory_{runtime_factory} {}
 
 int Application::run(int argc, char* argv[]) {
     std::filesystem::path config_path = default_config_path();
@@ -159,26 +159,27 @@ int Application::run(int argc, char* argv[]) {
 
         if (*auth_command) {
             spdlog::info("Starting Microsoft authentication");
-            return authenticate(config);
+            return authenticate(config, runtime_factory_);
         }
         if (*logout_command) {
             spdlog::info("Removing locally saved authentication");
             const bool removed =
-                auth::TokenStore{config.state_directory}.remove_refresh_token();
+                runtime_factory_.create_token_store(config)->remove_refresh_token();
             std::cout << (removed ? "Saved authentication removed.\n" :
                                    "No saved authentication was present.\n");
             return 0;
         }
         if (*monitor_command) {
             spdlog::info("Starting filesystem monitor");
-            return monitor::Monitor{config.sync_directory}.run();
+            return runtime_factory_.create_monitor(config)->run();
         }
 
         spdlog::info("Starting synchronization{}", config.dry_run ? " dry run" : "");
-        storage::ItemDatabase database{config.state_directory};
-        database.open();
-        graph::GraphClient graph;
-        return sync::SyncEngine{config, graph, database}.synchronize();
+        auto items = runtime_factory_.create_item_store(config);
+        items->open();
+        auto graph = runtime_factory_.create_graph_client(config);
+        auto metrics = runtime_factory_.create_metrics();
+        return sync::SyncEngine{config, *graph, *items, *metrics}.synchronize();
     } catch (const std::exception& error) {
         if (const auto logger = spdlog::default_logger()) {
             logger->error("{}", error.what());

@@ -15,29 +15,37 @@
 ## 架构
 
 ```text
-CLI / Application
+main（composition root）
        |
-       +-- Config
-       +-- DeviceAuth / TokenStore
-       +-- HttpTransport (libcurl)
-       +-- Monitor (文件系统事件入口)
-       +-- SyncEngine (同步编排)
+       +-- ProductionRuntimeFactory
                |
-               +-- GraphClient (Microsoft Graph 边界)
-               +-- ItemDatabase (本地状态边界)
+               +-- Application（CLI 与命令编排）
+                       |
+                       +-- HttpTransport / TokenStore
+                       +-- FileMonitor / Metrics
+                       +-- SyncEngine
+                               |
+                               +-- GraphClient
+                               +-- ItemStore
 ```
+
+应用使用构造器注入和明确的端口接口，不使用 Service Locator。`main` 是唯一的
+composition root。生产 runtime factory 在配置加载后创建 libcurl、文件 token、
+SQLite、monitor、Graph 和 metrics 适配器；测试则注入内存 fake。这样业务编排
+不再依赖基础设施实现，并为后续 Linux metrics exporter 保留稳定端口。
 
 目录与参考项目中的 `main/config/curlEngine/onedrive/sync/itemdb/monitor`
 职责相对应：
 
-- `src/app`：CLI 解析和应用生命周期。
+- `src/app`：CLI 解析、应用生命周期和运行时依赖工厂。
 - `src/auth`：设备代码 OAuth、Token 刷新和安全持久化。
 - `src/config`：配置文件加载和校验。
 - `src/graph`：Microsoft Graph API 访问边界。
 - `src/http`：强类型 libcurl HTTP 传输层。
-- `src/storage`：使用 SQLite 持久化远端 ID、ETag 与本地路径状态。
+- `src/storage`：ItemStore 端口，以及使用 SQLite 持久化远端 ID、ETag 与本地路径的适配器。
 - `src/sync`：差异计算和同步流程编排入口。
 - `src/monitor`：长驻监控模式入口。
+- `src/metrics`：Metrics 端口和无操作生产适配器。
 - `packaging/systemd`：systemd 用户服务。
 - `debian`：Ubuntu/Debian 原生包元数据。
 

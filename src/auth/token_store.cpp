@@ -24,10 +24,10 @@ std::string trim(std::string value) {
 
 }  // namespace
 
-TokenStore::TokenStore(std::filesystem::path state_directory)
+FileTokenStore::FileTokenStore(std::filesystem::path state_directory)
     : path_{std::move(state_directory) / "refresh_token"} {}
 
-std::optional<std::string> TokenStore::load_refresh_token() const {
+std::optional<std::string> FileTokenStore::load_refresh_token() const {
     if (!std::filesystem::exists(path_)) {
         return std::nullopt;
     }
@@ -51,7 +51,7 @@ std::optional<std::string> TokenStore::load_refresh_token() const {
     return token.empty() ? std::nullopt : std::optional<std::string>{std::move(token)};
 }
 
-void TokenStore::save_refresh_token(const std::string& refresh_token) const {
+void FileTokenStore::save_refresh_token(const std::string& refresh_token) const {
     if (refresh_token.empty()) {
         throw std::runtime_error("refusing to persist an empty refresh token");
     }
@@ -132,7 +132,7 @@ void TokenStore::save_refresh_token(const std::string& refresh_token) const {
     }
 }
 
-bool TokenStore::remove_refresh_token() const {
+bool FileTokenStore::remove_refresh_token() const {
     std::error_code error;
     const bool removed = std::filesystem::remove(path_, error);
     if (error) {
@@ -144,7 +144,7 @@ bool TokenStore::remove_refresh_token() const {
     return removed;
 }
 
-const std::filesystem::path& TokenStore::path() const noexcept {
+const std::filesystem::path& FileTokenStore::path() const noexcept {
     return path_;
 }
 

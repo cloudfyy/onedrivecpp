@@ -14,7 +14,14 @@ struct RemoteItem {
 
 class GraphClient {
 public:
-    [[nodiscard]] std::vector<RemoteItem> list_root() const;
+    virtual ~GraphClient() = default;
+
+    [[nodiscard]] virtual std::vector<RemoteItem> list_root() const = 0;
+};
+
+class MicrosoftGraphClient final : public GraphClient {
+public:
+    [[nodiscard]] std::vector<RemoteItem> list_root() const override;
 };
 
 }  // namespace onedrive::graph

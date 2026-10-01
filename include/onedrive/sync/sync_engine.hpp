@@ -2,7 +2,8 @@
 
 #include "onedrive/config/config.hpp"
 #include "onedrive/graph/graph_client.hpp"
-#include "onedrive/storage/item_database.hpp"
+#include "onedrive/metrics/metrics.hpp"
+#include "onedrive/storage/item_store.hpp"
 
 namespace onedrive::sync {
 
@@ -11,7 +12,8 @@ public:
     SyncEngine(
         const config::Config& config,
         graph::GraphClient& graph,
-        storage::ItemDatabase& database
+        storage::ItemStore& items,
+        metrics::Metrics& metrics
     );
 
     [[nodiscard]] int synchronize() const;
@@ -19,7 +21,8 @@ public:
 private:
     const config::Config& config_;
     graph::GraphClient& graph_;
-    storage::ItemDatabase& database_;
+    storage::ItemStore& items_;
+    metrics::Metrics& metrics_;
 };
 
 }  // namespace onedrive::sync

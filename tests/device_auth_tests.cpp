@@ -148,7 +148,7 @@ int test_refresh_and_token_store() {
     }
 
     TemporaryDirectory temporary_directory;
-    onedrive::auth::TokenStore store{temporary_directory.path()};
+    onedrive::auth::FileTokenStore store{temporary_directory.path()};
     store.save_refresh_token(tokens->refresh_token);
     store.save_refresh_token("rotated-refresh");
     const auto loaded = store.load_refresh_token();
