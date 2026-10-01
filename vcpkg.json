@@ -6,6 +6,7 @@
   "license": "GPL-3.0-or-later",
   "builtin-baseline": "b3ae22aef2b857af6e80d756c13f15db12be4e8a",
   "dependencies": [
+    "cli11",
     "curl",
     "nlohmann-json",
     "sqlite3"

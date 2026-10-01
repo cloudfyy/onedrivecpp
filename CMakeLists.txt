@@ -13,6 +13,7 @@ project(
 include(GNUInstallDirs)
 include(CTest)
 
+find_package(CLI11 CONFIG REQUIRED)
 find_package(CURL CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
@@ -55,6 +56,7 @@ target_include_directories(onedrive_core
 
 target_link_libraries(onedrive_core
     PRIVATE
+        CLI11::CLI11
         CURL::libcurl
         nlohmann_json::nlohmann_json
         unofficial::sqlite3::sqlite3
@@ -94,6 +96,10 @@ if(BUILD_TESTING)
     add_executable(http_client_tests tests/http_client_tests.cpp)
     target_link_libraries(http_client_tests PRIVATE onedrive_core)
     add_test(NAME http_client_tests COMMAND http_client_tests)
+
+    add_executable(application_cli_tests tests/application_cli_tests.cpp)
+    target_link_libraries(application_cli_tests PRIVATE onedrive_core)
+    add_test(NAME application_cli_tests COMMAND application_cli_tests)
 endif()
 
 set(CPACK_GENERATOR "DEB")

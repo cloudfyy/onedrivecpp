@@ -85,7 +85,7 @@ source "$HOME/.profile"
 ```
 
 仓库中的 `vcpkg.json` manifest 固定了 registry baseline，是 C++ 库依赖的
-唯一事实来源。目前它提供 libcurl、OpenSSL、nlohmann/json 和 SQLite。
+唯一事实来源。目前它提供 CLI11、libcurl、OpenSSL、nlohmann/json 和 SQLite。
 CMake 配置项目时，vcpkg 会自动安装 manifest 中声明的依赖。
 
 ## 本地构建与测试

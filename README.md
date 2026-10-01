@@ -89,8 +89,8 @@ source "$HOME/.profile"
 
 The committed `vcpkg.json` manifest pins the registry baseline and is the
 single source of truth for C++ library dependencies. It currently provides
-libcurl, OpenSSL, nlohmann/json, and SQLite. vcpkg automatically installs
-declared dependencies while CMake configures the project.
+CLI11, libcurl, OpenSSL, nlohmann/json, and SQLite. vcpkg automatically
+installs declared dependencies while CMake configures the project.
 
 ## Build and Test Locally
 
