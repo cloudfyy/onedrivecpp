@@ -1,5 +1,5 @@
-onedrive-cpp (0.1.0) unstable; urgency=medium
+onedrive-cpp (0.1.0-1) unstable; urgency=medium
 
-  * Initial C++26 architecture scaffold.
+  * Initial Debian release.
 
  -- onedrive-cpp maintainers <maintainers@example.invalid>  Tue, 29 Sep 2026 09:48:37 +0800

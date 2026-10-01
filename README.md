@@ -187,13 +187,15 @@ tests. The generated `.deb` is placed in the parent directory of the project,
 for example:
 
 ```text
-../onedrive-cpp_0.1.0_amd64.deb
+../onedrive-cpp_<version>_<architecture>.deb
 ```
 
 Install and verify the package:
 
 ```bash
-sudo apt install ../onedrive-cpp_0.1.0_$(dpkg --print-architecture).deb
+version=$(dpkg-parsechangelog -S Version)
+architecture=$(dpkg --print-architecture)
+sudo apt install "../onedrive-cpp_${version}_${architecture}.deb"
 onedrive-cpp --version
 ```
 
@@ -201,7 +203,7 @@ To check for Debian policy issues:
 
 ```bash
 sudo apt install -y lintian
-lintian ../onedrive-cpp_0.1.0_*.changes
+lintian "../onedrive-cpp_${version}_${architecture}.changes"
 ```
 
 ## Configuration and systemd

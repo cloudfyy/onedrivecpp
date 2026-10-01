@@ -181,13 +181,15 @@ dpkg-buildpackage --build=binary --no-sign
 目录的上一级，例如：
 
 ```text
-../onedrive-cpp_0.1.0_amd64.deb
+../onedrive-cpp_<版本>_<架构>.deb
 ```
 
 安装并检查：
 
 ```bash
-sudo apt install ../onedrive-cpp_0.1.0_$(dpkg --print-architecture).deb
+version=$(dpkg-parsechangelog -S Version)
+architecture=$(dpkg --print-architecture)
+sudo apt install "../onedrive-cpp_${version}_${architecture}.deb"
 onedrive-cpp --version
 ```
 
@@ -195,7 +197,7 @@ onedrive-cpp --version
 
 ```bash
 sudo apt install -y lintian
-lintian ../onedrive-cpp_0.1.0_*.changes
+lintian "../onedrive-cpp_${version}_${architecture}.changes"
 ```
 
 ## 配置与 systemd

@@ -16,3 +16,6 @@ override_dh_auto_configure:
 		-DCMAKE_BUILD_TYPE=Release \
 		-DBUILD_TESTING=ON \
 		-DCMAKE_TOOLCHAIN_FILE=$(VCPKG_ROOT)/scripts/buildsystems/vcpkg.cmake
+
+# The system dwz does not support Clang 20's DWARF sections.
+override_dh_dwz:

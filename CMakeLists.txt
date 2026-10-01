@@ -1,8 +1,11 @@
 cmake_minimum_required(VERSION 3.28)
 
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg.json" ONEDRIVE_VCPKG_MANIFEST)
+string(JSON ONEDRIVE_VERSION GET "${ONEDRIVE_VCPKG_MANIFEST}" version-semver)
+
 project(
     onedrive-cpp
-    VERSION 0.1.0
+    VERSION "${ONEDRIVE_VERSION}"
     DESCRIPTION "A modern C++ OneDrive synchronization client scaffold"
     LANGUAGES CXX
 )
@@ -18,6 +21,11 @@ set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+configure_file(
+    include/onedrive/version.hpp.in
+    generated/onedrive/version.hpp
+    @ONLY
+)
 set(
     ONEDRIVE_SYSTEM_CONFIG_DIR
     "/etc/onedrive-cpp"
@@ -41,6 +49,8 @@ target_include_directories(onedrive_core
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    PRIVATE
+        ${CMAKE_CURRENT_BINARY_DIR}/generated
 )
 
 target_link_libraries(onedrive_core
@@ -89,6 +99,7 @@ endif()
 set(CPACK_GENERATOR "DEB")
 set(CPACK_PACKAGE_CONTACT "onedrive-cpp maintainers")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "${PROJECT_DESCRIPTION}")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 set(CPACK_DEBIAN_PACKAGE_SECTION "net")
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)

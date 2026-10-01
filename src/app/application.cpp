@@ -8,18 +8,16 @@
 #include "onedrive/monitor/monitor.hpp"
 #include "onedrive/storage/item_database.hpp"
 #include "onedrive/sync/sync_engine.hpp"
+#include "onedrive/version.hpp"
 
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <iostream>
 #include <string>
-#include <string_view>
 
 namespace onedrive::app {
 namespace {
-
-constexpr std::string_view version{"0.1.0"};
 
 std::filesystem::path default_config_path() {
     if (const char* home = std::getenv("HOME"); home != nullptr) {
@@ -78,7 +76,7 @@ int Application::run(int argc, char* argv[]) {
 
     const std::string_view command{argv[1]};
     if (command == "--version") {
-        std::cout << "onedrive-cpp " << version << '\n';
+        std::cout << "onedrive-cpp " << build_info::version << '\n';
         return 0;
     }
 

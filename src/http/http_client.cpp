@@ -1,4 +1,5 @@
 #include "onedrive/http/http_client.hpp"
+#include "onedrive/version.hpp"
 
 #include <curl/curl.h>
 
@@ -119,7 +120,7 @@ HttpResult CurlHttpClient::perform(const HttpRequest& request) const {
         result = set_option(CURLOPT_TIMEOUT, request.operation_timeout.count());
     }
     if (result == CURLE_OK) {
-        result = set_option(CURLOPT_USERAGENT, "onedrive-cpp/0.1.0");
+        result = set_option(CURLOPT_USERAGENT, build_info::user_agent);
     }
     if (result == CURLE_OK && headers) {
         result = set_option(CURLOPT_HTTPHEADER, headers.get());

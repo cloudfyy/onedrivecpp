@@ -1,0 +1,8 @@
+#pragma once
+
+namespace onedrive::build_info {
+
+inline constexpr char version[] = "@PROJECT_VERSION@";
+inline constexpr char user_agent[] = "@PROJECT_NAME@/@PROJECT_VERSION@";
+
+}
