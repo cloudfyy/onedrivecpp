@@ -28,6 +28,11 @@ configure_file(
     generated/onedrive/version.hpp
     @ONLY
 )
+configure_file(
+    docs/onedrive-cpp.1.in
+    generated/onedrive-cpp.1
+    @ONLY
+)
 set(
     ONEDRIVE_SYSTEM_CONFIG_DIR
     "/etc/onedrive-cpp"
@@ -81,6 +86,9 @@ install(FILES packaging/systemd/onedrive-cpp.service
 )
 install(FILES README.md
     DESTINATION ${CMAKE_INSTALL_DOCDIR}
+)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/generated/onedrive-cpp.1
+    DESTINATION ${CMAKE_INSTALL_MANDIR}/man1
 )
 
 if(BUILD_TESTING)

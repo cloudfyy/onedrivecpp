@@ -132,6 +132,28 @@ onedrive-cpp monitor --log-file ~/.local/state/onedrive-cpp/onedrive-cpp.log
 日志文件达到 5 MiB 时轮转，并保留三个旧文件。不得把认证 token、设备代码或
 Authorization header 写入日志。
 
+### 手册页
+
+CMake 安装规则会把 section 1 手册安装到标准的 `share/man/man1` 目录。安装
+DEB 包后可直接查看：
+
+```bash
+man onedrive-cpp
+```
+
+Debian 的 `man-db` trigger 会自动更新索引。直接使用 `cmake --install` 安装到
+自定义前缀后，如有需要可手动刷新本地索引：
+
+```bash
+sudo mandb
+```
+
+不安装也可以查看构建目录中生成的手册：
+
+```bash
+man --local-file build/release/generated/onedrive-cpp.1
+```
+
 ### 完整 Release 重编译
 
 仅删除 Release 构建目录，使 CMake、vcpkg 和 Ninja 从空白状态重新配置和
@@ -210,6 +232,7 @@ version=$(dpkg-parsechangelog -S Version)
 architecture=$(dpkg --print-architecture)
 sudo apt install "../onedrive-cpp_${version}_${architecture}.deb"
 onedrive-cpp --version
+man onedrive-cpp
 ```
 
 如需检查 Debian 策略问题：

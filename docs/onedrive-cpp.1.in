@@ -1,0 +1,216 @@
+.TH ONEDRIVE-CPP 1 "October 2026" "onedrive-cpp @PROJECT_VERSION@" "User Commands"
+.SH NAME
+onedrive-cpp \- modern C++ OneDrive synchronization client
+.SH SYNOPSIS
+.B onedrive-cpp
+.RI [ options ]
+.I command
+.PP
+.B onedrive-cpp auth
+.RI [ options ]
+.PP
+.B onedrive-cpp logout
+.RI [ options ]
+.PP
+.B onedrive-cpp sync
+.RI [ options ]
+.PP
+.B onedrive-cpp monitor
+.RI [ options ]
+.SH DESCRIPTION
+.B onedrive-cpp
+is an independent, open-source client intended to authenticate with Microsoft
+and synchronize files through Microsoft Graph and OneDrive.
+.PP
+The current release includes configuration loading, device-code
+authentication, local state storage, dry-run support, logging, monitoring
+scaffolding, and packaging integration. Review the project release notes for
+the implementation status of remote file operations before using it with
+important data.
+.SH COMMANDS
+.TP
+.B auth
+Authorize the application with Microsoft using the OAuth 2.0 device-code flow.
+On success, save the refresh token in the configured state directory.
+.TP
+.B logout
+Remove the locally stored refresh token. This does not revoke consent on the
+Microsoft account; revoke the application separately in Microsoft account
+settings when required.
+.TP
+.B sync
+Run one synchronization pass. Use
+.B \-\-dry\-run
+to display synchronization inputs without changing remote files.
+.TP
+.B monitor
+Start the long-running filesystem monitor.
+.SH OPTIONS
+.TP
+.BR \-h ", " \-\-help
+Display help for the application or selected subcommand and exit.
+.TP
+.B \-\-version
+Display the application version and exit.
+.TP
+.BI \-\-config " PATH"
+Read application configuration from
+.IR PATH .
+The default is
+.I ~/.config/onedrive-cpp/config
+when
+.B HOME
+is available, otherwise
+.IR /etc/onedrive-cpp/onedrive-cpp.conf .
+.TP
+.BI \-\-log\-level " LEVEL"
+Set the minimum log level. Supported values are
+.BR trace ,
+.BR debug ,
+.BR info ,
+.BR warn ,
+.BR error ,
+.BR critical ,
+and
+.BR off .
+The default is
+.BR info .
+.TP
+.BI \-\-log\-file " PATH"
+Also write logs to
+.IR PATH .
+The file rotates at 5 MiB and retains three older files. Diagnostics continue
+to be written to standard error.
+.TP
+.B \-\-dry\-run
+For the
+.B sync
+command, display the effective synchronization inputs without modifying
+remote files.
+.SH CONFIGURATION
+The configuration file uses one
+.I key=value
+entry per line. Empty lines and lines beginning with
+.B #
+are ignored.
+.TP
+.B sync_directory
+Local directory used for OneDrive synchronization.
+.TP
+.B state_directory
+Directory containing the refresh token and SQLite synchronization state.
+.TP
+.B drive_id
+Microsoft Graph drive identifier. The default is
+.BR me .
+.TP
+.B application_id
+Microsoft Entra Application (client) ID.
+.TP
+.B azure_tenant_id
+Microsoft identity tenant selector, such as
+.BR common ,
+.BR consumers ,
+or a specific tenant ID. Use
+.B common
+for an application registered for both organizational and personal accounts.
+.TP
+.B auth_endpoint
+Microsoft identity endpoint. The default is
+.IR https://login.microsoftonline.com .
+.TP
+.B auth_scope
+Space-separated delegated OAuth scopes. Personal Microsoft accounts should
+start with
+.BR "Files.ReadWrite offline_access" .
+.TP
+.B dry_run
+Boolean value
+.B true
+or
+.BR false .
+.SH FILES
+.TP
+.I ~/.config/onedrive-cpp/config
+Default per-user configuration file.
+.TP
+.I /etc/onedrive-cpp/onedrive-cpp.conf
+System-wide example and fallback configuration.
+.TP
+.I ~/.local/state/onedrive-cpp/refresh_token
+Default locally stored OAuth refresh token. The file is created with
+owner-only permissions.
+.TP
+.I ~/.local/state/onedrive-cpp/items.sqlite3
+Default SQLite synchronization-state database.
+.TP
+.I /usr/lib/systemd/user/onedrive-cpp.service
+systemd user service installed by the package.
+.SH LOGGING
+Diagnostics are written to standard error. A systemd user service captures
+that stream in the journal. Follow service logs with:
+.PP
+.RS
+.B journalctl \-\-user \-u onedrive-cpp.service \-f
+.RE
+.PP
+OAuth tokens, device codes, authorization headers, and passwords must not be
+written to logs. Take care before sharing debug output because local paths and
+file metadata may still be sensitive.
+.SH ENVIRONMENT
+.TP
+.B HOME
+Used to determine default configuration, state, and synchronization paths.
+.SH EXIT STATUS
+.TP
+.B 0
+The command completed successfully, or help/version information was shown.
+.TP
+.B 1
+A runtime, configuration, authentication, storage, or synchronization error
+occurred.
+.TP
+.B 2
+The command line was invalid.
+.SH EXAMPLES
+Authorize a Microsoft account:
+.PP
+.RS
+.B onedrive-cpp auth \-\-config ~/.config/onedrive-cpp/config
+.RE
+.PP
+Inspect synchronization inputs:
+.PP
+.RS
+.B onedrive-cpp sync \-\-dry\-run \-\-log\-level debug
+.RE
+.PP
+Run the monitor with a rotating log file:
+.PP
+.RS
+.B onedrive-cpp monitor \-\-log\-file ~/.local/state/onedrive-cpp/onedrive-cpp.log
+.RE
+.SH SECURITY
+Protect the state directory and refresh token as account credentials. Do not
+publish tokens, device codes, authorization headers, private file names, or
+file contents in logs or issue reports.
+.SH SEE ALSO
+.BR journalctl (1),
+.BR systemctl (1),
+.BR systemd.service (5)
+.PP
+Project documentation:
+.UR https://github.com/cloudfyy/onedrivecpp
+.UE
+.SH BUGS
+Report bugs at:
+.UR https://github.com/cloudfyy/onedrivecpp/issues
+.UE
+.PP
+Do not include passwords, OAuth tokens, device codes, or private file contents
+in a bug report.
+.SH COPYRIGHT
+Copyright 2026 onedrive-cpp contributors.
+The software is licensed under GPL-3.0-or-later.
+onedrive-cpp is independent and is not affiliated with or endorsed by
+Microsoft.

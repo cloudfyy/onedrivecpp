@@ -139,6 +139,28 @@ and `off`. A configured log file rotates at 5 MiB and retains three older
 files. Authentication tokens, device codes, and authorization headers must
 never be written to logs.
 
+### Manual page
+
+The CMake install rules place the section 1 manual at the standard
+`share/man/man1` location. After installing the DEB package, view it with:
+
+```bash
+man onedrive-cpp
+```
+
+Debian's `man-db` trigger updates the index automatically. After a direct
+`cmake --install` into a custom prefix, refresh the local index when needed:
+
+```bash
+sudo mandb
+```
+
+The generated page can also be inspected without installing it:
+
+```bash
+man --local-file build/release/generated/onedrive-cpp.1
+```
+
 ### Clean Release rebuild
 
 Delete only the Release build tree to force CMake, vcpkg, and Ninja to
@@ -219,6 +241,7 @@ version=$(dpkg-parsechangelog -S Version)
 architecture=$(dpkg --print-architecture)
 sudo apt install "../onedrive-cpp_${version}_${architecture}.deb"
 onedrive-cpp --version
+man onedrive-cpp
 ```
 
 To check for Debian policy issues:
