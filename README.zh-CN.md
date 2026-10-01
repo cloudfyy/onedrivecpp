@@ -289,7 +289,8 @@ cp /etc/onedrive-cpp/onedrive-cpp.conf ~/.config/onedrive-cpp/config
 sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config
 ```
 
-个人 Microsoft 账号使用：
+注册类型为 **仅个人 Microsoft 账号（Personal Microsoft accounts only）**
+的应用使用：
 
 ```ini
 application_id=YOUR_APPLICATION_CLIENT_ID
@@ -298,16 +299,20 @@ auth_endpoint=https://login.microsoftonline.com
 auth_scope=Files.ReadWrite offline_access
 ```
 
-如果同一个应用注册需要同时支持个人账号和工作/学校账号，则使用 `common`：
+如果应用注册类型为 **任何 Entra ID 租户和个人 Microsoft 账号
+（Any Entra ID Tenant + Personal Microsoft accounts）**，即使本次登录使用
+个人账号，也应使用 `common`：
 
 ```ini
 application_id=YOUR_APPLICATION_CLIENT_ID
 azure_tenant_id=common
 auth_endpoint=https://login.microsoftonline.com
-auth_scope=Files.ReadWrite Files.ReadWrite.All Sites.ReadWrite.All offline_access
+auth_scope=Files.ReadWrite offline_access
 ```
 
-单租户组织应用应将 `common` 替换为 Directory (tenant) ID。
+单租户组织应用应将 `common` 替换为 Directory (tenant) ID。只有组织场景确实
+需要时才添加 `Files.ReadWrite.All` 或 `Sites.ReadWrite.All`；
+`Sites.ReadWrite.All` 不支持个人 Microsoft 账号。
 
 #### 授权客户端
 
@@ -324,6 +329,30 @@ onedrive-cpp auth
 如果 Microsoft 提示账号类型不受支持，请检查应用注册中的
 **Supported account types**：仅个人账号注册应使用 `consumers`，同时支持个人
 和组织账号的注册应使用 `common`。
+
+如果程序显示 `https://www.microsoft.com/link`，但该页面立即提示刚生成的代码
+无效或已过期，请检查是否把同时支持个人和组织账号的应用错误配置成了
+`azure_tenant_id=consumers`。应改为：
+
+```ini
+azure_tenant_id=common
+```
+
+重新运行 `onedrive-cpp auth`，并且只在新显示的
+`https://login.microsoft.com/device` 页面中使用本次新代码。之前生成的设备代码
+不能重复使用。只有应用的 Supported account type 确实是
+**Personal Microsoft accounts only** 时才使用 `consumers`。
+
+如果设备代码已被接受并进入账号登录，但之后 Microsoft 又提示代码已过期，
+同时终端仍停留在 `Waiting for authorization...`，应删除当前账号类型不支持的
+权限。个人 Microsoft 账号应使用：
+
+```ini
+auth_scope=Files.ReadWrite offline_access
+```
+
+修改权限后必须重新运行 `onedrive-cpp auth`；已有设备代码仍绑定原来的权限，
+无法修复或重复使用。
 
 使用以下命令删除已保存的认证：
 
@@ -355,3 +384,14 @@ journalctl --user -u onedrive-cpp.service -f
 
 GPL-3.0-or-later。参考项目同样采用 GPLv3，因此该许可证也便于未来在满足
 许可证要求的前提下复用或改写其设计。
+
+## 法律与品牌材料
+
+- [服务条款](TERMS.md)
+- [隐私声明](PRIVACY.md)
+- 项目 Logo：[SVG](assets/onedrive-cpp-logo.svg) |
+  [512x512 PNG](assets/onedrive-cpp-logo.png)
+
+法律文件是项目维护者草案，不构成法律建议。正式公开或商业发布前，应根据
+实际运营主体和适用司法管辖区进行审核。onedrive-cpp 是独立项目，与 Microsoft
+不存在隶属或背书关系。

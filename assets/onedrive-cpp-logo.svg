@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title description">
+  <title id="title">onedrive-cpp logo</title>
+  <desc id="description">A code document surrounded by two synchronization arrows</desc>
+  <defs>
+    <linearGradient id="background" x1="64" y1="48" x2="448" y2="464" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#111C35"/>
+      <stop offset="1" stop-color="#08101F"/>
+    </linearGradient>
+    <linearGradient id="document" x1="190" y1="150" x2="330" y2="362" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FAFC"/>
+      <stop offset="1" stop-color="#CBD5E1"/>
+    </linearGradient>
+    <marker id="arrow-cyan" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="10" markerHeight="10" orient="auto">
+      <path d="M1 1L11 6L1 11Z" fill="#22D3EE"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="10" markerHeight="10" orient="auto">
+      <path d="M1 1L11 6L1 11Z" fill="#3B82F6"/>
+    </marker>
+  </defs>
+
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#background)"/>
+  <path d="M132 214C150 138 218 88 295 96C338 100 377 121 404 153"
+        fill="none" stroke="#22D3EE" stroke-width="28" stroke-linecap="round"
+        marker-end="url(#arrow-cyan)"/>
+  <path d="M380 298C359 371 290 418 214 405C172 398 135 375 110 341"
+        fill="none" stroke="#3B82F6" stroke-width="28" stroke-linecap="round"
+        marker-end="url(#arrow-blue)"/>
+
+  <path d="M184 148C184 137 193 128 204 128H292L344 180V344C344 355 335 364 324 364H204C193 364 184 355 184 344Z"
+        fill="url(#document)"/>
+  <path d="M292 128V172C292 183 301 192 312 192H344" fill="#94A3B8"/>
+  <path d="M292 128V172C292 183 301 192 312 192H344" fill="none" stroke="#64748B" stroke-width="8" stroke-linejoin="round"/>
+
+  <path d="M231 232L205 256L231 280" fill="none" stroke="#0F766E" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M297 232L323 256L297 280" fill="none" stroke="#1D4ED8" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M278 218L250 294" fill="none" stroke="#334155" stroke-width="12" stroke-linecap="round"/>
+  <path d="M220 320H308" fill="none" stroke="#64748B" stroke-width="12" stroke-linecap="round"/>
+</svg>

@@ -245,6 +245,11 @@ AuthResult<OAuthTokens> DeviceAuthClient::poll_for_token(const DeviceCode& code)
     auto interval = code.polling_interval;
 
     while (now_() < deadline) {
+        sleep_(interval);
+        if (now_() >= deadline) {
+            break;
+        }
+
         auto response = post_form(
             transport_,
             token_url(),
@@ -268,12 +273,10 @@ AuthResult<OAuthTokens> DeviceAuthClient::poll_for_token(const DeviceCode& code)
 
         const std::string error = json->value("error", "");
         if (error == "authorization_pending") {
-            sleep_(interval);
             continue;
         }
         if (error == "slow_down") {
             interval += std::chrono::seconds{5};
-            sleep_(interval);
             continue;
         }
         if (error == "authorization_declined") {

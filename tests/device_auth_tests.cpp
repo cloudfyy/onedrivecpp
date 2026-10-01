@@ -118,8 +118,9 @@ int test_device_flow() {
         tokens->refresh_token != "refresh-secret") {
         return fail("device token response was not parsed");
     }
-    if (sleeps != std::vector{std::chrono::seconds{1}}) {
-        return fail("authorization_pending did not use the polling interval");
+    if (sleeps !=
+        std::vector{std::chrono::seconds{1}, std::chrono::seconds{1}}) {
+        return fail("device flow did not wait before each token request");
     }
     if (transport.requests.size() != 3 ||
         transport.requests[0].url !=

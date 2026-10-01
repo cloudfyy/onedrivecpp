@@ -304,7 +304,7 @@ cp /etc/onedrive-cpp/onedrive-cpp.conf ~/.config/onedrive-cpp/config
 sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config
 ```
 
-For a personal Microsoft account, use:
+For an application registered as **Personal Microsoft accounts only**, use:
 
 ```ini
 application_id=YOUR_APPLICATION_CLIENT_ID
@@ -313,18 +313,20 @@ auth_endpoint=https://login.microsoftonline.com
 auth_scope=Files.ReadWrite offline_access
 ```
 
-To support both personal and work/school accounts with the same registration,
-use `common`:
+For an application registered as **Any Entra ID Tenant + Personal Microsoft
+accounts**, use `common` even when the user signing in has a personal account:
 
 ```ini
 application_id=YOUR_APPLICATION_CLIENT_ID
 azure_tenant_id=common
 auth_endpoint=https://login.microsoftonline.com
-auth_scope=Files.ReadWrite Files.ReadWrite.All Sites.ReadWrite.All offline_access
+auth_scope=Files.ReadWrite offline_access
 ```
 
 For a single-tenant organizational application, replace `common` with the
-tenant's Directory (tenant) ID.
+tenant's Directory (tenant) ID. Add `Files.ReadWrite.All` or
+`Sites.ReadWrite.All` only for organizational scenarios that require them;
+`Sites.ReadWrite.All` is not supported for personal Microsoft accounts.
 
 #### Authorize the client
 
@@ -343,6 +345,33 @@ If Microsoft reports that the account is unsupported, verify the selected
 **Supported account types** and use `consumers` for personal-only
 registrations or `common` for combined personal and organizational
 registrations.
+
+If the program displays `https://www.microsoft.com/link` and that page
+immediately reports that a newly generated code is invalid or expired, check
+whether a combined personal and organizational application was incorrectly
+configured with `azure_tenant_id=consumers`. Change it to:
+
+```ini
+azure_tenant_id=common
+```
+
+Start `onedrive-cpp auth` again and use only the newly generated code at the
+newly displayed `https://login.microsoft.com/device` URL. Previously generated
+device codes cannot be reused. Keep `consumers` only for applications whose
+supported account type is **Personal Microsoft accounts only**.
+
+If the device code is accepted and account sign-in begins, but Microsoft then
+reports that the code expired while the terminal remains at
+`Waiting for authorization...`, remove permissions that are unavailable to
+the selected account type. In particular, personal Microsoft accounts should
+use:
+
+```ini
+auth_scope=Files.ReadWrite offline_access
+```
+
+After changing scopes, restart `onedrive-cpp auth`; an existing device code
+retains its original scopes and cannot be repaired or reused.
 
 Remove the saved authentication with:
 
@@ -378,3 +407,15 @@ or modify the synchronization directory.
 GPL-3.0-or-later. The reference project also uses GPLv3, which makes this
 license suitable for future reuse or adaptation of its design in compliance
 with the license terms.
+
+## Legal and Branding
+
+- [Terms of Service](TERMS.md)
+- [Privacy Statement](PRIVACY.md)
+- Project logo: [SVG](assets/onedrive-cpp-logo.svg) |
+  [512x512 PNG](assets/onedrive-cpp-logo.png)
+
+The legal documents are project-maintainer drafts, not legal advice. Review
+them for the applicable organization and jurisdiction before a public or
+commercial release. onedrive-cpp is an independent project and is not
+affiliated with or endorsed by Microsoft.
