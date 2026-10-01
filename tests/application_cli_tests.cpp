@@ -101,22 +101,45 @@ int main() {
     if (run_application({"onedrive-cpp", "auth", "--dry-run"}).exit_code != 2) {
         return fail("command-specific option was accepted by the wrong command");
     }
+    if (run_application(
+            {"onedrive-cpp", "logout", "--log-level", "verbose"}
+        ).exit_code != 2) {
+        return fail("invalid log level did not return usage exit code 2");
+    }
 
     TemporaryDirectory temporary_directory;
     const auto config_path = temporary_directory.path() / "config";
     const auto state_path = temporary_directory.path() / "state";
+    const auto log_path = temporary_directory.path() / "onedrive-cpp.log";
     {
         std::ofstream config{config_path};
         config << "sync_directory=" << temporary_directory.path().string() << '\n'
                << "state_directory=" << state_path.string() << '\n';
     }
 
-    const auto logout = run_application(
-        {"onedrive-cpp", "logout", "--config", config_path.string()}
-    );
+    const auto logout = run_application({
+        "onedrive-cpp",
+        "logout",
+        "--config",
+        config_path.string(),
+        "--log-level",
+        "debug",
+        "--log-file",
+        log_path.string(),
+    });
     if (logout.exit_code != 0 ||
         !logout.standard_output.contains("No saved authentication")) {
         return fail("logout did not accept a subcommand configuration path");
+    }
+    {
+        std::ifstream log{log_path};
+        const std::string contents{
+            std::istreambuf_iterator<char>{log},
+            std::istreambuf_iterator<char>{}
+        };
+        if (!contents.contains("Removing locally saved authentication")) {
+            return fail("configured log file did not receive application logs");
+        }
     }
 
     const auto dry_run = run_application(

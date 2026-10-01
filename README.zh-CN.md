@@ -85,8 +85,8 @@ source "$HOME/.profile"
 ```
 
 仓库中的 `vcpkg.json` manifest 固定了 registry baseline，是 C++ 库依赖的
-唯一事实来源。目前它提供 CLI11、libcurl、OpenSSL、nlohmann/json 和 SQLite。
-CMake 配置项目时，vcpkg 会自动安装 manifest 中声明的依赖。
+唯一事实来源。目前它提供 CLI11、libcurl、OpenSSL、nlohmann/json、spdlog 和
+SQLite。CMake 配置项目时，vcpkg 会自动安装 manifest 中声明的依赖。
 
 ## 本地构建与测试
 
@@ -112,6 +112,25 @@ ctest --preset release
 ./build/release/onedrive-cpp sync --dry-run
 ./build/release/onedrive-cpp --help
 ```
+
+### 日志
+
+运行诊断默认以 `info` 级别写入标准错误。systemd 会自动收集该输出：
+
+```bash
+journalctl --user -u onedrive-cpp.service -f
+```
+
+每个子命令都支持 `--log-level` 和 `--log-file`：
+
+```bash
+onedrive-cpp sync --dry-run --log-level debug
+onedrive-cpp monitor --log-file ~/.local/state/onedrive-cpp/onedrive-cpp.log
+```
+
+支持 `trace`、`debug`、`info`、`warn`、`error`、`critical` 和 `off`。
+日志文件达到 5 MiB 时轮转，并保留三个旧文件。不得把认证 token、设备代码或
+Authorization header 写入日志。
 
 ### 完整 Release 重编译
 

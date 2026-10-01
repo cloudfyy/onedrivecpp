@@ -89,8 +89,9 @@ source "$HOME/.profile"
 
 The committed `vcpkg.json` manifest pins the registry baseline and is the
 single source of truth for C++ library dependencies. It currently provides
-CLI11, libcurl, OpenSSL, nlohmann/json, and SQLite. vcpkg automatically
-installs declared dependencies while CMake configures the project.
+CLI11, libcurl, OpenSSL, nlohmann/json, spdlog, and SQLite. vcpkg
+automatically installs declared dependencies while CMake configures the
+project.
 
 ## Build and Test Locally
 
@@ -116,6 +117,27 @@ The executable is generated at `build/release/onedrive-cpp`. Verify it with:
 ./build/release/onedrive-cpp sync --dry-run
 ./build/release/onedrive-cpp --help
 ```
+
+### Logging
+
+Runtime diagnostics are written to standard error with `info` severity by
+default. systemd captures that stream automatically:
+
+```bash
+journalctl --user -u onedrive-cpp.service -f
+```
+
+Every subcommand accepts `--log-level` and `--log-file`:
+
+```bash
+onedrive-cpp sync --dry-run --log-level debug
+onedrive-cpp monitor --log-file ~/.local/state/onedrive-cpp/onedrive-cpp.log
+```
+
+Supported levels are `trace`, `debug`, `info`, `warn`, `error`, `critical`,
+and `off`. A configured log file rotates at 5 MiB and retains three older
+files. Authentication tokens, device codes, and authorization headers must
+never be written to logs.
 
 ### Clean Release rebuild
 

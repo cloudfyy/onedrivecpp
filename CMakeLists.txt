@@ -16,6 +16,7 @@ include(CTest)
 find_package(CLI11 CONFIG REQUIRED)
 find_package(CURL CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(spdlog CONFIG REQUIRED)
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
 
 set(CMAKE_CXX_STANDARD 26)
@@ -41,6 +42,7 @@ add_library(onedrive_core
     src/config/config.cpp
     src/graph/graph_client.cpp
     src/http/http_client.cpp
+    src/logging/logging.cpp
     src/monitor/monitor.cpp
     src/storage/item_database.cpp
     src/sync/sync_engine.cpp
@@ -59,6 +61,7 @@ target_link_libraries(onedrive_core
         CLI11::CLI11
         CURL::libcurl
         nlohmann_json::nlohmann_json
+        spdlog::spdlog
         unofficial::sqlite3::sqlite3
 )
 
