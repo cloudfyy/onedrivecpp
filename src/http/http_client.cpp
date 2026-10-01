@@ -7,6 +7,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <string_view>
 
 namespace onedrive::http {
 namespace {
@@ -47,6 +48,12 @@ struct WriteContext {
     bool size_exceeded{false};
 };
 
+struct HeaderContext {
+    std::vector<HttpHeader> headers;
+    std::size_t total_size{};
+    bool size_exceeded{false};
+};
+
 std::size_t write_response(char* data, std::size_t size, std::size_t count, void* context) {
     if (count != 0 && size > std::numeric_limits<std::size_t>::max() / count) {
         return 0;
@@ -60,6 +67,53 @@ std::size_t write_response(char* data, std::size_t size, std::size_t count, void
     }
     try {
         write_context.body.append(data, byte_count);
+        return byte_count;
+    } catch (...) {
+        return 0;
+    }
+}
+
+std::string_view trim_header_value(std::string_view value) {
+    while (!value.empty() && (value.front() == ' ' || value.front() == '\t')) {
+        value.remove_prefix(1);
+    }
+    while (!value.empty() &&
+           (value.back() == ' ' || value.back() == '\t' || value.back() == '\r' ||
+            value.back() == '\n')) {
+        value.remove_suffix(1);
+    }
+    return value;
+}
+
+std::size_t write_header(char* data, std::size_t size, std::size_t count, void* context) {
+    if (count != 0 && size > std::numeric_limits<std::size_t>::max() / count) {
+        return 0;
+    }
+
+    constexpr std::size_t maximum_header_size = 64U * 1024U;
+    const std::size_t byte_count = size * count;
+    auto& header_context = *static_cast<HeaderContext*>(context);
+    if (byte_count > maximum_header_size - header_context.total_size) {
+        header_context.size_exceeded = true;
+        return 0;
+    }
+    header_context.total_size += byte_count;
+
+    const std::string_view line{data, byte_count};
+    const auto separator = line.find(':');
+    if (separator == std::string_view::npos) {
+        return byte_count;
+    }
+
+    try {
+        const auto name = trim_header_value(line.substr(0, separator));
+        const auto value = trim_header_value(line.substr(separator + 1));
+        if (!name.empty()) {
+            header_context.headers.push_back({
+                .name = std::string{name},
+                .value = std::string{value},
+            });
+        }
         return byte_count;
     } catch (...) {
         return 0;
@@ -86,6 +140,7 @@ HttpResult CurlHttpClient::perform(const HttpRequest& request) const {
         .body = {},
         .maximum_size = request.maximum_response_size,
     };
+    HeaderContext header_context;
     std::array<char, CURL_ERROR_SIZE> error_buffer{};
     std::unique_ptr<curl_slist, HeaderListDeleter> headers;
     curl_slist* header_list = nullptr;
@@ -112,6 +167,12 @@ HttpResult CurlHttpClient::perform(const HttpRequest& request) const {
     }
     if (result == CURLE_OK) {
         result = set_option(CURLOPT_WRITEDATA, &write_context);
+    }
+    if (result == CURLE_OK) {
+        result = set_option(CURLOPT_HEADERFUNCTION, &write_header);
+    }
+    if (result == CURLE_OK) {
+        result = set_option(CURLOPT_HEADERDATA, &header_context);
     }
     if (result == CURLE_OK) {
         result = set_option(CURLOPT_CONNECTTIMEOUT, request.connect_timeout.count());
@@ -146,6 +207,11 @@ HttpResult CurlHttpClient::perform(const HttpRequest& request) const {
 
     result = curl_easy_perform(handle.get());
     if (result != CURLE_OK) {
+        if (header_context.size_exceeded) {
+            return std::unexpected(HttpError{
+                .message = "HTTP response headers exceeded the configured size limit",
+            });
+        }
         if (write_context.size_exceeded) {
             return std::unexpected(HttpError{
                 .message = "HTTP response exceeded the configured size limit",
@@ -168,6 +234,7 @@ HttpResult CurlHttpClient::perform(const HttpRequest& request) const {
 
     return HttpResponse{
         .status_code = status_code,
+        .headers = std::move(header_context.headers),
         .body = std::move(write_context.body),
     };
 }

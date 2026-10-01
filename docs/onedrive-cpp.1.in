@@ -23,10 +23,9 @@ is an independent, open-source client intended to authenticate with Microsoft
 and synchronize files through Microsoft Graph and OneDrive.
 .PP
 The current release includes configuration loading, device-code
-authentication, local state storage, dry-run support, logging, monitoring
-scaffolding, and packaging integration. Review the project release notes for
-the implementation status of remote file operations before using it with
-important data.
+authentication, authenticated Microsoft Graph root-directory listing, local
+state storage, dry-run support, logging, monitoring scaffolding, and packaging
+integration. File transfer and file modification are not implemented.
 .SH COMMANDS
 .TP
 .B auth
@@ -39,7 +38,11 @@ Microsoft account; revoke the application separately in Microsoft account
 settings when required.
 .TP
 .B sync
-Run one synchronization pass. Use
+Refresh the OAuth access token and list all items in the configured OneDrive
+root directory. Microsoft Graph HTTP 429 responses are retried using
+.B Retry-After
+or bounded exponential backoff, with a finite retry limit. This command does
+not transfer or modify files. Use
 .B \-\-dry\-run
 to display synchronization inputs without changing remote files.
 .TP
@@ -123,6 +126,24 @@ Microsoft identity endpoint. The default is
 Space-separated delegated OAuth scopes. Personal Microsoft accounts should
 start with
 .BR "Files.ReadWrite offline_access" .
+.TP
+.B graph_maximum_throttle_retries
+Maximum number of retries for a Microsoft Graph HTTP 429 response. The default
+is
+.BR 4 .
+.TP
+.B graph_initial_throttle_delay_seconds
+Initial exponential-backoff delay when a Graph 429 response has no valid
+numeric
+.B Retry-After
+header. The default is
+.BR 1 .
+.TP
+.B graph_maximum_throttle_delay_seconds
+Maximum accepted or calculated Graph throttling delay. The default is
+.B 300
+seconds. This value must be greater than or equal to
+.BR graph_initial_throttle_delay_seconds .
 .TP
 .B dry_run
 Boolean value

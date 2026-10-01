@@ -1,5 +1,7 @@
 #pragma once
 
+#include <chrono>
+#include <cstddef>
 #include <filesystem>
 #include <string>
 
@@ -15,6 +17,9 @@ struct Config {
     std::string auth_scope{
         "Files.ReadWrite Files.ReadWrite.All Sites.ReadWrite.All offline_access"
     };
+    std::size_t graph_maximum_throttle_retries{4};
+    std::chrono::seconds graph_initial_throttle_delay{1};
+    std::chrono::seconds graph_maximum_throttle_delay{300};
     bool dry_run{false};
 
     [[nodiscard]] static Config defaults();

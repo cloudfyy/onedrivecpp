@@ -25,6 +25,12 @@ int SyncEngine::synchronize() const {
                       << "  sync directory:  " << config_.sync_directory << '\n'
                       << "  state directory: " << config_.state_directory << '\n'
                       << "  drive id:        " << config_.drive_id << '\n'
+                      << "  throttle retries: "
+                      << config_.graph_maximum_throttle_retries << '\n'
+                      << "  throttle delay:   "
+                      << config_.graph_initial_throttle_delay.count() << '-'
+                      << config_.graph_maximum_throttle_delay.count()
+                      << " seconds\n"
                       << "  tracked items:   " << items_.size() << '\n';
             record_result(true);
             return 0;

@@ -9,10 +9,11 @@ copy the reference project's D implementation.
 
 > The current version provides a buildable architecture scaffold,
 > configuration loading, a CLI, Microsoft device-code authentication, an HTTP
-> transport layer, SQLite state persistence, dry-run support, a systemd user
-> service, and Debian packaging. Microsoft Graph file operations and actual
-> file synchronization have not yet been implemented. Non-dry-run
-> synchronization exits with an explicit error.
+> transport layer, authenticated Microsoft Graph root-directory listing,
+> SQLite state persistence, dry-run support, a systemd user service, and
+> Debian packaging. File transfer and actual synchronization have not yet
+> been implemented. Non-dry-run synchronization currently lists the remote
+> root directory without modifying it.
 
 ## Architecture
 
@@ -415,8 +416,25 @@ Remove the saved authentication with:
 onedrive-cpp logout
 ```
 
-The OAuth client implements refresh-token rotation, but Graph file operations
-are not wired to the acquired token yet.
+The `sync` command refreshes the OAuth access token, securely persists a
+rotated refresh token when Microsoft returns one, and lists all items in the
+configured drive's root directory through paginated Microsoft Graph requests.
+When Microsoft Graph returns HTTP 429, the client honors a numeric
+`Retry-After` header and otherwise uses bounded exponential backoff. Retries
+are limited so persistent throttling fails explicitly instead of waiting
+forever. The command does not download, upload, delete, or modify files yet.
+
+The throttling policy can be adjusted in the configuration file:
+
+```ini
+graph_maximum_throttle_retries=4
+graph_initial_throttle_delay_seconds=1
+graph_maximum_throttle_delay_seconds=300
+```
+
+The initial delay is doubled after each 429 response without a valid numeric
+`Retry-After`, up to the configured maximum. A server-provided delay above
+the configured maximum is rejected instead of sleeping unexpectedly long.
 
 After installing the DEB package, enable the user service:
 
@@ -431,9 +449,8 @@ or modify the synchronization directory.
 
 ## Suggested Next Steps
 
-1. Use the OAuth access token for authenticated Microsoft Graph drive and item
-   requests.
-2. Implement the delta API, conflict policies, and safe atomic file
+1. Implement Microsoft Graph delta queries and persist remote state.
+2. Add file transfer, conflict policies, and safe atomic file
    replacement.
 3. Connect the monitor to inotify and add integration tests for the Graph and
    file system boundaries.

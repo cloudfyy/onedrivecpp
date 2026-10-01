@@ -8,9 +8,9 @@
 但不复制其 D 语言实现。
 
 > 当前版本提供可编译的架构骨架、配置加载、CLI、Microsoft 设备代码认证、
-> HTTP 传输层、SQLite 状态持久化、dry-run、systemd 用户服务和 Debian 打包。
-> Microsoft Graph 文件操作和真实文件同步尚未实现；非 dry-run 同步会明确
-> 报错。
+> HTTP 传输层、经过认证的 Microsoft Graph 根目录列表、SQLite 状态持久化、
+> dry-run、systemd 用户服务和 Debian 打包。文件传输和真实文件同步尚未实现；
+> 非 dry-run 同步目前只会列出远端根目录，不会修改文件。
 
 ## 架构
 
@@ -391,8 +391,24 @@ auth_scope=Files.ReadWrite offline_access
 onedrive-cpp logout
 ```
 
-OAuth 客户端已经实现 refresh token 轮换，但尚未将取得的访问令牌接入 Graph
-文件操作。
+`sync` 命令会刷新 OAuth access token，在 Microsoft 返回轮换后的 refresh
+token 时安全持久化，并通过分页的 Microsoft Graph 请求列出配置 Drive 根目录
+中的全部项目。当 Microsoft Graph 返回 HTTP 429 时，客户端会遵循数值形式的
+`Retry-After` 响应头；响应头缺失或无效时使用有上限的指数退避。重试次数受到
+限制，持续节流会明确失败，而不是无限等待。目前不会下载、上传、删除或修改
+文件。
+
+可在配置文件中调整节流策略：
+
+```ini
+graph_maximum_throttle_retries=4
+graph_initial_throttle_delay_seconds=1
+graph_maximum_throttle_delay_seconds=300
+```
+
+当 429 响应没有有效的数值 `Retry-After` 时，初始等待时间会在每次重试后
+加倍，直至配置的最大值。如果服务器要求的等待时间超过配置上限，客户端会
+明确失败，而不是意外长时间休眠。
 
 安装 DEB 后启用用户服务：
 
@@ -406,9 +422,8 @@ journalctl --user -u onedrive-cpp.service -f
 
 ## 后续实现建议
 
-1. 使用 OAuth access token 发起经过认证的 Microsoft Graph Drive 和 Item
-   请求。
-2. 实现 delta API、冲突策略和安全的原子文件替换。
+1. 实现 Microsoft Graph delta 查询并持久化远端状态。
+2. 增加文件传输、冲突策略和安全的原子文件替换。
 3. 使用 inotify 接入 monitor，并为 Graph 和文件系统边界增加集成测试。
 
 ## 许可证

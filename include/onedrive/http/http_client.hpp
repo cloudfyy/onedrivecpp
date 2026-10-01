@@ -23,8 +23,14 @@ struct HttpRequest {
     std::size_t maximum_response_size{16U * 1024U * 1024U};
 };
 
+struct HttpHeader {
+    std::string name;
+    std::string value;
+};
+
 struct HttpResponse {
     long status_code{};
+    std::vector<HttpHeader> headers;
     std::string body;
 };
 

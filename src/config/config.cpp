@@ -1,7 +1,10 @@
 #include "onedrive/config/config.hpp"
 
+#include <charconv>
+#include <cstdint>
 #include <cstdlib>
 #include <fstream>
+#include <limits>
 #include <stdexcept>
 #include <string_view>
 
@@ -29,6 +32,43 @@ bool parse_bool(std::string_view value, std::size_t line_number) {
     );
 }
 
+std::uint64_t parse_unsigned(
+    std::string_view value,
+    std::string_view key,
+    std::size_t line_number
+) {
+    std::uint64_t result{};
+    const auto* begin = value.data();
+    const auto* end = begin + value.size();
+    const auto [position, error] = std::from_chars(begin, end, result);
+    if (value.empty() || error != std::errc{} || position != end) {
+        throw std::runtime_error(
+            "invalid unsigned integer for '" + std::string{key} +
+            "' at config line " + std::to_string(line_number)
+        );
+    }
+    return result;
+}
+
+std::chrono::seconds parse_seconds(
+    std::string_view value,
+    std::string_view key,
+    std::size_t line_number
+) {
+    const auto result = parse_unsigned(value, key, line_number);
+    using SecondsRepresentation = std::chrono::seconds::rep;
+    if (result >
+        static_cast<std::uint64_t>(
+            std::numeric_limits<SecondsRepresentation>::max()
+        )) {
+        throw std::runtime_error(
+            "value for '" + std::string{key} + "' is too large at config line " +
+            std::to_string(line_number)
+        );
+    }
+    return std::chrono::seconds{static_cast<SecondsRepresentation>(result)};
+}
+
 }  // namespace
 
 Config Config::defaults() {
@@ -46,6 +86,9 @@ Config Config::defaults() {
         .auth_endpoint = "https://login.microsoftonline.com",
         .auth_scope =
             "Files.ReadWrite Files.ReadWrite.All Sites.ReadWrite.All offline_access",
+        .graph_maximum_throttle_retries = 4,
+        .graph_initial_throttle_delay = std::chrono::seconds{1},
+        .graph_maximum_throttle_delay = std::chrono::seconds{300},
         .dry_run = false,
     };
 }
@@ -93,6 +136,22 @@ Config Config::load(const std::filesystem::path& path) {
             config.auth_endpoint = value;
         } else if (key == "auth_scope") {
             config.auth_scope = value;
+        } else if (key == "graph_maximum_throttle_retries") {
+            const auto retries = parse_unsigned(value, key, line_number);
+            if (retries > std::numeric_limits<std::size_t>::max()) {
+                throw std::runtime_error(
+                    "value for '" + key + "' is too large at config line " +
+                    std::to_string(line_number)
+                );
+            }
+            config.graph_maximum_throttle_retries =
+                static_cast<std::size_t>(retries);
+        } else if (key == "graph_initial_throttle_delay_seconds") {
+            config.graph_initial_throttle_delay =
+                parse_seconds(value, key, line_number);
+        } else if (key == "graph_maximum_throttle_delay_seconds") {
+            config.graph_maximum_throttle_delay =
+                parse_seconds(value, key, line_number);
         } else if (key == "dry_run") {
             config.dry_run = parse_bool(value, line_number);
         } else {
@@ -100,6 +159,13 @@ Config Config::load(const std::filesystem::path& path) {
                 "unknown key '" + key + "' at config line " + std::to_string(line_number)
             );
         }
+    }
+    if (config.graph_maximum_throttle_delay <
+        config.graph_initial_throttle_delay) {
+        throw std::runtime_error(
+            "graph_maximum_throttle_delay_seconds must be greater than or equal "
+            "to graph_initial_throttle_delay_seconds"
+        );
     }
     return config;
 }

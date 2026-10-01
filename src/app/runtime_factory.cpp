@@ -41,9 +41,26 @@ std::unique_ptr<auth::TokenStore> ProductionRuntimeFactory::create_token_store(
 }
 
 std::unique_ptr<graph::GraphClient> ProductionRuntimeFactory::create_graph_client(
-    const config::Config&
+    const config::Config& config
 ) const {
-    return std::make_unique<graph::MicrosoftGraphClient>();
+    return std::make_unique<graph::MicrosoftGraphClient>(
+        create_http_transport(),
+        create_token_store(config),
+        auth::DeviceAuthOptions{
+            .application_id = config.application_id,
+            .tenant_id = config.azure_tenant_id,
+            .auth_endpoint = config.auth_endpoint,
+            .scope = config.auth_scope,
+        },
+        graph::GraphOptions{
+            .drive_id = config.drive_id,
+            .endpoint = "https://graph.microsoft.com/v1.0",
+            .maximum_throttle_retries =
+                config.graph_maximum_throttle_retries,
+            .initial_throttle_delay = config.graph_initial_throttle_delay,
+            .maximum_throttle_delay = config.graph_maximum_throttle_delay,
+        }
+    );
 }
 
 std::unique_ptr<storage::ItemStore> ProductionRuntimeFactory::create_item_store(

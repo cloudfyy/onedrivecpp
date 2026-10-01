@@ -114,6 +114,7 @@ int main() {
         constexpr std::string_view response{
             "HTTP/1.1 201 Created\r\n"
             "Content-Type: text/plain\r\n"
+            "Retry-After: 17\r\n"
             "Content-Length: 2\r\n"
             "Connection: close\r\n"
             "\r\n"
@@ -155,6 +156,15 @@ int main() {
     }
     if (response->status_code != 201 || response->body != "OK") {
         return fail("HTTP response was not captured correctly");
+    }
+    bool retry_after_captured = false;
+    for (const auto& header : response->headers) {
+        if (header.name == "Retry-After" && header.value == "17") {
+            retry_after_captured = true;
+        }
+    }
+    if (!retry_after_captured) {
+        return fail("HTTP response headers were not captured correctly");
     }
     if (!received_request.starts_with("POST /token HTTP/1.1") ||
         !received_request.contains("Content-Type: application/x-www-form-urlencoded")) {

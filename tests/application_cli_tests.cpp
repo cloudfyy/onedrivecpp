@@ -272,7 +272,10 @@ int main() {
     {
         std::ofstream config{config_path};
         config << "sync_directory=" << temporary_directory.path().string() << '\n'
-               << "state_directory=" << state_path.string() << '\n';
+               << "state_directory=" << state_path.string() << '\n'
+               << "graph_maximum_throttle_retries=6\n"
+               << "graph_initial_throttle_delay_seconds=3\n"
+               << "graph_maximum_throttle_delay_seconds=120\n";
     }
 
     const auto logout = run_application(
@@ -316,6 +319,8 @@ int main() {
     );
     if (dry_run.exit_code != 0 ||
         !dry_run.standard_output.contains("Dry run configuration") ||
+        !dry_run.standard_output.contains("throttle retries: 6") ||
+        !dry_run.standard_output.contains("throttle delay:   3-120 seconds") ||
         runtime_factory.item_store_count != 1 ||
         runtime_factory.item_store_open_count != 1 ||
         runtime_factory.graph_client_count != 1 ||

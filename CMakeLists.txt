@@ -111,6 +111,10 @@ if(BUILD_TESTING)
     target_link_libraries(http_client_tests PRIVATE onedrive_core)
     add_test(NAME http_client_tests COMMAND http_client_tests)
 
+    add_executable(graph_client_tests tests/graph_client_tests.cpp)
+    target_link_libraries(graph_client_tests PRIVATE onedrive_core)
+    add_test(NAME graph_client_tests COMMAND graph_client_tests)
+
     add_executable(application_cli_tests tests/application_cli_tests.cpp)
     target_link_libraries(application_cli_tests PRIVATE onedrive_core)
     add_test(NAME application_cli_tests COMMAND application_cli_tests)
