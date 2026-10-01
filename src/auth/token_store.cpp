@@ -1,5 +1,7 @@
 #include "onedrive/auth/token_store.hpp"
 
+#include <spdlog/spdlog.h>
+
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
@@ -29,6 +31,7 @@ FileTokenStore::FileTokenStore(std::filesystem::path state_directory)
 
 std::optional<std::string> FileTokenStore::load_refresh_token() const {
     if (!std::filesystem::exists(path_)) {
+        spdlog::debug("No persisted Microsoft refresh token is present");
         return std::nullopt;
     }
     const auto file_status = std::filesystem::symlink_status(path_);
@@ -48,6 +51,10 @@ std::optional<std::string> FileTokenStore::load_refresh_token() const {
         std::istreambuf_iterator<char>{}
     };
     token = trim(std::move(token));
+    spdlog::debug(
+        "Loaded persisted Microsoft refresh token: {}",
+        token.empty() ? "empty" : "present"
+    );
     return token.empty() ? std::nullopt : std::optional<std::string>{std::move(token)};
 }
 
@@ -130,6 +137,7 @@ void FileTokenStore::save_refresh_token(const std::string& refresh_token) const 
             error.message()
         );
     }
+    spdlog::debug("Persisted Microsoft refresh token securely");
 }
 
 bool FileTokenStore::remove_refresh_token() const {
@@ -141,6 +149,10 @@ bool FileTokenStore::remove_refresh_token() const {
             error.message()
         );
     }
+    spdlog::debug(
+        "Removed persisted Microsoft refresh token: {}",
+        removed ? "present" : "not present"
+    );
     return removed;
 }
 

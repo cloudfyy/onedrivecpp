@@ -5,6 +5,7 @@
 #include "onedrive/http/http_client.hpp"
 
 #include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <charconv>
@@ -156,6 +157,7 @@ MicrosoftGraphClient::MicrosoftGraphClient(
 MicrosoftGraphClient::~MicrosoftGraphClient() = default;
 
 std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
+    spdlog::debug("Loading saved Microsoft authentication");
     const auto refresh_token = token_store_->load_refresh_token();
     if (!refresh_token) {
         throw std::runtime_error(
@@ -163,16 +165,20 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
         );
     }
 
+    spdlog::debug("Refreshing Microsoft access token");
     auto tokens = auth_client_->refresh_access_token(*refresh_token);
     if (!tokens) {
         throw std::runtime_error(
             "cannot refresh Microsoft access token: " + tokens.error().message
         );
     }
+    spdlog::debug("Microsoft access token refreshed");
     if (tokens->refresh_token != *refresh_token) {
         token_store_->save_refresh_token(tokens->refresh_token);
+        spdlog::debug("Persisted rotated Microsoft refresh token");
     }
 
+    spdlog::info("Starting Microsoft Graph root directory listing");
     std::string next_url =
         options_.drive_id == "me" ?
             options_.endpoint + "/me/drive/root/children" :
@@ -181,6 +187,7 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
     const std::string allowed_url_prefix = options_.endpoint + "/";
     std::unordered_set<std::string> visited_urls;
     std::vector<RemoteItem> items;
+    std::size_t page_number = 1;
 
     while (!next_url.empty()) {
         if (!next_url.starts_with(allowed_url_prefix)) {
@@ -197,6 +204,11 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
         http::HttpResult response;
         std::size_t throttle_retries = 0;
         while (true) {
+            spdlog::debug(
+                "Requesting Microsoft Graph root page {} (attempt {})",
+                page_number,
+                throttle_retries + 1
+            );
             response = transport_->perform(http::HttpRequest{
                 .method = http::HttpMethod::get,
                 .url = next_url,
@@ -231,11 +243,18 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
                     "throttle delay"
                 );
             }
-            sleep_(
-                server_delay.value_or(
-                    fallback_retry_delay(options_, throttle_retries)
-                )
+            const auto delay = server_delay.value_or(
+                fallback_retry_delay(options_, throttle_retries)
             );
+            spdlog::warn(
+                "Microsoft Graph throttled root page {}; retrying in {} seconds "
+                "({}/{})",
+                page_number,
+                delay.count(),
+                throttle_retries + 1,
+                options_.maximum_throttle_retries
+            );
+            sleep_(delay);
             ++throttle_retries;
         }
 
@@ -261,6 +280,7 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
                     "Microsoft Graph response field 'value' is not an array"
                 );
             }
+            const std::size_t page_item_count = values.size();
             for (const auto& value : values) {
                 RemoteItem item{
                     .id = value.at("id").get<std::string>(),
@@ -286,6 +306,13 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
                 }
                 next_url = next->get<std::string>();
             }
+            spdlog::debug(
+                "Received Microsoft Graph root page {} with {} items; {} total",
+                page_number,
+                page_item_count,
+                items.size()
+            );
+            ++page_number;
         } catch (const Json::exception& error) {
             throw std::runtime_error(
                 "Microsoft Graph response is missing required drive item data: " +
@@ -294,6 +321,11 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
         }
     }
 
+    spdlog::info(
+        "Completed Microsoft Graph root directory listing: {} pages, {} items",
+        page_number - 1,
+        items.size()
+    );
     return items;
 }
 

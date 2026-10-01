@@ -1,6 +1,7 @@
 #include "onedrive/auth/device_auth.hpp"
 
 #include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <chrono>
@@ -186,6 +187,7 @@ AuthResult<DeviceCode> DeviceAuthClient::request_device_code() const {
         return std::unexpected(invalid_configuration_error());
     }
 
+    spdlog::debug("Requesting Microsoft device authorization code");
     auto response = post_form(
         transport_,
         device_code_url(),
@@ -227,6 +229,12 @@ AuthResult<DeviceCode> DeviceAuthClient::request_device_code() const {
                 .message = "device authorization response contains invalid values",
             });
         }
+        spdlog::debug(
+            "Received Microsoft device authorization code with {} second expiry "
+            "and {} second polling interval",
+            expires_in,
+            interval
+        );
         return result;
     } catch (const Json::exception& error) {
         return std::unexpected(AuthError{
@@ -243,6 +251,8 @@ AuthResult<OAuthTokens> DeviceAuthClient::poll_for_token(const DeviceCode& code)
     }
     const auto deadline = now_() + code.expires_in;
     auto interval = code.polling_interval;
+    std::size_t poll_attempt = 0;
+    spdlog::debug("Waiting for Microsoft device authorization");
 
     while (now_() < deadline) {
         sleep_(interval);
@@ -250,6 +260,11 @@ AuthResult<OAuthTokens> DeviceAuthClient::poll_for_token(const DeviceCode& code)
             break;
         }
 
+        ++poll_attempt;
+        spdlog::trace(
+            "Polling Microsoft device authorization (attempt {})",
+            poll_attempt
+        );
         auto response = post_form(
             transport_,
             token_url(),
@@ -268,15 +283,25 @@ AuthResult<OAuthTokens> DeviceAuthClient::poll_for_token(const DeviceCode& code)
             return std::unexpected(json.error());
         }
         if (response->status_code >= 200 && response->status_code < 300) {
+            spdlog::debug(
+                "Microsoft device authorization completed after {} polls",
+                poll_attempt
+            );
             return parse_tokens(*json);
         }
 
         const std::string error = json->value("error", "");
         if (error == "authorization_pending") {
+            spdlog::trace("Microsoft device authorization remains pending");
             continue;
         }
         if (error == "slow_down") {
             interval += std::chrono::seconds{5};
+            spdlog::warn(
+                "Microsoft device authorization requested slower polling; "
+                "interval is now {} seconds",
+                interval.count()
+            );
             continue;
         }
         if (error == "authorization_declined") {

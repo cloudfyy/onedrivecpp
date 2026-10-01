@@ -315,6 +315,8 @@ int main() {
             "--config",
             config_path.string(),
             "--dry-run",
+            "--log-file",
+            log_path.string(),
         }
     );
     if (dry_run.exit_code != 0 ||
@@ -326,6 +328,16 @@ int main() {
         runtime_factory.graph_client_count != 1 ||
         runtime_factory.metrics_count != 1) {
         return fail("sync dry-run command was not parsed or executed");
+    }
+    {
+        std::ifstream log{log_path};
+        const std::string contents{
+            std::istreambuf_iterator<char>{log},
+            std::istreambuf_iterator<char>{}
+        };
+        if (!contents.contains("Synchronization dry run completed")) {
+            return fail("sync completion was not written to the configured log");
+        }
     }
 
     const auto monitor = run_application(

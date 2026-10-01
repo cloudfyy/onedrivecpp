@@ -2,6 +2,7 @@
 #include "onedrive/version.hpp"
 
 #include <curl/curl.h>
+#include <spdlog/spdlog.h>
 
 #include <array>
 #include <limits>
@@ -53,6 +54,10 @@ struct HeaderContext {
     std::size_t total_size{};
     bool size_exceeded{false};
 };
+
+std::string_view method_name(HttpMethod method) {
+    return method == HttpMethod::post ? "POST" : "GET";
+}
 
 std::size_t write_response(char* data, std::size_t size, std::size_t count, void* context) {
     if (count != 0 && size > std::numeric_limits<std::size_t>::max() / count) {
@@ -123,6 +128,7 @@ std::size_t write_header(char* data, std::size_t size, std::size_t count, void* 
 }  // namespace
 
 HttpResult CurlHttpClient::perform(const HttpRequest& request) const {
+    spdlog::trace("Performing HTTP {} request", method_name(request.method));
     static const CurlRuntime runtime;
     if (runtime.result() != CURLE_OK) {
         return std::unexpected(HttpError{
@@ -232,6 +238,12 @@ HttpResult CurlHttpClient::perform(const HttpRequest& request) const {
         });
     }
 
+    spdlog::trace(
+        "HTTP {} request completed with status {} and {} response bytes",
+        method_name(request.method),
+        status_code,
+        write_context.body.size()
+    );
     return HttpResponse{
         .status_code = status_code,
         .headers = std::move(header_context.headers),

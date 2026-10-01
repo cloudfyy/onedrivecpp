@@ -1,5 +1,7 @@
 #include "onedrive/config/config.hpp"
 
+#include <spdlog/spdlog.h>
+
 #include <charconv>
 #include <cstdint>
 #include <cstdlib>
@@ -96,9 +98,11 @@ Config Config::defaults() {
 Config Config::load(const std::filesystem::path& path) {
     Config config = defaults();
     if (!std::filesystem::exists(path)) {
+        spdlog::debug("Configuration file not found; using default values");
         return config;
     }
 
+    spdlog::debug("Loading configuration file");
     std::ifstream input{path};
     if (!input) {
         throw std::runtime_error("cannot open config file: " + path.string());
@@ -167,6 +171,7 @@ Config Config::load(const std::filesystem::path& path) {
             "to graph_initial_throttle_delay_seconds"
         );
     }
+    spdlog::debug("Configuration loaded and validated");
     return config;
 }
 

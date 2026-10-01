@@ -1,6 +1,7 @@
 #include "onedrive/storage/item_database.hpp"
 
 #include <sqlite3.h>
+#include <spdlog/spdlog.h>
 
 #include <memory>
 #include <stdexcept>
@@ -89,6 +90,7 @@ ItemDatabase::ItemDatabase(std::filesystem::path state_directory)
 ItemDatabase::~ItemDatabase() = default;
 
 void ItemDatabase::open() {
+    spdlog::debug("Opening synchronization state database");
     std::filesystem::create_directories(state_directory_);
     items_.clear();
     impl_->database.reset();
@@ -144,6 +146,10 @@ void ItemDatabase::open() {
         };
         items_.insert_or_assign(item.remote_id, std::move(item));
     }
+    spdlog::info(
+        "Synchronization state database ready with {} tracked items",
+        items_.size()
+    );
 }
 
 void ItemDatabase::upsert(ItemState item) {
@@ -169,6 +175,10 @@ void ItemDatabase::upsert(ItemState item) {
         );
     }
     items_.insert_or_assign(item.remote_id, std::move(item));
+    spdlog::trace(
+        "Updated synchronization state; {} items tracked",
+        items_.size()
+    );
 }
 
 const ItemState* ItemDatabase::find(const std::string& remote_id) const {
