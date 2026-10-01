@@ -4,18 +4,13 @@ export CC := clang-20
 export CXX := clang++-20
 export DEB_BUILD_MAINT_OPTIONS := hardening=+all
 
-ifndef VCPKG_ROOT
-$(error VCPKG_ROOT must point to a bootstrapped vcpkg checkout)
-endif
-
 %:
 	dh $@ --buildsystem=cmake+ninja
 
 override_dh_auto_configure:
 	dh_auto_configure -- \
 		-DCMAKE_BUILD_TYPE=Release \
-		-DBUILD_TESTING=ON \
-		-DCMAKE_TOOLCHAIN_FILE=$(VCPKG_ROOT)/scripts/buildsystems/vcpkg.cmake
+		-DBUILD_TESTING=ON
 
 # The system dwz does not support Clang 20's DWARF sections.
 override_dh_dwz:

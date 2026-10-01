@@ -59,7 +59,8 @@ The directories correspond to the responsibilities of
 - x86_64 or arm64, depending on the LLVM and Ubuntu build environment.
 - Clang 20 with `-std=c++2c` / CMake `CXX_STANDARD 26`.
 - CMake 3.28 or later.
-- vcpkg in manifest mode for C++ dependencies.
+- Development packages for CLI11, libcurl/OpenSSL, nlohmann/json, spdlog/fmt,
+  and SQLite from the system package manager.
 
 Ubuntu 24.04 provides the required CMake, Ninja, and Clang 20 packages through
 its official repositories. GCC 13 is not used because its C++26 support is not
@@ -72,7 +73,9 @@ Install the build tools from the Ubuntu 24.04 repositories:
 ```bash
 sudo apt update
 sudo apt install -y build-essential ca-certificates curl git \
-  cmake ninja-build clang-20 zip unzip tar pkg-config
+  cmake ninja-build clang-20 zip unzip tar pkg-config \
+  libcli11-dev libcurl4-openssl-dev libfmt-dev libspdlog-dev \
+  libsqlite3-dev libssl-dev nlohmann-json3-dev
 ```
 
 Verify the installed versions:
@@ -82,26 +85,9 @@ clang++-20 --version
 cmake --version
 ```
 
-Install and bootstrap vcpkg:
-
-```bash
-git clone https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
-"$HOME/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
-export VCPKG_ROOT="$HOME/vcpkg"
-```
-
-Persist `VCPKG_ROOT` and load it in the current shell:
-
-```bash
-echo 'export VCPKG_ROOT="$HOME/vcpkg"' >> "$HOME/.profile"
-source "$HOME/.profile"
-```
-
-The committed `vcpkg.json` manifest pins the registry baseline and is the
-single source of truth for C++ library dependencies. It currently provides
-CLI11, libcurl, OpenSSL, nlohmann/json, spdlog, and SQLite. vcpkg
-automatically installs declared dependencies while CMake configures the
-project.
+The compiled libraries are resolved from the operating system and linked
+dynamically. This lets Debian security updates replace libcurl, OpenSSL,
+SQLite, spdlog, and fmt without rebuilding `onedrive-cpp`.
 
 ## Build and Test Locally
 
@@ -109,7 +95,6 @@ Run all build commands from the project root:
 
 ```bash
 cd /home/yingying/onedrivecpp
-source "$HOME/.profile"
 ```
 
 ### Release build
@@ -173,8 +158,8 @@ man --local-file build/release/generated/onedrive-cpp.1
 
 ### Clean Release rebuild
 
-Delete only the Release build tree to force CMake, vcpkg, and Ninja to
-reconfigure and rebuild it from scratch:
+Delete only the Release build tree to force CMake and Ninja to reconfigure and
+rebuild it from scratch:
 
 ```bash
 rm -rf build/release
@@ -202,10 +187,6 @@ ctest --preset debug
 ```
 
 The Debug executable is generated at `build/debug/onedrive-cpp`.
-
-Each build tree has its own `vcpkg_installed` directory. Removing
-`build/release` or `build/debug` therefore also forces vcpkg to restore that
-configuration's dependencies during the next CMake configure step.
 
 ## Build DEB Packages
 

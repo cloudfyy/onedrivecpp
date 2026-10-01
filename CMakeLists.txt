@@ -14,10 +14,11 @@ include(GNUInstallDirs)
 include(CTest)
 
 find_package(CLI11 CONFIG REQUIRED)
-find_package(CURL CONFIG REQUIRED)
+set(CURL_USE_STATIC_LIBS OFF)
+find_package(CURL REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
-find_package(unofficial-sqlite3 CONFIG REQUIRED)
+find_package(SQLite3 REQUIRED)
 
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -69,7 +70,7 @@ target_link_libraries(onedrive_core
         CURL::libcurl
         nlohmann_json::nlohmann_json
         spdlog::spdlog
-        unofficial::sqlite3::sqlite3
+        SQLite3::SQLite3
 )
 
 target_compile_options(onedrive_core PRIVATE

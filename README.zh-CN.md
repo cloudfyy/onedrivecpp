@@ -55,7 +55,8 @@ SQLite、monitor、Graph 和 metrics 适配器；测试则注入内存 fake。�
 - x86_64 或 arm64（取决于 LLVM 和 Ubuntu 构建环境）。
 - Clang 20，使用 `-std=c++2c`/CMake `CXX_STANDARD 26`。
 - CMake 3.28 或更高版本。
-- 使用 vcpkg manifest 模式管理 C++ 依赖。
+- 使用系统包管理器提供 CLI11、libcurl/OpenSSL、nlohmann/json、
+  spdlog/fmt 和 SQLite 开发包。
 
 Ubuntu 24.04 的官方仓库已经提供项目所需的 CMake、Ninja 和 Clang 20。
 项目不使用默认的 GCC 13，因为它的 C++26 支持不足以满足当前配置。
@@ -67,7 +68,9 @@ Ubuntu 24.04 的官方仓库已经提供项目所需的 CMake、Ninja 和 Clang 
 ```bash
 sudo apt update
 sudo apt install -y build-essential ca-certificates curl git \
-  cmake ninja-build clang-20 zip unzip tar pkg-config
+  cmake ninja-build clang-20 zip unzip tar pkg-config \
+  libcli11-dev libcurl4-openssl-dev libfmt-dev libspdlog-dev \
+  libsqlite3-dev libssl-dev nlohmann-json3-dev
 ```
 
 确认版本：
@@ -77,24 +80,8 @@ clang++-20 --version
 cmake --version
 ```
 
-安装并引导 vcpkg：
-
-```bash
-git clone https://github.com/microsoft/vcpkg.git "$HOME/vcpkg"
-"$HOME/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
-export VCPKG_ROOT="$HOME/vcpkg"
-```
-
-持久化 `VCPKG_ROOT`，并在当前 Shell 中加载：
-
-```bash
-echo 'export VCPKG_ROOT="$HOME/vcpkg"' >> "$HOME/.profile"
-source "$HOME/.profile"
-```
-
-仓库中的 `vcpkg.json` manifest 固定了 registry baseline，是 C++ 库依赖的
-唯一事实来源。目前它提供 CLI11、libcurl、OpenSSL、nlohmann/json、spdlog 和
-SQLite。CMake 配置项目时，vcpkg 会自动安装 manifest 中声明的依赖。
+编译库从操作系统解析并动态链接。这样 Debian 的安全更新可以替换 libcurl、
+OpenSSL、SQLite、spdlog 和 fmt，而无需重新构建 `onedrive-cpp`。
 
 ## 本地构建与测试
 
@@ -102,7 +89,6 @@ SQLite。CMake 配置项目时，vcpkg 会自动安装 manifest 中声明的依�
 
 ```bash
 cd /home/yingying/onedrivecpp
-source "$HOME/.profile"
 ```
 
 ### Release 构建
@@ -164,8 +150,7 @@ man --local-file build/release/generated/onedrive-cpp.1
 
 ### 完整 Release 重编译
 
-仅删除 Release 构建目录，使 CMake、vcpkg 和 Ninja 从空白状态重新配置和
-编译：
+仅删除 Release 构建目录，使 CMake 和 Ninja 从空白状态重新配置和编译：
 
 ```bash
 rm -rf build/release
@@ -193,10 +178,6 @@ ctest --preset debug
 ```
 
 Debug 程序位于 `build/debug/onedrive-cpp`。
-
-每个构建目录都有独立的 `vcpkg_installed` 目录。因此，删除
-`build/release` 或 `build/debug` 后，vcpkg 会在下次 CMake 配置时重新安装
-对应配置的依赖。
 
 ## 构建 DEB 包
 

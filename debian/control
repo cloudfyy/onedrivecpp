@@ -6,7 +6,14 @@ Build-Depends:
  debhelper-compat (= 13),
  cmake (>= 3.28),
  ninja-build,
- clang-20
+ clang-20,
+ libcli11-dev,
+ libcurl4-openssl-dev,
+ libfmt-dev,
+ libspdlog-dev,
+ libsqlite3-dev,
+ libssl-dev,
+ nlohmann-json3-dev
 Standards-Version: 4.6.2
 Rules-Requires-Root: no
 

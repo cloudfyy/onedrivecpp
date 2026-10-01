@@ -7,28 +7,27 @@
   },
   "configurePresets": [
     {
-      "name": "vcpkg",
+      "name": "base",
       "hidden": true,
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "BUILD_TESTING": "ON",
-        "CMAKE_CXX_COMPILER": "clang++-20",
-        "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        "CMAKE_CXX_COMPILER": "clang++-20"
       }
     },
     {
       "name": "debug",
-      "displayName": "Debug with vcpkg",
-      "inherits": "vcpkg",
+      "displayName": "Debug with system libraries",
+      "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
       }
     },
     {
       "name": "release",
-      "displayName": "Release with vcpkg",
-      "inherits": "vcpkg",
+      "displayName": "Release with system libraries",
+      "inherits": "base",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
