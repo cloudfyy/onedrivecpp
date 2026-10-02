@@ -401,6 +401,15 @@ auth_scope=Files.ReadWrite offline_access
 onedrive-cpp logout
 ```
 
+使用以下命令删除当前配置 Drive 的远端元数据和 `deltaLink`：
+
+```bash
+onedrive-cpp reset-state
+```
+
+该命令保留认证 token、配置、同步目录中的本地文件以及其他 Drive 的状态。
+下一次 `sync` 会为当前 Drive 执行完整的初始 Delta 查询。
+
 `sync` 命令会刷新 OAuth access token，在 Microsoft 返回轮换后的 refresh
 token 时安全持久化，并通过分页的 Microsoft Graph Delta 请求获取配置 Drive
 中的递归文件树。首次成功查询会把远端元数据和最终 `deltaLink` 原子写入

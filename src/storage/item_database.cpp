@@ -449,6 +449,59 @@ void ItemDatabase::apply_delta(ItemDelta delta) {
     );
 }
 
+std::size_t ItemDatabase::reset(const std::string& drive_id) {
+    sqlite3* database = impl_->database.get();
+    if (database == nullptr) {
+        throw std::runtime_error("state database is not open");
+    }
+    if (drive_id.empty()) {
+        throw std::invalid_argument(
+            "cannot reset synchronization state without a drive ID"
+        );
+    }
+
+    Transaction transaction{database};
+    Statement item_statement{
+        database,
+        "DELETE FROM item WHERE drive_id = ?1;"
+    };
+    bind_text(database, item_statement.get(), 1, drive_id);
+    if (sqlite3_step(item_statement.get()) != SQLITE_DONE) {
+        throw std::runtime_error(
+            "cannot reset drive items: " + std::string{sqlite3_errmsg(database)}
+        );
+    }
+    const auto removed = static_cast<std::size_t>(sqlite3_changes(database));
+
+    Statement state_statement{
+        database,
+        "DELETE FROM drive_state WHERE drive_id = ?1;"
+    };
+    bind_text(database, state_statement.get(), 1, drive_id);
+    if (sqlite3_step(state_statement.get()) != SQLITE_DONE) {
+        throw std::runtime_error(
+            "cannot reset drive delta link: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+    transaction.commit();
+
+    for (auto iterator = items_.begin(); iterator != items_.end();) {
+        if (iterator->second.drive_id == drive_id) {
+            iterator = items_.erase(iterator);
+        } else {
+            ++iterator;
+        }
+    }
+    delta_links_.erase(drive_id);
+    spdlog::info(
+        "Reset synchronization state for drive '{}': {} items removed",
+        drive_id,
+        removed
+    );
+    return removed;
+}
+
 std::optional<std::string> ItemDatabase::delta_link(
     const std::string& drive_id
 ) const {

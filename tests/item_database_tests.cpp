@@ -172,6 +172,61 @@ int main() {
                 }) {
             return fail("updated delta state was not loaded");
         }
+
+        database.apply_delta({
+            .drive_id = "me",
+            .upserts = {
+                {
+                    .remote_id = "reset-me",
+                    .name = "reset-me.txt",
+                    .etag = "reset-me-etag",
+                    .remote_path = "reset-me.txt",
+                    .local_path = temporary_directory.path() / "reset-me.txt",
+                },
+            },
+            .delta_link = "https://graph.example.test/delta-me",
+        });
+        database.apply_delta({
+            .drive_id = "other-drive",
+            .upserts = {
+                {
+                    .remote_id = "keep-me",
+                    .name = "keep-me.txt",
+                    .etag = "keep-me-etag",
+                    .remote_path = "keep-me.txt",
+                    .local_path = temporary_directory.path() / "keep-me.txt",
+                },
+            },
+            .delta_link = "https://graph.example.test/delta-other",
+        });
+
+        if (database.reset("me") != 1 || database.size() != 3 ||
+            database.find("reset-me") != nullptr ||
+            database.find("keep-me") == nullptr ||
+            database.delta_link("me").has_value() ||
+            database.delta_link("other-drive") !=
+                std::optional<std::string>{
+                    "https://graph.example.test/delta-other"
+                }) {
+            return fail("drive reset did not preserve other synchronization state");
+        }
+        if (database.reset("me") != 0) {
+            return fail("resetting empty drive state removed unexpected items");
+        }
+    }
+
+    {
+        onedrive::storage::ItemDatabase database{temporary_directory.path()};
+        database.open();
+        if (database.size() != 3 || database.find("reset-me") != nullptr ||
+            database.find("keep-me") == nullptr ||
+            database.delta_link("me").has_value() ||
+            database.delta_link("other-drive") !=
+                std::optional<std::string>{
+                    "https://graph.example.test/delta-other"
+                }) {
+            return fail("drive reset was not persisted");
+        }
     }
 
     if (!std::filesystem::exists(temporary_directory.path() / "items.sqlite3")) {

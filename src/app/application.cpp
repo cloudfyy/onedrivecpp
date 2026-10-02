@@ -102,6 +102,10 @@ int Application::run(int argc, char* argv[]) {
         "logout",
         "Remove the locally stored refresh token"
     );
+    auto* reset_state_command = cli.add_subcommand(
+        "reset-state",
+        "Reset persisted synchronization state for the configured drive"
+    );
     auto* sync_command = cli.add_subcommand("sync", "Synchronize OneDrive files");
     auto* monitor_command =
         cli.add_subcommand("monitor", "Monitor for synchronization changes");
@@ -124,6 +128,7 @@ int Application::run(int argc, char* argv[]) {
     };
     add_common_options(*auth_command);
     add_common_options(*logout_command);
+    add_common_options(*reset_state_command);
     add_common_options(*sync_command);
     add_common_options(*monitor_command);
     sync_command->add_flag(
@@ -167,6 +172,21 @@ int Application::run(int argc, char* argv[]) {
                 runtime_factory_.create_token_store(config)->remove_refresh_token();
             std::cout << (removed ? "Saved authentication removed.\n" :
                                    "No saved authentication was present.\n");
+            return 0;
+        }
+        if (*reset_state_command) {
+            spdlog::info(
+                "Resetting synchronization state for drive '{}'",
+                config.drive_id
+            );
+            auto items = runtime_factory_.create_item_store(config);
+            items->open();
+            const auto removed = items->reset(config.drive_id);
+            std::cout << "Reset synchronization state for drive '"
+                      << config.drive_id << "': " << removed
+                      << " items removed.\n"
+                      << "The next sync will perform a full Microsoft Graph "
+                         "delta query.\n";
             return 0;
         }
         if (*monitor_command) {

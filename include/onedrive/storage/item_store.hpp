@@ -36,6 +36,7 @@ public:
     virtual void open() = 0;
     virtual void upsert(ItemState item) = 0;
     virtual void apply_delta(ItemDelta delta) = 0;
+    virtual std::size_t reset(const std::string& drive_id) = 0;
     [[nodiscard]] virtual std::optional<std::string> delta_link(
         const std::string& drive_id
     ) const = 0;

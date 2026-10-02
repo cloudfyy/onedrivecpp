@@ -105,8 +105,16 @@ public:
 
 class FakeItemStore final : public onedrive::storage::ItemStore {
 public:
-    FakeItemStore(int& open_count, int& apply_delta_count)
-        : open_count_{open_count}, apply_delta_count_{apply_delta_count} {}
+    FakeItemStore(
+        int& open_count,
+        int& apply_delta_count,
+        int& reset_count,
+        std::string& reset_drive_id
+    )
+        : open_count_{open_count},
+          apply_delta_count_{apply_delta_count},
+          reset_count_{reset_count},
+          reset_drive_id_{reset_drive_id} {}
 
     void open() override {
         ++open_count_;
@@ -116,6 +124,12 @@ public:
 
     void apply_delta(onedrive::storage::ItemDelta) override {
         ++apply_delta_count_;
+    }
+
+    std::size_t reset(const std::string& drive_id) override {
+        ++reset_count_;
+        reset_drive_id_ = drive_id;
+        return 7;
     }
 
     [[nodiscard]] std::optional<std::string> delta_link(
@@ -137,6 +151,8 @@ public:
 private:
     int& open_count_;
     int& apply_delta_count_;
+    int& reset_count_;
+    std::string& reset_drive_id_;
 };
 
 class FakeMonitor final : public onedrive::monitor::FileMonitor {
@@ -196,7 +212,9 @@ public:
         ++item_store_count;
         return std::make_unique<FakeItemStore>(
             item_store_open_count,
-            item_store_apply_delta_count
+            item_store_apply_delta_count,
+            item_store_reset_count,
+            reset_drive_id
         );
     }
 
@@ -218,6 +236,8 @@ public:
     mutable int item_store_count{0};
     mutable int item_store_open_count{0};
     mutable int item_store_apply_delta_count{0};
+    mutable int item_store_reset_count{0};
+    mutable std::string reset_drive_id;
     mutable int monitor_count{0};
     mutable int monitor_run_count{0};
     mutable int metrics_count{0};
@@ -266,6 +286,7 @@ int main() {
     const auto help =
         run_application(runtime_factory, {"build/release/onedrive-cpp"});
     if (help.exit_code != 0 || !help.standard_output.contains("auth") ||
+        !help.standard_output.contains("reset-state") ||
         !help.standard_output.contains("sync") ||
         !help.standard_output.contains("onedrive-cpp [OPTIONS] SUBCOMMAND") ||
         help.standard_output.contains("build/release/onedrive-cpp")) {
@@ -343,6 +364,31 @@ int main() {
         }
     }
 
+    const auto reset_state = run_application(
+        runtime_factory,
+        {
+            "onedrive-cpp",
+            "reset-state",
+            "--config",
+            config_path.string(),
+        }
+    );
+    if (reset_state.exit_code != 0 ||
+        !reset_state.standard_output.contains(
+            "Reset synchronization state for drive 'me': 7 items removed"
+        ) ||
+        !reset_state.standard_output.contains(
+            "next sync will perform a full Microsoft Graph delta query"
+        ) ||
+        runtime_factory.item_store_count != 1 ||
+        runtime_factory.item_store_open_count != 1 ||
+        runtime_factory.item_store_reset_count != 1 ||
+        runtime_factory.reset_drive_id != "me" ||
+        runtime_factory.graph_client_count != 0 ||
+        runtime_factory.metrics_count != 0) {
+        return fail("reset-state command was not dispatched to the item store");
+    }
+
     const auto dry_run = run_application(
         runtime_factory,
         {
@@ -362,8 +408,8 @@ int main() {
         ) ||
         !dry_run.standard_output.contains("throttle retries: 6") ||
         !dry_run.standard_output.contains("throttle delay:   3-120 seconds") ||
-        runtime_factory.item_store_count != 1 ||
-        runtime_factory.item_store_open_count != 1 ||
+        runtime_factory.item_store_count != 2 ||
+        runtime_factory.item_store_open_count != 2 ||
         runtime_factory.item_store_apply_delta_count != 0 ||
         runtime_factory.graph_client_count != 1 ||
         runtime_factory.metrics_count != 1) {

@@ -20,6 +20,7 @@ public:
     void open() override;
     void upsert(ItemState item) override;
     void apply_delta(ItemDelta delta) override;
+    std::size_t reset(const std::string& drive_id) override;
     [[nodiscard]] std::optional<std::string> delta_link(
         const std::string& drive_id
     ) const override;
