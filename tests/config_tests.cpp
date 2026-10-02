@@ -7,21 +7,28 @@
 #include <iostream>
 
 int main() {
-    const auto path = std::filesystem::temp_directory_path() / "onedrive-cpp-config-test.conf";
+    const auto path =
+        std::filesystem::temp_directory_path() / "onedrive-cpp-config-test.toml";
     {
         std::ofstream output{path};
-        output << "sync_directory=/tmp/OneDrive\n"
-               << "state_directory=/tmp/onedrive-state\n"
-               << "drive_id=test-drive\n"
-               << "application_id=test-application\n"
-               << "azure_tenant_id=test-tenant\n"
-               << "auth_endpoint=https://login.example.test\n"
-               << "auth_scope=Files.Read offline_access\n"
-               << "graph_maximum_throttle_retries=7\n"
-               << "graph_initial_throttle_delay_seconds=2\n"
-               << "graph_maximum_throttle_delay_seconds=90\n"
-               << "filesystem_metadata=database\n"
-               << "dry_run=true\n";
+        output << "config_version = 1\n"
+               << "[sync]\n"
+               << "directory = \"/tmp/OneDrive\"\n"
+               << "drive_id = \"test-drive\"\n"
+               << "dry_run = true\n"
+               << "[state]\n"
+               << "directory = \"/tmp/onedrive-state\"\n"
+               << "[auth]\n"
+               << "application_id = \"test-application\"\n"
+               << "tenant_id = \"test-tenant\"\n"
+               << "endpoint = \"https://login.example.test\"\n"
+               << "scopes = [\"Files.Read\", \"offline_access\"]\n"
+               << "[graph.throttle]\n"
+               << "maximum_retries = 7\n"
+               << "initial_delay_seconds = 2\n"
+               << "maximum_delay_seconds = 90\n"
+               << "[filesystem]\n"
+               << "metadata = \"database\"\n";
     }
 
     const auto config = onedrive::config::Config::load(path);
@@ -46,7 +53,9 @@ int main() {
 
     {
         std::ofstream output{path};
-        output << "graph_maximum_throttle_retries=invalid\n";
+        output << "config_version = 1\n"
+               << "[graph.throttle]\n"
+               << "maximum_retries = \"invalid\"\n";
     }
     try {
         static_cast<void>(onedrive::config::Config::load(path));
@@ -58,7 +67,9 @@ int main() {
 
     {
         std::ofstream output{path};
-        output << "filesystem_metadata=unsupported\n";
+        output << "config_version = 1\n"
+               << "[filesystem]\n"
+               << "metadata = \"unsupported\"\n";
     }
     try {
         static_cast<void>(onedrive::config::Config::load(path));
@@ -70,13 +81,69 @@ int main() {
 
     {
         std::ofstream output{path};
-        output << "graph_initial_throttle_delay_seconds=10\n"
-               << "graph_maximum_throttle_delay_seconds=5\n";
+        output << "config_version = 1\n"
+               << "[graph.throttle]\n"
+               << "initial_delay_seconds = 10\n"
+               << "maximum_delay_seconds = 5\n";
     }
     try {
         static_cast<void>(onedrive::config::Config::load(path));
         std::filesystem::remove(path);
         std::cerr << "invalid throttle delay range was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error&) {
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 1\n"
+               << "[sync]\n"
+               << "unknown = true\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "unknown TOML configuration key was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error&) {
+    }
+
+    {
+        std::ofstream output{path};
+        output << "[sync]\n"
+               << "drive_id = \"me\"\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "missing TOML configuration version was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error&) {
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 1\n"
+               << "[auth]\n"
+               << "scopes = [\"Files.Read\", 42]\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "non-string authentication scope was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error&) {
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 1\n"
+               << "[sync\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "malformed TOML configuration was accepted\n";
         return EXIT_FAILURE;
     } catch (const std::runtime_error&) {
     }

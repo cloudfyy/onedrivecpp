@@ -391,16 +391,24 @@ int main() {
     }
 
     TemporaryDirectory temporary_directory;
-    const auto config_path = temporary_directory.path() / "config";
+    const auto config_path = temporary_directory.path() / "config.toml";
     const auto state_path = temporary_directory.path() / "state";
     const auto log_path = temporary_directory.path() / "onedrive-cpp.log";
     {
         std::ofstream config{config_path};
-        config << "sync_directory=" << temporary_directory.path().string() << '\n'
-               << "state_directory=" << state_path.string() << '\n'
-               << "graph_maximum_throttle_retries=6\n"
-               << "graph_initial_throttle_delay_seconds=3\n"
-               << "graph_maximum_throttle_delay_seconds=120\n";
+        config << "config_version = 1\n"
+               << "[sync]\n"
+               << "directory = \""
+               << temporary_directory.path().string()
+               << "\"\n"
+               << "[state]\n"
+               << "directory = \""
+               << state_path.string()
+               << "\"\n"
+               << "[graph.throttle]\n"
+               << "maximum_retries = 6\n"
+               << "initial_delay_seconds = 3\n"
+               << "maximum_delay_seconds = 120\n";
     }
 
     const auto logout = run_application(

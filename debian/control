@@ -13,6 +13,7 @@ Build-Depends:
  libspdlog-dev,
  libsqlite3-dev,
  libssl-dev,
+ libtomlplusplus-dev,
  nlohmann-json3-dev
 Standards-Version: 4.6.2
 Rules-Requires-Root: no

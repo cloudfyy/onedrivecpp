@@ -77,7 +77,7 @@ sudo apt update
 sudo apt install -y build-essential ca-certificates curl git \
   cmake ninja-build clang-20 zip unzip tar pkg-config \
   libcli11-dev libcurl4-openssl-dev libfmt-dev libspdlog-dev \
-  libsqlite3-dev libssl-dev nlohmann-json3-dev
+  libsqlite3-dev libssl-dev libtomlplusplus-dev nlohmann-json3-dev
 ```
 
 Verify the installed versions:
@@ -278,34 +278,38 @@ lintian "../onedrive-cpp_${version}_${architecture}.changes"
 
 ## Configuration and systemd
 
-By default, the application first reads `~/.config/onedrive-cpp/config`. If
+By default, the application first reads `~/.config/onedrive-cpp/config.toml`. If
 that file does not exist, built-in defaults are used. A system-wide example is
-installed at `/etc/onedrive-cpp/onedrive-cpp.conf`. To create a user
+installed at `/etc/onedrive-cpp/onedrive-cpp.toml`. To create a user
 configuration:
 
 ```bash
 mkdir -p ~/.config/onedrive-cpp
-cp /etc/onedrive-cpp/onedrive-cpp.conf ~/.config/onedrive-cpp/config
-sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config
+cp /etc/onedrive-cpp/onedrive-cpp.toml ~/.config/onedrive-cpp/config.toml
+sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 ```
 
-`drive_id` selects the remote OneDrive drive to access. The default value,
+Configuration files use TOML and must declare `config_version = 1`. Unknown
+keys and invalid value types are rejected instead of being silently ignored.
+
+`sync.drive_id` selects the remote OneDrive drive to access. The default value,
 `me`, selects the signed-in user's default OneDrive and lists its root through
 the Microsoft Graph path `/me/drive/root/children`. To access another OneDrive
 or a SharePoint document library available to the account, set the actual
 Drive ID instead; the client then uses `/drives/<drive_id>/root/children`.
 For example:
 
-```ini
+```toml
+[sync]
 # Default OneDrive of the signed-in user
-drive_id=me
+drive_id = "me"
 
 # Another OneDrive or SharePoint document library
-# drive_id=b!YOUR_DRIVE_ID
+# drive_id = "b!YOUR_DRIVE_ID"
 ```
 
 Tracked remote IDs, ETags, and local paths are stored in
-`<state_directory>/items.sqlite3`. The database uses SQLite WAL mode and is
+`<state.directory>/items.sqlite3`. The database uses SQLite WAL mode and is
 loaded when the application starts.
 
 ### Microsoft authentication
@@ -331,14 +335,14 @@ Application Developer role.
 4. Select the supported account type:
    - For both work/school and personal Microsoft accounts, select
      **Any Entra ID Tenant + Personal Microsoft accounts** and later use
-     `azure_tenant_id=common`.
+     `auth.tenant_id = "common"`.
    - For personal Microsoft accounts only, select **Personal accounts only**
-     and later use `azure_tenant_id=consumers`.
+     and later use `auth.tenant_id = "consumers"`.
    - For one organization only, select **Single tenant**, then use that
      directory's tenant ID instead of `common`.
 5. Select **Register**.
 6. On the application **Overview** page, copy the **Application (client) ID**.
-   Do not copy the Object ID or Directory ID into `application_id`.
+   Do not copy the Object ID or Directory ID into `auth.application_id`.
 7. Open **Authentication > Advanced settings**, set
    **Allow public client flows** to **Yes**, and save.
 
@@ -385,27 +389,29 @@ Create the user configuration if it does not already exist:
 
 ```bash
 mkdir -p ~/.config/onedrive-cpp
-cp /etc/onedrive-cpp/onedrive-cpp.conf ~/.config/onedrive-cpp/config
-sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config
+cp /etc/onedrive-cpp/onedrive-cpp.toml ~/.config/onedrive-cpp/config.toml
+sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 ```
 
 For an application registered as **Personal Microsoft accounts only**, use:
 
-```ini
-application_id=YOUR_APPLICATION_CLIENT_ID
-azure_tenant_id=consumers
-auth_endpoint=https://login.microsoftonline.com
-auth_scope=Files.ReadWrite offline_access
+```toml
+[auth]
+application_id = "YOUR_APPLICATION_CLIENT_ID"
+tenant_id = "consumers"
+endpoint = "https://login.microsoftonline.com"
+scopes = ["Files.ReadWrite", "offline_access"]
 ```
 
 For an application registered as **Any Entra ID Tenant + Personal Microsoft
 accounts**, use `common` even when the user signing in has a personal account:
 
-```ini
-application_id=YOUR_APPLICATION_CLIENT_ID
-azure_tenant_id=common
-auth_endpoint=https://login.microsoftonline.com
-auth_scope=Files.ReadWrite offline_access
+```toml
+[auth]
+application_id = "YOUR_APPLICATION_CLIENT_ID"
+tenant_id = "common"
+endpoint = "https://login.microsoftonline.com"
+scopes = ["Files.ReadWrite", "offline_access"]
 ```
 
 For a single-tenant organizational application, replace `common` with the
@@ -424,7 +430,7 @@ onedrive-cpp auth
 Open the displayed URL, enter the user code, sign in with the account matching
 the registration's supported account type, and review the requested
 permissions. On success, the refresh token is atomically saved to
-`<state_directory>/refresh_token` with owner-only `0600` permissions.
+`<state.directory>/refresh_token` with owner-only `0600` permissions.
 
 If Microsoft reports that the account is unsupported, verify the selected
 **Supported account types** and use `consumers` for personal-only
@@ -434,10 +440,11 @@ registrations.
 If the program displays `https://www.microsoft.com/link` and that page
 immediately reports that a newly generated code is invalid or expired, check
 whether a combined personal and organizational application was incorrectly
-configured with `azure_tenant_id=consumers`. Change it to:
+configured with `auth.tenant_id = "consumers"`. Change it to:
 
-```ini
-azure_tenant_id=common
+```toml
+[auth]
+tenant_id = "common"
 ```
 
 Start `onedrive-cpp auth` again and use only the newly generated code at the
@@ -451,8 +458,9 @@ reports that the code expired while the terminal remains at
 the selected account type. In particular, personal Microsoft accounts should
 use:
 
-```ini
-auth_scope=Files.ReadWrite offline_access
+```toml
+[auth]
+scopes = ["Files.ReadWrite", "offline_access"]
 ```
 
 After changing scopes, restart `onedrive-cpp auth`; an existing device code
@@ -495,7 +503,7 @@ The `sync` command refreshes the OAuth access token, securely persists a
 rotated refresh token when Microsoft returns one, and obtains the configured
 drive's recursive file tree through paginated Microsoft Graph delta requests.
 The first successful query atomically writes remote metadata and the final
-`deltaLink` to `<state_directory>/items.sqlite3`; later runs reuse that link
+`deltaLink` to `<state.directory>/items.sqlite3`; later runs reuse that link
 and retrieve only added, changed, and deleted items. The `deltaLink` advances
 only after every page has been processed successfully, so a partial failure
 does not lose unapplied changes.
@@ -528,10 +536,11 @@ automatically retries with a full Delta query. Existing local snapshots remain
 available for conflict detection, and the saved cursor and remote inventory are
 replaced only after the full synchronization plan succeeds.
 
-`filesystem_metadata` controls optional `user.*` xattr hints:
+`filesystem.metadata` controls optional `user.*` xattr hints:
 
-```ini
-filesystem_metadata=auto
+```toml
+[filesystem]
+metadata = "auto"
 ```
 
 - `auto` verifies xattr behavior with an actual probe file, uses hints when
@@ -549,11 +558,11 @@ persistent throttling fails explicitly instead of waiting forever.
 
 The throttling policy can be adjusted in the configuration file:
 
-```ini
-graph_maximum_throttle_retries=4
-graph_initial_throttle_delay_seconds=1
-graph_maximum_throttle_delay_seconds=300
-filesystem_metadata=auto
+```toml
+[graph.throttle]
+maximum_retries = 4
+initial_delay_seconds = 1
+maximum_delay_seconds = 300
 ```
 
 The initial delay is doubled after each 429 response without a valid numeric

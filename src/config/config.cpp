@@ -1,80 +1,146 @@
 #include "onedrive/config/config.hpp"
 
 #include <spdlog/spdlog.h>
+#include <toml++/toml.hpp>
 
-#include <charconv>
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
-#include <fstream>
+#include <initializer_list>
 #include <limits>
+#include <optional>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 
 namespace onedrive::config {
 namespace {
 
-std::string trim(std::string value) {
-    const auto first = value.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos) {
-        return {};
-    }
-    const auto last = value.find_last_not_of(" \t\r\n");
-    return value.substr(first, last - first + 1);
-}
-
-bool parse_bool(std::string_view value, std::size_t line_number) {
-    if (value == "true") {
-        return true;
-    }
-    if (value == "false") {
-        return false;
-    }
-    throw std::runtime_error(
-        "invalid boolean at config line " + std::to_string(line_number)
-    );
-}
-
-std::uint64_t parse_unsigned(
-    std::string_view value,
-    std::string_view key,
-    std::size_t line_number
+void validate_keys(
+    const toml::table& table,
+    std::initializer_list<std::string_view> allowed,
+    std::string_view table_name
 ) {
-    std::uint64_t result{};
-    const auto* begin = value.data();
-    const auto* end = begin + value.size();
-    const auto [position, error] = std::from_chars(begin, end, result);
-    if (value.empty() || error != std::errc{} || position != end) {
+    for (const auto& [key, value] : table) {
+        static_cast<void>(value);
+        if (std::ranges::find(allowed, key.str()) == allowed.end()) {
+            const std::string prefix =
+                table_name.empty() ? "" : std::string{table_name} + ".";
+            throw std::runtime_error(
+                "unknown TOML configuration key '" + prefix +
+                std::string{key.str()} + "'"
+            );
+        }
+    }
+}
+
+const toml::table* optional_table(
+    const toml::table& parent,
+    std::string_view key,
+    std::string_view full_name
+) {
+    const auto* node = parent.get(key);
+    if (node == nullptr) {
+        return nullptr;
+    }
+    const auto* table = node->as_table();
+    if (table == nullptr) {
         throw std::runtime_error(
-            "invalid unsigned integer for '" + std::string{key} +
-            "' at config line " + std::to_string(line_number)
+            "TOML configuration value '" + std::string{full_name} +
+            "' must be a table"
         );
     }
-    return result;
+    return table;
 }
 
-std::chrono::seconds parse_seconds(
-    std::string_view value,
+template <typename Value>
+std::optional<Value> optional_value(
+    const toml::table& table,
     std::string_view key,
-    std::size_t line_number
+    std::string_view full_name,
+    std::string_view type_name
 ) {
-    const auto result = parse_unsigned(value, key, line_number);
+    const auto* node = table.get(key);
+    if (node == nullptr) {
+        return std::nullopt;
+    }
+    const auto value = node->value<Value>();
+    if (!value) {
+        throw std::runtime_error(
+            "TOML configuration value '" + std::string{full_name} +
+            "' must be " + std::string{type_name}
+        );
+    }
+    return value;
+}
+
+std::uint64_t unsigned_value(
+    const toml::table& table,
+    std::string_view key,
+    std::string_view full_name
+) {
+    const auto value =
+        optional_value<std::int64_t>(table, key, full_name, "an integer");
+    if (!value || *value < 0) {
+        throw std::runtime_error(
+            "TOML configuration value '" + std::string{full_name} +
+            "' must be a non-negative integer"
+        );
+    }
+    return static_cast<std::uint64_t>(*value);
+}
+
+std::chrono::seconds seconds_value(
+    const toml::table& table,
+    std::string_view key,
+    std::string_view full_name
+) {
+    const auto value = unsigned_value(table, key, full_name);
     using SecondsRepresentation = std::chrono::seconds::rep;
-    if (result >
+    if (value >
         static_cast<std::uint64_t>(
             std::numeric_limits<SecondsRepresentation>::max()
         )) {
         throw std::runtime_error(
-            "value for '" + std::string{key} + "' is too large at config line " +
-            std::to_string(line_number)
+            "TOML configuration value '" + std::string{full_name} +
+            "' is too large"
         );
     }
-    return std::chrono::seconds{static_cast<SecondsRepresentation>(result)};
+    return std::chrono::seconds{static_cast<SecondsRepresentation>(value)};
 }
 
-FilesystemMetadataMode parse_filesystem_metadata(
-    std::string_view value,
-    std::size_t line_number
+std::string string_array_value(
+    const toml::table& table,
+    std::string_view key,
+    std::string_view full_name
 ) {
+    const auto* node = table.get(key);
+    const auto* values = node == nullptr ? nullptr : node->as_array();
+    if (values == nullptr) {
+        throw std::runtime_error(
+            "TOML configuration value '" + std::string{full_name} +
+            "' must be an array of strings"
+        );
+    }
+
+    std::string result;
+    for (const auto& value : *values) {
+        const auto string_value = value.value<std::string>();
+        if (!string_value || string_value->empty()) {
+            throw std::runtime_error(
+                "TOML configuration value '" + std::string{full_name} +
+                "' must contain only non-empty strings"
+            );
+        }
+        if (!result.empty()) {
+            result.push_back(' ');
+        }
+        result += *string_value;
+    }
+    return result;
+}
+
+FilesystemMetadataMode parse_filesystem_metadata(std::string_view value) {
     if (value == "auto") {
         return FilesystemMetadataMode::automatic;
     }
@@ -85,8 +151,7 @@ FilesystemMetadataMode parse_filesystem_metadata(
         return FilesystemMetadataMode::database;
     }
     throw std::runtime_error(
-        "invalid filesystem_metadata at config line " +
-        std::to_string(line_number)
+        "invalid TOML configuration value for 'filesystem.metadata'"
     );
 }
 
@@ -123,78 +188,175 @@ Config Config::load(const std::filesystem::path& path) {
     }
 
     spdlog::debug("Loading configuration file");
-    std::ifstream input{path};
-    if (!input) {
-        throw std::runtime_error("cannot open config file: " + path.string());
+    toml::table root;
+    try {
+        root = toml::parse_file(path.string());
+    } catch (const toml::parse_error& error) {
+        throw std::runtime_error(
+            "cannot parse TOML configuration '" + path.string() +
+            "': " + std::string{error.description()}
+        );
     }
 
-    std::string line;
-    std::size_t line_number = 0;
-    while (std::getline(input, line)) {
-        ++line_number;
-        line = trim(line);
-        if (line.empty() || line.starts_with('#')) {
-            continue;
-        }
+    validate_keys(
+        root,
+        {"config_version", "sync", "state", "auth", "graph", "filesystem"},
+        ""
+    );
+    const auto config_version = optional_value<std::int64_t>(
+        root,
+        "config_version",
+        "config_version",
+        "an integer"
+    );
+    if (!config_version || *config_version != 1) {
+        throw std::runtime_error(
+            "TOML configuration requires config_version = 1"
+        );
+    }
 
-        const auto separator = line.find('=');
-        if (separator == std::string::npos) {
-            throw std::runtime_error(
-                "missing '=' at config line " + std::to_string(line_number)
+    if (const auto* sync = optional_table(root, "sync", "sync")) {
+        validate_keys(*sync, {"directory", "drive_id", "dry_run"}, "sync");
+        if (const auto value = optional_value<std::string>(
+                *sync,
+                "directory",
+                "sync.directory",
+                "a string"
+            )) {
+            config.sync_directory = *value;
+        }
+        if (const auto value = optional_value<std::string>(
+                *sync,
+                "drive_id",
+                "sync.drive_id",
+                "a string"
+            )) {
+            config.drive_id = *value;
+        }
+        if (const auto value = optional_value<bool>(
+                *sync,
+                "dry_run",
+                "sync.dry_run",
+                "a boolean"
+            )) {
+            config.dry_run = *value;
+        }
+    }
+
+    if (const auto* state = optional_table(root, "state", "state")) {
+        validate_keys(*state, {"directory"}, "state");
+        if (const auto value = optional_value<std::string>(
+                *state,
+                "directory",
+                "state.directory",
+                "a string"
+            )) {
+            config.state_directory = *value;
+        }
+    }
+
+    if (const auto* auth = optional_table(root, "auth", "auth")) {
+        validate_keys(
+            *auth,
+            {"application_id", "tenant_id", "endpoint", "scopes"},
+            "auth"
+        );
+        if (const auto value = optional_value<std::string>(
+                *auth,
+                "application_id",
+                "auth.application_id",
+                "a string"
+            )) {
+            config.application_id = *value;
+        }
+        if (const auto value = optional_value<std::string>(
+                *auth,
+                "tenant_id",
+                "auth.tenant_id",
+                "a string"
+            )) {
+            config.azure_tenant_id = *value;
+        }
+        if (const auto value = optional_value<std::string>(
+                *auth,
+                "endpoint",
+                "auth.endpoint",
+                "a string"
+            )) {
+            config.auth_endpoint = *value;
+        }
+        if (auth->contains("scopes")) {
+            config.auth_scope =
+                string_array_value(*auth, "scopes", "auth.scopes");
+        }
+    }
+
+    if (const auto* graph = optional_table(root, "graph", "graph")) {
+        validate_keys(*graph, {"throttle"}, "graph");
+        if (const auto* throttle =
+                optional_table(*graph, "throttle", "graph.throttle")) {
+            validate_keys(
+                *throttle,
+                {
+                    "maximum_retries",
+                    "initial_delay_seconds",
+                    "maximum_delay_seconds",
+                },
+                "graph.throttle"
             );
-        }
-
-        const auto key = trim(line.substr(0, separator));
-        const auto value = trim(line.substr(separator + 1));
-        if (key == "sync_directory") {
-            config.sync_directory = value;
-        } else if (key == "state_directory") {
-            config.state_directory = value;
-        } else if (key == "drive_id") {
-            config.drive_id = value;
-        } else if (key == "application_id") {
-            config.application_id = value;
-        } else if (key == "azure_tenant_id") {
-            config.azure_tenant_id = value;
-        } else if (key == "auth_endpoint") {
-            config.auth_endpoint = value;
-        } else if (key == "auth_scope") {
-            config.auth_scope = value;
-        } else if (key == "graph_maximum_throttle_retries") {
-            const auto retries = parse_unsigned(value, key, line_number);
-            if (retries > std::numeric_limits<std::size_t>::max()) {
-                throw std::runtime_error(
-                    "value for '" + key + "' is too large at config line " +
-                    std::to_string(line_number)
+            if (throttle->contains("maximum_retries")) {
+                const auto retries = unsigned_value(
+                    *throttle,
+                    "maximum_retries",
+                    "graph.throttle.maximum_retries"
+                );
+                if (retries > std::numeric_limits<std::size_t>::max()) {
+                    throw std::runtime_error(
+                        "TOML configuration value "
+                        "'graph.throttle.maximum_retries' is too large"
+                    );
+                }
+                config.graph_maximum_throttle_retries =
+                    static_cast<std::size_t>(retries);
+            }
+            if (throttle->contains("initial_delay_seconds")) {
+                config.graph_initial_throttle_delay = seconds_value(
+                    *throttle,
+                    "initial_delay_seconds",
+                    "graph.throttle.initial_delay_seconds"
                 );
             }
-            config.graph_maximum_throttle_retries =
-                static_cast<std::size_t>(retries);
-        } else if (key == "graph_initial_throttle_delay_seconds") {
-            config.graph_initial_throttle_delay =
-                parse_seconds(value, key, line_number);
-        } else if (key == "graph_maximum_throttle_delay_seconds") {
-            config.graph_maximum_throttle_delay =
-                parse_seconds(value, key, line_number);
-        } else if (key == "filesystem_metadata") {
-            config.filesystem_metadata =
-                parse_filesystem_metadata(value, line_number);
-        } else if (key == "dry_run") {
-            config.dry_run = parse_bool(value, line_number);
-        } else {
-            throw std::runtime_error(
-                "unknown key '" + key + "' at config line " + std::to_string(line_number)
-            );
+            if (throttle->contains("maximum_delay_seconds")) {
+                config.graph_maximum_throttle_delay = seconds_value(
+                    *throttle,
+                    "maximum_delay_seconds",
+                    "graph.throttle.maximum_delay_seconds"
+                );
+            }
         }
     }
+
+    if (const auto* filesystem =
+            optional_table(root, "filesystem", "filesystem")) {
+        validate_keys(*filesystem, {"metadata"}, "filesystem");
+        if (const auto value = optional_value<std::string>(
+                *filesystem,
+                "metadata",
+                "filesystem.metadata",
+                "a string"
+            )) {
+            config.filesystem_metadata = parse_filesystem_metadata(*value);
+        }
+    }
+
     if (config.graph_maximum_throttle_delay <
         config.graph_initial_throttle_delay) {
         throw std::runtime_error(
-            "graph_maximum_throttle_delay_seconds must be greater than or equal "
-            "to graph_initial_throttle_delay_seconds"
+            "graph.throttle.maximum_delay_seconds must be greater than or equal "
+            "to graph.throttle.initial_delay_seconds"
         );
     }
-    spdlog::debug("Configuration loaded and validated");
+    spdlog::debug("TOML configuration loaded and validated");
     return config;
 }
 

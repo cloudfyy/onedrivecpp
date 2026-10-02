@@ -20,6 +20,7 @@ find_package(nlohmann_json CONFIG REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(SQLite3 REQUIRED)
+find_package(tomlplusplus CONFIG REQUIRED)
 
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -79,6 +80,7 @@ target_link_libraries(onedrive_core
         OpenSSL::Crypto
         spdlog::spdlog
         SQLite3::SQLite3
+        tomlplusplus::tomlplusplus
 )
 
 target_compile_options(onedrive_core PRIVATE
@@ -89,7 +91,7 @@ add_executable(onedrive-cpp src/main.cpp)
 target_link_libraries(onedrive-cpp PRIVATE onedrive_core)
 
 install(TARGETS onedrive-cpp RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES config/onedrive-cpp.conf
+install(FILES config/onedrive-cpp.toml
     DESTINATION ${ONEDRIVE_SYSTEM_CONFIG_DIR}
 )
 install(FILES packaging/systemd/onedrive-cpp.service

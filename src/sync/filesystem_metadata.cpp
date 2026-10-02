@@ -180,7 +180,8 @@ FilesystemMetadata FilesystemMetadata::from_detected_support(
     if (mode == config::FilesystemMetadataMode::xattr &&
         !xattrs_supported) {
         throw std::runtime_error(
-            "filesystem_metadata=xattr requires user extended attribute support"
+            "filesystem.metadata = \"xattr\" requires user extended attribute "
+            "support"
         );
     }
     return FilesystemMetadata{

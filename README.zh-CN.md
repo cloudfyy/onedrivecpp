@@ -71,7 +71,7 @@ sudo apt update
 sudo apt install -y build-essential ca-certificates curl git \
   cmake ninja-build clang-20 zip unzip tar pkg-config \
   libcli11-dev libcurl4-openssl-dev libfmt-dev libspdlog-dev \
-  libsqlite3-dev libssl-dev nlohmann-json3-dev
+  libsqlite3-dev libssl-dev libtomlplusplus-dev nlohmann-json3-dev
 ```
 
 确认版本：
@@ -261,31 +261,35 @@ lintian "../onedrive-cpp_${version}_${architecture}.changes"
 
 ## 配置与 systemd
 
-默认优先读取 `~/.config/onedrive-cpp/config`；文件不存在时使用内置默认值。
-系统示例位于 `/etc/onedrive-cpp/onedrive-cpp.conf`。首次使用可执行：
+默认优先读取 `~/.config/onedrive-cpp/config.toml`；文件不存在时使用内置默认值。
+系统示例位于 `/etc/onedrive-cpp/onedrive-cpp.toml`。首次使用可执行：
 
 ```bash
 mkdir -p ~/.config/onedrive-cpp
-cp /etc/onedrive-cpp/onedrive-cpp.conf ~/.config/onedrive-cpp/config
-sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config
+cp /etc/onedrive-cpp/onedrive-cpp.toml ~/.config/onedrive-cpp/config.toml
+sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 ```
 
-`drive_id` 指定要访问的远端 OneDrive Drive。默认值 `me` 表示当前登录账号的
+配置文件使用 TOML，并且必须声明 `config_version = 1`。未知配置项和错误的
+值类型会直接报错，不会被静默忽略。
+
+`sync.drive_id` 指定要访问的远端 OneDrive Drive。默认值 `me` 表示当前登录账号的
 默认 OneDrive，程序使用 Microsoft Graph 路径 `/me/drive/root/children`
 列出其根目录。若要访问账号有权使用的其他 OneDrive 或 SharePoint 文档库，
 可将其设置为实际的 Drive ID；程序将改用
 `/drives/<drive_id>/root/children`。例如：
 
-```ini
+```toml
+[sync]
 # 当前账号的默认 OneDrive
-drive_id=me
+drive_id = "me"
 
 # 指定其他 OneDrive 或 SharePoint 文档库
-# drive_id=b!YOUR_DRIVE_ID
+# drive_id = "b!YOUR_DRIVE_ID"
 ```
 
 远端 ID、ETag 和本地路径状态保存在
-`<state_directory>/items.sqlite3`。数据库使用 SQLite WAL 模式，并在程序
+`<state.directory>/items.sqlite3`。数据库使用 SQLite WAL 模式，并在程序
 启动时加载。
 
 ### Microsoft 认证
@@ -309,13 +313,13 @@ Microsoft 当前要求账号具有有效的 Azure 订阅、可访问的 Microsof
 4. 选择支持的账号类型：
    - 如果同时支持工作/学校账号和个人 Microsoft 账号，选择
      **Any Entra ID Tenant + Personal Microsoft accounts**，并在配置中使用
-     `azure_tenant_id=common`。
+     `auth.tenant_id = "common"`。
    - 如果只支持个人 Microsoft 账号，选择 **Personal accounts only**，并使用
-     `azure_tenant_id=consumers`。
+     `auth.tenant_id = "consumers"`。
    - 如果只供一个组织使用，选择 **Single tenant**，并使用该目录的 Tenant ID。
 5. 点击 **注册（Register）**。
 6. 在应用的 **概述（Overview）** 页面复制 **Application (client) ID**。
-   `application_id` 不应填写 Object ID 或 Directory ID。
+   `auth.application_id` 不应填写 Object ID 或 Directory ID。
 7. 打开 **身份验证（Authentication）> 高级设置（Advanced settings）**，
    将 **Allow public client flows** 设置为 **Yes** 并保存。
 
@@ -358,29 +362,31 @@ Sites.ReadWrite.All
 
 ```bash
 mkdir -p ~/.config/onedrive-cpp
-cp /etc/onedrive-cpp/onedrive-cpp.conf ~/.config/onedrive-cpp/config
-sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config
+cp /etc/onedrive-cpp/onedrive-cpp.toml ~/.config/onedrive-cpp/config.toml
+sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 ```
 
 注册类型为 **仅个人 Microsoft 账号（Personal Microsoft accounts only）**
 的应用使用：
 
-```ini
-application_id=YOUR_APPLICATION_CLIENT_ID
-azure_tenant_id=consumers
-auth_endpoint=https://login.microsoftonline.com
-auth_scope=Files.ReadWrite offline_access
+```toml
+[auth]
+application_id = "YOUR_APPLICATION_CLIENT_ID"
+tenant_id = "consumers"
+endpoint = "https://login.microsoftonline.com"
+scopes = ["Files.ReadWrite", "offline_access"]
 ```
 
 如果应用注册类型为 **任何 Entra ID 租户和个人 Microsoft 账号
 （Any Entra ID Tenant + Personal Microsoft accounts）**，即使本次登录使用
 个人账号，也应使用 `common`：
 
-```ini
-application_id=YOUR_APPLICATION_CLIENT_ID
-azure_tenant_id=common
-auth_endpoint=https://login.microsoftonline.com
-auth_scope=Files.ReadWrite offline_access
+```toml
+[auth]
+application_id = "YOUR_APPLICATION_CLIENT_ID"
+tenant_id = "common"
+endpoint = "https://login.microsoftonline.com"
+scopes = ["Files.ReadWrite", "offline_access"]
 ```
 
 单租户组织应用应将 `common` 替换为 Directory (tenant) ID。只有组织场景确实
@@ -397,7 +403,7 @@ onedrive-cpp auth
 
 打开终端显示的网址，输入用户代码，使用与应用支持账号类型相符的账号登录，
 并确认所请求的权限。成功后，refresh token 会以原子方式保存到
-`<state_directory>/refresh_token`，权限限制为仅文件所有者可读写的 `0600`。
+`<state.directory>/refresh_token`，权限限制为仅文件所有者可读写的 `0600`。
 
 如果 Microsoft 提示账号类型不受支持，请检查应用注册中的
 **Supported account types**：仅个人账号注册应使用 `consumers`，同时支持个人
@@ -405,10 +411,11 @@ onedrive-cpp auth
 
 如果程序显示 `https://www.microsoft.com/link`，但该页面立即提示刚生成的代码
 无效或已过期，请检查是否把同时支持个人和组织账号的应用错误配置成了
-`azure_tenant_id=consumers`。应改为：
+`auth.tenant_id = "consumers"`。应改为：
 
-```ini
-azure_tenant_id=common
+```toml
+[auth]
+tenant_id = "common"
 ```
 
 重新运行 `onedrive-cpp auth`，并且只在新显示的
@@ -420,8 +427,9 @@ azure_tenant_id=common
 同时终端仍停留在 `Waiting for authorization...`，应删除当前账号类型不支持的
 权限。个人 Microsoft 账号应使用：
 
-```ini
-auth_scope=Files.ReadWrite offline_access
+```toml
+[auth]
+scopes = ["Files.ReadWrite", "offline_access"]
 ```
 
 修改权限后必须重新运行 `onedrive-cpp auth`；已有设备代码仍绑定原来的权限，
@@ -460,7 +468,7 @@ pending download 恢复记录。本地文件和其他 Drive 的状态不会被�
 `sync` 命令会刷新 OAuth access token，在 Microsoft 返回轮换后的 refresh
 token 时安全持久化，并通过分页的 Microsoft Graph Delta 请求获取配置 Drive
 中的递归文件树。首次成功查询会把远端元数据和最终 `deltaLink` 原子写入
-`<state_directory>/items.sqlite3`；后续运行复用该链接，只获取新增、修改和
+`<state.directory>/items.sqlite3`；后续运行复用该链接，只获取新增、修改和
 删除的项目。仅当所有分页均成功处理后才推进 `deltaLink`，因此中途失败不会
 丢失尚未应用的变更。
 
@@ -487,10 +495,11 @@ token 时安全持久化，并通过分页的 Microsoft Graph Delta 请求获取
 完整 Delta 查询重试。已有本地快照会继续用于冲突检测；只有完整同步计划成功后，
 程序才会替换已保存的游标和远端 item 清单。
 
-`filesystem_metadata` 控制是否额外写入 `user.*` xattr：
+`filesystem.metadata` 控制是否额外写入 `user.*` xattr：
 
-```ini
-filesystem_metadata=auto
+```toml
+[filesystem]
+metadata = "auto"
 ```
 
 - `auto`：实际创建探测文件验证 xattr；支持时写入辅助标记，不支持时自动使用
@@ -507,11 +516,11 @@ filesystem_metadata=auto
 
 可在配置文件中调整节流策略：
 
-```ini
-graph_maximum_throttle_retries=4
-graph_initial_throttle_delay_seconds=1
-graph_maximum_throttle_delay_seconds=300
-filesystem_metadata=auto
+```toml
+[graph.throttle]
+maximum_retries = 4
+initial_delay_seconds = 1
+maximum_delay_seconds = 300
 ```
 
 当 429 响应没有有效的数值 `Retry-After` 时，初始等待时间会在每次重试后

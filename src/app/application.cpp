@@ -29,9 +29,9 @@ namespace {
 
 std::filesystem::path default_config_path() {
     if (const char* home = std::getenv("HOME"); home != nullptr) {
-        return std::filesystem::path{home} / ".config/onedrive-cpp/config";
+        return std::filesystem::path{home} / ".config/onedrive-cpp/config.toml";
     }
-    return "/etc/onedrive-cpp/onedrive-cpp.conf";
+    return "/etc/onedrive-cpp/onedrive-cpp.toml";
 }
 
 int authenticate(

@@ -104,11 +104,11 @@ without an interactive prompt. This option is invalid without
 Read application configuration from
 .IR PATH .
 The default is
-.I ~/.config/onedrive-cpp/config
+.I ~/.config/onedrive-cpp/config.toml
 when
 .B HOME
 is available, otherwise
-.IR /etc/onedrive-cpp/onedrive-cpp.conf .
+.IR /etc/onedrive-cpp/onedrive-cpp.toml .
 .TP
 .BI \-\-log\-level " LEVEL"
 Set the minimum log level. Supported values are
@@ -162,26 +162,25 @@ For the
 command, display the effective synchronization inputs without modifying
 remote files.
 .SH CONFIGURATION
-The configuration file uses one
-.I key=value
-entry per line. Empty lines and lines beginning with
-.B #
-are ignored.
+The configuration file uses TOML and must declare
+.BR "config_version = 1" .
+Unknown keys, invalid types, and unsupported configuration versions are
+rejected.
 .TP
-.B sync_directory
+.B sync.directory
 Local directory used for OneDrive synchronization.
 .TP
-.B state_directory
+.B state.directory
 Directory containing the refresh token and SQLite synchronization state.
 .TP
-.B drive_id
+.B sync.drive_id
 Microsoft Graph drive identifier. The default is
 .BR me .
 .TP
-.B application_id
+.B auth.application_id
 Microsoft Entra Application (client) ID.
 .TP
-.B azure_tenant_id
+.B auth.tenant_id
 Microsoft identity tenant selector, such as
 .BR common ,
 .BR consumers ,
@@ -189,34 +188,34 @@ or a specific tenant ID. Use
 .B common
 for an application registered for both organizational and personal accounts.
 .TP
-.B auth_endpoint
+.B auth.endpoint
 Microsoft identity endpoint. The default is
 .IR https://login.microsoftonline.com .
 .TP
-.B auth_scope
-Space-separated delegated OAuth scopes. Personal Microsoft accounts should
+.B auth.scopes
+Array of delegated OAuth scope strings. Personal Microsoft accounts should
 start with
-.BR "Files.ReadWrite offline_access" .
+.BR [\(dqFiles.ReadWrite\(dq,\ \(dqoffline_access\(dq] .
 .TP
-.B graph_maximum_throttle_retries
+.B graph.throttle.maximum_retries
 Maximum number of retries for a Microsoft Graph HTTP 429 response. The default
 is
 .BR 4 .
 .TP
-.B graph_initial_throttle_delay_seconds
+.B graph.throttle.initial_delay_seconds
 Initial exponential-backoff delay when a Graph 429 response has no valid
 numeric
 .B Retry-After
 header. The default is
 .BR 1 .
 .TP
-.B graph_maximum_throttle_delay_seconds
+.B graph.throttle.maximum_delay_seconds
 Maximum accepted or calculated Graph throttling delay. The default is
 .B 300
 seconds. This value must be greater than or equal to
-.BR graph_initial_throttle_delay_seconds .
+.BR graph.throttle.initial_delay_seconds .
 .TP
-.B filesystem_metadata
+.B filesystem.metadata
 File-system metadata policy:
 .B auto
 probes user extended attributes and otherwise uses only the SQLite recovery
@@ -227,7 +226,7 @@ requires extended-attribute support; and
 never reads or writes extended attributes. The default is
 .BR auto .
 .TP
-.B dry_run
+.B sync.dry_run
 Boolean value
 .B true
 or
@@ -245,10 +244,10 @@ source packaging/completions/onedrive-cpp.bash
 .EE
 .SH FILES
 .TP
-.I ~/.config/onedrive-cpp/config
+.I ~/.config/onedrive-cpp/config.toml
 Default per-user configuration file.
 .TP
-.I /etc/onedrive-cpp/onedrive-cpp.conf
+.I /etc/onedrive-cpp/onedrive-cpp.toml
 System-wide example and fallback configuration.
 .TP
 .I ~/.local/state/onedrive-cpp/refresh_token
@@ -290,7 +289,7 @@ The command line was invalid.
 Authorize a Microsoft account:
 .PP
 .RS
-.B onedrive-cpp auth \-\-config ~/.config/onedrive-cpp/config
+.B onedrive-cpp auth \-\-config ~/.config/onedrive-cpp/config.toml
 .RE
 .PP
 Inspect synchronization inputs:

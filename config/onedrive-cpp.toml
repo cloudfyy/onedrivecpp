@@ -1,0 +1,29 @@
+config_version = 1
+
+[sync]
+# Paths may be absolute or relative to the service working directory.
+directory = "/home/USER/OneDrive"
+drive_id = "me"
+dry_run = true
+
+[state]
+directory = "/home/USER/.local/state/onedrive-cpp"
+
+[auth]
+application_id = ""
+tenant_id = "common"
+endpoint = "https://login.microsoftonline.com"
+scopes = [
+  "Files.ReadWrite",
+  "Files.ReadWrite.All",
+  "Sites.ReadWrite.All",
+  "offline_access",
+]
+
+[graph.throttle]
+maximum_retries = 4
+initial_delay_seconds = 1
+maximum_delay_seconds = 300
+
+[filesystem]
+metadata = "auto"
