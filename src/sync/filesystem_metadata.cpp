@@ -18,11 +18,6 @@
 namespace onedrive::sync::detail {
 namespace {
 
-bool xattr_unavailable(int error) {
-    return error == ENOTSUP || error == EOPNOTSUPP || error == EPERM ||
-           error == EACCES || error == ENODATA;
-}
-
 bool probe_xattr_support(const std::filesystem::path& root) {
     const auto probe = root / std::format(
                                   ".onedrive-cpp-xattr-probe-{}",
@@ -74,7 +69,7 @@ bool probe_xattr_support(const std::filesystem::path& root) {
                 cleanup_error.message()
             );
         }
-        if (xattr_unavailable(error)) {
+        if (xattr_error_is_unavailable(error)) {
             spdlog::debug(
                 "User xattr probe is unavailable for '{}': {}",
                 root.string(),
@@ -112,7 +107,7 @@ bool probe_xattr_support(const std::filesystem::path& root) {
         );
     }
     if (read_error != 0) {
-        if (xattr_unavailable(read_error)) {
+        if (xattr_error_is_unavailable(read_error)) {
             spdlog::debug(
                 "User xattr probe could not read metadata in '{}': {}",
                 root.string(),
@@ -126,7 +121,7 @@ bool probe_xattr_support(const std::filesystem::path& root) {
         );
     }
     if (remove_error != 0) {
-        if (xattr_unavailable(remove_error)) {
+        if (xattr_error_is_unavailable(remove_error)) {
             spdlog::debug(
                 "User xattr probe could not remove metadata in '{}': {}",
                 root.string(),
@@ -152,6 +147,11 @@ bool probe_xattr_support(const std::filesystem::path& root) {
 
 }  // namespace
 
+bool xattr_error_is_unavailable(int error) noexcept {
+    return error == ENOTSUP || error == EOPNOTSUPP || error == EPERM ||
+           error == EACCES || error == ENODATA;
+}
+
 FilesystemMetadata::FilesystemMetadata(bool use_xattrs)
     : use_xattrs_{use_xattrs} {}
 
@@ -159,20 +159,34 @@ FilesystemMetadata FilesystemMetadata::detect(
     config::FilesystemMetadataMode mode,
     const std::filesystem::path& root
 ) {
-    const bool use_xattrs =
+    const bool xattrs_supported =
         mode != config::FilesystemMetadataMode::database &&
         probe_xattr_support(root);
-    if (mode == config::FilesystemMetadataMode::xattr && !use_xattrs) {
+    auto metadata = from_detected_support(mode, xattrs_supported);
+    spdlog::info(
+        "Filesystem metadata strategy for '{}': {}",
+        root.string(),
+        metadata.uses_xattrs() ?
+            "database journal with xattr hints" :
+            "database journal"
+    );
+    return metadata;
+}
+
+FilesystemMetadata FilesystemMetadata::from_detected_support(
+    config::FilesystemMetadataMode mode,
+    bool xattrs_supported
+) {
+    if (mode == config::FilesystemMetadataMode::xattr &&
+        !xattrs_supported) {
         throw std::runtime_error(
             "filesystem_metadata=xattr requires user extended attribute support"
         );
     }
-    spdlog::info(
-        "Filesystem metadata strategy for '{}': {}",
-        root.string(),
-        use_xattrs ? "database journal with xattr hints" : "database journal"
-    );
-    return FilesystemMetadata{use_xattrs};
+    return FilesystemMetadata{
+        mode != config::FilesystemMetadataMode::database &&
+        xattrs_supported
+    };
 }
 
 bool FilesystemMetadata::uses_xattrs() const noexcept {

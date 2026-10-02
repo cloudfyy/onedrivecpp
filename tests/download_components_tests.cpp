@@ -60,8 +60,10 @@ public:
         const std::filesystem::path& destination
     ) const override {
         std::ofstream output{destination, std::ios::binary};
-        output << "data";
+        output << contents;
     }
+
+    std::string contents{"data"};
 };
 
 class FakeItemStore final : public onedrive::storage::ItemStore {
@@ -223,6 +225,102 @@ int main() {
     if (!items.pending.empty() || items.find("me", "recover") == nullptr ||
         !std::filesystem::exists(recover_destination)) {
         return fail("pending installed download was not recovered");
+    }
+
+    graph.contents = "short";
+    const auto mismatch_item = remote_item("mismatch", "mismatch.txt");
+    const auto mismatch_destination = root / "mismatch.txt";
+    try {
+        static_cast<void>(detail::download_atomically(
+            graph,
+            items,
+            mismatch_item,
+            item_state(mismatch_item, mismatch_destination),
+            mismatch_destination,
+            metadata
+        ));
+        return fail("download size mismatch was accepted");
+    } catch (const std::runtime_error&) {
+    }
+    if (std::filesystem::exists(mismatch_destination) ||
+        items.pending.contains("mismatch")) {
+        return fail("size mismatch left installed or journaled state");
+    }
+    graph.contents = "data";
+
+    const auto duplicate_destination = root / "duplicate.txt";
+    const auto duplicate_temporary = root / ".duplicate.partial";
+    for (const auto& path : {duplicate_destination, duplicate_temporary}) {
+        std::ofstream output{path, std::ios::binary};
+        output << "data";
+    }
+    items.pending.emplace(
+        "duplicate",
+        onedrive::storage::PendingDownload{
+            .item = {
+                .drive_id = "me",
+                .remote_id = "duplicate",
+                .name = "duplicate.txt",
+                .etag = "etag",
+                .remote_path = "duplicate.txt",
+                .local_path = duplicate_destination,
+                .size = 4,
+            },
+            .temporary_path = duplicate_temporary,
+            .content_fingerprint =
+                "3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7",
+        }
+    );
+    detail::recover_pending_downloads(items, root, "me", metadata);
+    if (std::filesystem::exists(duplicate_temporary) ||
+        items.pending.contains("duplicate")) {
+        return fail("duplicate recovery temporary file was not cleaned");
+    }
+
+    items.pending.emplace(
+        "invalid",
+        onedrive::storage::PendingDownload{
+            .item = {
+                .drive_id = "me",
+                .remote_id = "invalid",
+                .name = "invalid.txt",
+                .etag = "etag",
+                .remote_path = "invalid.txt",
+                .local_path = root / "invalid.txt",
+                .size = 4,
+            },
+            .temporary_path = root / ".invalid.partial",
+            .content_fingerprint = "not-a-sha256",
+        }
+    );
+    try {
+        detail::recover_pending_downloads(items, root, "me", metadata);
+        return fail("invalid recovery journal metadata was accepted");
+    } catch (const std::runtime_error&) {
+    }
+    items.pending.erase("invalid");
+
+    items.pending.emplace(
+        "outside",
+        onedrive::storage::PendingDownload{
+            .item = {
+                .drive_id = "me",
+                .remote_id = "outside",
+                .name = "outside.txt",
+                .etag = "etag",
+                .remote_path = "outside.txt",
+                .local_path = temporary.path() / "outside.txt",
+                .size = 4,
+            },
+            .temporary_path = temporary.path() / ".outside.partial",
+            .content_fingerprint =
+                "3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7",
+        }
+    );
+    try {
+        detail::recover_pending_downloads(items, root, "me", metadata);
+        return fail("recovery destination outside the sync root was accepted");
+    } catch (const std::runtime_error&) {
     }
     return EXIT_SUCCESS;
 }

@@ -78,11 +78,36 @@ int main() {
     if (!detail::local_snapshot_matches(snapshot, file)) {
         return fail("unchanged local snapshot did not match");
     }
+    auto changed_snapshot = snapshot;
+    changed_snapshot.local_size = 5;
+    if (detail::local_snapshot_matches(changed_snapshot, file)) {
+        return fail("changed local snapshot incorrectly matched");
+    }
+    try {
+        static_cast<void>(
+            detail::content_fingerprint(root / "missing.txt")
+        );
+        return fail("missing fingerprint input was accepted");
+    } catch (const std::runtime_error&) {
+    }
 
     const auto nested = root / "nested" / "directory";
     detail::ensure_directory_tree(root, nested);
     if (!std::filesystem::is_directory(nested)) {
         return fail("safe directory tree was not created");
+    }
+    const auto conflicting_file = root / "not-a-directory";
+    {
+        std::ofstream output{conflicting_file};
+        output << "data";
+    }
+    try {
+        detail::ensure_directory_tree(
+            root,
+            conflicting_file / "directory"
+        );
+        return fail("file was accepted as a directory component");
+    } catch (const std::runtime_error&) {
     }
     const auto outside = temporary.path() / "outside";
     std::filesystem::create_directories(outside);

@@ -141,6 +141,17 @@ if(BUILD_TESTING)
     target_link_libraries(local_filesystem_tests PRIVATE onedrive_core)
     add_test(NAME local_filesystem_tests COMMAND local_filesystem_tests)
 
+    add_executable(
+        filesystem_metadata_tests
+        tests/filesystem_metadata_tests.cpp
+    )
+    target_include_directories(
+        filesystem_metadata_tests
+        PRIVATE src/sync
+    )
+    target_link_libraries(filesystem_metadata_tests PRIVATE onedrive_core)
+    add_test(NAME filesystem_metadata_tests COMMAND filesystem_metadata_tests)
+
     add_executable(sync_plan_tests tests/sync_plan_tests.cpp)
     target_include_directories(sync_plan_tests PRIVATE src/sync)
     target_link_libraries(sync_plan_tests PRIVATE onedrive_core)
