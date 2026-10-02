@@ -78,6 +78,8 @@ int main() {
                     .local_path = temporary_directory.path() / "notes.txt",
                     .last_modified = "2026-10-02T00:00:00Z",
                     .size = 42,
+                    .local_size = 42,
+                    .local_modified_ticks = 123456,
                     .directory = false,
                 },
             },
@@ -97,9 +99,9 @@ int main() {
         onedrive::storage::ItemDatabase database{temporary_directory.path()};
         database.open();
 
-        const auto* first = database.find("remote-1");
-        const auto* second = database.find("remote-2");
-        const auto* third = database.find("remote-3");
+        const auto* first = database.find("", "remote-1");
+        const auto* second = database.find("", "remote-2");
+        const auto* third = database.find("me", "remote-3");
         if (database.size() != 3 || first == nullptr || second == nullptr ||
             third == nullptr) {
             return fail("persisted items were not loaded");
@@ -113,7 +115,8 @@ int main() {
         }
         if (third->drive_id != "me" || third->parent_id != "root-id" ||
             third->remote_path != "notes.txt" || third->size != 42 ||
-            third->directory ||
+            third->local_size != 42 ||
+            third->local_modified_ticks != 123456 || third->directory ||
             database.delta_link("me") !=
                 std::optional<std::string>{
                     "https://graph.example.test/delta-1"
@@ -140,7 +143,7 @@ int main() {
             return fail("invalid delta state was accepted");
         } catch (const std::invalid_argument&) {
         }
-        if (database.find("rolled-back") != nullptr ||
+        if (database.find("me", "rolled-back") != nullptr ||
             database.delta_link("me") !=
                 std::optional<std::string>{
                     "https://graph.example.test/delta-1"
@@ -153,7 +156,7 @@ int main() {
             .removals = {"remote-3"},
             .delta_link = "https://graph.example.test/delta-2",
         });
-        if (database.size() != 2 || database.find("remote-3") != nullptr ||
+        if (database.size() != 2 || database.find("me", "remote-3") != nullptr ||
             database.delta_link("me") !=
                 std::optional<std::string>{
                     "https://graph.example.test/delta-2"
@@ -165,7 +168,7 @@ int main() {
     {
         onedrive::storage::ItemDatabase database{temporary_directory.path()};
         database.open();
-        if (database.size() != 2 || database.find("remote-3") != nullptr ||
+        if (database.size() != 2 || database.find("me", "remote-3") != nullptr ||
             database.delta_link("me") !=
                 std::optional<std::string>{
                     "https://graph.example.test/delta-2"
@@ -201,8 +204,8 @@ int main() {
         });
 
         if (database.reset("me") != 1 || database.size() != 3 ||
-            database.find("reset-me") != nullptr ||
-            database.find("keep-me") == nullptr ||
+            database.find("me", "reset-me") != nullptr ||
+            database.find("other-drive", "keep-me") == nullptr ||
             database.delta_link("me").has_value() ||
             database.delta_link("other-drive") !=
                 std::optional<std::string>{
@@ -218,8 +221,9 @@ int main() {
     {
         onedrive::storage::ItemDatabase database{temporary_directory.path()};
         database.open();
-        if (database.size() != 3 || database.find("reset-me") != nullptr ||
-            database.find("keep-me") == nullptr ||
+        if (database.size() != 3 ||
+            database.find("me", "reset-me") != nullptr ||
+            database.find("other-drive", "keep-me") == nullptr ||
             database.delta_link("me").has_value() ||
             database.delta_link("other-drive") !=
                 std::optional<std::string>{

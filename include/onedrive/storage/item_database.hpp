@@ -25,6 +25,7 @@ public:
         const std::string& drive_id
     ) const override;
     [[nodiscard]] const ItemState* find(
+        const std::string& drive_id,
         const std::string& remote_id
     ) const override;
     [[nodiscard]] std::size_t size() const noexcept override;

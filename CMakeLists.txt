@@ -118,6 +118,10 @@ if(BUILD_TESTING)
     add_executable(application_cli_tests tests/application_cli_tests.cpp)
     target_link_libraries(application_cli_tests PRIVATE onedrive_core)
     add_test(NAME application_cli_tests COMMAND application_cli_tests)
+
+    add_executable(sync_engine_tests tests/sync_engine_tests.cpp)
+    target_link_libraries(sync_engine_tests PRIVATE onedrive_core)
+    add_test(NAME sync_engine_tests COMMAND sync_engine_tests)
 endif()
 
 set(CPACK_GENERATOR "DEB")

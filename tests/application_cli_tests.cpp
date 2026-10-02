@@ -101,6 +101,14 @@ public:
             .delta_link = "https://graph.example.test/delta-token",
         };
     }
+
+    void download_file(
+        const std::string&,
+        const std::filesystem::path& destination
+    ) const override {
+        std::ofstream output{destination, std::ios::binary};
+        output << std::string(42, 'x');
+    }
 };
 
 class FakeItemStore final : public onedrive::storage::ItemStore {
@@ -139,6 +147,7 @@ public:
     }
 
     [[nodiscard]] const onedrive::storage::ItemState* find(
+        const std::string&,
         const std::string&
     ) const override {
         return nullptr;
@@ -446,6 +455,10 @@ int main() {
                 "Remote delta prepared for drive 'me': 1 upserts, 0 removals"
             ) ||
             !contents.contains(
+                "Synchronization plan for drive 'me': 0 directories, 1 "
+                "downloads, 42 bytes, 0 deferred local removals"
+            ) ||
+            !contents.contains(
                 "Dry run left synchronization state unchanged for drive 'me'"
             ) ||
             !contents.contains("Synchronization dry run completed")) {
@@ -483,6 +496,14 @@ int main() {
                 "Remote delta prepared for drive 'me': 1 upserts, 0 removals"
             ) ||
             !contents.contains("Persisting remote delta for drive 'me'") ||
+            !contents.contains("Downloading 'notes.txt' (42 bytes)") ||
+            !contents.contains(
+                "Atomically installed 'notes.txt' (42 bytes)"
+            ) ||
+            !contents.contains(
+                "Download execution completed: 1 downloaded, 0 reused, 0 "
+                "directories prepared"
+            ) ||
             !contents.contains(
                 "Remote item changed: path='notes.txt', id='file-id', "
                 "eTag='file-etag', type=file"

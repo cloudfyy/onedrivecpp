@@ -19,6 +19,8 @@ struct ItemState {
     std::filesystem::path local_path;
     std::string last_modified;
     std::int64_t size{0};
+    std::int64_t local_size{0};
+    std::int64_t local_modified_ticks{0};
     bool directory{false};
 };
 
@@ -41,6 +43,7 @@ public:
         const std::string& drive_id
     ) const = 0;
     [[nodiscard]] virtual const ItemState* find(
+        const std::string& drive_id,
         const std::string& remote_id
     ) const = 0;
     [[nodiscard]] virtual std::size_t size() const noexcept = 0;

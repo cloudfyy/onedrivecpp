@@ -5,10 +5,15 @@
 #include <spdlog/spdlog.h>
 
 #include <array>
+#include <cerrno>
+#include <cstring>
+#include <fcntl.h>
 #include <limits>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <sys/stat.h>
+#include <unistd.h>
 
 namespace onedrive::http {
 namespace {
@@ -46,7 +51,11 @@ struct HeaderListDeleter {
 struct WriteContext {
     std::string body;
     std::size_t maximum_size;
+    int descriptor{-1};
     bool size_exceeded{false};
+    bool write_failed{false};
+    int write_error{};
+    std::size_t received_size{};
 };
 
 struct HeaderContext {
@@ -66,6 +75,31 @@ std::size_t write_response(char* data, std::size_t size, std::size_t count, void
 
     const std::size_t byte_count = size * count;
     auto& write_context = *static_cast<WriteContext*>(context);
+    if (byte_count >
+        std::numeric_limits<std::size_t>::max() - write_context.received_size) {
+        return 0;
+    }
+    write_context.received_size += byte_count;
+    if (write_context.descriptor != -1) {
+        std::size_t written = 0;
+        while (written < byte_count) {
+            const auto result = ::write(
+                write_context.descriptor,
+                data + written,
+                byte_count - written
+            );
+            if (result == -1 && errno == EINTR) {
+                continue;
+            }
+            if (result <= 0) {
+                write_context.write_failed = true;
+                write_context.write_error = errno;
+                return 0;
+            }
+            written += static_cast<std::size_t>(result);
+        }
+        return byte_count;
+    }
     if (byte_count > write_context.maximum_size - write_context.body.size()) {
         write_context.size_exceeded = true;
         return 0;
@@ -125,9 +159,7 @@ std::size_t write_header(char* data, std::size_t size, std::size_t count, void* 
     }
 }
 
-}  // namespace
-
-HttpResult CurlHttpClient::perform(const HttpRequest& request) const {
+HttpResult perform_request(const HttpRequest& request, int descriptor) {
     spdlog::trace("Performing HTTP {} request", method_name(request.method));
     static const CurlRuntime runtime;
     if (runtime.result() != CURLE_OK) {
@@ -145,6 +177,7 @@ HttpResult CurlHttpClient::perform(const HttpRequest& request) const {
     WriteContext write_context{
         .body = {},
         .maximum_size = request.maximum_response_size,
+        .descriptor = descriptor,
     };
     HeaderContext header_context;
     std::array<char, CURL_ERROR_SIZE> error_buffer{};
@@ -223,6 +256,12 @@ HttpResult CurlHttpClient::perform(const HttpRequest& request) const {
                 .message = "HTTP response exceeded the configured size limit",
             });
         }
+        if (write_context.write_failed) {
+            return std::unexpected(HttpError{
+                .message = "cannot write HTTP response: " +
+                           std::string{std::strerror(write_context.write_error)},
+            });
+        }
         const std::string detail = error_buffer.front() == '\0' ?
                                        curl_easy_strerror(result) :
                                        error_buffer.data();
@@ -242,13 +281,61 @@ HttpResult CurlHttpClient::perform(const HttpRequest& request) const {
         "HTTP {} request completed with status {} and {} response bytes",
         method_name(request.method),
         status_code,
-        write_context.body.size()
+        write_context.received_size
     );
     return HttpResponse{
         .status_code = status_code,
         .headers = std::move(header_context.headers),
         .body = std::move(write_context.body),
     };
+}
+
+}  // namespace
+
+HttpResult CurlHttpClient::perform(const HttpRequest& request) const {
+    return perform_request(request, -1);
+}
+
+HttpResult CurlHttpClient::download(
+    const HttpRequest& request,
+    const std::filesystem::path& destination
+) const {
+    const int descriptor = ::open(
+        destination.c_str(),
+        O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
+        S_IRUSR | S_IWUSR
+    );
+    if (descriptor == -1) {
+        return std::unexpected(HttpError{
+            .message = "cannot create download file '" + destination.string() +
+                       "': " + std::strerror(errno),
+        });
+    }
+
+    auto response = perform_request(request, descriptor);
+    std::string close_error;
+    if (response && response->status_code >= 200 && response->status_code < 300 &&
+        ::fsync(descriptor) == -1) {
+        response = std::unexpected(HttpError{
+            .message = "cannot flush download file '" + destination.string() +
+                       "': " + std::strerror(errno),
+        });
+    }
+    if (::close(descriptor) == -1) {
+        close_error = std::strerror(errno);
+    }
+    if (!response || response->status_code < 200 || response->status_code >= 300 ||
+        !close_error.empty()) {
+        std::error_code ignored;
+        std::filesystem::remove(destination, ignored);
+    }
+    if (!close_error.empty()) {
+        return std::unexpected(HttpError{
+            .message = "cannot close download file '" + destination.string() +
+                       "': " + close_error,
+        });
+    }
+    return response;
 }
 
 }  // namespace onedrive::http

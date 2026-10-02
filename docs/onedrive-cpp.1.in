@@ -27,8 +27,9 @@ and synchronize files through Microsoft Graph and OneDrive.
 .PP
 The current release includes configuration loading, device-code
 authentication, authenticated Microsoft Graph delta queries, local state and
-delta-link storage, dry-run support, logging, monitoring scaffolding, and
-packaging integration. File transfer and file modification are not implemented.
+delta-link storage, safe one-way downloads, dry-run support, logging,
+monitoring scaffolding, and packaging integration. Uploads and local removal
+of remotely deleted files are not implemented.
 .SH COMMANDS
 .TP
 .B auth
@@ -50,13 +51,19 @@ performs a full initial delta query for the configured drive.
 .B sync
 Refresh the OAuth access token and retrieve recursive drive changes using the
 Microsoft Graph delta API. Successful non-dry-run queries atomically persist
-remote metadata and the final delta link. Microsoft Graph HTTP 429 responses
-are retried using
+remote metadata and the final delta link after creating directories and safely
+downloading added or changed files. Downloads use same-directory temporary
+files, size validation, flushing, and atomic replacement. Existing local files
+that cannot be proven unchanged cause a conflict instead of being overwritten.
+Crash-recovery markers require user extended-attribute support on the target
+file system.
+Microsoft Graph HTTP 429 responses are retried using
 .B Retry-After
-or bounded exponential backoff, with a finite retry limit. This command does
-not transfer or modify local files. Use
+or bounded exponential backoff, with a finite retry limit. Remote deletion
+records do not remove local files. Use
 .B \-\-dry\-run
-to query and display changes without updating synchronization state.
+to display the download plan without creating files or updating synchronization
+state.
 .TP
 .B monitor
 Start the long-running filesystem monitor.

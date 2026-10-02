@@ -10,10 +10,11 @@ copy the reference project's D implementation.
 > The current version provides a buildable architecture scaffold,
 > configuration loading, a CLI, Microsoft device-code authentication, an HTTP
 > transport layer, authenticated Microsoft Graph delta queries, SQLite remote
-> state and delta-link persistence, dry-run support, a systemd user service,
-> and Debian packaging. File transfer and actual synchronization have not yet
-> been implemented. Non-dry-run synchronization currently updates only the
-> local state database and does not modify files.
+> state and delta-link persistence, safe one-way downloads, dry-run support, a
+> systemd user service, and Debian packaging. Synchronization currently
+> creates remote directories and downloads added or changed remote files;
+> uploads, local execution of remote deletions, and two-way conflict resolution
+> are not implemented.
 
 ## Architecture
 
@@ -447,9 +448,23 @@ and retrieve only added, changed, and deleted items. The `deltaLink` advances
 only after every page has been processed successfully, so a partial failure
 does not lose unapplied changes.
 
-`--dry-run` still queries and reports the remote change summary but does not
-update SQLite state. Normal mode currently updates only the local state
-database and does not download, upload, delete, or modify files. When
+`--dry-run` queries remote changes and reports directory creations, file
+downloads, download bytes, and local removals, but does not create files or
+update SQLite state. Normal mode creates remote directories and downloads
+added or changed files. Each download is written to a temporary file in the
+target directory, size-checked, flushed, and atomically replaced. The
+`deltaLink` advances only after every planned operation succeeds. Local
+snapshots for completed files support safe retries after a partial failure.
+
+The client refuses to overwrite a local file that it cannot prove is
+unchanged, reports a `local modification conflict`, and stops. It does not yet
+upload local changes or remove local files for remote deletion records. When
+
+Crash-recovery markers use `user.*` extended attributes on the target file
+system. Common Linux file systems such as ext4 support them. A file system
+without extended-attribute support fails explicitly rather than falling back
+to an unsafe mode that could overwrite local changes.
+
 Microsoft Graph returns HTTP 429, the client honors a numeric `Retry-After`
 header and otherwise uses bounded exponential backoff. Retries are limited so
 persistent throttling fails explicitly instead of waiting forever.
@@ -479,9 +494,8 @@ or modify the synchronization directory.
 
 ## Suggested Next Steps
 
-1. Build synchronization plans from persisted remote state and implement safe
-   downloads with temporary files and atomic replacement.
-2. Add uploads, deletion handling, and conflict policies.
+1. Safely apply remote deletions and moves to the local file tree.
+2. Add uploads and two-way conflict policies.
 3. Connect the monitor to inotify and add integration tests for the Graph and
    file system boundaries.
 

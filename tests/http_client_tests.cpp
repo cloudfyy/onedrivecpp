@@ -4,6 +4,8 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <poll.h>
 #include <string>
@@ -169,6 +171,75 @@ int main() {
     if (!received_request.starts_with("POST /token HTTP/1.1") ||
         !received_request.contains("Content-Type: application/x-www-form-urlencoded")) {
         return fail("HTTP request method or headers were not sent correctly");
+    }
+
+    std::string download_request;
+    server_error.clear();
+    std::jthread download_server{[&] {
+        pollfd descriptor{
+            .fd = listener.get(),
+            .events = POLLIN,
+            .revents = 0,
+        };
+        if (::poll(&descriptor, 1, 10'000) != 1) {
+            server_error = "timed out waiting for download request";
+            return;
+        }
+        Socket connection{
+            ::accept4(listener.get(), nullptr, nullptr, SOCK_CLOEXEC)
+        };
+        char buffer[4096];
+        while (!download_request.contains("\r\n\r\n")) {
+            const auto count =
+                ::recv(connection.get(), buffer, sizeof(buffer), 0);
+            if (count <= 0) {
+                server_error = "cannot read download request";
+                return;
+            }
+            download_request.append(buffer, static_cast<std::size_t>(count));
+        }
+        constexpr std::string_view download_response{
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Length: 8\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "download"
+        };
+        if (::send(
+                connection.get(),
+                download_response.data(),
+                download_response.size(),
+                MSG_NOSIGNAL
+            ) != static_cast<ssize_t>(download_response.size())) {
+            server_error = "cannot send download response";
+        }
+    }};
+    const auto destination =
+        std::filesystem::temp_directory_path() / "onedrive-cpp-http-download";
+    std::error_code ignored;
+    std::filesystem::remove(destination, ignored);
+    const auto download_response = client.download(
+        {
+            .url = "http://127.0.0.1:" + std::to_string(port) + "/download",
+            .connect_timeout = std::chrono::seconds{2},
+            .operation_timeout = std::chrono::seconds{5},
+        },
+        destination
+    );
+    download_server.join();
+    std::ifstream downloaded{destination, std::ios::binary};
+    const std::string downloaded_contents{
+        std::istreambuf_iterator<char>{downloaded},
+        std::istreambuf_iterator<char>{}
+    };
+    std::filesystem::remove(destination, ignored);
+    if (!server_error.empty()) {
+        return fail(server_error);
+    }
+    if (!download_response || download_response->status_code != 200 ||
+        downloaded_contents != "download" ||
+        !download_request.starts_with("GET /download HTTP/1.1")) {
+        return fail("HTTP response was not streamed to the download file");
     }
 
     return EXIT_SUCCESS;

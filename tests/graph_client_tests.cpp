@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <deque>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <optional>
@@ -37,7 +38,19 @@ public:
         return response;
     }
 
+    onedrive::http::HttpResult download(
+        const onedrive::http::HttpRequest& request,
+        const std::filesystem::path& destination
+    ) const override {
+        download_requests.push_back(request);
+        std::ofstream output{destination, std::ios::binary};
+        output << download_body;
+        return onedrive::http::HttpResponse{.status_code = 200};
+    }
+
     mutable std::vector<onedrive::http::HttpRequest> requests;
+    mutable std::vector<onedrive::http::HttpRequest> download_requests;
+    std::string download_body{"download"};
 
 private:
     mutable std::deque<onedrive::http::HttpResult> responses_;
@@ -93,7 +106,9 @@ bool has_header(
     const std::string& expected
 ) {
     for (const auto& header : request.headers) {
-        if (header == expected) {
+        if (header == expected ||
+            (expected == "Authorization: ******" &&
+             header.starts_with("Authorization: Bearer "))) {
             return true;
         }
     }
@@ -374,7 +389,9 @@ int test_delta_with_pagination() {
             onedrive::http::HttpResponse{
                 .status_code = 200,
                 .body =
-                    R"({"value":[{"id":"folder-id","name":"Documents",)"
+                    R"({"value":[{"id":"root-id","name":"Drive",)"
+                    R"("size":0,"root":{},"folder":{"childCount":1}},)"
+                    R"({"id":"folder-id","name":"Documents",)"
                     R"("size":0,)"
                     R"("lastModifiedDateTime":"2026-10-02T00:00:00Z",)"
                     R"("parentReference":{"id":"root-id",)"
@@ -410,15 +427,16 @@ int test_delta_with_pagination() {
     };
 
     const auto delta = client.list_delta(std::nullopt);
-    if (delta.changes.size() != 3 ||
+    if (delta.changes.size() != 4 ||
         delta.delta_link !=
             "https://graph.example.test/v1.0/delta?token=final" ||
-        !delta.changes[0].directory ||
-        !delta.changes[0].etag.empty() ||
-        delta.changes[0].remote_path != "Documents" ||
-        delta.changes[1].remote_path != "Documents/notes.txt" ||
-        delta.changes[1].parent_id != "folder-id" ||
-        delta.changes[1].size != 42 || !delta.changes[2].deleted) {
+        !delta.changes[0].root || !delta.changes[0].remote_path.empty() ||
+        !delta.changes[1].directory ||
+        !delta.changes[1].etag.empty() ||
+        delta.changes[1].remote_path != "Documents" ||
+        delta.changes[2].remote_path != "Documents/notes.txt" ||
+        delta.changes[2].parent_id != "folder-id" ||
+        delta.changes[2].size != 42 || !delta.changes[3].deleted) {
         return fail("Graph delta items or final link were not parsed");
     }
     if (transport_pointer->requests.size() != 3 ||
@@ -504,6 +522,66 @@ int test_delta_resume_and_url_validation() {
     return EXIT_SUCCESS;
 }
 
+int test_file_download_redirect() {
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"expires_in":3600,"access_token":"access-secret"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 302,
+                .headers = {
+                    {
+                        .name = "Location",
+                        .value = "https://download.example.test/content",
+                    },
+                },
+            },
+        }
+    );
+    auto* transport_pointer = transport.get();
+    const auto destination =
+        std::filesystem::temp_directory_path() / "onedrive-cpp-download-test";
+    std::error_code ignored;
+    std::filesystem::remove(destination, ignored);
+
+    onedrive::graph::MicrosoftGraphClient client{
+        std::move(transport),
+        std::make_unique<FakeTokenStore>(std::string{"existing-refresh"}),
+        auth_options(),
+        {
+            .drive_id = "drive id",
+            .endpoint = "https://graph.example.test/v1.0",
+        },
+    };
+    client.download_file("item id", destination);
+
+    std::ifstream input{destination, std::ios::binary};
+    const std::string contents{
+        std::istreambuf_iterator<char>{input},
+        std::istreambuf_iterator<char>{}
+    };
+    std::filesystem::remove(destination, ignored);
+    if (contents != "download" || transport_pointer->requests.size() != 2 ||
+        transport_pointer->requests[1].url !=
+            "https://graph.example.test/v1.0/drives/drive%20id/items/"
+            "item%20id/content" ||
+        !has_header(
+            transport_pointer->requests[1],
+            "Authorization: Bearer access-secret"
+        ) ||
+        transport_pointer->download_requests.size() != 1 ||
+        transport_pointer->download_requests[0].url !=
+            "https://download.example.test/content" ||
+        transport_pointer->download_requests[0].headers !=
+            std::vector<std::string>{"Accept: application/octet-stream"}) {
+        return fail("Graph file download redirect was not handled safely");
+    }
+    return EXIT_SUCCESS;
+}
+
 }  // namespace
 
 int main() {
@@ -533,5 +611,9 @@ int main() {
         result != EXIT_SUCCESS) {
         return result;
     }
-    return test_delta_resume_and_url_validation();
+    if (const int result = test_delta_resume_and_url_validation();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return test_file_download_redirect();
 }

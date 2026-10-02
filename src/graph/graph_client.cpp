@@ -103,6 +103,18 @@ std::optional<std::chrono::seconds> retry_after(
     return std::nullopt;
 }
 
+std::optional<std::string> header_value(
+    const http::HttpResponse& response,
+    std::string_view name
+) {
+    for (const auto& header : response.headers) {
+        if (equal_case_insensitive(header.name, name)) {
+            return header.value;
+        }
+    }
+    return std::nullopt;
+}
+
 std::chrono::seconds fallback_retry_delay(
     const GraphOptions& options,
     std::size_t retry_number
@@ -179,6 +191,37 @@ MicrosoftGraphClient::MicrosoftGraphClient(
 
 MicrosoftGraphClient::~MicrosoftGraphClient() = default;
 
+std::string MicrosoftGraphClient::access_token() const {
+    constexpr auto expiry_margin = std::chrono::minutes{1};
+    if (!cached_access_token_.empty() &&
+        access_token_expires_at_ > std::chrono::system_clock::now() + expiry_margin) {
+        return cached_access_token_;
+    }
+
+    spdlog::debug("Loading saved Microsoft authentication");
+    const auto refresh_token = token_store_->load_refresh_token();
+    if (!refresh_token) {
+        throw std::runtime_error(
+            "no saved Microsoft authentication is available; run 'onedrive-cpp auth'"
+        );
+    }
+    spdlog::debug("Refreshing Microsoft access token");
+    auto tokens = auth_client_->refresh_access_token(*refresh_token);
+    if (!tokens) {
+        throw std::runtime_error(
+            "cannot refresh Microsoft access token: " + tokens.error().message
+        );
+    }
+    if (tokens->refresh_token != *refresh_token) {
+        token_store_->save_refresh_token(tokens->refresh_token);
+        spdlog::debug("Persisted rotated Microsoft refresh token");
+    }
+    cached_access_token_ = tokens->access_token;
+    access_token_expires_at_ = tokens->expires_at;
+    spdlog::debug("Microsoft access token refreshed");
+    return cached_access_token_;
+}
+
 std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
     spdlog::debug("Loading saved Microsoft authentication");
     const auto refresh_token = token_store_->load_refresh_token();
@@ -196,6 +239,8 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
         );
     }
     spdlog::debug("Microsoft access token refreshed");
+    cached_access_token_ = tokens->access_token;
+    access_token_expires_at_ = tokens->expires_at;
     if (tokens->refresh_token != *refresh_token) {
         token_store_->save_refresh_token(tokens->refresh_token);
         spdlog::debug("Persisted rotated Microsoft refresh token");
@@ -376,6 +421,8 @@ DeltaResult MicrosoftGraphClient::list_delta(
         );
     }
     spdlog::debug("Microsoft access token refreshed");
+    cached_access_token_ = tokens->access_token;
+    access_token_expires_at_ = tokens->expires_at;
     if (tokens->refresh_token != *refresh_token) {
         token_store_->save_refresh_token(tokens->refresh_token);
         spdlog::debug("Persisted rotated Microsoft refresh token");
@@ -514,7 +561,10 @@ DeltaResult MicrosoftGraphClient::list_delta(
                         item.etag = etag->get<std::string>();
                     }
                     item.directory = value.contains("folder");
-                    item.remote_path = item_remote_path(value, item.name);
+                    item.root = value.contains("root");
+                    if (!item.root) {
+                        item.remote_path = item_remote_path(value, item.name);
+                    }
                     if (const auto parent = value.find("parentReference");
                         parent != value.end() && parent->is_object()) {
                         if (const auto parent_id = parent->find("id");
@@ -530,8 +580,8 @@ DeltaResult MicrosoftGraphClient::list_delta(
                         size != value.end() && size->is_number_integer()) {
                         item.size = size->get<std::int64_t>();
                     }
-                    if (item.name.empty() || item.remote_path.empty() ||
-                        item.size < 0) {
+                    if (item.name.empty() ||
+                        (!item.root && item.remote_path.empty()) || item.size < 0) {
                         throw std::runtime_error(
                             "Microsoft Graph returned a delta item with invalid metadata"
                         );
@@ -598,6 +648,85 @@ DeltaResult MicrosoftGraphClient::list_delta(
         result.changes.size()
     );
     return result;
+}
+
+void MicrosoftGraphClient::download_file(
+    const std::string& remote_id,
+    const std::filesystem::path& destination
+) const {
+    if (remote_id.empty()) {
+        throw std::invalid_argument("cannot download a drive item without an ID");
+    }
+    const std::string content_url =
+        options_.drive_id == "me" ?
+            options_.endpoint + "/me/drive/items/" + percent_encode(remote_id) +
+                "/content" :
+            options_.endpoint + "/drives/" + percent_encode(options_.drive_id) +
+                "/items/" + percent_encode(remote_id) + "/content";
+
+    auto redirect = transport_->perform(http::HttpRequest{
+        .method = http::HttpMethod::get,
+        .url = content_url,
+        .headers = {
+            "Accept: application/octet-stream",
+            "Authorization: Bearer " + access_token(),
+        },
+        .body = {},
+        .connect_timeout = std::chrono::seconds{30},
+        .operation_timeout = std::chrono::seconds{60},
+        .maximum_response_size = 64U * 1024U,
+    });
+    if (!redirect) {
+        throw std::runtime_error(
+            "Microsoft Graph download request failed: " + redirect.error().message
+        );
+    }
+    if (redirect->status_code < 300 || redirect->status_code >= 400) {
+        throw std::runtime_error(
+            std::format(
+                "Microsoft Graph download did not return a redirect (HTTP {})",
+                redirect->status_code
+            )
+        );
+    }
+    const auto location = header_value(*redirect, "Location");
+    if (!location || !location->starts_with("https://")) {
+        throw std::runtime_error(
+            "Microsoft Graph download returned an invalid HTTPS redirect"
+        );
+    }
+
+    spdlog::trace(
+        "Received HTTPS download redirect for Microsoft Graph drive item '{}'",
+        remote_id
+    );
+    spdlog::debug("Downloading Microsoft Graph drive item '{}'", remote_id);
+    auto response = transport_->download(
+        http::HttpRequest{
+            .method = http::HttpMethod::get,
+            .url = *location,
+            .headers = {"Accept: application/octet-stream"},
+            .body = {},
+            .connect_timeout = std::chrono::seconds{30},
+            .operation_timeout = std::chrono::hours{1},
+            .maximum_response_size = 0,
+        },
+        destination
+    );
+    if (!response) {
+        throw std::runtime_error(
+            "Microsoft Graph file download failed: " + response.error().message
+        );
+    }
+    if (response->status_code < 200 || response->status_code >= 300) {
+        throw std::runtime_error(
+            std::format(
+                "Microsoft Graph file download failed with HTTP {}",
+                response->status_code
+            )
+        );
+    }
+    spdlog::debug("Downloaded Microsoft Graph drive item '{}'", remote_id);
 }
 
 }  // namespace onedrive::graph

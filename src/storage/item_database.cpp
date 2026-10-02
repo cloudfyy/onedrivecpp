@@ -145,6 +145,8 @@ void create_current_schema(sqlite3* database) {
         "local_path TEXT NOT NULL,"
         "last_modified TEXT NOT NULL,"
         "size INTEGER NOT NULL,"
+        "local_size INTEGER NOT NULL,"
+        "local_modified_ticks INTEGER NOT NULL,"
         "directory INTEGER NOT NULL,"
         "PRIMARY KEY (drive_id, remote_id)"
         ");"
@@ -152,7 +154,7 @@ void create_current_schema(sqlite3* database) {
         "drive_id TEXT PRIMARY KEY NOT NULL,"
         "delta_link TEXT NOT NULL"
         ");"
-        "PRAGMA user_version = 2;"
+        "PRAGMA user_version = 3;"
     );
 }
 
@@ -177,25 +179,40 @@ void migrate_schema(sqlite3* database) {
             "local_path TEXT NOT NULL,"
             "last_modified TEXT NOT NULL,"
             "size INTEGER NOT NULL,"
+            "local_size INTEGER NOT NULL,"
+            "local_modified_ticks INTEGER NOT NULL,"
             "directory INTEGER NOT NULL,"
             "PRIMARY KEY (drive_id, remote_id)"
             ");"
             "INSERT INTO item ("
             "drive_id, remote_id, parent_id, name, etag, remote_path, "
-            "local_path, last_modified, size, directory"
+            "local_path, last_modified, size, local_size, "
+            "local_modified_ticks, directory"
             ") SELECT '', remote_id, '', '', etag, local_path, local_path, '', "
-            "0, 0 FROM item_v1;"
+            "0, 0, 0, 0 FROM item_v1;"
             "DROP TABLE item_v1;"
             "CREATE TABLE drive_state ("
             "drive_id TEXT PRIMARY KEY NOT NULL,"
             "delta_link TEXT NOT NULL"
             ");"
-            "PRAGMA user_version = 2;"
+            "PRAGMA user_version = 3;"
         );
         transaction.commit();
         return;
     }
-    if (version != 2) {
+    if (version == 2) {
+        Transaction transaction{database};
+        execute(
+            database,
+            "ALTER TABLE item ADD COLUMN local_size INTEGER NOT NULL DEFAULT 0;"
+            "ALTER TABLE item ADD COLUMN local_modified_ticks INTEGER NOT NULL "
+            "DEFAULT 0;"
+            "PRAGMA user_version = 3;"
+        );
+        transaction.commit();
+        return;
+    }
+    if (version != 3) {
         throw std::runtime_error(
             "unsupported state database schema version " + std::to_string(version)
         );
@@ -251,7 +268,8 @@ void ItemDatabase::open() {
     Statement query{
         database,
         "SELECT drive_id, remote_id, parent_id, name, etag, remote_path, "
-        "local_path, last_modified, size, directory "
+        "local_path, last_modified, size, local_size, local_modified_ticks, "
+        "directory "
         "FROM item ORDER BY drive_id, remote_id;"
     };
     while (true) {
@@ -275,7 +293,9 @@ void ItemDatabase::open() {
             .local_path = column_text(query.get(), 6),
             .last_modified = column_text(query.get(), 7),
             .size = sqlite3_column_int64(query.get(), 8),
-            .directory = sqlite3_column_int(query.get(), 9) != 0,
+            .local_size = sqlite3_column_int64(query.get(), 9),
+            .local_modified_ticks = sqlite3_column_int64(query.get(), 10),
+            .directory = sqlite3_column_int(query.get(), 11) != 0,
         };
         const std::string key = item_key(item.drive_id, item.remote_id);
         items_.insert_or_assign(key, std::move(item));
@@ -316,13 +336,15 @@ void ItemDatabase::upsert(ItemState item) {
         database,
         "INSERT INTO item ("
         "drive_id, remote_id, parent_id, name, etag, remote_path, local_path, "
-        "last_modified, size, directory"
-        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) "
+        "last_modified, size, local_size, local_modified_ticks, directory"
+        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) "
         "ON CONFLICT(drive_id, remote_id) DO UPDATE SET "
         "parent_id = excluded.parent_id, name = excluded.name, "
         "etag = excluded.etag, remote_path = excluded.remote_path, "
         "local_path = excluded.local_path, "
         "last_modified = excluded.last_modified, size = excluded.size, "
+        "local_size = excluded.local_size, "
+        "local_modified_ticks = excluded.local_modified_ticks, "
         "directory = excluded.directory;"
     };
     const std::string local_path = item.local_path.string();
@@ -335,7 +357,9 @@ void ItemDatabase::upsert(ItemState item) {
     bind_text(database, statement.get(), 7, local_path);
     bind_text(database, statement.get(), 8, item.last_modified);
     bind_integer(database, statement.get(), 9, item.size);
-    bind_integer(database, statement.get(), 10, item.directory ? 1 : 0);
+    bind_integer(database, statement.get(), 10, item.local_size);
+    bind_integer(database, statement.get(), 11, item.local_modified_ticks);
+    bind_integer(database, statement.get(), 12, item.directory ? 1 : 0);
 
     if (sqlite3_step(statement.get()) != SQLITE_DONE) {
         throw std::runtime_error(
@@ -364,13 +388,15 @@ void ItemDatabase::apply_delta(ItemDelta delta) {
         database,
         "INSERT INTO item ("
         "drive_id, remote_id, parent_id, name, etag, remote_path, local_path, "
-        "last_modified, size, directory"
-        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10) "
+        "last_modified, size, local_size, local_modified_ticks, directory"
+        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) "
         "ON CONFLICT(drive_id, remote_id) DO UPDATE SET "
         "parent_id = excluded.parent_id, name = excluded.name, "
         "etag = excluded.etag, remote_path = excluded.remote_path, "
         "local_path = excluded.local_path, "
         "last_modified = excluded.last_modified, size = excluded.size, "
+        "local_size = excluded.local_size, "
+        "local_modified_ticks = excluded.local_modified_ticks, "
         "directory = excluded.directory;"
     };
     for (auto& item : delta.upserts) {
@@ -388,7 +414,14 @@ void ItemDatabase::apply_delta(ItemDelta delta) {
         bind_text(database, upsert_statement.get(), 7, local_path);
         bind_text(database, upsert_statement.get(), 8, item.last_modified);
         bind_integer(database, upsert_statement.get(), 9, item.size);
-        bind_integer(database, upsert_statement.get(), 10, item.directory ? 1 : 0);
+        bind_integer(database, upsert_statement.get(), 10, item.local_size);
+        bind_integer(
+            database,
+            upsert_statement.get(),
+            11,
+            item.local_modified_ticks
+        );
+        bind_integer(database, upsert_statement.get(), 12, item.directory ? 1 : 0);
         if (sqlite3_step(upsert_statement.get()) != SQLITE_DONE) {
             throw std::runtime_error(
                 "cannot apply delta item: " +
@@ -516,14 +549,12 @@ std::optional<std::string> ItemDatabase::delta_link(
                std::optional<std::string>{iterator->second};
 }
 
-const ItemState* ItemDatabase::find(const std::string& remote_id) const {
-    for (const auto& [key, item] : items_) {
-        static_cast<void>(key);
-        if (item.remote_id == remote_id) {
-            return &item;
-        }
-    }
-    return nullptr;
+const ItemState* ItemDatabase::find(
+    const std::string& drive_id,
+    const std::string& remote_id
+) const {
+    const auto iterator = items_.find(item_key(drive_id, remote_id));
+    return iterator == items_.end() ? nullptr : &iterator->second;
 }
 
 std::size_t ItemDatabase::size() const noexcept {

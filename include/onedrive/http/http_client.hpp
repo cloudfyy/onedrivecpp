@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstddef>
 #include <expected>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -44,11 +45,19 @@ class HttpTransport {
 public:
     virtual ~HttpTransport() = default;
     [[nodiscard]] virtual HttpResult perform(const HttpRequest& request) const = 0;
+    [[nodiscard]] virtual HttpResult download(
+        const HttpRequest& request,
+        const std::filesystem::path& destination
+    ) const = 0;
 };
 
 class CurlHttpClient final : public HttpTransport {
 public:
     [[nodiscard]] HttpResult perform(const HttpRequest& request) const override;
+    [[nodiscard]] HttpResult download(
+        const HttpRequest& request,
+        const std::filesystem::path& destination
+    ) const override;
 };
 
 }  // namespace onedrive::http

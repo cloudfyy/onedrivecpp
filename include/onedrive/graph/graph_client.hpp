@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -31,6 +32,7 @@ struct RemoteItem {
     std::int64_t size{0};
     bool directory{false};
     bool deleted{false};
+    bool root{false};
 };
 
 struct DeltaResult {
@@ -54,6 +56,10 @@ public:
     [[nodiscard]] virtual DeltaResult list_delta(
         const std::optional<std::string>& delta_link
     ) const = 0;
+    virtual void download_file(
+        const std::string& remote_id,
+        const std::filesystem::path& destination
+    ) const = 0;
 };
 
 class MicrosoftGraphClient final : public GraphClient {
@@ -73,6 +79,10 @@ public:
     [[nodiscard]] DeltaResult list_delta(
         const std::optional<std::string>& delta_link
     ) const override;
+    void download_file(
+        const std::string& remote_id,
+        const std::filesystem::path& destination
+    ) const override;
 
 private:
     std::unique_ptr<http::HttpTransport> transport_;
@@ -80,6 +90,10 @@ private:
     GraphOptions options_;
     std::unique_ptr<auth::DeviceAuthClient> auth_client_;
     SleepFunction sleep_;
+    mutable std::string cached_access_token_;
+    mutable std::chrono::system_clock::time_point access_token_expires_at_{};
+
+    [[nodiscard]] std::string access_token() const;
 };
 
 }  // namespace onedrive::graph
