@@ -458,7 +458,7 @@ snapshots for completed files support safe retries after a partial failure.
 
 The client refuses to overwrite a local file that it cannot prove is
 unchanged, reports a `local modification conflict`, and stops. It does not yet
-upload local changes or remove local files for remote deletion records. When
+upload local changes or remove local files for remote deletion records.
 
 After a download completes, the client writes the temporary path, destination,
 remote metadata, size, and SHA-256 content fingerprint to a SQLite
@@ -481,7 +481,7 @@ filesystem_metadata=auto
 Capability detection probes the target synchronization directory instead of
 using a file-system-name allowlist.
 
-Microsoft Graph returns HTTP 429, the client honors a numeric `Retry-After`
+When Microsoft Graph returns HTTP 429, the client honors a numeric `Retry-After`
 header and otherwise uses bounded exponential backoff. Retries are limited so
 persistent throttling fails explicitly instead of waiting forever.
 
