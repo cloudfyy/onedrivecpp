@@ -120,8 +120,12 @@ public:
         return result;
     }
 
-    std::size_t reset(const std::string&) override {
-        return 0;
+    bool reset(const std::string&) override {
+        return false;
+    }
+
+    onedrive::storage::ClearedState clear(const std::string&) override {
+        return {};
     }
 
     [[nodiscard]] std::optional<std::string> delta_link(
@@ -246,6 +250,7 @@ int test_dry_run_and_success() {
         std::istreambuf_iterator<char>{}
     };
     if (contents != "data" || items.applied_delta.upserts.size() != 2 ||
+        !items.applied_delta.replace_drive_items ||
         items.applied_delta.upserts[1].local_size != 4 ||
         items.applied_delta.upserts[1].local_modified_ticks == 0) {
         return fail("downloaded file or local snapshot was incorrect");

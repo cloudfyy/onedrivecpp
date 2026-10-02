@@ -453,6 +453,19 @@ void ItemDatabase::apply_delta(ItemDelta delta) {
     }
 
     Transaction transaction{database};
+    if (delta.replace_drive_items) {
+        Statement replace_statement{
+            database,
+            "DELETE FROM item WHERE drive_id = ?1;"
+        };
+        bind_text(database, replace_statement.get(), 1, delta.drive_id);
+        if (sqlite3_step(replace_statement.get()) != SQLITE_DONE) {
+            throw std::runtime_error(
+                "cannot replace drive items: " +
+                std::string{sqlite3_errmsg(database)}
+            );
+        }
+    }
     Statement upsert_statement{
         database,
         "INSERT INTO item ("
@@ -535,6 +548,15 @@ void ItemDatabase::apply_delta(ItemDelta delta) {
     }
     transaction.commit();
 
+    if (delta.replace_drive_items) {
+        for (auto iterator = items_.begin(); iterator != items_.end();) {
+            if (iterator->second.drive_id == delta.drive_id) {
+                iterator = items_.erase(iterator);
+            } else {
+                ++iterator;
+            }
+        }
+    }
     for (auto& item : delta.upserts) {
         const std::string key = item_key(delta.drive_id, item.remote_id);
         items_.insert_or_assign(key, std::move(item));
@@ -545,10 +567,11 @@ void ItemDatabase::apply_delta(ItemDelta delta) {
     delta_links_.insert_or_assign(delta.drive_id, std::move(delta.delta_link));
     spdlog::debug(
         "Committed remote delta for drive '{}': {} upserts, {} removals, "
-        "delta cursor advanced, {} total items tracked",
+        "inventory {}, delta cursor advanced, {} total items tracked",
         delta.drive_id,
         delta.upserts.size(),
         delta.removals.size(),
+        delta.replace_drive_items ? "replaced" : "updated",
         items_.size()
     );
 }
@@ -689,7 +712,7 @@ std::vector<PendingDownload> ItemDatabase::pending_downloads(
     return downloads;
 }
 
-std::size_t ItemDatabase::reset(const std::string& drive_id) {
+bool ItemDatabase::reset(const std::string& drive_id) {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
         throw std::runtime_error("state database is not open");
@@ -702,18 +725,6 @@ std::size_t ItemDatabase::reset(const std::string& drive_id) {
 
     const bool had_delta_link = delta_links_.contains(drive_id);
     Transaction transaction{database};
-    Statement item_statement{
-        database,
-        "DELETE FROM item WHERE drive_id = ?1;"
-    };
-    bind_text(database, item_statement.get(), 1, drive_id);
-    if (sqlite3_step(item_statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot reset drive items: " + std::string{sqlite3_errmsg(database)}
-        );
-    }
-    const auto removed = static_cast<std::size_t>(sqlite3_changes(database));
-
     Statement state_statement{
         database,
         "DELETE FROM drive_state WHERE drive_id = ?1;"
@@ -725,6 +736,64 @@ std::size_t ItemDatabase::reset(const std::string& drive_id) {
             std::string{sqlite3_errmsg(database)}
         );
     }
+    transaction.commit();
+
+    std::size_t retained_items = 0;
+    for (const auto& [key, item] : items_) {
+        static_cast<void>(key);
+        retained_items += item.drive_id == drive_id ? 1U : 0U;
+    }
+    delta_links_.erase(drive_id);
+    spdlog::debug(
+        "Reset synchronization cursor for drive '{}': saved cursor {}, "
+        "{} item snapshots retained",
+        drive_id,
+        had_delta_link ? "removed" : "not present",
+        retained_items
+    );
+    return had_delta_link;
+}
+
+ClearedState ItemDatabase::clear(const std::string& drive_id) {
+    sqlite3* database = impl_->database.get();
+    if (database == nullptr) {
+        throw std::runtime_error("state database is not open");
+    }
+    if (drive_id.empty()) {
+        throw std::invalid_argument(
+            "cannot clear synchronization state without a drive ID"
+        );
+    }
+
+    ClearedState cleared{
+        .delta_link = delta_links_.contains(drive_id),
+    };
+    Transaction transaction{database};
+    Statement item_statement{
+        database,
+        "DELETE FROM item WHERE drive_id = ?1;"
+    };
+    bind_text(database, item_statement.get(), 1, drive_id);
+    if (sqlite3_step(item_statement.get()) != SQLITE_DONE) {
+        throw std::runtime_error(
+            "cannot clear drive items: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+    cleared.items = static_cast<std::size_t>(sqlite3_changes(database));
+
+    Statement state_statement{
+        database,
+        "DELETE FROM drive_state WHERE drive_id = ?1;"
+    };
+    bind_text(database, state_statement.get(), 1, drive_id);
+    if (sqlite3_step(state_statement.get()) != SQLITE_DONE) {
+        throw std::runtime_error(
+            "cannot clear drive delta link: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+
     Statement pending_statement{
         database,
         "DELETE FROM pending_download WHERE drive_id = ?1;"
@@ -732,11 +801,11 @@ std::size_t ItemDatabase::reset(const std::string& drive_id) {
     bind_text(database, pending_statement.get(), 1, drive_id);
     if (sqlite3_step(pending_statement.get()) != SQLITE_DONE) {
         throw std::runtime_error(
-            "cannot reset pending downloads: " +
+            "cannot clear pending downloads: " +
             std::string{sqlite3_errmsg(database)}
         );
     }
-    const auto removed_pending =
+    cleared.pending_downloads =
         static_cast<std::size_t>(sqlite3_changes(database));
     transaction.commit();
 
@@ -748,15 +817,15 @@ std::size_t ItemDatabase::reset(const std::string& drive_id) {
         }
     }
     delta_links_.erase(drive_id);
-    spdlog::debug(
-        "Cleared synchronization state for drive '{}': {} items removed, "
-        "{} pending downloads removed, saved delta cursor {}",
+    spdlog::warn(
+        "Cleared all synchronization state for drive '{}': {} item snapshots, "
+        "{} pending downloads, saved delta cursor {}",
         drive_id,
-        removed,
-        removed_pending,
-        had_delta_link ? "removed" : "not present"
+        cleared.items,
+        cleared.pending_downloads,
+        cleared.delta_link ? "removed" : "not present"
     );
-    return removed;
+    return cleared;
 }
 
 std::optional<std::string> ItemDatabase::delta_link(

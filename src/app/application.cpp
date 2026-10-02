@@ -81,6 +81,8 @@ Application::Application(const RuntimeFactory& runtime_factory)
 int Application::run(int argc, char* argv[]) {
     std::filesystem::path config_path = default_config_path();
     bool force_dry_run = false;
+    bool clear_all_state = false;
+    bool assume_yes = false;
     std::string log_level{"info"};
     std::string log_file;
 
@@ -104,7 +106,7 @@ int Application::run(int argc, char* argv[]) {
     );
     auto* reset_state_command = cli.add_subcommand(
         "reset-state",
-        "Reset persisted synchronization state for the configured drive"
+        "Reset the Microsoft Graph delta cursor for the configured drive"
     );
     auto* sync_command = cli.add_subcommand("sync", "Synchronize OneDrive files");
     auto* monitor_command =
@@ -131,6 +133,18 @@ int Application::run(int argc, char* argv[]) {
     add_common_options(*reset_state_command);
     add_common_options(*sync_command);
     add_common_options(*monitor_command);
+    auto* clear_all_option = reset_state_command->add_flag(
+        "--clear-all",
+        clear_all_state,
+        "Clear all saved synchronization state for the configured drive"
+    );
+    reset_state_command
+        ->add_flag(
+            "--yes",
+            assume_yes,
+            "Confirm --clear-all without an interactive prompt"
+        )
+        ->needs(clear_all_option);
     sync_command->add_flag(
         "--dry-run",
         force_dry_run,
@@ -175,22 +189,72 @@ int Application::run(int argc, char* argv[]) {
             return 0;
         }
         if (*reset_state_command) {
+            if (clear_all_state && !assume_yes) {
+                std::cout
+                    << "WARNING: This will remove all saved item snapshots, "
+                       "the Delta cursor, and pending-download recovery records "
+                       "for drive '" << config.drive_id << "'.\n"
+                    << "Local files will not be deleted, but the next sync may "
+                       "report local modification conflicts.\n"
+                    << "Type the drive ID '" << config.drive_id
+                    << "' to confirm: " << std::flush;
+                std::string confirmation;
+                if (!std::getline(std::cin, confirmation) ||
+                    confirmation != config.drive_id) {
+                    spdlog::warn(
+                        "Full synchronization state clear cancelled for drive "
+                        "'{}': confirmation did not match",
+                        config.drive_id
+                    );
+                    std::cout << "Full state clear cancelled.\n";
+                    return 1;
+                }
+            }
+            if (clear_all_state) {
+                spdlog::warn(
+                    "Clearing all synchronization state for drive '{}'",
+                    config.drive_id
+                );
+                auto items = runtime_factory_.create_item_store(config);
+                items->open();
+                const auto cleared = items->clear(config.drive_id);
+                spdlog::warn(
+                    "Full synchronization state clear completed for drive '{}': "
+                    "{} item snapshots and {} pending downloads removed; saved "
+                    "cursor {}",
+                    config.drive_id,
+                    cleared.items,
+                    cleared.pending_downloads,
+                    cleared.delta_link ? "removed" : "not present"
+                );
+                std::cout
+                    << "Cleared all synchronization state for drive '"
+                    << config.drive_id << "': " << cleared.items
+                    << " item snapshots and " << cleared.pending_downloads
+                    << " pending downloads removed; saved cursor "
+                    << (cleared.delta_link ? "removed" : "not present") << ".\n"
+                    << "Local files were not deleted. The next sync may report "
+                       "local modification conflicts.\n";
+                return 0;
+            }
             spdlog::info(
                 "Resetting synchronization state for drive '{}'",
                 config.drive_id
             );
             auto items = runtime_factory_.create_item_store(config);
             items->open();
-            const auto removed = items->reset(config.drive_id);
+            const bool removed = items->reset(config.drive_id);
             spdlog::info(
-                "Synchronization state reset completed for drive '{}': {} items "
-                "removed; next sync will use an initial delta query",
+                "Synchronization cursor reset completed for drive '{}': saved "
+                "cursor {}; item snapshots and pending downloads preserved; "
+                "next sync will use an initial delta query",
                 config.drive_id,
-                removed
+                removed ? "removed" : "not present"
             );
-            std::cout << "Reset synchronization state for drive '"
-                      << config.drive_id << "': " << removed
-                      << " items removed.\n"
+            std::cout << "Reset synchronization cursor for drive '"
+                      << config.drive_id << "': saved cursor "
+                      << (removed ? "removed" : "not present") << ".\n"
+                      << "Item snapshots and pending downloads were preserved.\n"
                       << "The next sync will perform a full Microsoft Graph "
                          "delta query.\n";
             return 0;

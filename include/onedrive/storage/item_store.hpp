@@ -29,12 +29,19 @@ struct ItemDelta {
     std::vector<ItemState> upserts;
     std::vector<std::string> removals;
     std::string delta_link;
+    bool replace_drive_items{false};
 };
 
 struct PendingDownload {
     ItemState item;
     std::filesystem::path temporary_path;
     std::string content_fingerprint;
+};
+
+struct ClearedState {
+    std::size_t items{0};
+    std::size_t pending_downloads{0};
+    bool delta_link{false};
 };
 
 class ItemStore {
@@ -52,7 +59,8 @@ public:
     [[nodiscard]] virtual std::vector<PendingDownload> pending_downloads(
         const std::string& drive_id
     ) const = 0;
-    virtual std::size_t reset(const std::string& drive_id) = 0;
+    virtual bool reset(const std::string& drive_id) = 0;
+    virtual ClearedState clear(const std::string& drive_id) = 0;
     [[nodiscard]] virtual std::optional<std::string> delta_link(
         const std::string& drive_id
     ) const = 0;

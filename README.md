@@ -429,15 +429,32 @@ Remove the saved authentication with:
 onedrive-cpp logout
 ```
 
-Remove remote metadata and the `deltaLink` for the configured drive with:
+Reset the saved `deltaLink` for the configured drive with:
 
 ```bash
 onedrive-cpp reset-state
 ```
 
-This preserves authentication tokens, configuration, local files in the sync
-directory, and state for other drives. The next `sync` performs a full initial
-delta query for the configured drive.
+This preserves authentication tokens, configuration, local files, item
+snapshots, pending-download recovery records, and state for other drives. The
+next `sync` recovers pending downloads first, then performs a full initial
+Delta query. Existing snapshots are used to detect local modifications safely;
+after all planned operations succeed, the complete remote inventory replaces
+the configured Drive's old item metadata.
+
+To discard all saved synchronization state for the configured Drive, use the
+explicitly destructive mode:
+
+```bash
+onedrive-cpp reset-state --clear-all
+```
+
+The command requires the configured Drive ID to be typed exactly before it
+removes item snapshots, the Delta cursor, and pending-download recovery
+records. Local files and other Drives remain untouched. Because local
+snapshots are no longer available, the next sync may report local modification
+conflicts. Automation must acknowledge this risk explicitly with
+`reset-state --clear-all --yes`; `--yes` is rejected without `--clear-all`.
 
 The `sync` command refreshes the OAuth access token, securely persists a
 rotated refresh token when Microsoft returns one, and obtains the configured

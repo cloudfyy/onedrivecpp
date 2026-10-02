@@ -725,6 +725,7 @@ int SyncEngine::synchronize() const {
             .upserts = {},
             .removals = {},
             .delta_link = delta.delta_link,
+            .replace_drive_items = !previous_delta_link.has_value(),
         };
         std::vector<const graph::RemoteItem*> directories;
         std::vector<const graph::RemoteItem*> downloads;

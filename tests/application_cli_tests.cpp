@@ -117,12 +117,16 @@ public:
         int& open_count,
         int& apply_delta_count,
         int& reset_count,
-        std::string& reset_drive_id
+        std::string& reset_drive_id,
+        int& clear_count,
+        std::string& clear_drive_id
     )
         : open_count_{open_count},
           apply_delta_count_{apply_delta_count},
           reset_count_{reset_count},
-          reset_drive_id_{reset_drive_id} {}
+          reset_drive_id_{reset_drive_id},
+          clear_count_{clear_count},
+          clear_drive_id_{clear_drive_id} {}
 
     void open() override {
         ++open_count_;
@@ -148,10 +152,22 @@ public:
         return {};
     }
 
-    std::size_t reset(const std::string& drive_id) override {
+    bool reset(const std::string& drive_id) override {
         ++reset_count_;
         reset_drive_id_ = drive_id;
-        return 7;
+        return true;
+    }
+
+    onedrive::storage::ClearedState clear(
+        const std::string& drive_id
+    ) override {
+        ++clear_count_;
+        clear_drive_id_ = drive_id;
+        return {
+            .items = 7,
+            .pending_downloads = 2,
+            .delta_link = true,
+        };
     }
 
     [[nodiscard]] std::optional<std::string> delta_link(
@@ -176,6 +192,8 @@ private:
     int& apply_delta_count_;
     int& reset_count_;
     std::string& reset_drive_id_;
+    int& clear_count_;
+    std::string& clear_drive_id_;
 };
 
 class FakeMonitor final : public onedrive::monitor::FileMonitor {
@@ -237,7 +255,9 @@ public:
             item_store_open_count,
             item_store_apply_delta_count,
             item_store_reset_count,
-            reset_drive_id
+            reset_drive_id,
+            clear_count_,
+            clear_drive_id_
         );
     }
 
@@ -261,6 +281,8 @@ public:
     mutable int item_store_apply_delta_count{0};
     mutable int item_store_reset_count{0};
     mutable std::string reset_drive_id;
+    mutable int clear_count_{0};
+    mutable std::string clear_drive_id_;
     mutable int monitor_count{0};
     mutable int monitor_run_count{0};
     mutable int metrics_count{0};
@@ -268,7 +290,8 @@ public:
 
 RunResult run_application(
     FakeRuntimeFactory& runtime_factory,
-    std::vector<std::string> arguments
+    std::vector<std::string> arguments,
+    std::string standard_input = {}
 ) {
     std::vector<char*> argument_pointers;
     argument_pointers.reserve(arguments.size());
@@ -278,6 +301,8 @@ RunResult run_application(
 
     std::ostringstream standard_output;
     std::ostringstream standard_error;
+    std::istringstream input{std::move(standard_input)};
+    auto* original_input = std::cin.rdbuf(input.rdbuf());
     auto* original_output = std::cout.rdbuf(standard_output.rdbuf());
     auto* original_error = std::cerr.rdbuf(standard_error.rdbuf());
 
@@ -289,6 +314,7 @@ RunResult run_application(
 
     std::cout.rdbuf(original_output);
     std::cerr.rdbuf(original_error);
+    std::cin.rdbuf(original_input);
     return {
         .exit_code = exit_code,
         .standard_output = std::move(standard_output).str(),
@@ -343,6 +369,12 @@ int main() {
             {"onedrive-cpp", "logout", "--log-level", "verbose"}
         ).exit_code != 2) {
         return fail("invalid log level did not return usage exit code 2");
+    }
+    if (run_application(
+            runtime_factory,
+            {"onedrive-cpp", "reset-state", "--yes"}
+        ).exit_code != 2) {
+        return fail("--yes was accepted without --clear-all");
     }
 
     TemporaryDirectory temporary_directory;
@@ -400,7 +432,10 @@ int main() {
     );
     if (reset_state.exit_code != 0 ||
         !reset_state.standard_output.contains(
-            "Reset synchronization state for drive 'me': 7 items removed"
+            "Reset synchronization cursor for drive 'me': saved cursor removed"
+        ) ||
+        !reset_state.standard_output.contains(
+            "Item snapshots and pending downloads were preserved"
         ) ||
         !reset_state.standard_output.contains(
             "next sync will perform a full Microsoft Graph delta query"
@@ -420,11 +455,77 @@ int main() {
             std::istreambuf_iterator<char>{}
         };
         if (!contents.contains(
-                "Synchronization state reset completed for drive 'me': 7 items "
-                "removed; next sync will use an initial delta query"
+                "Synchronization cursor reset completed for drive 'me': saved "
+                "cursor removed; item snapshots and pending downloads preserved; "
+                "next sync will use an initial delta query"
             )) {
             return fail("reset-state completion was not written to the log");
         }
+    }
+
+    const auto cancelled_clear = run_application(
+        runtime_factory,
+        {
+            "onedrive-cpp",
+            "reset-state",
+            "--clear-all",
+            "--config",
+            config_path.string(),
+        },
+        "wrong-drive\n"
+    );
+    if (cancelled_clear.exit_code != 1 ||
+        !cancelled_clear.standard_output.contains("WARNING:") ||
+        !cancelled_clear.standard_output.contains("Full state clear cancelled") ||
+        runtime_factory.clear_count_ != 0 ||
+        runtime_factory.item_store_count != 1) {
+        return fail("full state clear accepted an invalid confirmation");
+    }
+
+    const auto confirmed_clear = run_application(
+        runtime_factory,
+        {
+            "onedrive-cpp",
+            "reset-state",
+            "--clear-all",
+            "--config",
+            config_path.string(),
+            "--log-file",
+            log_path.string(),
+        },
+        "me\n"
+    );
+    if (confirmed_clear.exit_code != 0 ||
+        !confirmed_clear.standard_output.contains(
+            "7 item snapshots and 2 pending downloads removed"
+        ) ||
+        !confirmed_clear.standard_output.contains(
+            "Local files were not deleted"
+        ) ||
+        runtime_factory.clear_count_ != 1 ||
+        runtime_factory.clear_drive_id_ != "me" ||
+        runtime_factory.item_store_count != 2 ||
+        runtime_factory.item_store_open_count != 2) {
+        return fail("confirmed full state clear was not executed");
+    }
+
+    const auto automated_clear = run_application(
+        runtime_factory,
+        {
+            "onedrive-cpp",
+            "reset-state",
+            "--clear-all",
+            "--yes",
+            "--config",
+            config_path.string(),
+        }
+    );
+    if (automated_clear.exit_code != 0 ||
+        automated_clear.standard_output.contains("Type the drive ID") ||
+        runtime_factory.clear_count_ != 2 ||
+        runtime_factory.item_store_count != 3 ||
+        runtime_factory.item_store_open_count != 3) {
+        return fail("--yes did not explicitly confirm full state clear");
     }
 
     const auto dry_run = run_application(
@@ -448,8 +549,8 @@ int main() {
         ) ||
         !dry_run.standard_output.contains("throttle retries: 6") ||
         !dry_run.standard_output.contains("throttle delay:   3-120 seconds") ||
-        runtime_factory.item_store_count != 2 ||
-        runtime_factory.item_store_open_count != 2 ||
+        runtime_factory.item_store_count != 4 ||
+        runtime_factory.item_store_open_count != 4 ||
         runtime_factory.item_store_apply_delta_count != 0 ||
         runtime_factory.graph_client_count != 1 ||
         runtime_factory.metrics_count != 1) {

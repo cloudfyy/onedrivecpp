@@ -233,37 +233,79 @@ int main() {
             return fail("pending downloads were not saved by drive");
         }
 
-        if (database.reset("me") != 1 || database.size() != 3 ||
-            database.find("me", "reset-me") != nullptr ||
+        if (!database.reset("me") || database.size() != 4 ||
+            database.find("me", "reset-me") == nullptr ||
             database.find("other-drive", "keep-me") == nullptr ||
             database.delta_link("me").has_value() ||
-            !database.pending_downloads("me").empty() ||
+            database.pending_downloads("me").size() != 1 ||
             database.pending_downloads("other-drive").size() != 1 ||
             database.delta_link("other-drive") !=
                 std::optional<std::string>{
                     "https://graph.example.test/delta-other"
                 }) {
-            return fail("drive reset did not preserve other synchronization state");
+            return fail("cursor reset did not preserve recovery state");
         }
-        if (database.reset("me") != 0) {
-            return fail("resetting empty drive state removed unexpected items");
+        if (database.reset("me")) {
+            return fail("resetting an absent cursor reported a removal");
         }
     }
 
     {
         onedrive::storage::ItemDatabase database{temporary_directory.path()};
         database.open();
-        if (database.size() != 3 ||
-            database.find("me", "reset-me") != nullptr ||
+        if (database.size() != 4 ||
+            database.find("me", "reset-me") == nullptr ||
             database.find("other-drive", "keep-me") == nullptr ||
             database.delta_link("me").has_value() ||
-            !database.pending_downloads("me").empty() ||
+            database.pending_downloads("me").size() != 1 ||
             database.pending_downloads("other-drive").size() != 1 ||
             database.delta_link("other-drive") !=
                 std::optional<std::string>{
                     "https://graph.example.test/delta-other"
                 }) {
-            return fail("drive reset was not persisted");
+            return fail("safe cursor reset was not persisted");
+        }
+
+        database.apply_delta({
+            .drive_id = "me",
+            .upserts = {
+                {
+                    .remote_id = "fresh-me",
+                    .name = "fresh-me.txt",
+                    .etag = "fresh-me-etag",
+                    .remote_path = "fresh-me.txt",
+                    .local_path = temporary_directory.path() / "fresh-me.txt",
+                },
+            },
+            .delta_link = "https://graph.example.test/delta-fresh",
+            .replace_drive_items = true,
+        });
+        if (database.size() != 4 ||
+            database.find("me", "reset-me") != nullptr ||
+            database.find("me", "fresh-me") == nullptr ||
+            database.find("other-drive", "keep-me") == nullptr ||
+            database.find("", "remote-1") == nullptr ||
+            database.find("", "remote-2") == nullptr ||
+            database.pending_downloads("me").size() != 1 ||
+            database.pending_downloads("other-drive").size() != 1) {
+            return fail("initial delta did not replace only the selected drive");
+        }
+
+        const auto cleared = database.clear("me");
+        if (cleared.items != 1 || cleared.pending_downloads != 1 ||
+            !cleared.delta_link || database.size() != 3 ||
+            database.find("me", "fresh-me") != nullptr ||
+            database.find("other-drive", "keep-me") == nullptr ||
+            database.find("", "remote-1") == nullptr ||
+            database.find("", "remote-2") == nullptr ||
+            !database.pending_downloads("me").empty() ||
+            database.pending_downloads("other-drive").size() != 1 ||
+            database.delta_link("me").has_value() ||
+            database.delta_link("other-drive") !=
+                std::optional<std::string>{
+                    "https://graph.example.test/delta-other"
+                }) {
+            return fail("full clear did not isolate the configured drive");
         }
     }
 

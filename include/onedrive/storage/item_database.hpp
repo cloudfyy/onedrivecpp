@@ -28,7 +28,8 @@ public:
     [[nodiscard]] std::vector<PendingDownload> pending_downloads(
         const std::string& drive_id
     ) const override;
-    std::size_t reset(const std::string& drive_id) override;
+    bool reset(const std::string& drive_id) override;
+    ClearedState clear(const std::string& drive_id) override;
     [[nodiscard]] std::optional<std::string> delta_link(
         const std::string& drive_id
     ) const override;

@@ -42,11 +42,24 @@ Microsoft account; revoke the application separately in Microsoft account
 settings when required.
 .TP
 .B reset-state
-Remove remote metadata and the delta link for the configured drive. This
-preserves authentication, configuration, local files, and state for other
-drives. The next
+Reset the saved delta link for the configured drive. This preserves
+authentication, configuration, local files, item snapshots, pending-download
+recovery records, and state for other drives. The next
 .B sync
-performs a full initial delta query for the configured drive.
+recovers pending downloads and performs a full initial delta query for the
+configured drive. The complete remote inventory replaces old item metadata
+only after all planned operations succeed.
+.PP
+With
+.BR \-\-clear\-all ,
+remove item snapshots, the delta link, and pending-download recovery records
+for the configured drive. The command requires the configured drive ID as
+interactive confirmation. Local files and other drives remain untouched, but
+the next sync may report local modification conflicts. For automation,
+.B \-\-yes
+explicitly confirms
+.BR \-\-clear\-all ;
+it is rejected without that option.
 .TP
 .B sync
 Refresh the OAuth access token and retrieve recursive drive changes using the
@@ -74,6 +87,18 @@ Display help for the application or selected subcommand and exit.
 .TP
 .B \-\-version
 Display the application version and exit.
+.TP
+.B \-\-clear\-all
+With
+.BR reset-state ,
+remove all saved synchronization state for the configured drive after
+confirmation.
+.TP
+.B \-\-yes
+Confirm
+.B reset-state \-\-clear\-all
+without an interactive prompt. This option is invalid without
+.BR \-\-clear\-all .
 .TP
 .BI \-\-config " PATH"
 Read application configuration from
