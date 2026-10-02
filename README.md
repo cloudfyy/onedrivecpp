@@ -460,10 +460,26 @@ The client refuses to overwrite a local file that it cannot prove is
 unchanged, reports a `local modification conflict`, and stops. It does not yet
 upload local changes or remove local files for remote deletion records. When
 
-Crash-recovery markers use `user.*` extended attributes on the target file
-system. Common Linux file systems such as ext4 support them. A file system
-without extended-attribute support fails explicitly rather than falling back
-to an unsafe mode that could overwrite local changes.
+After a download completes, the client writes the temporary path, destination,
+remote metadata, size, and SHA-256 content fingerprint to a SQLite
+`pending_download` journal before the atomic replacement. Startup recovery
+processes this journal first, making SQLite authoritative rather than relying
+on target-file-system extended attributes.
+
+`filesystem_metadata` controls optional `user.*` xattr hints:
+
+```ini
+filesystem_metadata=auto
+```
+
+- `auto` verifies xattr behavior with an actual probe file, uses hints when
+  supported, and automatically falls back to the database journal otherwise.
+- `xattr` requires xattr support and stops synchronization if the probe fails.
+- `database` never reads or writes xattrs and is suitable for FUSE, SMB/NFS,
+  and file systems with unreliable extended-attribute semantics.
+
+Capability detection probes the target synchronization directory instead of
+using a file-system-name allowlist.
 
 Microsoft Graph returns HTTP 429, the client honors a numeric `Retry-After`
 header and otherwise uses bounded exponential backoff. Retries are limited so
@@ -475,6 +491,7 @@ The throttling policy can be adjusted in the configuration file:
 graph_maximum_throttle_retries=4
 graph_initial_throttle_delay_seconds=1
 graph_maximum_throttle_delay_seconds=300
+filesystem_metadata=auto
 ```
 
 The initial delay is doubled after each 429 response without a valid numeric

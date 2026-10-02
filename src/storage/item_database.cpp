@@ -154,7 +154,22 @@ void create_current_schema(sqlite3* database) {
         "drive_id TEXT PRIMARY KEY NOT NULL,"
         "delta_link TEXT NOT NULL"
         ");"
-        "PRAGMA user_version = 3;"
+        "CREATE TABLE IF NOT EXISTS pending_download ("
+        "drive_id TEXT NOT NULL,"
+        "remote_id TEXT NOT NULL,"
+        "parent_id TEXT NOT NULL,"
+        "name TEXT NOT NULL,"
+        "etag TEXT NOT NULL,"
+        "remote_path TEXT NOT NULL,"
+        "local_path TEXT NOT NULL,"
+        "last_modified TEXT NOT NULL,"
+        "size INTEGER NOT NULL,"
+        "directory INTEGER NOT NULL,"
+        "temporary_path TEXT NOT NULL,"
+        "content_fingerprint TEXT NOT NULL,"
+        "PRIMARY KEY (drive_id, remote_id)"
+        ");"
+        "PRAGMA user_version = 4;"
     );
 }
 
@@ -195,7 +210,22 @@ void migrate_schema(sqlite3* database) {
             "drive_id TEXT PRIMARY KEY NOT NULL,"
             "delta_link TEXT NOT NULL"
             ");"
-            "PRAGMA user_version = 3;"
+            "CREATE TABLE pending_download ("
+            "drive_id TEXT NOT NULL,"
+            "remote_id TEXT NOT NULL,"
+            "parent_id TEXT NOT NULL,"
+            "name TEXT NOT NULL,"
+            "etag TEXT NOT NULL,"
+            "remote_path TEXT NOT NULL,"
+            "local_path TEXT NOT NULL,"
+            "last_modified TEXT NOT NULL,"
+            "size INTEGER NOT NULL,"
+            "directory INTEGER NOT NULL,"
+            "temporary_path TEXT NOT NULL,"
+            "content_fingerprint TEXT NOT NULL,"
+            "PRIMARY KEY (drive_id, remote_id)"
+            ");"
+            "PRAGMA user_version = 4;"
         );
         transaction.commit();
         return;
@@ -207,12 +237,51 @@ void migrate_schema(sqlite3* database) {
             "ALTER TABLE item ADD COLUMN local_size INTEGER NOT NULL DEFAULT 0;"
             "ALTER TABLE item ADD COLUMN local_modified_ticks INTEGER NOT NULL "
             "DEFAULT 0;"
-            "PRAGMA user_version = 3;"
+            "CREATE TABLE pending_download ("
+            "drive_id TEXT NOT NULL,"
+            "remote_id TEXT NOT NULL,"
+            "parent_id TEXT NOT NULL,"
+            "name TEXT NOT NULL,"
+            "etag TEXT NOT NULL,"
+            "remote_path TEXT NOT NULL,"
+            "local_path TEXT NOT NULL,"
+            "last_modified TEXT NOT NULL,"
+            "size INTEGER NOT NULL,"
+            "directory INTEGER NOT NULL,"
+            "temporary_path TEXT NOT NULL,"
+            "content_fingerprint TEXT NOT NULL,"
+            "PRIMARY KEY (drive_id, remote_id)"
+            ");"
+            "PRAGMA user_version = 4;"
         );
         transaction.commit();
         return;
     }
-    if (version != 3) {
+    if (version == 3) {
+        Transaction transaction{database};
+        execute(
+            database,
+            "CREATE TABLE pending_download ("
+            "drive_id TEXT NOT NULL,"
+            "remote_id TEXT NOT NULL,"
+            "parent_id TEXT NOT NULL,"
+            "name TEXT NOT NULL,"
+            "etag TEXT NOT NULL,"
+            "remote_path TEXT NOT NULL,"
+            "local_path TEXT NOT NULL,"
+            "last_modified TEXT NOT NULL,"
+            "size INTEGER NOT NULL,"
+            "directory INTEGER NOT NULL,"
+            "temporary_path TEXT NOT NULL,"
+            "content_fingerprint TEXT NOT NULL,"
+            "PRIMARY KEY (drive_id, remote_id)"
+            ");"
+            "PRAGMA user_version = 4;"
+        );
+        transaction.commit();
+        return;
+    }
+    if (version != 4) {
         throw std::runtime_error(
             "unsupported state database schema version " + std::to_string(version)
         );
@@ -484,6 +553,142 @@ void ItemDatabase::apply_delta(ItemDelta delta) {
     );
 }
 
+void ItemDatabase::save_pending_download(PendingDownload download) {
+    sqlite3* database = impl_->database.get();
+    if (database == nullptr) {
+        throw std::runtime_error("state database is not open");
+    }
+    if (download.item.drive_id.empty() || download.item.remote_id.empty() ||
+        download.temporary_path.empty() || download.content_fingerprint.empty()) {
+        throw std::invalid_argument(
+            "pending download requires drive, item, temporary path, and fingerprint"
+        );
+    }
+
+    Statement statement{
+        database,
+        "INSERT INTO pending_download ("
+        "drive_id, remote_id, parent_id, name, etag, remote_path, local_path, "
+        "last_modified, size, directory, temporary_path, content_fingerprint"
+        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) "
+        "ON CONFLICT(drive_id, remote_id) DO UPDATE SET "
+        "parent_id = excluded.parent_id, name = excluded.name, "
+        "etag = excluded.etag, remote_path = excluded.remote_path, "
+        "local_path = excluded.local_path, "
+        "last_modified = excluded.last_modified, size = excluded.size, "
+        "directory = excluded.directory, temporary_path = excluded.temporary_path, "
+        "content_fingerprint = excluded.content_fingerprint;"
+    };
+    bind_text(database, statement.get(), 1, download.item.drive_id);
+    bind_text(database, statement.get(), 2, download.item.remote_id);
+    bind_text(database, statement.get(), 3, download.item.parent_id);
+    bind_text(database, statement.get(), 4, download.item.name);
+    bind_text(database, statement.get(), 5, download.item.etag);
+    bind_text(database, statement.get(), 6, download.item.remote_path);
+    bind_text(
+        database,
+        statement.get(),
+        7,
+        download.item.local_path.string()
+    );
+    bind_text(database, statement.get(), 8, download.item.last_modified);
+    bind_integer(database, statement.get(), 9, download.item.size);
+    bind_integer(
+        database,
+        statement.get(),
+        10,
+        download.item.directory ? 1 : 0
+    );
+    bind_text(database, statement.get(), 11, download.temporary_path.string());
+    bind_text(database, statement.get(), 12, download.content_fingerprint);
+    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
+        throw std::runtime_error(
+            "cannot save pending download: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+    spdlog::debug(
+        "Saved pending download journal for '{}'",
+        download.item.remote_path
+    );
+}
+
+void ItemDatabase::remove_pending_download(
+    const std::string& drive_id,
+    const std::string& remote_id
+) {
+    sqlite3* database = impl_->database.get();
+    if (database == nullptr) {
+        throw std::runtime_error("state database is not open");
+    }
+    Statement statement{
+        database,
+        "DELETE FROM pending_download WHERE drive_id = ?1 AND remote_id = ?2;"
+    };
+    bind_text(database, statement.get(), 1, drive_id);
+    bind_text(database, statement.get(), 2, remote_id);
+    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
+        throw std::runtime_error(
+            "cannot remove pending download: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+    spdlog::debug(
+        "Removed pending download journal for drive '{}', item '{}'",
+        drive_id,
+        remote_id
+    );
+}
+
+std::vector<PendingDownload> ItemDatabase::pending_downloads(
+    const std::string& drive_id
+) const {
+    sqlite3* database = impl_->database.get();
+    if (database == nullptr) {
+        throw std::runtime_error("state database is not open");
+    }
+    Statement statement{
+        database,
+        "SELECT drive_id, remote_id, parent_id, name, etag, remote_path, "
+        "local_path, last_modified, size, directory, temporary_path, "
+        "content_fingerprint FROM pending_download WHERE drive_id = ?1 "
+        "ORDER BY remote_path;"
+    };
+    bind_text(database, statement.get(), 1, drive_id);
+    std::vector<PendingDownload> downloads;
+    while (true) {
+        const int result = sqlite3_step(statement.get());
+        if (result == SQLITE_DONE) {
+            break;
+        }
+        if (result != SQLITE_ROW) {
+            throw std::runtime_error(
+                "cannot read pending downloads: " +
+                std::string{sqlite3_errmsg(database)}
+            );
+        }
+        downloads.push_back({
+            .item = {
+                .drive_id = column_text(statement.get(), 0),
+                .remote_id = column_text(statement.get(), 1),
+                .parent_id = column_text(statement.get(), 2),
+                .name = column_text(statement.get(), 3),
+                .etag = column_text(statement.get(), 4),
+                .remote_path = column_text(statement.get(), 5),
+                .local_path = column_text(statement.get(), 6),
+                .last_modified = column_text(statement.get(), 7),
+                .size = sqlite3_column_int64(statement.get(), 8),
+                .local_size = 0,
+                .local_modified_ticks = 0,
+                .directory = sqlite3_column_int(statement.get(), 9) != 0,
+            },
+            .temporary_path = column_text(statement.get(), 10),
+            .content_fingerprint = column_text(statement.get(), 11),
+        });
+    }
+    return downloads;
+}
+
 std::size_t ItemDatabase::reset(const std::string& drive_id) {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
@@ -520,6 +725,19 @@ std::size_t ItemDatabase::reset(const std::string& drive_id) {
             std::string{sqlite3_errmsg(database)}
         );
     }
+    Statement pending_statement{
+        database,
+        "DELETE FROM pending_download WHERE drive_id = ?1;"
+    };
+    bind_text(database, pending_statement.get(), 1, drive_id);
+    if (sqlite3_step(pending_statement.get()) != SQLITE_DONE) {
+        throw std::runtime_error(
+            "cannot reset pending downloads: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+    const auto removed_pending =
+        static_cast<std::size_t>(sqlite3_changes(database));
     transaction.commit();
 
     for (auto iterator = items_.begin(); iterator != items_.end();) {
@@ -532,9 +750,10 @@ std::size_t ItemDatabase::reset(const std::string& drive_id) {
     delta_links_.erase(drive_id);
     spdlog::debug(
         "Cleared synchronization state for drive '{}': {} items removed, "
-        "saved delta cursor {}",
+        "{} pending downloads removed, saved delta cursor {}",
         drive_id,
         removed,
+        removed_pending,
         had_delta_link ? "removed" : "not present"
     );
     return removed;

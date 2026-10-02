@@ -82,6 +82,9 @@ public:
     void open() override {}
 
     void upsert(onedrive::storage::ItemState item) override {
+        if (fail_upsert) {
+            throw std::runtime_error{"simulated item persistence failure"};
+        }
         ++upsert_count;
         items.insert_or_assign(item.remote_id, std::move(item));
     }
@@ -89,6 +92,32 @@ public:
     void apply_delta(onedrive::storage::ItemDelta delta) override {
         ++apply_count;
         applied_delta = std::move(delta);
+    }
+
+    void save_pending_download(
+        onedrive::storage::PendingDownload download
+    ) override {
+        pending.insert_or_assign(
+            download.item.remote_id,
+            std::move(download)
+        );
+    }
+
+    void remove_pending_download(
+        const std::string&,
+        const std::string& remote_id
+    ) override {
+        pending.erase(remote_id);
+    }
+
+    [[nodiscard]] std::vector<onedrive::storage::PendingDownload>
+    pending_downloads(const std::string&) const override {
+        std::vector<onedrive::storage::PendingDownload> result;
+        for (const auto& [remote_id, download] : pending) {
+            static_cast<void>(remote_id);
+            result.push_back(download);
+        }
+        return result;
     }
 
     std::size_t reset(const std::string&) override {
@@ -114,9 +143,11 @@ public:
     }
 
     std::unordered_map<std::string, onedrive::storage::ItemState> items;
+    std::unordered_map<std::string, onedrive::storage::PendingDownload> pending;
     onedrive::storage::ItemDelta applied_delta;
     int upsert_count{0};
     int apply_count{0};
+    bool fail_upsert{false};
 };
 
 class FakeMetrics final : public onedrive::metrics::Metrics {
@@ -143,6 +174,8 @@ onedrive::config::Config config_for(
     auto config = onedrive::config::Config::defaults();
     config.sync_directory = root;
     config.state_directory = root.parent_path() / "state";
+    config.filesystem_metadata =
+        onedrive::config::FilesystemMetadataMode::database;
     config.dry_run = dry_run;
     return config;
 }
@@ -307,11 +340,203 @@ int test_failure_and_conflict() {
     return EXIT_SUCCESS;
 }
 
+int test_pending_download_recovery() {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path() / "files";
+    std::filesystem::create_directories(root);
+    const auto destination = root / "recovered.txt";
+    const auto temporary_file = root / ".recovered.txt.partial";
+    {
+        std::ofstream output{temporary_file, std::ios::binary};
+        output << "data";
+    }
+
+    FakeGraphClient graph;
+    FakeItemStore items;
+    items.pending.emplace(
+        "recovered",
+        onedrive::storage::PendingDownload{
+            .item = {
+                .drive_id = "me",
+                .remote_id = "recovered",
+                .name = "recovered.txt",
+                .etag = "etag",
+                .remote_path = "recovered.txt",
+                .local_path = destination,
+                .size = 4,
+            },
+            .temporary_path = temporary_file,
+            .content_fingerprint =
+                "3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7",
+        }
+    );
+    FakeMetrics metrics;
+    const auto config = config_for(root, false);
+    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize() != 0 ||
+        !items.pending.empty() || items.find("me", "recovered") == nullptr ||
+        !std::filesystem::exists(destination) ||
+        std::filesystem::exists(temporary_file) || graph.download_count != 0) {
+        return fail("pending download was not recovered from the database journal");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_post_install_recovery() {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path() / "files";
+    FakeGraphClient graph;
+    graph.changes = {file("recover-after-install", "installed.txt", 4)};
+    graph.contents["recover-after-install"] = "data";
+    FakeItemStore items;
+    items.fail_upsert = true;
+    FakeMetrics metrics;
+    const auto config = config_for(root, false);
+    try {
+        static_cast<void>(
+            onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize()
+        );
+        return fail("item persistence failure did not stop synchronization");
+    } catch (const std::runtime_error&) {
+    }
+    if (items.pending.size() != 1 ||
+        !std::filesystem::exists(root / "installed.txt") ||
+        graph.download_count != 1 || metrics.last_success) {
+        return fail("post-install failure did not preserve recovery state");
+    }
+
+    items.fail_upsert = false;
+    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize() != 0 ||
+        !items.pending.empty() ||
+        items.find("me", "recover-after-install") == nullptr ||
+        graph.download_count != 1 || !metrics.last_success) {
+        return fail("installed download was not recovered without re-downloading");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_unsafe_pending_path_rejected() {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path() / "files";
+    std::filesystem::create_directories(root);
+    const auto outside = temporary.path() / "outside.partial";
+    {
+        std::ofstream output{outside, std::ios::binary};
+        output << "data";
+    }
+    FakeGraphClient graph;
+    FakeItemStore items;
+    items.pending.emplace(
+        "unsafe",
+        onedrive::storage::PendingDownload{
+            .item = {
+                .drive_id = "me",
+                .remote_id = "unsafe",
+                .name = "unsafe.txt",
+                .etag = "etag",
+                .remote_path = "unsafe.txt",
+                .local_path = root / "unsafe.txt",
+                .size = 4,
+            },
+            .temporary_path = outside,
+            .content_fingerprint =
+                "3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7",
+        }
+    );
+    FakeMetrics metrics;
+    try {
+        static_cast<void>(
+            onedrive::sync::SyncEngine{
+                config_for(root, false),
+                graph,
+                items,
+                metrics
+            }.synchronize()
+        );
+        return fail("unsafe pending temporary path was accepted");
+    } catch (const std::runtime_error&) {
+    }
+    if (!std::filesystem::exists(outside) ||
+        std::filesystem::exists(root / "unsafe.txt") ||
+        items.pending.size() != 1 || metrics.last_success) {
+        return fail("unsafe pending path changed recovery state");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_mismatched_recovery_file_preserved() {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path() / "files";
+    std::filesystem::create_directories(root);
+    const auto destination = root / "installed.txt";
+    const auto temporary_file = root / ".installed.txt.partial";
+    {
+        std::ofstream output{destination, std::ios::binary};
+        output << "data";
+    }
+    {
+        std::ofstream output{temporary_file, std::ios::binary};
+        output << "local";
+    }
+    FakeGraphClient graph;
+    FakeItemStore items;
+    items.pending.emplace(
+        "installed",
+        onedrive::storage::PendingDownload{
+            .item = {
+                .drive_id = "me",
+                .remote_id = "installed",
+                .name = "installed.txt",
+                .etag = "etag",
+                .remote_path = "installed.txt",
+                .local_path = destination,
+                .size = 4,
+            },
+            .temporary_path = temporary_file,
+            .content_fingerprint =
+                "3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7",
+        }
+    );
+    FakeMetrics metrics;
+    try {
+        static_cast<void>(
+            onedrive::sync::SyncEngine{
+                config_for(root, false),
+                graph,
+                items,
+                metrics
+            }.synchronize()
+        );
+        return fail("mismatched recovery temporary file was removed");
+    } catch (const std::runtime_error&) {
+    }
+    if (!std::filesystem::exists(destination) ||
+        !std::filesystem::exists(temporary_file) ||
+        items.pending.size() != 1 || metrics.last_success) {
+        return fail("mismatched recovery file was not preserved safely");
+    }
+    return EXIT_SUCCESS;
+}
+
 }  // namespace
 
 int main() {
     if (const int result = test_dry_run_and_success(); result != EXIT_SUCCESS) {
         return result;
     }
-    return test_failure_and_conflict();
+    if (const int result = test_failure_and_conflict(); result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_pending_download_recovery();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_post_install_recovery();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_unsafe_pending_path_rejected();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return test_mismatched_recovery_file_preserved();
 }

@@ -71,6 +71,25 @@ std::chrono::seconds parse_seconds(
     return std::chrono::seconds{static_cast<SecondsRepresentation>(result)};
 }
 
+FilesystemMetadataMode parse_filesystem_metadata(
+    std::string_view value,
+    std::size_t line_number
+) {
+    if (value == "auto") {
+        return FilesystemMetadataMode::automatic;
+    }
+    if (value == "xattr") {
+        return FilesystemMetadataMode::xattr;
+    }
+    if (value == "database") {
+        return FilesystemMetadataMode::database;
+    }
+    throw std::runtime_error(
+        "invalid filesystem_metadata at config line " +
+        std::to_string(line_number)
+    );
+}
+
 }  // namespace
 
 Config Config::defaults() {
@@ -91,6 +110,7 @@ Config Config::defaults() {
         .graph_maximum_throttle_retries = 4,
         .graph_initial_throttle_delay = std::chrono::seconds{1},
         .graph_maximum_throttle_delay = std::chrono::seconds{300},
+        .filesystem_metadata = FilesystemMetadataMode::automatic,
         .dry_run = false,
     };
 }
@@ -156,6 +176,9 @@ Config Config::load(const std::filesystem::path& path) {
         } else if (key == "graph_maximum_throttle_delay_seconds") {
             config.graph_maximum_throttle_delay =
                 parse_seconds(value, key, line_number);
+        } else if (key == "filesystem_metadata") {
+            config.filesystem_metadata =
+                parse_filesystem_metadata(value, line_number);
         } else if (key == "dry_run") {
             config.dry_run = parse_bool(value, line_number);
         } else {

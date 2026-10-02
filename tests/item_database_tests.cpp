@@ -202,11 +202,43 @@ int main() {
             },
             .delta_link = "https://graph.example.test/delta-other",
         });
+        database.save_pending_download({
+            .item = {
+                .drive_id = "me",
+                .remote_id = "pending-me",
+                .name = "pending-me.txt",
+                .etag = "pending-etag",
+                .remote_path = "pending-me.txt",
+                .local_path = temporary_directory.path() / "pending-me.txt",
+                .size = 4,
+            },
+            .temporary_path = temporary_directory.path() / "pending-me.tmp",
+            .content_fingerprint = "fingerprint-me",
+        });
+        database.save_pending_download({
+            .item = {
+                .drive_id = "other-drive",
+                .remote_id = "pending-other",
+                .name = "pending-other.txt",
+                .etag = "pending-etag",
+                .remote_path = "pending-other.txt",
+                .local_path = temporary_directory.path() / "pending-other.txt",
+                .size = 5,
+            },
+            .temporary_path = temporary_directory.path() / "pending-other.tmp",
+            .content_fingerprint = "fingerprint-other",
+        });
+        if (database.pending_downloads("me").size() != 1 ||
+            database.pending_downloads("other-drive").size() != 1) {
+            return fail("pending downloads were not saved by drive");
+        }
 
         if (database.reset("me") != 1 || database.size() != 3 ||
             database.find("me", "reset-me") != nullptr ||
             database.find("other-drive", "keep-me") == nullptr ||
             database.delta_link("me").has_value() ||
+            !database.pending_downloads("me").empty() ||
+            database.pending_downloads("other-drive").size() != 1 ||
             database.delta_link("other-drive") !=
                 std::optional<std::string>{
                     "https://graph.example.test/delta-other"
@@ -225,6 +257,8 @@ int main() {
             database.find("me", "reset-me") != nullptr ||
             database.find("other-drive", "keep-me") == nullptr ||
             database.delta_link("me").has_value() ||
+            !database.pending_downloads("me").empty() ||
+            database.pending_downloads("other-drive").size() != 1 ||
             database.delta_link("other-drive") !=
                 std::optional<std::string>{
                     "https://graph.example.test/delta-other"

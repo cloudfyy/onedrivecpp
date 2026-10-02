@@ -20,6 +20,14 @@ public:
     void open() override;
     void upsert(ItemState item) override;
     void apply_delta(ItemDelta delta) override;
+    void save_pending_download(PendingDownload download) override;
+    void remove_pending_download(
+        const std::string& drive_id,
+        const std::string& remote_id
+    ) override;
+    [[nodiscard]] std::vector<PendingDownload> pending_downloads(
+        const std::string& drive_id
+    ) const override;
     std::size_t reset(const std::string& drive_id) override;
     [[nodiscard]] std::optional<std::string> delta_link(
         const std::string& drive_id

@@ -7,6 +7,12 @@
 
 namespace onedrive::config {
 
+enum class FilesystemMetadataMode {
+    automatic,
+    xattr,
+    database,
+};
+
 struct Config {
     std::filesystem::path sync_directory;
     std::filesystem::path state_directory;
@@ -20,6 +26,9 @@ struct Config {
     std::size_t graph_maximum_throttle_retries{4};
     std::chrono::seconds graph_initial_throttle_delay{1};
     std::chrono::seconds graph_maximum_throttle_delay{300};
+    FilesystemMetadataMode filesystem_metadata{
+        FilesystemMetadataMode::automatic
+    };
     bool dry_run{false};
 
     [[nodiscard]] static Config defaults();

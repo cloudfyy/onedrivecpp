@@ -20,6 +20,7 @@ int main() {
                << "graph_maximum_throttle_retries=7\n"
                << "graph_initial_throttle_delay_seconds=2\n"
                << "graph_maximum_throttle_delay_seconds=90\n"
+               << "filesystem_metadata=database\n"
                << "dry_run=true\n";
     }
 
@@ -36,6 +37,8 @@ int main() {
         config.graph_maximum_throttle_retries != 7 ||
         config.graph_initial_throttle_delay != std::chrono::seconds{2} ||
         config.graph_maximum_throttle_delay != std::chrono::seconds{90} ||
+        config.filesystem_metadata !=
+            onedrive::config::FilesystemMetadataMode::database ||
         !config.dry_run) {
         std::cerr << "configuration values were not parsed correctly\n";
         return EXIT_FAILURE;
@@ -49,6 +52,18 @@ int main() {
         static_cast<void>(onedrive::config::Config::load(path));
         std::filesystem::remove(path);
         std::cerr << "invalid throttle retry count was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error&) {
+    }
+
+    {
+        std::ofstream output{path};
+        output << "filesystem_metadata=unsupported\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "invalid filesystem metadata mode was accepted\n";
         return EXIT_FAILURE;
     } catch (const std::runtime_error&) {
     }

@@ -134,6 +134,20 @@ public:
         ++apply_delta_count_;
     }
 
+    void save_pending_download(
+        onedrive::storage::PendingDownload
+    ) override {}
+
+    void remove_pending_download(
+        const std::string&,
+        const std::string&
+    ) override {}
+
+    [[nodiscard]] std::vector<onedrive::storage::PendingDownload>
+    pending_downloads(const std::string&) const override {
+        return {};
+    }
+
     std::size_t reset(const std::string& drive_id) override {
         ++reset_count_;
         reset_drive_id_ = drive_id;

@@ -428,9 +428,24 @@ token 时安全持久化，并通过分页的 Microsoft Graph Delta 请求获取
 `local modification conflict` 并停止。当前不会上传本地变化，也不会根据远端
 删除记录移除本地文件。
 
-崩溃恢复标记使用目标文件系统的 `user.*` 扩展属性。ext4 等常见 Linux
-文件系统支持该功能；不支持扩展属性的文件系统会明确报错，不会降低为可能
-覆盖本地修改的不安全模式。
+下载完成后，程序先把临时路径、目标路径、远端元数据、大小和 SHA-256 内容
+指纹写入 SQLite `pending_download` journal，再执行原子替换。程序重启时会先
+恢复 journal，因此 SQLite 是崩溃恢复的权威来源，不依赖目标文件系统的
+扩展属性。
+
+`filesystem_metadata` 控制是否额外写入 `user.*` xattr：
+
+```ini
+filesystem_metadata=auto
+```
+
+- `auto`：实际创建探测文件验证 xattr；支持时写入辅助标记，不支持时自动使用
+  纯 database journal。
+- `xattr`：要求 xattr 支持，探测失败时同步立即停止。
+- `database`：完全不读写 xattr，适合 FUSE、SMB/NFS 或其他扩展属性语义不稳定
+  的文件系统。
+
+能力判断基于目标同步目录中的实际读写探测，而不是文件系统名称白名单。
 
 当 Microsoft Graph 返回 HTTP 429 时，客户端会遵循数值形式的 `Retry-After`
 响应头；响应头缺失或无效时使用有上限的指数退避。重试次数受到限制，持续
@@ -442,6 +457,7 @@ token 时安全持久化，并通过分页的 Microsoft Graph Delta 请求获取
 graph_maximum_throttle_retries=4
 graph_initial_throttle_delay_seconds=1
 graph_maximum_throttle_delay_seconds=300
+filesystem_metadata=auto
 ```
 
 当 429 响应没有有效的数值 `Retry-After` 时，初始等待时间会在每次重试后

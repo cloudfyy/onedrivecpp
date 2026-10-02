@@ -31,6 +31,12 @@ struct ItemDelta {
     std::string delta_link;
 };
 
+struct PendingDownload {
+    ItemState item;
+    std::filesystem::path temporary_path;
+    std::string content_fingerprint;
+};
+
 class ItemStore {
 public:
     virtual ~ItemStore() = default;
@@ -38,6 +44,14 @@ public:
     virtual void open() = 0;
     virtual void upsert(ItemState item) = 0;
     virtual void apply_delta(ItemDelta delta) = 0;
+    virtual void save_pending_download(PendingDownload download) = 0;
+    virtual void remove_pending_download(
+        const std::string& drive_id,
+        const std::string& remote_id
+    ) = 0;
+    [[nodiscard]] virtual std::vector<PendingDownload> pending_downloads(
+        const std::string& drive_id
+    ) const = 0;
     virtual std::size_t reset(const std::string& drive_id) = 0;
     [[nodiscard]] virtual std::optional<std::string> delta_link(
         const std::string& drive_id

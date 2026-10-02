@@ -17,6 +17,7 @@ find_package(CLI11 CONFIG REQUIRED)
 set(CURL_USE_STATIC_LIBS OFF)
 find_package(CURL REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(OpenSSL REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(SQLite3 REQUIRED)
 
@@ -69,6 +70,7 @@ target_link_libraries(onedrive_core
         CLI11::CLI11
         CURL::libcurl
         nlohmann_json::nlohmann_json
+        OpenSSL::Crypto
         spdlog::spdlog
         SQLite3::SQLite3
 )
