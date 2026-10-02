@@ -12,6 +12,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -362,6 +363,147 @@ int test_throttling_fallback_and_limit() {
     return EXIT_SUCCESS;
 }
 
+int test_delta_with_pagination() {
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"expires_in":3600,"access_token":"access-secret"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"value":[{"id":"folder-id","name":"Documents",)"
+                    R"("size":0,)"
+                    R"("lastModifiedDateTime":"2026-10-02T00:00:00Z",)"
+                    R"("parentReference":{"id":"root-id",)"
+                    R"("path":"/drives/drive-id/root:"},)"
+                    R"("folder":{"childCount":1}}],)"
+                    R"("@odata.nextLink":)"
+                    R"("https://graph.example.test/v1.0/delta?page=2"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"value":[{"id":"file-id","name":"notes.txt",)"
+                    R"("eTag":"file-etag","size":42,)"
+                    R"("lastModifiedDateTime":"2026-10-02T00:01:00Z",)"
+                    R"("parentReference":{"id":"folder-id",)"
+                    R"("path":"/drives/drive-id/root:/Documents"},)"
+                    R"("file":{"mimeType":"text/plain"}},)"
+                    R"({"id":"deleted-id","deleted":{"state":"deleted"}}],)"
+                    R"("@odata.deltaLink":)"
+                    R"("https://graph.example.test/v1.0/delta?token=final"})",
+            },
+        }
+    );
+    auto* transport_pointer = transport.get();
+    onedrive::graph::MicrosoftGraphClient client{
+        std::move(transport),
+        std::make_unique<FakeTokenStore>(std::string{"existing-refresh"}),
+        auth_options(),
+        {
+            .drive_id = "drive id",
+            .endpoint = "https://graph.example.test/v1.0",
+        },
+    };
+
+    const auto delta = client.list_delta(std::nullopt);
+    if (delta.changes.size() != 3 ||
+        delta.delta_link !=
+            "https://graph.example.test/v1.0/delta?token=final" ||
+        !delta.changes[0].directory ||
+        !delta.changes[0].etag.empty() ||
+        delta.changes[0].remote_path != "Documents" ||
+        delta.changes[1].remote_path != "Documents/notes.txt" ||
+        delta.changes[1].parent_id != "folder-id" ||
+        delta.changes[1].size != 42 || !delta.changes[2].deleted) {
+        return fail("Graph delta items or final link were not parsed");
+    }
+    if (transport_pointer->requests.size() != 3 ||
+        transport_pointer->requests[1].url !=
+            "https://graph.example.test/v1.0/drives/drive%20id/root/delta" ||
+        transport_pointer->requests[2].url !=
+            "https://graph.example.test/v1.0/delta?page=2") {
+        return fail("Graph delta pagination requests were incorrect");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_delta_resume_and_url_validation() {
+    constexpr std::string_view saved_delta_link{
+        "https://graph.example.test/v1.0/delta?token=saved"
+    };
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"expires_in":3600,"access_token":"access-secret"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"value":[],"@odata.deltaLink":)"
+                    R"("https://graph.example.test/v1.0/delta?token=next"})",
+            },
+        }
+    );
+    auto* transport_pointer = transport.get();
+    onedrive::graph::MicrosoftGraphClient client{
+        std::move(transport),
+        std::make_unique<FakeTokenStore>(std::string{"existing-refresh"}),
+        auth_options(),
+        {
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+        },
+    };
+    const auto delta = client.list_delta(std::string{saved_delta_link});
+    if (!delta.changes.empty() ||
+        delta.delta_link !=
+            "https://graph.example.test/v1.0/delta?token=next" ||
+        transport_pointer->requests.size() != 2 ||
+        transport_pointer->requests[1].url != saved_delta_link) {
+        return fail("saved Graph delta link was not resumed");
+    }
+
+    auto untrusted_transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"expires_in":3600,"access_token":"access-secret"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"value":[],"@odata.deltaLink":)"
+                    R"("https://attacker.example/collect"})",
+            },
+        }
+    );
+    onedrive::graph::MicrosoftGraphClient untrusted_client{
+        std::move(untrusted_transport),
+        std::make_unique<FakeTokenStore>(std::string{"existing-refresh"}),
+        auth_options(),
+        {
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+        },
+    };
+    try {
+        static_cast<void>(untrusted_client.list_delta(std::nullopt));
+        return fail("untrusted Graph delta link was accepted");
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains("outside its endpoint")) {
+            return fail("untrusted Graph delta link error was not reported");
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
 }  // namespace
 
 int main() {
@@ -383,5 +525,13 @@ int main() {
         result != EXIT_SUCCESS) {
         return result;
     }
-    return test_throttling_fallback_and_limit();
+    if (const int result = test_throttling_fallback_and_limit();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_delta_with_pagination();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return test_delta_resume_and_url_validation();
 }

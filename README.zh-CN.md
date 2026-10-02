@@ -8,9 +8,9 @@
 但不复制其 D 语言实现。
 
 > 当前版本提供可编译的架构骨架、配置加载、CLI、Microsoft 设备代码认证、
-> HTTP 传输层、经过认证的 Microsoft Graph 根目录列表、SQLite 状态持久化、
-> dry-run、systemd 用户服务和 Debian 打包。文件传输和真实文件同步尚未实现；
-> 非 dry-run 同步目前只会列出远端根目录，不会修改文件。
+> HTTP 传输层、经过认证的 Microsoft Graph Delta 查询、SQLite 远端状态和
+> deltaLink 持久化、dry-run、systemd 用户服务和 Debian 打包。文件传输和真实
+> 文件同步尚未实现；非 dry-run 同步目前只更新本地状态数据库，不会修改文件。
 
 ## 架构
 
@@ -402,11 +402,17 @@ onedrive-cpp logout
 ```
 
 `sync` 命令会刷新 OAuth access token，在 Microsoft 返回轮换后的 refresh
-token 时安全持久化，并通过分页的 Microsoft Graph 请求列出配置 Drive 根目录
-中的全部项目。当 Microsoft Graph 返回 HTTP 429 时，客户端会遵循数值形式的
-`Retry-After` 响应头；响应头缺失或无效时使用有上限的指数退避。重试次数受到
-限制，持续节流会明确失败，而不是无限等待。目前不会下载、上传、删除或修改
-文件。
+token 时安全持久化，并通过分页的 Microsoft Graph Delta 请求获取配置 Drive
+中的递归文件树。首次成功查询会把远端元数据和最终 `deltaLink` 原子写入
+`<state_directory>/items.sqlite3`；后续运行复用该链接，只获取新增、修改和
+删除的项目。仅当所有分页均成功处理后才推进 `deltaLink`，因此中途失败不会
+丢失尚未应用的变更。
+
+`--dry-run` 仍会查询并显示远端变更摘要，但不会更新 SQLite 状态。普通模式
+目前也只更新本地状态数据库，不会下载、上传、删除或修改同步目录中的文件。
+当 Microsoft Graph 返回 HTTP 429 时，客户端会遵循数值形式的 `Retry-After`
+响应头；响应头缺失或无效时使用有上限的指数退避。重试次数受到限制，持续
+节流会明确失败，而不是无限等待。
 
 可在配置文件中调整节流策略：
 
@@ -432,8 +438,8 @@ journalctl --user -u onedrive-cpp.service -f
 
 ## 后续实现建议
 
-1. 实现 Microsoft Graph delta 查询并持久化远端状态。
-2. 增加文件传输、冲突策略和安全的原子文件替换。
+1. 根据持久化的远端状态生成同步计划，并使用临时文件和原子替换实现安全下载。
+2. 增加上传、删除和冲突处理策略。
 3. 使用 inotify 接入 monitor，并为 Graph 和文件系统边界增加集成测试。
 
 ## 许可证

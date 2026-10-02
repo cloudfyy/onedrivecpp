@@ -79,26 +79,50 @@ private:
 class FakeGraphClient final : public onedrive::graph::GraphClient {
 public:
     [[nodiscard]] std::vector<onedrive::graph::RemoteItem> list_root() const override {
+        return {};
+    }
+
+    [[nodiscard]] onedrive::graph::DeltaResult list_delta(
+        const std::optional<std::string>&
+    ) const override {
         return {
-            {
-                .id = "file-id",
-                .name = "notes.txt",
-                .etag = "file-etag",
-                .directory = false,
+            .changes = {
+                {
+                    .id = "file-id",
+                    .name = "notes.txt",
+                    .etag = "file-etag",
+                    .parent_id = "root-id",
+                    .remote_path = "notes.txt",
+                    .last_modified = "2026-10-02T00:00:00Z",
+                    .size = 42,
+                    .directory = false,
+                },
             },
+            .delta_link = "https://graph.example.test/delta-token",
         };
     }
 };
 
 class FakeItemStore final : public onedrive::storage::ItemStore {
 public:
-    explicit FakeItemStore(int& open_count) : open_count_{open_count} {}
+    FakeItemStore(int& open_count, int& apply_delta_count)
+        : open_count_{open_count}, apply_delta_count_{apply_delta_count} {}
 
     void open() override {
         ++open_count_;
     }
 
     void upsert(onedrive::storage::ItemState) override {}
+
+    void apply_delta(onedrive::storage::ItemDelta) override {
+        ++apply_delta_count_;
+    }
+
+    [[nodiscard]] std::optional<std::string> delta_link(
+        const std::string&
+    ) const override {
+        return std::nullopt;
+    }
 
     [[nodiscard]] const onedrive::storage::ItemState* find(
         const std::string&
@@ -112,6 +136,7 @@ public:
 
 private:
     int& open_count_;
+    int& apply_delta_count_;
 };
 
 class FakeMonitor final : public onedrive::monitor::FileMonitor {
@@ -169,7 +194,10 @@ public:
         const onedrive::config::Config&
     ) const override {
         ++item_store_count;
-        return std::make_unique<FakeItemStore>(item_store_open_count);
+        return std::make_unique<FakeItemStore>(
+            item_store_open_count,
+            item_store_apply_delta_count
+        );
     }
 
     [[nodiscard]] std::unique_ptr<onedrive::monitor::FileMonitor> create_monitor(
@@ -189,6 +217,7 @@ public:
     mutable int graph_client_count{0};
     mutable int item_store_count{0};
     mutable int item_store_open_count{0};
+    mutable int item_store_apply_delta_count{0};
     mutable int monitor_count{0};
     mutable int monitor_run_count{0};
     mutable int metrics_count{0};
@@ -328,10 +357,14 @@ int main() {
     );
     if (dry_run.exit_code != 0 ||
         !dry_run.standard_output.contains("Dry run configuration") ||
+        !dry_run.standard_output.contains(
+            "Remote delta contains 1 changes (1 upserts, 0 removals)"
+        ) ||
         !dry_run.standard_output.contains("throttle retries: 6") ||
         !dry_run.standard_output.contains("throttle delay:   3-120 seconds") ||
         runtime_factory.item_store_count != 1 ||
         runtime_factory.item_store_open_count != 1 ||
+        runtime_factory.item_store_apply_delta_count != 0 ||
         runtime_factory.graph_client_count != 1 ||
         runtime_factory.metrics_count != 1) {
         return fail("sync dry-run command was not parsed or executed");
@@ -361,8 +394,11 @@ int main() {
         }
     );
     if (trace_sync.exit_code != 0 ||
-        !trace_sync.standard_output.contains("Remote root contains 1 items")) {
-        return fail("sync trace command did not inspect the remote root");
+        !trace_sync.standard_output.contains(
+            "Remote delta contains 1 changes (1 upserts, 0 removals)"
+        ) ||
+        runtime_factory.item_store_apply_delta_count != 1) {
+        return fail("sync trace command did not apply the remote delta");
     }
     {
         std::ifstream log{log_path};
@@ -371,10 +407,10 @@ int main() {
             std::istreambuf_iterator<char>{}
         };
         if (!contents.contains(
-                "Remote root item: name='notes.txt', id='file-id', "
+                "Remote item changed: path='notes.txt', id='file-id', "
                 "eTag='file-etag', type=file"
             )) {
-            return fail("remote root item metadata was not written at trace level");
+            return fail("remote delta item metadata was not written at trace level");
         }
     }
 

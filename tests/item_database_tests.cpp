@@ -4,6 +4,8 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <optional>
+#include <stdexcept>
 #include <string>
 
 namespace {
@@ -64,8 +66,29 @@ int main() {
             .etag = "etag-updated",
             .local_path = "documents/report-renamed.txt",
         });
+        database.apply_delta({
+            .drive_id = "me",
+            .upserts = {
+                {
+                    .remote_id = "remote-3",
+                    .parent_id = "root-id",
+                    .name = "notes.txt",
+                    .etag = "etag-3",
+                    .remote_path = "notes.txt",
+                    .local_path = temporary_directory.path() / "notes.txt",
+                    .last_modified = "2026-10-02T00:00:00Z",
+                    .size = 42,
+                    .directory = false,
+                },
+            },
+            .delta_link = "https://graph.example.test/delta-1",
+        });
 
-        if (database.size() != 2) {
+        if (database.size() != 3 ||
+            database.delta_link("me") !=
+                std::optional<std::string>{
+                    "https://graph.example.test/delta-1"
+                }) {
             return fail("upsert did not preserve the expected item count");
         }
     }
@@ -76,7 +99,9 @@ int main() {
 
         const auto* first = database.find("remote-1");
         const auto* second = database.find("remote-2");
-        if (database.size() != 2 || first == nullptr || second == nullptr) {
+        const auto* third = database.find("remote-3");
+        if (database.size() != 3 || first == nullptr || second == nullptr ||
+            third == nullptr) {
             return fail("persisted items were not loaded");
         }
         if (first->etag != "etag-updated" ||
@@ -85,6 +110,67 @@ int main() {
         }
         if (second->etag != "etag-2" || second->local_path != "photos/image.jpg") {
             return fail("second item state was not persisted");
+        }
+        if (third->drive_id != "me" || third->parent_id != "root-id" ||
+            third->remote_path != "notes.txt" || third->size != 42 ||
+            third->directory ||
+            database.delta_link("me") !=
+                std::optional<std::string>{
+                    "https://graph.example.test/delta-1"
+                }) {
+            return fail("delta item state was not persisted");
+        }
+
+        try {
+            database.apply_delta({
+                .drive_id = "me",
+                .upserts = {
+                    {
+                        .remote_id = "rolled-back",
+                        .name = "rolled-back.txt",
+                        .etag = "rolled-back-etag",
+                        .remote_path = "rolled-back.txt",
+                        .local_path =
+                            temporary_directory.path() / "rolled-back.txt",
+                    },
+                },
+                .removals = {""},
+                .delta_link = "https://graph.example.test/delta-invalid",
+            });
+            return fail("invalid delta state was accepted");
+        } catch (const std::invalid_argument&) {
+        }
+        if (database.find("rolled-back") != nullptr ||
+            database.delta_link("me") !=
+                std::optional<std::string>{
+                    "https://graph.example.test/delta-1"
+                }) {
+            return fail("failed delta update was not rolled back");
+        }
+
+        database.apply_delta({
+            .drive_id = "me",
+            .removals = {"remote-3"},
+            .delta_link = "https://graph.example.test/delta-2",
+        });
+        if (database.size() != 2 || database.find("remote-3") != nullptr ||
+            database.delta_link("me") !=
+                std::optional<std::string>{
+                    "https://graph.example.test/delta-2"
+                }) {
+            return fail("delta removal was not persisted");
+        }
+    }
+
+    {
+        onedrive::storage::ItemDatabase database{temporary_directory.path()};
+        database.open();
+        if (database.size() != 2 || database.find("remote-3") != nullptr ||
+            database.delta_link("me") !=
+                std::optional<std::string>{
+                    "https://graph.example.test/delta-2"
+                }) {
+            return fail("updated delta state was not loaded");
         }
     }
 

@@ -16,6 +16,7 @@
 #include <stdexcept>
 #include <string_view>
 #include <thread>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 
@@ -113,6 +114,28 @@ std::chrono::seconds fallback_retry_delay(
         delay = std::min(delay * 2, options.maximum_throttle_delay);
     }
     return delay;
+}
+
+std::string item_remote_path(const Json& value, const std::string& name) {
+    const auto parent = value.find("parentReference");
+    if (parent == value.end() || !parent->is_object()) {
+        return name;
+    }
+    const auto path = parent->find("path");
+    if (path == parent->end() || !path->is_string()) {
+        return name;
+    }
+
+    const std::string parent_path = path->get<std::string>();
+    const auto root_marker = parent_path.find("root:");
+    if (root_marker == std::string::npos) {
+        return name;
+    }
+    std::string relative_parent = parent_path.substr(root_marker + 5);
+    while (relative_parent.starts_with('/')) {
+        relative_parent.erase(relative_parent.begin());
+    }
+    return relative_parent.empty() ? name : relative_parent + '/' + name;
 }
 
 }  // namespace
@@ -286,7 +309,12 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
                     .id = value.at("id").get<std::string>(),
                     .name = value.at("name").get<std::string>(),
                     .etag = value.at("eTag").get<std::string>(),
+                    .parent_id = {},
+                    .remote_path = {},
+                    .last_modified = {},
+                    .size = 0,
                     .directory = value.contains("folder"),
+                    .deleted = false,
                 };
                 if (item.id.empty() || item.name.empty() || item.etag.empty()) {
                     throw std::runtime_error(
@@ -327,6 +355,245 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
         items.size()
     );
     return items;
+}
+
+DeltaResult MicrosoftGraphClient::list_delta(
+    const std::optional<std::string>& delta_link
+) const {
+    spdlog::debug("Loading saved Microsoft authentication");
+    const auto refresh_token = token_store_->load_refresh_token();
+    if (!refresh_token) {
+        throw std::runtime_error(
+            "no saved Microsoft authentication is available; run 'onedrive-cpp auth'"
+        );
+    }
+
+    spdlog::debug("Refreshing Microsoft access token");
+    auto tokens = auth_client_->refresh_access_token(*refresh_token);
+    if (!tokens) {
+        throw std::runtime_error(
+            "cannot refresh Microsoft access token: " + tokens.error().message
+        );
+    }
+    spdlog::debug("Microsoft access token refreshed");
+    if (tokens->refresh_token != *refresh_token) {
+        token_store_->save_refresh_token(tokens->refresh_token);
+        spdlog::debug("Persisted rotated Microsoft refresh token");
+    }
+
+    const std::string allowed_url_prefix = options_.endpoint + "/";
+    std::string next_url;
+    if (delta_link) {
+        next_url = *delta_link;
+        spdlog::info("Resuming Microsoft Graph delta query");
+    } else {
+        next_url =
+            options_.drive_id == "me" ?
+                options_.endpoint + "/me/drive/root/delta" :
+                options_.endpoint + "/drives/" + percent_encode(options_.drive_id) +
+                    "/root/delta";
+        spdlog::info("Starting initial Microsoft Graph delta query");
+    }
+
+    std::unordered_set<std::string> visited_urls;
+    std::unordered_map<std::string, std::size_t> change_indexes;
+    DeltaResult result;
+    std::size_t page_number = 1;
+    while (!next_url.empty()) {
+        if (!next_url.starts_with(allowed_url_prefix)) {
+            throw std::runtime_error(
+                "Microsoft Graph returned a delta URL outside its endpoint"
+            );
+        }
+        if (!visited_urls.insert(next_url).second) {
+            throw std::runtime_error(
+                "Microsoft Graph returned a repeated delta URL"
+            );
+        }
+
+        http::HttpResult response;
+        std::size_t throttle_retries = 0;
+        while (true) {
+            spdlog::debug(
+                "Requesting Microsoft Graph delta page {} (attempt {})",
+                page_number,
+                throttle_retries + 1
+            );
+            response = transport_->perform(http::HttpRequest{
+                .method = http::HttpMethod::get,
+                .url = next_url,
+                .headers = {
+                    "Accept: application/json",
+                    "Authorization: Bearer " + tokens->access_token,
+                },
+                .body = {},
+            });
+            if (!response) {
+                throw std::runtime_error(
+                    "Microsoft Graph delta request failed: " +
+                    response.error().message
+                );
+            }
+            if (response->status_code != 429) {
+                break;
+            }
+            if (throttle_retries >= options_.maximum_throttle_retries) {
+                throw std::runtime_error(
+                    std::format(
+                        "Microsoft Graph throttling persisted after {} retries",
+                        throttle_retries
+                    )
+                );
+            }
+
+            const auto server_delay = retry_after(*response);
+            if (server_delay &&
+                *server_delay > options_.maximum_throttle_delay) {
+                throw std::runtime_error(
+                    "Microsoft Graph Retry-After exceeds the configured maximum "
+                    "throttle delay"
+                );
+            }
+            const auto delay = server_delay.value_or(
+                fallback_retry_delay(options_, throttle_retries)
+            );
+            spdlog::warn(
+                "Microsoft Graph throttled delta page {}; retrying in {} seconds "
+                "({}/{})",
+                page_number,
+                delay.count(),
+                throttle_retries + 1,
+                options_.maximum_throttle_retries
+            );
+            sleep_(delay);
+            ++throttle_retries;
+        }
+
+        Json json;
+        try {
+            json = Json::parse(response->body);
+        } catch (const Json::exception& error) {
+            throw std::runtime_error(
+                "Microsoft Graph returned invalid delta JSON: " +
+                std::string{error.what()}
+            );
+        }
+        if (response->status_code < 200 || response->status_code >= 300) {
+            throw std::runtime_error(
+                graph_error_message(json, response->status_code)
+            );
+        }
+
+        try {
+            const auto& values = json.at("value");
+            if (!values.is_array()) {
+                throw std::runtime_error(
+                    "Microsoft Graph delta response field 'value' is not an array"
+                );
+            }
+            const std::size_t page_item_count = values.size();
+            for (const auto& value : values) {
+                RemoteItem item{};
+                item.id = value.at("id").get<std::string>();
+                item.deleted = value.contains("deleted");
+                if (item.id.empty()) {
+                    throw std::runtime_error(
+                        "Microsoft Graph returned a delta item with an empty ID"
+                    );
+                }
+                if (!item.deleted) {
+                    item.name = value.at("name").get<std::string>();
+                    if (const auto etag = value.find("eTag");
+                        etag != value.end()) {
+                        if (!etag->is_string()) {
+                            throw std::runtime_error(
+                                "Microsoft Graph returned a delta item with an "
+                                "invalid eTag"
+                            );
+                        }
+                        item.etag = etag->get<std::string>();
+                    }
+                    item.directory = value.contains("folder");
+                    item.remote_path = item_remote_path(value, item.name);
+                    if (const auto parent = value.find("parentReference");
+                        parent != value.end() && parent->is_object()) {
+                        if (const auto parent_id = parent->find("id");
+                            parent_id != parent->end() && parent_id->is_string()) {
+                            item.parent_id = parent_id->get<std::string>();
+                        }
+                    }
+                    if (const auto modified = value.find("lastModifiedDateTime");
+                        modified != value.end() && modified->is_string()) {
+                        item.last_modified = modified->get<std::string>();
+                    }
+                    if (const auto size = value.find("size");
+                        size != value.end() && size->is_number_integer()) {
+                        item.size = size->get<std::int64_t>();
+                    }
+                    if (item.name.empty() || item.remote_path.empty() ||
+                        item.size < 0) {
+                        throw std::runtime_error(
+                            "Microsoft Graph returned a delta item with invalid metadata"
+                        );
+                    }
+                }
+                const auto [position, inserted] = change_indexes.emplace(
+                    item.id,
+                    result.changes.size()
+                );
+                if (inserted) {
+                    result.changes.push_back(std::move(item));
+                } else {
+                    result.changes[position->second] = std::move(item);
+                }
+            }
+
+            next_url.clear();
+            if (const auto next = json.find("@odata.nextLink");
+                next != json.end()) {
+                if (!next->is_string()) {
+                    throw std::runtime_error(
+                        "Microsoft Graph returned an invalid delta pagination URL"
+                    );
+                }
+                next_url = next->get<std::string>();
+            } else {
+                const auto final_link = json.find("@odata.deltaLink");
+                if (final_link == json.end() || !final_link->is_string()) {
+                    throw std::runtime_error(
+                        "Microsoft Graph delta response did not contain a final "
+                        "delta link"
+                    );
+                }
+                result.delta_link = final_link->get<std::string>();
+                if (!result.delta_link.starts_with(allowed_url_prefix)) {
+                    throw std::runtime_error(
+                        "Microsoft Graph returned a delta URL outside its endpoint"
+                    );
+                }
+            }
+            spdlog::debug(
+                "Received Microsoft Graph delta page {} with {} changes; {} total",
+                page_number,
+                page_item_count,
+                result.changes.size()
+            );
+            ++page_number;
+        } catch (const Json::exception& error) {
+            throw std::runtime_error(
+                "Microsoft Graph delta response is missing required drive item "
+                "data: " +
+                std::string{error.what()}
+            );
+        }
+    }
+
+    spdlog::info(
+        "Completed Microsoft Graph delta query: {} pages, {} changes",
+        page_number - 1,
+        result.changes.size()
+    );
+    return result;
 }
 
 }  // namespace onedrive::graph

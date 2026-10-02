@@ -9,11 +9,11 @@ copy the reference project's D implementation.
 
 > The current version provides a buildable architecture scaffold,
 > configuration loading, a CLI, Microsoft device-code authentication, an HTTP
-> transport layer, authenticated Microsoft Graph root-directory listing,
-> SQLite state persistence, dry-run support, a systemd user service, and
-> Debian packaging. File transfer and actual synchronization have not yet
-> been implemented. Non-dry-run synchronization currently lists the remote
-> root directory without modifying it.
+> transport layer, authenticated Microsoft Graph delta queries, SQLite remote
+> state and delta-link persistence, dry-run support, a systemd user service,
+> and Debian packaging. File transfer and actual synchronization have not yet
+> been implemented. Non-dry-run synchronization currently updates only the
+> local state database and does not modify files.
 
 ## Architecture
 
@@ -429,12 +429,20 @@ onedrive-cpp logout
 ```
 
 The `sync` command refreshes the OAuth access token, securely persists a
-rotated refresh token when Microsoft returns one, and lists all items in the
-configured drive's root directory through paginated Microsoft Graph requests.
-When Microsoft Graph returns HTTP 429, the client honors a numeric
-`Retry-After` header and otherwise uses bounded exponential backoff. Retries
-are limited so persistent throttling fails explicitly instead of waiting
-forever. The command does not download, upload, delete, or modify files yet.
+rotated refresh token when Microsoft returns one, and obtains the configured
+drive's recursive file tree through paginated Microsoft Graph delta requests.
+The first successful query atomically writes remote metadata and the final
+`deltaLink` to `<state_directory>/items.sqlite3`; later runs reuse that link
+and retrieve only added, changed, and deleted items. The `deltaLink` advances
+only after every page has been processed successfully, so a partial failure
+does not lose unapplied changes.
+
+`--dry-run` still queries and reports the remote change summary but does not
+update SQLite state. Normal mode currently updates only the local state
+database and does not download, upload, delete, or modify files. When
+Microsoft Graph returns HTTP 429, the client honors a numeric `Retry-After`
+header and otherwise uses bounded exponential backoff. Retries are limited so
+persistent throttling fails explicitly instead of waiting forever.
 
 The throttling policy can be adjusted in the configuration file:
 
@@ -461,9 +469,9 @@ or modify the synchronization directory.
 
 ## Suggested Next Steps
 
-1. Implement Microsoft Graph delta queries and persist remote state.
-2. Add file transfer, conflict policies, and safe atomic file
-   replacement.
+1. Build synchronization plans from persisted remote state and implement safe
+   downloads with temporary files and atomic replacement.
+2. Add uploads, deletion handling, and conflict policies.
 3. Connect the monitor to inotify and add integration tests for the Graph and
    file system boundaries.
 

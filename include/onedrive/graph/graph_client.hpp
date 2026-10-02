@@ -2,8 +2,10 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -23,7 +25,17 @@ struct RemoteItem {
     std::string id;
     std::string name;
     std::string etag;
+    std::string parent_id;
+    std::string remote_path;
+    std::string last_modified;
+    std::int64_t size{0};
     bool directory{false};
+    bool deleted{false};
+};
+
+struct DeltaResult {
+    std::vector<RemoteItem> changes;
+    std::string delta_link;
 };
 
 struct GraphOptions {
@@ -39,6 +51,9 @@ public:
     virtual ~GraphClient() = default;
 
     [[nodiscard]] virtual std::vector<RemoteItem> list_root() const = 0;
+    [[nodiscard]] virtual DeltaResult list_delta(
+        const std::optional<std::string>& delta_link
+    ) const = 0;
 };
 
 class MicrosoftGraphClient final : public GraphClient {
@@ -55,6 +70,9 @@ public:
     ~MicrosoftGraphClient() override;
 
     [[nodiscard]] std::vector<RemoteItem> list_root() const override;
+    [[nodiscard]] DeltaResult list_delta(
+        const std::optional<std::string>& delta_link
+    ) const override;
 
 private:
     std::unique_ptr<http::HttpTransport> transport_;

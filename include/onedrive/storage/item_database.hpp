@@ -19,6 +19,10 @@ public:
 
     void open() override;
     void upsert(ItemState item) override;
+    void apply_delta(ItemDelta delta) override;
+    [[nodiscard]] std::optional<std::string> delta_link(
+        const std::string& drive_id
+    ) const override;
     [[nodiscard]] const ItemState* find(
         const std::string& remote_id
     ) const override;
@@ -29,6 +33,7 @@ private:
 
     std::filesystem::path state_directory_;
     std::unordered_map<std::string, ItemState> items_;
+    std::unordered_map<std::string, std::string> delta_links_;
     std::unique_ptr<Impl> impl_;
 };
 
