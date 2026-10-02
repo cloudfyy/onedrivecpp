@@ -101,8 +101,19 @@ install(FILES README.md
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/generated/onedrive-cpp.1
     DESTINATION ${CMAKE_INSTALL_MANDIR}/man1
 )
+install(
+    FILES packaging/completions/onedrive-cpp.bash
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/bash-completion/completions
+    RENAME onedrive-cpp
+)
+install(
+    FILES packaging/completions/_onedrive-cpp
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/zsh/vendor-completions
+)
 
 if(BUILD_TESTING)
+    find_program(BASH_EXECUTABLE bash REQUIRED)
+
     add_executable(config_tests tests/config_tests.cpp)
     target_link_libraries(config_tests PRIVATE onedrive_core)
     add_test(NAME config_tests COMMAND config_tests)
@@ -110,6 +121,14 @@ if(BUILD_TESTING)
     add_executable(console_tests tests/console_tests.cpp)
     target_link_libraries(console_tests PRIVATE onedrive_core)
     add_test(NAME console_tests COMMAND console_tests)
+
+    add_test(
+        NAME bash_completion_tests
+        COMMAND
+            ${BASH_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/bash_completion_tests.sh
+            ${CMAKE_CURRENT_SOURCE_DIR}/packaging/completions/onedrive-cpp.bash
+    )
 
     add_executable(item_database_tests tests/item_database_tests.cpp)
     target_link_libraries(item_database_tests PRIVATE onedrive_core)

@@ -232,6 +232,17 @@ Boolean value
 .B true
 or
 .BR false .
+.SH SHELL COMPLETION
+Bash and Zsh completion definitions are installed with the package. They
+complete subcommands, command options, enumerated option values, and paths for
+file-valued options.
+.PP
+For an uninstalled development tree, enable Bash completion in the current
+shell with:
+.PP
+.EX
+source packaging/completions/onedrive-cpp.bash
+.EE
 .SH FILES
 .TP
 .I ~/.config/onedrive-cpp/config

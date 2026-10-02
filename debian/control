@@ -20,6 +20,7 @@ Rules-Requires-Root: no
 Package: onedrive-cpp
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}
+Suggests: bash-completion, zsh
 Description: modern C++ OneDrive synchronization client scaffold
  A modular C++26 client scaffold with configuration, Microsoft Graph,
  local-state, synchronization, monitoring, and systemd integration layers.

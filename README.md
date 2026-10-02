@@ -144,6 +144,30 @@ in this mode. `--quiet` suppresses informational and success output while
 retaining warnings and errors. Diagnostic logs remain on standard error, while
 command results are written to standard output.
 
+### Shell completion
+
+The package installs Bash and Zsh completion definitions for subcommands,
+options, enumerated values, and file paths. New shell sessions load them
+automatically when the shell completion system is enabled.
+
+For a development build, enable Bash completion in the current shell with:
+
+```bash
+source packaging/completions/onedrive-cpp.bash
+```
+
+Then use Tab completion for commands and values:
+
+```bash
+build/release/onedrive-cpp <Tab>
+build/release/onedrive-cpp sync --<Tab>
+build/release/onedrive-cpp sync --log-level <Tab>
+```
+
+The installed definitions are placed in
+`share/bash-completion/completions/onedrive-cpp` and
+`share/zsh/vendor-completions/_onedrive-cpp`.
+
 ### Manual page
 
 The CMake install rules place the section 1 manual at the standard
