@@ -112,16 +112,25 @@ ctest --preset release
 journalctl --user -u onedrive-cpp.service -f
 ```
 
-每个子命令都支持 `--log-level` 和 `--log-file`：
+每个子命令都支持诊断日志和用户输出选项：
 
 ```bash
 onedrive-cpp sync --dry-run --log-level debug
 onedrive-cpp monitor --log-file ~/.local/state/onedrive-cpp/onedrive-cpp.log
+onedrive-cpp sync --dry-run --color always
+onedrive-cpp sync --dry-run --output json
+onedrive-cpp sync --dry-run --quiet
 ```
 
 支持 `trace`、`debug`、`info`、`warn`、`error`、`critical` 和 `off`。
 日志文件达到 5 MiB 时轮转，并保留三个旧文件。不得把认证 token、设备代码或
 Authorization header 写入日志。
+
+`--color=auto` 是默认值：仅在终端中启用样式，设置 `NO_COLOR` 时自动禁用；
+`always` 强制输出 ANSI 样式，`never` 始终禁用。`--output=json` 每行输出一个
+紧凑 JSON 对象且绝不包含 ANSI 序列；危险操作在该模式下必须使用 `--yes`
+显式确认。`--quiet` 隐藏普通信息和成功消息，但保留警告和错误。诊断日志继续
+写入标准错误，命令结果写入标准输出。
 
 ### 手册页
 

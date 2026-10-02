@@ -1,5 +1,6 @@
 #include "onedrive/sync/sync_engine.hpp"
 
+#include "onedrive/cli/console.hpp"
 #include "download_recovery.hpp"
 #include "download_transaction.hpp"
 #include "filesystem_metadata.hpp"
@@ -11,12 +12,17 @@
 #include <chrono>
 #include <filesystem>
 #include <format>
-#include <iostream>
 #include <optional>
 #include <stdexcept>
 
 namespace onedrive::sync {
 namespace {
+
+struct ExecutionSummary {
+    std::size_t downloaded{0};
+    std::size_t reused{0};
+    std::size_t directories{0};
+};
 
 std::filesystem::path prepare_sync_root(
     const std::filesystem::path& configured_root
@@ -40,13 +46,21 @@ std::filesystem::path prepare_sync_root(
 
 void report_plan(
     const detail::SyncPlan& plan,
-    const std::string& drive_id
+    const std::string& drive_id,
+    const cli::Console& console
 ) {
     const auto upsert_count =
         plan.directory_count() + plan.download_count();
-    std::cout << "Remote delta contains " << plan.change_count()
-              << " changes (" << upsert_count << " upserts, "
-              << plan.removal_count() << " removals).\n";
+    console.message(
+        cli::MessageKind::information,
+        "remote_delta",
+        std::format(
+            "Remote delta contains {} changes ({} upserts, {} removals).",
+            plan.change_count(),
+            upsert_count,
+            plan.removal_count()
+        )
+    );
     spdlog::info(
         "Remote delta prepared for drive '{}': {} upserts, {} removals",
         drive_id,
@@ -68,11 +82,32 @@ void report_plan(
             plan.removal_count()
         );
     }
-    std::cout << "Synchronization plan:\n"
-              << "  create directories: " << plan.directory_count() << '\n'
-              << "  download files:     " << plan.download_count() << '\n'
-              << "  download bytes:     " << plan.download_bytes() << '\n'
-              << "  local removals:     0\n";
+    console.section(
+        "synchronization_plan",
+        "Synchronization plan:",
+        {
+            {
+                .label = "create directories:",
+                .key = "create_directories",
+                .value = std::to_string(plan.directory_count()),
+            },
+            {
+                .label = "download files:",
+                .key = "download_files",
+                .value = std::to_string(plan.download_count()),
+            },
+            {
+                .label = "download bytes:",
+                .key = "download_bytes",
+                .value = std::to_string(plan.download_bytes()),
+            },
+            {
+                .label = "local removals:",
+                .key = "local_removals",
+                .value = "0",
+            },
+        }
+    );
 }
 
 void check_download_capacity(
@@ -101,7 +136,7 @@ void check_download_capacity(
     }
 }
 
-void execute_plan(
+ExecutionSummary execute_plan(
     detail::SyncPlan& plan,
     const std::filesystem::path& sync_root,
     const std::string& drive_id,
@@ -185,6 +220,11 @@ void execute_plan(
         reused_count,
         plan.directory_count()
     );
+    return {
+        .downloaded = downloaded_count,
+        .reused = reused_count,
+        .directories = plan.directory_count(),
+    };
 }
 
 }  // namespace
@@ -193,9 +233,14 @@ SyncEngine::SyncEngine(
     const config::Config& config,
     graph::GraphClient& graph,
     storage::ItemStore& items,
-    metrics::Metrics& metrics
+    metrics::Metrics& metrics,
+    const cli::Console* console
 )
-    : config_{config}, graph_{graph}, items_{items}, metrics_{metrics} {}
+    : config_{config},
+      graph_{graph},
+      items_{items},
+      metrics_{metrics},
+      console_{console} {}
 
 int SyncEngine::synchronize() const {
     const auto started_at = std::chrono::steady_clock::now();
@@ -207,20 +252,54 @@ int SyncEngine::synchronize() const {
     };
 
     try {
+        cli::Console fallback_console;
+        const auto& console =
+            console_ == nullptr ? fallback_console : *console_;
         std::filesystem::path sync_root = config_.sync_directory;
         std::optional<detail::FilesystemMetadata> metadata;
         if (config_.dry_run) {
-            std::cout << "Dry run configuration:\n"
-                      << "  sync directory:  " << config_.sync_directory << '\n'
-                      << "  state directory: " << config_.state_directory << '\n'
-                      << "  drive id:        " << config_.drive_id << '\n'
-                      << "  throttle retries: "
-                      << config_.graph_maximum_throttle_retries << '\n'
-                      << "  throttle delay:   "
-                      << config_.graph_initial_throttle_delay.count() << '-'
-                      << config_.graph_maximum_throttle_delay.count()
-                      << " seconds\n"
-                      << "  tracked items:   " << items_.size() << '\n';
+            console.section(
+                "dry_run_configuration",
+                "Dry run configuration:",
+                {
+                    {
+                        .label = "sync directory:",
+                        .key = "sync_directory",
+                        .value = config_.sync_directory.string(),
+                    },
+                    {
+                        .label = "state directory:",
+                        .key = "state_directory",
+                        .value = config_.state_directory.string(),
+                    },
+                    {
+                        .label = "drive id:",
+                        .key = "drive_id",
+                        .value = config_.drive_id,
+                    },
+                    {
+                        .label = "throttle retries:",
+                        .key = "throttle_retries",
+                        .value = std::to_string(
+                            config_.graph_maximum_throttle_retries
+                        ),
+                    },
+                    {
+                        .label = "throttle delay:",
+                        .key = "throttle_delay",
+                        .value = std::format(
+                            "{}-{} seconds",
+                            config_.graph_initial_throttle_delay.count(),
+                            config_.graph_maximum_throttle_delay.count()
+                        ),
+                    },
+                    {
+                        .label = "tracked items:",
+                        .key = "tracked_items",
+                        .value = std::to_string(items_.size()),
+                    },
+                }
+            );
             const auto pending = items_.pending_downloads(config_.drive_id);
             if (!pending.empty()) {
                 spdlog::info(
@@ -250,13 +329,18 @@ int SyncEngine::synchronize() const {
             items_.size(),
             previous_delta_link ? "present" : "absent"
         );
+        console.message(
+            cli::MessageKind::information,
+            "delta_query_started",
+            "Fetching Microsoft Graph changes..."
+        );
         auto plan = detail::SyncPlan::build(
             graph_.list_delta(previous_delta_link),
             config_.drive_id,
             config_.sync_directory,
             !previous_delta_link.has_value()
         );
-        report_plan(plan, config_.drive_id);
+        report_plan(plan, config_.drive_id, console);
 
         if (config_.dry_run) {
             spdlog::debug(
@@ -268,13 +352,39 @@ int SyncEngine::synchronize() const {
                 config_.sync_directory,
                 plan.download_bytes()
             );
-            execute_plan(
+            console.message(
+                cli::MessageKind::information,
+                "execution_started",
+                "Executing synchronization plan..."
+            );
+            const auto summary = execute_plan(
                 plan,
                 sync_root,
                 config_.drive_id,
                 graph_,
                 items_,
                 *metadata
+            );
+            console.section(
+                "execution_summary",
+                "Synchronization summary:",
+                {
+                    {
+                        .label = "downloaded:",
+                        .key = "downloaded",
+                        .value = std::to_string(summary.downloaded),
+                    },
+                    {
+                        .label = "reused:",
+                        .key = "reused",
+                        .value = std::to_string(summary.reused),
+                    },
+                    {
+                        .label = "directories prepared:",
+                        .key = "directories_prepared",
+                        .value = std::to_string(summary.directories),
+                    },
+                }
             );
             spdlog::debug(
                 "Persisting remote delta for drive '{}'",
@@ -290,10 +400,30 @@ int SyncEngine::synchronize() const {
                 "Synchronization dry run completed in {} milliseconds",
                 std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count()
             );
+            console.message(
+                cli::MessageKind::success,
+                "sync_completed",
+                std::format(
+                    "Synchronization dry run completed in {} milliseconds",
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        elapsed
+                    ).count()
+                )
+            );
         } else {
             spdlog::info(
                 "Synchronization state update completed in {} milliseconds",
                 std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count()
+            );
+            console.message(
+                cli::MessageKind::success,
+                "sync_completed",
+                std::format(
+                    "Synchronization state update completed in {} milliseconds",
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        elapsed
+                    ).count()
+                )
             );
         }
         return 0;

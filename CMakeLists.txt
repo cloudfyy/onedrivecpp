@@ -47,6 +47,7 @@ add_library(onedrive_core
     src/app/runtime_factory.cpp
     src/auth/device_auth.cpp
     src/auth/token_store.cpp
+    src/cli/console.cpp
     src/config/config.cpp
     src/graph/graph_client.cpp
     src/http/http_client.cpp
@@ -105,6 +106,10 @@ if(BUILD_TESTING)
     add_executable(config_tests tests/config_tests.cpp)
     target_link_libraries(config_tests PRIVATE onedrive_core)
     add_test(NAME config_tests COMMAND config_tests)
+
+    add_executable(console_tests tests/console_tests.cpp)
+    target_link_libraries(console_tests PRIVATE onedrive_core)
+    add_test(NAME console_tests COMMAND console_tests)
 
     add_executable(item_database_tests tests/item_database_tests.cpp)
     target_link_libraries(item_database_tests PRIVATE onedrive_core)

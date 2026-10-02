@@ -121,17 +121,28 @@ default. systemd captures that stream automatically:
 journalctl --user -u onedrive-cpp.service -f
 ```
 
-Every subcommand accepts `--log-level` and `--log-file`:
+Every subcommand accepts diagnostic logging and user-output options:
 
 ```bash
 onedrive-cpp sync --dry-run --log-level debug
 onedrive-cpp monitor --log-file ~/.local/state/onedrive-cpp/onedrive-cpp.log
+onedrive-cpp sync --dry-run --color always
+onedrive-cpp sync --dry-run --output json
+onedrive-cpp sync --dry-run --quiet
 ```
 
 Supported levels are `trace`, `debug`, `info`, `warn`, `error`, `critical`,
 and `off`. A configured log file rotates at 5 MiB and retains three older
 files. Authentication tokens, device codes, and authorization headers must
 never be written to logs.
+
+`--color=auto` is the default: styling is enabled only for a terminal and is
+disabled when `NO_COLOR` is set. `always` forces ANSI styling and `never`
+disables it. `--output=json` emits one compact JSON object per line and never
+emits ANSI sequences; destructive interactive confirmation requires `--yes`
+in this mode. `--quiet` suppresses informational and success output while
+retaining warnings and errors. Diagnostic logs remain on standard error, while
+command results are written to standard output.
 
 ### Manual page
 

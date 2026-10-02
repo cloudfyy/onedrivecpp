@@ -129,6 +129,33 @@ Also write logs to
 The file rotates at 5 MiB and retains three older files. Diagnostics continue
 to be written to standard error.
 .TP
+.BI \-\-color " MODE"
+Control ANSI styling. Supported modes are
+.BR auto ,
+.BR always ,
+and
+.BR never .
+The default
+.B auto
+enables styling only when standard output is a terminal and
+.B NO_COLOR
+is not set.
+.TP
+.BI \-\-output " FORMAT"
+Select
+.B text
+or
+.B json
+command output. JSON output uses one compact object per line, never contains
+ANSI sequences, and requires
+.B \-\-yes
+for destructive operations that would otherwise prompt interactively.
+.TP
+.B \-\-quiet
+Suppress informational and success command output while retaining warnings
+and errors. Diagnostic logging remains controlled separately by
+.BR \-\-log\-level .
+.TP
 .B \-\-dry\-run
 For the
 .B sync

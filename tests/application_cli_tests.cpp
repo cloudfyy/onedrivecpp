@@ -372,6 +372,18 @@ int main() {
     }
     if (run_application(
             runtime_factory,
+            {"onedrive-cpp", "logout", "--color", "sometimes"}
+        ).exit_code != 2) {
+        return fail("invalid color mode did not return usage exit code 2");
+    }
+    if (run_application(
+            runtime_factory,
+            {"onedrive-cpp", "logout", "--output", "yaml"}
+        ).exit_code != 2) {
+        return fail("invalid output mode did not return usage exit code 2");
+    }
+    if (run_application(
+            runtime_factory,
             {"onedrive-cpp", "reset-state", "--yes"}
         ).exit_code != 2) {
         return fail("--yes was accepted without --clear-all");
@@ -625,6 +637,50 @@ int main() {
             )) {
             return fail("remote delta item metadata was not written at trace level");
         }
+    }
+
+    const auto json_dry_run = run_application(
+        runtime_factory,
+        {
+            "onedrive-cpp",
+            "sync",
+            "--config",
+            config_path.string(),
+            "--dry-run",
+            "--output",
+            "json",
+            "--color",
+            "always",
+        }
+    );
+    if (json_dry_run.exit_code != 0 ||
+        !json_dry_run.standard_output.contains(
+            "\"event\":\"dry_run_configuration\""
+        ) ||
+        !json_dry_run.standard_output.contains(
+            "\"event\":\"synchronization_plan\""
+        ) ||
+        !json_dry_run.standard_output.contains(
+            "\"event\":\"sync_completed\""
+        ) ||
+        json_dry_run.standard_output.contains("\033[")) {
+        return fail("JSON output was not emitted as unstyled JSON Lines");
+    }
+
+    const auto quiet_dry_run = run_application(
+        runtime_factory,
+        {
+            "onedrive-cpp",
+            "sync",
+            "--config",
+            config_path.string(),
+            "--dry-run",
+            "--quiet",
+        }
+    );
+    if (quiet_dry_run.exit_code != 0 ||
+        !quiet_dry_run.standard_output.empty()) {
+        return fail("quiet output did not suppress sync information");
     }
 
     const auto monitor = run_application(

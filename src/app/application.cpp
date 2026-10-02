@@ -3,6 +3,7 @@
 #include "onedrive/app/runtime_factory.hpp"
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
+#include "onedrive/cli/console.hpp"
 #include "onedrive/config/config.hpp"
 #include "onedrive/graph/graph_client.hpp"
 #include "onedrive/http/http_client.hpp"
@@ -19,6 +20,7 @@
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
+#include <format>
 #include <iostream>
 #include <string>
 
@@ -34,7 +36,8 @@ std::filesystem::path default_config_path() {
 
 int authenticate(
     const config::Config& config,
-    const RuntimeFactory& runtime_factory
+    const RuntimeFactory& runtime_factory,
+    const cli::Console& console
 ) {
     auto transport = runtime_factory.create_http_transport();
     auto client = runtime_factory.create_device_auth_client(config, *transport);
@@ -49,12 +52,24 @@ int authenticate(
     }
 
     if (!device_code->message.empty()) {
-        std::cout << device_code->message << '\n';
+        console.message(
+            cli::MessageKind::information,
+            "device_authorization",
+            device_code->message
+        );
     } else {
-        std::cout << "Open " << device_code->verification_uri
-                  << " and enter code " << device_code->user_code << '\n';
+        console.message(
+            cli::MessageKind::information,
+            "device_authorization",
+            "Open " + device_code->verification_uri + " and enter code " +
+                device_code->user_code
+        );
     }
-    std::cout << "Waiting for authorization...\n";
+    console.message(
+        cli::MessageKind::information,
+        "authorization_wait",
+        "Waiting for authorization..."
+    );
 
     auto tokens = client->poll_for_token(*device_code);
     if (!tokens) {
@@ -68,8 +83,12 @@ int authenticate(
     auto token_store = runtime_factory.create_token_store(config);
     token_store->save_refresh_token(tokens->refresh_token);
     spdlog::info("Microsoft authentication succeeded");
-    std::cout << "Authentication succeeded. Refresh token saved to "
-              << token_store->path() << '\n';
+    console.message(
+        cli::MessageKind::success,
+        "authentication_succeeded",
+        "Authentication succeeded. Refresh token saved to " +
+            token_store->path().string()
+    );
     return 0;
 }
 
@@ -85,6 +104,9 @@ int Application::run(int argc, char* argv[]) {
     bool assume_yes = false;
     std::string log_level{"info"};
     std::string log_file;
+    std::string color_mode{"auto"};
+    std::string output_mode{"text"};
+    bool quiet = false;
 
     CLI::App cli{
         "A modern C++ OneDrive synchronization client",
@@ -113,7 +135,14 @@ int Application::run(int argc, char* argv[]) {
         cli.add_subcommand("monitor", "Monitor for synchronization changes");
 
     const auto add_common_options =
-        [&config_path, &log_level, &log_file](CLI::App& command) {
+        [
+            &config_path,
+            &log_level,
+            &log_file,
+            &color_mode,
+            &output_mode,
+            &quiet
+        ](CLI::App& command) {
         command
             .add_option("--config", config_path, "Path to the configuration file")
             ->type_name("PATH");
@@ -127,6 +156,27 @@ int Application::run(int argc, char* argv[]) {
         command
             .add_option("--log-file", log_file, "Also write rotating logs to this file")
             ->type_name("PATH");
+        command
+            .add_option(
+                "--color",
+                color_mode,
+                "Color output: auto, always, or never"
+            )
+            ->check(CLI::IsMember({"auto", "always", "never"}))
+            ->capture_default_str();
+        command
+            .add_option(
+                "--output",
+                output_mode,
+                "Output format: text or json"
+            )
+            ->check(CLI::IsMember({"text", "json"}))
+            ->capture_default_str();
+        command.add_flag(
+            "--quiet",
+            quiet,
+            "Suppress informational and success output"
+        );
     };
     add_common_options(*auth_command);
     add_common_options(*logout_command);
@@ -163,6 +213,13 @@ int Application::run(int argc, char* argv[]) {
         return exit_code == 0 ? 0 : 2;
     }
 
+    const cli::Console console{
+        {
+            .color = cli::Console::parse_color_mode(color_mode),
+            .output = cli::Console::parse_output_mode(output_mode),
+            .quiet = quiet,
+        }
+    };
     std::optional<logging::Session> logging_session;
     try {
         logging_session.emplace(
@@ -178,35 +235,60 @@ int Application::run(int argc, char* argv[]) {
 
         if (*auth_command) {
             spdlog::info("Starting Microsoft authentication");
-            return authenticate(config, runtime_factory_);
+            return authenticate(config, runtime_factory_, console);
         }
         if (*logout_command) {
             spdlog::info("Removing locally saved authentication");
             const bool removed =
                 runtime_factory_.create_token_store(config)->remove_refresh_token();
-            std::cout << (removed ? "Saved authentication removed.\n" :
-                                   "No saved authentication was present.\n");
+            console.message(
+                cli::MessageKind::success,
+                "logout_completed",
+                removed ? "Saved authentication removed." :
+                          "No saved authentication was present."
+            );
             return 0;
         }
         if (*reset_state_command) {
             if (clear_all_state && !assume_yes) {
-                std::cout
-                    << "WARNING: This will remove all saved item snapshots, "
-                       "the Delta cursor, and pending-download recovery records "
-                       "for drive '" << config.drive_id << "'.\n"
-                    << "Local files will not be deleted, but the next sync may "
-                       "report local modification conflicts.\n"
-                    << "Type the drive ID '" << config.drive_id
-                    << "' to confirm: " << std::flush;
-                std::string confirmation;
-                if (!std::getline(std::cin, confirmation) ||
-                    confirmation != config.drive_id) {
+                console.message(
+                    cli::MessageKind::warning,
+                    "full_state_clear_warning",
+                    "WARNING: This will remove all saved item snapshots, the "
+                    "Delta cursor, and pending-download recovery records for "
+                    "drive '" + config.drive_id + "'."
+                );
+                console.message(
+                    cli::MessageKind::warning,
+                    "full_state_clear_warning",
+                    "Local files will not be deleted, but the next sync may "
+                    "report local modification conflicts."
+                );
+                if (console.output_mode() == cli::OutputMode::json) {
+                    console.message(
+                        cli::MessageKind::error,
+                        "confirmation_required",
+                        "Interactive confirmation is unavailable with JSON "
+                        "output; use --yes to confirm explicitly."
+                    );
+                    return 1;
+                }
+                if (!console.confirm(
+                        "full_state_clear_confirmation",
+                        "Type the drive ID '" + config.drive_id +
+                            "' to confirm: ",
+                        config.drive_id
+                    )) {
                     spdlog::warn(
                         "Full synchronization state clear cancelled for drive "
                         "'{}': confirmation did not match",
                         config.drive_id
                     );
-                    std::cout << "Full state clear cancelled.\n";
+                    console.message(
+                        cli::MessageKind::warning,
+                        "full_state_clear_cancelled",
+                        "Full state clear cancelled."
+                    );
                     return 1;
                 }
             }
@@ -227,14 +309,25 @@ int Application::run(int argc, char* argv[]) {
                     cleared.pending_downloads,
                     cleared.delta_link ? "removed" : "not present"
                 );
-                std::cout
-                    << "Cleared all synchronization state for drive '"
-                    << config.drive_id << "': " << cleared.items
-                    << " item snapshots and " << cleared.pending_downloads
-                    << " pending downloads removed; saved cursor "
-                    << (cleared.delta_link ? "removed" : "not present") << ".\n"
-                    << "Local files were not deleted. The next sync may report "
-                       "local modification conflicts.\n";
+                console.message(
+                    cli::MessageKind::success,
+                    "full_state_clear_completed",
+                    std::format(
+                        "Cleared all synchronization state for drive '{}': {} "
+                        "item snapshots and {} pending downloads removed; saved "
+                        "cursor {}.",
+                        config.drive_id,
+                        cleared.items,
+                        cleared.pending_downloads,
+                        cleared.delta_link ? "removed" : "not present"
+                    )
+                );
+                console.message(
+                    cli::MessageKind::warning,
+                    "local_files_preserved",
+                    "Local files were not deleted. The next sync may report "
+                    "local modification conflicts."
+                );
                 return 0;
             }
             spdlog::info(
@@ -251,16 +344,38 @@ int Application::run(int argc, char* argv[]) {
                 config.drive_id,
                 removed ? "removed" : "not present"
             );
-            std::cout << "Reset synchronization cursor for drive '"
-                      << config.drive_id << "': saved cursor "
-                      << (removed ? "removed" : "not present") << ".\n"
-                      << "Item snapshots and pending downloads were preserved.\n"
-                      << "The next sync will perform a full Microsoft Graph "
-                         "delta query.\n";
+            console.message(
+                cli::MessageKind::success,
+                "state_cursor_reset",
+                "Reset synchronization cursor for drive '" + config.drive_id +
+                    "': saved cursor " +
+                    (removed ? "removed" : "not present") + "."
+            );
+            console.message(
+                cli::MessageKind::information,
+                "state_preserved",
+                "Item snapshots and pending downloads were preserved."
+            );
+            console.message(
+                cli::MessageKind::information,
+                "initial_delta_scheduled",
+                "The next sync will perform a full Microsoft Graph delta query."
+            );
             return 0;
         }
         if (*monitor_command) {
             spdlog::info("Starting filesystem monitor");
+            console.message(
+                cli::MessageKind::success,
+                "monitor_ready",
+                "Monitor scaffold ready for: " +
+                    config.sync_directory.string()
+            );
+            console.message(
+                cli::MessageKind::information,
+                "monitor_status",
+                "Filesystem event integration is planned for the next milestone."
+            );
             return runtime_factory_.create_monitor(config)->run();
         }
 
@@ -269,7 +384,13 @@ int Application::run(int argc, char* argv[]) {
         items->open();
         auto graph = runtime_factory_.create_graph_client(config);
         auto metrics = runtime_factory_.create_metrics();
-        return sync::SyncEngine{config, *graph, *items, *metrics}.synchronize();
+        return sync::SyncEngine{
+            config,
+            *graph,
+            *items,
+            *metrics,
+            &console
+        }.synchronize();
     } catch (const std::exception& error) {
         if (const auto logger = spdlog::default_logger()) {
             logger->error("{}", error.what());
