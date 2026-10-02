@@ -92,11 +92,8 @@ SQLite, spdlog, and fmt without rebuilding `onedrive-cpp`.
 
 ## Build and Test Locally
 
-Run all build commands from the project root:
-
-```bash
-cd /home/yingying/onedrivecpp
-```
+After cloning the repository, change to its root directory. All build commands
+below assume the project root is the current working directory.
 
 ### Release build
 

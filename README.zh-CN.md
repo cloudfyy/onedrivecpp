@@ -85,11 +85,7 @@ OpenSSL、SQLite、spdlog 和 fmt，而无需重新构建 `onedrive-cpp`。
 
 ## 本地构建与测试
 
-所有构建命令均在项目根目录执行：
-
-```bash
-cd /home/yingying/onedrivecpp
-```
+克隆仓库后请进入仓库根目录。以下所有构建命令均假定当前工作目录为项目根目录。
 
 ### Release 构建
 
