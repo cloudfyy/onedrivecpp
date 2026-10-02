@@ -79,7 +79,14 @@ private:
 class FakeGraphClient final : public onedrive::graph::GraphClient {
 public:
     [[nodiscard]] std::vector<onedrive::graph::RemoteItem> list_root() const override {
-        return {};
+        return {
+            {
+                .id = "file-id",
+                .name = "notes.txt",
+                .etag = "file-etag",
+                .directory = false,
+            },
+        };
     }
 };
 
@@ -337,6 +344,37 @@ int main() {
         };
         if (!contents.contains("Synchronization dry run completed")) {
             return fail("sync completion was not written to the configured log");
+        }
+    }
+
+    const auto trace_sync = run_application(
+        runtime_factory,
+        {
+            "onedrive-cpp",
+            "sync",
+            "--config",
+            config_path.string(),
+            "--log-level",
+            "trace",
+            "--log-file",
+            log_path.string(),
+        }
+    );
+    if (trace_sync.exit_code != 0 ||
+        !trace_sync.standard_output.contains("Remote root contains 1 items")) {
+        return fail("sync trace command did not inspect the remote root");
+    }
+    {
+        std::ifstream log{log_path};
+        const std::string contents{
+            std::istreambuf_iterator<char>{log},
+            std::istreambuf_iterator<char>{}
+        };
+        if (!contents.contains(
+                "Remote root item: name='notes.txt', id='file-id', "
+                "eTag='file-etag', type=file"
+            )) {
+            return fail("remote root item metadata was not written at trace level");
         }
     }
 

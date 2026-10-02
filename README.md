@@ -253,6 +253,21 @@ cp /etc/onedrive-cpp/onedrive-cpp.conf ~/.config/onedrive-cpp/config
 sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config
 ```
 
+`drive_id` selects the remote OneDrive drive to access. The default value,
+`me`, selects the signed-in user's default OneDrive and lists its root through
+the Microsoft Graph path `/me/drive/root/children`. To access another OneDrive
+or a SharePoint document library available to the account, set the actual
+Drive ID instead; the client then uses `/drives/<drive_id>/root/children`.
+For example:
+
+```ini
+# Default OneDrive of the signed-in user
+drive_id=me
+
+# Another OneDrive or SharePoint document library
+# drive_id=b!YOUR_DRIVE_ID
+```
+
 Tracked remote IDs, ETags, and local paths are stored in
 `<state_directory>/items.sqlite3`. The database uses SQLite WAL mode and is
 loaded when the application starts.

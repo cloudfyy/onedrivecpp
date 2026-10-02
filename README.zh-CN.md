@@ -238,6 +238,20 @@ cp /etc/onedrive-cpp/onedrive-cpp.conf ~/.config/onedrive-cpp/config
 sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config
 ```
 
+`drive_id` 指定要访问的远端 OneDrive Drive。默认值 `me` 表示当前登录账号的
+默认 OneDrive，程序使用 Microsoft Graph 路径 `/me/drive/root/children`
+列出其根目录。若要访问账号有权使用的其他 OneDrive 或 SharePoint 文档库，
+可将其设置为实际的 Drive ID；程序将改用
+`/drives/<drive_id>/root/children`。例如：
+
+```ini
+# 当前账号的默认 OneDrive
+drive_id=me
+
+# 指定其他 OneDrive 或 SharePoint 文档库
+# drive_id=b!YOUR_DRIVE_ID
+```
+
 远端 ID、ETag 和本地路径状态保存在
 `<state_directory>/items.sqlite3`。数据库使用 SQLite WAL 模式，并在程序
 启动时加载。

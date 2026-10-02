@@ -40,6 +40,15 @@ int SyncEngine::synchronize() const {
         }
 
         const auto remote_items = graph_.list_root();
+        for (const auto& item : remote_items) {
+            spdlog::trace(
+                "Remote root item: name='{}', id='{}', eTag='{}', type={}",
+                item.name,
+                item.id,
+                item.etag,
+                item.directory ? "directory" : "file"
+            );
+        }
         std::cout << "Remote root contains " << remote_items.size() << " items.\n";
         record_result(true);
         const auto elapsed = std::chrono::steady_clock::now() - started_at;
