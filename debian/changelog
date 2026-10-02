@@ -1,3 +1,11 @@
+onedrive-cpp (0.3.0-1) unstable; urgency=medium
+
+  * Add safe one-way synchronization with atomic downloads and recovery.
+  * Automatically recover from expired Microsoft Graph Delta cursors.
+  * Show per-file download progress in text and JSON output modes.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Fri, 02 Oct 2026 23:33:55 +0000
+
 onedrive-cpp (0.2.0-1) unstable; urgency=medium
 
   * Add authenticated Microsoft Graph root-directory listing.
