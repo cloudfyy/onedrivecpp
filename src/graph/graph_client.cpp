@@ -571,6 +571,10 @@ DeltaResult MicrosoftGraphClient::list_delta(
                         "Microsoft Graph returned a delta URL outside its endpoint"
                     );
                 }
+                spdlog::debug(
+                    "Received final Microsoft Graph delta cursor on page {}",
+                    page_number
+                );
             }
             spdlog::debug(
                 "Received Microsoft Graph delta page {} with {} changes; {} total",

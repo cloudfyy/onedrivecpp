@@ -182,6 +182,12 @@ int Application::run(int argc, char* argv[]) {
             auto items = runtime_factory_.create_item_store(config);
             items->open();
             const auto removed = items->reset(config.drive_id);
+            spdlog::info(
+                "Synchronization state reset completed for drive '{}': {} items "
+                "removed; next sync will use an initial delta query",
+                config.drive_id,
+                removed
+            );
             std::cout << "Reset synchronization state for drive '"
                       << config.drive_id << "': " << removed
                       << " items removed.\n"

@@ -60,6 +60,13 @@ int SyncEngine::synchronize() const {
         }
 
         const auto previous_delta_link = items_.delta_link(config_.drive_id);
+        spdlog::debug(
+            "Preparing Microsoft Graph delta query for drive '{}': {} tracked "
+            "items, saved cursor {}",
+            config_.drive_id,
+            items_.size(),
+            previous_delta_link ? "present" : "absent"
+        );
         const auto delta = graph_.list_delta(previous_delta_link);
         storage::ItemDelta state_delta{
             .drive_id = config_.drive_id,
@@ -98,7 +105,22 @@ int SyncEngine::synchronize() const {
         std::cout << "Remote delta contains " << delta.changes.size()
                   << " changes (" << state_delta.upserts.size() << " upserts, "
                   << state_delta.removals.size() << " removals).\n";
-        if (!config_.dry_run) {
+        spdlog::info(
+            "Remote delta prepared for drive '{}': {} upserts, {} removals",
+            config_.drive_id,
+            state_delta.upserts.size(),
+            state_delta.removals.size()
+        );
+        if (config_.dry_run) {
+            spdlog::debug(
+                "Dry run left synchronization state unchanged for drive '{}'",
+                config_.drive_id
+            );
+        } else {
+            spdlog::debug(
+                "Persisting remote delta for drive '{}'",
+                config_.drive_id
+            );
             items_.apply_delta(std::move(state_delta));
         }
         record_result(true);

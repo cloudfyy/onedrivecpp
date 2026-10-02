@@ -371,6 +371,8 @@ int main() {
             "reset-state",
             "--config",
             config_path.string(),
+            "--log-file",
+            log_path.string(),
         }
     );
     if (reset_state.exit_code != 0 ||
@@ -388,6 +390,19 @@ int main() {
         runtime_factory.metrics_count != 0) {
         return fail("reset-state command was not dispatched to the item store");
     }
+    {
+        std::ifstream log{log_path};
+        const std::string contents{
+            std::istreambuf_iterator<char>{log},
+            std::istreambuf_iterator<char>{}
+        };
+        if (!contents.contains(
+                "Synchronization state reset completed for drive 'me': 7 items "
+                "removed; next sync will use an initial delta query"
+            )) {
+            return fail("reset-state completion was not written to the log");
+        }
+    }
 
     const auto dry_run = run_application(
         runtime_factory,
@@ -397,6 +412,8 @@ int main() {
             "--config",
             config_path.string(),
             "--dry-run",
+            "--log-level",
+            "debug",
             "--log-file",
             log_path.string(),
         }
@@ -421,8 +438,18 @@ int main() {
             std::istreambuf_iterator<char>{log},
             std::istreambuf_iterator<char>{}
         };
-        if (!contents.contains("Synchronization dry run completed")) {
-            return fail("sync completion was not written to the configured log");
+        if (!contents.contains(
+                "Preparing Microsoft Graph delta query for drive 'me': 0 tracked "
+                "items, saved cursor absent"
+            ) ||
+            !contents.contains(
+                "Remote delta prepared for drive 'me': 1 upserts, 0 removals"
+            ) ||
+            !contents.contains(
+                "Dry run left synchronization state unchanged for drive 'me'"
+            ) ||
+            !contents.contains("Synchronization dry run completed")) {
+            return fail("sync dry-run diagnostics were not written to the log");
         }
     }
 
@@ -453,6 +480,10 @@ int main() {
             std::istreambuf_iterator<char>{}
         };
         if (!contents.contains(
+                "Remote delta prepared for drive 'me': 1 upserts, 0 removals"
+            ) ||
+            !contents.contains("Persisting remote delta for drive 'me'") ||
+            !contents.contains(
                 "Remote item changed: path='notes.txt', id='file-id', "
                 "eTag='file-etag', type=file"
             )) {

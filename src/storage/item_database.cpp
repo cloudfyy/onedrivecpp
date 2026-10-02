@@ -442,7 +442,9 @@ void ItemDatabase::apply_delta(ItemDelta delta) {
     }
     delta_links_.insert_or_assign(delta.drive_id, std::move(delta.delta_link));
     spdlog::debug(
-        "Applied remote delta: {} upserts, {} removals, {} items tracked",
+        "Committed remote delta for drive '{}': {} upserts, {} removals, "
+        "delta cursor advanced, {} total items tracked",
+        delta.drive_id,
         delta.upserts.size(),
         delta.removals.size(),
         items_.size()
@@ -460,6 +462,7 @@ std::size_t ItemDatabase::reset(const std::string& drive_id) {
         );
     }
 
+    const bool had_delta_link = delta_links_.contains(drive_id);
     Transaction transaction{database};
     Statement item_statement{
         database,
@@ -494,10 +497,12 @@ std::size_t ItemDatabase::reset(const std::string& drive_id) {
         }
     }
     delta_links_.erase(drive_id);
-    spdlog::info(
-        "Reset synchronization state for drive '{}': {} items removed",
+    spdlog::debug(
+        "Cleared synchronization state for drive '{}': {} items removed, "
+        "saved delta cursor {}",
         drive_id,
-        removed
+        removed,
+        had_delta_link ? "removed" : "not present"
     );
     return removed;
 }
