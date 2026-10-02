@@ -54,6 +54,11 @@ add_library(onedrive_core
     src/metrics/metrics.cpp
     src/monitor/monitor.cpp
     src/storage/item_database.cpp
+    src/sync/download_recovery.cpp
+    src/sync/download_transaction.cpp
+    src/sync/filesystem_metadata.cpp
+    src/sync/local_filesystem.cpp
+    src/sync/sync_plan.cpp
     src/sync/sync_engine.cpp
 )
 
@@ -124,6 +129,33 @@ if(BUILD_TESTING)
     add_executable(sync_engine_tests tests/sync_engine_tests.cpp)
     target_link_libraries(sync_engine_tests PRIVATE onedrive_core)
     add_test(NAME sync_engine_tests COMMAND sync_engine_tests)
+
+    add_executable(
+        local_filesystem_tests
+        tests/local_filesystem_tests.cpp
+    )
+    target_include_directories(
+        local_filesystem_tests
+        PRIVATE src/sync
+    )
+    target_link_libraries(local_filesystem_tests PRIVATE onedrive_core)
+    add_test(NAME local_filesystem_tests COMMAND local_filesystem_tests)
+
+    add_executable(sync_plan_tests tests/sync_plan_tests.cpp)
+    target_include_directories(sync_plan_tests PRIVATE src/sync)
+    target_link_libraries(sync_plan_tests PRIVATE onedrive_core)
+    add_test(NAME sync_plan_tests COMMAND sync_plan_tests)
+
+    add_executable(
+        download_components_tests
+        tests/download_components_tests.cpp
+    )
+    target_include_directories(
+        download_components_tests
+        PRIVATE src/sync
+    )
+    target_link_libraries(download_components_tests PRIVATE onedrive_core)
+    add_test(NAME download_components_tests COMMAND download_components_tests)
 endif()
 
 set(CPACK_GENERATOR "DEB")
