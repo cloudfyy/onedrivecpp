@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -38,6 +39,11 @@ struct RemoteItem {
 struct DeltaResult {
     std::vector<RemoteItem> changes;
     std::string delta_link;
+};
+
+class DeltaCursorInvalidError final : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
 };
 
 struct GraphOptions {

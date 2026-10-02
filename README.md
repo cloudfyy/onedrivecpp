@@ -518,6 +518,11 @@ remote metadata, size, and SHA-256 content fingerprint to a SQLite
 processes this journal first, making SQLite authoritative rather than relying
 on target-file-system extended attributes.
 
+If Microsoft Graph rejects a saved Delta cursor with `410 Gone`, synchronization
+automatically retries with a full Delta query. Existing local snapshots remain
+available for conflict detection, and the saved cursor and remote inventory are
+replaced only after the full synchronization plan succeeds.
+
 `filesystem_metadata` controls optional `user.*` xattr hints:
 
 ```ini

@@ -479,6 +479,10 @@ token 时安全持久化，并通过分页的 Microsoft Graph Delta 请求获取
 恢复 journal，因此 SQLite 是崩溃恢复的权威来源，不依赖目标文件系统的
 扩展属性。
 
+如果 Microsoft Graph 以 `410 Gone` 拒绝已保存的 Delta 游标，同步会自动改用
+完整 Delta 查询重试。已有本地快照会继续用于冲突检测；只有完整同步计划成功后，
+程序才会替换已保存的游标和远端 item 清单。
+
 `filesystem_metadata` 控制是否额外写入 `user.*` xattr：
 
 ```ini

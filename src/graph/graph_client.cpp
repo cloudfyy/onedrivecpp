@@ -526,6 +526,12 @@ DeltaResult MicrosoftGraphClient::list_delta(
             );
         }
         if (response->status_code < 200 || response->status_code >= 300) {
+            if (delta_link && response->status_code == 410) {
+                throw DeltaCursorInvalidError(
+                    "Microsoft Graph rejected the saved delta cursor: " +
+                    graph_error_message(json, response->status_code)
+                );
+            }
             throw std::runtime_error(
                 graph_error_message(json, response->status_code)
             );

@@ -51,8 +51,14 @@ public:
     }
 
     [[nodiscard]] onedrive::graph::DeltaResult list_delta(
-        const std::optional<std::string>&
+        const std::optional<std::string>& delta_link
     ) const override {
+        delta_requests.push_back(delta_link);
+        if (delta_link && reject_saved_cursor) {
+            throw onedrive::graph::DeltaCursorInvalidError{
+                "simulated invalid delta cursor"
+            };
+        }
         return {
             .changes = changes,
             .delta_link = "https://graph.example.test/delta",
@@ -74,7 +80,9 @@ public:
     std::vector<onedrive::graph::RemoteItem> changes;
     std::unordered_map<std::string, std::string> contents;
     std::string failing_id;
+    bool reject_saved_cursor{false};
     mutable int download_count{0};
+    mutable std::vector<std::optional<std::string>> delta_requests;
 };
 
 class FakeItemStore final : public onedrive::storage::ItemStore {
@@ -131,7 +139,7 @@ public:
     [[nodiscard]] std::optional<std::string> delta_link(
         const std::string&
     ) const override {
-        return std::nullopt;
+        return saved_delta_link;
     }
 
     [[nodiscard]] const onedrive::storage::ItemState* find(
@@ -149,6 +157,7 @@ public:
     std::unordered_map<std::string, onedrive::storage::ItemState> items;
     std::unordered_map<std::string, onedrive::storage::PendingDownload> pending;
     onedrive::storage::ItemDelta applied_delta;
+    std::optional<std::string> saved_delta_link;
     int upsert_count{0};
     int apply_count{0};
     bool fail_upsert{false};
@@ -345,6 +354,46 @@ int test_failure_and_conflict() {
     return EXIT_SUCCESS;
 }
 
+int test_invalid_delta_cursor_restarts_full_query() {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path() / "files";
+    FakeGraphClient graph;
+    graph.reject_saved_cursor = true;
+    graph.changes = {
+        {
+            .id = "directory",
+            .name = "Documents",
+            .etag = "directory-etag",
+            .parent_id = "root",
+            .remote_path = "Documents",
+            .directory = true,
+        },
+    };
+    FakeItemStore items;
+    items.saved_delta_link =
+        "https://graph.example.test/delta?token=expired";
+    FakeMetrics metrics;
+
+    if (onedrive::sync::SyncEngine{
+            config_for(root, false),
+            graph,
+            items,
+            metrics
+        }.synchronize() != 0 ||
+        graph.delta_requests !=
+            std::vector<std::optional<std::string>>{
+                items.saved_delta_link,
+                std::nullopt,
+            } ||
+        items.apply_count != 1 || !items.applied_delta.replace_drive_items ||
+        items.applied_delta.upserts.size() != 1 || !metrics.last_success) {
+        return fail(
+            "invalid delta cursor did not restart a replacing full query"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_pending_download_recovery() {
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "files";
@@ -529,6 +578,10 @@ int main() {
         return result;
     }
     if (const int result = test_failure_and_conflict(); result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_invalid_delta_cursor_restarts_full_query();
+        result != EXIT_SUCCESS) {
         return result;
     }
     if (const int result = test_pending_download_recovery();

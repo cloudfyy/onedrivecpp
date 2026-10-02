@@ -522,6 +522,51 @@ int test_delta_resume_and_url_validation() {
     return EXIT_SUCCESS;
 }
 
+int test_invalid_delta_cursor_error() {
+    constexpr std::string_view saved_delta_link{
+        "https://graph.example.test/v1.0/delta?token=expired"
+    };
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"expires_in":3600,"access_token":"access-secret"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 410,
+                .body =
+                    R"({"error":{"code":"resyncRequired",)"
+                    R"("message":"The delta token is no longer valid."}})",
+            },
+        }
+    );
+    auto* transport_pointer = transport.get();
+    onedrive::graph::MicrosoftGraphClient client{
+        std::move(transport),
+        std::make_unique<FakeTokenStore>(std::string{"existing-refresh"}),
+        auth_options(),
+        {
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+        },
+    };
+
+    try {
+        static_cast<void>(client.list_delta(std::string{saved_delta_link}));
+        return fail("invalid saved Graph delta cursor was accepted");
+    } catch (const onedrive::graph::DeltaCursorInvalidError& error) {
+        if (!std::string{error.what()}.contains("delta token is no longer valid")) {
+            return fail("invalid Graph delta cursor error omitted the server detail");
+        }
+    }
+    if (transport_pointer->requests.size() != 2 ||
+        transport_pointer->requests[1].url != saved_delta_link) {
+        return fail("invalid Graph delta cursor request was incorrect");
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_file_download_redirect() {
     auto transport = std::make_unique<FakeTransport>(
         std::deque<onedrive::http::HttpResult>{
@@ -612,6 +657,10 @@ int main() {
         return result;
     }
     if (const int result = test_delta_resume_and_url_validation();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_invalid_delta_cursor_error();
         result != EXIT_SUCCESS) {
         return result;
     }

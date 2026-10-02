@@ -334,11 +334,29 @@ int SyncEngine::synchronize() const {
             "delta_query_started",
             "Fetching Microsoft Graph changes..."
         );
+        bool replace_drive_items = !previous_delta_link.has_value();
+        graph::DeltaResult delta;
+        try {
+            delta = graph_.list_delta(previous_delta_link);
+        } catch (const graph::DeltaCursorInvalidError& error) {
+            spdlog::warn(
+                "{}; retrying with a full Microsoft Graph delta query",
+                error.what()
+            );
+            console.message(
+                cli::MessageKind::warning,
+                "delta_cursor_invalid",
+                "The saved Microsoft Graph cursor is no longer valid; "
+                "fetching the full remote state..."
+            );
+            delta = graph_.list_delta(std::nullopt);
+            replace_drive_items = true;
+        }
         auto plan = detail::SyncPlan::build(
-            graph_.list_delta(previous_delta_link),
+            std::move(delta),
             config_.drive_id,
             config_.sync_directory,
-            !previous_delta_link.has_value()
+            replace_drive_items
         );
         report_plan(plan, config_.drive_id, console);
 
