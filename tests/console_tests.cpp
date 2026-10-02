@@ -39,8 +39,12 @@ int main() {
             {.label = "Bytes:", .key = "bytes", .value = "42"},
         }
     );
+    plain.download_progress("file.bin", 1, 2, 5, 10, false);
+    plain.download_progress("file.bin", 1, 2, 10, 10, true);
     if (plain_output.str() !=
-        "Completed.\nSummary\n  Files: 12\n  Bytes: 42\n" ||
+        "Completed.\nSummary\n  Files: 12\n  Bytes: 42\n"
+        "[1/2] Downloading 'file.bin': 50% (5/10 bytes)\n"
+        "[1/2] Downloading 'file.bin': 100% (10/10 bytes)\n" ||
         !plain_error.str().empty()) {
         return fail("plain console output was incorrect");
     }
@@ -80,16 +84,25 @@ int main() {
             {.label = "Files", .key = "files", .value = "12"},
         }
     );
+    json.download_progress("file.bin", 1, 1, 4, 8, false);
     std::istringstream json_lines{json_output.str()};
     std::string line;
     std::getline(json_lines, line);
     const auto message = nlohmann::json::parse(line);
     std::getline(json_lines, line);
     const auto section = nlohmann::json::parse(line);
+    std::getline(json_lines, line);
+    const auto progress = nlohmann::json::parse(line);
     if (message.at("event") != "phase" ||
         message.at("message") != "Working" ||
         section.at("event") != "summary" ||
         section.at("values").at("files") != "12" ||
+        progress.at("event") != "download_progress" ||
+        progress.at("path") != "file.bin" ||
+        progress.at("downloaded_bytes") != 4 ||
+        progress.at("total_bytes") != 8 ||
+        progress.at("percentage") != 50 ||
+        progress.at("completed") != false ||
         json_output.str().contains("\033[")) {
         return fail("JSON console output was invalid");
     }
@@ -112,6 +125,7 @@ int main() {
         "Hidden",
         {{.label = "Files", .key = "files", .value = "12"}}
     );
+    quiet.download_progress("hidden.bin", 1, 1, 1, 2, false);
     quiet.message(MessageKind::warning, "warning", "Visible warning");
     quiet.message(MessageKind::error, "error", "Visible error");
     if (quiet_output.str() != "Visible warning\n" ||

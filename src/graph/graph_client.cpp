@@ -658,7 +658,8 @@ DeltaResult MicrosoftGraphClient::list_delta(
 
 void MicrosoftGraphClient::download_file(
     const std::string& remote_id,
-    const std::filesystem::path& destination
+    const std::filesystem::path& destination,
+    const DownloadProgress& progress
 ) const {
     if (remote_id.empty()) {
         throw std::invalid_argument("cannot download a drive item without an ID");
@@ -717,7 +718,8 @@ void MicrosoftGraphClient::download_file(
             .operation_timeout = std::chrono::hours{1},
             .maximum_response_size = 0,
         },
-        destination
+        destination,
+        progress
     );
     if (!response) {
         throw std::runtime_error(

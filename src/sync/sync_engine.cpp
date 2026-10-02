@@ -142,7 +142,8 @@ ExecutionSummary execute_plan(
     const std::string& drive_id,
     graph::GraphClient& graph,
     storage::ItemStore& items,
-    const detail::FilesystemMetadata& metadata
+    const detail::FilesystemMetadata& metadata,
+    const cli::Console& console
 ) {
     for (std::size_t index = 0; index < plan.directory_count(); ++index) {
         const auto& item = plan.directory(index);
@@ -202,13 +203,60 @@ ExecutionSummary execute_plan(
                 item.remote_path,
                 item.size
             );
-            state = detail::download_atomically(
-                graph,
-                items,
-                item,
-                state,
-                destination,
-                metadata
+            const auto expected_size =
+                static_cast<std::uint64_t>(item.size);
+            std::uint64_t last_reported_percentage = 0;
+            console.download_progress(
+                item.remote_path,
+                index + 1,
+                plan.download_count(),
+                0,
+                expected_size,
+                false
+            );
+            try {
+                state = detail::download_atomically(
+                    graph,
+                    items,
+                    item,
+                    state,
+                    destination,
+                    metadata,
+                    [&](std::uint64_t downloaded, std::uint64_t reported_total) {
+                        const auto total =
+                            expected_size == 0 ? reported_total : expected_size;
+                        if (total == 0 || downloaded >= total) {
+                            return;
+                        }
+                        const auto percentage = static_cast<std::uint64_t>(
+                            static_cast<long double>(downloaded) * 100.0L /
+                            static_cast<long double>(total)
+                        );
+                        if (percentage < last_reported_percentage + 5) {
+                            return;
+                        }
+                        last_reported_percentage = percentage;
+                        console.download_progress(
+                            item.remote_path,
+                            index + 1,
+                            plan.download_count(),
+                            downloaded,
+                            total,
+                            false
+                        );
+                    }
+                );
+            } catch (...) {
+                console.end_download_progress();
+                throw;
+            }
+            console.download_progress(
+                item.remote_path,
+                index + 1,
+                plan.download_count(),
+                expected_size,
+                expected_size,
+                true
             );
             ++downloaded_count;
         }
@@ -381,7 +429,8 @@ int SyncEngine::synchronize() const {
                 config_.drive_id,
                 graph_,
                 items_,
-                *metadata
+                *metadata,
+                console
             );
             console.section(
                 "execution_summary",

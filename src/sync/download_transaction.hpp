@@ -14,7 +14,8 @@ namespace onedrive::sync::detail {
     const graph::RemoteItem& item,
     storage::ItemState state,
     const std::filesystem::path& destination,
-    const FilesystemMetadata& metadata
+    const FilesystemMetadata& metadata,
+    const graph::DownloadProgress& progress = {}
 );
 
 }  // namespace onedrive::sync::detail

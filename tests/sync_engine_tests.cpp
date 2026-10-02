@@ -1,3 +1,4 @@
+#include "onedrive/cli/console.hpp"
 #include "onedrive/config/config.hpp"
 #include "onedrive/graph/graph_client.hpp"
 #include "onedrive/metrics/metrics.hpp"
@@ -10,6 +11,7 @@
 #include <fstream>
 #include <iostream>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -67,7 +69,8 @@ public:
 
     void download_file(
         const std::string& remote_id,
-        const std::filesystem::path& destination
+        const std::filesystem::path& destination,
+        const onedrive::graph::DownloadProgress& progress
     ) const override {
         ++download_count;
         if (remote_id == failing_id) {
@@ -75,6 +78,11 @@ public:
         }
         std::ofstream output{destination, std::ios::binary};
         output << contents.at(remote_id);
+        if (progress) {
+            const auto size = contents.at(remote_id).size();
+            progress(size / 2, size);
+            progress(size, size);
+        }
     }
 
     std::vector<onedrive::graph::RemoteItem> changes;
@@ -248,9 +256,35 @@ int test_dry_run_and_success() {
     FakeItemStore items;
     FakeMetrics metrics;
     const auto config = config_for(root, false);
-    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize() != 0 ||
+    std::ostringstream progress_output;
+    std::ostringstream progress_error;
+    const onedrive::cli::Console console{
+        {
+            .color = onedrive::cli::ColorMode::never,
+            .output = onedrive::cli::OutputMode::text,
+        },
+        progress_output,
+        progress_error
+    };
+    if (onedrive::sync::SyncEngine{
+            config,
+            graph,
+            items,
+            metrics,
+            &console
+        }.synchronize() != 0 ||
         graph.download_count != 1 || items.upsert_count != 1 ||
-        items.apply_count != 1 || !metrics.last_success) {
+        items.apply_count != 1 || !metrics.last_success ||
+        !progress_output.str().contains(
+            "[1/1] Downloading 'Documents/file.txt': 0% (0/4 bytes)"
+        ) ||
+        !progress_output.str().contains(
+            "[1/1] Downloading 'Documents/file.txt': 50% (2/4 bytes)"
+        ) ||
+        !progress_output.str().contains(
+            "[1/1] Downloading 'Documents/file.txt': 100% (4/4 bytes)"
+        ) ||
+        !progress_error.str().empty()) {
         return fail("successful download did not commit synchronization state");
     }
     std::ifstream input{root / "Documents/file.txt", std::ios::binary};

@@ -104,7 +104,8 @@ public:
 
     void download_file(
         const std::string&,
-        const std::filesystem::path& destination
+        const std::filesystem::path& destination,
+        const onedrive::graph::DownloadProgress&
     ) const override {
         std::ofstream output{destination, std::ios::binary};
         output << std::string(42, 'x');

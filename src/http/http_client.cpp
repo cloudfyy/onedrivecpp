@@ -7,6 +7,7 @@
 #include <array>
 #include <cerrno>
 #include <cstring>
+#include <exception>
 #include <fcntl.h>
 #include <limits>
 #include <memory>
@@ -62,6 +63,12 @@ struct HeaderContext {
     std::vector<HttpHeader> headers;
     std::size_t total_size{};
     bool size_exceeded{false};
+};
+
+struct ProgressContext {
+    const DownloadProgress* callback{};
+    bool failed{false};
+    std::string error;
 };
 
 std::string_view method_name(HttpMethod method) {
@@ -159,7 +166,38 @@ std::size_t write_header(char* data, std::size_t size, std::size_t count, void* 
     }
 }
 
-HttpResult perform_request(const HttpRequest& request, int descriptor) {
+int report_progress(
+    void* context,
+    curl_off_t download_total,
+    curl_off_t downloaded,
+    curl_off_t,
+    curl_off_t
+) {
+    auto& progress = *static_cast<ProgressContext*>(context);
+    try {
+        (*progress.callback)(
+            downloaded < 0 ? 0U : static_cast<std::uint64_t>(downloaded),
+            download_total < 0 ?
+                0U :
+                static_cast<std::uint64_t>(download_total)
+        );
+        return 0;
+    } catch (const std::exception& error) {
+        progress.failed = true;
+        progress.error = error.what();
+        return 1;
+    } catch (...) {
+        progress.failed = true;
+        progress.error = "unknown error";
+        return 1;
+    }
+}
+
+HttpResult perform_request(
+    const HttpRequest& request,
+    int descriptor,
+    const DownloadProgress& progress = {}
+) {
     spdlog::trace("Performing HTTP {} request", method_name(request.method));
     static const CurlRuntime runtime;
     if (runtime.result() != CURLE_OK) {
@@ -180,6 +218,11 @@ HttpResult perform_request(const HttpRequest& request, int descriptor) {
         .descriptor = descriptor,
     };
     HeaderContext header_context;
+    ProgressContext progress_context{
+        .callback = &progress,
+        .failed = false,
+        .error = {},
+    };
     std::array<char, CURL_ERROR_SIZE> error_buffer{};
     std::unique_ptr<curl_slist, HeaderListDeleter> headers;
     curl_slist* header_list = nullptr;
@@ -222,6 +265,15 @@ HttpResult perform_request(const HttpRequest& request, int descriptor) {
     if (result == CURLE_OK) {
         result = set_option(CURLOPT_USERAGENT, build_info::user_agent);
     }
+    if (result == CURLE_OK && progress) {
+        result = set_option(CURLOPT_NOPROGRESS, 0L);
+    }
+    if (result == CURLE_OK && progress) {
+        result = set_option(CURLOPT_XFERINFOFUNCTION, &report_progress);
+    }
+    if (result == CURLE_OK && progress) {
+        result = set_option(CURLOPT_XFERINFODATA, &progress_context);
+    }
     if (result == CURLE_OK && headers) {
         result = set_option(CURLOPT_HTTPHEADER, headers.get());
     }
@@ -246,6 +298,12 @@ HttpResult perform_request(const HttpRequest& request, int descriptor) {
 
     result = curl_easy_perform(handle.get());
     if (result != CURLE_OK) {
+        if (progress_context.failed) {
+            return std::unexpected(HttpError{
+                .message = "download progress callback failed: " +
+                           progress_context.error,
+            });
+        }
         if (header_context.size_exceeded) {
             return std::unexpected(HttpError{
                 .message = "HTTP response headers exceeded the configured size limit",
@@ -298,7 +356,8 @@ HttpResult CurlHttpClient::perform(const HttpRequest& request) const {
 
 HttpResult CurlHttpClient::download(
     const HttpRequest& request,
-    const std::filesystem::path& destination
+    const std::filesystem::path& destination,
+    const DownloadProgress& progress
 ) const {
     const int descriptor = ::open(
         destination.c_str(),
@@ -312,7 +371,7 @@ HttpResult CurlHttpClient::download(
         });
     }
 
-    auto response = perform_request(request, descriptor);
+    auto response = perform_request(request, descriptor, progress);
     std::string close_error;
     if (response && response->status_code >= 200 && response->status_code < 300 &&
         ::fsync(descriptor) == -1) {

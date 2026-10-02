@@ -40,11 +40,15 @@ public:
 
     onedrive::http::HttpResult download(
         const onedrive::http::HttpRequest& request,
-        const std::filesystem::path& destination
+        const std::filesystem::path& destination,
+        const onedrive::http::DownloadProgress& progress
     ) const override {
         download_requests.push_back(request);
         std::ofstream output{destination, std::ios::binary};
         output << download_body;
+        if (progress) {
+            progress(download_body.size(), download_body.size());
+        }
         return onedrive::http::HttpResponse{.status_code = 200};
     }
 
@@ -601,7 +605,14 @@ int test_file_download_redirect() {
             .endpoint = "https://graph.example.test/v1.0",
         },
     };
-    client.download_file("item id", destination);
+    std::vector<std::pair<std::uint64_t, std::uint64_t>> progress;
+    client.download_file(
+        "item id",
+        destination,
+        [&](std::uint64_t downloaded, std::uint64_t total) {
+            progress.emplace_back(downloaded, total);
+        }
+    );
 
     std::ifstream input{destination, std::ios::binary};
     const std::string contents{
@@ -621,7 +632,9 @@ int test_file_download_redirect() {
         transport_pointer->download_requests[0].url !=
             "https://download.example.test/content" ||
         transport_pointer->download_requests[0].headers !=
-            std::vector<std::string>{"Accept: application/octet-stream"}) {
+            std::vector<std::string>{"Accept: application/octet-stream"} ||
+        progress !=
+            std::vector<std::pair<std::uint64_t, std::uint64_t>>{{8, 8}}) {
         return fail("Graph file download redirect was not handled safely");
     }
     return EXIT_SUCCESS;

@@ -518,6 +518,11 @@ remote metadata, size, and SHA-256 content fingerprint to a SQLite
 processes this journal first, making SQLite authoritative rather than relying
 on target-file-system extended attributes.
 
+During each file transfer, text output shows the current file number, remote
+path, percentage, and transferred bytes. Interactive terminals update the
+current line in place; redirected text and JSON output receive progress events
+at five-percentage-point intervals. `--quiet` suppresses progress output.
+
 If Microsoft Graph rejects a saved Delta cursor with `410 Gone`, synchronization
 automatically retries with a full Delta query. Existing local snapshots remain
 available for conflict detection, and the saved cursor and remote inventory are

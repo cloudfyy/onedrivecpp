@@ -23,6 +23,9 @@ class HttpTransport;
 
 namespace onedrive::graph {
 
+using DownloadProgress =
+    std::function<void(std::uint64_t downloaded, std::uint64_t total)>;
+
 struct RemoteItem {
     std::string id;
     std::string name;
@@ -64,7 +67,8 @@ public:
     ) const = 0;
     virtual void download_file(
         const std::string& remote_id,
-        const std::filesystem::path& destination
+        const std::filesystem::path& destination,
+        const DownloadProgress& progress = {}
     ) const = 0;
 };
 
@@ -87,7 +91,8 @@ public:
     ) const override;
     void download_file(
         const std::string& remote_id,
-        const std::filesystem::path& destination
+        const std::filesystem::path& destination,
+        const DownloadProgress& progress = {}
     ) const override;
 
 private:

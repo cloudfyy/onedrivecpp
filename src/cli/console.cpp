@@ -4,6 +4,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
 #include <stdexcept>
@@ -65,6 +66,9 @@ Console::Console(
         options_.color != ColorMode::never &&
         (options_.color == ColorMode::always ||
          (::isatty(STDOUT_FILENO) != 0 && std::getenv("NO_COLOR") == nullptr));
+    interactive_ =
+        options_.output == OutputMode::text && &output_ == &std::cout &&
+        ::isatty(STDOUT_FILENO) != 0;
 }
 
 void Console::message(
@@ -130,6 +134,67 @@ void Console::section(
             width,
             field.value
         );
+    }
+}
+
+void Console::download_progress(
+    std::string_view path,
+    std::size_t file_index,
+    std::size_t file_count,
+    std::uint64_t downloaded,
+    std::uint64_t total,
+    bool completed
+) const {
+    if (options_.quiet) {
+        return;
+    }
+    const auto percentage =
+        total == 0 ?
+            (completed ? 100U : 0U) :
+            static_cast<unsigned>(std::min(
+                100.0,
+                std::floor(
+                    static_cast<double>(downloaded) * 100.0 /
+                    static_cast<double>(total)
+                )
+            ));
+    if (options_.output == OutputMode::json) {
+        output_ << nlohmann::json{
+            {"event", "download_progress"},
+            {"path", path},
+            {"file_index", file_index},
+            {"file_count", file_count},
+            {"downloaded_bytes", downloaded},
+            {"total_bytes", total},
+            {"percentage", percentage},
+            {"completed", completed},
+        }.dump() << '\n';
+        return;
+    }
+
+    const auto line = fmt::format(
+        "[{}/{}] Downloading '{}': {}% ({}/{} bytes)",
+        file_index,
+        file_count,
+        path,
+        percentage,
+        downloaded,
+        total
+    );
+    if (interactive_) {
+        output_ << '\r' << "\033[2K" << line;
+        if (completed) {
+            output_ << '\n';
+        }
+        output_ << std::flush;
+        return;
+    }
+    output_ << line << '\n';
+}
+
+void Console::end_download_progress() const {
+    if (interactive_) {
+        output_ << '\n' << std::flush;
     }
 }
 

@@ -2,8 +2,10 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -40,6 +42,8 @@ struct HttpError {
 };
 
 using HttpResult = std::expected<HttpResponse, HttpError>;
+using DownloadProgress =
+    std::function<void(std::uint64_t downloaded, std::uint64_t total)>;
 
 class HttpTransport {
 public:
@@ -47,7 +51,8 @@ public:
     [[nodiscard]] virtual HttpResult perform(const HttpRequest& request) const = 0;
     [[nodiscard]] virtual HttpResult download(
         const HttpRequest& request,
-        const std::filesystem::path& destination
+        const std::filesystem::path& destination,
+        const DownloadProgress& progress = {}
     ) const = 0;
 };
 
@@ -56,7 +61,8 @@ public:
     [[nodiscard]] HttpResult perform(const HttpRequest& request) const override;
     [[nodiscard]] HttpResult download(
         const HttpRequest& request,
-        const std::filesystem::path& destination
+        const std::filesystem::path& destination,
+        const DownloadProgress& progress = {}
     ) const override;
 };
 

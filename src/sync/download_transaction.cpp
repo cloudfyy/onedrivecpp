@@ -15,7 +15,8 @@ storage::ItemState download_atomically(
     const graph::RemoteItem& item,
     storage::ItemState state,
     const std::filesystem::path& destination,
-    const FilesystemMetadata& metadata
+    const FilesystemMetadata& metadata,
+    const graph::DownloadProgress& progress
 ) {
     const auto temporary = temporary_path_for(destination);
     bool journaled = false;
@@ -24,7 +25,7 @@ storage::ItemState download_atomically(
         item.remote_path
     );
     try {
-        graph.download_file(item.id, temporary);
+        graph.download_file(item.id, temporary, progress);
         const auto downloaded_size = std::filesystem::file_size(temporary);
         if (downloaded_size != static_cast<std::uintmax_t>(item.size)) {
             throw std::runtime_error(

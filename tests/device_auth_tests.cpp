@@ -35,7 +35,8 @@ public:
 
     onedrive::http::HttpResult download(
         const onedrive::http::HttpRequest&,
-        const std::filesystem::path&
+        const std::filesystem::path&,
+        const onedrive::http::DownloadProgress&
     ) const override {
         return std::unexpected(
             onedrive::http::HttpError{.message = "download was not expected"}

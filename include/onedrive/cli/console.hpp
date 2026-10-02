@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <iosfwd>
 #include <string>
 #include <string_view>
@@ -55,6 +57,15 @@ public:
         std::string_view title,
         const std::vector<Field>& fields
     ) const;
+    void download_progress(
+        std::string_view path,
+        std::size_t file_index,
+        std::size_t file_count,
+        std::uint64_t downloaded,
+        std::uint64_t total,
+        bool completed
+    ) const;
+    void end_download_progress() const;
     [[nodiscard]] bool confirm(
         std::string_view event,
         std::string_view prompt,
@@ -73,6 +84,7 @@ private:
     std::ostream& output_;
     std::ostream& error_;
     bool styled_{false};
+    bool interactive_{false};
 };
 
 }  // namespace onedrive::cli

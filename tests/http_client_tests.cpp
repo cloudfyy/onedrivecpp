@@ -7,6 +7,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <utility>
+#include <vector>
 #include <poll.h>
 #include <string>
 #include <sys/socket.h>
@@ -218,13 +220,17 @@ int main() {
         std::filesystem::temp_directory_path() / "onedrive-cpp-http-download";
     std::error_code ignored;
     std::filesystem::remove(destination, ignored);
+    std::vector<std::pair<std::uint64_t, std::uint64_t>> download_progress;
     const auto download_response = client.download(
         {
             .url = "http://127.0.0.1:" + std::to_string(port) + "/download",
             .connect_timeout = std::chrono::seconds{2},
             .operation_timeout = std::chrono::seconds{5},
         },
-        destination
+        destination,
+        [&](std::uint64_t downloaded, std::uint64_t total) {
+            download_progress.emplace_back(downloaded, total);
+        }
     );
     download_server.join();
     std::ifstream downloaded{destination, std::ios::binary};
@@ -238,7 +244,9 @@ int main() {
     }
     if (!download_response || download_response->status_code != 200 ||
         downloaded_contents != "download" ||
-        !download_request.starts_with("GET /download HTTP/1.1")) {
+        !download_request.starts_with("GET /download HTTP/1.1") ||
+        download_progress.empty() || download_progress.back().first != 8 ||
+        download_progress.back().second != 8) {
         return fail("HTTP response was not streamed to the download file");
     }
 
