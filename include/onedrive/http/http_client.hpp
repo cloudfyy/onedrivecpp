@@ -51,6 +51,7 @@ struct HttpResponse {
     long status_code{};
     std::vector<HttpHeader> headers;
     std::string body;
+    std::uint64_t received_size{};
 };
 
 enum class HttpErrorCode {

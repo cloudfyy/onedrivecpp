@@ -453,6 +453,8 @@ HttpResult perform_request(
         .status_code = status_code,
         .headers = std::move(header_context.headers),
         .body = std::move(write_context.body),
+        .received_size =
+            static_cast<std::uint64_t>(write_context.received_size),
     };
 }
 

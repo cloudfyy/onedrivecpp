@@ -78,6 +78,9 @@ value are rejected before download. Permissions are derived from mode 0666 and
 the process umask.
 SQLite pending-download records and SHA-256 content fingerprints provide
 crash recovery independently of target-file-system extended attributes.
+Range chunks are accepted only when HTTP status, Content-Range, total size, and
+received byte count exactly match the request; rejected chunks are rolled back
+to the preceding durable offset.
 Microsoft Graph HTTP 408, 429, 502, 503, and 504 responses are retried using
 .B Retry-After
 or bounded exponential backoff, with a finite retry limit. A pre-authenticated

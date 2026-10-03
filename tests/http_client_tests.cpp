@@ -187,7 +187,8 @@ int main() {
     if (!response) {
         return fail(response.error().message);
     }
-    if (response->status_code != 201 || response->body != "OK") {
+    if (response->status_code != 201 || response->body != "OK" ||
+        response->received_size != 2) {
         return fail("HTTP response was not captured correctly");
     }
     bool retry_after_captured = false;
@@ -278,6 +279,7 @@ int main() {
         return fail(server_error);
     }
     if (!download_response || download_response->status_code != 200 ||
+        download_response->received_size != 8 ||
         downloaded_contents != "download" ||
         !download_request.starts_with("GET /download HTTP/1.1") ||
         download_progress.empty() || download_progress.back().first != 8 ||

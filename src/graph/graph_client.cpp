@@ -115,6 +115,138 @@ std::optional<std::string> header_value(
     return std::nullopt;
 }
 
+struct ContentRange {
+    std::uint64_t first;
+    std::uint64_t last;
+    std::uint64_t total;
+};
+
+[[noreturn]] void invalid_content_range(std::string_view header) {
+    throw std::runtime_error(
+        "Microsoft Graph chunk download returned an invalid "
+        "Content-Range header: " + std::string{header}
+    );
+}
+
+std::uint64_t parse_content_range_number(
+    std::string_view value,
+    std::string_view header
+) {
+    std::uint64_t number{};
+    const auto* begin = value.data();
+    const auto* end = begin + value.size();
+    const auto [position, error] = std::from_chars(begin, end, number);
+    if (value.empty() || error != std::errc{} || position != end) {
+        invalid_content_range(header);
+    }
+    return number;
+}
+
+ContentRange parse_content_range(std::string_view header) {
+    constexpr std::string_view prefix{"bytes "};
+    if (!header.starts_with(prefix)) {
+        invalid_content_range(header);
+    }
+    header.remove_prefix(prefix.size());
+    const auto dash = header.find('-');
+    const auto slash = header.find('/');
+    if (dash == std::string_view::npos ||
+        slash == std::string_view::npos ||
+        dash == 0 || slash <= dash + 1 || slash + 1 >= header.size()) {
+        invalid_content_range(header);
+    }
+    const ContentRange range{
+        .first = parse_content_range_number(header.substr(0, dash), header),
+        .last = parse_content_range_number(
+            header.substr(dash + 1, slash - dash - 1),
+            header
+        ),
+        .total = parse_content_range_number(header.substr(slash + 1), header),
+    };
+    if (range.first > range.last || range.last >= range.total) {
+        invalid_content_range(header);
+    }
+    return range;
+}
+
+void validate_chunk_response(
+    const http::HttpResponse& response,
+    std::uint64_t expected_first,
+    std::uint64_t expected_last,
+    std::uint64_t expected_total
+) {
+    if (response.status_code != 206) {
+        throw std::runtime_error(
+            std::format(
+                "Microsoft Graph chunk download expected HTTP 206 but "
+                "received HTTP {}",
+                response.status_code
+            )
+        );
+    }
+    std::optional<std::string_view> header;
+    for (const auto& candidate : response.headers) {
+        if (!equal_case_insensitive(candidate.name, "Content-Range")) {
+            continue;
+        }
+        if (header.has_value()) {
+            throw std::runtime_error(
+                "Microsoft Graph chunk download returned multiple "
+                "Content-Range headers"
+            );
+        }
+        header = candidate.value;
+    }
+    if (!header.has_value()) {
+        throw std::runtime_error(
+            "Microsoft Graph chunk download did not return Content-Range"
+        );
+    }
+    const auto range = parse_content_range(*header);
+    if (range.first != expected_first ||
+        range.last != expected_last ||
+        range.total != expected_total) {
+        throw std::runtime_error(
+            std::format(
+                "Microsoft Graph chunk download returned Content-Range "
+                "'{}'; expected 'bytes {}-{}/{}'",
+                *header,
+                expected_first,
+                expected_last,
+                expected_total
+            )
+        );
+    }
+    const auto expected_bytes = expected_last - expected_first + 1;
+    if (response.received_size != expected_bytes) {
+        throw std::runtime_error(
+            std::format(
+                "Microsoft Graph chunk download wrote {} bytes; expected {}",
+                response.received_size,
+                expected_bytes
+            )
+        );
+    }
+}
+
+void roll_back_chunk(
+    const std::filesystem::path& destination,
+    std::uint64_t offset
+) {
+    std::error_code error;
+    if (offset == 0) {
+        std::filesystem::remove(destination, error);
+    } else {
+        std::filesystem::resize_file(destination, offset, error);
+    }
+    if (error) {
+        throw std::runtime_error(
+            "cannot roll back rejected Microsoft Graph chunk at byte " +
+            std::to_string(offset) + ": " + error.message()
+        );
+    }
+}
+
 [[noreturn]] void throw_download_error(
     std::string_view description,
     const http::HttpError& error
@@ -1282,14 +1414,16 @@ void MicrosoftGraphClient::download_file(
                 response.error()
             );
         }
-        if (response->status_code != 206) {
-            throw std::runtime_error(
-                std::format(
-                    "Microsoft Graph chunk download expected HTTP 206 but "
-                    "received HTTP {}",
-                    response->status_code
-                )
+        try {
+            validate_chunk_response(
+                *response,
+                offset,
+                end,
+                expected_size
             );
+        } catch (...) {
+            roll_back_chunk(destination, offset);
+            throw;
         }
         offset += bytes;
         if (checkpoint) {
