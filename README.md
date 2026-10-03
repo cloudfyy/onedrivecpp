@@ -233,7 +233,24 @@ policy checks:
 cpack --config build/release/CPackConfig.cmake -G DEB
 ```
 
-The generated package is placed in the current directory.
+The generated package is placed in the current directory. CMake reads
+`ID` and `VERSION_ID` from `/etc/os-release`, so an Ubuntu 24.04 amd64 build
+is named:
+
+```text
+onedrive-cpp_0.4.0-1~ubuntu24.04_amd64.deb
+```
+
+For a cross-distribution build environment, override the detected suffix
+explicitly during configuration:
+
+```bash
+cmake --preset release \
+  -DONEDRIVE_PACKAGE_DISTRIBUTION=ubuntu26.04
+```
+
+Packages for Ubuntu 26.04 must still be built and tested in an Ubuntu 26.04
+environment; changing the suffix does not change the binary ABI.
 
 ### Official Debian package
 
@@ -256,8 +273,12 @@ tests. The generated `.deb` is placed in the parent directory of the project,
 for example:
 
 ```text
-../onedrive-cpp_<version>_<architecture>.deb
+../onedrive-cpp_0.4.0-1~ubuntu24.04_amd64.deb
 ```
+
+The Debian changelog carries the native build distribution suffix. When
+adding Ubuntu 26.04 support, build from an Ubuntu 26.04 environment with a
+`0.4.0-1~ubuntu26.04` changelog version.
 
 Install and verify the package:
 

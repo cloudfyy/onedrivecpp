@@ -1,4 +1,4 @@
-onedrive-cpp (0.4.0-1) unstable; urgency=medium
+onedrive-cpp (0.4.0-1~ubuntu24.04) noble; urgency=medium
 
   * Migrate configuration to strict, grouped TOML.
   * Add command-aware startup checks and single-process state locking.
