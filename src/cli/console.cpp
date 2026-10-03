@@ -188,8 +188,7 @@ void Console::blocked_item(
 }
 
 void Console::download_progress(
-    std::string_view path,
-    std::size_t file_index,
+    std::size_t completed_files,
     std::size_t file_count,
     std::uint64_t downloaded,
     std::uint64_t total,
@@ -198,9 +197,19 @@ void Console::download_progress(
     if (options_.quiet) {
         return;
     }
-    const auto percentage =
+    auto percentage =
         total == 0 ?
-            (completed ? 100U : 0U) :
+            (file_count == 0 ?
+                (completed ? 100U : 0U) :
+                static_cast<unsigned>(
+                    std::min(
+                        100.0,
+                        std::floor(
+                            static_cast<double>(completed_files) * 100.0 /
+                            static_cast<double>(file_count)
+                        )
+                    )
+                )) :
             static_cast<unsigned>(std::min(
                 100.0,
                 std::floor(
@@ -208,11 +217,13 @@ void Console::download_progress(
                     static_cast<double>(total)
                 )
             ));
+    if (!completed) {
+        percentage = std::min(percentage, 99U);
+    }
     if (options_.output == OutputMode::json) {
         output_ << nlohmann::json{
             {"event", "download_progress"},
-            {"path", path},
-            {"file_index", file_index},
+            {"completed_files", completed_files},
             {"file_count", file_count},
             {"downloaded_bytes", downloaded},
             {"total_bytes", total},
@@ -223,11 +234,13 @@ void Console::download_progress(
     }
 
     const auto line = fmt::format(
-        "[{}/{}] Downloading '{}': {}%",
-        file_index,
+        "{}: {}/{} files, {}% ({}/{} bytes)",
+        completed ? "Done" : "DL",
+        completed_files,
         file_count,
-        path,
-        percentage
+        percentage,
+        downloaded,
+        total
     );
     if (interactive_) {
         output_ << '\r' << "\033[2K" << line;

@@ -36,8 +36,6 @@ struct DownloadTask {
     graph::RemoteItem item;
     storage::ItemState state;
     std::filesystem::path destination;
-    std::size_t file_index{0};
-    std::size_t file_count{0};
 };
 
 struct PreparedDownloadBatch {
@@ -65,6 +63,57 @@ PreparedDownloadBatch prepare_downloads(
     std::atomic_size_t next_task{0};
     std::stop_source stop;
     std::mutex console_mutex;
+    std::vector<std::uint64_t> task_downloaded(tasks.size());
+    std::vector<bool> task_completed(tasks.size());
+    std::uint64_t downloaded_bytes = 0;
+    std::uint64_t total_bytes = 0;
+    for (const auto& task : tasks) {
+        total_bytes += static_cast<std::uint64_t>(task.item.size);
+    }
+    std::size_t completed_files = 0;
+    unsigned last_reported_percentage = 0;
+    const auto report_progress =
+        [&](std::size_t index, std::uint64_t downloaded, bool completed) {
+            const std::scoped_lock lock{console_mutex};
+            const auto expected_size =
+                static_cast<std::uint64_t>(tasks[index].item.size);
+            const auto current = std::min(downloaded, expected_size);
+            if (current > task_downloaded[index]) {
+                downloaded_bytes += current - task_downloaded[index];
+                task_downloaded[index] = current;
+            }
+            if (completed && !task_completed[index]) {
+                task_completed[index] = true;
+                ++completed_files;
+            }
+            const auto byte_percentage =
+                total_bytes == 0 ?
+                    0U :
+                    static_cast<unsigned>(
+                        static_cast<long double>(downloaded_bytes) * 100.0L /
+                        static_cast<long double>(total_bytes)
+                    );
+            const auto file_percentage = static_cast<unsigned>(
+                completed_files * 100 / tasks.size()
+            );
+            const auto percentage = std::max(
+                byte_percentage,
+                file_percentage
+            );
+            const bool all_completed = completed_files == tasks.size();
+            if (!all_completed &&
+                percentage < last_reported_percentage + 1) {
+                return;
+            }
+            last_reported_percentage = percentage;
+            console.download_progress(
+                completed_files,
+                tasks.size(),
+                downloaded_bytes,
+                total_bytes,
+                all_completed
+            );
+        };
     const auto worker = [&](std::stop_token thread_stop) {
         while (!thread_stop.stop_requested() && !stop.stop_requested()) {
             const std::size_t index =
@@ -75,7 +124,6 @@ PreparedDownloadBatch prepare_downloads(
             const auto& task = tasks[index];
             const auto expected_size =
                 static_cast<std::uint64_t>(task.item.size);
-            std::uint64_t last_reported_percentage = 0;
             try {
                 batch.downloads[index].emplace(detail::prepare_download(
                     graph,
@@ -89,25 +137,10 @@ PreparedDownloadBatch prepare_downloads(
                         if (total == 0 || downloaded >= total) {
                             return;
                         }
-                        const auto percentage = static_cast<std::uint64_t>(
-                            static_cast<long double>(downloaded) * 100.0L /
-                            static_cast<long double>(total)
-                        );
-                        if (percentage < last_reported_percentage + 5) {
-                            return;
-                        }
-                        last_reported_percentage = percentage;
-                        const std::scoped_lock lock{console_mutex};
-                        console.download_progress(
-                            task.item.remote_path,
-                            task.file_index,
-                            task.file_count,
-                            downloaded,
-                            total,
-                            false
-                        );
+                        report_progress(index, downloaded, false);
                     }
                 ));
+                report_progress(index, expected_size, true);
             } catch (...) {
                 batch.errors[index] = std::current_exception();
                 stop.request_stop();
@@ -472,22 +505,10 @@ ExecutionSummary execute_plan(
                 item.remote_path,
                 item.size
             );
-            const auto expected_size =
-                static_cast<std::uint64_t>(item.size);
-            console.download_progress(
-                item.remote_path,
-                index + 1,
-                plan.download_count(),
-                0,
-                expected_size,
-                false
-            );
             download_tasks.push_back({
                 .item = item,
                 .state = state,
                 .destination = destination,
-                .file_index = index + 1,
-                .file_count = plan.download_count(),
             });
         }
     }
@@ -539,16 +560,6 @@ ExecutionSummary execute_plan(
             console.end_download_progress();
             throw;
         }
-        const auto expected_size =
-            static_cast<std::uint64_t>(download_tasks[index].item.size);
-        console.download_progress(
-            download_tasks[index].item.remote_path,
-            download_tasks[index].file_index,
-            download_tasks[index].file_count,
-            expected_size,
-            expected_size,
-            true
-        );
         ++downloaded_count;
     }
     spdlog::info(

@@ -68,8 +68,7 @@ public:
         std::string_view reason_message
     ) const;
     void download_progress(
-        std::string_view path,
-        std::size_t file_index,
+        std::size_t completed_files,
         std::size_t file_count,
         std::uint64_t downloaded,
         std::uint64_t total,

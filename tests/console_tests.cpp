@@ -46,14 +46,16 @@ int main() {
         "local_modification",
         "local file was modified"
     );
-    plain.download_progress("file.bin", 1, 2, 5, 10, false);
-    plain.download_progress("file.bin", 1, 2, 10, 10, true);
+    plain.download_progress(1, 2, 5, 10, false);
+    plain.download_progress(1, 2, 10, 10, false);
+    plain.download_progress(2, 2, 10, 10, true);
     if (plain_output.str() !=
         "Completed.\nSummary\n  Files: 12\n  Bytes: 42\n"
         "Microsoft Graph delta: 2 pages, 350 items scanned (continuing)\n"
         "Microsoft Graph delta: 3 pages, 412 items scanned (complete)\n"
-        "[1/2] Downloading 'file.bin': 50%\n"
-        "[1/2] Downloading 'file.bin': 100%\n" ||
+        "DL: 1/2 files, 50% (5/10 bytes)\n"
+        "DL: 1/2 files, 99% (10/10 bytes)\n"
+        "Done: 2/2 files, 100% (10/10 bytes)\n" ||
         plain_error.str() !=
             "Blocked 'conflict.txt': local file was modified "
             "(local_modification)\n") {
@@ -101,7 +103,7 @@ int main() {
         "local_modification",
         "local file was modified"
     );
-    json.download_progress("file.bin", 1, 1, 4, 8, false);
+    json.download_progress(0, 1, 4, 8, false);
     std::istringstream json_lines{json_output.str()};
     std::string line;
     std::getline(json_lines, line);
@@ -122,7 +124,7 @@ int main() {
         delta_progress.at("items") != 625 ||
         delta_progress.at("completed") != false ||
         download_progress.at("event") != "download_progress" ||
-        download_progress.at("path") != "file.bin" ||
+        download_progress.at("completed_files") != 0 ||
         download_progress.at("downloaded_bytes") != 4 ||
         download_progress.at("total_bytes") != 8 ||
         download_progress.at("percentage") != 50 ||
@@ -153,7 +155,7 @@ int main() {
         {{.label = "Files", .key = "files", .value = "12"}}
     );
     quiet.delta_progress(1, 200, false);
-    quiet.download_progress("hidden.bin", 1, 1, 1, 2, false);
+    quiet.download_progress(0, 1, 1, 2, false);
     quiet.blocked_item(
         "conflict.txt",
         "local_modification",
