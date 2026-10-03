@@ -48,6 +48,7 @@ int main() {
     const onedrive::account::DriveIdentity identity{
         .user_id = "stable-user-id",
         .user_display_name = "Alice / Example",
+        .configured_drive_id = "me",
         .drive_id = "stable-drive-id",
         .drive_name = "Team / Drive",
         .photo = onedrive::account::ProfilePhoto{
@@ -88,6 +89,19 @@ int main() {
     };
     if (avatar_bytes != "photo") {
         return fail("profile photo was not persisted");
+    }
+    std::ifstream drive_metadata{paths.drive_directory / "drive.json"};
+    const std::string drive_metadata_contents{
+        std::istreambuf_iterator<char>{drive_metadata},
+        std::istreambuf_iterator<char>{}
+    };
+    if (!drive_metadata_contents.contains(
+            R"("configured_drive_id": "me")"
+        ) ||
+        !drive_metadata_contents.contains(
+            R"("drive_id": "stable-drive-id")"
+        )) {
+        return fail("configured Drive ID mapping was not saved as metadata");
     }
 
     auto renamed = identity;

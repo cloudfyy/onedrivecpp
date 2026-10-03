@@ -269,7 +269,8 @@ AccountPaths paths_for(
     const DriveIdentity& identity
 ) {
     if (identity.user_id.empty() || identity.user_display_name.empty() ||
-        identity.drive_id.empty() || identity.drive_name.empty()) {
+        identity.configured_drive_id.empty() || identity.drive_id.empty() ||
+        identity.drive_name.empty()) {
         throw std::invalid_argument(
             "account identity requires user and drive IDs and names"
         );
@@ -335,6 +336,7 @@ void write_metadata(
     write_private_file(
         paths.drive_directory / "drive.json",
         nlohmann::json{
+            {"configured_drive_id", identity.configured_drive_id},
             {"drive_id", identity.drive_id},
             {"name", identity.drive_name},
         }.dump(2) + "\n"

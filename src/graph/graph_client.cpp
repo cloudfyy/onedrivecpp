@@ -253,6 +253,7 @@ account::DriveIdentity fetch_drive_identity(
     const auto drive = request_json(drive_url, "drive identity");
 
     account::DriveIdentity identity;
+    identity.configured_drive_id = options.drive_id;
     try {
         identity.user_id = user.at("id").get<std::string>();
         identity.user_display_name =

@@ -55,6 +55,7 @@ public:
         return {
             .user_id = "user-id",
             .user_display_name = "Test User",
+            .configured_drive_id = "me",
             .drive_id = "drive-id",
             .drive_name = "Test Drive",
         };

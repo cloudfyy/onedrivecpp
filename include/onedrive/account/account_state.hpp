@@ -16,6 +16,7 @@ struct ProfilePhoto {
 struct DriveIdentity {
     std::string user_id;
     std::string user_display_name;
+    std::string configured_drive_id;
     std::string drive_id;
     std::string drive_name;
     std::optional<ProfilePhoto> photo;

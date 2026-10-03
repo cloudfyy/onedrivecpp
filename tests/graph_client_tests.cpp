@@ -682,6 +682,7 @@ int test_drive_identity_and_profile_photo() {
     );
     if (identity.user_id != "user-id" ||
         identity.user_display_name != "Alice Example" ||
+        identity.configured_drive_id != "me" ||
         identity.drive_id != "canonical-drive-id" ||
         identity.drive_name != "Alice Drive" || !identity.photo ||
         identity.photo->content_type != "image/png" ||

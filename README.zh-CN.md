@@ -335,7 +335,8 @@ download_concurrency = 4
 账号和 Drive 目录包含稳定 ID 哈希，因此显示名称改变时不会创建第二套状态目录。
 Drive 数据库除远端 ID、ETag 和本地路径外，还会保存并校验用户 ID、显示名称、
 真实 Drive ID、Drive 名称、头像 MIME 类型和头像二进制内容。SQLite 使用 WAL
-模式。
+模式。数据库中的 `drive_mapping` 表会记录配置选择器与解析结果，例如
+`me` 到 Microsoft 真实 Drive ID 的映射。
 
 旧的平面 `<state.directory>/items.sqlite3` 和
 `<state.directory>/refresh_token` 布局不会自动迁移。升级后需要重新运行

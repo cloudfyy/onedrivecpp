@@ -194,6 +194,11 @@ void create_identity_schema(sqlite3* database) {
         "avatar_content_type TEXT NOT NULL,"
         "avatar_bytes BLOB NOT NULL"
         ");"
+        "CREATE TABLE IF NOT EXISTS drive_mapping ("
+        "configured_drive_id TEXT PRIMARY KEY NOT NULL,"
+        "canonical_drive_id TEXT NOT NULL,"
+        "last_resolved INTEGER NOT NULL DEFAULT (unixepoch())"
+        ");"
     );
 }
 
@@ -237,7 +242,7 @@ void create_current_schema(sqlite3* database) {
     );
     create_blocked_item_schema(database);
     create_identity_schema(database);
-    execute(database, "PRAGMA user_version = 6;");
+    execute(database, "PRAGMA user_version = 7;");
 }
 
 void migrate_schema(sqlite3* database) {
@@ -296,7 +301,7 @@ void migrate_schema(sqlite3* database) {
         );
         create_blocked_item_schema(database);
         create_identity_schema(database);
-        execute(database, "PRAGMA user_version = 6;");
+        execute(database, "PRAGMA user_version = 7;");
         transaction.commit();
         return;
     }
@@ -326,7 +331,7 @@ void migrate_schema(sqlite3* database) {
         );
         create_blocked_item_schema(database);
         create_identity_schema(database);
-        execute(database, "PRAGMA user_version = 6;");
+        execute(database, "PRAGMA user_version = 7;");
         transaction.commit();
         return;
     }
@@ -353,7 +358,7 @@ void migrate_schema(sqlite3* database) {
         );
         create_blocked_item_schema(database);
         create_identity_schema(database);
-        execute(database, "PRAGMA user_version = 6;");
+        execute(database, "PRAGMA user_version = 7;");
         transaction.commit();
         return;
     }
@@ -361,18 +366,25 @@ void migrate_schema(sqlite3* database) {
         Transaction transaction{database};
         create_blocked_item_schema(database);
         create_identity_schema(database);
-        execute(database, "PRAGMA user_version = 6;");
+        execute(database, "PRAGMA user_version = 7;");
         transaction.commit();
         return;
     }
     if (version == 5) {
         Transaction transaction{database};
         create_identity_schema(database);
-        execute(database, "PRAGMA user_version = 6;");
+        execute(database, "PRAGMA user_version = 7;");
         transaction.commit();
         return;
     }
-    if (version != 6) {
+    if (version == 6) {
+        Transaction transaction{database};
+        create_identity_schema(database);
+        execute(database, "PRAGMA user_version = 7;");
+        transaction.commit();
+        return;
+    }
+    if (version != 7) {
         throw std::runtime_error(
             "unsupported state database schema version " + std::to_string(version)
         );
@@ -405,7 +417,8 @@ ItemDatabase::~ItemDatabase() = default;
 void ItemDatabase::open() {
     spdlog::debug("Opening synchronization state database");
     if (identity_.user_id.empty() || identity_.user_display_name.empty() ||
-        identity_.drive_id.empty() || identity_.drive_name.empty()) {
+        identity_.configured_drive_id.empty() || identity_.drive_id.empty() ||
+        identity_.drive_name.empty()) {
         throw std::invalid_argument(
             "state database requires a complete account and drive identity"
         );
@@ -494,6 +507,28 @@ void ItemDatabase::open() {
     if (sqlite3_step(identity_upsert.get()) != SQLITE_DONE) {
         throw std::runtime_error(
             "cannot update state database identity: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+    Statement mapping_upsert{
+        database,
+        "INSERT INTO drive_mapping ("
+        "configured_drive_id, canonical_drive_id"
+        ") VALUES (?1, ?2) "
+        "ON CONFLICT(configured_drive_id) DO UPDATE SET "
+        "canonical_drive_id = excluded.canonical_drive_id, "
+        "last_resolved = unixepoch();"
+    };
+    bind_text(
+        database,
+        mapping_upsert.get(),
+        1,
+        identity_.configured_drive_id
+    );
+    bind_text(database, mapping_upsert.get(), 2, identity_.drive_id);
+    if (sqlite3_step(mapping_upsert.get()) != SQLITE_DONE) {
+        throw std::runtime_error(
+            "cannot update configured Drive ID mapping: " +
             std::string{sqlite3_errmsg(database)}
         );
     }

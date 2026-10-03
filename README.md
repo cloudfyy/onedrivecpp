@@ -365,7 +365,8 @@ The account and Drive metadata use stable ID hashes so display-name changes do
 not create a second state tree. The Drive database stores and validates the
 user ID, display name, canonical Drive ID, Drive name, profile-photo MIME type,
 and profile-photo bytes in addition to remote IDs, ETags, and local paths.
-SQLite uses WAL mode.
+Its `drive_mapping` table records the configured selector and resolved ID, for
+example `me` to the canonical Microsoft Drive ID. SQLite uses WAL mode.
 
 The former flat `<state.directory>/items.sqlite3` and
 `<state.directory>/refresh_token` layout is intentionally not migrated. Run

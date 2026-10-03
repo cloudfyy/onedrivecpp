@@ -45,7 +45,8 @@ onedrive::account::DriveIdentity identity() {
     return {
         .user_id = "user-id",
         .user_display_name = "Test User",
-        .drive_id = "me",
+        .configured_drive_id = "me",
+        .drive_id = "canonical-drive-id",
         .drive_name = "Test Drive",
         .photo = onedrive::account::ProfilePhoto{
             .content_type = "image/jpeg",
@@ -85,6 +86,38 @@ bool create_version_four_database(const std::filesystem::path& path) {
     return succeeded;
 }
 
+bool create_version_six_database(const std::filesystem::path& path) {
+    if (!create_version_four_database(path)) {
+        return false;
+    }
+    sqlite3* database = nullptr;
+    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
+        sqlite3_close(database);
+        return false;
+    }
+    constexpr const char* schema =
+        "CREATE TABLE blocked_item ("
+        "drive_id TEXT NOT NULL, remote_id TEXT NOT NULL, "
+        "parent_id TEXT NOT NULL, name TEXT NOT NULL, etag TEXT NOT NULL, "
+        "remote_path TEXT NOT NULL, last_modified TEXT NOT NULL, "
+        "size INTEGER NOT NULL, directory INTEGER NOT NULL, "
+        "reason_code TEXT NOT NULL, reason_message TEXT NOT NULL, "
+        "first_seen INTEGER NOT NULL DEFAULT (unixepoch()), "
+        "last_attempt INTEGER NOT NULL DEFAULT (unixepoch()), "
+        "attempt_count INTEGER NOT NULL DEFAULT 1, "
+        "PRIMARY KEY (drive_id, remote_id));"
+        "CREATE TABLE identity ("
+        "singleton INTEGER PRIMARY KEY NOT NULL CHECK (singleton = 1), "
+        "user_id TEXT NOT NULL, user_display_name TEXT NOT NULL, "
+        "drive_id TEXT NOT NULL, drive_name TEXT NOT NULL, "
+        "avatar_content_type TEXT NOT NULL, avatar_bytes BLOB NOT NULL);"
+        "PRAGMA user_version = 6;";
+    const bool succeeded =
+        sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
+    sqlite3_close(database);
+    return succeeded;
+}
+
 bool identity_row_is_valid(const std::filesystem::path& path) {
     sqlite3* database = nullptr;
     if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
@@ -111,7 +144,7 @@ bool identity_row_is_valid(const std::filesystem::path& path) {
         } == "Test User" &&
         std::string{
             reinterpret_cast<const char*>(sqlite3_column_text(statement, 2))
-        } == "me" &&
+        } == "canonical-drive-id" &&
         std::string{
             reinterpret_cast<const char*>(sqlite3_column_text(statement, 3))
         } == "Test Drive" &&
@@ -120,8 +153,23 @@ bool identity_row_is_valid(const std::filesystem::path& path) {
         } == "image/jpeg" &&
         sqlite3_column_int(statement, 5) == 4;
     sqlite3_finalize(statement);
+    statement = nullptr;
+    const bool mapping_prepared = sqlite3_prepare_v2(
+        database,
+        "SELECT canonical_drive_id FROM drive_mapping "
+        "WHERE configured_drive_id = 'me';",
+        -1,
+        &statement,
+        nullptr
+    ) == SQLITE_OK;
+    const bool mapping_valid =
+        mapping_prepared && sqlite3_step(statement) == SQLITE_ROW &&
+        std::string{
+            reinterpret_cast<const char*>(sqlite3_column_text(statement, 0))
+        } == "canonical-drive-id";
+    sqlite3_finalize(statement);
     sqlite3_close(database);
-    return valid;
+    return valid && mapping_valid;
 }
 
 }  // namespace
@@ -519,6 +567,27 @@ int main() {
                 "migrated-blocked") {
             return fail("migrated blocked item was not persisted");
         }
+    }
+
+    const auto version_six_directory =
+        temporary_directory.path() / "version-six";
+    std::filesystem::create_directories(version_six_directory);
+    if (!create_version_six_database(
+            version_six_directory / "items.sqlite3"
+        )) {
+        return fail("version six migration fixture could not be created");
+    }
+    {
+        onedrive::storage::ItemDatabase database{
+            version_six_directory,
+            identity()
+        };
+        database.open();
+    }
+    if (!identity_row_is_valid(
+            version_six_directory / "items.sqlite3"
+        )) {
+        return fail("version six database did not gain the Drive ID mapping");
     }
 
     return EXIT_SUCCESS;
