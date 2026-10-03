@@ -1,5 +1,6 @@
 #pragma once
 
+#include "download_space_coordinator.hpp"
 #include "filesystem_metadata.hpp"
 #include "local_filesystem.hpp"
 #include "onedrive/graph/graph_client.hpp"
@@ -18,6 +19,7 @@ struct PreparedDownload {
     std::string content_fingerprint;
     std::uintmax_t downloaded_size{0};
     LocalFileBaseline destination_baseline;
+    DownloadSpaceCoordinator::Lease space_reservation;
 };
 
 [[nodiscard]] PreparedDownload prepare_download(
@@ -28,6 +30,7 @@ struct PreparedDownload {
     const std::filesystem::path& destination,
     LocalFileBaseline destination_baseline,
     const FilesystemMetadata& metadata,
+    DownloadSpaceCoordinator& space,
     const graph::DownloadProgress& progress = {}
 );
 [[nodiscard]] storage::ItemState commit_download(
@@ -43,6 +46,7 @@ void discard_prepared_download(const PreparedDownload& download) noexcept;
     storage::ItemState state,
     const std::filesystem::path& destination,
     const FilesystemMetadata& metadata,
+    DownloadSpaceCoordinator& space,
     const graph::DownloadProgress& progress = {}
 );
 
@@ -54,6 +58,7 @@ template <typename GraphImplementation, typename StoreImplementation>
     storage::ItemState state,
     const std::filesystem::path& destination,
     const FilesystemMetadata& metadata,
+    DownloadSpaceCoordinator& space,
     const graph::DownloadProgress& progress = {}
 ) {
     graph::GraphClient graph_proxy{
@@ -71,6 +76,7 @@ template <typename GraphImplementation, typename StoreImplementation>
         std::move(state),
         destination,
         metadata,
+        space,
         progress
     );
 }

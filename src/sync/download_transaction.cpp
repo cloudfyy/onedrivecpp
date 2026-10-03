@@ -18,6 +18,7 @@ PreparedDownload prepare_download(
     const std::filesystem::path& destination,
     LocalFileBaseline destination_baseline,
     const FilesystemMetadata& metadata,
+    DownloadSpaceCoordinator& space,
     const graph::DownloadProgress& progress
 ) {
     if (item.size < 0) {
@@ -100,6 +101,9 @@ PreparedDownload prepare_download(
         }
     }
 
+    auto space_reservation = space.acquire(
+        static_cast<std::uintmax_t>(item.size) - completed_bytes
+    );
     state.local_path = destination;
     items.save_partial_download({
         .item = state,
@@ -119,12 +123,20 @@ PreparedDownload prepare_download(
             completed_bytes,
             progress,
             [&](std::uint64_t durable_bytes) {
-                completed_bytes = durable_bytes;
+                if (durable_bytes < completed_bytes) {
+                    throw std::logic_error(
+                        "download checkpoint moved backwards"
+                    );
+                }
+                const auto newly_durable =
+                    durable_bytes - completed_bytes;
                 items.save_partial_download({
                     .item = state,
                     .temporary_path = temporary,
                     .completed_bytes = durable_bytes,
                 });
+                space_reservation.consume(newly_durable);
+                completed_bytes = durable_bytes;
             }
         );
         const auto downloaded_size = std::filesystem::file_size(temporary);
@@ -149,6 +161,7 @@ PreparedDownload prepare_download(
             .content_fingerprint = fingerprint,
             .downloaded_size = downloaded_size,
             .destination_baseline = std::move(destination_baseline),
+            .space_reservation = std::move(space_reservation),
         };
     } catch (const DownloadIntegrityError& error) {
         items.remove_partial_download(state.drive_id, item.id);
@@ -307,6 +320,7 @@ storage::ItemState download_atomically(
     storage::ItemState state,
     const std::filesystem::path& destination,
     const FilesystemMetadata& metadata,
+    DownloadSpaceCoordinator& space,
     const graph::DownloadProgress& progress
 ) {
     return commit_download(
@@ -319,6 +333,7 @@ storage::ItemState download_atomically(
             destination,
             capture_local_file_baseline(destination),
             metadata,
+            space,
             progress
         )
     );

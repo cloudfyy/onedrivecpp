@@ -322,7 +322,10 @@ sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 同步时，`sync.directory` 和 `state.directory` 不能互相包含，不能把文件系统
 根目录用作同步目录，并且所有已存在的路径组件都不能是符号链接。普通同步会在
 访问 Graph 前执行创建、写入、`fsync`、删除探测；dry-run 仍保持不修改同步目录。
-下载空间除计划字节外，还会预留 256 MiB 或计划传输量 5% 中的较大值。
+下载会保留实际传输量 5% 或 256 MiB 中的较大值作为安全余量。并发 worker 在
+传输前只预留各自尚未下载的字节，每个可靠 checkpoint 后释放对应承诺空间；当
+可用容量已被其他活动下载预留时会等待。这样大批次可以顺序推进，同时不会让
+并发下载过量承诺磁盘空间。
 
 `sync.drive_id` 指定要访问的远端 OneDrive Drive。默认值 `me` 表示当前登录账号的
 默认 OneDrive，程序使用 Microsoft Graph 路径 `/me/drive/root/children`

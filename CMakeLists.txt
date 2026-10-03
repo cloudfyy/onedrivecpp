@@ -93,6 +93,7 @@ add_library(onedrive_core
     src/storage/item_database.cpp
     src/sync/download_integrity.cpp
     src/sync/download_recovery.cpp
+    src/sync/download_space_coordinator.cpp
     src/sync/download_transaction.cpp
     src/sync/filesystem_metadata.cpp
     src/sync/item_operation_coordinator.cpp
@@ -257,6 +258,23 @@ if(BUILD_TESTING)
     add_test(
         NAME item_operation_coordinator_tests
         COMMAND item_operation_coordinator_tests
+    )
+
+    add_executable(
+        download_space_coordinator_tests
+        tests/download_space_coordinator_tests.cpp
+    )
+    target_include_directories(
+        download_space_coordinator_tests
+        PRIVATE src/sync
+    )
+    target_link_libraries(
+        download_space_coordinator_tests
+        PRIVATE onedrive_core
+    )
+    add_test(
+        NAME download_space_coordinator_tests
+        COMMAND download_space_coordinator_tests
     )
 
     add_executable(

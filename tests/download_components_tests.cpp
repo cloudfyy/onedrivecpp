@@ -47,7 +47,7 @@ public:
 
     void download_file(
         const std::string&,
-        std::uint64_t,
+        std::uint64_t expected_size,
         const std::filesystem::path& destination,
         std::uint64_t initial_offset,
         const onedrive::graph::DownloadProgress&,
@@ -66,7 +66,7 @@ public:
             output << contents.substr(initial_offset);
         }
         if (checkpoint) {
-            checkpoint(contents.size());
+            checkpoint(expected_size);
         }
     }
 
@@ -230,6 +230,7 @@ int main() {
         onedrive::config::FilesystemMetadataMode::database,
         root
     );
+    detail::DownloadSpaceCoordinator space{root, 0};
     FakeGraphClient graph;
     FakeItemStore items;
     auto installed_item = remote_item("installed", "installed.txt");
@@ -245,7 +246,8 @@ int main() {
         installed_item,
         item_state(installed_item, destination),
         destination,
-        metadata
+        metadata,
+        space
     );
     if (!std::filesystem::exists(destination) || !items.pending.empty() ||
         !items.partials.empty() || !items.find("me", "installed") ||
@@ -263,7 +265,8 @@ int main() {
             recover_item,
             item_state(recover_item, recover_destination),
             recover_destination,
-            metadata
+            metadata,
+            space
         ));
         return fail("post-install persistence failure was accepted");
     } catch (const std::runtime_error&) {
@@ -290,7 +293,8 @@ int main() {
             mismatch_item,
             item_state(mismatch_item, mismatch_destination),
             mismatch_destination,
-            metadata
+            metadata,
+            space
         ));
         return fail("download size mismatch was accepted");
     } catch (const std::runtime_error&) {
@@ -323,7 +327,8 @@ int main() {
         truncated_item,
         item_state(truncated_item, truncated_destination),
         truncated_destination,
-        metadata
+        metadata,
+        space
     ));
     std::ifstream truncated_input{truncated_destination, std::ios::binary};
     const std::string truncated_contents{
@@ -335,6 +340,37 @@ int main() {
         return fail(
             "partial download tail was not truncated to its durable checkpoint"
         );
+    }
+
+    const auto complete_item = remote_item("complete", "complete.txt");
+    const auto complete_destination = root / "complete.txt";
+    const auto complete_partial =
+        root / ".complete.txt.onedrive-partial-previous";
+    {
+        std::ofstream output{complete_partial, std::ios::binary};
+        output << "data";
+    }
+    items.partials.emplace(
+        "complete",
+        onedrive::storage::PartialDownload{
+            .item = item_state(complete_item, complete_destination),
+            .temporary_path = complete_partial,
+            .completed_bytes = 4,
+        }
+    );
+    static_cast<void>(detail::download_atomically(
+        graph,
+        items,
+        complete_item,
+        item_state(complete_item, complete_destination),
+        complete_destination,
+        metadata,
+        space
+    ));
+    if (graph.last_initial_offset != 4 ||
+        !std::filesystem::exists(complete_destination) ||
+        items.partials.contains("complete")) {
+        return fail("fully checkpointed download was not installed");
     }
 
     const auto stale_item = remote_item("stale", "stale.txt");
@@ -361,7 +397,8 @@ int main() {
         stale_item,
         item_state(stale_item, stale_destination),
         stale_destination,
-        metadata
+        metadata,
+        space
     ));
     if (graph.last_initial_offset != 0 ||
         std::filesystem::exists(stale_partial) ||
@@ -392,7 +429,8 @@ int main() {
             unsafe_item,
             item_state(unsafe_item, unsafe_destination),
             unsafe_destination,
-            metadata
+            metadata,
+            space
         ));
         return fail("unsafe partial download path was accepted");
     } catch (const std::runtime_error&) {
@@ -417,7 +455,8 @@ int main() {
         quick_xor_item,
         item_state(quick_xor_item, quick_xor_destination),
         quick_xor_destination,
-        metadata
+        metadata,
+        space
     ));
     if (!std::filesystem::exists(quick_xor_destination) ||
         items.partials.contains("quick-xor")) {
@@ -439,7 +478,8 @@ int main() {
             corrupt_item,
             item_state(corrupt_item, corrupt_destination),
             corrupt_destination,
-            metadata
+            metadata,
+            space
         ));
         return fail("download with a mismatched Graph hash was accepted");
     } catch (const detail::DownloadIntegrityError&) {

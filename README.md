@@ -353,8 +353,11 @@ one another, the filesystem root cannot be used as the sync directory, and
 every existing path component must be free of symbolic links. Normal sync
 performs a create/write/fsync/remove probe before contacting Graph. Dry-run
 keeps its non-mutating sync-directory behavior. Downloads also reserve the
-larger of 256 MiB or 5% of the planned transfer in addition to the download
-bytes.
+larger of 256 MiB or 5% of the actual transfer as a safety margin. Concurrent
+workers reserve only their remaining bytes before transfer, release promised
+space at each durable checkpoint, and wait when another active download owns
+the currently available capacity. This permits large batches to proceed
+sequentially without allowing concurrent downloads to overcommit the disk.
 
 `sync.drive_id` selects the remote OneDrive drive to access. The default value,
 `me`, selects the signed-in user's default OneDrive and lists its root through

@@ -2,6 +2,7 @@
 
 #include "onedrive/cli/console.hpp"
 #include "download_recovery.hpp"
+#include "download_space_coordinator.hpp"
 #include "download_transaction.hpp"
 #include "filesystem_metadata.hpp"
 #include "item_operation_coordinator.hpp"
@@ -52,6 +53,7 @@ DownloadBatch download_files(
     graph::GraphClient& graph,
     storage::ItemStore& items,
     detail::ItemOperationCoordinator& operations,
+    detail::DownloadSpaceCoordinator& space,
     const detail::FilesystemMetadata& metadata,
     const cli::Console& console
 ) {
@@ -145,6 +147,7 @@ DownloadBatch download_files(
                         task.destination,
                         task.destination_baseline,
                         metadata,
+                        space,
                         [&](std::uint64_t downloaded,
                             std::uint64_t reported_total) {
                             const auto total =
@@ -159,10 +162,13 @@ DownloadBatch download_files(
                     )
                 ));
                 report_progress(index, expected_size, true);
+            } catch (const detail::DownloadSpaceCancelledError&) {
+                return;
             } catch (const detail::LocalModificationConflictError& error) {
                 batch.conflicts[index] = error.what();
             } catch (...) {
                 batch.errors[index] = std::current_exception();
+                space.cancel();
                 stop.request_stop();
             }
         }
@@ -352,40 +358,10 @@ void report_plan(
     }
 }
 
-void check_download_capacity(
-    const std::filesystem::path& sync_directory,
-    std::uintmax_t required
-) {
-    if (required == 0) {
-        return;
-    }
-    const auto space = std::filesystem::space(
-        std::filesystem::exists(sync_directory) ?
-            sync_directory :
-            sync_directory.parent_path()
-    );
+std::uintmax_t download_safety_reserve(std::uintmax_t transfer_bytes) {
     constexpr std::uintmax_t minimum_reserve =
         std::uintmax_t{256} * 1024U * 1024U;
-    const auto reserve = std::max(minimum_reserve, required / 20U);
-    spdlog::debug(
-        "Download capacity check: {} bytes required, {} bytes reserved, {} "
-        "bytes available",
-        required,
-        reserve,
-        space.available
-    );
-    if (required > space.available ||
-        reserve > space.available - required) {
-        throw std::runtime_error(
-            std::format(
-                "synchronization requires {} bytes plus a {} byte safety "
-                "reserve, but only {} bytes are available",
-                required,
-                reserve,
-                space.available
-            )
-        );
-    }
+    return std::max(minimum_reserve, transfer_bytes / 20U);
 }
 
 ExecutionSummary execute_plan(
@@ -572,6 +548,14 @@ ExecutionSummary execute_plan(
         download_tasks.size(),
         download_concurrency
     );
+    std::uintmax_t transfer_bytes = 0;
+    for (const auto& task : download_tasks) {
+        transfer_bytes += static_cast<std::uintmax_t>(task.item.size);
+    }
+    detail::DownloadSpaceCoordinator space{
+        sync_root,
+        download_safety_reserve(transfer_bytes)
+    };
     detail::ItemOperationCoordinator operations;
     auto downloads = download_files(
         download_tasks,
@@ -579,9 +563,16 @@ ExecutionSummary execute_plan(
         graph,
         items,
         operations,
+        space,
         metadata,
         console
     );
+    for (const auto& error : downloads.errors) {
+        if (error) {
+            console.end_download_progress();
+            std::rethrow_exception(error);
+        }
+    }
     for (std::size_t index = 0; index < download_tasks.size(); ++index) {
         const auto& conflict = downloads.conflicts[index];
         if (conflict.has_value()) {
@@ -595,10 +586,6 @@ ExecutionSummary execute_plan(
                 console
             );
             continue;
-        }
-        if (downloads.errors[index]) {
-            console.end_download_progress();
-            std::rethrow_exception(downloads.errors[index]);
         }
         auto state = std::move(downloads.states[index]);
         if (!state) {
@@ -772,10 +759,6 @@ int SyncEngine::synchronize() const {
                 config_->drive_id
             );
         } else {
-            check_download_capacity(
-                config_->sync_directory,
-                plan.download_bytes()
-            );
             console.message(
                 cli::MessageKind::information,
                 "execution_started",
