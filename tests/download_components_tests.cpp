@@ -1,4 +1,5 @@
 #include "download_recovery.hpp"
+#include "download_integrity.hpp"
 #include "download_transaction.hpp"
 #include "filesystem_metadata.hpp"
 #include "test_support.hpp"
@@ -231,7 +232,12 @@ int main() {
     );
     FakeGraphClient graph;
     FakeItemStore items;
-    const auto installed_item = remote_item("installed", "installed.txt");
+    auto installed_item = remote_item("installed", "installed.txt");
+    installed_item.content_hash = onedrive::FileHash{
+        .algorithm = onedrive::FileHashAlgorithm::sha256,
+        .value =
+            "3A6EB0790F39AC87C94F3856B2DD2C5D110E6811602261A9A923D3BB23ADC8B7",
+    };
     const auto destination = root / "installed.txt";
     const auto installed = detail::download_atomically(
         graph,
@@ -395,6 +401,60 @@ int main() {
         !items.partials.contains("unsafe-partial") ||
         std::filesystem::exists(unsafe_destination)) {
         return fail("unsafe partial download path changed recovery state");
+    }
+
+    auto quick_xor_item = remote_item("quick-xor", "quick-xor.txt");
+    quick_xor_item.size = 1;
+    quick_xor_item.content_hash = onedrive::FileHash{
+        .algorithm = onedrive::FileHashAlgorithm::quick_xor,
+        .value = "SgAAAAAAAAAAAAAAAQAAAAAAAAA=",
+    };
+    const auto quick_xor_destination = root / "quick-xor.txt";
+    graph.contents = "J";
+    static_cast<void>(detail::download_atomically(
+        graph,
+        items,
+        quick_xor_item,
+        item_state(quick_xor_item, quick_xor_destination),
+        quick_xor_destination,
+        metadata
+    ));
+    if (!std::filesystem::exists(quick_xor_destination) ||
+        items.partials.contains("quick-xor")) {
+        return fail("valid QuickXorHash download was not installed");
+    }
+
+    auto corrupt_item = remote_item("corrupt", "corrupt.txt");
+    corrupt_item.content_hash = onedrive::FileHash{
+        .algorithm = onedrive::FileHashAlgorithm::sha256,
+        .value =
+            "0000000000000000000000000000000000000000000000000000000000000000",
+    };
+    const auto corrupt_destination = root / "corrupt.txt";
+    graph.contents = "data";
+    try {
+        static_cast<void>(detail::download_atomically(
+            graph,
+            items,
+            corrupt_item,
+            item_state(corrupt_item, corrupt_destination),
+            corrupt_destination,
+            metadata
+        ));
+        return fail("download with a mismatched Graph hash was accepted");
+    } catch (const detail::DownloadIntegrityError&) {
+    }
+    bool corrupt_temporary_exists = false;
+    for (const auto& entry : std::filesystem::directory_iterator{root}) {
+        if (entry.path().filename().string().starts_with(
+                ".corrupt.txt.onedrive-partial-"
+            )) {
+            corrupt_temporary_exists = true;
+        }
+    }
+    if (std::filesystem::exists(corrupt_destination) ||
+        corrupt_temporary_exists || items.partials.contains("corrupt")) {
+        return fail("failed hash verification retained resumable state");
     }
 
     const auto duplicate_destination = root / "duplicate.txt";

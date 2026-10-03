@@ -665,6 +665,50 @@ int test_blocked_items_continue_and_retry() {
         !retry_metrics.last_success) {
         return fail("persisted blocked item was not retried and cleared");
     }
+
+    const auto hash_retry_root = temporary.path() / "hash-retry";
+    FakeGraphClient hash_retry_graph;
+    hash_retry_graph.contents["hash-retry"] = "data";
+    FakeItemStore hash_retry_items;
+    hash_retry_items.saved_delta_link =
+        "https://graph.example.test/delta?token=saved";
+    hash_retry_items.blocked = {
+        {
+            .drive_id = "me",
+            .remote_id = "hash-retry",
+            .parent_id = "root",
+            .name = "hash-retry.txt",
+            .etag = "retry-etag",
+            .remote_path = "hash-retry.txt",
+            .last_modified = "2026-10-02T00:00:00Z",
+            .size = 4,
+            .reason_code = "local_modification",
+            .reason_message = "previous conflict",
+            .attempt_count = 1,
+            .content_hash = onedrive::FileHash{
+                .algorithm = onedrive::FileHashAlgorithm::sha256,
+                .value =
+                    "000000000000000000000000000000000000000000000000"
+                    "0000000000000000",
+            },
+        },
+    };
+    FakeMetrics hash_retry_metrics;
+    try {
+        static_cast<void>(onedrive::sync::SyncEngine{
+            config_for(hash_retry_root, false),
+            hash_retry_graph,
+            hash_retry_items,
+            hash_retry_metrics
+        }.synchronize());
+        return fail("blocked retry ignored its persisted content hash");
+    } catch (const std::runtime_error&) {
+    }
+    if (std::filesystem::exists(hash_retry_root / "hash-retry.txt") ||
+        !hash_retry_items.partials.empty() ||
+        hash_retry_metrics.last_success) {
+        return fail("failed blocked hash retry retained resumable state");
+    }
     return EXIT_SUCCESS;
 }
 

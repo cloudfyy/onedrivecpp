@@ -91,6 +91,7 @@ add_library(onedrive_core
     src/metrics/metrics.cpp
     src/monitor/monitor.cpp
     src/storage/item_database.cpp
+    src/sync/download_integrity.cpp
     src/sync/download_recovery.cpp
     src/sync/download_transaction.cpp
     src/sync/filesystem_metadata.cpp
@@ -268,6 +269,17 @@ if(BUILD_TESTING)
     )
     target_link_libraries(download_components_tests PRIVATE onedrive_core)
     add_test(NAME download_components_tests COMMAND download_components_tests)
+
+    add_executable(
+        download_integrity_tests
+        tests/download_integrity_tests.cpp
+    )
+    target_include_directories(
+        download_integrity_tests
+        PRIVATE src/sync
+    )
+    target_link_libraries(download_integrity_tests PRIVATE onedrive_core)
+    add_test(NAME download_integrity_tests COMMAND download_integrity_tests)
 endif()
 
 set(

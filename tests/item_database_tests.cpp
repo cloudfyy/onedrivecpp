@@ -121,6 +121,32 @@ bool create_version_seven_database(const std::filesystem::path& path) {
     return succeeded;
 }
 
+bool create_version_eight_database(const std::filesystem::path& path) {
+    if (!create_version_seven_database(path)) {
+        return false;
+    }
+    sqlite3* database = nullptr;
+    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
+        sqlite3_close(database);
+        return false;
+    }
+    constexpr const char* schema =
+        "CREATE TABLE partial_download ("
+        "drive_id TEXT NOT NULL, remote_id TEXT NOT NULL, "
+        "parent_id TEXT NOT NULL, name TEXT NOT NULL, etag TEXT NOT NULL, "
+        "remote_path TEXT NOT NULL, local_path TEXT NOT NULL, "
+        "last_modified TEXT NOT NULL, size INTEGER NOT NULL, "
+        "directory INTEGER NOT NULL, temporary_path TEXT NOT NULL, "
+        "completed_bytes INTEGER NOT NULL, "
+        "updated_at INTEGER NOT NULL DEFAULT (unixepoch()), "
+        "PRIMARY KEY (drive_id, remote_id));"
+        "PRAGMA user_version = 8;";
+    const bool succeeded =
+        sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
+    sqlite3_close(database);
+    return succeeded;
+}
+
 bool identity_row_is_valid(const std::filesystem::path& path) {
     sqlite3* database = nullptr;
     if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
@@ -346,6 +372,10 @@ int main() {
                     .remote_path = "blocked-me.txt",
                     .reason_code = "local_modification",
                     .reason_message = "local file was modified",
+                    .content_hash = onedrive::FileHash{
+                        .algorithm = onedrive::FileHashAlgorithm::quick_xor,
+                        .value = "SgAAAAAAAAAAAAAAAQAAAAAAAAA=",
+                    },
                 },
             },
             .delta_link = "https://graph.example.test/delta-me",
@@ -434,7 +464,10 @@ int main() {
             !database.partial_download("other-drive", "partial-other") ||
             database.blocked_items("me").size() != 1 ||
             database.blocked_items("other-drive").size() != 1 ||
-            database.blocked_items("me")[0].attempt_count != 1) {
+            database.blocked_items("me")[0].attempt_count != 1 ||
+            !database.blocked_items("me")[0].content_hash ||
+            database.blocked_items("me")[0].content_hash->value !=
+                "SgAAAAAAAAAAAAAAAQAAAAAAAAA=") {
             return fail("pending downloads or blocked items were not saved by drive");
         }
 
@@ -762,6 +795,50 @@ int main() {
         if (!database.partial_download("me", "migrated-partial")) {
             return fail(
                 "version seven database did not gain partial download state"
+            );
+        }
+    }
+
+    const auto version_eight_directory =
+        temporary_directory.path() / "version-eight";
+    std::filesystem::create_directories(version_eight_directory);
+    if (!create_version_eight_database(
+            version_eight_directory / "items.sqlite3"
+        )) {
+        return fail("version eight migration fixture could not be created");
+    }
+    {
+        onedrive::storage::ItemDatabase database{
+            version_eight_directory,
+            identity()
+        };
+        database.open();
+        database.apply_delta({
+            .drive_id = "me",
+            .blocked_upserts = {
+                {
+                    .remote_id = "hash-after-migration",
+                    .name = "hash.txt",
+                    .etag = "etag",
+                    .remote_path = "hash.txt",
+                    .reason_code = "local_modification",
+                    .reason_message = "local file was modified",
+                    .content_hash = onedrive::FileHash{
+                        .algorithm = onedrive::FileHashAlgorithm::sha256,
+                        .value =
+                            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+                            "AAAAAAAAAAAAAAAA",
+                    },
+                },
+            },
+            .delta_link = "https://graph.example.test/delta-v9",
+        });
+        const auto blocked = database.blocked_items("me");
+        if (blocked.size() != 1 || !blocked[0].content_hash ||
+            blocked[0].content_hash->algorithm !=
+                onedrive::FileHashAlgorithm::sha256) {
+            return fail(
+                "version eight database did not gain blocked hash metadata"
             );
         }
     }

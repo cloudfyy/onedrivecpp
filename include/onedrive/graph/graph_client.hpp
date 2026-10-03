@@ -1,6 +1,7 @@
 #pragma once
 
 #include "onedrive/account/account_state.hpp"
+#include "onedrive/file_hash.hpp"
 #include "onedrive/proxy_service.hpp"
 
 #include <chrono>
@@ -51,6 +52,7 @@ struct RemoteItem {
     bool directory{false};
     bool deleted{false};
     bool root{false};
+    std::optional<FileHash> content_hash;
 };
 
 struct DeltaResult {

@@ -213,11 +213,23 @@ void create_blocked_item_schema(sqlite3* database) {
         "directory INTEGER NOT NULL,"
         "reason_code TEXT NOT NULL,"
         "reason_message TEXT NOT NULL,"
+        "content_hash_algorithm TEXT NOT NULL DEFAULT '',"
+        "content_hash_value TEXT NOT NULL DEFAULT '',"
         "first_seen INTEGER NOT NULL DEFAULT (unixepoch()),"
         "last_attempt INTEGER NOT NULL DEFAULT (unixepoch()),"
         "attempt_count INTEGER NOT NULL DEFAULT 1,"
         "PRIMARY KEY (drive_id, remote_id)"
         ");"
+    );
+}
+
+void add_blocked_item_hash_columns(sqlite3* database) {
+    execute(
+        database,
+        "ALTER TABLE blocked_item ADD COLUMN content_hash_algorithm "
+        "TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE blocked_item ADD COLUMN content_hash_value "
+        "TEXT NOT NULL DEFAULT '';"
     );
 }
 
@@ -304,7 +316,7 @@ void create_current_schema(sqlite3* database) {
     create_blocked_item_schema(database);
     create_identity_schema(database);
     create_partial_download_schema(database);
-    execute(database, "PRAGMA user_version = 8;");
+    execute(database, "PRAGMA user_version = 9;");
 }
 
 void migrate_schema(sqlite3* database) {
@@ -364,7 +376,7 @@ void migrate_schema(sqlite3* database) {
         create_blocked_item_schema(database);
         create_identity_schema(database);
         create_partial_download_schema(database);
-        execute(database, "PRAGMA user_version = 8;");
+        execute(database, "PRAGMA user_version = 9;");
         transaction.commit();
         return;
     }
@@ -395,7 +407,7 @@ void migrate_schema(sqlite3* database) {
         create_blocked_item_schema(database);
         create_identity_schema(database);
         create_partial_download_schema(database);
-        execute(database, "PRAGMA user_version = 8;");
+        execute(database, "PRAGMA user_version = 9;");
         transaction.commit();
         return;
     }
@@ -423,7 +435,7 @@ void migrate_schema(sqlite3* database) {
         create_blocked_item_schema(database);
         create_identity_schema(database);
         create_partial_download_schema(database);
-        execute(database, "PRAGMA user_version = 8;");
+        execute(database, "PRAGMA user_version = 9;");
         transaction.commit();
         return;
     }
@@ -432,34 +444,44 @@ void migrate_schema(sqlite3* database) {
         create_blocked_item_schema(database);
         create_identity_schema(database);
         create_partial_download_schema(database);
-        execute(database, "PRAGMA user_version = 8;");
+        execute(database, "PRAGMA user_version = 9;");
         transaction.commit();
         return;
     }
     if (version == 5) {
         Transaction transaction{database};
+        add_blocked_item_hash_columns(database);
         create_identity_schema(database);
         create_partial_download_schema(database);
-        execute(database, "PRAGMA user_version = 8;");
+        execute(database, "PRAGMA user_version = 9;");
         transaction.commit();
         return;
     }
     if (version == 6) {
         Transaction transaction{database};
+        add_blocked_item_hash_columns(database);
         create_identity_schema(database);
         create_partial_download_schema(database);
-        execute(database, "PRAGMA user_version = 8;");
+        execute(database, "PRAGMA user_version = 9;");
         transaction.commit();
         return;
     }
     if (version == 7) {
         Transaction transaction{database};
+        add_blocked_item_hash_columns(database);
         create_partial_download_schema(database);
-        execute(database, "PRAGMA user_version = 8;");
+        execute(database, "PRAGMA user_version = 9;");
         transaction.commit();
         return;
     }
-    if (version != 8) {
+    if (version == 8) {
+        Transaction transaction{database};
+        add_blocked_item_hash_columns(database);
+        execute(database, "PRAGMA user_version = 9;");
+        transaction.commit();
+        return;
+    }
+    if (version != 9) {
         throw std::runtime_error(
             "unsupported state database schema version " + std::to_string(version)
         );
@@ -890,14 +912,17 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         database,
         "INSERT INTO blocked_item ("
         "drive_id, remote_id, parent_id, name, etag, remote_path, "
-        "last_modified, size, directory, reason_code, reason_message"
-        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) "
+        "last_modified, size, directory, reason_code, reason_message, "
+        "content_hash_algorithm, content_hash_value"
+        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) "
         "ON CONFLICT(drive_id, remote_id) DO UPDATE SET "
         "parent_id = excluded.parent_id, name = excluded.name, "
         "etag = excluded.etag, remote_path = excluded.remote_path, "
         "last_modified = excluded.last_modified, size = excluded.size, "
         "directory = excluded.directory, reason_code = excluded.reason_code, "
         "reason_message = excluded.reason_message, "
+        "content_hash_algorithm = excluded.content_hash_algorithm, "
+        "content_hash_value = excluded.content_hash_value, "
         "last_attempt = unixepoch(), "
         "attempt_count = blocked_item.attempt_count + 1;"
     };
@@ -940,6 +965,27 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
             11,
             item.reason_message
         );
+        std::string hash_algorithm;
+        std::string hash_value;
+        if (item.content_hash.has_value()) {
+            hash_algorithm =
+                item.content_hash->algorithm == FileHashAlgorithm::sha256 ?
+                    "sha256" :
+                    "quick_xor";
+            hash_value = item.content_hash->value;
+            if (hash_value.empty()) {
+                throw std::invalid_argument(
+                    "blocked item content hash cannot be empty"
+                );
+            }
+        }
+        bind_text(
+            database,
+            upsert_blocked_statement.get(),
+            12,
+            hash_algorithm
+        );
+        bind_text(database, upsert_blocked_statement.get(), 13, hash_value);
         if (sqlite3_step(upsert_blocked_statement.get()) != SQLITE_DONE) {
             throw std::runtime_error(
                 "cannot persist blocked item: " +
@@ -1326,7 +1372,8 @@ std::vector<BlockedItem> ItemDatabase::blocked_items_on_worker(
         database,
         "SELECT drive_id, remote_id, parent_id, name, etag, remote_path, "
         "last_modified, size, directory, reason_code, reason_message, "
-        "attempt_count FROM blocked_item WHERE drive_id = ?1 "
+        "attempt_count, content_hash_algorithm, content_hash_value "
+        "FROM blocked_item WHERE drive_id = ?1 "
         "ORDER BY remote_path;"
     };
     bind_text(database, statement.get(), 1, drive_id);
@@ -1341,6 +1388,24 @@ std::vector<BlockedItem> ItemDatabase::blocked_items_on_worker(
                 "cannot read blocked synchronization items: " +
                 std::string{sqlite3_errmsg(database)}
             );
+        }
+        const std::string hash_algorithm = column_text(statement.get(), 12);
+        const std::string hash_value = column_text(statement.get(), 13);
+        std::optional<FileHash> content_hash;
+        if (!hash_algorithm.empty() || !hash_value.empty()) {
+            if (hash_value.empty() ||
+                (hash_algorithm != "sha256" &&
+                 hash_algorithm != "quick_xor")) {
+                throw std::runtime_error(
+                    "blocked item contains invalid content hash metadata"
+                );
+            }
+            content_hash = FileHash{
+                .algorithm = hash_algorithm == "sha256" ?
+                    FileHashAlgorithm::sha256 :
+                    FileHashAlgorithm::quick_xor,
+                .value = hash_value,
+            };
         }
         result.push_back({
             .drive_id = column_text(statement.get(), 0),
@@ -1357,6 +1422,7 @@ std::vector<BlockedItem> ItemDatabase::blocked_items_on_worker(
             .attempt_count = static_cast<std::uint64_t>(
                 sqlite3_column_int64(statement.get(), 11)
             ),
+            .content_hash = std::move(content_hash),
         });
     }
     return result;

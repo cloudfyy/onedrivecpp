@@ -203,6 +203,84 @@ std::string item_remote_path(const Json& value, const std::string& name) {
     return relative_parent.empty() ? name : relative_parent + '/' + name;
 }
 
+std::optional<FileHash> item_content_hash(const Json& value) {
+    const auto file = value.find("file");
+    if (file == value.end()) {
+        return std::nullopt;
+    }
+    if (!file->is_object()) {
+        throw std::runtime_error(
+            "Microsoft Graph returned an invalid file facet"
+        );
+    }
+    const auto hashes = file->find("hashes");
+    if (hashes == file->end()) {
+        return std::nullopt;
+    }
+    if (!hashes->is_object()) {
+        throw std::runtime_error(
+            "Microsoft Graph returned an invalid file hash facet"
+        );
+    }
+    const auto read_hash = [&](std::string_view name)
+        -> std::optional<std::string> {
+        const auto hash = hashes->find(std::string{name});
+        if (hash == hashes->end()) {
+            return std::nullopt;
+        }
+        if (!hash->is_string() || hash->get_ref<const std::string&>().empty()) {
+            throw std::runtime_error(
+                "Microsoft Graph returned an invalid " +
+                std::string{name}
+            );
+        }
+        return hash->get<std::string>();
+    };
+    if (auto sha256 = read_hash("sha256Hash"); sha256.has_value()) {
+        const bool valid =
+            sha256.value().size() == 64 &&
+            std::ranges::all_of(
+                sha256.value(),
+                [](unsigned char character) {
+                    return std::isxdigit(character) != 0;
+                }
+            );
+        if (!valid) {
+            throw std::runtime_error(
+                "Microsoft Graph returned an invalid sha256Hash"
+            );
+        }
+        return FileHash{
+            .algorithm = onedrive::FileHashAlgorithm::sha256,
+            .value = std::move(sha256.value()),
+        };
+    }
+    if (auto quick_xor = read_hash("quickXorHash");
+        quick_xor.has_value()) {
+        const bool valid =
+            quick_xor.value().size() == 28 &&
+            quick_xor.value().back() == '=' &&
+            std::ranges::all_of(
+                quick_xor.value().begin(),
+                quick_xor.value().end() - 1,
+                [](unsigned char character) {
+                    return std::isalnum(character) != 0 ||
+                           character == '+' || character == '/';
+                }
+            );
+        if (!valid) {
+            throw std::runtime_error(
+                "Microsoft Graph returned an invalid quickXorHash"
+            );
+        }
+        return FileHash{
+            .algorithm = onedrive::FileHashAlgorithm::quick_xor,
+            .value = std::move(quick_xor.value()),
+        };
+    }
+    return std::nullopt;
+}
+
 }  // namespace
 
 MicrosoftGraphClient::MicrosoftGraphClient(
@@ -521,12 +599,15 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
                     .size = 0,
                     .directory = value.contains("folder"),
                     .deleted = false,
+                    .root = false,
+                    .content_hash = std::nullopt,
                 };
                 if (item.id.empty() || item.name.empty() || item.etag.empty()) {
                     throw std::runtime_error(
                         "Microsoft Graph returned a drive item with empty metadata"
                     );
                 }
+                item.content_hash = item_content_hash(value);
                 items.push_back(std::move(item));
             }
 
@@ -718,6 +799,7 @@ DeltaResult MicrosoftGraphClient::list_delta(
                         size != value.end() && size->is_number_integer()) {
                         item.size = size->get<std::int64_t>();
                     }
+                    item.content_hash = item_content_hash(value);
                     if (item.name.empty() ||
                         (!item.root && item.remote_path.empty()) || item.size < 0) {
                         throw std::runtime_error(

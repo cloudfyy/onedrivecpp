@@ -669,6 +669,14 @@ Authentication, Graph, database, root-permission, disk-capacity, and download
 transport failures remain fatal. The client does not yet upload local changes
 or remove local files for remote deletion records.
 
+When Microsoft Graph supplies a file content hash, the completed temporary
+file is verified before it can enter the install journal. SHA-256 is preferred
+when present; otherwise the client verifies the OneDrive/SharePoint
+QuickXorHash. A mismatch removes the partial checkpoint and temporary file so
+the next attempt restarts from byte zero. The separate local SHA-256
+fingerprint below protects crash recovery state and is not treated as a
+substitute for a remote integrity hash.
+
 After a download completes, the client writes the temporary path, destination,
 remote metadata, size, and SHA-256 content fingerprint to a SQLite
 `pending_download` journal before the atomic replacement. Startup recovery

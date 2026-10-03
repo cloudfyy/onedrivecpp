@@ -189,8 +189,7 @@ int test_list_root_with_refresh_and_pagination() {
             onedrive::http::HttpResponse{
                 .status_code = 200,
                 .body =
-                    R"({"value":[{"id":"file-id","name":"notes.txt",)"
-                    R"("eTag":"file-etag","file":{"mimeType":"text/plain"}}]})",
+                    R"json({"value":[{"id":"file-id","name":"notes.txt","eTag":"file-etag","file":{"mimeType":"text/plain","hashes":{"quickXorHash":"SgAAAAAAAAAAAAAAAQAAAAAAAAA="}}}]})json",
             },
         }
     );
@@ -211,7 +210,12 @@ int test_list_root_with_refresh_and_pagination() {
     const auto items = client.list_root();
 
     if (items.size() != 2 || !items[0].directory || items[1].directory ||
-        items[0].name != "Documents" || items[1].etag != "file-etag") {
+        items[0].name != "Documents" || items[1].etag != "file-etag" ||
+        !items[1].content_hash ||
+        items[1].content_hash->algorithm !=
+            onedrive::FileHashAlgorithm::quick_xor ||
+        items[1].content_hash->value !=
+            "SgAAAAAAAAAAAAAAAQAAAAAAAAA=") {
         return fail("Graph drive items were not parsed across pages");
     }
     if (token_store_pointer->saved_tokens !=
@@ -258,6 +262,41 @@ int test_missing_authentication() {
     }
     if (!transport_pointer->requests.empty()) {
         return fail("missing authentication unexpectedly made an HTTP request");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_invalid_file_hash() {
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"expires_in":3600,"access_token":"access-secret"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"json({"value":[{"id":"file-id","name":"bad.txt","eTag":"etag","file":{"hashes":{"quickXorHash":"not-base64"}}}]})json",
+            },
+        }
+    );
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(
+                std::string{"existing-refresh"}
+            )
+        ),
+        auth_options(),
+    };
+    try {
+        static_cast<void>(client.list_root());
+        return fail("invalid Graph file hash was accepted");
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains("invalid quickXorHash")) {
+            return fail("invalid Graph file hash error was not actionable");
+        }
     }
     return EXIT_SUCCESS;
 }
@@ -505,15 +544,7 @@ int test_delta_with_pagination() {
             onedrive::http::HttpResponse{
                 .status_code = 200,
                 .body =
-                    R"({"value":[{"id":"file-id","name":"notes.txt",)"
-                    R"("eTag":"file-etag","size":42,)"
-                    R"("lastModifiedDateTime":"2026-10-02T00:01:00Z",)"
-                    R"("parentReference":{"id":"folder-id",)"
-                    R"("path":"/drives/drive-id/root:/Documents"},)"
-                    R"("file":{"mimeType":"text/plain"}},)"
-                    R"({"id":"deleted-id","deleted":{"state":"deleted"}}],)"
-                    R"("@odata.deltaLink":)"
-                    R"("https://graph.example.test/v1.0/delta?token=final"})",
+                    R"json({"value":[{"id":"file-id","name":"notes.txt","eTag":"file-etag","size":42,"lastModifiedDateTime":"2026-10-02T00:01:00Z","parentReference":{"id":"folder-id","path":"/drives/drive-id/root:/Documents"},"file":{"mimeType":"text/plain","hashes":{"quickXorHash":"SgAAAAAAAAAAAAAAAQAAAAAAAAA=","sha256Hash":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}},{"id":"deleted-id","deleted":{"state":"deleted"}}],"@odata.deltaLink":"https://graph.example.test/v1.0/delta?token=final"})json",
             },
         }
     );
@@ -544,7 +575,13 @@ int test_delta_with_pagination() {
         delta.changes[1].remote_path != "Documents" ||
         delta.changes[2].remote_path != "Documents/notes.txt" ||
         delta.changes[2].parent_id != "folder-id" ||
-        delta.changes[2].size != 42 || !delta.changes[3].deleted ||
+        delta.changes[2].size != 42 ||
+        !delta.changes[2].content_hash ||
+        delta.changes[2].content_hash->algorithm !=
+            onedrive::FileHashAlgorithm::sha256 ||
+        delta.changes[2].content_hash->value !=
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" ||
+        !delta.changes[3].deleted ||
         progress !=
             std::vector<std::tuple<std::size_t, std::size_t, bool>>{
                 {1, 2, false},
@@ -1026,6 +1063,9 @@ int main() {
         return result;
     }
     if (const int result = test_missing_authentication(); result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_invalid_file_hash(); result != EXIT_SUCCESS) {
         return result;
     }
     if (const int result = test_graph_error(); result != EXIT_SUCCESS) {

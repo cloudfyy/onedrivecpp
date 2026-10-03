@@ -1,5 +1,6 @@
 #include "download_transaction.hpp"
 
+#include "download_integrity.hpp"
 #include "local_filesystem.hpp"
 
 #include <spdlog/spdlog.h>
@@ -138,6 +139,7 @@ PreparedDownload prepare_download(
             );
         }
         const std::string fingerprint = content_fingerprint(temporary);
+        verify_download_integrity(temporary, item, fingerprint);
         metadata.write_remote_identity(item, temporary);
         return {
             .item = item,
@@ -148,6 +150,17 @@ PreparedDownload prepare_download(
             .downloaded_size = downloaded_size,
             .destination_baseline = std::move(destination_baseline),
         };
+    } catch (const DownloadIntegrityError& error) {
+        items.remove_partial_download(state.drive_id, item.id);
+        PreparedDownload incomplete;
+        incomplete.temporary_path = temporary;
+        discard_prepared_download(incomplete);
+        spdlog::warn(
+            "Download integrity verification failed for '{}': {}",
+            item.remote_path,
+            error.what()
+        );
+        throw;
     } catch (const std::exception& error) {
         if (completed_bytes == 0) {
             items.remove_partial_download(state.drive_id, item.id);

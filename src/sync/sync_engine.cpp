@@ -201,6 +201,9 @@ graph::RemoteItem remote_item(const storage::BlockedItem& item) {
         .last_modified = item.last_modified,
         .size = item.size,
         .directory = item.directory,
+        .deleted = false,
+        .root = false,
+        .content_hash = item.content_hash,
     };
 }
 

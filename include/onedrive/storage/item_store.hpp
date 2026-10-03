@@ -1,5 +1,6 @@
 #pragma once
 
+#include "onedrive/file_hash.hpp"
 #include "onedrive/proxy_service.hpp"
 
 #include <cstddef>
@@ -42,6 +43,7 @@ struct BlockedItem {
     std::string reason_code;
     std::string reason_message;
     std::uint64_t attempt_count{0};
+    std::optional<FileHash> content_hash;
 };
 
 struct ItemDelta {

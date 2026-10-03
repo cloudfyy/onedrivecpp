@@ -143,6 +143,7 @@ void SyncPlan::block(
         .directory = item.directory,
         .reason_code = std::move(reason_code),
         .reason_message = std::move(reason_message),
+        .content_hash = item.content_hash,
     };
     if (existing == state_delta_.blocked_upserts.end()) {
         state_delta_.blocked_upserts.push_back(std::move(blocked));
