@@ -593,6 +593,12 @@ item，其他独立文件继续同步；游标安全推进后 `sync` 返回状�
 恢复 journal，因此 SQLite 是崩溃恢复的权威来源，不依赖目标文件系统的
 扩展属性。
 
+大文件每个 Range 分片成功并完成 `fsync` 后，还会单独持久化 SQLite
+`partial_download` 检查点，其中记录远端 ETag、预期大小、目标、临时路径和已
+可靠写入的字节数。后续进程仅在元数据和同目录普通文件仍匹配时续传；未形成
+检查点的尾部字节会被截断，远端版本变化或陈旧状态则从 byte 0 重新开始。完整
+下载会先从 partial 状态转换到现有的待安装 journal，再进行原子替换。
+
 Delta 查询期间，文本输出和日志会在每页处理完成后显示已完成页数和累计扫描
 条目数。JSON 输出会产生包含 `pages`、`items` 和 `completed` 字段的
 `delta_progress` 事件。Microsoft Graph 不会预先提供 Delta 条目总数，因此无法

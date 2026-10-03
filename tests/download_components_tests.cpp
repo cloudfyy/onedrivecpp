@@ -48,10 +48,24 @@ public:
         const std::string&,
         std::uint64_t,
         const std::filesystem::path& destination,
-        const onedrive::graph::DownloadProgress&
+        std::uint64_t initial_offset,
+        const onedrive::graph::DownloadProgress&,
+        const onedrive::graph::DownloadCheckpoint& checkpoint
     ) const {
-        std::ofstream output{destination, std::ios::binary};
-        output << contents;
+        if (initial_offset == 0) {
+            std::ofstream output{destination, std::ios::binary};
+            output << contents;
+        } else {
+            std::fstream output{
+                destination,
+                std::ios::in | std::ios::out | std::ios::binary
+            };
+            output.seekp(static_cast<std::streamoff>(initial_offset));
+            output << contents.substr(initial_offset);
+        }
+        if (checkpoint) {
+            checkpoint(contents.size());
+        }
     }
 
     std::string contents{"data"};
@@ -96,6 +110,35 @@ public:
         return result;
     }
 
+    void save_partial_download(
+        onedrive::storage::PartialDownload download
+    ) {
+        partials.insert_or_assign(
+            download.item.remote_id,
+            std::move(download)
+        );
+    }
+
+    void remove_partial_download(
+        const std::string&,
+        const std::string& remote_id
+    ) {
+        partials.erase(remote_id);
+    }
+
+    [[nodiscard]] std::optional<onedrive::storage::PartialDownload>
+    partial_download(
+        const std::string&,
+        const std::string& remote_id
+    ) const {
+        const auto iterator = partials.find(remote_id);
+        return iterator == partials.end() ?
+                   std::nullopt :
+                   std::optional<onedrive::storage::PartialDownload>{
+                       iterator->second
+                   };
+    }
+
     [[nodiscard]] std::vector<onedrive::storage::BlockedItem> blocked_items(
         const std::string&
     ) const {
@@ -134,6 +177,7 @@ public:
 
     std::unordered_map<std::string, onedrive::storage::ItemState> states;
     std::unordered_map<std::string, onedrive::storage::PendingDownload> pending;
+    std::unordered_map<std::string, onedrive::storage::PartialDownload> partials;
     bool fail_upsert{false};
 };
 

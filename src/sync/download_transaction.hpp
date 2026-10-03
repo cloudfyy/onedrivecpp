@@ -22,6 +22,7 @@ struct PreparedDownload {
 
 [[nodiscard]] PreparedDownload prepare_download(
     graph::GraphClient& graph,
+    storage::ItemStore& items,
     const graph::RemoteItem& item,
     storage::ItemState state,
     const std::filesystem::path& destination,

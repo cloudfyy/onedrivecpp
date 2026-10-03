@@ -33,6 +33,15 @@ public:
     [[nodiscard]] std::vector<PendingDownload> pending_downloads(
         const std::string& drive_id
     ) const;
+    void save_partial_download(PartialDownload download);
+    void remove_partial_download(
+        const std::string& drive_id,
+        const std::string& remote_id
+    );
+    [[nodiscard]] std::optional<PartialDownload> partial_download(
+        const std::string& drive_id,
+        const std::string& remote_id
+    ) const;
     [[nodiscard]] std::vector<BlockedItem> blocked_items(
         const std::string& drive_id
     ) const;
@@ -60,6 +69,15 @@ private:
     );
     [[nodiscard]] std::vector<PendingDownload> pending_downloads_on_worker(
         const std::string& drive_id
+    ) const;
+    void save_partial_download_on_worker(const PartialDownload& download);
+    void remove_partial_download_on_worker(
+        const std::string& drive_id,
+        const std::string& remote_id
+    );
+    [[nodiscard]] std::optional<PartialDownload> partial_download_on_worker(
+        const std::string& drive_id,
+        const std::string& remote_id
     ) const;
     [[nodiscard]] std::vector<BlockedItem> blocked_items_on_worker(
         const std::string& drive_id

@@ -675,6 +675,14 @@ remote metadata, size, and SHA-256 content fingerprint to a SQLite
 processes this journal first, making SQLite authoritative rather than relying
 on target-file-system extended attributes.
 
+Large downloads also persist a separate SQLite `partial_download` checkpoint
+after each successful, flushed Range chunk. The checkpoint records the remote
+ETag, expected size, destination, temporary path, and durable byte count. A
+later process resumes only when that metadata and the same-directory regular
+file still match; uncheckpointed trailing bytes are truncated, while stale or
+changed remote versions restart from byte zero. The completed download moves
+from partial state to the existing pending-install journal before replacement.
+
 Download progress is aggregated across concurrent transfers. Text output shows
 completed and total file counts, overall byte percentage, and transferred size
 using B, KiB, MiB, or GiB. Interactive terminals update one concise line in

@@ -60,6 +60,12 @@ struct PendingDownload {
     std::string content_fingerprint;
 };
 
+struct PartialDownload {
+    ItemState item;
+    std::filesystem::path temporary_path;
+    std::uint64_t completed_bytes{0};
+};
+
 struct ClearedState {
     std::size_t items{0};
     std::size_t pending_downloads{0};
@@ -73,6 +79,9 @@ PRO_DEF_MEM_DISPATCH(StoreApplyDeltaDispatch, apply_delta);
 PRO_DEF_MEM_DISPATCH(StoreSavePendingDispatch, save_pending_download);
 PRO_DEF_MEM_DISPATCH(StoreRemovePendingDispatch, remove_pending_download);
 PRO_DEF_MEM_DISPATCH(StorePendingDispatch, pending_downloads);
+PRO_DEF_MEM_DISPATCH(StoreSavePartialDispatch, save_partial_download);
+PRO_DEF_MEM_DISPATCH(StoreRemovePartialDispatch, remove_partial_download);
+PRO_DEF_MEM_DISPATCH(StorePartialDispatch, partial_download);
 PRO_DEF_MEM_DISPATCH(StoreBlockedDispatch, blocked_items);
 PRO_DEF_MEM_DISPATCH(StoreResetDispatch, reset);
 PRO_DEF_MEM_DISPATCH(StoreClearDispatch, clear);
@@ -92,6 +101,18 @@ struct ItemStoreFacade : pro::facade_builder
     ::add_convention<
         StorePendingDispatch,
         std::vector<PendingDownload>(const std::string&) const
+    >
+    ::add_convention<StoreSavePartialDispatch, void(PartialDownload)>
+    ::add_convention<
+        StoreRemovePartialDispatch,
+        void(const std::string&, const std::string&)
+    >
+    ::add_convention<
+        StorePartialDispatch,
+        std::optional<PartialDownload>(
+            const std::string&,
+            const std::string&
+        ) const
     >
     ::add_convention<
         StoreBlockedDispatch,
@@ -146,6 +167,24 @@ public:
         const std::string& drive_id
     ) const {
         return implementation()->pending_downloads(drive_id);
+    }
+
+    void save_partial_download(PartialDownload download) {
+        implementation()->save_partial_download(std::move(download));
+    }
+
+    void remove_partial_download(
+        const std::string& drive_id,
+        const std::string& remote_id
+    ) {
+        implementation()->remove_partial_download(drive_id, remote_id);
+    }
+
+    [[nodiscard]] std::optional<PartialDownload> partial_download(
+        const std::string& drive_id,
+        const std::string& remote_id
+    ) const {
+        return implementation()->partial_download(drive_id, remote_id);
     }
 
     [[nodiscard]] std::vector<BlockedItem> blocked_items(

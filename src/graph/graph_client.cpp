@@ -803,10 +803,26 @@ void MicrosoftGraphClient::download_file(
     const std::string& remote_id,
     std::uint64_t expected_size,
     const std::filesystem::path& destination,
-    const DownloadProgress& progress
+    std::uint64_t initial_offset,
+    const DownloadProgress& progress,
+    const DownloadCheckpoint& checkpoint
 ) const {
     if (remote_id.empty()) {
         throw std::invalid_argument("cannot download a drive item without an ID");
+    }
+    if (initial_offset > expected_size) {
+        throw std::invalid_argument(
+            "download resume offset exceeds the expected file size"
+        );
+    }
+    if (initial_offset == expected_size) {
+        if (progress) {
+            progress(expected_size, expected_size);
+        }
+        if (checkpoint) {
+            checkpoint(expected_size);
+        }
+        return;
     }
     const std::string content_url =
         options_.drive_id == "me" ?
@@ -886,7 +902,8 @@ void MicrosoftGraphClient::download_file(
     };
 
     spdlog::debug("Downloading Microsoft Graph drive item '{}'", remote_id);
-    if (expected_size <= options_.download_chunk_threshold_bytes) {
+    if (initial_offset == 0 &&
+        expected_size <= options_.download_chunk_threshold_bytes) {
         auto response = download(
             {"Accept: application/octet-stream"},
             0,
@@ -907,6 +924,9 @@ void MicrosoftGraphClient::download_file(
                 )
             );
         }
+        if (checkpoint) {
+            checkpoint(expected_size);
+        }
         spdlog::debug("Downloaded Microsoft Graph drive item '{}'", remote_id);
         return;
     }
@@ -917,7 +937,7 @@ void MicrosoftGraphClient::download_file(
         remote_id,
         chunk_size
     );
-    for (std::uint64_t offset = 0; offset < expected_size;) {
+    for (std::uint64_t offset = initial_offset; offset < expected_size;) {
         const auto bytes = std::min(chunk_size, expected_size - offset);
         const auto end = offset + bytes - 1;
         auto response = download(
@@ -958,6 +978,9 @@ void MicrosoftGraphClient::download_file(
             );
         }
         offset += bytes;
+        if (checkpoint) {
+            checkpoint(offset);
+        }
     }
     spdlog::debug("Downloaded Microsoft Graph drive item '{}'", remote_id);
 }

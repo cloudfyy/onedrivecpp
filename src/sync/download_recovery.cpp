@@ -166,6 +166,7 @@ void recover_pending_downloads(
         download.item.local_modified_ticks = modified_ticks(destination);
         items.upsert(download.item);
         items.remove_pending_download(drive_id, download.item.remote_id);
+        items.remove_partial_download(drive_id, download.item.remote_id);
         spdlog::info(
             "Recovered pending download '{}'",
             download.item.remote_path

@@ -32,6 +32,8 @@ namespace onedrive::graph {
 
 using DownloadProgress =
     std::function<void(std::uint64_t downloaded, std::uint64_t total)>;
+using DownloadCheckpoint =
+    std::function<void(std::uint64_t completed_bytes)>;
 using DeltaProgress = std::function<void(
     std::size_t pages,
     std::size_t items,
@@ -99,7 +101,9 @@ struct GraphClientFacade : pro::facade_builder
             const std::string&,
             std::uint64_t,
             const std::filesystem::path&,
-            const DownloadProgress&
+            std::uint64_t,
+            const DownloadProgress&,
+            const DownloadCheckpoint&
         ) const
     >
     ::build {};
@@ -129,13 +133,33 @@ public:
         const std::string& remote_id,
         std::uint64_t expected_size,
         const std::filesystem::path& destination,
-        const DownloadProgress& progress = {}
+        std::uint64_t initial_offset,
+        const DownloadProgress& progress,
+        const DownloadCheckpoint& checkpoint
     ) const {
         implementation()->download_file(
             remote_id,
             expected_size,
             destination,
-            progress
+            initial_offset,
+            progress,
+            checkpoint
+        );
+    }
+
+    void download_file(
+        const std::string& remote_id,
+        std::uint64_t expected_size,
+        const std::filesystem::path& destination,
+        const DownloadProgress& progress = {}
+    ) const {
+        download_file(
+            remote_id,
+            expected_size,
+            destination,
+            0,
+            progress,
+            {}
         );
     }
 };
@@ -167,8 +191,25 @@ public:
         const std::string& remote_id,
         std::uint64_t expected_size,
         const std::filesystem::path& destination,
-        const DownloadProgress& progress = {}
+        std::uint64_t initial_offset,
+        const DownloadProgress& progress,
+        const DownloadCheckpoint& checkpoint
     ) const;
+    void download_file(
+        const std::string& remote_id,
+        std::uint64_t expected_size,
+        const std::filesystem::path& destination,
+        const DownloadProgress& progress = {}
+    ) const {
+        download_file(
+            remote_id,
+            expected_size,
+            destination,
+            0,
+            progress,
+            {}
+        );
+    }
 
 private:
     std::unique_ptr<http::HttpTransport> transport_;

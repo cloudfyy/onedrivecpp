@@ -139,6 +139,7 @@ DownloadBatch download_files(
                     items,
                     detail::prepare_download(
                         graph,
+                        items,
                         task.item,
                         task.state,
                         task.destination,

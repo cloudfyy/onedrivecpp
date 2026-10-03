@@ -10,6 +10,7 @@
 #include <deque>
 #include <functional>
 #include <future>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -240,6 +241,28 @@ void create_identity_schema(sqlite3* database) {
     );
 }
 
+void create_partial_download_schema(sqlite3* database) {
+    execute(
+        database,
+        "CREATE TABLE IF NOT EXISTS partial_download ("
+        "drive_id TEXT NOT NULL,"
+        "remote_id TEXT NOT NULL,"
+        "parent_id TEXT NOT NULL,"
+        "name TEXT NOT NULL,"
+        "etag TEXT NOT NULL,"
+        "remote_path TEXT NOT NULL,"
+        "local_path TEXT NOT NULL,"
+        "last_modified TEXT NOT NULL,"
+        "size INTEGER NOT NULL,"
+        "directory INTEGER NOT NULL,"
+        "temporary_path TEXT NOT NULL,"
+        "completed_bytes INTEGER NOT NULL,"
+        "updated_at INTEGER NOT NULL DEFAULT (unixepoch()),"
+        "PRIMARY KEY (drive_id, remote_id)"
+        ");"
+    );
+}
+
 void create_current_schema(sqlite3* database) {
     execute(
         database,
@@ -280,7 +303,8 @@ void create_current_schema(sqlite3* database) {
     );
     create_blocked_item_schema(database);
     create_identity_schema(database);
-    execute(database, "PRAGMA user_version = 7;");
+    create_partial_download_schema(database);
+    execute(database, "PRAGMA user_version = 8;");
 }
 
 void migrate_schema(sqlite3* database) {
@@ -339,7 +363,8 @@ void migrate_schema(sqlite3* database) {
         );
         create_blocked_item_schema(database);
         create_identity_schema(database);
-        execute(database, "PRAGMA user_version = 7;");
+        create_partial_download_schema(database);
+        execute(database, "PRAGMA user_version = 8;");
         transaction.commit();
         return;
     }
@@ -369,7 +394,8 @@ void migrate_schema(sqlite3* database) {
         );
         create_blocked_item_schema(database);
         create_identity_schema(database);
-        execute(database, "PRAGMA user_version = 7;");
+        create_partial_download_schema(database);
+        execute(database, "PRAGMA user_version = 8;");
         transaction.commit();
         return;
     }
@@ -396,7 +422,8 @@ void migrate_schema(sqlite3* database) {
         );
         create_blocked_item_schema(database);
         create_identity_schema(database);
-        execute(database, "PRAGMA user_version = 7;");
+        create_partial_download_schema(database);
+        execute(database, "PRAGMA user_version = 8;");
         transaction.commit();
         return;
     }
@@ -404,25 +431,35 @@ void migrate_schema(sqlite3* database) {
         Transaction transaction{database};
         create_blocked_item_schema(database);
         create_identity_schema(database);
-        execute(database, "PRAGMA user_version = 7;");
+        create_partial_download_schema(database);
+        execute(database, "PRAGMA user_version = 8;");
         transaction.commit();
         return;
     }
     if (version == 5) {
         Transaction transaction{database};
         create_identity_schema(database);
-        execute(database, "PRAGMA user_version = 7;");
+        create_partial_download_schema(database);
+        execute(database, "PRAGMA user_version = 8;");
         transaction.commit();
         return;
     }
     if (version == 6) {
         Transaction transaction{database};
         create_identity_schema(database);
-        execute(database, "PRAGMA user_version = 7;");
+        create_partial_download_schema(database);
+        execute(database, "PRAGMA user_version = 8;");
         transaction.commit();
         return;
     }
-    if (version != 7) {
+    if (version == 7) {
+        Transaction transaction{database};
+        create_partial_download_schema(database);
+        execute(database, "PRAGMA user_version = 8;");
+        transaction.commit();
+        return;
+    }
+    if (version != 8) {
         throw std::runtime_error(
             "unsupported state database schema version " + std::to_string(version)
         );
@@ -1100,6 +1137,176 @@ std::vector<PendingDownload> ItemDatabase::pending_downloads_on_worker(
     return downloads;
 }
 
+void ItemDatabase::save_partial_download(PartialDownload download) {
+    impl_->invoke([this, download = std::move(download)] {
+        save_partial_download_on_worker(download);
+    });
+}
+
+void ItemDatabase::save_partial_download_on_worker(
+    const PartialDownload& download
+) {
+    sqlite3* database = impl_->database.get();
+    if (database == nullptr) {
+        throw std::runtime_error("state database is not open");
+    }
+    if (download.item.drive_id.empty() || download.item.remote_id.empty() ||
+        download.temporary_path.empty() || download.item.size < 0 ||
+        download.completed_bytes >
+            static_cast<std::uint64_t>(download.item.size) ||
+        download.completed_bytes >
+            static_cast<std::uint64_t>(
+                std::numeric_limits<std::int64_t>::max()
+            )) {
+        throw std::invalid_argument(
+            "partial download requires valid item, path, size, and offset"
+        );
+    }
+
+    Statement statement{
+        database,
+        "INSERT INTO partial_download ("
+        "drive_id, remote_id, parent_id, name, etag, remote_path, local_path, "
+        "last_modified, size, directory, temporary_path, completed_bytes"
+        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) "
+        "ON CONFLICT(drive_id, remote_id) DO UPDATE SET "
+        "parent_id = excluded.parent_id, name = excluded.name, "
+        "etag = excluded.etag, remote_path = excluded.remote_path, "
+        "local_path = excluded.local_path, "
+        "last_modified = excluded.last_modified, size = excluded.size, "
+        "directory = excluded.directory, "
+        "temporary_path = excluded.temporary_path, "
+        "completed_bytes = excluded.completed_bytes, "
+        "updated_at = unixepoch();"
+    };
+    bind_text(database, statement.get(), 1, download.item.drive_id);
+    bind_text(database, statement.get(), 2, download.item.remote_id);
+    bind_text(database, statement.get(), 3, download.item.parent_id);
+    bind_text(database, statement.get(), 4, download.item.name);
+    bind_text(database, statement.get(), 5, download.item.etag);
+    bind_text(database, statement.get(), 6, download.item.remote_path);
+    bind_text(
+        database,
+        statement.get(),
+        7,
+        download.item.local_path.string()
+    );
+    bind_text(database, statement.get(), 8, download.item.last_modified);
+    bind_integer(database, statement.get(), 9, download.item.size);
+    bind_integer(
+        database,
+        statement.get(),
+        10,
+        download.item.directory ? 1 : 0
+    );
+    bind_text(database, statement.get(), 11, download.temporary_path.string());
+    bind_integer(
+        database,
+        statement.get(),
+        12,
+        static_cast<std::int64_t>(download.completed_bytes)
+    );
+    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
+        throw std::runtime_error(
+            "cannot save partial download: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+}
+
+void ItemDatabase::remove_partial_download(
+    const std::string& drive_id,
+    const std::string& remote_id
+) {
+    impl_->invoke([this, drive_id, remote_id] {
+        remove_partial_download_on_worker(drive_id, remote_id);
+    });
+}
+
+void ItemDatabase::remove_partial_download_on_worker(
+    const std::string& drive_id,
+    const std::string& remote_id
+) {
+    sqlite3* database = impl_->database.get();
+    if (database == nullptr) {
+        throw std::runtime_error("state database is not open");
+    }
+    Statement statement{
+        database,
+        "DELETE FROM partial_download WHERE drive_id = ?1 AND remote_id = ?2;"
+    };
+    bind_text(database, statement.get(), 1, drive_id);
+    bind_text(database, statement.get(), 2, remote_id);
+    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
+        throw std::runtime_error(
+            "cannot remove partial download: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+}
+
+std::optional<PartialDownload> ItemDatabase::partial_download(
+    const std::string& drive_id,
+    const std::string& remote_id
+) const {
+    return impl_->invoke([this, drive_id, remote_id] {
+        return partial_download_on_worker(drive_id, remote_id);
+    });
+}
+
+std::optional<PartialDownload> ItemDatabase::partial_download_on_worker(
+    const std::string& drive_id,
+    const std::string& remote_id
+) const {
+    sqlite3* database = impl_->database.get();
+    if (database == nullptr) {
+        throw std::runtime_error("state database is not open");
+    }
+    Statement statement{
+        database,
+        "SELECT drive_id, remote_id, parent_id, name, etag, remote_path, "
+        "local_path, last_modified, size, directory, temporary_path, "
+        "completed_bytes FROM partial_download "
+        "WHERE drive_id = ?1 AND remote_id = ?2;"
+    };
+    bind_text(database, statement.get(), 1, drive_id);
+    bind_text(database, statement.get(), 2, remote_id);
+    const int result = sqlite3_step(statement.get());
+    if (result == SQLITE_DONE) {
+        return std::nullopt;
+    }
+    if (result != SQLITE_ROW) {
+        throw std::runtime_error(
+            "cannot read partial download: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+    const auto completed = sqlite3_column_int64(statement.get(), 11);
+    if (completed < 0) {
+        throw std::runtime_error(
+            "partial download contains a negative completed byte count"
+        );
+    }
+    return PartialDownload{
+        .item = {
+            .drive_id = column_text(statement.get(), 0),
+            .remote_id = column_text(statement.get(), 1),
+            .parent_id = column_text(statement.get(), 2),
+            .name = column_text(statement.get(), 3),
+            .etag = column_text(statement.get(), 4),
+            .remote_path = column_text(statement.get(), 5),
+            .local_path = column_text(statement.get(), 6),
+            .last_modified = column_text(statement.get(), 7),
+            .size = sqlite3_column_int64(statement.get(), 8),
+            .local_size = 0,
+            .local_modified_ticks = 0,
+            .directory = sqlite3_column_int(statement.get(), 9) != 0,
+        },
+        .temporary_path = column_text(statement.get(), 10),
+        .completed_bytes = static_cast<std::uint64_t>(completed),
+    };
+}
+
 std::vector<BlockedItem> ItemDatabase::blocked_items(
     const std::string& drive_id
 ) const {
@@ -1260,6 +1467,18 @@ ClearedState ItemDatabase::clear_on_worker(const std::string& drive_id) {
     }
     cleared.pending_downloads =
         static_cast<std::size_t>(sqlite3_changes(database));
+
+    Statement partial_statement{
+        database,
+        "DELETE FROM partial_download WHERE drive_id = ?1;"
+    };
+    bind_text(database, partial_statement.get(), 1, drive_id);
+    if (sqlite3_step(partial_statement.get()) != SQLITE_DONE) {
+        throw std::runtime_error(
+            "cannot clear partial downloads: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
 
     Statement blocked_statement{
         database,

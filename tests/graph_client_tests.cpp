@@ -750,6 +750,77 @@ int test_file_download_redirect() {
     return EXIT_SUCCESS;
 }
 
+int test_resumed_file_download() {
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"expires_in":3600,"access_token":"access-secret"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 302,
+                .headers = {
+                    {
+                        .name = "Location",
+                        .value = "https://download.example.test/content",
+                    },
+                },
+            },
+        }
+    );
+    auto* transport_pointer = transport.get();
+    const auto destination =
+        std::filesystem::temp_directory_path() /
+        "onedrive-cpp-resumed-download-test";
+    {
+        std::ofstream output{destination, std::ios::binary};
+        output << "down";
+    }
+
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(
+                std::string{"existing-refresh"}
+            )
+        ),
+        auth_options(),
+        {
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+        },
+    };
+    std::vector<std::uint64_t> checkpoints;
+    client.download_file(
+        "item-id",
+        8,
+        destination,
+        4,
+        {},
+        [&](std::uint64_t completed) {
+            checkpoints.push_back(completed);
+        }
+    );
+
+    std::ifstream input{destination, std::ios::binary};
+    const std::string contents{
+        std::istreambuf_iterator<char>{input},
+        std::istreambuf_iterator<char>{}
+    };
+    std::error_code ignored;
+    std::filesystem::remove(destination, ignored);
+    if (contents != "download" ||
+        transport_pointer->download_requests.size() != 1 ||
+        transport_pointer->download_requests[0].download_offset != 4 ||
+        transport_pointer->download_requests[0].headers.back() !=
+            "Range: bytes=4-7" ||
+        checkpoints != std::vector<std::uint64_t>{8}) {
+        return fail("Graph file download did not resume from its byte offset");
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_large_file_chunked_download() {
     auto transport = std::make_unique<FakeTransport>(
         std::deque<onedrive::http::HttpResult>{
@@ -963,6 +1034,10 @@ int main() {
         return result;
     }
     if (const int result = test_file_download_redirect();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_resumed_file_download();
         result != EXIT_SUCCESS) {
         return result;
     }

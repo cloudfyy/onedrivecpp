@@ -67,9 +67,15 @@ public:
         const std::string& remote_id,
         std::uint64_t,
         const std::filesystem::path& destination,
-        const onedrive::graph::DownloadProgress& progress
+        std::uint64_t initial_offset,
+        const onedrive::graph::DownloadProgress& progress,
+        const onedrive::graph::DownloadCheckpoint& checkpoint
     ) const {
         ++download_count;
+        last_download_offset.store(
+            initial_offset,
+            std::memory_order_relaxed
+        );
         const int active =
             active_downloads.fetch_add(1, std::memory_order_relaxed) + 1;
         int maximum =
@@ -100,12 +106,27 @@ public:
         if (before_download_write) {
             before_download_write(remote_id);
         }
-        std::ofstream output{destination, std::ios::binary};
-        output << contents.at(remote_id);
+        if (initial_offset == 0) {
+            std::ofstream output{destination, std::ios::binary};
+            output << contents.at(remote_id);
+        } else {
+            std::fstream output{
+                destination,
+                std::ios::in | std::ios::out | std::ios::binary
+            };
+            output.seekp(static_cast<std::streamoff>(initial_offset));
+            output << contents.at(remote_id).substr(initial_offset);
+        }
         if (progress) {
             const auto size = contents.at(remote_id).size();
-            progress(size / 2, size);
+            progress(
+                initial_offset + (size - initial_offset) / 2,
+                size
+            );
             progress(size, size);
+        }
+        if (checkpoint) {
+            checkpoint(contents.at(remote_id).size());
         }
     }
 
@@ -119,6 +140,7 @@ public:
     mutable std::atomic_int download_count{0};
     mutable std::atomic_int active_downloads{0};
     mutable std::atomic_int maximum_concurrent_downloads{0};
+    mutable std::atomic_uint64_t last_download_offset{0};
     mutable std::vector<std::optional<std::string>> delta_requests;
 };
 
@@ -170,6 +192,38 @@ public:
         return result;
     }
 
+    void save_partial_download(
+        onedrive::storage::PartialDownload download
+    ) {
+        const std::scoped_lock lock{mutex};
+        partials.insert_or_assign(
+            download.item.remote_id,
+            std::move(download)
+        );
+    }
+
+    void remove_partial_download(
+        const std::string&,
+        const std::string& remote_id
+    ) {
+        const std::scoped_lock lock{mutex};
+        partials.erase(remote_id);
+    }
+
+    [[nodiscard]] std::optional<onedrive::storage::PartialDownload>
+    partial_download(
+        const std::string&,
+        const std::string& remote_id
+    ) const {
+        const std::scoped_lock lock{mutex};
+        const auto iterator = partials.find(remote_id);
+        return iterator == partials.end() ?
+                   std::nullopt :
+                   std::optional<onedrive::storage::PartialDownload>{
+                       iterator->second
+                   };
+    }
+
     [[nodiscard]] std::vector<onedrive::storage::BlockedItem> blocked_items(
         const std::string&
     ) const {
@@ -211,6 +265,7 @@ public:
 
     std::unordered_map<std::string, onedrive::storage::ItemState> items;
     std::unordered_map<std::string, onedrive::storage::PendingDownload> pending;
+    std::unordered_map<std::string, onedrive::storage::PartialDownload> partials;
     std::vector<onedrive::storage::BlockedItem> blocked;
     onedrive::storage::ItemDelta applied_delta;
     std::optional<std::string> saved_delta_link;
@@ -830,6 +885,64 @@ int test_mismatched_recovery_file_preserved() {
     return EXIT_SUCCESS;
 }
 
+int test_partial_download_resume() {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path() / "files";
+    std::filesystem::create_directories(root);
+    const auto destination = root / "resume.txt";
+    const auto partial_path =
+        root / ".resume.txt.onedrive-partial-previous";
+    {
+        std::ofstream output{partial_path, std::ios::binary};
+        output << "part";
+    }
+
+    FakeGraphClient graph;
+    graph.changes = {file("resume", "resume.txt", 8)};
+    graph.contents["resume"] = "partdata";
+    FakeItemStore items;
+    items.partials.emplace(
+        "resume",
+        onedrive::storage::PartialDownload{
+            .item = {
+                .drive_id = "me",
+                .remote_id = "resume",
+                .parent_id = "parent",
+                .name = "resume.txt",
+                .etag = "etag",
+                .remote_path = "resume.txt",
+                .local_path = destination,
+                .last_modified = "2026-10-02T00:00:00Z",
+                .size = 8,
+            },
+            .temporary_path = partial_path,
+            .completed_bytes = 4,
+        }
+    );
+    FakeMetrics metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(root, false),
+            graph,
+            items,
+            metrics
+        }.synchronize() != 0 ||
+        graph.last_download_offset != 4 ||
+        !items.partials.empty() ||
+        items.upsert_count != 1 ||
+        !metrics.last_success) {
+        return fail("partial download did not resume from its saved offset");
+    }
+    std::ifstream input{destination, std::ios::binary};
+    std::string contents{
+        std::istreambuf_iterator<char>{input},
+        std::istreambuf_iterator<char>{}
+    };
+    if (contents != "partdata" || std::filesystem::exists(partial_path)) {
+        return fail("resumed download content was not installed correctly");
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_bounded_concurrent_downloads() {
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "files";
@@ -899,6 +1012,10 @@ int main() {
         return result;
     }
     if (const int result = test_bounded_concurrent_downloads();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_partial_download_resume();
         result != EXIT_SUCCESS) {
         return result;
     }

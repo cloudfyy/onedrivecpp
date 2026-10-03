@@ -180,10 +180,15 @@ public:
         const std::string&,
         std::uint64_t,
         const std::filesystem::path& destination,
-        const onedrive::graph::DownloadProgress&
+        std::uint64_t,
+        const onedrive::graph::DownloadProgress&,
+        const onedrive::graph::DownloadCheckpoint& checkpoint
     ) const {
         std::ofstream output{destination, std::ios::binary};
         output << std::string(42, 'x');
+        if (checkpoint) {
+            checkpoint(42);
+        }
     }
 
 private:
@@ -229,6 +234,21 @@ public:
     [[nodiscard]] std::vector<onedrive::storage::PendingDownload>
     pending_downloads(const std::string&) const {
         return {};
+    }
+
+    void save_partial_download(onedrive::storage::PartialDownload) {}
+
+    void remove_partial_download(
+        const std::string&,
+        const std::string&
+    ) {}
+
+    [[nodiscard]] std::optional<onedrive::storage::PartialDownload>
+    partial_download(
+        const std::string&,
+        const std::string&
+    ) const {
+        return std::nullopt;
     }
 
     [[nodiscard]] std::vector<onedrive::storage::BlockedItem> blocked_items(

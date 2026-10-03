@@ -559,6 +559,50 @@ int main() {
         }
     }
 
+    const auto partial_directory =
+        temporary_directory.path() / "partial-download";
+    const auto partial_path =
+        partial_directory / ".resume.txt.onedrive-partial-test";
+    {
+        onedrive::storage::ItemDatabase database{
+            partial_directory,
+            identity()
+        };
+        database.open();
+        database.save_partial_download({
+            .item = {
+                .drive_id = "me",
+                .remote_id = "resume",
+                .parent_id = "root",
+                .name = "resume.txt",
+                .etag = "resume-etag",
+                .remote_path = "resume.txt",
+                .local_path = partial_directory / "resume.txt",
+                .last_modified = "2026-10-03T00:00:00Z",
+                .size = 8,
+            },
+            .temporary_path = partial_path,
+            .completed_bytes = 4,
+        });
+    }
+    {
+        onedrive::storage::ItemDatabase database{
+            partial_directory,
+            identity()
+        };
+        database.open();
+        const auto partial = database.partial_download("me", "resume");
+        if (!partial || partial->item.etag != "resume-etag" ||
+            partial->temporary_path != partial_path ||
+            partial->completed_bytes != 4) {
+            return fail("partial download state was not persisted");
+        }
+        database.remove_partial_download("me", "resume");
+        if (database.partial_download("me", "resume")) {
+            return fail("partial download state was not removed");
+        }
+    }
+
     const auto migration_directory =
         temporary_directory.path() / "version-four";
     std::filesystem::create_directories(migration_directory);

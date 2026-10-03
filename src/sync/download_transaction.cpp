@@ -11,6 +11,7 @@ namespace onedrive::sync::detail {
 
 PreparedDownload prepare_download(
     graph::GraphClient& graph,
+    storage::ItemStore& items,
     const graph::RemoteItem& item,
     storage::ItemState state,
     const std::filesystem::path& destination,
@@ -18,17 +19,115 @@ PreparedDownload prepare_download(
     const FilesystemMetadata& metadata,
     const graph::DownloadProgress& progress
 ) {
-    const auto temporary = temporary_path_for(destination);
+    if (item.size < 0) {
+        throw std::invalid_argument(
+            "cannot download an item with a negative size"
+        );
+    }
+    auto temporary = temporary_path_for(destination);
+    std::uint64_t completed_bytes = 0;
+    const auto saved =
+        items.partial_download(state.drive_id, item.id);
+    if (saved.has_value()) {
+        const auto& partial = saved.value();
+        const auto normalized_temporary =
+            partial.temporary_path.lexically_normal();
+        const auto normalized_destination = destination.lexically_normal();
+        const auto expected_prefix =
+            "." + destination.filename().string() + ".onedrive-partial-";
+        if (normalized_temporary.parent_path() !=
+                normalized_destination.parent_path() ||
+            !normalized_temporary.filename().string().starts_with(
+                expected_prefix
+            )) {
+            throw std::runtime_error(
+                "partial download path is outside the destination directory: " +
+                partial.temporary_path.string()
+            );
+        }
+
+        std::error_code status_error;
+        const auto status = std::filesystem::symlink_status(
+            partial.temporary_path,
+            status_error
+        );
+        const bool missing =
+            status_error == std::errc::no_such_file_or_directory ||
+            (!status_error && !std::filesystem::exists(status));
+        if (status_error && !missing) {
+            throw std::runtime_error(
+                "cannot inspect partial download '" +
+                partial.temporary_path.string() + "': " +
+                status_error.message()
+            );
+        }
+        const bool metadata_matches =
+            partial.item.etag == item.etag &&
+            partial.item.size == item.size &&
+            partial.item.local_path.lexically_normal() ==
+                normalized_destination &&
+            partial.completed_bytes <=
+                static_cast<std::uint64_t>(item.size);
+        if (!missing && std::filesystem::is_regular_file(status) &&
+            metadata_matches) {
+            const auto actual_size =
+                std::filesystem::file_size(partial.temporary_path);
+            if (actual_size >= partial.completed_bytes) {
+                if (actual_size > partial.completed_bytes) {
+                    std::filesystem::resize_file(
+                        partial.temporary_path,
+                        partial.completed_bytes
+                    );
+                }
+                temporary = partial.temporary_path;
+                completed_bytes = partial.completed_bytes;
+                spdlog::info(
+                    "Resuming partial download '{}' at byte {}",
+                    item.remote_path,
+                    completed_bytes
+                );
+            }
+        }
+        if (completed_bytes == 0) {
+            std::error_code remove_error;
+            std::filesystem::remove(partial.temporary_path, remove_error);
+            if (remove_error) {
+                throw std::runtime_error(
+                    "cannot discard stale partial download '" +
+                    partial.temporary_path.string() + "': " +
+                    remove_error.message()
+                );
+            }
+            items.remove_partial_download(state.drive_id, item.id);
+        }
+    }
+
+    state.local_path = destination;
+    items.save_partial_download({
+        .item = state,
+        .temporary_path = temporary,
+        .completed_bytes = completed_bytes,
+    });
     spdlog::trace(
-        "Downloading '{}' through a same-directory temporary file",
-        item.remote_path
+        "Downloading '{}' through a same-directory temporary file at byte {}",
+        item.remote_path,
+        completed_bytes
     );
     try {
         graph.download_file(
             item.id,
             static_cast<std::uint64_t>(item.size),
             temporary,
-            progress
+            completed_bytes,
+            progress,
+            [&](std::uint64_t durable_bytes) {
+                completed_bytes = durable_bytes;
+                items.save_partial_download({
+                    .item = state,
+                    .temporary_path = temporary,
+                    .completed_bytes = durable_bytes,
+                });
+            }
         );
         const auto downloaded_size = std::filesystem::file_size(temporary);
         if (downloaded_size != static_cast<std::uintmax_t>(item.size)) {
@@ -53,22 +152,31 @@ PreparedDownload prepare_download(
             .destination_baseline = std::move(destination_baseline),
         };
     } catch (const std::exception& error) {
-        PreparedDownload incomplete;
-        incomplete.temporary_path = temporary;
-        discard_prepared_download(incomplete);
+        if (completed_bytes == 0) {
+            items.remove_partial_download(state.drive_id, item.id);
+            PreparedDownload incomplete;
+            incomplete.temporary_path = temporary;
+            discard_prepared_download(incomplete);
+        }
         spdlog::warn(
-            "Download preparation failed for '{}': {}",
+            "Download preparation failed for '{}' at byte {}: {}",
             item.remote_path,
+            completed_bytes,
             error.what()
         );
         throw;
     } catch (...) {
-        PreparedDownload incomplete;
-        incomplete.temporary_path = temporary;
-        discard_prepared_download(incomplete);
+        if (completed_bytes == 0) {
+            items.remove_partial_download(state.drive_id, item.id);
+            PreparedDownload incomplete;
+            incomplete.temporary_path = temporary;
+            discard_prepared_download(incomplete);
+        }
         spdlog::warn(
-            "Download preparation failed for '{}' due to an unknown error",
-            item.remote_path
+            "Download preparation failed for '{}' at byte {} due to an "
+            "unknown error",
+            item.remote_path,
+            completed_bytes
         );
         throw;
     }
@@ -99,11 +207,19 @@ storage::ItemState commit_download(
             .content_fingerprint = download.content_fingerprint,
         });
         journaled = true;
+        items.remove_partial_download(
+            download.state.drive_id,
+            download.state.remote_id
+        );
         if (!local_file_matches_baseline(
                 download.destination,
                 download.destination_baseline
             )) {
             items.remove_pending_download(
+                download.state.drive_id,
+                download.state.remote_id
+            );
+            items.remove_partial_download(
                 download.state.drive_id,
                 download.state.remote_id
             );
@@ -187,6 +303,7 @@ storage::ItemState download_atomically(
         items,
         prepare_download(
             graph,
+            items,
             item,
             std::move(state),
             destination,
