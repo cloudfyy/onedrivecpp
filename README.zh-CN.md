@@ -15,19 +15,58 @@
 
 ## 架构
 
-```text
-main（composition root）
-       |
-       +-- ProductionRuntimeFactory
-               |
-               +-- Application（CLI 与命令编排）
-                       |
-                       +-- HttpTransport / TokenStore
-                       +-- FileMonitor / Metrics
-                       +-- SyncEngine
-                               |
-                               +-- GraphClient
-                               +-- ItemStore
+```mermaid
+flowchart TB
+    main["main<br/>唯一组合根"] --> app["Application<br/>CLI 与命令编排"]
+    main --> runtime["RuntimeFactory<br/>Proxy 4 端口"]
+    runtime -. 由其实现 .-> factory["ProductionRuntimeFactory"]
+
+    app --> preflight["RuntimePreflight<br/>配置与路径预检"]
+    app --> runtime
+    app --> auth["认证 / 登出"]
+    app --> monitor["监控命令"]
+    app --> engine["SyncEngine"]
+
+    factory --> http["CurlHttpClient"]
+    factory --> device_auth["DeviceAuthClient"]
+    factory --> tokens["FileTokenStore"]
+    factory --> graph["MicrosoftGraphClient"]
+    factory --> database["ItemDatabase"]
+    factory --> file_monitor["FileMonitor"]
+    factory --> metrics["Metrics"]
+
+    auth --> http
+    auth --> device_auth
+    auth --> tokens
+    monitor --> file_monitor
+
+    engine --> graph_port["GraphClient 端口"]
+    engine --> store_port["ItemStore 端口"]
+    engine --> metrics
+    graph_port -. 由其实现 .-> graph
+    store_port -. 由其实现 .-> database
+
+    subgraph sync_pipeline["同步流水线"]
+        plan["Delta 查询与 SyncPlan"]
+        recovery["未完成下载恢复"]
+        workers["并发下载工作线程"]
+        commit["完整性校验与原子提交"]
+        plan --> recovery --> workers --> commit
+    end
+
+    engine --> plan
+    graph --> http
+    graph --> device_auth
+    graph --> tokens
+    graph --> cloud[("Microsoft Graph / OneDrive")]
+    device_auth --> http
+    workers --> graph_port
+    workers --> store_port
+    workers --> filesystem[("本地文件系统")]
+    commit --> store_port
+    commit --> filesystem
+    database --> db_thread["专用数据库线程"]
+    db_thread --> sqlite[("SQLite 状态库")]
 ```
 
 应用使用构造器注入和明确的端口接口，不使用 Service Locator。`main` 是唯一的

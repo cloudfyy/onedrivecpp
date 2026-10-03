@@ -18,19 +18,58 @@ copy the reference project's D implementation.
 
 ## Architecture
 
-```text
-main (composition root)
-       |
-       +-- ProductionRuntimeFactory
-               |
-               +-- Application (CLI and command orchestration)
-                       |
-                       +-- HttpTransport / TokenStore
-                       +-- FileMonitor / Metrics
-                       +-- SyncEngine
-                               |
-                               +-- GraphClient
-                               +-- ItemStore
+```mermaid
+flowchart TB
+    main["main<br/>composition root"] --> app["Application<br/>CLI and command orchestration"]
+    main --> runtime["RuntimeFactory<br/>Proxy 4 port"]
+    runtime -. implemented by .-> factory["ProductionRuntimeFactory"]
+
+    app --> preflight["RuntimePreflight<br/>configuration and path validation"]
+    app --> runtime
+    app --> auth["Authentication / logout"]
+    app --> monitor["Monitor command"]
+    app --> engine["SyncEngine"]
+
+    factory --> http["CurlHttpClient"]
+    factory --> device_auth["DeviceAuthClient"]
+    factory --> tokens["FileTokenStore"]
+    factory --> graph["MicrosoftGraphClient"]
+    factory --> database["ItemDatabase"]
+    factory --> file_monitor["FileMonitor"]
+    factory --> metrics["Metrics"]
+
+    auth --> http
+    auth --> device_auth
+    auth --> tokens
+    monitor --> file_monitor
+
+    engine --> graph_port["GraphClient port"]
+    engine --> store_port["ItemStore port"]
+    engine --> metrics
+    graph_port -. implemented by .-> graph
+    store_port -. implemented by .-> database
+
+    subgraph sync_pipeline["Synchronization pipeline"]
+        plan["Delta query and SyncPlan"]
+        recovery["Pending-download recovery"]
+        workers["Concurrent download workers"]
+        commit["Integrity check and atomic commit"]
+        plan --> recovery --> workers --> commit
+    end
+
+    engine --> plan
+    graph --> http
+    graph --> device_auth
+    graph --> tokens
+    graph --> cloud[("Microsoft Graph / OneDrive")]
+    device_auth --> http
+    workers --> graph_port
+    workers --> store_port
+    workers --> filesystem[("Local filesystem")]
+    commit --> store_port
+    commit --> filesystem
+    database --> db_thread["Dedicated database thread"]
+    db_thread --> sqlite[("SQLite state")]
 ```
 
 The application uses constructor injection and explicit port interfaces rather
