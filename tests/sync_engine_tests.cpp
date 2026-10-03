@@ -287,13 +287,13 @@ int test_dry_run_and_success() {
         graph.download_count != 1 || items.upsert_count != 1 ||
         items.apply_count != 1 || !metrics.last_success ||
         !progress_output.str().contains(
-            "[1/1] Downloading 'Documents/file.txt': 0% (0/4 bytes)"
+            "[1/1] Downloading 'Documents/file.txt': 0%"
         ) ||
         !progress_output.str().contains(
-            "[1/1] Downloading 'Documents/file.txt': 50% (2/4 bytes)"
+            "[1/1] Downloading 'Documents/file.txt': 50%"
         ) ||
         !progress_output.str().contains(
-            "[1/1] Downloading 'Documents/file.txt': 100% (4/4 bytes)"
+            "[1/1] Downloading 'Documents/file.txt': 100%"
         ) ||
         !progress_error.str().empty()) {
         return fail("successful download did not commit synchronization state");

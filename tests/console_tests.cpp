@@ -52,8 +52,8 @@ int main() {
         "Completed.\nSummary\n  Files: 12\n  Bytes: 42\n"
         "Microsoft Graph delta: 2 pages, 350 items scanned (continuing)\n"
         "Microsoft Graph delta: 3 pages, 412 items scanned (complete)\n"
-        "[1/2] Downloading 'file.bin': 50% (5/10 bytes)\n"
-        "[1/2] Downloading 'file.bin': 100% (10/10 bytes)\n" ||
+        "[1/2] Downloading 'file.bin': 50%\n"
+        "[1/2] Downloading 'file.bin': 100%\n" ||
         plain_error.str() !=
             "Blocked 'conflict.txt': local file was modified "
             "(local_modification)\n") {

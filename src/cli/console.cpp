@@ -223,13 +223,11 @@ void Console::download_progress(
     }
 
     const auto line = fmt::format(
-        "[{}/{}] Downloading '{}': {}% ({}/{} bytes)",
+        "[{}/{}] Downloading '{}': {}%",
         file_index,
         file_count,
         path,
-        percentage,
-        downloaded,
-        total
+        percentage
     );
     if (interactive_) {
         output_ << '\r' << "\033[2K" << line;
