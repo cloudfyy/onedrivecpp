@@ -460,9 +460,11 @@ SharePoint, Azure Information Protection (AIP), and HEIC files are served with
 bytes that differ from their Graph metadata. `"relaxed"` accepts those files,
 but disables resumable/chunked downloads and remote size/hash verification.
 HTTP success, durable writes, atomic installation, and the local SHA-256
-recovery fingerprint remain enforced. Because Graph cannot reliably identify
-AIP-protected files in advance, relaxed mode applies to all downloads and
-weakens integrity guarantees.
+recovery fingerprint remain enforced. Disk space is reserved incrementally
+from actual transfer progress rather than untrusted Graph size metadata, and
+the transfer is aborted if the reservation cannot grow safely. Because Graph
+cannot reliably identify AIP-protected files in advance, relaxed mode applies
+to all downloads and weakens integrity guarantees.
 
 State is separated by the stable Microsoft user ID and canonical Drive ID while
 retaining friendly directory names:

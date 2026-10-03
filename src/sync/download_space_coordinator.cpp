@@ -4,6 +4,7 @@
 
 #include <exception>
 #include <format>
+#include <limits>
 #include <utility>
 
 namespace onedrive::sync::detail {
@@ -33,6 +34,20 @@ DownloadSpaceCoordinator::Lease::operator=(Lease&& other) noexcept {
     return *this;
 }
 
+void DownloadSpaceCoordinator::Lease::expand(std::uintmax_t bytes) {
+    if (bytes == 0) {
+        return;
+    }
+    if (owner_ == nullptr) {
+        throw std::logic_error("cannot expand an inactive download space lease");
+    }
+    if (bytes > std::numeric_limits<std::uintmax_t>::max() - remaining_) {
+        throw std::overflow_error("download space lease exceeds its size limit");
+    }
+    owner_->reserve(bytes, true);
+    remaining_ += bytes;
+}
+
 void DownloadSpaceCoordinator::Lease::consume(std::uintmax_t bytes) {
     if (bytes == 0) {
         return;
@@ -44,6 +59,11 @@ void DownloadSpaceCoordinator::Lease::consume(std::uintmax_t bytes) {
     }
     owner_->consume(bytes);
     remaining_ -= bytes;
+}
+
+std::uintmax_t
+DownloadSpaceCoordinator::Lease::remaining() const noexcept {
+    return remaining_;
 }
 
 void DownloadSpaceCoordinator::Lease::release() noexcept {
@@ -81,8 +101,23 @@ DownloadSpaceCoordinator::Lease DownloadSpaceCoordinator::acquire(
     std::uintmax_t bytes
 ) {
     if (bytes == 0) {
-        return {};
+        const std::scoped_lock lock{mutex_};
+        if (cancelled_) {
+            throw DownloadSpaceCancelledError{
+                "download space reservation was cancelled"
+            };
+        }
+        ++active_leases_;
+        return Lease{this, 0};
     }
+    reserve(bytes, false);
+    return Lease{this, bytes};
+}
+
+void DownloadSpaceCoordinator::reserve(
+    std::uintmax_t bytes,
+    bool expanding
+) {
     std::unique_lock lock{mutex_};
     while (true) {
         if (cancelled_) {
@@ -97,21 +132,26 @@ DownloadSpaceCoordinator::Lease DownloadSpaceCoordinator::acquire(
             bytes <= available - safety_reserve_ - reserved_;
         if (fits) {
             reserved_ += bytes;
-            ++active_leases_;
+            if (!expanding) {
+                ++active_leases_;
+            }
             spdlog::debug(
-                "Reserved {} download bytes; {} bytes promised with {} bytes "
+                "{} {} download bytes; {} bytes promised with {} bytes "
                 "available and {} bytes held for safety",
+                expanding ? "Expanded reservation by" : "Reserved",
                 bytes,
                 reserved_,
                 available,
                 safety_reserve_
             );
-            return Lease{this, bytes};
+            return;
         }
-        if (active_leases_ == 0) {
+        const auto leases_that_can_release =
+            active_leases_ - static_cast<std::size_t>(expanding);
+        if (leases_that_can_release == 0) {
             throw std::runtime_error(
                 std::format(
-                    "download requires {} additional bytes plus a {} byte "
+                    "download requires {} more bytes plus a {} byte "
                     "safety reserve, but only {} bytes are available",
                     bytes,
                     safety_reserve_,

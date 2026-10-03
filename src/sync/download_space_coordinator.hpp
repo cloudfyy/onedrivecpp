@@ -28,7 +28,9 @@ public:
         Lease(Lease&& other) noexcept;
         Lease& operator=(Lease&& other) noexcept;
 
+        void expand(std::uintmax_t bytes);
         void consume(std::uintmax_t bytes);
+        [[nodiscard]] std::uintmax_t remaining() const noexcept;
 
     private:
         friend DownloadSpaceCoordinator;
@@ -55,6 +57,7 @@ public:
 private:
     friend Lease;
 
+    void reserve(std::uintmax_t bytes, bool expanding);
     void consume(std::uintmax_t bytes);
     void release(std::uintmax_t remaining) noexcept;
 

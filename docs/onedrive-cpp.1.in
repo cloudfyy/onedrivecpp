@@ -281,7 +281,9 @@ Remote metadata validation policy:
 requires the downloaded size and any Graph-provided content hash to match;
 .B relaxed
 accepts SharePoint, AIP, or HEIC content that differs from Graph metadata and
-disables resumable and chunked downloads. The default is
+disables resumable and chunked downloads. Relaxed downloads reserve disk space
+incrementally from actual transfer progress and abort if that reservation
+cannot grow safely. The default is
 .BR strict .
 Relaxed mode weakens integrity guarantees.
 .TP

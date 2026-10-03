@@ -104,9 +104,11 @@ PreparedDownload prepare_download(
         }
     }
 
-    auto space_reservation = space.acquire(
-        static_cast<std::uintmax_t>(item.size) - completed_bytes
-    );
+    const auto initial_reservation =
+        item.validate_content ?
+            static_cast<std::uintmax_t>(item.size) - completed_bytes :
+            std::uintmax_t{0};
+    auto space_reservation = space.acquire(initial_reservation);
     state.local_path = destination;
     items.save_partial_download({
         .item = state,
@@ -118,6 +120,36 @@ PreparedDownload prepare_download(
         item.remote_path,
         completed_bytes
     );
+    std::uintmax_t relaxed_accounted_bytes = 0;
+    const auto account_relaxed_bytes = [&](std::uintmax_t observed_bytes) {
+        if (item.validate_content) {
+            return;
+        }
+        if (observed_bytes < relaxed_accounted_bytes) {
+            relaxed_accounted_bytes = 0;
+        }
+        const auto additional_bytes =
+            observed_bytes - relaxed_accounted_bytes;
+        if (additional_bytes > space_reservation.remaining()) {
+            space_reservation.expand(
+                additional_bytes - space_reservation.remaining()
+            );
+        }
+        space_reservation.consume(additional_bytes);
+        relaxed_accounted_bytes = observed_bytes;
+    };
+    const graph::DownloadProgress tracked_progress =
+        [&account_relaxed_bytes, &progress](
+            std::uint64_t downloaded,
+            std::uint64_t total
+        ) {
+            account_relaxed_bytes(
+                static_cast<std::uintmax_t>(downloaded)
+            );
+            if (progress) {
+                progress(downloaded, total);
+            }
+        };
     try {
         graph.download_file(
             item.id,
@@ -125,7 +157,7 @@ PreparedDownload prepare_download(
             temporary,
             completed_bytes,
             std::move(stop_token),
-            progress,
+            tracked_progress,
             [&](std::uint64_t durable_bytes) {
                 if (durable_bytes < completed_bytes) {
                     throw std::logic_error(
@@ -144,6 +176,7 @@ PreparedDownload prepare_download(
             }
         );
         const auto downloaded_size = std::filesystem::file_size(temporary);
+        account_relaxed_bytes(downloaded_size);
         if (item.validate_content &&
             downloaded_size != static_cast<std::uintmax_t>(item.size)) {
             throw std::runtime_error(

@@ -52,7 +52,7 @@ public:
         const std::filesystem::path& destination,
         std::uint64_t initial_offset,
         std::stop_token,
-        const onedrive::graph::DownloadProgress&,
+        const onedrive::graph::DownloadProgress& progress,
         const onedrive::graph::DownloadCheckpoint& checkpoint
     ) const {
         last_initial_offset = initial_offset;
@@ -67,12 +67,23 @@ public:
             output.seekp(static_cast<std::streamoff>(initial_offset));
             output << contents.substr(initial_offset);
         }
-        if (checkpoint) {
+        if (progress) {
+            if (progress_updates.empty()) {
+                progress(contents.size(), contents.size());
+            } else {
+                for (const auto downloaded : progress_updates) {
+                    progress(downloaded, contents.size());
+                }
+            }
+        }
+        if (send_checkpoint && checkpoint) {
             checkpoint(expected_size);
         }
     }
 
     std::string contents{"data"};
+    std::vector<std::uint64_t> progress_updates;
+    bool send_checkpoint{true};
     mutable std::uint64_t last_initial_offset{0};
 };
 
@@ -324,6 +335,8 @@ int main() {
     }
     graph.contents = "data";
 
+    graph.send_checkpoint = false;
+    graph.progress_updates = {0, 2, 2, 4};
     auto relaxed_item = remote_item("relaxed", "protected.heic");
     relaxed_item.size = 2;
     relaxed_item.content_hash = onedrive::FileHash{
@@ -348,6 +361,105 @@ int main() {
             "relaxed download validation did not accept actual file metadata"
         );
     }
+
+    auto zero_size_relaxed_item =
+        remote_item("relaxed-zero", "protected-zero.heic");
+    zero_size_relaxed_item.size = 0;
+    zero_size_relaxed_item.validate_content = false;
+    const auto zero_size_relaxed_destination =
+        root / "protected-zero.heic";
+    const auto zero_size_relaxed = detail::download_atomically(
+        graph,
+        items,
+        zero_size_relaxed_item,
+        item_state(
+            zero_size_relaxed_item,
+            zero_size_relaxed_destination
+        ),
+        zero_size_relaxed_destination,
+        metadata,
+        space
+    );
+    if (!std::filesystem::exists(zero_size_relaxed_destination) ||
+        zero_size_relaxed.local_size != 4 ||
+        zero_size_relaxed.size != 4) {
+        return fail(
+            "zero-size relaxed download did not reserve its actual bytes"
+        );
+    }
+
+    auto overreported_relaxed_item =
+        remote_item("relaxed-large", "protected-large.heic");
+    overreported_relaxed_item.size = 100;
+    overreported_relaxed_item.validate_content = false;
+    const auto overreported_relaxed_destination =
+        root / "protected-large.heic";
+    detail::DownloadSpaceCoordinator actual_size_space{
+        root,
+        0,
+        [](const std::filesystem::path&) {
+            return std::uintmax_t{4};
+        }
+    };
+    const auto overreported_relaxed = detail::download_atomically(
+        graph,
+        items,
+        overreported_relaxed_item,
+        item_state(
+            overreported_relaxed_item,
+            overreported_relaxed_destination
+        ),
+        overreported_relaxed_destination,
+        metadata,
+        actual_size_space
+    );
+    if (!std::filesystem::exists(overreported_relaxed_destination) ||
+        overreported_relaxed.local_size != 4 ||
+        overreported_relaxed.size != 4) {
+        return fail(
+            "relaxed download reserved an inaccurate remote file size"
+        );
+    }
+
+    graph.progress_updates.clear();
+    auto insufficient_relaxed_item =
+        remote_item("relaxed-space", "protected-space.heic");
+    insufficient_relaxed_item.size = 2;
+    insufficient_relaxed_item.validate_content = false;
+    const auto insufficient_relaxed_destination =
+        root / "protected-space.heic";
+    detail::DownloadSpaceCoordinator insufficient_relaxed_space{
+        root,
+        0,
+        [](const std::filesystem::path&) {
+            return std::uintmax_t{3};
+        }
+    };
+    try {
+        static_cast<void>(detail::download_atomically(
+            graph,
+            items,
+            insufficient_relaxed_item,
+            item_state(
+                insufficient_relaxed_item,
+                insufficient_relaxed_destination
+            ),
+            insufficient_relaxed_destination,
+            metadata,
+            insufficient_relaxed_space
+        ));
+        return fail("relaxed download exceeded dynamically available space");
+    } catch (const std::runtime_error&) {
+    }
+    if (std::filesystem::exists(insufficient_relaxed_destination) ||
+        items.partials.contains(insufficient_relaxed_item.id)) {
+        return fail("failed relaxed space expansion retained download state");
+    }
+    auto released_space = insufficient_relaxed_space.acquire(3);
+    if (released_space.remaining() != 3) {
+        return fail("failed relaxed expansion did not release its reservation");
+    }
+
     const auto relaxed_partial =
         root / ".protected-partial.heic.onedrive-partial-previous";
     {
@@ -385,6 +497,7 @@ int main() {
         return fail("relaxed download reused a remote-size partial file");
     }
 
+    graph.send_checkpoint = true;
     const auto truncated_item = remote_item("truncated", "truncated.txt");
     const auto truncated_destination = root / "truncated.txt";
     const auto truncated_partial =
