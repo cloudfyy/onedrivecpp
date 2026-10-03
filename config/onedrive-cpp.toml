@@ -19,8 +19,8 @@ endpoint = "https://login.microsoftonline.com"
 scopes = [
   "User.Read",
   "Files.ReadWrite",
-  "Files.ReadWrite.All",
-  "Sites.ReadWrite.All",
+  #"Files.ReadWrite.All",
+  #"Sites.ReadWrite.All",
   "offline_access",
 ]
 
