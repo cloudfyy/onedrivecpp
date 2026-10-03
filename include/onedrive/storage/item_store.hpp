@@ -24,10 +24,27 @@ struct ItemState {
     bool directory{false};
 };
 
+struct BlockedItem {
+    std::string drive_id;
+    std::string remote_id;
+    std::string parent_id;
+    std::string name;
+    std::string etag;
+    std::string remote_path;
+    std::string last_modified;
+    std::int64_t size{0};
+    bool directory{false};
+    std::string reason_code;
+    std::string reason_message;
+    std::uint64_t attempt_count{0};
+};
+
 struct ItemDelta {
     std::string drive_id;
     std::vector<ItemState> upserts;
     std::vector<std::string> removals;
+    std::vector<BlockedItem> blocked_upserts;
+    std::vector<std::string> blocked_removals;
     std::string delta_link;
     bool replace_drive_items{false};
 };
@@ -41,6 +58,7 @@ struct PendingDownload {
 struct ClearedState {
     std::size_t items{0};
     std::size_t pending_downloads{0};
+    std::size_t blocked_items{0};
     bool delta_link{false};
 };
 
@@ -57,6 +75,9 @@ public:
         const std::string& remote_id
     ) = 0;
     [[nodiscard]] virtual std::vector<PendingDownload> pending_downloads(
+        const std::string& drive_id
+    ) const = 0;
+    [[nodiscard]] virtual std::vector<BlockedItem> blocked_items(
         const std::string& drive_id
     ) const = 0;
     virtual bool reset(const std::string& drive_id) = 0;

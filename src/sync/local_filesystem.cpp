@@ -84,7 +84,7 @@ std::size_t filesystem_limit(
     std::string_view remote_path,
     std::string_view reason
 ) {
-    throw std::runtime_error(
+    throw InvalidRemotePathError(
         "invalid Microsoft Graph remote path '" + escaped_path(remote_path) +
         "': " + std::string{reason}
     );
@@ -315,14 +315,14 @@ void ensure_directory_tree(
         current /= component;
         const auto status = std::filesystem::symlink_status(current);
         if (std::filesystem::is_symlink(status)) {
-            throw std::runtime_error(
+            throw LocalPathConflictError(
                 "local synchronization path contains a symbolic link: " +
                 current.string()
             );
         }
         if (std::filesystem::exists(status)) {
             if (!std::filesystem::is_directory(status)) {
-                throw std::runtime_error(
+                throw LocalPathConflictError(
                     "local path conflicts with remote directory: " +
                     current.string()
                 );

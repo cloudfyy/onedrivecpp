@@ -140,6 +140,12 @@ public:
         return result;
     }
 
+    [[nodiscard]] std::vector<onedrive::storage::BlockedItem> blocked_items(
+        const std::string&
+    ) const override {
+        return blocked;
+    }
+
     bool reset(const std::string&) override {
         return false;
     }
@@ -168,6 +174,7 @@ public:
 
     std::unordered_map<std::string, onedrive::storage::ItemState> items;
     std::unordered_map<std::string, onedrive::storage::PendingDownload> pending;
+    std::vector<onedrive::storage::BlockedItem> blocked;
     onedrive::storage::ItemDelta applied_delta;
     std::optional<std::string> saved_delta_link;
     int upsert_count{0};
@@ -343,20 +350,19 @@ int test_failure_and_conflict() {
     FakeItemStore conflict_items;
     FakeMetrics conflict_metrics;
     const auto conflict_config = config_for(conflict_root, false);
-    try {
-        static_cast<void>(
-            onedrive::sync::SyncEngine{
-                conflict_config,
-                conflict_graph,
-                conflict_items,
-                conflict_metrics
-            }.synchronize()
-        );
-        return fail("untracked local file was overwritten");
-    } catch (const std::runtime_error&) {
-    }
-    if (conflict_graph.download_count != 0 || conflict_items.apply_count != 0) {
-        return fail("local conflict performed a download or advanced state");
+    if (onedrive::sync::SyncEngine{
+            conflict_config,
+            conflict_graph,
+            conflict_items,
+            conflict_metrics
+        }.synchronize() != 2 ||
+        conflict_graph.download_count != 0 ||
+        conflict_items.apply_count != 1 ||
+        conflict_items.applied_delta.blocked_upserts.size() != 1 ||
+        conflict_items.applied_delta.blocked_upserts[0].reason_code !=
+            "local_modification" ||
+        !conflict_metrics.last_success) {
+        return fail("local conflict was not isolated and persisted");
     }
 
     const auto symlink_root = temporary.path() / "symlink-root";
@@ -373,21 +379,124 @@ int test_failure_and_conflict() {
     FakeItemStore symlink_items;
     FakeMetrics symlink_metrics;
     const auto symlink_config = config_for(symlink_root, false);
-    try {
-        static_cast<void>(
-            onedrive::sync::SyncEngine{
-                symlink_config,
-                symlink_graph,
-                symlink_items,
-                symlink_metrics
-            }.synchronize()
-        );
-        return fail("symbolic link escaped the synchronization root");
-    } catch (const std::runtime_error&) {
+    if (onedrive::sync::SyncEngine{
+            symlink_config,
+            symlink_graph,
+            symlink_items,
+            symlink_metrics
+        }.synchronize() != 2 ||
+        symlink_graph.download_count != 0 ||
+        symlink_items.apply_count != 1 ||
+        symlink_items.applied_delta.blocked_upserts.size() != 1 ||
+        symlink_items.applied_delta.blocked_upserts[0].reason_code !=
+            "local_path_conflict" ||
+        std::filesystem::exists(outside / "file.txt") ||
+        !symlink_metrics.last_success) {
+        return fail("symbolic link conflict was not isolated safely");
     }
-    if (symlink_graph.download_count != 0 ||
-        std::filesystem::exists(outside / "file.txt")) {
-        return fail("symbolic link path wrote outside the synchronization root");
+    return EXIT_SUCCESS;
+}
+
+int test_blocked_items_continue_and_retry() {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path() / "files";
+    FakeGraphClient graph;
+    graph.changes = {
+        file("invalid", std::string(256, 'x'), 4),
+        file("good", "good.txt", 4),
+    };
+    graph.contents["good"] = "data";
+    FakeItemStore items;
+    FakeMetrics metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(root, false),
+            graph,
+            items,
+            metrics
+        }.synchronize() != 2 ||
+        graph.download_count != 1 ||
+        !std::filesystem::exists(root / "good.txt") ||
+        items.apply_count != 1 ||
+        items.applied_delta.blocked_upserts.size() != 1 ||
+        items.applied_delta.blocked_upserts[0].remote_id != "invalid" ||
+        items.applied_delta.upserts.size() != 1 ||
+        !metrics.last_success) {
+        return fail("invalid filename prevented an independent download");
+    }
+
+    const auto parent_root = temporary.path() / "parent-conflict";
+    std::filesystem::create_directories(parent_root);
+    {
+        std::ofstream output{parent_root / "Documents"};
+        output << "local file";
+    }
+    FakeGraphClient parent_graph;
+    parent_graph.changes = {
+        {
+            .id = "directory",
+            .name = "Documents",
+            .etag = "directory-etag",
+            .parent_id = "root",
+            .remote_path = "Documents",
+            .directory = true,
+        },
+        file("child", "Documents/child.txt", 4),
+        file("independent", "independent.txt", 4),
+    };
+    parent_graph.contents["independent"] = "data";
+    FakeItemStore parent_items;
+    FakeMetrics parent_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(parent_root, false),
+            parent_graph,
+            parent_items,
+            parent_metrics
+        }.synchronize() != 2 ||
+        parent_graph.download_count != 1 ||
+        !std::filesystem::exists(parent_root / "independent.txt") ||
+        parent_items.applied_delta.blocked_upserts.size() != 2 ||
+        parent_items.applied_delta.blocked_upserts[0].reason_code !=
+            "local_path_conflict" ||
+        parent_items.applied_delta.blocked_upserts[1].reason_code !=
+            "blocked_by_parent") {
+        return fail("blocked directory did not isolate its descendants");
+    }
+
+    const auto retry_root = temporary.path() / "retry";
+    FakeGraphClient retry_graph;
+    retry_graph.contents["retry"] = "data";
+    FakeItemStore retry_items;
+    retry_items.saved_delta_link =
+        "https://graph.example.test/delta?token=saved";
+    retry_items.blocked = {
+        {
+            .drive_id = "me",
+            .remote_id = "retry",
+            .parent_id = "root",
+            .name = "retry.txt",
+            .etag = "retry-etag",
+            .remote_path = "retry.txt",
+            .last_modified = "2026-10-02T00:00:00Z",
+            .size = 4,
+            .reason_code = "local_modification",
+            .reason_message = "previous conflict",
+            .attempt_count = 1,
+        },
+    };
+    FakeMetrics retry_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(retry_root, false),
+            retry_graph,
+            retry_items,
+            retry_metrics
+        }.synchronize() != 0 ||
+        retry_graph.download_count != 1 ||
+        !std::filesystem::exists(retry_root / "retry.txt") ||
+        retry_items.applied_delta.blocked_upserts.size() != 0 ||
+        retry_items.applied_delta.blocked_removals !=
+            std::vector<std::string>{"retry"} ||
+        !retry_metrics.last_success) {
+        return fail("persisted blocked item was not retried and cleared");
     }
     return EXIT_SUCCESS;
 }
@@ -616,6 +725,10 @@ int main() {
         return result;
     }
     if (const int result = test_failure_and_conflict(); result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_blocked_items_continue_and_retry();
+        result != EXIT_SUCCESS) {
         return result;
     }
     if (const int result = test_invalid_delta_cursor_restarts_full_query();

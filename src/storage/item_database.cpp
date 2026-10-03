@@ -3,6 +3,7 @@
 #include <sqlite3.h>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <memory>
@@ -135,6 +136,29 @@ int schema_version(sqlite3* database) {
     return sqlite3_column_int(statement.get(), 0);
 }
 
+void create_blocked_item_schema(sqlite3* database) {
+    execute(
+        database,
+        "CREATE TABLE IF NOT EXISTS blocked_item ("
+        "drive_id TEXT NOT NULL,"
+        "remote_id TEXT NOT NULL,"
+        "parent_id TEXT NOT NULL,"
+        "name TEXT NOT NULL,"
+        "etag TEXT NOT NULL,"
+        "remote_path TEXT NOT NULL,"
+        "last_modified TEXT NOT NULL,"
+        "size INTEGER NOT NULL,"
+        "directory INTEGER NOT NULL,"
+        "reason_code TEXT NOT NULL,"
+        "reason_message TEXT NOT NULL,"
+        "first_seen INTEGER NOT NULL DEFAULT (unixepoch()),"
+        "last_attempt INTEGER NOT NULL DEFAULT (unixepoch()),"
+        "attempt_count INTEGER NOT NULL DEFAULT 1,"
+        "PRIMARY KEY (drive_id, remote_id)"
+        ");"
+    );
+}
+
 void create_current_schema(sqlite3* database) {
     execute(
         database,
@@ -172,8 +196,9 @@ void create_current_schema(sqlite3* database) {
         "content_fingerprint TEXT NOT NULL,"
         "PRIMARY KEY (drive_id, remote_id)"
         ");"
-        "PRAGMA user_version = 4;"
     );
+    create_blocked_item_schema(database);
+    execute(database, "PRAGMA user_version = 5;");
 }
 
 void migrate_schema(sqlite3* database) {
@@ -230,6 +255,8 @@ void migrate_schema(sqlite3* database) {
             ");"
             "PRAGMA user_version = 4;"
         );
+        create_blocked_item_schema(database);
+        execute(database, "PRAGMA user_version = 5;");
         transaction.commit();
         return;
     }
@@ -257,6 +284,8 @@ void migrate_schema(sqlite3* database) {
             ");"
             "PRAGMA user_version = 4;"
         );
+        create_blocked_item_schema(database);
+        execute(database, "PRAGMA user_version = 5;");
         transaction.commit();
         return;
     }
@@ -281,10 +310,19 @@ void migrate_schema(sqlite3* database) {
             ");"
             "PRAGMA user_version = 4;"
         );
+        create_blocked_item_schema(database);
+        execute(database, "PRAGMA user_version = 5;");
         transaction.commit();
         return;
     }
-    if (version != 4) {
+    if (version == 4) {
+        Transaction transaction{database};
+        create_blocked_item_schema(database);
+        execute(database, "PRAGMA user_version = 5;");
+        transaction.commit();
+        return;
+    }
+    if (version != 5) {
         throw std::runtime_error(
             "unsupported state database schema version " + std::to_string(version)
         );
@@ -313,6 +351,7 @@ void ItemDatabase::open() {
     spdlog::debug("Opening synchronization state database");
     std::filesystem::create_directories(state_directory_);
     items_.clear();
+    blocked_items_.clear();
     delta_links_.clear();
     impl_->database.reset();
 
@@ -379,6 +418,45 @@ void ItemDatabase::open() {
         items_.insert_or_assign(key, std::move(item));
     }
 
+    Statement blocked_query{
+        database,
+        "SELECT drive_id, remote_id, parent_id, name, etag, remote_path, "
+        "last_modified, size, directory, reason_code, reason_message, "
+        "attempt_count FROM blocked_item ORDER BY drive_id, remote_id;"
+    };
+    while (true) {
+        const int step_result = sqlite3_step(blocked_query.get());
+        if (step_result == SQLITE_DONE) {
+            break;
+        }
+        if (step_result != SQLITE_ROW) {
+            throw std::runtime_error(
+                "cannot read blocked synchronization items: " +
+                std::string{sqlite3_errmsg(database)}
+            );
+        }
+        BlockedItem item{
+            .drive_id = column_text(blocked_query.get(), 0),
+            .remote_id = column_text(blocked_query.get(), 1),
+            .parent_id = column_text(blocked_query.get(), 2),
+            .name = column_text(blocked_query.get(), 3),
+            .etag = column_text(blocked_query.get(), 4),
+            .remote_path = column_text(blocked_query.get(), 5),
+            .last_modified = column_text(blocked_query.get(), 6),
+            .size = sqlite3_column_int64(blocked_query.get(), 7),
+            .directory = sqlite3_column_int(blocked_query.get(), 8) != 0,
+            .reason_code = column_text(blocked_query.get(), 9),
+            .reason_message = column_text(blocked_query.get(), 10),
+            .attempt_count = static_cast<std::uint64_t>(
+                sqlite3_column_int64(blocked_query.get(), 11)
+            ),
+        };
+        blocked_items_.insert_or_assign(
+            item_key(item.drive_id, item.remote_id),
+            std::move(item)
+        );
+    }
+
     Statement drive_query{
         database,
         "SELECT drive_id, delta_link FROM drive_state ORDER BY drive_id;"
@@ -399,8 +477,10 @@ void ItemDatabase::open() {
         );
     }
     spdlog::info(
-        "Synchronization state database ready with {} tracked items",
-        items_.size()
+        "Synchronization state database ready with {} tracked items and {} "
+        "blocked items",
+        items_.size(),
+        blocked_items_.size()
     );
 }
 
@@ -474,6 +554,22 @@ void ItemDatabase::apply_delta(ItemDelta delta) {
                 std::string{sqlite3_errmsg(database)}
             );
         }
+        Statement replace_blocked_statement{
+            database,
+            "DELETE FROM blocked_item WHERE drive_id = ?1;"
+        };
+        bind_text(
+            database,
+            replace_blocked_statement.get(),
+            1,
+            delta.drive_id
+        );
+        if (sqlite3_step(replace_blocked_statement.get()) != SQLITE_DONE) {
+            throw std::runtime_error(
+                "cannot replace blocked drive items: " +
+                std::string{sqlite3_errmsg(database)}
+            );
+        }
     }
     Statement upsert_statement{
         database,
@@ -543,6 +639,92 @@ void ItemDatabase::apply_delta(ItemDelta delta) {
         sqlite3_clear_bindings(delete_statement.get());
     }
 
+    Statement delete_blocked_statement{
+        database,
+        "DELETE FROM blocked_item WHERE drive_id = ?1 AND remote_id = ?2;"
+    };
+    for (const auto& remote_id : delta.blocked_removals) {
+        if (remote_id.empty()) {
+            throw std::invalid_argument(
+                "cannot remove a blocked item without an ID"
+            );
+        }
+        bind_text(database, delete_blocked_statement.get(), 1, delta.drive_id);
+        bind_text(database, delete_blocked_statement.get(), 2, remote_id);
+        if (sqlite3_step(delete_blocked_statement.get()) != SQLITE_DONE) {
+            throw std::runtime_error(
+                "cannot remove blocked item: " +
+                std::string{sqlite3_errmsg(database)}
+            );
+        }
+        sqlite3_reset(delete_blocked_statement.get());
+        sqlite3_clear_bindings(delete_blocked_statement.get());
+    }
+
+    Statement upsert_blocked_statement{
+        database,
+        "INSERT INTO blocked_item ("
+        "drive_id, remote_id, parent_id, name, etag, remote_path, "
+        "last_modified, size, directory, reason_code, reason_message"
+        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) "
+        "ON CONFLICT(drive_id, remote_id) DO UPDATE SET "
+        "parent_id = excluded.parent_id, name = excluded.name, "
+        "etag = excluded.etag, remote_path = excluded.remote_path, "
+        "last_modified = excluded.last_modified, size = excluded.size, "
+        "directory = excluded.directory, reason_code = excluded.reason_code, "
+        "reason_message = excluded.reason_message, "
+        "last_attempt = unixepoch(), "
+        "attempt_count = blocked_item.attempt_count + 1;"
+    };
+    for (auto& item : delta.blocked_upserts) {
+        if (item.remote_id.empty() || item.reason_code.empty() ||
+            item.reason_message.empty()) {
+            throw std::invalid_argument(
+                "blocked item requires an ID, reason code, and reason message"
+            );
+        }
+        item.drive_id = delta.drive_id;
+        bind_text(database, upsert_blocked_statement.get(), 1, item.drive_id);
+        bind_text(database, upsert_blocked_statement.get(), 2, item.remote_id);
+        bind_text(database, upsert_blocked_statement.get(), 3, item.parent_id);
+        bind_text(database, upsert_blocked_statement.get(), 4, item.name);
+        bind_text(database, upsert_blocked_statement.get(), 5, item.etag);
+        bind_text(database, upsert_blocked_statement.get(), 6, item.remote_path);
+        bind_text(
+            database,
+            upsert_blocked_statement.get(),
+            7,
+            item.last_modified
+        );
+        bind_integer(database, upsert_blocked_statement.get(), 8, item.size);
+        bind_integer(
+            database,
+            upsert_blocked_statement.get(),
+            9,
+            item.directory ? 1 : 0
+        );
+        bind_text(
+            database,
+            upsert_blocked_statement.get(),
+            10,
+            item.reason_code
+        );
+        bind_text(
+            database,
+            upsert_blocked_statement.get(),
+            11,
+            item.reason_message
+        );
+        if (sqlite3_step(upsert_blocked_statement.get()) != SQLITE_DONE) {
+            throw std::runtime_error(
+                "cannot persist blocked item: " +
+                std::string{sqlite3_errmsg(database)}
+            );
+        }
+        sqlite3_reset(upsert_blocked_statement.get());
+        sqlite3_clear_bindings(upsert_blocked_statement.get());
+    }
+
     Statement state_statement{
         database,
         "INSERT INTO drive_state (drive_id, delta_link) VALUES (?1, ?2) "
@@ -565,6 +747,14 @@ void ItemDatabase::apply_delta(ItemDelta delta) {
                 ++iterator;
             }
         }
+        for (auto iterator = blocked_items_.begin();
+             iterator != blocked_items_.end();) {
+            if (iterator->second.drive_id == delta.drive_id) {
+                iterator = blocked_items_.erase(iterator);
+            } else {
+                ++iterator;
+            }
+        }
     }
     for (auto& item : delta.upserts) {
         const std::string key = item_key(delta.drive_id, item.remote_id);
@@ -573,13 +763,24 @@ void ItemDatabase::apply_delta(ItemDelta delta) {
     for (const auto& remote_id : delta.removals) {
         items_.erase(item_key(delta.drive_id, remote_id));
     }
+    for (const auto& remote_id : delta.blocked_removals) {
+        blocked_items_.erase(item_key(delta.drive_id, remote_id));
+    }
+    for (auto& item : delta.blocked_upserts) {
+        const std::string key = item_key(delta.drive_id, item.remote_id);
+        const auto previous = blocked_items_.find(key);
+        item.attempt_count =
+            previous == blocked_items_.end() ? 1 : previous->second.attempt_count + 1;
+        blocked_items_.insert_or_assign(key, std::move(item));
+    }
     delta_links_.insert_or_assign(delta.drive_id, std::move(delta.delta_link));
     spdlog::debug(
-        "Committed remote delta for drive '{}': {} upserts, {} removals, "
-        "inventory {}, delta cursor advanced, {} total items tracked",
+        "Committed remote delta for drive '{}': {} upserts, {} removals, {} "
+        "blocked, inventory {}, delta cursor advanced, {} total items tracked",
         delta.drive_id,
         delta.upserts.size(),
         delta.removals.size(),
+        delta.blocked_upserts.size(),
         delta.replace_drive_items ? "replaced" : "updated",
         items_.size()
     );
@@ -721,6 +922,20 @@ std::vector<PendingDownload> ItemDatabase::pending_downloads(
     return downloads;
 }
 
+std::vector<BlockedItem> ItemDatabase::blocked_items(
+    const std::string& drive_id
+) const {
+    std::vector<BlockedItem> result;
+    for (const auto& [key, item] : blocked_items_) {
+        static_cast<void>(key);
+        if (item.drive_id == drive_id) {
+            result.push_back(item);
+        }
+    }
+    std::ranges::sort(result, {}, &BlockedItem::remote_path);
+    return result;
+}
+
 bool ItemDatabase::reset(const std::string& drive_id) {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
@@ -816,6 +1031,20 @@ ClearedState ItemDatabase::clear(const std::string& drive_id) {
     }
     cleared.pending_downloads =
         static_cast<std::size_t>(sqlite3_changes(database));
+
+    Statement blocked_statement{
+        database,
+        "DELETE FROM blocked_item WHERE drive_id = ?1;"
+    };
+    bind_text(database, blocked_statement.get(), 1, drive_id);
+    if (sqlite3_step(blocked_statement.get()) != SQLITE_DONE) {
+        throw std::runtime_error(
+            "cannot clear blocked items: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+    cleared.blocked_items =
+        static_cast<std::size_t>(sqlite3_changes(database));
     transaction.commit();
 
     for (auto iterator = items_.begin(); iterator != items_.end();) {
@@ -825,13 +1054,22 @@ ClearedState ItemDatabase::clear(const std::string& drive_id) {
             ++iterator;
         }
     }
+    for (auto iterator = blocked_items_.begin();
+         iterator != blocked_items_.end();) {
+        if (iterator->second.drive_id == drive_id) {
+            iterator = blocked_items_.erase(iterator);
+        } else {
+            ++iterator;
+        }
+    }
     delta_links_.erase(drive_id);
     spdlog::warn(
         "Cleared all synchronization state for drive '{}': {} item snapshots, "
-        "{} pending downloads, saved delta cursor {}",
+        "{} pending downloads, {} blocked items, saved delta cursor {}",
         drive_id,
         cleared.items,
         cleared.pending_downloads,
+        cleared.blocked_items,
         cleared.delta_link ? "removed" : "not present"
     );
     return cleared;

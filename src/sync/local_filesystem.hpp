@@ -4,9 +4,20 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <stdexcept>
 #include <string>
 
 namespace onedrive::sync::detail {
+
+class InvalidRemotePathError final : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
+class LocalPathConflictError final : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
 
 [[nodiscard]] std::filesystem::path local_path_for(
     const std::filesystem::path& sync_directory,

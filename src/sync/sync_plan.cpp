@@ -27,6 +27,7 @@ SyncPlan SyncPlan::build(
         const auto& item = plan.delta_.changes[index];
         if (item.deleted) {
             plan.state_delta_.removals.push_back(item.id);
+            plan.state_delta_.blocked_removals.push_back(item.id);
             spdlog::trace("Remote item deleted: id='{}'", item.id);
             continue;
         }
@@ -41,6 +42,14 @@ SyncPlan SyncPlan::build(
             item.etag,
             item.directory ? "directory" : "file"
         );
+        std::filesystem::path local_path;
+        try {
+            local_path = local_path_for(sync_directory, item.remote_path);
+        } catch (const InvalidRemotePathError& error) {
+            plan.block(item, "invalid_remote_path", error.what());
+            continue;
+        }
+        plan.state_delta_.blocked_removals.push_back(item.id);
         if (item.directory) {
             plan.directories_.push_back(index);
         } else {
@@ -62,7 +71,7 @@ SyncPlan SyncPlan::build(
             .name = item.name,
             .etag = item.etag,
             .remote_path = item.remote_path,
-            .local_path = local_path_for(sync_directory, item.remote_path),
+            .local_path = std::move(local_path),
             .last_modified = item.last_modified,
             .size = item.size,
             .local_size = 0,
@@ -105,6 +114,47 @@ storage::ItemState& SyncPlan::state_for(const std::string& remote_id) {
     return *iterator;
 }
 
+void SyncPlan::block(
+    const graph::RemoteItem& item,
+    std::string reason_code,
+    std::string reason_message
+) {
+    std::erase_if(
+        state_delta_.upserts,
+        [&item](const storage::ItemState& state) {
+            return state.remote_id == item.id;
+        }
+    );
+    std::erase(state_delta_.blocked_removals, item.id);
+    const auto existing = std::ranges::find(
+        state_delta_.blocked_upserts,
+        item.id,
+        &storage::BlockedItem::remote_id
+    );
+    storage::BlockedItem blocked{
+        .drive_id = state_delta_.drive_id,
+        .remote_id = item.id,
+        .parent_id = item.parent_id,
+        .name = item.name,
+        .etag = item.etag,
+        .remote_path = item.remote_path,
+        .last_modified = item.last_modified,
+        .size = item.size,
+        .directory = item.directory,
+        .reason_code = std::move(reason_code),
+        .reason_message = std::move(reason_message),
+    };
+    if (existing == state_delta_.blocked_upserts.end()) {
+        state_delta_.blocked_upserts.push_back(std::move(blocked));
+    } else {
+        *existing = std::move(blocked);
+    }
+}
+
+const storage::BlockedItem& SyncPlan::blocked(std::size_t index) const {
+    return state_delta_.blocked_upserts.at(index);
+}
+
 storage::ItemDelta SyncPlan::release_state_delta() {
     return std::move(state_delta_);
 }
@@ -123,6 +173,10 @@ std::size_t SyncPlan::download_count() const noexcept {
 
 std::size_t SyncPlan::removal_count() const noexcept {
     return state_delta_.removals.size();
+}
+
+std::size_t SyncPlan::blocked_count() const noexcept {
+    return state_delta_.blocked_upserts.size();
 }
 
 std::uintmax_t SyncPlan::download_bytes() const noexcept {

@@ -518,8 +518,8 @@ This preserves authentication tokens, configuration, local files, item
 snapshots, pending-download recovery records, and state for other drives. The
 next `sync` recovers pending downloads first, then performs a full initial
 Delta query. Existing snapshots are used to detect local modifications safely;
-after all planned operations succeed, the complete remote inventory replaces
-the configured Drive's old item metadata.
+blocked-item records are preserved for diagnosis, and the complete remote
+inventory replaces the configured Drive's old item metadata.
 
 During a Delta query, text output and logs report each completed page and the
 cumulative number of scanned items. JSON output emits a `delta_progress` event
@@ -532,8 +532,9 @@ every remote path. Empty, absolute, dot-segment, NUL-containing, control-byte,
 and empty components are rejected. Component and complete-path byte lengths
 are checked against the target filesystem limits. The error identifies the
 remote path, offending component, actual size, and supported limit; control
-bytes are escaped so diagnostics remain safe to display. Invalid names stop
-the sync before its Delta cursor is advanced and must be renamed in OneDrive.
+bytes are escaped so diagnostics remain safe to display. Invalid names are
+persisted as blocked items while independent files continue synchronizing.
+They are retried automatically and normally require renaming in OneDrive.
 
 To discard all saved synchronization state for the configured Drive, use the
 explicitly destructive mode:
@@ -543,8 +544,8 @@ onedrive-cpp reset-state --clear-all
 ```
 
 The command requires the configured Drive ID to be typed exactly before it
-removes item snapshots, the Delta cursor, and pending-download recovery
-records. Local files and other Drives remain untouched. Because local
+removes item snapshots, the Delta cursor, pending-download recovery records,
+and blocked items. Local files and other Drives remain untouched. Because local
 snapshots are no longer available, the next sync may report local modification
 conflicts. Automation must acknowledge this risk explicitly with
 `reset-state --clear-all --yes`; `--yes` is rejected without `--clear-all`.
@@ -563,12 +564,19 @@ downloads, download bytes, and local removals, but does not create files or
 update SQLite state. Normal mode creates remote directories and downloads
 added or changed files. Each download is written to a temporary file in the
 target directory, size-checked, flushed, and atomically replaced. The
-`deltaLink` advances only after every planned operation succeeds. Local
-snapshots for completed files support safe retries after a partial failure.
+`deltaLink` advances after every change is either applied successfully or
+durably recorded as blocked in the same SQLite transaction. Local snapshots
+for completed files support safe retries after a systemic failure.
 
 The client refuses to overwrite a local file that it cannot prove is
-unchanged, reports a `local modification conflict`, and stops. It does not yet
-upload local changes or remove local files for remote deletion records.
+unchanged. Invalid remote paths, local modifications, symbolic links, local
+path-type conflicts, and descendants of blocked directories are persisted as
+blocked items. Independent files continue, and `sync` exits with status 2
+after safely advancing the cursor. Blocked items are retried on every later
+incremental sync; a successful retry or remote deletion clears the record.
+Authentication, Graph, database, root-permission, disk-capacity, and download
+transport failures remain fatal. The client does not yet upload local changes
+or remove local files for remote deletion records.
 
 After a download completes, the client writes the temporary path, destination,
 remote metadata, size, and SHA-256 content fingerprint to a SQLite

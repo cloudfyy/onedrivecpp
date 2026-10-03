@@ -62,6 +62,11 @@ public:
         std::size_t items,
         bool completed
     ) const;
+    void blocked_item(
+        std::string_view path,
+        std::string_view reason_code,
+        std::string_view reason_message
+    ) const;
     void download_progress(
         std::string_view path,
         std::size_t file_index,

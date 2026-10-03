@@ -310,11 +310,12 @@ int Application::run(int argc, char* argv[]) {
                 const auto cleared = items->clear(config.drive_id);
                 spdlog::warn(
                     "Full synchronization state clear completed for drive '{}': "
-                    "{} item snapshots and {} pending downloads removed; saved "
-                    "cursor {}",
+                    "{} item snapshots, {} pending downloads, and {} blocked "
+                    "items removed; saved cursor {}",
                     config.drive_id,
                     cleared.items,
                     cleared.pending_downloads,
+                    cleared.blocked_items,
                     cleared.delta_link ? "removed" : "not present"
                 );
                 console.message(
@@ -322,11 +323,12 @@ int Application::run(int argc, char* argv[]) {
                     "full_state_clear_completed",
                     std::format(
                         "Cleared all synchronization state for drive '{}': {} "
-                        "item snapshots and {} pending downloads removed; saved "
-                        "cursor {}.",
+                        "item snapshots, {} pending downloads, and {} blocked "
+                        "items removed; saved cursor {}.",
                         config.drive_id,
                         cleared.items,
                         cleared.pending_downloads,
+                        cleared.blocked_items,
                         cleared.delta_link ? "removed" : "not present"
                     )
                 );
@@ -347,8 +349,8 @@ int Application::run(int argc, char* argv[]) {
             const bool removed = items->reset(config.drive_id);
             spdlog::info(
                 "Synchronization cursor reset completed for drive '{}': saved "
-                "cursor {}; item snapshots and pending downloads preserved; "
-                "next sync will use an initial delta query",
+                "cursor {}; item snapshots, pending downloads, and blocked "
+                "items preserved; next sync will use an initial delta query",
                 config.drive_id,
                 removed ? "removed" : "not present"
             );
@@ -362,7 +364,8 @@ int Application::run(int argc, char* argv[]) {
             console.message(
                 cli::MessageKind::information,
                 "state_preserved",
-                "Item snapshots and pending downloads were preserved."
+                "Item snapshots, pending downloads, and blocked items were "
+                "preserved."
             );
             console.message(
                 cli::MessageKind::information,

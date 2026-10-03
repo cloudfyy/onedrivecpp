@@ -28,12 +28,21 @@ public:
     [[nodiscard]] storage::ItemState& state_for(
         const std::string& remote_id
     );
+    void block(
+        const graph::RemoteItem& item,
+        std::string reason_code,
+        std::string reason_message
+    );
+    [[nodiscard]] const storage::BlockedItem& blocked(
+        std::size_t index
+    ) const;
     [[nodiscard]] storage::ItemDelta release_state_delta();
 
     [[nodiscard]] std::size_t change_count() const noexcept;
     [[nodiscard]] std::size_t directory_count() const noexcept;
     [[nodiscard]] std::size_t download_count() const noexcept;
     [[nodiscard]] std::size_t removal_count() const noexcept;
+    [[nodiscard]] std::size_t blocked_count() const noexcept;
     [[nodiscard]] std::uintmax_t download_bytes() const noexcept;
 
 private:

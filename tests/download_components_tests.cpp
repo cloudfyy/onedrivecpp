@@ -107,6 +107,12 @@ public:
         return result;
     }
 
+    [[nodiscard]] std::vector<onedrive::storage::BlockedItem> blocked_items(
+        const std::string&
+    ) const override {
+        return {};
+    }
+
     bool reset(const std::string&) override {
         return false;
     }

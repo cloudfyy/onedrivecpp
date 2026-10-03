@@ -157,6 +157,12 @@ public:
         return {};
     }
 
+    [[nodiscard]] std::vector<onedrive::storage::BlockedItem> blocked_items(
+        const std::string&
+    ) const override {
+        return {};
+    }
+
     bool reset(const std::string& drive_id) override {
         ++reset_count_;
         reset_drive_id_ = drive_id;
@@ -171,6 +177,7 @@ public:
         return {
             .items = 7,
             .pending_downloads = 2,
+            .blocked_items = 3,
             .delta_link = true,
         };
     }
@@ -477,7 +484,7 @@ int main() {
             "Reset synchronization cursor for drive 'me': saved cursor removed"
         ) ||
         !reset_state.standard_output.contains(
-            "Item snapshots and pending downloads were preserved"
+            "Item snapshots, pending downloads, and blocked items were preserved"
         ) ||
         !reset_state.standard_output.contains(
             "next sync will perform a full Microsoft Graph delta query"
@@ -498,8 +505,8 @@ int main() {
         };
         if (!contents.contains(
                 "Synchronization cursor reset completed for drive 'me': saved "
-                "cursor removed; item snapshots and pending downloads preserved; "
-                "next sync will use an initial delta query"
+                "cursor removed; item snapshots, pending downloads, and blocked "
+                "items preserved; next sync will use an initial delta query"
             )) {
             return fail("reset-state completion was not written to the log");
         }
@@ -539,7 +546,7 @@ int main() {
     );
     if (confirmed_clear.exit_code != 0 ||
         !confirmed_clear.standard_output.contains(
-            "7 item snapshots and 2 pending downloads removed"
+            "7 item snapshots, 2 pending downloads, and 3 blocked items removed"
         ) ||
         !confirmed_clear.standard_output.contains(
             "Local files were not deleted"
@@ -587,7 +594,7 @@ int main() {
     if (dry_run.exit_code != 0 ||
         !dry_run.standard_output.contains("Dry run configuration") ||
         !dry_run.standard_output.contains(
-            "Remote delta contains 1 changes (1 upserts, 0 removals)"
+            "Remote delta contains 1 changes (1 upserts, 0 removals, 0 blocked)"
         ) ||
         !dry_run.standard_output.contains("throttle retries: 6") ||
         !dry_run.standard_output.contains("throttle delay:   3-120 seconds") ||
@@ -638,7 +645,7 @@ int main() {
     );
     if (trace_sync.exit_code != 0 ||
         !trace_sync.standard_output.contains(
-            "Remote delta contains 1 changes (1 upserts, 0 removals)"
+            "Remote delta contains 1 changes (1 upserts, 0 removals, 0 blocked)"
         ) ||
         runtime_factory.item_store_apply_delta_count != 1) {
         return fail("sync trace command did not apply the remote delta");

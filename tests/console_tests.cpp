@@ -41,6 +41,11 @@ int main() {
     );
     plain.delta_progress(2, 350, false);
     plain.delta_progress(3, 412, true);
+    plain.blocked_item(
+        "conflict.txt",
+        "local_modification",
+        "local file was modified"
+    );
     plain.download_progress("file.bin", 1, 2, 5, 10, false);
     plain.download_progress("file.bin", 1, 2, 10, 10, true);
     if (plain_output.str() !=
@@ -49,7 +54,9 @@ int main() {
         "Microsoft Graph delta: 3 pages, 412 items scanned (complete)\n"
         "[1/2] Downloading 'file.bin': 50% (5/10 bytes)\n"
         "[1/2] Downloading 'file.bin': 100% (10/10 bytes)\n" ||
-        !plain_error.str().empty()) {
+        plain_error.str() !=
+            "Blocked 'conflict.txt': local file was modified "
+            "(local_modification)\n") {
         return fail("plain console output was incorrect");
     }
 
@@ -89,6 +96,11 @@ int main() {
         }
     );
     json.delta_progress(4, 625, false);
+    json.blocked_item(
+        "conflict.txt",
+        "local_modification",
+        "local file was modified"
+    );
     json.download_progress("file.bin", 1, 1, 4, 8, false);
     std::istringstream json_lines{json_output.str()};
     std::string line;
@@ -100,6 +112,7 @@ int main() {
     const auto delta_progress = nlohmann::json::parse(line);
     std::getline(json_lines, line);
     const auto download_progress = nlohmann::json::parse(line);
+    const auto blocked = nlohmann::json::parse(json_error.str());
     if (message.at("event") != "phase" ||
         message.at("message") != "Working" ||
         section.at("event") != "summary" ||
@@ -114,6 +127,9 @@ int main() {
         download_progress.at("total_bytes") != 8 ||
         download_progress.at("percentage") != 50 ||
         download_progress.at("completed") != false ||
+        blocked.at("event") != "item_blocked" ||
+        blocked.at("path") != "conflict.txt" ||
+        blocked.at("reason_code") != "local_modification" ||
         json_output.str().contains("\033[")) {
         return fail("JSON console output was invalid");
     }
@@ -138,10 +154,17 @@ int main() {
     );
     quiet.delta_progress(1, 200, false);
     quiet.download_progress("hidden.bin", 1, 1, 1, 2, false);
+    quiet.blocked_item(
+        "conflict.txt",
+        "local_modification",
+        "local file was modified"
+    );
     quiet.message(MessageKind::warning, "warning", "Visible warning");
     quiet.message(MessageKind::error, "error", "Visible error");
     if (quiet_output.str() != "Visible warning\n" ||
-        quiet_error.str() != "Visible error\n") {
+        quiet_error.str() !=
+            "Blocked 'conflict.txt': local file was modified "
+            "(local_modification)\nVisible error\n") {
         return fail("quiet mode suppressed or retained the wrong output");
     }
 

@@ -1,5 +1,7 @@
 #include "onedrive/storage/item_database.hpp"
 
+#include <sqlite3.h>
+
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -37,6 +39,37 @@ private:
 int fail(const std::string& message) {
     std::cerr << message << '\n';
     return EXIT_FAILURE;
+}
+
+bool create_version_four_database(const std::filesystem::path& path) {
+    sqlite3* database = nullptr;
+    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
+        sqlite3_close(database);
+        return false;
+    }
+    constexpr const char* schema =
+        "CREATE TABLE item ("
+        "drive_id TEXT NOT NULL, remote_id TEXT NOT NULL, "
+        "parent_id TEXT NOT NULL, name TEXT NOT NULL, etag TEXT NOT NULL, "
+        "remote_path TEXT NOT NULL, local_path TEXT NOT NULL, "
+        "last_modified TEXT NOT NULL, size INTEGER NOT NULL, "
+        "local_size INTEGER NOT NULL, local_modified_ticks INTEGER NOT NULL, "
+        "directory INTEGER NOT NULL, PRIMARY KEY (drive_id, remote_id));"
+        "CREATE TABLE drive_state ("
+        "drive_id TEXT PRIMARY KEY NOT NULL, delta_link TEXT NOT NULL);"
+        "CREATE TABLE pending_download ("
+        "drive_id TEXT NOT NULL, remote_id TEXT NOT NULL, "
+        "parent_id TEXT NOT NULL, name TEXT NOT NULL, etag TEXT NOT NULL, "
+        "remote_path TEXT NOT NULL, local_path TEXT NOT NULL, "
+        "last_modified TEXT NOT NULL, size INTEGER NOT NULL, "
+        "directory INTEGER NOT NULL, temporary_path TEXT NOT NULL, "
+        "content_fingerprint TEXT NOT NULL, "
+        "PRIMARY KEY (drive_id, remote_id));"
+        "PRAGMA user_version = 4;";
+    const bool succeeded =
+        sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
+    sqlite3_close(database);
+    return succeeded;
 }
 
 }  // namespace
@@ -194,6 +227,16 @@ int main() {
                     .local_path = temporary_directory.path() / "reset-me.txt",
                 },
             },
+            .blocked_upserts = {
+                {
+                    .remote_id = "blocked-me",
+                    .name = "blocked-me.txt",
+                    .etag = "blocked-etag",
+                    .remote_path = "blocked-me.txt",
+                    .reason_code = "local_modification",
+                    .reason_message = "local file was modified",
+                },
+            },
             .delta_link = "https://graph.example.test/delta-me",
         });
         database.apply_delta({
@@ -205,6 +248,16 @@ int main() {
                     .etag = "keep-me-etag",
                     .remote_path = "keep-me.txt",
                     .local_path = temporary_directory.path() / "keep-me.txt",
+                },
+            },
+            .blocked_upserts = {
+                {
+                    .remote_id = "blocked-other",
+                    .name = "blocked-other.txt",
+                    .etag = "blocked-etag",
+                    .remote_path = "blocked-other.txt",
+                    .reason_code = "invalid_remote_path",
+                    .reason_message = "invalid name",
                 },
             },
             .delta_link = "https://graph.example.test/delta-other",
@@ -236,8 +289,11 @@ int main() {
             .content_fingerprint = "fingerprint-other",
         });
         if (database.pending_downloads("me").size() != 1 ||
-            database.pending_downloads("other-drive").size() != 1) {
-            return fail("pending downloads were not saved by drive");
+            database.pending_downloads("other-drive").size() != 1 ||
+            database.blocked_items("me").size() != 1 ||
+            database.blocked_items("other-drive").size() != 1 ||
+            database.blocked_items("me")[0].attempt_count != 1) {
+            return fail("pending downloads or blocked items were not saved by drive");
         }
 
         if (!database.reset("me") || database.size() != 4 ||
@@ -246,6 +302,8 @@ int main() {
             database.delta_link("me").has_value() ||
             database.pending_downloads("me").size() != 1 ||
             database.pending_downloads("other-drive").size() != 1 ||
+            database.blocked_items("me").size() != 1 ||
+            database.blocked_items("other-drive").size() != 1 ||
             database.delta_link("other-drive") !=
                 std::optional<std::string>{
                     "https://graph.example.test/delta-other"
@@ -266,6 +324,8 @@ int main() {
             database.delta_link("me").has_value() ||
             database.pending_downloads("me").size() != 1 ||
             database.pending_downloads("other-drive").size() != 1 ||
+            database.blocked_items("me").size() != 1 ||
+            database.blocked_items("other-drive").size() != 1 ||
             database.delta_link("other-drive") !=
                 std::optional<std::string>{
                     "https://graph.example.test/delta-other"
@@ -284,6 +344,16 @@ int main() {
                     .local_path = temporary_directory.path() / "fresh-me.txt",
                 },
             },
+            .blocked_upserts = {
+                {
+                    .remote_id = "fresh-blocked-me",
+                    .name = "fresh-blocked-me.txt",
+                    .etag = "fresh-blocked-etag",
+                    .remote_path = "fresh-blocked-me.txt",
+                    .reason_code = "local_modification",
+                    .reason_message = "still modified",
+                },
+            },
             .delta_link = "https://graph.example.test/delta-fresh",
             .replace_drive_items = true,
         });
@@ -294,19 +364,25 @@ int main() {
             database.find("", "remote-1") == nullptr ||
             database.find("", "remote-2") == nullptr ||
             database.pending_downloads("me").size() != 1 ||
-            database.pending_downloads("other-drive").size() != 1) {
+            database.pending_downloads("other-drive").size() != 1 ||
+            database.blocked_items("me").size() != 1 ||
+            database.blocked_items("me")[0].remote_id != "fresh-blocked-me" ||
+            database.blocked_items("other-drive").size() != 1) {
             return fail("initial delta did not replace only the selected drive");
         }
 
         const auto cleared = database.clear("me");
         if (cleared.items != 1 || cleared.pending_downloads != 1 ||
-            !cleared.delta_link || database.size() != 3 ||
+            cleared.blocked_items != 1 || !cleared.delta_link ||
+            database.size() != 3 ||
             database.find("me", "fresh-me") != nullptr ||
             database.find("other-drive", "keep-me") == nullptr ||
             database.find("", "remote-1") == nullptr ||
             database.find("", "remote-2") == nullptr ||
             !database.pending_downloads("me").empty() ||
             database.pending_downloads("other-drive").size() != 1 ||
+            !database.blocked_items("me").empty() ||
+            database.blocked_items("other-drive").size() != 1 ||
             database.delta_link("me").has_value() ||
             database.delta_link("other-drive") !=
                 std::optional<std::string>{
@@ -318,6 +394,45 @@ int main() {
 
     if (!std::filesystem::exists(temporary_directory.path() / "items.sqlite3")) {
         return fail("SQLite state database was not created");
+    }
+
+    const auto migration_directory =
+        temporary_directory.path() / "version-four";
+    std::filesystem::create_directories(migration_directory);
+    if (!create_version_four_database(
+            migration_directory / "items.sqlite3"
+        )) {
+        return fail("version four migration fixture could not be created");
+    }
+    {
+        onedrive::storage::ItemDatabase database{migration_directory};
+        database.open();
+        database.apply_delta({
+            .drive_id = "me",
+            .blocked_upserts = {
+                {
+                    .remote_id = "migrated-blocked",
+                    .name = "blocked.txt",
+                    .etag = "etag",
+                    .remote_path = "blocked.txt",
+                    .reason_code = "local_modification",
+                    .reason_message = "local file was modified",
+                },
+            },
+            .delta_link = "https://graph.example.test/migrated",
+        });
+        if (database.blocked_items("me").size() != 1) {
+            return fail("version four database was not migrated to blocked items");
+        }
+    }
+    {
+        onedrive::storage::ItemDatabase database{migration_directory};
+        database.open();
+        if (database.blocked_items("me").size() != 1 ||
+            database.blocked_items("me")[0].remote_id !=
+                "migrated-blocked") {
+            return fail("migrated blocked item was not persisted");
+        }
     }
 
     return EXIT_SUCCESS;

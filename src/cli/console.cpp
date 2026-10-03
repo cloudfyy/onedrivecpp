@@ -164,6 +164,29 @@ void Console::delta_progress(
     );
 }
 
+void Console::blocked_item(
+    std::string_view path,
+    std::string_view reason_code,
+    std::string_view reason_message
+) const {
+    if (options_.output == OutputMode::json) {
+        error_ << nlohmann::json{
+            {"event", "item_blocked"},
+            {"level", "warning"},
+            {"path", path},
+            {"reason_code", reason_code},
+            {"message", reason_message},
+        }.dump() << '\n';
+        return;
+    }
+    error_ << fmt::format(
+        "Blocked '{}': {} ({})\n",
+        path,
+        reason_message,
+        reason_code
+    );
+}
+
 void Console::download_progress(
     std::string_view path,
     std::size_t file_index,

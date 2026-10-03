@@ -15,6 +15,7 @@
 #include <format>
 #include <optional>
 #include <stdexcept>
+#include <unordered_set>
 
 namespace onedrive::sync {
 namespace {
@@ -24,6 +25,66 @@ struct ExecutionSummary {
     std::size_t reused{0};
     std::size_t directories{0};
 };
+
+graph::RemoteItem remote_item(const storage::BlockedItem& item) {
+    return {
+        .id = item.remote_id,
+        .name = item.name,
+        .etag = item.etag,
+        .parent_id = item.parent_id,
+        .remote_path = item.remote_path,
+        .last_modified = item.last_modified,
+        .size = item.size,
+        .directory = item.directory,
+    };
+}
+
+void add_blocked_retries(
+    graph::DeltaResult& delta,
+    const std::vector<storage::BlockedItem>& blocked
+) {
+    std::unordered_set<std::string> changed_ids;
+    changed_ids.reserve(delta.changes.size());
+    for (const auto& item : delta.changes) {
+        changed_ids.insert(item.id);
+    }
+    for (const auto& item : blocked) {
+        if (!changed_ids.contains(item.remote_id)) {
+            delta.changes.push_back(remote_item(item));
+        }
+    }
+}
+
+void report_blocked(
+    const storage::BlockedItem& item,
+    const cli::Console& console
+) {
+    spdlog::warn(
+        "Blocked remote item '{}': {} ({})",
+        item.remote_path,
+        item.reason_message,
+        item.reason_code
+    );
+    console.blocked_item(
+        item.remote_path,
+        item.reason_code,
+        item.reason_message
+    );
+}
+
+bool below_blocked_directory(
+    std::string_view path,
+    const std::vector<std::string>& blocked_directories
+) {
+    return std::ranges::any_of(
+        blocked_directories,
+        [path](const std::string& directory) {
+            return path.size() > directory.size() &&
+                   path.starts_with(directory) &&
+                   path[directory.size()] == '/';
+        }
+    );
+}
 
 std::filesystem::path prepare_sync_root(
     const std::filesystem::path& configured_root
@@ -56,17 +117,21 @@ void report_plan(
         cli::MessageKind::information,
         "remote_delta",
         std::format(
-            "Remote delta contains {} changes ({} upserts, {} removals).",
+            "Remote delta contains {} changes ({} upserts, {} removals, {} "
+            "blocked).",
             plan.change_count(),
             upsert_count,
-            plan.removal_count()
+            plan.removal_count(),
+            plan.blocked_count()
         )
     );
     spdlog::info(
-        "Remote delta prepared for drive '{}': {} upserts, {} removals",
+        "Remote delta prepared for drive '{}': {} upserts, {} removals, {} "
+        "blocked",
         drive_id,
         upsert_count,
-        plan.removal_count()
+        plan.removal_count(),
+        plan.blocked_count()
     );
     spdlog::info(
         "Synchronization plan for drive '{}': {} directories, {} downloads, "
@@ -103,12 +168,20 @@ void report_plan(
                 .value = std::to_string(plan.download_bytes()),
             },
             {
+                .label = "blocked items:",
+                .key = "blocked_items",
+                .value = std::to_string(plan.blocked_count()),
+            },
+            {
                 .label = "local removals:",
                 .key = "local_removals",
                 .value = "0",
             },
         }
     );
+    for (std::size_t index = 0; index < plan.blocked_count(); ++index) {
+        report_blocked(plan.blocked(index), console);
+    }
 }
 
 void check_download_capacity(
@@ -155,27 +228,87 @@ ExecutionSummary execute_plan(
     const detail::FilesystemMetadata& metadata,
     const cli::Console& console
 ) {
+    std::vector<std::string> blocked_directories;
+    for (std::size_t index = 0; index < plan.blocked_count(); ++index) {
+        const auto& blocked = plan.blocked(index);
+        if (blocked.directory) {
+            blocked_directories.push_back(blocked.remote_path);
+        }
+    }
+
+    std::size_t prepared_directory_count = 0;
     for (std::size_t index = 0; index < plan.directory_count(); ++index) {
         const auto& item = plan.directory(index);
-        detail::ensure_directory_tree(
-            sync_root,
-            detail::local_path_for(sync_root, item.remote_path)
-        );
+        if (below_blocked_directory(item.remote_path, blocked_directories)) {
+            plan.block(
+                item,
+                "blocked_by_parent",
+                "a parent remote directory is blocked"
+            );
+            blocked_directories.push_back(item.remote_path);
+            report_blocked(
+                plan.blocked(plan.blocked_count() - 1),
+                console
+            );
+            continue;
+        }
+        try {
+            detail::ensure_directory_tree(
+                sync_root,
+                plan.state_for(item.id).local_path
+            );
+            ++prepared_directory_count;
+        } catch (const detail::LocalPathConflictError& error) {
+            plan.block(item, "local_path_conflict", error.what());
+            blocked_directories.push_back(item.remote_path);
+            report_blocked(
+                plan.blocked(plan.blocked_count() - 1),
+                console
+            );
+        }
     }
 
     std::size_t downloaded_count = 0;
     std::size_t reused_count = 0;
     for (std::size_t index = 0; index < plan.download_count(); ++index) {
         const auto& item = plan.download(index);
-        const auto destination =
-            detail::local_path_for(sync_root, item.remote_path);
-        detail::ensure_directory_tree(sync_root, destination.parent_path());
+        if (below_blocked_directory(item.remote_path, blocked_directories)) {
+            plan.block(
+                item,
+                "blocked_by_parent",
+                "a parent remote directory is blocked"
+            );
+            report_blocked(
+                plan.blocked(plan.blocked_count() - 1),
+                console
+            );
+            continue;
+        }
+        auto& state = plan.state_for(item.id);
+        const auto destination = state.local_path;
+        try {
+            detail::ensure_directory_tree(sync_root, destination.parent_path());
+        } catch (const detail::LocalPathConflictError& error) {
+            plan.block(item, "local_path_conflict", error.what());
+            report_blocked(
+                plan.blocked(plan.blocked_count() - 1),
+                console
+            );
+            continue;
+        }
         if (std::filesystem::is_symlink(
                 std::filesystem::symlink_status(destination)
             )) {
-            throw std::runtime_error(
+            plan.block(
+                item,
+                "local_path_conflict",
                 "local file path is a symbolic link: " + destination.string()
             );
+            report_blocked(
+                plan.blocked(plan.blocked_count() - 1),
+                console
+            );
+            continue;
         }
 
         const auto* previous = items.find(drive_id, item.id);
@@ -190,12 +323,18 @@ ExecutionSummary execute_plan(
                 "Refusing to overwrite locally modified file '{}'",
                 destination.string()
             );
-            throw std::runtime_error(
+            plan.block(
+                item,
+                "local_modification",
                 "local modification conflict: " + destination.string()
             );
+            report_blocked(
+                plan.blocked(plan.blocked_count() - 1),
+                console
+            );
+            continue;
         }
 
-        auto& state = plan.state_for(item.id);
         if (current_remote_file) {
             spdlog::debug(
                 "Reusing completed download for '{}'",
@@ -276,12 +415,12 @@ ExecutionSummary execute_plan(
         "directories prepared",
         downloaded_count,
         reused_count,
-        plan.directory_count()
+        prepared_directory_count
     );
     return {
         .downloaded = downloaded_count,
         .reused = reused_count,
-        .directories = plan.directory_count(),
+        .directories = prepared_directory_count,
     };
 }
 
@@ -414,6 +553,15 @@ int SyncEngine::synchronize() const {
             delta = graph_.list_delta(std::nullopt, delta_progress);
             replace_drive_items = true;
         }
+        const auto previously_blocked =
+            items_.blocked_items(config_.drive_id);
+        if (!replace_drive_items && !previously_blocked.empty()) {
+            add_blocked_retries(delta, previously_blocked);
+            spdlog::debug(
+                "Added {} blocked items to the synchronization retry plan",
+                previously_blocked.size()
+            );
+        }
         auto plan = detail::SyncPlan::build(
             std::move(delta),
             config_.drive_id,
@@ -422,6 +570,7 @@ int SyncEngine::synchronize() const {
         );
         report_plan(plan, config_.drive_id, console);
 
+        std::size_t blocked_count = plan.blocked_count();
         if (config_.dry_run) {
             spdlog::debug(
                 "Dry run left synchronization state unchanged for drive '{}'",
@@ -465,18 +614,43 @@ int SyncEngine::synchronize() const {
                         .key = "directories_prepared",
                         .value = std::to_string(summary.directories),
                     },
+                    {
+                        .label = "blocked:",
+                        .key = "blocked",
+                        .value = std::to_string(plan.blocked_count()),
+                    },
                 }
             );
             spdlog::debug(
                 "Persisting remote delta for drive '{}'",
                 config_.drive_id
             );
+            blocked_count = plan.blocked_count();
             items_.apply_delta(plan.release_state_delta());
         }
 
         record_result(true);
         const auto elapsed = std::chrono::steady_clock::now() - started_at;
-        if (config_.dry_run) {
+        if (blocked_count != 0) {
+            spdlog::warn(
+                "Synchronization completed with {} blocked items in {} "
+                "milliseconds",
+                blocked_count,
+                std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count()
+            );
+            console.message(
+                cli::MessageKind::warning,
+                "sync_completed_with_issues",
+                std::format(
+                    "Synchronization completed with {} blocked items in {} "
+                    "milliseconds.",
+                    blocked_count,
+                    std::chrono::duration_cast<std::chrono::milliseconds>(
+                        elapsed
+                    ).count()
+                )
+            );
+        } else if (config_.dry_run) {
             spdlog::info(
                 "Synchronization dry run completed in {} milliseconds",
                 std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count()
@@ -507,7 +681,7 @@ int SyncEngine::synchronize() const {
                 )
             );
         }
-        return 0;
+        return blocked_count == 0 ? 0 : 2;
     } catch (...) {
         record_result(false);
         const auto elapsed = std::chrono::steady_clock::now() - started_at;

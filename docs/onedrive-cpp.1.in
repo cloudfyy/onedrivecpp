@@ -44,18 +44,18 @@ settings when required.
 .B reset-state
 Reset the saved delta link for the configured drive. This preserves
 authentication, configuration, local files, item snapshots, pending-download
-recovery records, and state for other drives. The next
+recovery records, blocked-item records, and state for other drives. The next
 .B sync
 recovers pending downloads and performs a full initial delta query for the
-configured drive. The complete remote inventory replaces old item metadata
-only after all planned operations succeed.
+configured drive. The complete remote inventory replaces old item metadata;
+items that still conflict are recorded as blocked.
 .PP
 With
 .BR \-\-clear\-all ,
-remove item snapshots, the delta link, and pending-download recovery records
-for the configured drive. The command requires the configured drive ID as
-interactive confirmation. Local files and other drives remain untouched, but
-the next sync may report local modification conflicts. For automation,
+remove item snapshots, the delta link, pending-download recovery records, and
+blocked items for the configured drive. The command requires the configured
+drive ID as interactive confirmation. Local files and other drives remain
+untouched, but the next sync may report local modification conflicts. For automation,
 .B \-\-yes
 explicitly confirms
 .BR \-\-clear\-all ;
@@ -67,7 +67,10 @@ Microsoft Graph delta API. Successful non-dry-run queries atomically persist
 remote metadata and the final delta link after creating directories and safely
 downloading added or changed files. Downloads use same-directory temporary
 files, size validation, flushing, and atomic replacement. Existing local files
-that cannot be proven unchanged cause a conflict instead of being overwritten.
+that cannot be proven unchanged are persisted as blocked items instead of being
+overwritten. Invalid names, local path conflicts, and descendants of blocked
+directories are also isolated while independent files continue. A partial
+completion exits with status 2, and blocked items are retried on later syncs.
 SQLite pending-download records and SHA-256 content fingerprints provide
 crash recovery independently of target-file-system extended attributes.
 Microsoft Graph HTTP 429 responses are retried using

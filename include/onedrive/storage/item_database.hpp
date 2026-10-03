@@ -28,6 +28,9 @@ public:
     [[nodiscard]] std::vector<PendingDownload> pending_downloads(
         const std::string& drive_id
     ) const override;
+    [[nodiscard]] std::vector<BlockedItem> blocked_items(
+        const std::string& drive_id
+    ) const override;
     bool reset(const std::string& drive_id) override;
     ClearedState clear(const std::string& drive_id) override;
     [[nodiscard]] std::optional<std::string> delta_link(
@@ -44,6 +47,7 @@ private:
 
     std::filesystem::path state_directory_;
     std::unordered_map<std::string, ItemState> items_;
+    std::unordered_map<std::string, BlockedItem> blocked_items_;
     std::unordered_map<std::string, std::string> delta_links_;
     std::unique_ptr<Impl> impl_;
 };
