@@ -19,6 +19,8 @@ public:
 
     RuntimePreflight(const RuntimePreflight&) = delete;
     RuntimePreflight& operator=(const RuntimePreflight&) = delete;
+    RuntimePreflight(RuntimePreflight&&) = delete;
+    RuntimePreflight& operator=(RuntimePreflight&&) = delete;
 
 private:
     int lock_descriptor_{-1};

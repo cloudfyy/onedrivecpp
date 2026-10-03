@@ -25,7 +25,7 @@ ProductionRuntimeFactory::create_device_auth_client(
     const http::HttpTransport& transport
 ) const {
     return std::make_unique<auth::DeviceAuthClient>(
-        transport,
+        &transport,
         auth::DeviceAuthOptions{
             .application_id = config.application_id,
             .tenant_id = config.azure_tenant_id,

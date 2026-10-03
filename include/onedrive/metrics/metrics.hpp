@@ -6,7 +6,12 @@ namespace onedrive::metrics {
 
 class Metrics {
 public:
+    Metrics() = default;
     virtual ~Metrics() = default;
+    Metrics(const Metrics&) = delete;
+    Metrics& operator=(const Metrics&) = delete;
+    Metrics(Metrics&&) = delete;
+    Metrics& operator=(Metrics&&) = delete;
 
     virtual void record_sync_run(
         bool success,

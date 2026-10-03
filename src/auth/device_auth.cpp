@@ -164,7 +164,7 @@ AuthResult<OAuthTokens> parse_tokens(
 }  // namespace
 
 DeviceAuthClient::DeviceAuthClient(
-    const http::HttpTransport& transport,
+    gsl::not_null<const http::HttpTransport*> transport,
     DeviceAuthOptions options,
     SleepFunction sleep,
     ClockFunction now
@@ -189,7 +189,7 @@ AuthResult<DeviceCode> DeviceAuthClient::request_device_code() const {
 
     spdlog::debug("Requesting Microsoft device authorization code");
     auto response = post_form(
-        transport_,
+        *transport_,
         device_code_url(),
         {
             {"client_id", options_.application_id},
@@ -266,7 +266,7 @@ AuthResult<OAuthTokens> DeviceAuthClient::poll_for_token(const DeviceCode& code)
             poll_attempt
         );
         auto response = post_form(
-            transport_,
+            *transport_,
             token_url(),
             {
                 {"client_id", options_.application_id},
@@ -340,7 +340,7 @@ AuthResult<OAuthTokens> DeviceAuthClient::refresh_access_token(
     }
 
     auto response = post_form(
-        transport_,
+        *transport_,
         token_url(),
         {
             {"client_id", options_.application_id},

@@ -39,7 +39,12 @@ namespace onedrive::app {
 
 class RuntimeFactory {
 public:
+    RuntimeFactory() = default;
     virtual ~RuntimeFactory() = default;
+    RuntimeFactory(const RuntimeFactory&) = delete;
+    RuntimeFactory& operator=(const RuntimeFactory&) = delete;
+    RuntimeFactory(RuntimeFactory&&) = delete;
+    RuntimeFactory& operator=(RuntimeFactory&&) = delete;
 
     [[nodiscard]] virtual std::unique_ptr<http::HttpTransport>
     create_http_transport() const = 0;

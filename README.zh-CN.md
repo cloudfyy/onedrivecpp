@@ -69,9 +69,10 @@ Ubuntu 24.04 的官方仓库已经提供项目所需的 CMake、Ninja 和 Clang 
 ```bash
 sudo apt update
 sudo apt install -y build-essential ca-certificates curl git \
-  cmake ninja-build clang-20 zip unzip tar pkg-config \
+  cmake ninja-build clang-20 clang-tidy-20 zip unzip tar pkg-config \
   libcli11-dev libcurl4-openssl-dev libfmt-dev libspdlog-dev \
-  libsqlite3-dev libssl-dev libtomlplusplus-dev nlohmann-json3-dev
+  libmsgsl-dev libsqlite3-dev libssl-dev libtomlplusplus-dev \
+  nlohmann-json3-dev
 ```
 
 确认版本：
@@ -206,6 +207,20 @@ ctest --preset debug
 ```
 
 Debug 程序位于 `build/debug/onedrive-cpp`。
+
+### C++ Core Guidelines 检查
+
+`lint` preset 会在编译时按照项目的 `.clang-tidy` 策略运行 Clang-Tidy。
+Clang 静态分析器、bug-prone、performance、portability 以及选定的 C++ Core
+Guidelines 诊断都会作为构建错误：
+
+```bash
+cmake --preset lint
+cmake --build --preset lint
+```
+
+策略只排除经过审查的必要 C/POSIX API、协议常量和已检查缓冲区边界噪声。
+项目使用 Microsoft GSL 在 API 和 RAII 边界表达非空借用依赖。
 
 ## 构建 DEB 包
 

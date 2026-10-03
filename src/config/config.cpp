@@ -177,7 +177,8 @@ Config Config::defaults() {
         .graph_initial_throttle_delay = std::chrono::seconds{1},
         .graph_maximum_throttle_delay = std::chrono::seconds{300},
         .download_concurrency = 4,
-        .download_chunk_threshold_bytes = 8U * 1024U * 1024U,
+        .download_chunk_threshold_bytes =
+            std::uint64_t{8} * 1024U * 1024U,
         .filesystem_metadata = FilesystemMetadataMode::automatic,
         .dry_run = false,
     };

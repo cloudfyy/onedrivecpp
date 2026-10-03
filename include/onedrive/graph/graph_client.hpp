@@ -64,12 +64,19 @@ struct GraphOptions {
     std::size_t maximum_throttle_retries{4};
     std::chrono::seconds initial_throttle_delay{1};
     std::chrono::seconds maximum_throttle_delay{300};
-    std::uint64_t download_chunk_threshold_bytes{8U * 1024U * 1024U};
+    std::uint64_t download_chunk_threshold_bytes{
+        std::uint64_t{8} * 1024U * 1024U
+    };
 };
 
 class GraphClient {
 public:
+    GraphClient() = default;
     virtual ~GraphClient() = default;
+    GraphClient(const GraphClient&) = delete;
+    GraphClient& operator=(const GraphClient&) = delete;
+    GraphClient(GraphClient&&) = delete;
+    GraphClient& operator=(GraphClient&&) = delete;
 
     [[nodiscard]] virtual account::DriveIdentity drive_identity() const = 0;
     [[nodiscard]] virtual std::vector<RemoteItem> list_root() const = 0;
@@ -97,6 +104,10 @@ public:
         SleepFunction sleep = {}
     );
     ~MicrosoftGraphClient() override;
+    MicrosoftGraphClient(const MicrosoftGraphClient&) = delete;
+    MicrosoftGraphClient& operator=(const MicrosoftGraphClient&) = delete;
+    MicrosoftGraphClient(MicrosoftGraphClient&&) = delete;
+    MicrosoftGraphClient& operator=(MicrosoftGraphClient&&) = delete;
 
     [[nodiscard]] account::DriveIdentity drive_identity() const override;
     [[nodiscard]] std::vector<RemoteItem> list_root() const override;

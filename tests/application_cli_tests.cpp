@@ -282,11 +282,11 @@ public:
         return std::nullopt;
     }
 
-    [[nodiscard]] const onedrive::storage::ItemState* find(
+    [[nodiscard]] std::optional<onedrive::storage::ItemState> find(
         const std::string&,
         const std::string&
     ) const override {
-        return nullptr;
+        return std::nullopt;
     }
 
     [[nodiscard]] std::size_t size() const noexcept override {
@@ -336,7 +336,7 @@ public:
         const onedrive::http::HttpTransport& transport
     ) const override {
         return std::make_unique<onedrive::auth::DeviceAuthClient>(
-            transport,
+            &transport,
             onedrive::auth::DeviceAuthOptions{
                 .application_id = config.application_id,
                 .tenant_id = config.azure_tenant_id,
@@ -425,7 +425,7 @@ RunResult run_application(
     auto* original_output = std::cout.rdbuf(standard_output.rdbuf());
     auto* original_error = std::cerr.rdbuf(standard_error.rdbuf());
 
-    onedrive::app::Application application{runtime_factory};
+    onedrive::app::Application application{&runtime_factory};
     const int exit_code = application.run(
         static_cast<int>(argument_pointers.size()),
         argument_pointers.data()

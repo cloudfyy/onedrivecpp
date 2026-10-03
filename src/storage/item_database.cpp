@@ -2,6 +2,7 @@
 
 #include <sqlite3.h>
 #include <spdlog/spdlog.h>
+#include <gsl/pointers>
 
 #include <algorithm>
 #include <cerrno>
@@ -19,11 +20,19 @@ namespace {
 
 class Statement {
 public:
-    Statement(sqlite3* database, const char* sql) : database_{database} {
-        const int result = sqlite3_prepare_v2(database_, sql, -1, &statement_, nullptr);
+    Statement(gsl::not_null<sqlite3*> database, const char* sql)
+        : database_{database} {
+        const int result = sqlite3_prepare_v2(
+            database_.get(),
+            sql,
+            -1,
+            &statement_,
+            nullptr
+        );
         if (result != SQLITE_OK) {
             throw std::runtime_error(
-                "cannot prepare SQLite statement: " + std::string{sqlite3_errmsg(database_)}
+                "cannot prepare SQLite statement: " +
+                std::string{sqlite3_errmsg(database_.get())}
             );
         }
     }
@@ -34,13 +43,15 @@ public:
 
     Statement(const Statement&) = delete;
     Statement& operator=(const Statement&) = delete;
+    Statement(Statement&&) = delete;
+    Statement& operator=(Statement&&) = delete;
 
     [[nodiscard]] sqlite3_stmt* get() const noexcept {
         return statement_;
     }
 
 private:
-    sqlite3* database_;
+    gsl::not_null<sqlite3*> database_;
     sqlite3_stmt* statement_{nullptr};
 };
 
@@ -125,26 +136,35 @@ std::string item_key(std::string_view drive_id, std::string_view remote_id) {
 
 class Transaction {
 public:
-    explicit Transaction(sqlite3* database) : database_{database} {
-        execute(database_, "BEGIN IMMEDIATE;");
+    explicit Transaction(gsl::not_null<sqlite3*> database)
+        : database_{database} {
+        execute(database_.get(), "BEGIN IMMEDIATE;");
     }
 
     ~Transaction() {
         if (!committed_) {
-            sqlite3_exec(database_, "ROLLBACK;", nullptr, nullptr, nullptr);
+            sqlite3_exec(
+                database_.get(),
+                "ROLLBACK;",
+                nullptr,
+                nullptr,
+                nullptr
+            );
         }
     }
 
     Transaction(const Transaction&) = delete;
     Transaction& operator=(const Transaction&) = delete;
+    Transaction(Transaction&&) = delete;
+    Transaction& operator=(Transaction&&) = delete;
 
     void commit() {
-        execute(database_, "COMMIT;");
+        execute(database_.get(), "COMMIT;");
         committed_ = true;
     }
 
 private:
-    sqlite3* database_;
+    gsl::not_null<sqlite3*> database_;
     bool committed_{false};
 };
 
@@ -1235,12 +1255,14 @@ std::optional<std::string> ItemDatabase::delta_link(
                std::optional<std::string>{iterator->second};
 }
 
-const ItemState* ItemDatabase::find(
+std::optional<ItemState> ItemDatabase::find(
     const std::string& drive_id,
     const std::string& remote_id
 ) const {
     const auto iterator = items_.find(item_key(drive_id, remote_id));
-    return iterator == items_.end() ? nullptr : &iterator->second;
+    return iterator == items_.end() ?
+               std::nullopt :
+               std::optional<ItemState>{iterator->second};
 }
 
 std::size_t ItemDatabase::size() const noexcept {

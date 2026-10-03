@@ -16,6 +16,7 @@ include(CTest)
 find_package(CLI11 CONFIG REQUIRED)
 set(CURL_USE_STATIC_LIBS OFF)
 find_package(CURL REQUIRED)
+find_package(Microsoft.GSL CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(OpenSSL REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
@@ -26,6 +27,22 @@ set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+option(
+    ONEDRIVE_ENABLE_CLANG_TIDY
+    "Run Clang-Tidy checks while compiling"
+    OFF
+)
+if(ONEDRIVE_ENABLE_CLANG_TIDY)
+    find_program(
+        ONEDRIVE_CLANG_TIDY
+        NAMES clang-tidy-20 clang-tidy
+        REQUIRED
+    )
+    set(
+        CMAKE_CXX_CLANG_TIDY
+        "${ONEDRIVE_CLANG_TIDY};--config-file=${CMAKE_CURRENT_SOURCE_DIR}/.clang-tidy"
+    )
+endif()
 configure_file(
     include/onedrive/version.hpp.in
     generated/onedrive/version.hpp
@@ -75,6 +92,8 @@ target_include_directories(onedrive_core
 )
 
 target_link_libraries(onedrive_core
+    PUBLIC
+        Microsoft.GSL::GSL
     PRIVATE
         CLI11::CLI11
         CURL::libcurl
@@ -114,6 +133,10 @@ install(
     FILES packaging/completions/_onedrive-cpp
     DESTINATION ${CMAKE_INSTALL_DATADIR}/zsh/vendor-completions
 )
+
+if(ONEDRIVE_ENABLE_CLANG_TIDY)
+    set(CMAKE_CXX_CLANG_TIDY "")
+endif()
 
 if(BUILD_TESTING)
     find_program(BASH_EXECUTABLE bash REQUIRED)

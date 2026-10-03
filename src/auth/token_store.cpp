@@ -15,7 +15,7 @@
 namespace onedrive::auth {
 namespace {
 
-std::string trim(std::string value) {
+std::string trim(const std::string& value) {
     const auto first = value.find_first_not_of(" \t\r\n");
     if (first == std::string::npos) {
         return {};
@@ -26,8 +26,8 @@ std::string trim(std::string value) {
 
 }  // namespace
 
-FileTokenStore::FileTokenStore(std::filesystem::path state_directory)
-    : path_{std::move(state_directory) / "refresh_token"} {}
+FileTokenStore::FileTokenStore(const std::filesystem::path& state_directory)
+    : path_{state_directory / "refresh_token"} {}
 
 std::optional<std::string> FileTokenStore::load_refresh_token() const {
     if (!std::filesystem::exists(path_)) {
@@ -64,7 +64,7 @@ std::optional<std::string> FileTokenStore::load_refresh_token() const {
         std::istreambuf_iterator<char>{input},
         std::istreambuf_iterator<char>{}
     };
-    token = trim(std::move(token));
+    token = trim(token);
     spdlog::debug(
         "Loaded persisted Microsoft refresh token: {}",
         token.empty() ? "empty" : "present"

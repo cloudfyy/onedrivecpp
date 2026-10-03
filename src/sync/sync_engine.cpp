@@ -114,7 +114,7 @@ PreparedDownloadBatch prepare_downloads(
                 all_completed
             );
         };
-    const auto worker = [&](std::stop_token thread_stop) {
+    const auto worker = [&](const std::stop_token& thread_stop) {
         while (!thread_stop.stop_requested() && !stop.stop_requested()) {
             const std::size_t index =
                 next_task.fetch_add(1, std::memory_order_relaxed);
@@ -346,7 +346,8 @@ void check_download_capacity(
             sync_directory :
             sync_directory.parent_path()
     );
-    constexpr std::uintmax_t minimum_reserve = 256U * 1024U * 1024U;
+    constexpr std::uintmax_t minimum_reserve =
+        std::uintmax_t{256} * 1024U * 1024U;
     const auto reserve = std::max(minimum_reserve, required / 20U);
     spdlog::debug(
         "Download capacity check: {} bytes required, {} bytes reserved, {} "
@@ -464,10 +465,10 @@ ExecutionSummary execute_plan(
             continue;
         }
 
-        const auto* previous = items.find(drive_id, item.id);
+        const auto previous = items.find(drive_id, item.id);
         const bool exists = std::filesystem::exists(destination);
         const bool snapshot_matches =
-            exists && previous != nullptr &&
+            exists && previous.has_value() &&
             detail::local_snapshot_matches(*previous, destination);
         const bool current_remote_file =
             snapshot_matches && previous->etag == item.etag;
@@ -542,7 +543,8 @@ ExecutionSummary execute_plan(
             console.end_download_progress();
             std::rethrow_exception(prepared.errors[index]);
         }
-        if (!prepared.downloads[index]) {
+        auto download = std::move(prepared.downloads[index]);
+        if (!download) {
             discard_from(index);
             console.end_download_progress();
             throw std::runtime_error(
@@ -552,7 +554,7 @@ ExecutionSummary execute_plan(
         try {
             auto state = detail::commit_download(
                 items,
-                std::move(*prepared.downloads[index])
+                std::move(download).value()
             );
             plan.state_for(download_tasks[index].item.id) = std::move(state);
         } catch (...) {
@@ -585,16 +587,16 @@ SyncEngine::SyncEngine(
     metrics::Metrics& metrics,
     const cli::Console* console
 )
-    : config_{config},
-      graph_{graph},
-      items_{items},
-      metrics_{metrics},
+    : config_{&config},
+      graph_{&graph},
+      items_{&items},
+      metrics_{&metrics},
       console_{console} {}
 
 int SyncEngine::synchronize() const {
     const auto started_at = std::chrono::steady_clock::now();
     const auto record_result = [this, started_at](bool success) {
-        metrics_.record_sync_run(
+        metrics_->record_sync_run(
             success,
             std::chrono::steady_clock::now() - started_at
         );
@@ -604,9 +606,9 @@ int SyncEngine::synchronize() const {
         cli::Console fallback_console;
         const auto& console =
             console_ == nullptr ? fallback_console : *console_;
-        std::filesystem::path sync_root = config_.sync_directory;
+        std::filesystem::path sync_root = config_->sync_directory;
         std::optional<detail::FilesystemMetadata> metadata;
-        if (config_.dry_run) {
+        if (config_->dry_run) {
             console.section(
                 "dry_run_configuration",
                 "Dry run configuration:",
@@ -614,23 +616,23 @@ int SyncEngine::synchronize() const {
                     {
                         .label = "sync directory:",
                         .key = "sync_directory",
-                        .value = config_.sync_directory.string(),
+                        .value = config_->sync_directory.string(),
                     },
                     {
                         .label = "state directory:",
                         .key = "state_directory",
-                        .value = config_.state_directory.string(),
+                        .value = config_->state_directory.string(),
                     },
                     {
                         .label = "drive id:",
                         .key = "drive_id",
-                        .value = config_.drive_id,
+                        .value = config_->drive_id,
                     },
                     {
                         .label = "throttle retries:",
                         .key = "throttle_retries",
                         .value = std::to_string(
-                            config_.graph_maximum_throttle_retries
+                            config_->graph_maximum_throttle_retries
                         ),
                     },
                     {
@@ -638,25 +640,25 @@ int SyncEngine::synchronize() const {
                         .key = "throttle_delay",
                         .value = std::format(
                             "{}-{} seconds",
-                            config_.graph_initial_throttle_delay.count(),
-                            config_.graph_maximum_throttle_delay.count()
+                            config_->graph_initial_throttle_delay.count(),
+                            config_->graph_maximum_throttle_delay.count()
                         ),
                     },
                     {
                         .label = "download concurrency:",
                         .key = "download_concurrency",
                         .value = std::to_string(
-                            config_.download_concurrency
+                            config_->download_concurrency
                         ),
                     },
                     {
                         .label = "tracked items:",
                         .key = "tracked_items",
-                        .value = std::to_string(items_.size()),
+                        .value = std::to_string(items_->size()),
                     },
                 }
             );
-            const auto pending = items_.pending_downloads(config_.drive_id);
+            const auto pending = items_->pending_downloads(config_->drive_id);
             if (!pending.empty()) {
                 spdlog::info(
                     "Dry run found {} pending downloads; recovery is deferred",
@@ -664,25 +666,25 @@ int SyncEngine::synchronize() const {
                 );
             }
         } else {
-            sync_root = prepare_sync_root(config_.sync_directory);
+            sync_root = prepare_sync_root(config_->sync_directory);
             metadata.emplace(detail::FilesystemMetadata::detect(
-                config_.filesystem_metadata,
+                config_->filesystem_metadata,
                 sync_root
             ));
             detail::recover_pending_downloads(
-                items_,
+                *items_,
                 sync_root,
-                config_.drive_id,
+                config_->drive_id,
                 *metadata
             );
         }
 
-        const auto previous_delta_link = items_.delta_link(config_.drive_id);
+        const auto previous_delta_link = items_->delta_link(config_->drive_id);
         spdlog::debug(
             "Preparing Microsoft Graph delta query for drive '{}': {} tracked "
             "items, saved cursor {}",
-            config_.drive_id,
-            items_.size(),
+            config_->drive_id,
+            items_->size(),
             previous_delta_link ? "present" : "absent"
         );
         console.message(
@@ -697,7 +699,7 @@ int SyncEngine::synchronize() const {
                 console.delta_progress(pages, items, completed);
             };
         try {
-            delta = graph_.list_delta(previous_delta_link, delta_progress);
+            delta = graph_->list_delta(previous_delta_link, delta_progress);
         } catch (const graph::DeltaCursorInvalidError& error) {
             spdlog::warn(
                 "{}; retrying with a full Microsoft Graph delta query",
@@ -709,11 +711,11 @@ int SyncEngine::synchronize() const {
                 "The saved Microsoft Graph cursor is no longer valid; "
                 "fetching the full remote state..."
             );
-            delta = graph_.list_delta(std::nullopt, delta_progress);
+            delta = graph_->list_delta(std::nullopt, delta_progress);
             replace_drive_items = true;
         }
         const auto previously_blocked =
-            items_.blocked_items(config_.drive_id);
+            items_->blocked_items(config_->drive_id);
         if (!replace_drive_items && !previously_blocked.empty()) {
             add_blocked_retries(delta, previously_blocked);
             spdlog::debug(
@@ -723,21 +725,21 @@ int SyncEngine::synchronize() const {
         }
         auto plan = detail::SyncPlan::build(
             std::move(delta),
-            config_.drive_id,
-            config_.sync_directory,
+            config_->drive_id,
+            config_->sync_directory,
             replace_drive_items
         );
-        report_plan(plan, config_.drive_id, console);
+        report_plan(plan, config_->drive_id, console);
 
         std::size_t blocked_count = plan.blocked_count();
-        if (config_.dry_run) {
+        if (config_->dry_run) {
             spdlog::debug(
                 "Dry run left synchronization state unchanged for drive '{}'",
-                config_.drive_id
+                config_->drive_id
             );
         } else {
             check_download_capacity(
-                config_.sync_directory,
+                config_->sync_directory,
                 plan.download_bytes()
             );
             console.message(
@@ -748,12 +750,12 @@ int SyncEngine::synchronize() const {
             const auto summary = execute_plan(
                 plan,
                 sync_root,
-                config_.drive_id,
-                graph_,
-                items_,
+                config_->drive_id,
+                *graph_,
+                *items_,
                 *metadata,
                 console,
-                config_.download_concurrency
+                config_->download_concurrency
             );
             console.section(
                 "execution_summary",
@@ -783,10 +785,10 @@ int SyncEngine::synchronize() const {
             );
             spdlog::debug(
                 "Persisting remote delta for drive '{}'",
-                config_.drive_id
+                config_->drive_id
             );
             blocked_count = plan.blocked_count();
-            items_.apply_delta(plan.release_state_delta());
+            items_->apply_delta(plan.release_state_delta());
         }
 
         record_result(true);
@@ -810,7 +812,7 @@ int SyncEngine::synchronize() const {
                     ).count()
                 )
             );
-        } else if (config_.dry_run) {
+        } else if (config_->dry_run) {
             spdlog::info(
                 "Synchronization dry run completed in {} milliseconds",
                 std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count()

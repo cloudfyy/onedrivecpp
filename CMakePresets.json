@@ -31,6 +31,14 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "lint",
+      "displayName": "Debug with Clang-Tidy checks",
+      "inherits": "debug",
+      "cacheVariables": {
+        "ONEDRIVE_ENABLE_CLANG_TIDY": "ON"
+      }
     }
   ],
   "buildPresets": [
@@ -41,6 +49,10 @@
     {
       "name": "release",
       "configurePreset": "release"
+    },
+    {
+      "name": "lint",
+      "configurePreset": "lint"
     }
   ],
   "testPresets": [

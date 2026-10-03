@@ -227,7 +227,7 @@ std::string content_fingerprint(const std::filesystem::path& path) {
     if (!context || EVP_DigestInit_ex(context.get(), EVP_sha256(), nullptr) != 1) {
         throw std::runtime_error("cannot initialize SHA-256 recovery fingerprint");
     }
-    std::array<char, 64U * 1024U> buffer{};
+    std::array<char, std::size_t{64} * 1024U> buffer{};
     while (input) {
         input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
         const auto count = input.gcount();

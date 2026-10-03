@@ -197,12 +197,16 @@ public:
         return saved_delta_link;
     }
 
-    [[nodiscard]] const onedrive::storage::ItemState* find(
+    [[nodiscard]] std::optional<onedrive::storage::ItemState> find(
         const std::string&,
         const std::string& remote_id
     ) const override {
         const auto iterator = items.find(remote_id);
-        return iterator == items.end() ? nullptr : &iterator->second;
+        return iterator == items.end() ?
+                   std::nullopt :
+                   std::optional<onedrive::storage::ItemState>{
+                       iterator->second
+                   };
     }
 
     [[nodiscard]] std::size_t size() const noexcept override {
@@ -608,7 +612,7 @@ int test_pending_download_recovery() {
     FakeMetrics metrics;
     const auto config = config_for(root, false);
     if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize() != 0 ||
-        !items.pending.empty() || items.find("me", "recovered") == nullptr ||
+        !items.pending.empty() || !items.find("me", "recovered") ||
         !std::filesystem::exists(destination) ||
         std::filesystem::exists(temporary_file) || graph.download_count != 0) {
         return fail("pending download was not recovered from the database journal");
@@ -642,7 +646,7 @@ int test_post_install_recovery() {
     items.fail_upsert = false;
     if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize() != 0 ||
         !items.pending.empty() ||
-        items.find("me", "recover-after-install") == nullptr ||
+        !items.find("me", "recover-after-install") ||
         graph.download_count != 1 || !metrics.last_success) {
         return fail("installed download was not recovered without re-downloading");
     }

@@ -139,12 +139,16 @@ public:
         return std::nullopt;
     }
 
-    [[nodiscard]] const onedrive::storage::ItemState* find(
+    [[nodiscard]] std::optional<onedrive::storage::ItemState> find(
         const std::string&,
         const std::string& remote_id
     ) const override {
         const auto iterator = states.find(remote_id);
-        return iterator == states.end() ? nullptr : &iterator->second;
+        return iterator == states.end() ?
+                   std::nullopt :
+                   std::optional<onedrive::storage::ItemState>{
+                       iterator->second
+                   };
     }
 
     [[nodiscard]] std::size_t size() const noexcept override {
@@ -215,7 +219,7 @@ int main() {
         metadata
     );
     if (!std::filesystem::exists(destination) || !items.pending.empty() ||
-        items.find("me", "installed") == nullptr ||
+        !items.find("me", "installed") ||
         installed.local_size != 4 || installed.local_modified_ticks == 0) {
         return fail("atomic download transaction did not commit");
     }
@@ -242,7 +246,7 @@ int main() {
 
     items.fail_upsert = false;
     detail::recover_pending_downloads(items, root, "me", metadata);
-    if (!items.pending.empty() || items.find("me", "recover") == nullptr ||
+    if (!items.pending.empty() || !items.find("me", "recover") ||
         !std::filesystem::exists(recover_destination)) {
         return fail("pending installed download was not recovered");
     }

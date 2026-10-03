@@ -20,6 +20,9 @@ struct Style {
     std::string_view color;
 };
 
+constexpr unsigned completed_percentage = 100;
+constexpr unsigned maximum_incomplete_percentage = 99;
+
 Style style_for(MessageKind kind) {
     switch (kind) {
         case MessageKind::information:
@@ -67,15 +70,15 @@ std::string format_bytes(std::uint64_t bytes) {
 
     double value = static_cast<double>(bytes);
     std::size_t unit = 0;
-    do {
+    while (true) {
         value /= static_cast<double>(unit_size);
         if (value < static_cast<double>(unit_size) ||
             unit + 1 == units.size()) {
             break;
         }
         ++unit;
-    } while (true);
-    return fmt::format("{:.1f} {}", value, units[unit]);
+    }
+    return fmt::format("{:.1f} {}", value, units.at(unit));
 }
 
 }  // namespace
@@ -85,16 +88,19 @@ Console::Console(
     std::ostream& output,
     std::ostream& error
 )
-    : options_{options}, output_{output}, error_{error} {
-    styled_ =
+    : options_{options},
+      output_{&output},
+      error_{&error},
+      styled_{
         options_.output == OutputMode::text &&
         options_.color != ColorMode::never &&
         (options_.color == ColorMode::always ||
-         (::isatty(STDOUT_FILENO) != 0 && std::getenv("NO_COLOR") == nullptr));
-    interactive_ =
-        options_.output == OutputMode::text && &output_ == &std::cout &&
-        ::isatty(STDOUT_FILENO) != 0;
-}
+         (::isatty(STDOUT_FILENO) != 0 && std::getenv("NO_COLOR") == nullptr))
+      },
+      interactive_{
+          options_.output == OutputMode::text && output_.get() == &std::cout &&
+          ::isatty(STDOUT_FILENO) != 0
+      } {}
 
 void Console::message(
     MessageKind kind,
@@ -105,7 +111,7 @@ void Console::message(
         return;
     }
     std::ostream& stream =
-        kind == MessageKind::error ? error_ : output_;
+        kind == MessageKind::error ? *error_ : *output_;
     if (options_.output == OutputMode::json) {
         stream << nlohmann::json{
             {"event", event},
@@ -136,7 +142,7 @@ void Console::section(
         for (const auto& field : fields) {
             values[field.key] = field.value;
         }
-        output_ << nlohmann::json{
+        *output_ << nlohmann::json{
             {"event", event},
             {"values", std::move(values)},
         }.dump() << '\n';
@@ -144,16 +150,16 @@ void Console::section(
     }
 
     if (styled_) {
-        output_ << "\033[1;36m" << title << "\033[0m\n";
+        *output_ << "\033[1;36m" << title << "\033[0m\n";
     } else {
-        output_ << title << '\n';
+        *output_ << title << '\n';
     }
     std::size_t width = 0;
     for (const auto& field : fields) {
         width = std::max(width, field.label.size());
     }
     for (const auto& field : fields) {
-        output_ << fmt::format(
+        *output_ << fmt::format(
             "  {:<{}} {}\n",
             field.label,
             width,
@@ -171,7 +177,7 @@ void Console::delta_progress(
         return;
     }
     if (options_.output == OutputMode::json) {
-        output_ << nlohmann::json{
+        *output_ << nlohmann::json{
             {"event", "delta_progress"},
             {"pages", pages},
             {"items", items},
@@ -179,7 +185,7 @@ void Console::delta_progress(
         }.dump() << '\n';
         return;
     }
-    output_ << fmt::format(
+    *output_ << fmt::format(
         "Microsoft Graph delta: {} page{}, {} item{} scanned ({})\n",
         pages,
         pages == 1 ? "" : "s",
@@ -195,7 +201,7 @@ void Console::blocked_item(
     std::string_view reason_message
 ) const {
     if (options_.output == OutputMode::json) {
-        error_ << nlohmann::json{
+        *error_ << nlohmann::json{
             {"event", "item_blocked"},
             {"level", "warning"},
             {"path", path},
@@ -204,7 +210,7 @@ void Console::blocked_item(
         }.dump() << '\n';
         return;
     }
-    error_ << fmt::format(
+    *error_ << fmt::format(
         "Blocked '{}': {} ({})\n",
         path,
         reason_message,
@@ -225,10 +231,10 @@ void Console::download_progress(
     auto percentage =
         total == 0 ?
             (file_count == 0 ?
-                (completed ? 100U : 0U) :
+                (completed ? completed_percentage : 0U) :
                 static_cast<unsigned>(
                     std::min(
-                        100.0,
+                        static_cast<double>(completed_percentage),
                         std::floor(
                             static_cast<double>(completed_files) * 100.0 /
                             static_cast<double>(file_count)
@@ -236,17 +242,20 @@ void Console::download_progress(
                     )
                 )) :
             static_cast<unsigned>(std::min(
-                100.0,
+                static_cast<double>(completed_percentage),
                 std::floor(
                     static_cast<double>(downloaded) * 100.0 /
                     static_cast<double>(total)
                 )
             ));
     if (!completed) {
-        percentage = std::min(percentage, 99U);
+        percentage = std::min(
+            percentage,
+            maximum_incomplete_percentage
+        );
     }
     if (options_.output == OutputMode::json) {
-        output_ << nlohmann::json{
+        *output_ << nlohmann::json{
             {"event", "download_progress"},
             {"completed_files", completed_files},
             {"file_count", file_count},
@@ -268,19 +277,19 @@ void Console::download_progress(
         format_bytes(total)
     );
     if (interactive_) {
-        output_ << '\r' << "\033[2K" << line;
+        *output_ << '\r' << "\033[2K" << line;
         if (completed) {
-            output_ << '\n';
+            *output_ << '\n';
         }
-        output_ << std::flush;
+        *output_ << std::flush;
         return;
     }
-    output_ << line << '\n';
+    *output_ << line << '\n';
 }
 
 void Console::end_download_progress() const {
     if (interactive_) {
-        output_ << '\n' << std::flush;
+        *output_ << '\n' << std::flush;
     }
 }
 
@@ -295,7 +304,7 @@ bool Console::confirm(
             "use --yes to confirm explicitly"
         );
     }
-    output_ << prompt << std::flush;
+    *output_ << prompt << std::flush;
     std::string confirmation;
     const bool matched =
         static_cast<bool>(std::getline(std::cin, confirmation)) &&

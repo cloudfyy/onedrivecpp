@@ -1,5 +1,7 @@
 #pragma once
 
+#include <gsl/pointers>
+
 #include <cstddef>
 #include <cstdint>
 #include <iosfwd>
@@ -90,8 +92,8 @@ private:
     [[nodiscard]] static std::ostream& default_error();
 
     ConsoleOptions options_;
-    std::ostream& output_;
-    std::ostream& error_;
+    gsl::not_null<std::ostream*> output_;
+    gsl::not_null<std::ostream*> error_;
     bool styled_{false};
     bool interactive_{false};
 };

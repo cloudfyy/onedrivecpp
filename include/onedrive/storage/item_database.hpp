@@ -20,6 +20,8 @@ public:
 
     ItemDatabase(const ItemDatabase&) = delete;
     ItemDatabase& operator=(const ItemDatabase&) = delete;
+    ItemDatabase(ItemDatabase&&) = delete;
+    ItemDatabase& operator=(ItemDatabase&&) = delete;
 
     void open() override;
     void upsert(ItemState item) override;
@@ -40,7 +42,7 @@ public:
     [[nodiscard]] std::optional<std::string> delta_link(
         const std::string& drive_id
     ) const override;
-    [[nodiscard]] const ItemState* find(
+    [[nodiscard]] std::optional<ItemState> find(
         const std::string& drive_id,
         const std::string& remote_id
     ) const override;

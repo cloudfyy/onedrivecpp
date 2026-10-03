@@ -6,7 +6,12 @@ namespace onedrive::monitor {
 
 class FileMonitor {
 public:
+    FileMonitor() = default;
     virtual ~FileMonitor() = default;
+    FileMonitor(const FileMonitor&) = delete;
+    FileMonitor& operator=(const FileMonitor&) = delete;
+    FileMonitor(FileMonitor&&) = delete;
+    FileMonitor& operator=(FileMonitor&&) = delete;
     [[nodiscard]] virtual int run() const = 0;
 };
 

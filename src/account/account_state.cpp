@@ -53,11 +53,14 @@ std::string stable_suffix(std::string_view value) {
     );
 }
 
-std::string friendly_component(
-    std::string_view display_name,
-    std::string_view stable_id,
-    std::string_view fallback
-) {
+struct FriendlyComponentInput {
+    std::string_view display_name;
+    std::string_view stable_id;
+    std::string_view fallback;
+};
+
+std::string friendly_component(FriendlyComponentInput input) {
+    const auto [display_name, stable_id, fallback] = input;
     std::string result;
     result.reserve(display_name.size() + 10);
     bool separator = false;
@@ -136,7 +139,11 @@ std::filesystem::path stable_directory(
         }
     }
     return parent /
-           friendly_component(display_name, stable_id, fallback);
+           friendly_component({
+               .display_name = display_name,
+               .stable_id = stable_id,
+               .fallback = fallback,
+           });
 }
 
 void ensure_private_directory(const std::filesystem::path& path) {

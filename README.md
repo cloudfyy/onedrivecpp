@@ -75,9 +75,10 @@ Install the build tools from the Ubuntu 24.04 repositories:
 ```bash
 sudo apt update
 sudo apt install -y build-essential ca-certificates curl git \
-  cmake ninja-build clang-20 zip unzip tar pkg-config \
+  cmake ninja-build clang-20 clang-tidy-20 zip unzip tar pkg-config \
   libcli11-dev libcurl4-openssl-dev libfmt-dev libspdlog-dev \
-  libsqlite3-dev libssl-dev libtomlplusplus-dev nlohmann-json3-dev
+  libmsgsl-dev libsqlite3-dev libssl-dev libtomlplusplus-dev \
+  nlohmann-json3-dev
 ```
 
 Verify the installed versions:
@@ -221,6 +222,22 @@ ctest --preset debug
 ```
 
 The Debug executable is generated at `build/debug/onedrive-cpp`.
+
+### C++ Core Guidelines checks
+
+The lint preset runs Clang-Tidy during compilation with the project
+`.clang-tidy` policy. Diagnostics from the Clang static analyzer, bug-prone,
+performance, portability, and selected C++ Core Guidelines checks are treated
+as build errors:
+
+```bash
+cmake --preset lint
+cmake --build --preset lint
+```
+
+The policy excludes only reviewed noise from required C/POSIX APIs, protocol
+constants, and checked buffer boundaries. Microsoft GSL is used to express
+non-null borrowed dependencies at API and RAII boundaries.
 
 ## Build DEB Packages
 

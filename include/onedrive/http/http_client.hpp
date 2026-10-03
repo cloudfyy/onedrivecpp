@@ -23,7 +23,9 @@ struct HttpRequest {
     std::string body;
     std::chrono::seconds connect_timeout{10};
     std::chrono::seconds operation_timeout{60};
-    std::size_t maximum_response_size{16U * 1024U * 1024U};
+    std::size_t maximum_response_size{
+        std::size_t{16} * 1024U * 1024U
+    };
     std::uint64_t download_offset{0};
 };
 
@@ -48,7 +50,12 @@ using DownloadProgress =
 
 class HttpTransport {
 public:
+    HttpTransport() = default;
     virtual ~HttpTransport() = default;
+    HttpTransport(const HttpTransport&) = delete;
+    HttpTransport& operator=(const HttpTransport&) = delete;
+    HttpTransport(HttpTransport&&) = delete;
+    HttpTransport& operator=(HttpTransport&&) = delete;
     [[nodiscard]] virtual HttpResult perform(const HttpRequest& request) const = 0;
     [[nodiscard]] virtual HttpResult download(
         const HttpRequest& request,

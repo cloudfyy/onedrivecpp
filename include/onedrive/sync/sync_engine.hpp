@@ -5,6 +5,8 @@
 #include "onedrive/metrics/metrics.hpp"
 #include "onedrive/storage/item_store.hpp"
 
+#include <gsl/pointers>
+
 namespace onedrive::cli {
 class Console;
 }
@@ -24,10 +26,10 @@ public:
     [[nodiscard]] int synchronize() const;
 
 private:
-    const config::Config& config_;
-    graph::GraphClient& graph_;
-    storage::ItemStore& items_;
-    metrics::Metrics& metrics_;
+    gsl::not_null<const config::Config*> config_;
+    gsl::not_null<graph::GraphClient*> graph_;
+    gsl::not_null<storage::ItemStore*> items_;
+    gsl::not_null<metrics::Metrics*> metrics_;
     const cli::Console* console_;
 };
 

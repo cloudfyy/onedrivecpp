@@ -16,7 +16,8 @@
 namespace onedrive::logging {
 namespace {
 
-constexpr std::size_t maximum_log_file_size = 5U * 1024U * 1024U;
+constexpr std::size_t maximum_log_file_size =
+    std::size_t{5} * 1024U * 1024U;
 constexpr std::size_t retained_log_files = 3;
 
 spdlog::level::level_enum parse_level(std::string level) {

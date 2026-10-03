@@ -48,15 +48,12 @@ std::string percent_encode(std::string_view value) {
 }
 
 std::string graph_error_message(const Json& response, long status_code) {
-    try {
-        if (const auto error = response.find("error");
-            error != response.end() && error->is_object()) {
-            if (const auto message = error->find("message");
-                message != error->end() && message->is_string()) {
-                return message->get<std::string>();
-            }
+    if (const auto error = response.find("error");
+        error != response.end() && error->is_object()) {
+        if (const auto message = error->find("message");
+            message != error->end() && message->is_string()) {
+            return message->get<std::string>();
         }
-    } catch (const Json::exception&) {
     }
     return std::format("Microsoft Graph request failed with HTTP {}", status_code);
 }
@@ -123,7 +120,10 @@ std::chrono::seconds fallback_retry_delay(
     for (std::size_t index = 0;
          index < retry_number && delay < options.maximum_throttle_delay;
          ++index) {
-        delay = std::min(delay * 2, options.maximum_throttle_delay);
+        const auto remaining = options.maximum_throttle_delay - delay;
+        delay = delay > remaining ?
+                    options.maximum_throttle_delay :
+                    delay + delay;
     }
     return delay;
 }
@@ -135,7 +135,7 @@ bool retryable_status(long status_code) {
 
 template <typename Operation>
 http::HttpResult perform_with_retries(
-    Operation&& operation,
+    Operation operation,
     const GraphOptions& options,
     const MicrosoftGraphClient::SleepFunction& sleep,
     std::string_view description
@@ -239,7 +239,10 @@ MicrosoftGraphClient::MicrosoftGraphClient(
         );
     }
     auth_client_ =
-        std::make_unique<auth::DeviceAuthClient>(*transport_, std::move(auth_options));
+        std::make_unique<auth::DeviceAuthClient>(
+            transport_.get(),
+            std::move(auth_options)
+        );
 }
 
 MicrosoftGraphClient::~MicrosoftGraphClient() = default;
@@ -268,7 +271,7 @@ account::DriveIdentity fetch_drive_identity(
             .body = {},
             .connect_timeout = std::chrono::seconds{30},
             .operation_timeout = std::chrono::seconds{60},
-            .maximum_response_size = 1024U * 1024U,
+            .maximum_response_size = std::size_t{1024} * 1024U,
         });
         if (!response) {
             throw std::runtime_error(
@@ -339,7 +342,7 @@ account::DriveIdentity fetch_drive_identity(
         .body = {},
         .connect_timeout = std::chrono::seconds{30},
         .operation_timeout = std::chrono::seconds{60},
-        .maximum_response_size = 8U * 1024U * 1024U,
+        .maximum_response_size = std::size_t{8} * 1024U * 1024U,
     });
     if (!photo) {
         throw std::runtime_error(
@@ -824,7 +827,7 @@ void MicrosoftGraphClient::download_file(
                 .body = {},
                 .connect_timeout = std::chrono::seconds{30},
                 .operation_timeout = std::chrono::seconds{60},
-                .maximum_response_size = 64U * 1024U,
+                .maximum_response_size = std::size_t{64} * 1024U,
             });
         },
         options_,

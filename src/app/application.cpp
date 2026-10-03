@@ -117,7 +117,9 @@ int authenticate(
 
 }  // namespace
 
-Application::Application(const RuntimeFactory& runtime_factory)
+Application::Application(
+    gsl::not_null<const RuntimeFactory*> runtime_factory
+)
     : runtime_factory_{runtime_factory} {}
 
 int Application::run(int argc, char* argv[]) {
@@ -265,7 +267,7 @@ int Application::run(int argc, char* argv[]) {
 
         if (*auth_command) {
             spdlog::info("Starting Microsoft authentication");
-            return authenticate(config, runtime_factory_, console);
+            return authenticate(config, *runtime_factory_, console);
         }
         if (*logout_command) {
             spdlog::info("Removing locally saved authentication");
@@ -273,7 +275,7 @@ int Application::run(int argc, char* argv[]) {
                 account::AccountState::find_active_token_directory(
                     config.state_directory
                 ) &&
-                runtime_factory_.create_token_store(config)
+                runtime_factory_->create_token_store(config)
                     ->remove_refresh_token();
             console.message(
                 cli::MessageKind::success,
@@ -284,7 +286,7 @@ int Application::run(int argc, char* argv[]) {
             return 0;
         }
         if (*reset_state_command) {
-            auto graph = runtime_factory_.create_graph_client(config);
+            auto graph = runtime_factory_->create_graph_client(config);
             const auto identity = graph->drive_identity();
             config.drive_id = identity.drive_id;
             const auto& confirmation_drive_reference =
@@ -345,7 +347,7 @@ int Application::run(int argc, char* argv[]) {
                     config.drive_id
                 );
                 auto items =
-                    runtime_factory_.create_item_store(config, identity);
+                    runtime_factory_->create_item_store(config, identity);
                 items->open();
                 const auto cleared = items->clear(config.drive_id);
                 spdlog::warn(
@@ -384,7 +386,7 @@ int Application::run(int argc, char* argv[]) {
                 "Resetting synchronization state for drive '{}'",
                 config.drive_id
             );
-            auto items = runtime_factory_.create_item_store(config, identity);
+            auto items = runtime_factory_->create_item_store(config, identity);
             items->open();
             const bool removed = items->reset(config.drive_id);
             spdlog::info(
@@ -427,16 +429,16 @@ int Application::run(int argc, char* argv[]) {
                 "monitor_status",
                 "Filesystem event integration is planned for the next milestone."
             );
-            return runtime_factory_.create_monitor(config)->run();
+            return runtime_factory_->create_monitor(config)->run();
         }
 
         spdlog::info("Starting synchronization{}", config.dry_run ? " dry run" : "");
-        auto graph = runtime_factory_.create_graph_client(config);
+        auto graph = runtime_factory_->create_graph_client(config);
         const auto identity = graph->drive_identity();
         config.drive_id = identity.drive_id;
-        auto items = runtime_factory_.create_item_store(config, identity);
+        auto items = runtime_factory_->create_item_store(config, identity);
         items->open();
-        auto metrics = runtime_factory_.create_metrics();
+        auto metrics = runtime_factory_->create_metrics();
         return sync::SyncEngine{
             config,
             *graph,

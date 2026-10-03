@@ -8,7 +8,12 @@ namespace onedrive::auth {
 
 class TokenStore {
 public:
+    TokenStore() = default;
     virtual ~TokenStore() = default;
+    TokenStore(const TokenStore&) = delete;
+    TokenStore& operator=(const TokenStore&) = delete;
+    TokenStore(TokenStore&&) = delete;
+    TokenStore& operator=(TokenStore&&) = delete;
 
     [[nodiscard]] virtual std::optional<std::string> load_refresh_token() const = 0;
     virtual void save_refresh_token(const std::string& refresh_token) const = 0;
@@ -18,7 +23,7 @@ public:
 
 class FileTokenStore final : public TokenStore {
 public:
-    explicit FileTokenStore(std::filesystem::path state_directory);
+    explicit FileTokenStore(const std::filesystem::path& state_directory);
 
     [[nodiscard]] std::optional<std::string> load_refresh_token() const override;
     void save_refresh_token(const std::string& refresh_token) const override;

@@ -245,11 +245,10 @@ int main() {
         };
         database.open();
 
-        const auto* first = database.find("", "remote-1");
-        const auto* second = database.find("", "remote-2");
-        const auto* third = database.find("me", "remote-3");
-        if (database.size() != 3 || first == nullptr || second == nullptr ||
-            third == nullptr) {
+        const auto first = database.find("", "remote-1");
+        const auto second = database.find("", "remote-2");
+        const auto third = database.find("me", "remote-3");
+        if (database.size() != 3 || !first || !second || !third) {
             return fail("persisted items were not loaded");
         }
         if (first->etag != "etag-updated" ||
@@ -289,7 +288,7 @@ int main() {
             return fail("invalid delta state was accepted");
         } catch (const std::invalid_argument&) {
         }
-        if (database.find("me", "rolled-back") != nullptr ||
+        if (database.find("me", "rolled-back") ||
             database.delta_link("me") !=
                 std::optional<std::string>{
                     "https://graph.example.test/delta-1"
@@ -302,7 +301,7 @@ int main() {
             .removals = {"remote-3"},
             .delta_link = "https://graph.example.test/delta-2",
         });
-        if (database.size() != 2 || database.find("me", "remote-3") != nullptr ||
+        if (database.size() != 2 || database.find("me", "remote-3") ||
             database.delta_link("me") !=
                 std::optional<std::string>{
                     "https://graph.example.test/delta-2"
@@ -317,7 +316,7 @@ int main() {
             identity()
         };
         database.open();
-        if (database.size() != 2 || database.find("me", "remote-3") != nullptr ||
+        if (database.size() != 2 || database.find("me", "remote-3") ||
             database.delta_link("me") !=
                 std::optional<std::string>{
                     "https://graph.example.test/delta-2"
@@ -406,8 +405,8 @@ int main() {
         }
 
         if (!database.reset("me") || database.size() != 4 ||
-            database.find("me", "reset-me") == nullptr ||
-            database.find("other-drive", "keep-me") == nullptr ||
+            !database.find("me", "reset-me") ||
+            !database.find("other-drive", "keep-me") ||
             database.delta_link("me").has_value() ||
             database.pending_downloads("me").size() != 1 ||
             database.pending_downloads("other-drive").size() != 1 ||
@@ -431,8 +430,8 @@ int main() {
         };
         database.open();
         if (database.size() != 4 ||
-            database.find("me", "reset-me") == nullptr ||
-            database.find("other-drive", "keep-me") == nullptr ||
+            !database.find("me", "reset-me") ||
+            !database.find("other-drive", "keep-me") ||
             database.delta_link("me").has_value() ||
             database.pending_downloads("me").size() != 1 ||
             database.pending_downloads("other-drive").size() != 1 ||
@@ -470,11 +469,11 @@ int main() {
             .replace_drive_items = true,
         });
         if (database.size() != 4 ||
-            database.find("me", "reset-me") != nullptr ||
-            database.find("me", "fresh-me") == nullptr ||
-            database.find("other-drive", "keep-me") == nullptr ||
-            database.find("", "remote-1") == nullptr ||
-            database.find("", "remote-2") == nullptr ||
+            database.find("me", "reset-me") ||
+            !database.find("me", "fresh-me") ||
+            !database.find("other-drive", "keep-me") ||
+            !database.find("", "remote-1") ||
+            !database.find("", "remote-2") ||
             database.pending_downloads("me").size() != 1 ||
             database.pending_downloads("other-drive").size() != 1 ||
             database.blocked_items("me").size() != 1 ||
@@ -487,10 +486,10 @@ int main() {
         if (cleared.items != 1 || cleared.pending_downloads != 1 ||
             cleared.blocked_items != 1 || !cleared.delta_link ||
             database.size() != 3 ||
-            database.find("me", "fresh-me") != nullptr ||
-            database.find("other-drive", "keep-me") == nullptr ||
-            database.find("", "remote-1") == nullptr ||
-            database.find("", "remote-2") == nullptr ||
+            database.find("me", "fresh-me") ||
+            !database.find("other-drive", "keep-me") ||
+            !database.find("", "remote-1") ||
+            !database.find("", "remote-2") ||
             !database.pending_downloads("me").empty() ||
             database.pending_downloads("other-drive").size() != 1 ||
             !database.blocked_items("me").empty() ||

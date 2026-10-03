@@ -64,7 +64,12 @@ struct ClearedState {
 
 class ItemStore {
 public:
+    ItemStore() = default;
     virtual ~ItemStore() = default;
+    ItemStore(const ItemStore&) = delete;
+    ItemStore& operator=(const ItemStore&) = delete;
+    ItemStore(ItemStore&&) = delete;
+    ItemStore& operator=(ItemStore&&) = delete;
 
     virtual void open() = 0;
     virtual void upsert(ItemState item) = 0;
@@ -85,7 +90,7 @@ public:
     [[nodiscard]] virtual std::optional<std::string> delta_link(
         const std::string& drive_id
     ) const = 0;
-    [[nodiscard]] virtual const ItemState* find(
+    [[nodiscard]] virtual std::optional<ItemState> find(
         const std::string& drive_id,
         const std::string& remote_id
     ) const = 0;

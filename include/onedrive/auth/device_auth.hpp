@@ -2,6 +2,8 @@
 
 #include "onedrive/http/http_client.hpp"
 
+#include <gsl/pointers>
+
 #include <chrono>
 #include <expected>
 #include <functional>
@@ -58,7 +60,7 @@ public:
     using ClockFunction = std::function<std::chrono::steady_clock::time_point()>;
 
     DeviceAuthClient(
-        const http::HttpTransport& transport,
+        gsl::not_null<const http::HttpTransport*> transport,
         DeviceAuthOptions options,
         SleepFunction sleep = {},
         ClockFunction now = {}
@@ -71,7 +73,7 @@ public:
     ) const;
 
 private:
-    const http::HttpTransport& transport_;
+    gsl::not_null<const http::HttpTransport*> transport_;
     DeviceAuthOptions options_;
     SleepFunction sleep_;
     ClockFunction now_;

@@ -29,6 +29,11 @@ public:
         }
     }
 
+    CurlRuntime(const CurlRuntime&) = delete;
+    CurlRuntime& operator=(const CurlRuntime&) = delete;
+    CurlRuntime(CurlRuntime&&) = delete;
+    CurlRuntime& operator=(CurlRuntime&&) = delete;
+
     [[nodiscard]] CURLcode result() const noexcept {
         return result_;
     }
@@ -147,7 +152,8 @@ std::size_t write_header(char* data, std::size_t size, std::size_t count, void* 
         return 0;
     }
 
-    constexpr std::size_t maximum_header_size = 64U * 1024U;
+    constexpr std::size_t maximum_header_size =
+        std::size_t{64} * 1024U;
     const std::size_t byte_count = size * count;
     auto& header_context = *static_cast<HeaderContext*>(context);
     if (byte_count > maximum_header_size - header_context.total_size) {
