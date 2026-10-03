@@ -1,3 +1,11 @@
+onedrive-cpp (0.6.6-1~ubuntu24.04) noble; urgency=medium
+
+  * Cancel active concurrent downloads while preserving durable checkpoints.
+  * Configure download timeouts, stall detection, receive-rate limits, and
+    HTTP version selection.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sat, 03 Oct 2026 13:02:29 +0000
+
 onedrive-cpp (0.6.5-1~ubuntu24.04) noble; urgency=medium
 
   * Resume durable partial downloads across process restarts.
