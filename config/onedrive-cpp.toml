@@ -30,10 +30,17 @@ application_id = ""
 tenant_id = "common"
 endpoint = "https://login.microsoftonline.com"
 scopes = [
+  # Identify the signed-in user and read basic profile information.
   "User.Read",
+  # Read and write files in the signed-in user's OneDrive.
   "Files.ReadWrite",
-  #"Files.ReadWrite.All",
-  #"Sites.ReadWrite.All",
+  # Optional for organizational accounts: access every file the user can access,
+  # including shared files and document libraries.
+  # "Files.ReadWrite.All",
+  # Optional for organizational SharePoint sites; personal accounts do not
+  # support this scope.
+  # "Sites.ReadWrite.All",
+  # Request a refresh token so the client can stay signed in.
   "offline_access",
 ]
 
