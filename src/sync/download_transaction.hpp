@@ -1,6 +1,7 @@
 #pragma once
 
 #include "filesystem_metadata.hpp"
+#include "local_filesystem.hpp"
 #include "onedrive/graph/graph_client.hpp"
 #include "onedrive/storage/item_store.hpp"
 
@@ -16,6 +17,7 @@ struct PreparedDownload {
     std::filesystem::path temporary_path;
     std::string content_fingerprint;
     std::uintmax_t downloaded_size{0};
+    LocalFileBaseline destination_baseline;
 };
 
 [[nodiscard]] PreparedDownload prepare_download(
@@ -23,6 +25,7 @@ struct PreparedDownload {
     const graph::RemoteItem& item,
     storage::ItemState state,
     const std::filesystem::path& destination,
+    LocalFileBaseline destination_baseline,
     const FilesystemMetadata& metadata,
     const graph::DownloadProgress& progress = {}
 );

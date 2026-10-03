@@ -209,6 +209,94 @@ bool local_snapshot_matches(
            modified_ticks(path) == state.local_modified_ticks;
 }
 
+LocalFileBaseline capture_local_file_baseline(
+    const std::filesystem::path& path
+) {
+    std::error_code error;
+    const auto status = std::filesystem::symlink_status(path, error);
+    if (error) {
+        if (error == std::errc::no_such_file_or_directory) {
+            return {};
+        }
+        throw std::runtime_error(
+            "cannot inspect local download destination '" + path.string() +
+            "': " + error.message()
+        );
+    }
+    if (!std::filesystem::exists(status)) {
+        return {};
+    }
+    if (!std::filesystem::is_regular_file(status)) {
+        throw LocalPathConflictError(
+            "local download destination is not a regular file: " +
+            path.string()
+        );
+    }
+
+    const auto size_before = std::filesystem::file_size(path);
+    if (size_before > static_cast<std::uintmax_t>(
+                          std::numeric_limits<std::int64_t>::max()
+                      )) {
+        throw std::runtime_error(
+            "local download destination is too large to track: " +
+            path.string()
+        );
+    }
+    const auto ticks_before = modified_ticks(path);
+    auto fingerprint = content_fingerprint(path);
+    const auto size_after = std::filesystem::file_size(path);
+    const auto ticks_after = modified_ticks(path);
+    if (size_before != size_after || ticks_before != ticks_after) {
+        throw LocalModificationConflictError(
+            "local file changed while capturing the download baseline: " +
+            path.string()
+        );
+    }
+    return {
+        .existed = true,
+        .size = static_cast<std::int64_t>(size_after),
+        .modified_ticks = ticks_after,
+        .fingerprint = std::move(fingerprint),
+    };
+}
+
+bool local_file_matches_baseline(
+    const std::filesystem::path& path,
+    const LocalFileBaseline& baseline
+) {
+    std::error_code error;
+    const auto status = std::filesystem::symlink_status(path, error);
+    if (error) {
+        if (error == std::errc::no_such_file_or_directory) {
+            return !baseline.existed;
+        }
+        throw std::runtime_error(
+            "cannot inspect local download destination '" + path.string() +
+            "': " + error.message()
+        );
+    }
+    if (!baseline.existed) {
+        return !std::filesystem::exists(status);
+    }
+    if (!std::filesystem::is_regular_file(status)) {
+        return false;
+    }
+    const auto size_before = std::filesystem::file_size(path);
+    if (size_before > static_cast<std::uintmax_t>(
+                          std::numeric_limits<std::int64_t>::max()
+                      ) ||
+        static_cast<std::int64_t>(size_before) != baseline.size ||
+        modified_ticks(path) != baseline.modified_ticks) {
+        return false;
+    }
+    const auto fingerprint = content_fingerprint(path);
+    const auto size_after = std::filesystem::file_size(path);
+    return size_before == size_after &&
+           static_cast<std::int64_t>(size_after) == baseline.size &&
+           modified_ticks(path) == baseline.modified_ticks &&
+           fingerprint == baseline.fingerprint;
+}
+
 std::string content_fingerprint(const std::filesystem::path& path) {
     std::ifstream input{path, std::ios::binary};
     if (!input) {

@@ -104,6 +104,31 @@ int main() {
     if (detail::local_snapshot_matches(changed_snapshot, file)) {
         return fail("changed local snapshot incorrectly matched");
     }
+    const auto baseline = detail::capture_local_file_baseline(file);
+    if (!baseline.existed ||
+        !detail::local_file_matches_baseline(file, baseline)) {
+        return fail("unchanged local file baseline did not match");
+    }
+    {
+        std::ofstream output{file, std::ios::binary};
+        output << "edit";
+    }
+    if (detail::local_file_matches_baseline(file, baseline)) {
+        return fail("same-size local content change was not detected");
+    }
+    const auto created_during_download = root / "created-later.txt";
+    const auto missing_baseline =
+        detail::capture_local_file_baseline(created_during_download);
+    {
+        std::ofstream output{created_during_download};
+        output << "user data";
+    }
+    if (detail::local_file_matches_baseline(
+            created_during_download,
+            missing_baseline
+        )) {
+        return fail("file created after baseline was not detected");
+    }
     try {
         static_cast<void>(
             detail::content_fingerprint(root / "missing.txt")

@@ -649,11 +649,15 @@ transaction. Local snapshots for completed files support safe retries after a
 systemic failure.
 
 The client refuses to overwrite a local file that it cannot prove is
-unchanged. Invalid remote paths, local modifications, symbolic links, local
-path-type conflicts, and descendants of blocked directories are persisted as
-blocked items. Independent files continue, and `sync` exits with status 2
-after safely advancing the cursor. Blocked items are retried on every later
-incremental sync; a successful retry or remote deletion clears the record.
+unchanged. Before downloading, it captures the destination's existence, size,
+modification time, and SHA-256 fingerprint, then checks that baseline before
+journaling and immediately before the atomic replacement. A file created or
+modified during transfer is retained and persisted as a `local_modification`
+blocked item. Invalid remote paths, symbolic links, local path-type conflicts,
+and descendants of blocked directories are also persisted as blocked items.
+Independent files continue, and `sync` exits with status 2 after safely
+advancing the cursor. Blocked items are retried on every later incremental
+sync; a successful retry or remote deletion clears the record.
 Authentication, Graph, database, root-permission, disk-capacity, and download
 transport failures remain fatal. The client does not yet upload local changes
 or remove local files for remote deletion records.

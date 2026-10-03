@@ -19,6 +19,18 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+class LocalModificationConflictError final : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
+struct LocalFileBaseline {
+    bool existed{false};
+    std::int64_t size{0};
+    std::int64_t modified_ticks{0};
+    std::string fingerprint;
+};
+
 [[nodiscard]] std::filesystem::path local_path_for(
     const std::filesystem::path& sync_directory,
     const std::string& remote_path
@@ -29,6 +41,13 @@ public:
 [[nodiscard]] bool local_snapshot_matches(
     const storage::ItemState& state,
     const std::filesystem::path& path
+);
+[[nodiscard]] LocalFileBaseline capture_local_file_baseline(
+    const std::filesystem::path& path
+);
+[[nodiscard]] bool local_file_matches_baseline(
+    const std::filesystem::path& path,
+    const LocalFileBaseline& baseline
 );
 [[nodiscard]] std::string content_fingerprint(
     const std::filesystem::path& path

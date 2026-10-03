@@ -14,6 +14,7 @@ PreparedDownload prepare_download(
     const graph::RemoteItem& item,
     storage::ItemState state,
     const std::filesystem::path& destination,
+    LocalFileBaseline destination_baseline,
     const FilesystemMetadata& metadata,
     const graph::DownloadProgress& progress
 ) {
@@ -49,6 +50,7 @@ PreparedDownload prepare_download(
             .temporary_path = temporary,
             .content_fingerprint = fingerprint,
             .downloaded_size = downloaded_size,
+            .destination_baseline = std::move(destination_baseline),
         };
     } catch (const std::exception& error) {
         PreparedDownload incomplete;
@@ -78,6 +80,18 @@ storage::ItemState commit_download(
 ) {
     bool journaled = false;
     try {
+        const auto ensure_destination_unchanged = [&] {
+            if (!local_file_matches_baseline(
+                    download.destination,
+                    download.destination_baseline
+                )) {
+                throw LocalModificationConflictError(
+                    "local file changed while downloading: " +
+                    download.destination.string()
+                );
+            }
+        };
+        ensure_destination_unchanged();
         download.state.local_path = download.destination;
         items.save_pending_download({
             .item = download.state,
@@ -85,6 +99,20 @@ storage::ItemState commit_download(
             .content_fingerprint = download.content_fingerprint,
         });
         journaled = true;
+        if (!local_file_matches_baseline(
+                download.destination,
+                download.destination_baseline
+            )) {
+            items.remove_pending_download(
+                download.state.drive_id,
+                download.state.remote_id
+            );
+            journaled = false;
+            throw LocalModificationConflictError(
+                "local file changed while committing the download: " +
+                download.destination.string()
+            );
+        }
         std::filesystem::rename(
             download.temporary_path,
             download.destination
@@ -162,6 +190,7 @@ storage::ItemState download_atomically(
             item,
             std::move(state),
             destination,
+            capture_local_file_baseline(destination),
             metadata,
             progress
         )

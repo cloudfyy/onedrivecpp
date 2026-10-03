@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <mutex>
 #include <optional>
@@ -96,6 +97,9 @@ public:
             }
             throw std::runtime_error{"simulated download failure"};
         }
+        if (before_download_write) {
+            before_download_write(remote_id);
+        }
         std::ofstream output{destination, std::ios::binary};
         output << contents.at(remote_id);
         if (progress) {
@@ -108,6 +112,7 @@ public:
     std::vector<onedrive::graph::RemoteItem> changes;
     std::unordered_map<std::string, std::string> contents;
     std::string failing_id;
+    std::function<void(const std::string&)> before_download_write;
     bool reject_saved_cursor{false};
     std::chrono::milliseconds download_delay{0};
     int downloads_started_before_failure{0};
@@ -404,6 +409,45 @@ int test_failure_and_conflict() {
         return fail(
             "an independently completed download was discarded after failure"
         );
+    }
+
+    const auto changed_root = temporary.path() / "changed-during-download";
+    FakeGraphClient changed_graph;
+    changed_graph.changes = {
+        file("changed", "changed.txt", 4),
+    };
+    changed_graph.contents["changed"] = "data";
+    changed_graph.before_download_write =
+        [destination = changed_root / "changed.txt"](const std::string&) {
+            std::ofstream output{destination};
+            output << "user data";
+        };
+    FakeItemStore changed_items;
+    FakeMetrics changed_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(changed_root, false),
+            changed_graph,
+            changed_items,
+            changed_metrics
+        }.synchronize() != 2 ||
+        changed_items.upsert_count != 0 ||
+        changed_items.apply_count != 1 ||
+        changed_items.applied_delta.blocked_upserts.size() != 1 ||
+        changed_items.applied_delta.blocked_upserts[0].reason_code !=
+            "local_modification" ||
+        !changed_items.pending.empty() ||
+        !changed_metrics.last_success) {
+        return fail("download-time local modification was not isolated");
+    }
+    {
+        std::ifstream input{changed_root / "changed.txt"};
+        std::string contents{
+            std::istreambuf_iterator<char>{input},
+            std::istreambuf_iterator<char>{}
+        };
+        if (contents != "user data") {
+            return fail("download overwrote a file created during transfer");
+        }
     }
 
     const auto conflict_root = temporary.path() / "conflict";

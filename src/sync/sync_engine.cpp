@@ -36,10 +36,12 @@ struct DownloadTask {
     graph::RemoteItem item;
     storage::ItemState state;
     std::filesystem::path destination;
+    detail::LocalFileBaseline destination_baseline;
 };
 
 struct DownloadBatch {
     std::vector<std::optional<storage::ItemState>> states;
+    std::vector<std::optional<std::string>> conflicts;
     std::vector<std::exception_ptr> errors;
 };
 
@@ -55,6 +57,7 @@ DownloadBatch download_files(
         .states = std::vector<std::optional<storage::ItemState>>(
             tasks.size()
         ),
+        .conflicts = std::vector<std::optional<std::string>>(tasks.size()),
         .errors = std::vector<std::exception_ptr>(tasks.size()),
     };
     if (tasks.empty()) {
@@ -133,6 +136,7 @@ DownloadBatch download_files(
                         task.item,
                         task.state,
                         task.destination,
+                        task.destination_baseline,
                         metadata,
                         [&](std::uint64_t downloaded,
                             std::uint64_t reported_total) {
@@ -148,6 +152,8 @@ DownloadBatch download_files(
                     )
                 ));
                 report_progress(index, expected_size, true);
+            } catch (const detail::LocalModificationConflictError& error) {
+                batch.conflicts[index] = error.what();
             } catch (...) {
                 batch.errors[index] = std::current_exception();
                 stop.request_stop();
@@ -503,6 +509,40 @@ ExecutionSummary execute_plan(
             state.local_modified_ticks = detail::modified_ticks(destination);
             ++reused_count;
         } else {
+            detail::LocalFileBaseline baseline;
+            try {
+                baseline =
+                    detail::capture_local_file_baseline(destination);
+            } catch (const detail::LocalModificationConflictError& error) {
+                plan.block(item, "local_modification", error.what());
+                report_blocked(
+                    plan.blocked(plan.blocked_count() - 1),
+                    console
+                );
+                continue;
+            } catch (const detail::LocalPathConflictError& error) {
+                plan.block(item, "local_path_conflict", error.what());
+                report_blocked(
+                    plan.blocked(plan.blocked_count() - 1),
+                    console
+                );
+                continue;
+            }
+            if (baseline.existed &&
+                (!previous ||
+                 baseline.size != previous->local_size ||
+                 baseline.modified_ticks !=
+                     previous->local_modified_ticks)) {
+                const std::string reason =
+                    "local file changed before downloading: " +
+                    destination.string();
+                plan.block(item, "local_modification", reason);
+                report_blocked(
+                    plan.blocked(plan.blocked_count() - 1),
+                    console
+                );
+                continue;
+            }
             spdlog::info(
                 "Downloading '{}' ({} bytes)",
                 item.remote_path,
@@ -512,6 +552,7 @@ ExecutionSummary execute_plan(
                 .item = item,
                 .state = state,
                 .destination = destination,
+                .destination_baseline = std::move(baseline),
             });
         }
     }
@@ -530,6 +571,19 @@ ExecutionSummary execute_plan(
         console
     );
     for (std::size_t index = 0; index < download_tasks.size(); ++index) {
+        const auto& conflict = downloads.conflicts[index];
+        if (conflict.has_value()) {
+            plan.block(
+                download_tasks[index].item,
+                "local_modification",
+                conflict.value()
+            );
+            report_blocked(
+                plan.blocked(plan.blocked_count() - 1),
+                console
+            );
+            continue;
+        }
         if (downloads.errors[index]) {
             console.end_download_progress();
             std::rethrow_exception(downloads.errors[index]);
