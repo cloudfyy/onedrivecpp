@@ -63,6 +63,9 @@ struct WriteContext {
     int write_error{};
     std::size_t received_size{};
     std::uint64_t file_offset{};
+    const DownloadData* download_data{};
+    bool data_callback_failed{false};
+    std::string data_callback_error;
 };
 
 struct HeaderContext {
@@ -116,6 +119,7 @@ std::size_t write_response(char* data, std::size_t size, std::size_t count, void
     }
     write_context.received_size += byte_count;
     if (write_context.descriptor != -1) {
+        const auto block_offset = write_context.file_offset;
         std::size_t written = 0;
         while (written < byte_count) {
             const auto position =
@@ -143,6 +147,23 @@ std::size_t write_response(char* data, std::size_t size, std::size_t count, void
             written += static_cast<std::size_t>(result);
         }
         write_context.file_offset += static_cast<std::uint64_t>(byte_count);
+        if (write_context.download_data != nullptr &&
+            *write_context.download_data) {
+            try {
+                (*write_context.download_data)(
+                    block_offset,
+                    std::as_bytes(std::span{data, byte_count})
+                );
+            } catch (const std::exception& error) {
+                write_context.data_callback_failed = true;
+                write_context.data_callback_error = error.what();
+                return 0;
+            } catch (...) {
+                write_context.data_callback_failed = true;
+                write_context.data_callback_error = "unknown error";
+                return 0;
+            }
+        }
         return byte_count;
     }
     if (byte_count > write_context.maximum_size - write_context.body.size()) {
@@ -242,7 +263,8 @@ int report_progress(
 HttpResult perform_request(
     const HttpRequest& request,
     int descriptor,
-    const DownloadProgress& progress = {}
+    const DownloadProgress& progress = {},
+    const DownloadData& data = {}
 ) {
     spdlog::trace("Performing HTTP {} request", method_name(request.method));
     const auto connect_timeout = request.connect_timeout.count();
@@ -282,6 +304,8 @@ HttpResult perform_request(
         .maximum_size = request.maximum_response_size,
         .descriptor = descriptor,
         .file_offset = request.download_offset,
+        .download_data = &data,
+        .data_callback_error = {},
     };
     HeaderContext header_context;
     ProgressContext progress_context{
@@ -428,6 +452,12 @@ HttpResult perform_request(
                            std::string{std::strerror(write_context.write_error)},
             });
         }
+        if (write_context.data_callback_failed) {
+            return std::unexpected(HttpError{
+                .message = "download data callback failed: " +
+                           write_context.data_callback_error,
+            });
+        }
         const std::string detail = error_buffer.front() == '\0' ?
                                        curl_easy_strerror(result) :
                                        error_buffer.data();
@@ -467,7 +497,8 @@ HttpResult CurlHttpClient::perform(const HttpRequest& request) const {
 HttpResult CurlHttpClient::download(
     const HttpRequest& request,
     const std::filesystem::path& destination,
-    const DownloadProgress& progress
+    const DownloadProgress& progress,
+    const DownloadData& data
 ) const {
     if (request.download_offset >
         static_cast<std::uint64_t>(std::numeric_limits<off_t>::max())) {
@@ -492,7 +523,7 @@ HttpResult CurlHttpClient::download(
         });
     }
 
-    auto response = perform_request(request, descriptor, progress);
+    auto response = perform_request(request, descriptor, progress, data);
     std::string close_error;
     std::string truncate_error;
     if ((!response || response->status_code < 200 ||

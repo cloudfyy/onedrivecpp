@@ -13,6 +13,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <proxy/proxy.h>
 #include <stop_token>
 #include <stdexcept>
@@ -35,6 +36,10 @@ namespace onedrive::graph {
 
 using DownloadProgress =
     std::function<void(std::uint64_t downloaded, std::uint64_t total)>;
+using DownloadData = std::function<void(
+    std::uint64_t offset,
+    std::span<const std::byte> data
+)>;
 using DownloadCheckpoint =
     std::function<void(std::uint64_t completed_bytes)>;
 using DeltaProgress = std::function<void(
@@ -117,7 +122,8 @@ struct GraphClientFacade : pro::facade_builder
             std::uint64_t,
             std::stop_token,
             const DownloadProgress&,
-            const DownloadCheckpoint&
+            const DownloadCheckpoint&,
+            const DownloadData&
         ) const
     >
     ::build {};
@@ -150,7 +156,8 @@ public:
         std::uint64_t initial_offset,
         std::stop_token stop_token,
         const DownloadProgress& progress,
-        const DownloadCheckpoint& checkpoint
+        const DownloadCheckpoint& checkpoint,
+        const DownloadData& data = {}
     ) const {
         implementation()->download_file(
             remote_id,
@@ -159,7 +166,8 @@ public:
             initial_offset,
             std::move(stop_token),
             progress,
-            checkpoint
+            checkpoint,
+            data
         );
     }
 
@@ -176,6 +184,7 @@ public:
             0,
             {},
             progress,
+            {},
             {}
         );
     }
@@ -211,7 +220,8 @@ public:
         std::uint64_t initial_offset,
         std::stop_token stop_token,
         const DownloadProgress& progress,
-        const DownloadCheckpoint& checkpoint
+        const DownloadCheckpoint& checkpoint,
+        const DownloadData& data = {}
     ) const;
     void download_file(
         const std::string& remote_id,
@@ -226,6 +236,7 @@ public:
             0,
             {},
             progress,
+            {},
             {}
         );
     }

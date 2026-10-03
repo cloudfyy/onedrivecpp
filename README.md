@@ -744,10 +744,14 @@ or remove local files for remote deletion records.
 When Microsoft Graph supplies a file content hash, the completed temporary
 file is verified before it can enter the install journal. SHA-256 is preferred
 when present; otherwise the client verifies the OneDrive/SharePoint
-QuickXorHash. A mismatch removes the partial checkpoint and temporary file so
-the next attempt restarts from byte zero. The separate local SHA-256
-fingerprint below protects crash recovery state and is not treated as a
-substitute for a remote integrity hash.
+QuickXorHash. Downloads starting at byte zero calculate SHA-256 and
+QuickXorHash incrementally as bytes are written, and reuse the streamed SHA-256
+as the recovery fingerprint. Resumed downloads, or transfers whose byte
+offsets become discontinuous during retry, safely fall back to hashing the
+completed file. A mismatch removes the partial checkpoint and temporary file
+so the next attempt restarts from byte zero. The local SHA-256 fingerprint
+protects crash recovery state and is not treated as a substitute for a remote
+integrity hash.
 
 Installed files receive the authoritative Graph
 `fileSystemInfo.lastModifiedDateTime` value. Files without a valid authoritative

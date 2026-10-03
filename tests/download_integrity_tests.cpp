@@ -85,32 +85,38 @@ int test_integrity_verification(const std::filesystem::path& root) {
         "3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7"
     };
     detail::verify_download_integrity(
-        path,
         remote_item({
             .algorithm = onedrive::FileHashAlgorithm::sha256,
             .value =
                 "3A6EB0790F39AC87C94F3856B2DD2C5D110E6811602261A9A923D3BB23ADC8B7",
         }),
-        sha256
+        {
+            .sha256 = sha256,
+            .quick_xor = {},
+        }
     );
     detail::verify_download_integrity(
-        path,
         remote_item({
             .algorithm = onedrive::FileHashAlgorithm::quick_xor,
             .value = "ZAgDHcIAAAAAAAAABAAAAAAAAAA=",
         }),
-        sha256
+        {
+            .sha256 = sha256,
+            .quick_xor = "ZAgDHcIAAAAAAAAABAAAAAAAAAA=",
+        }
     );
 
     try {
         detail::verify_download_integrity(
-            path,
             remote_item({
                 .algorithm = onedrive::FileHashAlgorithm::sha256,
                 .value =
                     "0000000000000000000000000000000000000000000000000000000000000000",
             }),
-            sha256
+            {
+                .sha256 = sha256,
+                .quick_xor = {},
+            }
         );
         return fail("mismatched SHA-256 was accepted");
     } catch (const detail::DownloadIntegrityError&) {
@@ -118,12 +124,14 @@ int test_integrity_verification(const std::filesystem::path& root) {
 
     try {
         detail::verify_download_integrity(
-            path,
             remote_item({
                 .algorithm = onedrive::FileHashAlgorithm::quick_xor,
                 .value = "AAAAAAAAAAAAAAAAAAAAAAAAAAA=",
             }),
-            sha256
+            {
+                .sha256 = sha256,
+                .quick_xor = "ZAgDHcIAAAAAAAAABAAAAAAAAAA=",
+            }
         );
         return fail("mismatched QuickXorHash was accepted");
     } catch (const detail::DownloadIntegrityError&) {
@@ -132,10 +140,57 @@ int test_integrity_verification(const std::filesystem::path& root) {
     onedrive::graph::RemoteItem without_hash{};
     without_hash.remote_path = "missing.bin";
     detail::verify_download_integrity(
-        root / "missing.bin",
         without_hash,
-        {}
+        {
+            .sha256 = {},
+            .quick_xor = {},
+        }
     );
+    return EXIT_SUCCESS;
+}
+
+int test_streaming_hashes() {
+    namespace detail = onedrive::sync::detail;
+
+    constexpr std::string_view contents{"data"};
+    const auto bytes = std::as_bytes(std::span{contents});
+    detail::StreamingDownloadHasher split;
+    split.update(0, bytes.first(2));
+    split.update(2, bytes.subspan(2));
+    const auto hashes = split.finish(contents.size());
+    if (!hashes.has_value() ||
+        hashes->sha256 !=
+            "3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7" ||
+        hashes->quick_xor != "ZAgDHcIAAAAAAAAABAAAAAAAAAA=") {
+        return fail("split streamed hashes did not match reference values");
+    }
+
+    detail::StreamingDownloadHasher restarted;
+    constexpr std::string_view discarded{"bad"};
+    restarted.update(0, std::as_bytes(std::span{discarded}));
+    restarted.update(0, bytes);
+    const auto restarted_hashes = restarted.finish(contents.size());
+    if (!restarted_hashes.has_value() ||
+        restarted_hashes->sha256 != hashes->sha256 ||
+        restarted_hashes->quick_xor != hashes->quick_xor) {
+        return fail("streamed hashes did not reset for a restarted transfer");
+    }
+
+    detail::StreamingDownloadHasher discontinuous;
+    discontinuous.update(1, bytes);
+    if (discontinuous.finish(contents.size()).has_value()) {
+        return fail("discontinuous streamed hashes were accepted");
+    }
+
+    detail::StreamingDownloadHasher empty;
+    const auto empty_hashes = empty.finish(0);
+    if (!empty_hashes.has_value() ||
+        empty_hashes->sha256 !=
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" ||
+        empty_hashes->quick_xor !=
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAA=") {
+        return fail("empty streamed hashes did not match reference values");
+    }
     return EXIT_SUCCESS;
 }
 
@@ -144,6 +199,10 @@ int test_integrity_verification(const std::filesystem::path& root) {
 int main() {
     TemporaryDirectory temporary;
     if (const int result = test_quick_xor_hash_vectors(temporary.path());
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_streaming_hashes();
         result != EXIT_SUCCESS) {
         return result;
     }

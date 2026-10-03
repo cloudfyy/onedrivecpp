@@ -1193,7 +1193,8 @@ void MicrosoftGraphClient::download_file(
     std::uint64_t initial_offset,
     std::stop_token stop_token,
     const DownloadProgress& progress,
-    const DownloadCheckpoint& checkpoint
+    const DownloadCheckpoint& checkpoint,
+    const DownloadData& data
 ) const {
     const auto& download_transport = options_.download_transport;
     if (remote_id.empty()) {
@@ -1315,7 +1316,8 @@ void MicrosoftGraphClient::download_file(
                             .stop_token = stop_token,
                         },
                         destination,
-                        chunk_progress
+                        chunk_progress,
+                        data
                     );
                 },
                 options_,

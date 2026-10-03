@@ -78,6 +78,9 @@ value are rejected before download. Permissions are derived from mode 0666 and
 the process umask.
 SQLite pending-download records and SHA-256 content fingerprints provide
 crash recovery independently of target-file-system extended attributes.
+Downloads starting at byte zero calculate SHA-256 and QuickXorHash while data
+is written and reuse the streamed SHA-256 recovery fingerprint. Resumed or
+non-contiguous transfers fall back to hashing the completed file.
 Range chunks are accepted only when HTTP status, Content-Range, total size, and
 received byte count exactly match the request; rejected chunks are rolled back
 to the preceding durable offset.

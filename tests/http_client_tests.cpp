@@ -251,6 +251,8 @@ int main() {
     std::error_code ignored;
     std::filesystem::remove(destination, ignored);
     std::vector<std::pair<std::uint64_t, std::uint64_t>> download_progress;
+    std::string streamed_download_data;
+    std::vector<std::uint64_t> streamed_download_offsets;
     const auto download_response = client.download(
         {
             .url = "http://127.0.0.1:" + std::to_string(port) + "/download",
@@ -261,6 +263,13 @@ int main() {
         destination,
         [&](std::uint64_t downloaded, std::uint64_t total) {
             download_progress.emplace_back(downloaded, total);
+        },
+        [&](std::uint64_t offset, std::span<const std::byte> data) {
+            streamed_download_offsets.push_back(offset);
+            streamed_download_data.append(
+                reinterpret_cast<const char*>(data.data()),
+                data.size()
+            );
         }
     );
     download_server.join();
@@ -284,9 +293,76 @@ int main() {
         !download_request.starts_with("GET /download HTTP/1.1") ||
         download_progress.empty() || download_progress.back().first != 8 ||
         download_progress.back().second != 8 ||
+        streamed_download_offsets != std::vector<std::uint64_t>{0} ||
+        streamed_download_data != "download" ||
         !inspected_download ||
         (downloaded_status.st_mode & 0777) != 0644) {
         return fail("HTTP response was not streamed to the download file");
+    }
+
+    server_error.clear();
+    std::jthread failed_observer_server{[&] {
+        pollfd descriptor{
+            .fd = listener.get(),
+            .events = POLLIN,
+            .revents = 0,
+        };
+        if (::poll(&descriptor, 1, 10'000) != 1) {
+            server_error = "timed out waiting for observed download request";
+            return;
+        }
+        Socket connection{
+            ::accept4(listener.get(), nullptr, nullptr, SOCK_CLOEXEC)
+        };
+        std::string request;
+        char buffer[4096];
+        while (!request.contains("\r\n\r\n")) {
+            const auto count =
+                ::recv(connection.get(), buffer, sizeof(buffer), 0);
+            if (count <= 0) {
+                server_error = "cannot read observed download request";
+                return;
+            }
+            request.append(buffer, static_cast<std::size_t>(count));
+        }
+        constexpr std::string_view response{
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Length: 8\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "download"
+        };
+        if (::send(
+                connection.get(),
+                response.data(),
+                response.size(),
+                MSG_NOSIGNAL
+            ) != static_cast<ssize_t>(response.size())) {
+            server_error = "cannot send observed download response";
+        }
+    }};
+    const auto failed_observer_response = client.download(
+        {
+            .url = "http://127.0.0.1:" + std::to_string(port) + "/observer",
+            .connect_timeout = std::chrono::seconds{2},
+            .operation_timeout = std::chrono::seconds{5},
+        },
+        destination,
+        {},
+        [](std::uint64_t, std::span<const std::byte>) {
+            throw std::runtime_error{"simulated observer failure"};
+        }
+    );
+    failed_observer_server.join();
+    if (!server_error.empty()) {
+        return fail(server_error);
+    }
+    if (failed_observer_response ||
+        !failed_observer_response.error().message.contains(
+            "simulated observer failure"
+        ) ||
+        std::filesystem::exists(destination)) {
+        return fail("failed download data observer did not abort cleanly");
     }
 
     {

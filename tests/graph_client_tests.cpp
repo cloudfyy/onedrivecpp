@@ -44,7 +44,8 @@ public:
     onedrive::http::HttpResult download(
         const onedrive::http::HttpRequest& request,
         const std::filesystem::path& destination,
-        const onedrive::http::DownloadProgress& progress
+        const onedrive::http::DownloadProgress& progress,
+        const onedrive::http::DownloadData& data
     ) const {
         download_requests.push_back(request);
         std::string body = download_body;
@@ -74,6 +75,12 @@ public:
             };
             output.seekp(static_cast<std::streamoff>(request.download_offset));
             output << body;
+        }
+        if (data) {
+            data(
+                request.download_offset,
+                std::as_bytes(std::span{body})
+            );
         }
         if (progress) {
             progress(body.size(), body.size());
@@ -904,12 +911,24 @@ int test_file_download_redirect() {
         },
     };
     std::vector<std::pair<std::uint64_t, std::uint64_t>> progress;
+    std::string observed_download_data;
+    std::vector<std::uint64_t> observed_download_offsets;
     client.download_file(
         "item id",
         8,
         destination,
+        0,
+        {},
         [&](std::uint64_t downloaded, std::uint64_t total) {
             progress.emplace_back(downloaded, total);
+        },
+        {},
+        [&](std::uint64_t offset, std::span<const std::byte> data) {
+            observed_download_offsets.push_back(offset);
+            observed_download_data.append(
+                reinterpret_cast<const char*>(data.data()),
+                data.size()
+            );
         }
     );
 
@@ -955,6 +974,8 @@ int test_file_download_redirect() {
             onedrive::http::HttpVersion::http_2 ||
         transport_pointer->download_requests[1].url !=
             "https://download.example.test/empty" ||
+        observed_download_offsets != std::vector<std::uint64_t>{0} ||
+        observed_download_data != "download" ||
         progress !=
             std::vector<std::pair<std::uint64_t, std::uint64_t>>{{8, 8}}) {
         return fail("Graph file download redirect was not handled safely");
@@ -1204,6 +1225,7 @@ int test_resumed_file_download() {
         },
     };
     std::vector<std::uint64_t> checkpoints;
+    std::vector<std::uint64_t> observed_offsets;
     client.download_file(
         "item-id",
         8,
@@ -1213,6 +1235,9 @@ int test_resumed_file_download() {
         {},
         [&](std::uint64_t completed) {
             checkpoints.push_back(completed);
+        },
+        [&](std::uint64_t offset, std::span<const std::byte>) {
+            observed_offsets.push_back(offset);
         }
     );
     std::vector<std::pair<std::uint64_t, std::uint64_t>> completed_progress;
@@ -1247,6 +1272,7 @@ int test_resumed_file_download() {
         transport_pointer->download_requests[0].download_offset != 4 ||
         transport_pointer->download_requests[0].headers.back() !=
             "Range: bytes=4-7" ||
+        observed_offsets != std::vector<std::uint64_t>{4} ||
         checkpoints != std::vector<std::uint64_t>{8, 8} ||
         completed_progress !=
             std::vector<std::pair<std::uint64_t, std::uint64_t>>{{8, 8}}) {

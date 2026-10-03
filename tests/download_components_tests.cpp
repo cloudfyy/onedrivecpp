@@ -53,7 +53,8 @@ public:
         std::uint64_t initial_offset,
         std::stop_token,
         const onedrive::graph::DownloadProgress& progress,
-        const onedrive::graph::DownloadCheckpoint& checkpoint
+        const onedrive::graph::DownloadCheckpoint& checkpoint,
+        const onedrive::graph::DownloadData& data
     ) const {
         last_initial_offset = initial_offset;
         if (initial_offset == 0) {
@@ -66,6 +67,17 @@ public:
             };
             output.seekp(static_cast<std::streamoff>(initial_offset));
             output << contents.substr(initial_offset);
+        }
+        if (data) {
+            const std::string_view downloaded{contents};
+            data(
+                initial_offset,
+                std::as_bytes(std::span{
+                    downloaded.substr(
+                        static_cast<std::size_t>(initial_offset)
+                    )
+                })
+            );
         }
         if (progress) {
             if (progress_updates.empty()) {
@@ -498,7 +510,12 @@ int main() {
     }
 
     graph.send_checkpoint = true;
-    const auto truncated_item = remote_item("truncated", "truncated.txt");
+    auto truncated_item = remote_item("truncated", "truncated.txt");
+    truncated_item.content_hash = onedrive::FileHash{
+        .algorithm = onedrive::FileHashAlgorithm::sha256,
+        .value =
+            "3A6EB0790F39AC87C94F3856B2DD2C5D110E6811602261A9A923D3BB23ADC8B7",
+    };
     const auto truncated_destination = root / "truncated.txt";
     const auto truncated_partial =
         root / ".truncated.txt.onedrive-partial-previous";

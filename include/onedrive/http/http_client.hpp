@@ -11,6 +11,7 @@
 #include <functional>
 #include <memory>
 #include <proxy/proxy.h>
+#include <span>
 #include <stop_token>
 #include <string>
 #include <type_traits>
@@ -18,6 +19,11 @@
 #include <vector>
 
 namespace onedrive::http {
+
+using DownloadData = std::function<void(
+    std::uint64_t offset,
+    std::span<const std::byte> data
+)>;
 
 enum class HttpMethod {
     get,
@@ -81,7 +87,8 @@ struct HttpTransportFacade : pro::facade_builder
         HttpResult(
             const HttpRequest&,
             const std::filesystem::path&,
-            const DownloadProgress&
+            const DownloadProgress&,
+            const DownloadData&
         ) const
     >
     ::build {};
@@ -99,9 +106,15 @@ public:
     [[nodiscard]] HttpResult download(
         const HttpRequest& request,
         const std::filesystem::path& destination,
-        const DownloadProgress& progress = {}
+        const DownloadProgress& progress = {},
+        const DownloadData& data = {}
     ) const {
-        return implementation()->download(request, destination, progress);
+        return implementation()->download(
+            request,
+            destination,
+            progress,
+            data
+        );
     }
 };
 
@@ -111,7 +124,8 @@ public:
     [[nodiscard]] HttpResult download(
         const HttpRequest& request,
         const std::filesystem::path& destination,
-        const DownloadProgress& progress = {}
+        const DownloadProgress& progress = {},
+        const DownloadData& data = {}
     ) const;
 };
 

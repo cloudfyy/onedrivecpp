@@ -643,8 +643,11 @@ Graph、数据库、同步根目录权限、整体磁盘容量和下载传输错
 
 Microsoft Graph 提供文件内容哈希时，程序会在临时文件进入待安装 journal 前
 进行校验：优先使用 SHA-256，否则校验 OneDrive/SharePoint QuickXorHash。
-哈希不匹配会删除 partial 检查点和临时文件，使下次尝试从 byte 0 重新下载。
-下述本地 SHA-256 指纹仅用于保护崩溃恢复状态，不能替代远端完整性哈希。
+从 byte 0 开始的下载会在写入数据时增量计算 SHA-256 和 QuickXorHash，并将
+流式 SHA-256 同时用于崩溃恢复指纹。断点续传或重试期间字节 offset 不连续时，
+会安全回退到对完整文件重新计算哈希。哈希不匹配会删除 partial 检查点和临时
+文件，使下次尝试从 byte 0 重新下载。本地 SHA-256 指纹仅用于保护崩溃恢复
+状态，不能替代远端完整性哈希。
 
 安装后的文件采用 Graph 权威的 `fileSystemInfo.lastModifiedDateTime`；缺少有效
 权威时间的文件会在下载前被拒绝。新下载文件的权限由 `0666` 和进程 `umask`

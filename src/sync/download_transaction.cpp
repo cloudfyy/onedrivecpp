@@ -109,6 +109,10 @@ PreparedDownload prepare_download(
             static_cast<std::uintmax_t>(item.size) - completed_bytes :
             std::uintmax_t{0};
     auto space_reservation = space.acquire(initial_reservation);
+    std::optional<StreamingDownloadHasher> streamed_hasher;
+    if (completed_bytes == 0) {
+        streamed_hasher.emplace();
+    }
     state.local_path = destination;
     items.save_partial_download({
         .item = state,
@@ -173,6 +177,14 @@ PreparedDownload prepare_download(
                 });
                 space_reservation.consume(newly_durable);
                 completed_bytes = durable_bytes;
+            },
+            [&streamed_hasher](
+                std::uint64_t offset,
+                std::span<const std::byte> data
+            ) {
+                if (streamed_hasher.has_value()) {
+                    streamed_hasher->update(offset, data);
+                }
             }
         );
         const auto downloaded_size = std::filesystem::file_size(temporary);
@@ -188,9 +200,26 @@ PreparedDownload prepare_download(
                 )
             );
         }
-        const std::string fingerprint = content_fingerprint(temporary);
+        auto streamed_hashes =
+            streamed_hasher.has_value() ?
+                streamed_hasher->finish(
+                    static_cast<std::uint64_t>(downloaded_size)
+                ) :
+                std::nullopt;
+        DownloadHashes hashes;
+        if (streamed_hashes.has_value()) {
+            hashes = std::move(streamed_hashes.value());
+        } else {
+            hashes.sha256 = content_fingerprint(temporary);
+            if (item.content_hash.has_value() &&
+                item.content_hash->algorithm ==
+                    FileHashAlgorithm::quick_xor) {
+                hashes.quick_xor = quick_xor_hash(temporary);
+            }
+        }
+        const std::string& fingerprint = hashes.sha256;
         if (item.validate_content) {
-            verify_download_integrity(temporary, item, fingerprint);
+            verify_download_integrity(item, hashes);
         } else {
             if (downloaded_size >
                 static_cast<std::uintmax_t>(

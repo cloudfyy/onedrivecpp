@@ -70,7 +70,8 @@ public:
         std::uint64_t initial_offset,
         std::stop_token stop_token,
         const onedrive::graph::DownloadProgress& progress,
-        const onedrive::graph::DownloadCheckpoint& checkpoint
+        const onedrive::graph::DownloadCheckpoint& checkpoint,
+        const onedrive::graph::DownloadData& data
     ) const {
         ++download_count;
         last_download_offset.store(
@@ -148,6 +149,17 @@ public:
             };
             output.seekp(static_cast<std::streamoff>(initial_offset));
             output << contents.at(remote_id).substr(initial_offset);
+        }
+        if (data) {
+            const std::string_view downloaded{contents.at(remote_id)};
+            data(
+                initial_offset,
+                std::as_bytes(std::span{
+                    downloaded.substr(
+                        static_cast<std::size_t>(initial_offset)
+                    )
+                })
+            );
         }
         if (progress) {
             const auto size = contents.at(remote_id).size();

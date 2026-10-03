@@ -122,7 +122,8 @@ public:
     [[nodiscard]] onedrive::http::HttpResult download(
         const onedrive::http::HttpRequest&,
         const std::filesystem::path&,
-        const onedrive::http::DownloadProgress&
+        const onedrive::http::DownloadProgress&,
+        const onedrive::http::DownloadData&
     ) const {
         return std::unexpected(
             onedrive::http::HttpError{
@@ -183,10 +184,15 @@ public:
         std::uint64_t,
         std::stop_token,
         const onedrive::graph::DownloadProgress&,
-        const onedrive::graph::DownloadCheckpoint& checkpoint
+        const onedrive::graph::DownloadCheckpoint& checkpoint,
+        const onedrive::graph::DownloadData& data
     ) const {
+        const std::string contents(42, 'x');
         std::ofstream output{destination, std::ios::binary};
-        output << std::string(42, 'x');
+        output << contents;
+        if (data) {
+            data(0, std::as_bytes(std::span{contents}));
+        }
         if (checkpoint) {
             checkpoint(42);
         }

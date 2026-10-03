@@ -4,6 +4,7 @@ onedrive-cpp (0.6.8-1~ubuntu24.04) noble; urgency=medium
   * Block files marked as malware without replacing local data.
   * Validate ranged download responses and roll back rejected chunks.
   * Expand metadata lifecycle and download protocol coverage.
+  * Calculate download integrity hashes incrementally during transfer.
 
  -- cloudfyy <cloudfyy@hotmail.com>  Sat, 03 Oct 2026 23:35:51 +0000
 
