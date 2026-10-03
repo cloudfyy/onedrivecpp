@@ -4,6 +4,7 @@
 #include "download_recovery.hpp"
 #include "download_transaction.hpp"
 #include "filesystem_metadata.hpp"
+#include "item_operation_coordinator.hpp"
 #include "local_filesystem.hpp"
 #include "sync_plan.hpp"
 
@@ -50,6 +51,7 @@ DownloadBatch download_files(
     std::size_t concurrency,
     graph::GraphClient& graph,
     storage::ItemStore& items,
+    detail::ItemOperationCoordinator& operations,
     const detail::FilesystemMetadata& metadata,
     const cli::Console& console
 ) {
@@ -129,6 +131,10 @@ DownloadBatch download_files(
             const auto expected_size =
                 static_cast<std::uint64_t>(task.item.size);
             try {
+                auto operation = operations.acquire(
+                    task.state.drive_id,
+                    task.item.id
+                );
                 batch.states[index].emplace(detail::commit_download(
                     items,
                     detail::prepare_download(
@@ -562,11 +568,13 @@ ExecutionSummary execute_plan(
         download_tasks.size(),
         download_concurrency
     );
+    detail::ItemOperationCoordinator operations;
     auto downloads = download_files(
         download_tasks,
         download_concurrency,
         graph,
         items,
+        operations,
         metadata,
         console
     );

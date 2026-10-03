@@ -94,6 +94,7 @@ add_library(onedrive_core
     src/sync/download_recovery.cpp
     src/sync/download_transaction.cpp
     src/sync/filesystem_metadata.cpp
+    src/sync/item_operation_coordinator.cpp
     src/sync/local_filesystem.cpp
     src/sync/sync_plan.cpp
     src/sync/sync_engine.cpp
@@ -239,6 +240,23 @@ if(BUILD_TESTING)
     target_include_directories(sync_plan_tests PRIVATE src/sync)
     target_link_libraries(sync_plan_tests PRIVATE onedrive_core)
     add_test(NAME sync_plan_tests COMMAND sync_plan_tests)
+
+    add_executable(
+        item_operation_coordinator_tests
+        tests/item_operation_coordinator_tests.cpp
+    )
+    target_include_directories(
+        item_operation_coordinator_tests
+        PRIVATE src/sync
+    )
+    target_link_libraries(
+        item_operation_coordinator_tests
+        PRIVATE onedrive_core
+    )
+    add_test(
+        NAME item_operation_coordinator_tests
+        COMMAND item_operation_coordinator_tests
+    )
 
     add_executable(
         download_components_tests

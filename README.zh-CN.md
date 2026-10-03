@@ -574,6 +574,11 @@ token 时安全持久化，并通过分页的 Microsoft Graph Delta 请求获取
 同一 SQLite 事务中可靠记录为 blocked 后，程序才推进 `deltaLink`。系统性失败
 时，已完成文件的本地快照会支持安全重试。
 
+每个下载从准备阶段到最终 ItemStore 更新都会持有按 `(drive_id, remote_id)`
+索引的 operation-coordinator 租约。同一远端条目的操作会串行执行，不同条目和
+Drive 仍保持并行。未来上传、删除和重命名路径必须获取同一租约，防止一个条目的
+网络、文件系统和状态变更相互交错。
+
 程序不会覆盖无法确认未被用户修改的本地文件。下载前会记录目标是否存在、大小、
 修改时间和 SHA-256 指纹，并在写 journal 前及原子替换前立即复核。下载期间创建
 或修改的文件会被保留并持久化为 `local_modification` blocked item。非法远端

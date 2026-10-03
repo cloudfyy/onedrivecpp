@@ -648,6 +648,13 @@ either applied successfully or durably recorded as blocked in the same SQLite
 transaction. Local snapshots for completed files support safe retries after a
 systemic failure.
 
+Each download holds an operation-coordinator lease keyed by
+`(drive_id, remote_id)` from preparation through the final ItemStore update.
+Operations for the same remote item are serialized while different items and
+drives remain concurrent. Future upload, delete, and rename paths must acquire
+the same lease so their network, filesystem, and state transitions cannot
+overlap for one item.
+
 The client refuses to overwrite a local file that it cannot prove is
 unchanged. Before downloading, it captures the destination's existence, size,
 modification time, and SHA-256 fingerprint, then checks that baseline before
