@@ -340,6 +340,7 @@ For example:
 # Default OneDrive of the signed-in user
 drive_id = "me"
 download_concurrency = 4
+download_chunk_threshold_bytes = 104857600
 
 # Another OneDrive or SharePoint document library
 # drive_id = "b!YOUR_DRIVE_ID"
@@ -347,6 +348,12 @@ download_concurrency = 4
 
 `download_concurrency` controls how many files can be downloaded at the same
 time. It defaults to `4` and accepts values from `1` through `16`.
+
+`download_chunk_threshold_bytes` sets the large-file threshold in bytes. Files
+larger than this value are downloaded sequentially with HTTP byte-range
+requests, using the same value as the maximum chunk size. It defaults to
+`104857600` (100 MiB) and must be greater than zero. Files at or below the
+threshold use a single request.
 
 State is separated by the stable Microsoft user ID and canonical Drive ID while
 retaining friendly directory names:

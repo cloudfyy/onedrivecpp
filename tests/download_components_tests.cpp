@@ -69,6 +69,7 @@ public:
 
     void download_file(
         const std::string&,
+        std::uint64_t,
         const std::filesystem::path& destination,
         const onedrive::graph::DownloadProgress&
     ) const override {

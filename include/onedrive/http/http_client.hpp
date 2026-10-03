@@ -24,6 +24,7 @@ struct HttpRequest {
     std::chrono::seconds connect_timeout{10};
     std::chrono::seconds operation_timeout{60};
     std::size_t maximum_response_size{16U * 1024U * 1024U};
+    std::uint64_t download_offset{0};
 };
 
 struct HttpHeader {

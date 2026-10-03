@@ -177,6 +177,7 @@ Config Config::defaults() {
         .graph_initial_throttle_delay = std::chrono::seconds{1},
         .graph_maximum_throttle_delay = std::chrono::seconds{300},
         .download_concurrency = 4,
+        .download_chunk_threshold_bytes = 100U * 1024U * 1024U,
         .filesystem_metadata = FilesystemMetadataMode::automatic,
         .dry_run = false,
     };
@@ -220,7 +221,13 @@ Config Config::load(const std::filesystem::path& path) {
     if (const auto* sync = optional_table(root, "sync", "sync")) {
         validate_keys(
             *sync,
-            {"directory", "drive_id", "dry_run", "download_concurrency"},
+            {
+                "directory",
+                "drive_id",
+                "dry_run",
+                "download_concurrency",
+                "download_chunk_threshold_bytes",
+            },
             "sync"
         );
         if (const auto value = optional_value<std::string>(
@@ -247,20 +254,33 @@ Config Config::load(const std::filesystem::path& path) {
             )) {
             config.dry_run = *value;
         }
-            if (sync->contains("download_concurrency")) {
-                const auto concurrency = unsigned_value(
-                    *sync,
-                    "download_concurrency",
-                    "sync.download_concurrency"
+        if (sync->contains("download_concurrency")) {
+            const auto concurrency = unsigned_value(
+                *sync,
+                "download_concurrency",
+                "sync.download_concurrency"
+            );
+            if (concurrency < 1 || concurrency > 16) {
+                throw std::runtime_error(
+                    "sync.download_concurrency must be between 1 and 16"
                 );
-                if (concurrency < 1 || concurrency > 16) {
-                    throw std::runtime_error(
-                        "sync.download_concurrency must be between 1 and 16"
-                    );
-                }
-                config.download_concurrency =
-                    static_cast<std::size_t>(concurrency);
             }
+            config.download_concurrency =
+                static_cast<std::size_t>(concurrency);
+        }
+        if (sync->contains("download_chunk_threshold_bytes")) {
+            const auto threshold = unsigned_value(
+                *sync,
+                "download_chunk_threshold_bytes",
+                "sync.download_chunk_threshold_bytes"
+            );
+            if (threshold == 0) {
+                throw std::runtime_error(
+                    "sync.download_chunk_threshold_bytes must be greater than 0"
+                );
+            }
+            config.download_chunk_threshold_bytes = threshold;
+        }
     }
 
     if (const auto* state = optional_table(root, "state", "state")) {

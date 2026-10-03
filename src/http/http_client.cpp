@@ -57,6 +57,7 @@ struct WriteContext {
     bool write_failed{false};
     int write_error{};
     std::size_t received_size{};
+    std::uint64_t file_offset{};
 };
 
 struct HeaderContext {
@@ -90,10 +91,19 @@ std::size_t write_response(char* data, std::size_t size, std::size_t count, void
     if (write_context.descriptor != -1) {
         std::size_t written = 0;
         while (written < byte_count) {
-            const auto result = ::write(
+            const auto position =
+                write_context.file_offset + static_cast<std::uint64_t>(written);
+            if (position >
+                static_cast<std::uint64_t>(std::numeric_limits<off_t>::max())) {
+                write_context.write_failed = true;
+                write_context.write_error = EFBIG;
+                return 0;
+            }
+            const auto result = ::pwrite(
                 write_context.descriptor,
                 data + written,
-                byte_count - written
+                byte_count - written,
+                static_cast<off_t>(position)
             );
             if (result == -1 && errno == EINTR) {
                 continue;
@@ -105,6 +115,7 @@ std::size_t write_response(char* data, std::size_t size, std::size_t count, void
             }
             written += static_cast<std::size_t>(result);
         }
+        write_context.file_offset += static_cast<std::uint64_t>(byte_count);
         return byte_count;
     }
     if (byte_count > write_context.maximum_size - write_context.body.size()) {
@@ -216,6 +227,7 @@ HttpResult perform_request(
         .body = {},
         .maximum_size = request.maximum_response_size,
         .descriptor = descriptor,
+        .file_offset = request.download_offset,
     };
     HeaderContext header_context;
     ProgressContext progress_context{
@@ -359,9 +371,18 @@ HttpResult CurlHttpClient::download(
     const std::filesystem::path& destination,
     const DownloadProgress& progress
 ) const {
+    if (request.download_offset >
+        static_cast<std::uint64_t>(std::numeric_limits<off_t>::max())) {
+        return std::unexpected(HttpError{
+            .message = "download offset exceeds the supported file size",
+        });
+    }
+    const int flags = request.download_offset == 0 ?
+                          O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW :
+                          O_WRONLY | O_CLOEXEC | O_NOFOLLOW;
     const int descriptor = ::open(
         destination.c_str(),
-        O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
+        flags,
         S_IRUSR | S_IWUSR
     );
     if (descriptor == -1) {

@@ -64,6 +64,7 @@ struct GraphOptions {
     std::size_t maximum_throttle_retries{4};
     std::chrono::seconds initial_throttle_delay{1};
     std::chrono::seconds maximum_throttle_delay{300};
+    std::uint64_t download_chunk_threshold_bytes{100U * 1024U * 1024U};
 };
 
 class GraphClient {
@@ -78,6 +79,7 @@ public:
     ) const = 0;
     virtual void download_file(
         const std::string& remote_id,
+        std::uint64_t expected_size,
         const std::filesystem::path& destination,
         const DownloadProgress& progress = {}
     ) const = 0;
@@ -104,6 +106,7 @@ public:
     ) const override;
     void download_file(
         const std::string& remote_id,
+        std::uint64_t expected_size,
         const std::filesystem::path& destination,
         const DownloadProgress& progress = {}
     ) const override;

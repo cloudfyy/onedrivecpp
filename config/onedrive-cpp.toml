@@ -6,6 +6,8 @@ directory = "/home/USER/OneDrive"
 drive_id = "me"
 dry_run = true
 download_concurrency = 4
+# Files larger than this value are downloaded in HTTP Range chunks of this size.
+download_chunk_threshold_bytes = 104857600
 
 [state]
 directory = "/home/USER/.local/state/onedrive-cpp"

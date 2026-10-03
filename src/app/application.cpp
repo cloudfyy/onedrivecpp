@@ -37,6 +37,8 @@ graph::GraphOptions graph_options(const config::Config& config) {
             config.graph_maximum_throttle_retries,
         .initial_throttle_delay = config.graph_initial_throttle_delay,
         .maximum_throttle_delay = config.graph_maximum_throttle_delay,
+        .download_chunk_threshold_bytes =
+            config.download_chunk_threshold_bytes,
     };
 }
 

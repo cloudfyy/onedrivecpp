@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <string>
 
@@ -28,6 +29,7 @@ struct Config {
     std::chrono::seconds graph_initial_throttle_delay{1};
     std::chrono::seconds graph_maximum_throttle_delay{300};
     std::size_t download_concurrency{4};
+    std::uint64_t download_chunk_threshold_bytes{100U * 1024U * 1024U};
     FilesystemMetadataMode filesystem_metadata{
         FilesystemMetadataMode::automatic
     };

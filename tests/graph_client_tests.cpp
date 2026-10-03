@@ -45,12 +45,36 @@ public:
         const onedrive::http::DownloadProgress& progress
     ) const override {
         download_requests.push_back(request);
-        std::ofstream output{destination, std::ios::binary};
-        output << download_body;
-        if (progress) {
-            progress(download_body.size(), download_body.size());
+        std::string body = download_body;
+        long status_code = 200;
+        for (const auto& header : request.headers) {
+            if (!header.starts_with("Range: bytes=")) {
+                continue;
+            }
+            const auto separator = header.find('-', 13);
+            const auto start = std::stoull(header.substr(13, separator - 13));
+            const auto end = std::stoull(header.substr(separator + 1));
+            body = download_body.substr(
+                static_cast<std::size_t>(start),
+                static_cast<std::size_t>(end - start + 1)
+            );
+            status_code = 206;
         }
-        return onedrive::http::HttpResponse{.status_code = 200};
+        if (request.download_offset == 0) {
+            std::ofstream output{destination, std::ios::binary};
+            output << body;
+        } else {
+            std::fstream output{
+                destination,
+                std::ios::binary | std::ios::in | std::ios::out
+            };
+            output.seekp(static_cast<std::streamoff>(request.download_offset));
+            output << body;
+        }
+        if (progress) {
+            progress(body.size(), body.size());
+        }
+        return onedrive::http::HttpResponse{.status_code = status_code};
     }
 
     mutable std::vector<onedrive::http::HttpRequest> requests;
@@ -620,6 +644,7 @@ int test_file_download_redirect() {
     std::vector<std::pair<std::uint64_t, std::uint64_t>> progress;
     client.download_file(
         "item id",
+        8,
         destination,
         [&](std::uint64_t downloaded, std::uint64_t total) {
             progress.emplace_back(downloaded, total);
@@ -648,6 +673,78 @@ int test_file_download_redirect() {
         progress !=
             std::vector<std::pair<std::uint64_t, std::uint64_t>>{{8, 8}}) {
         return fail("Graph file download redirect was not handled safely");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_large_file_chunked_download() {
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"expires_in":3600,"access_token":"access-secret"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 302,
+                .headers = {
+                    {
+                        .name = "Location",
+                        .value = "https://download.example.test/content",
+                    },
+                },
+            },
+        }
+    );
+    auto* transport_pointer = transport.get();
+    const auto destination =
+        std::filesystem::temp_directory_path() /
+        "onedrive-cpp-chunked-download-test";
+    std::error_code ignored;
+    std::filesystem::remove(destination, ignored);
+
+    onedrive::graph::MicrosoftGraphClient client{
+        std::move(transport),
+        std::make_unique<FakeTokenStore>(std::string{"existing-refresh"}),
+        auth_options(),
+        {
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+            .download_chunk_threshold_bytes = 3,
+        },
+    };
+    std::vector<std::pair<std::uint64_t, std::uint64_t>> progress;
+    client.download_file(
+        "item-id",
+        8,
+        destination,
+        [&](std::uint64_t downloaded, std::uint64_t total) {
+            progress.emplace_back(downloaded, total);
+        }
+    );
+
+    std::ifstream input{destination, std::ios::binary};
+    const std::string contents{
+        std::istreambuf_iterator<char>{input},
+        std::istreambuf_iterator<char>{}
+    };
+    std::filesystem::remove(destination, ignored);
+    if (contents != "download" ||
+        transport_pointer->download_requests.size() != 3 ||
+        transport_pointer->download_requests[0].headers.back() !=
+            "Range: bytes=0-2" ||
+        transport_pointer->download_requests[1].headers.back() !=
+            "Range: bytes=3-5" ||
+        transport_pointer->download_requests[2].headers.back() !=
+            "Range: bytes=6-7" ||
+        transport_pointer->download_requests[1].download_offset != 3 ||
+        progress !=
+            std::vector<std::pair<std::uint64_t, std::uint64_t>>{
+                {3, 8},
+                {6, 8},
+                {8, 8},
+            }) {
+        return fail("large Graph file was not downloaded in byte ranges");
     }
     return EXIT_SUCCESS;
 }
@@ -764,6 +861,10 @@ int main() {
         return result;
     }
     if (const int result = test_file_download_redirect();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_large_file_chunked_download();
         result != EXIT_SUCCESS) {
         return result;
     }

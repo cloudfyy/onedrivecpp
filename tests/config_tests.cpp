@@ -17,6 +17,7 @@ int main() {
                << "drive_id = \"test-drive\"\n"
                << "dry_run = true\n"
                << "download_concurrency = 6\n"
+               << "download_chunk_threshold_bytes = 4096\n"
                << "[state]\n"
                << "directory = \"/tmp/onedrive-state\"\n"
                << "[auth]\n"
@@ -46,6 +47,7 @@ int main() {
         config.graph_initial_throttle_delay != std::chrono::seconds{2} ||
         config.graph_maximum_throttle_delay != std::chrono::seconds{90} ||
         config.download_concurrency != 6 ||
+        config.download_chunk_threshold_bytes != 4096 ||
         config.filesystem_metadata !=
             onedrive::config::FilesystemMetadataMode::database ||
         !config.dry_run) {
@@ -63,6 +65,20 @@ int main() {
         static_cast<void>(onedrive::config::Config::load(path));
         std::filesystem::remove(path);
         std::cerr << "invalid throttle retry count was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error&) {
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 1\n"
+               << "[sync]\n"
+               << "download_chunk_threshold_bytes = 0\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "zero download chunk threshold was accepted\n";
         return EXIT_FAILURE;
     } catch (const std::runtime_error&) {
     }

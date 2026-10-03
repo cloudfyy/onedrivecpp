@@ -23,7 +23,12 @@ PreparedDownload prepare_download(
         item.remote_path
     );
     try {
-        graph.download_file(item.id, temporary, progress);
+        graph.download_file(
+            item.id,
+            static_cast<std::uint64_t>(item.size),
+            temporary,
+            progress
+        );
         const auto downloaded_size = std::filesystem::file_size(temporary);
         if (downloaded_size != static_cast<std::uintmax_t>(item.size)) {
             throw std::runtime_error(

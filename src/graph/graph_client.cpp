@@ -807,6 +807,7 @@ DeltaResult MicrosoftGraphClient::list_delta(
 
 void MicrosoftGraphClient::download_file(
     const std::string& remote_id,
+    std::uint64_t expected_size,
     const std::filesystem::path& destination,
     const DownloadProgress& progress
 ) const {
@@ -856,32 +857,92 @@ void MicrosoftGraphClient::download_file(
         "Received HTTPS download redirect for Microsoft Graph drive item '{}'",
         remote_id
     );
+    const auto download = [&](std::vector<std::string> headers,
+                              std::uint64_t offset,
+                              const DownloadProgress& chunk_progress) {
+        return transport_->download(
+            http::HttpRequest{
+                .method = http::HttpMethod::get,
+                .url = *location,
+                .headers = std::move(headers),
+                .body = {},
+                .connect_timeout = std::chrono::seconds{30},
+                .operation_timeout = std::chrono::hours{1},
+                .maximum_response_size = 0,
+                .download_offset = offset,
+            },
+            destination,
+            chunk_progress
+        );
+    };
+
     spdlog::debug("Downloading Microsoft Graph drive item '{}'", remote_id);
-    auto response = transport_->download(
-        http::HttpRequest{
-            .method = http::HttpMethod::get,
-            .url = *location,
-            .headers = {"Accept: application/octet-stream"},
-            .body = {},
-            .connect_timeout = std::chrono::seconds{30},
-            .operation_timeout = std::chrono::hours{1},
-            .maximum_response_size = 0,
-        },
-        destination,
-        progress
-    );
-    if (!response) {
-        throw std::runtime_error(
-            "Microsoft Graph file download failed: " + response.error().message
+    if (expected_size <= options_.download_chunk_threshold_bytes) {
+        auto response = download(
+            {"Accept: application/octet-stream"},
+            0,
+            progress
         );
+        if (!response) {
+            throw std::runtime_error(
+                "Microsoft Graph file download failed: " +
+                response.error().message
+            );
+        }
+        if (response->status_code < 200 || response->status_code >= 300) {
+            throw std::runtime_error(
+                std::format(
+                    "Microsoft Graph file download failed with HTTP {}",
+                    response->status_code
+                )
+            );
+        }
+        spdlog::debug("Downloaded Microsoft Graph drive item '{}'", remote_id);
+        return;
     }
-    if (response->status_code < 200 || response->status_code >= 300) {
-        throw std::runtime_error(
-            std::format(
-                "Microsoft Graph file download failed with HTTP {}",
-                response->status_code
-            )
+
+    const auto chunk_size = options_.download_chunk_threshold_bytes;
+    spdlog::debug(
+        "Downloading Microsoft Graph drive item '{}' in {}-byte chunks",
+        remote_id,
+        chunk_size
+    );
+    for (std::uint64_t offset = 0; offset < expected_size;) {
+        const auto bytes = std::min(chunk_size, expected_size - offset);
+        const auto end = offset + bytes - 1;
+        auto response = download(
+            {
+                "Accept: application/octet-stream",
+                std::format("Range: bytes={}-{}", offset, end),
+            },
+            offset,
+            progress ?
+                DownloadProgress{
+                    [&, offset](std::uint64_t downloaded, std::uint64_t) {
+                        progress(
+                            std::min(offset + downloaded, expected_size),
+                            expected_size
+                        );
+                    }
+                } :
+                DownloadProgress{}
         );
+        if (!response) {
+            throw std::runtime_error(
+                "Microsoft Graph chunk download failed: " +
+                response.error().message
+            );
+        }
+        if (response->status_code != 206) {
+            throw std::runtime_error(
+                std::format(
+                    "Microsoft Graph chunk download expected HTTP 206 but "
+                    "received HTTP {}",
+                    response->status_code
+                )
+            );
+        }
+        offset += bytes;
     }
     spdlog::debug("Downloaded Microsoft Graph drive item '{}'", remote_id);
 }

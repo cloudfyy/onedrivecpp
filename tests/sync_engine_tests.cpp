@@ -86,6 +86,7 @@ public:
 
     void download_file(
         const std::string& remote_id,
+        std::uint64_t,
         const std::filesystem::path& destination,
         const onedrive::graph::DownloadProgress& progress
     ) const override {
