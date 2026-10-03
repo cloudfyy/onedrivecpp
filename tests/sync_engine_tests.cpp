@@ -68,6 +68,7 @@ public:
         std::uint64_t,
         const std::filesystem::path& destination,
         std::uint64_t initial_offset,
+        std::stop_token stop_token,
         const onedrive::graph::DownloadProgress& progress,
         const onedrive::graph::DownloadCheckpoint& checkpoint
     ) const {
@@ -94,14 +95,45 @@ public:
             }
         } guard{active_downloads};
         if (download_delay > std::chrono::milliseconds::zero()) {
-            std::this_thread::sleep_for(download_delay);
+            const auto deadline =
+                std::chrono::steady_clock::now() + download_delay;
+            while (std::chrono::steady_clock::now() < deadline) {
+                if (stop_token.stop_requested()) {
+                    throw onedrive::graph::DownloadCancelledError{
+                        "simulated download cancellation"
+                    };
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds{1});
+            }
         }
         if (remote_id == failing_id) {
             while (download_count.load(std::memory_order_relaxed) <
-                   downloads_started_before_failure) {
+                       downloads_started_before_failure ||
+                   checkpoint_count.load(std::memory_order_relaxed) <
+                       checkpoints_before_failure) {
                 std::this_thread::yield();
             }
             throw std::runtime_error{"simulated download failure"};
+        }
+        if (remote_id == cancellable_id) {
+            const auto durable_bytes = std::min<std::size_t>(
+                cancellation_checkpoint,
+                contents.at(remote_id).size()
+            );
+            {
+                std::ofstream output{destination, std::ios::binary};
+                output << contents.at(remote_id).substr(0, durable_bytes);
+            }
+            if (checkpoint) {
+                checkpoint(durable_bytes);
+            }
+            checkpoint_count.fetch_add(1, std::memory_order_relaxed);
+            while (!stop_token.stop_requested()) {
+                std::this_thread::yield();
+            }
+            throw onedrive::graph::DownloadCancelledError{
+                "simulated download cancellation"
+            };
         }
         if (before_download_write) {
             before_download_write(remote_id);
@@ -133,11 +165,15 @@ public:
     std::vector<onedrive::graph::RemoteItem> changes;
     std::unordered_map<std::string, std::string> contents;
     std::string failing_id;
+    std::string cancellable_id;
     std::function<void(const std::string&)> before_download_write;
     bool reject_saved_cursor{false};
     std::chrono::milliseconds download_delay{0};
     int downloads_started_before_failure{0};
+    int checkpoints_before_failure{0};
+    std::size_t cancellation_checkpoint{0};
     mutable std::atomic_int download_count{0};
+    mutable std::atomic_int checkpoint_count{0};
     mutable std::atomic_int active_downloads{0};
     mutable std::atomic_int maximum_concurrent_downloads{0};
     mutable std::atomic_uint64_t last_download_offset{0};
@@ -987,6 +1023,58 @@ int test_partial_download_resume() {
     return EXIT_SUCCESS;
 }
 
+int test_concurrent_failure_cancels_active_download() {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path() / "files";
+    FakeGraphClient graph;
+    graph.changes = {
+        file("failed", "failed.txt", 4),
+        file("interrupted", "interrupted.txt", 4),
+    };
+    graph.contents["interrupted"] = "data";
+    graph.failing_id = "failed";
+    graph.cancellable_id = "interrupted";
+    graph.downloads_started_before_failure = 2;
+    graph.checkpoints_before_failure = 1;
+    graph.cancellation_checkpoint = 2;
+    FakeItemStore items;
+    FakeMetrics metrics;
+    auto config = config_for(root, false);
+    config.download_concurrency = 2;
+
+    try {
+        static_cast<void>(
+            onedrive::sync::SyncEngine{
+                config,
+                graph,
+                items,
+                metrics
+            }.synchronize()
+        );
+        return fail("concurrent download failure was accepted");
+    } catch (const std::runtime_error& error) {
+        if (std::string_view{error.what()} !=
+            "simulated download failure") {
+            return fail("download cancellation masked the original failure");
+        }
+    }
+
+    const auto partial = items.partials.find("interrupted");
+    if (partial == items.partials.end() ||
+        partial->second.completed_bytes != 2 ||
+        !std::filesystem::exists(partial->second.temporary_path) ||
+        std::filesystem::file_size(partial->second.temporary_path) != 2 ||
+        std::filesystem::exists(root / "interrupted.txt") ||
+        items.partials.contains("failed") ||
+        items.upsert_count != 0 ||
+        metrics.last_success) {
+        return fail(
+            "cancelled active download did not preserve its durable checkpoint"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_bounded_concurrent_downloads() {
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "files";
@@ -1060,6 +1148,10 @@ int main() {
         return result;
     }
     if (const int result = test_partial_download_resume();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_concurrent_failure_cancels_active_download();
         result != EXIT_SUCCESS) {
         return result;
     }

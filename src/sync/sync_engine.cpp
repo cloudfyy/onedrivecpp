@@ -148,6 +148,7 @@ DownloadBatch download_files(
                         task.destination_baseline,
                         metadata,
                         space,
+                        stop.get_token(),
                         [&](std::uint64_t downloaded,
                             std::uint64_t reported_total) {
                             const auto total =
@@ -163,6 +164,8 @@ DownloadBatch download_files(
                 ));
                 report_progress(index, expected_size, true);
             } catch (const detail::DownloadSpaceCancelledError&) {
+                return;
+            } catch (const graph::DownloadCancelledError&) {
                 return;
             } catch (const detail::LocalModificationConflictError& error) {
                 batch.conflicts[index] = error.what();

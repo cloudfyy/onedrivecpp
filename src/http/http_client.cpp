@@ -73,9 +73,14 @@ struct HeaderContext {
 
 struct ProgressContext {
     const DownloadProgress* callback{};
+    std::stop_token stop_token;
+    bool cancelled{false};
     bool failed{false};
     std::string error;
 };
+
+constexpr int curl_progress_continue = 0;
+constexpr int curl_progress_abort = 1;
 
 std::string_view method_name(HttpMethod method) {
     return method == HttpMethod::post ? "POST" : "GET";
@@ -191,6 +196,13 @@ int report_progress(
     curl_off_t
 ) {
     auto& progress = *static_cast<ProgressContext*>(context);
+    if (progress.stop_token.stop_requested()) {
+        progress.cancelled = true;
+        return curl_progress_abort;
+    }
+    if (progress.callback == nullptr || !*progress.callback) {
+        return curl_progress_continue;
+    }
     try {
         (*progress.callback)(
             downloaded < 0 ? 0U : static_cast<std::uint64_t>(downloaded),
@@ -198,15 +210,15 @@ int report_progress(
                 0U :
                 static_cast<std::uint64_t>(download_total)
         );
-        return 0;
+        return curl_progress_continue;
     } catch (const std::exception& error) {
         progress.failed = true;
         progress.error = error.what();
-        return 1;
+        return curl_progress_abort;
     } catch (...) {
         progress.failed = true;
         progress.error = "unknown error";
-        return 1;
+        return curl_progress_abort;
     }
 }
 
@@ -238,6 +250,8 @@ HttpResult perform_request(
     HeaderContext header_context;
     ProgressContext progress_context{
         .callback = &progress,
+        .stop_token = request.stop_token,
+        .cancelled = false,
         .failed = false,
         .error = {},
     };
@@ -283,13 +297,15 @@ HttpResult perform_request(
     if (result == CURLE_OK) {
         result = set_option(CURLOPT_USERAGENT, build_info::user_agent);
     }
-    if (result == CURLE_OK && progress) {
+    const bool monitor_progress =
+        progress || request.stop_token.stop_possible();
+    if (result == CURLE_OK && monitor_progress) {
         result = set_option(CURLOPT_NOPROGRESS, 0L);
     }
-    if (result == CURLE_OK && progress) {
+    if (result == CURLE_OK && monitor_progress) {
         result = set_option(CURLOPT_XFERINFOFUNCTION, &report_progress);
     }
-    if (result == CURLE_OK && progress) {
+    if (result == CURLE_OK && monitor_progress) {
         result = set_option(CURLOPT_XFERINFODATA, &progress_context);
     }
     if (result == CURLE_OK && headers) {
@@ -316,6 +332,12 @@ HttpResult perform_request(
 
     result = curl_easy_perform(handle.get());
     if (result != CURLE_OK) {
+        if (progress_context.cancelled) {
+            return std::unexpected(HttpError{
+                .code = HttpErrorCode::cancelled,
+                .message = "HTTP request was cancelled",
+            });
+        }
         if (progress_context.failed) {
             return std::unexpected(HttpError{
                 .message = "download progress callback failed: " +

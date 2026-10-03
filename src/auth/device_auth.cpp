@@ -101,6 +101,7 @@ AuthResult<http::HttpResponse> post_form(
         .url = url,
         .headers = {"Content-Type: application/x-www-form-urlencoded"},
         .body = encode_form(values),
+        .stop_token = {},
     });
     if (!response) {
         return std::unexpected(AuthError{

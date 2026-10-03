@@ -50,6 +50,7 @@ public:
         std::uint64_t expected_size,
         const std::filesystem::path& destination,
         std::uint64_t initial_offset,
+        std::stop_token,
         const onedrive::graph::DownloadProgress&,
         const onedrive::graph::DownloadCheckpoint& checkpoint
     ) const {

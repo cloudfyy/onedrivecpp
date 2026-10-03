@@ -19,6 +19,7 @@ PreparedDownload prepare_download(
     LocalFileBaseline destination_baseline,
     const FilesystemMetadata& metadata,
     DownloadSpaceCoordinator& space,
+    std::stop_token stop_token,
     const graph::DownloadProgress& progress
 ) {
     if (item.size < 0) {
@@ -121,6 +122,7 @@ PreparedDownload prepare_download(
             static_cast<std::uint64_t>(item.size),
             temporary,
             completed_bytes,
+            std::move(stop_token),
             progress,
             [&](std::uint64_t durable_bytes) {
                 if (durable_bytes < completed_bytes) {
@@ -334,6 +336,7 @@ storage::ItemState download_atomically(
             capture_local_file_baseline(destination),
             metadata,
             space,
+            {},
             progress
         )
     );

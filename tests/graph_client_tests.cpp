@@ -835,6 +835,7 @@ int test_resumed_file_download() {
         destination,
         4,
         {},
+        {},
         [&](std::uint64_t completed) {
             checkpoints.push_back(completed);
         }
@@ -845,6 +846,7 @@ int test_resumed_file_download() {
         8,
         destination,
         8,
+        {},
         [&](std::uint64_t downloaded, std::uint64_t total) {
             completed_progress.emplace_back(downloaded, total);
         },
@@ -853,7 +855,7 @@ int test_resumed_file_download() {
         }
     );
     try {
-        client.download_file("item-id", 8, destination, 9, {}, {});
+        client.download_file("item-id", 8, destination, 9, {}, {}, {});
         return fail("Graph download accepted a resume offset beyond file size");
     } catch (const std::invalid_argument&) {
     }
@@ -874,6 +876,83 @@ int test_resumed_file_download() {
         completed_progress !=
             std::vector<std::pair<std::uint64_t, std::uint64_t>>{{8, 8}}) {
         return fail("Graph file download did not resume from its byte offset");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_cancelled_download_is_not_retried_or_checkpointed() {
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"expires_in":3600,"access_token":"access-secret"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 302,
+                .headers = {
+                    {
+                        .name = "Location",
+                        .value = "https://download.example.test/content",
+                    },
+                },
+            },
+        }
+    );
+    transport->download_responses.push_back(
+        onedrive::http::HttpResponse{
+            .status_code = 503,
+            .headers = {
+                {.name = "Retry-After", .value = "5"},
+            },
+        }
+    );
+    auto* transport_pointer = transport.get();
+    const auto destination =
+        std::filesystem::temp_directory_path() /
+        "onedrive-cpp-cancelled-download-test";
+    std::error_code ignored;
+    std::filesystem::remove(destination, ignored);
+
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(
+                std::string{"existing-refresh"}
+            )
+        ),
+        auth_options(),
+        {
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+            .download_chunk_threshold_bytes = 3,
+        },
+    };
+    std::vector<std::uint64_t> checkpoints;
+    std::stop_source cancellation;
+    try {
+        client.download_file(
+            "item-id",
+            8,
+            destination,
+            0,
+            cancellation.get_token(),
+            [&](std::uint64_t, std::uint64_t) {
+                cancellation.request_stop();
+            },
+            [&](std::uint64_t completed) {
+                checkpoints.push_back(completed);
+            }
+        );
+        std::filesystem::remove(destination, ignored);
+        return fail("Graph download ignored transport cancellation");
+    } catch (const onedrive::graph::DownloadCancelledError&) {
+    }
+    std::filesystem::remove(destination, ignored);
+
+    if (transport_pointer->download_requests.size() != 1 ||
+        !checkpoints.empty()) {
+        return fail("Graph cancellation was retried or checkpointed");
     }
     return EXIT_SUCCESS;
 }
@@ -934,6 +1013,7 @@ int test_large_file_chunked_download() {
         8,
         destination,
         0,
+        {},
         [&](std::uint64_t downloaded, std::uint64_t total) {
             progress.emplace_back(downloaded, total);
         },
@@ -1104,6 +1184,11 @@ int main() {
         return result;
     }
     if (const int result = test_resumed_file_download();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result =
+            test_cancelled_download_is_not_retried_or_checkpointed();
         result != EXIT_SUCCESS) {
         return result;
     }

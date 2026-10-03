@@ -10,6 +10,7 @@
 #include <functional>
 #include <memory>
 #include <proxy/proxy.h>
+#include <stop_token>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -33,6 +34,7 @@ struct HttpRequest {
         std::size_t{16} * 1024U * 1024U
     };
     std::uint64_t download_offset{0};
+    std::stop_token stop_token;
 };
 
 struct HttpHeader {
@@ -46,7 +48,13 @@ struct HttpResponse {
     std::string body;
 };
 
+enum class HttpErrorCode {
+    transport,
+    cancelled,
+};
+
 struct HttpError {
+    HttpErrorCode code{HttpErrorCode::transport};
     std::string message;
 };
 

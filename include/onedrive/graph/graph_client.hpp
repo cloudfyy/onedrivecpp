@@ -13,6 +13,7 @@
 #include <mutex>
 #include <optional>
 #include <proxy/proxy.h>
+#include <stop_token>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -65,6 +66,11 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+class DownloadCancelledError final : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
 struct GraphOptions {
     std::string drive_id{"me"};
     std::string endpoint{"https://graph.microsoft.com/v1.0"};
@@ -104,6 +110,7 @@ struct GraphClientFacade : pro::facade_builder
             std::uint64_t,
             const std::filesystem::path&,
             std::uint64_t,
+            std::stop_token,
             const DownloadProgress&,
             const DownloadCheckpoint&
         ) const
@@ -136,6 +143,7 @@ public:
         std::uint64_t expected_size,
         const std::filesystem::path& destination,
         std::uint64_t initial_offset,
+        std::stop_token stop_token,
         const DownloadProgress& progress,
         const DownloadCheckpoint& checkpoint
     ) const {
@@ -144,6 +152,7 @@ public:
             expected_size,
             destination,
             initial_offset,
+            std::move(stop_token),
             progress,
             checkpoint
         );
@@ -160,6 +169,7 @@ public:
             expected_size,
             destination,
             0,
+            {},
             progress,
             {}
         );
@@ -194,6 +204,7 @@ public:
         std::uint64_t expected_size,
         const std::filesystem::path& destination,
         std::uint64_t initial_offset,
+        std::stop_token stop_token,
         const DownloadProgress& progress,
         const DownloadCheckpoint& checkpoint
     ) const;
@@ -208,6 +219,7 @@ public:
             expected_size,
             destination,
             0,
+            {},
             progress,
             {}
         );

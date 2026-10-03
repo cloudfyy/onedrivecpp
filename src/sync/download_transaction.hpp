@@ -7,6 +7,7 @@
 #include "onedrive/storage/item_store.hpp"
 
 #include <filesystem>
+#include <stop_token>
 #include <utility>
 
 namespace onedrive::sync::detail {
@@ -31,6 +32,7 @@ struct PreparedDownload {
     LocalFileBaseline destination_baseline,
     const FilesystemMetadata& metadata,
     DownloadSpaceCoordinator& space,
+    std::stop_token stop_token,
     const graph::DownloadProgress& progress = {}
 );
 [[nodiscard]] storage::ItemState commit_download(

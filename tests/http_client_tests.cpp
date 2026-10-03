@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 #include <poll.h>
+#include <stop_token>
 #include <string>
 #include <sys/socket.h>
 #include <thread>
@@ -319,6 +320,94 @@ int main() {
         failed_chunk_response->status_code != 503 ||
         partial_contents != "prefix") {
         return fail("failed HTTP chunk did not preserve completed data");
+    }
+
+    {
+        std::ofstream resumable{destination, std::ios::binary};
+        resumable << "prefix";
+    }
+    server_error.clear();
+    std::jthread cancelled_chunk_server{[&] {
+        pollfd descriptor{
+            .fd = listener.get(),
+            .events = POLLIN,
+            .revents = 0,
+        };
+        if (::poll(&descriptor, 1, 10'000) != 1) {
+            server_error = "timed out waiting for cancelled chunk request";
+            return;
+        }
+        Socket connection{
+            ::accept4(listener.get(), nullptr, nullptr, SOCK_CLOEXEC)
+        };
+        std::string request;
+        char buffer[4096];
+        while (!request.contains("\r\n\r\n")) {
+            const auto count =
+                ::recv(connection.get(), buffer, sizeof(buffer), 0);
+            if (count <= 0) {
+                server_error = "cannot read cancelled chunk request";
+                return;
+            }
+            request.append(buffer, static_cast<std::size_t>(count));
+        }
+        constexpr std::string_view response_start{
+            "HTTP/1.1 206 Partial Content\r\n"
+            "Content-Length: 10\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "chunk"
+        };
+        if (::send(
+                connection.get(),
+                response_start.data(),
+                response_start.size(),
+                MSG_NOSIGNAL
+            ) != static_cast<ssize_t>(response_start.size())) {
+            server_error = "cannot start cancelled chunk response";
+            return;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds{100});
+        constexpr std::string_view remainder{"-tail"};
+        static_cast<void>(::send(
+            connection.get(),
+            remainder.data(),
+            remainder.size(),
+            MSG_NOSIGNAL
+        ));
+    }};
+    std::stop_source cancellation;
+    const auto cancelled_chunk_response = client.download(
+        {
+            .url = "http://127.0.0.1:" + std::to_string(port) + "/cancel",
+            .headers = {"Range: bytes=6-15"},
+            .connect_timeout = std::chrono::seconds{2},
+            .operation_timeout = std::chrono::seconds{5},
+            .download_offset = 6,
+            .stop_token = cancellation.get_token(),
+        },
+        destination,
+        [&](std::uint64_t downloaded, std::uint64_t) {
+            if (downloaded >= 5) {
+                cancellation.request_stop();
+            }
+        }
+    );
+    cancelled_chunk_server.join();
+    std::ifstream cancelled_partial{destination, std::ios::binary};
+    const std::string cancelled_contents{
+        std::istreambuf_iterator<char>{cancelled_partial},
+        std::istreambuf_iterator<char>{}
+    };
+    std::filesystem::remove(destination, ignored);
+    if (!server_error.empty()) {
+        return fail(server_error);
+    }
+    if (cancelled_chunk_response ||
+        cancelled_chunk_response.error().code !=
+            onedrive::http::HttpErrorCode::cancelled ||
+        cancelled_contents != "prefix") {
+        return fail("cancelled HTTP chunk did not roll back to its offset");
     }
 
     return EXIT_SUCCESS;

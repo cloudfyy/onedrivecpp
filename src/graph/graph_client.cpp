@@ -10,9 +10,11 @@
 #include <algorithm>
 #include <charconv>
 #include <chrono>
+#include <condition_variable>
 #include <cctype>
 #include <format>
 #include <optional>
+#include <mutex>
 #include <stdexcept>
 #include <string_view>
 #include <thread>
@@ -112,6 +114,20 @@ std::optional<std::string> header_value(
     return std::nullopt;
 }
 
+[[noreturn]] void throw_download_error(
+    std::string_view description,
+    const http::HttpError& error
+) {
+    if (error.code == http::HttpErrorCode::cancelled) {
+        throw DownloadCancelledError(
+            std::string{description} + " was cancelled"
+        );
+    }
+    throw std::runtime_error(
+        std::string{description} + " failed: " + error.message
+    );
+}
+
 std::chrono::seconds fallback_retry_delay(
     const GraphOptions& options,
     std::size_t retry_number
@@ -133,15 +149,42 @@ bool retryable_status(long status_code) {
            status_code == 503 || status_code == 504;
 }
 
+http::HttpResult cancelled_http_result() {
+    return std::unexpected(http::HttpError{
+        .code = http::HttpErrorCode::cancelled,
+        .message = "HTTP request was cancelled",
+    });
+}
+
+bool wait_for_retry(
+    std::chrono::seconds delay,
+    const MicrosoftGraphClient::SleepFunction& sleep,
+    const std::stop_token& stop_token
+) {
+    if (!stop_token.stop_possible()) {
+        sleep(delay);
+        return false;
+    }
+    std::mutex mutex;
+    std::condition_variable_any condition;
+    std::unique_lock lock{mutex};
+    condition.wait_for(lock, stop_token, delay, [] { return false; });
+    return stop_token.stop_requested();
+}
+
 template <typename Operation>
 http::HttpResult perform_with_retries(
     Operation operation,
     const GraphOptions& options,
     const MicrosoftGraphClient::SleepFunction& sleep,
-    std::string_view description
+    std::string_view description,
+    const std::stop_token& stop_token = {}
 ) {
     std::size_t retries = 0;
     while (true) {
+        if (stop_token.stop_requested()) {
+            return cancelled_http_result();
+        }
         auto response = operation();
         if (!response || !retryable_status(response->status_code)) {
             return response;
@@ -176,7 +219,9 @@ http::HttpResult perform_with_retries(
             retries + 1,
             options.maximum_throttle_retries
         );
-        sleep(delay);
+        if (wait_for_retry(delay, sleep, stop_token)) {
+            return cancelled_http_result();
+        }
         ++retries;
     }
 }
@@ -350,6 +395,7 @@ account::DriveIdentity fetch_drive_identity(
             .connect_timeout = std::chrono::seconds{30},
             .operation_timeout = std::chrono::seconds{60},
             .maximum_response_size = std::size_t{1024} * 1024U,
+            .stop_token = {},
         });
         if (!response) {
             throw std::runtime_error(
@@ -421,6 +467,7 @@ account::DriveIdentity fetch_drive_identity(
         .connect_timeout = std::chrono::seconds{30},
         .operation_timeout = std::chrono::seconds{60},
         .maximum_response_size = std::size_t{8} * 1024U * 1024U,
+        .stop_token = {},
     });
     if (!photo) {
         throw std::runtime_error(
@@ -553,6 +600,7 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
                     "Authorization: Bearer " + tokens->access_token,
                 },
                 .body = {},
+                .stop_token = {},
             });
             },
             options_,
@@ -716,6 +764,7 @@ DeltaResult MicrosoftGraphClient::list_delta(
                     "Authorization: Bearer " + tokens->access_token,
                 },
                 .body = {},
+                .stop_token = {},
             });
             },
             options_,
@@ -886,6 +935,7 @@ void MicrosoftGraphClient::download_file(
     std::uint64_t expected_size,
     const std::filesystem::path& destination,
     std::uint64_t initial_offset,
+    std::stop_token stop_token,
     const DownloadProgress& progress,
     const DownloadCheckpoint& checkpoint
 ) const {
@@ -896,6 +946,9 @@ void MicrosoftGraphClient::download_file(
         throw std::invalid_argument(
             "download resume offset exceeds the expected file size"
         );
+    }
+    if (stop_token.stop_requested()) {
+        throw DownloadCancelledError("Microsoft Graph download was cancelled");
     }
     if (initial_offset == expected_size) {
         if (progress) {
@@ -926,15 +979,18 @@ void MicrosoftGraphClient::download_file(
                 .connect_timeout = std::chrono::seconds{30},
                 .operation_timeout = std::chrono::seconds{60},
                 .maximum_response_size = std::size_t{64} * 1024U,
+                .stop_token = stop_token,
             });
         },
         options_,
         sleep_,
-        "Microsoft Graph download redirect"
+        "Microsoft Graph download redirect",
+        stop_token
     );
     if (!redirect) {
-        throw std::runtime_error(
-            "Microsoft Graph download request failed: " + redirect.error().message
+        throw_download_error(
+            "Microsoft Graph download request",
+            redirect.error()
         );
     }
     if (redirect->status_code < 300 || redirect->status_code >= 400) {
@@ -972,6 +1028,7 @@ void MicrosoftGraphClient::download_file(
                         .operation_timeout = std::chrono::hours{1},
                         .maximum_response_size = 0,
                         .download_offset = offset,
+                        .stop_token = stop_token,
                     },
                     destination,
                     chunk_progress
@@ -979,7 +1036,8 @@ void MicrosoftGraphClient::download_file(
             },
             options_,
             sleep_,
-            description
+            description,
+            stop_token
         );
     };
 
@@ -993,9 +1051,9 @@ void MicrosoftGraphClient::download_file(
             "Microsoft Graph file download"
         );
         if (!response) {
-            throw std::runtime_error(
-                "Microsoft Graph file download failed: " +
-                response.error().message
+            throw_download_error(
+                "Microsoft Graph file download",
+                response.error()
             );
         }
         if (response->status_code < 200 || response->status_code >= 300) {
@@ -1045,9 +1103,9 @@ void MicrosoftGraphClient::download_file(
             )
         );
         if (!response) {
-            throw std::runtime_error(
-                "Microsoft Graph chunk download failed: " +
-                response.error().message
+            throw_download_error(
+                "Microsoft Graph chunk download",
+                response.error()
             );
         }
         if (response->status_code != 206) {
