@@ -1,3 +1,12 @@
+onedrive-cpp (0.6.5-1~ubuntu24.04) noble; urgency=medium
+
+  * Resume durable partial downloads across process restarts.
+  * Protect local modifications and serialize operations for each remote item.
+  * Verify downloaded content with Graph SHA-256 or QuickXorHash metadata.
+  * Coordinate concurrent download disk-space reservations.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sat, 03 Oct 2026 12:21:56 +0000
+
 onedrive-cpp (0.6.4-1~ubuntu24.04) noble; urgency=medium
 
   * Serialize ItemStore access through a dedicated database thread.
