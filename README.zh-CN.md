@@ -311,10 +311,14 @@ sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 [sync]
 # 当前账号的默认 OneDrive
 drive_id = "me"
+download_concurrency = 4
 
 # 指定其他 OneDrive 或 SharePoint 文档库
 # drive_id = "b!YOUR_DRIVE_ID"
 ```
+
+`download_concurrency` 控制可同时下载的文件数量，默认值为 `4`，允许范围为
+`1` 到 `16`。
 
 远端 ID、ETag 和本地路径状态保存在
 `<state.directory>/items.sqlite3`。数据库使用 SQLite WAL 模式，并在程序

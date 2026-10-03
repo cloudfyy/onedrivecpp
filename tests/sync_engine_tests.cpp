@@ -5,6 +5,7 @@
 #include "onedrive/storage/item_store.hpp"
 #include "onedrive/sync/sync_engine.hpp"
 
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -14,6 +15,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -77,6 +79,26 @@ public:
         const onedrive::graph::DownloadProgress& progress
     ) const override {
         ++download_count;
+        const int active =
+            active_downloads.fetch_add(1, std::memory_order_relaxed) + 1;
+        int maximum =
+            maximum_concurrent_downloads.load(std::memory_order_relaxed);
+        while (active > maximum &&
+               !maximum_concurrent_downloads.compare_exchange_weak(
+                   maximum,
+                   active,
+                   std::memory_order_relaxed
+               )) {
+        }
+        struct ActiveDownloadGuard {
+            std::atomic_int& count;
+            ~ActiveDownloadGuard() {
+                count.fetch_sub(1, std::memory_order_relaxed);
+            }
+        } guard{active_downloads};
+        if (download_delay > std::chrono::milliseconds::zero()) {
+            std::this_thread::sleep_for(download_delay);
+        }
         if (remote_id == failing_id) {
             throw std::runtime_error{"simulated download failure"};
         }
@@ -93,7 +115,10 @@ public:
     std::unordered_map<std::string, std::string> contents;
     std::string failing_id;
     bool reject_saved_cursor{false};
-    mutable int download_count{0};
+    std::chrono::milliseconds download_delay{0};
+    mutable std::atomic_int download_count{0};
+    mutable std::atomic_int active_downloads{0};
+    mutable std::atomic_int maximum_concurrent_downloads{0};
     mutable std::vector<std::optional<std::string>> delta_requests;
 };
 
@@ -718,6 +743,45 @@ int test_mismatched_recovery_file_preserved() {
     return EXIT_SUCCESS;
 }
 
+int test_bounded_concurrent_downloads() {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path() / "files";
+    FakeGraphClient graph;
+    graph.changes = {
+        file("one", "one.txt", 4),
+        file("two", "two.txt", 4),
+        file("three", "three.txt", 4),
+        file("four", "four.txt", 4),
+    };
+    for (const auto& item : graph.changes) {
+        graph.contents[item.id] = "data";
+    }
+    graph.download_delay = std::chrono::milliseconds{40};
+    FakeItemStore items;
+    FakeMetrics metrics;
+    auto config = config_for(root, false);
+    config.download_concurrency = 2;
+
+    if (onedrive::sync::SyncEngine{
+            config,
+            graph,
+            items,
+            metrics
+        }.synchronize() != 0 ||
+        graph.download_count != 4 ||
+        graph.maximum_concurrent_downloads != 2 ||
+        items.upsert_count != 4 || items.apply_count != 1 ||
+        !metrics.last_success) {
+        return fail("downloads did not respect the configured concurrency");
+    }
+    for (const auto& item : graph.changes) {
+        if (!std::filesystem::exists(root / item.remote_path)) {
+            return fail("a concurrent download was not installed");
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
 }  // namespace
 
 int main() {
@@ -744,6 +808,10 @@ int main() {
         return result;
     }
     if (const int result = test_unsafe_pending_path_rejected();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_bounded_concurrent_downloads();
         result != EXIT_SUCCESS) {
         return result;
     }

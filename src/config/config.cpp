@@ -175,6 +175,7 @@ Config Config::defaults() {
         .graph_maximum_throttle_retries = 4,
         .graph_initial_throttle_delay = std::chrono::seconds{1},
         .graph_maximum_throttle_delay = std::chrono::seconds{300},
+        .download_concurrency = 4,
         .filesystem_metadata = FilesystemMetadataMode::automatic,
         .dry_run = false,
     };
@@ -216,7 +217,11 @@ Config Config::load(const std::filesystem::path& path) {
     }
 
     if (const auto* sync = optional_table(root, "sync", "sync")) {
-        validate_keys(*sync, {"directory", "drive_id", "dry_run"}, "sync");
+        validate_keys(
+            *sync,
+            {"directory", "drive_id", "dry_run", "download_concurrency"},
+            "sync"
+        );
         if (const auto value = optional_value<std::string>(
                 *sync,
                 "directory",
@@ -241,6 +246,20 @@ Config Config::load(const std::filesystem::path& path) {
             )) {
             config.dry_run = *value;
         }
+            if (sync->contains("download_concurrency")) {
+                const auto concurrency = unsigned_value(
+                    *sync,
+                    "download_concurrency",
+                    "sync.download_concurrency"
+                );
+                if (concurrency < 1 || concurrency > 16) {
+                    throw std::runtime_error(
+                        "sync.download_concurrency must be between 1 and 16"
+                    );
+                }
+                config.download_concurrency =
+                    static_cast<std::size_t>(concurrency);
+            }
     }
 
     if (const auto* state = optional_table(root, "state", "state")) {

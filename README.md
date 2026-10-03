@@ -339,10 +339,14 @@ For example:
 [sync]
 # Default OneDrive of the signed-in user
 drive_id = "me"
+download_concurrency = 4
 
 # Another OneDrive or SharePoint document library
 # drive_id = "b!YOUR_DRIVE_ID"
 ```
+
+`download_concurrency` controls how many files can be downloaded at the same
+time. It defaults to `4` and accepts values from `1` through `16`.
 
 Tracked remote IDs, ETags, and local paths are stored in
 `<state.directory>/items.sqlite3`. The database uses SQLite WAL mode and is

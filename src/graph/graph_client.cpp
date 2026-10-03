@@ -192,6 +192,7 @@ MicrosoftGraphClient::MicrosoftGraphClient(
 MicrosoftGraphClient::~MicrosoftGraphClient() = default;
 
 std::string MicrosoftGraphClient::access_token() const {
+    const std::scoped_lock lock{access_token_mutex_};
     constexpr auto expiry_margin = std::chrono::minutes{1};
     if (!cached_access_token_.empty() &&
         access_token_expires_at_ > std::chrono::system_clock::now() + expiry_margin) {

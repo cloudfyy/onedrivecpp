@@ -596,8 +596,11 @@ int main() {
         !dry_run.standard_output.contains(
             "Remote delta contains 1 changes (1 upserts, 0 removals, 0 blocked)"
         ) ||
-        !dry_run.standard_output.contains("throttle retries: 6") ||
-        !dry_run.standard_output.contains("throttle delay:   3-120 seconds") ||
+        !dry_run.standard_output.contains("throttle retries:     6") ||
+        !dry_run.standard_output.contains(
+            "throttle delay:       3-120 seconds"
+        ) ||
+        !dry_run.standard_output.contains("download concurrency: 4") ||
         runtime_factory.item_store_count != 4 ||
         runtime_factory.item_store_open_count != 4 ||
         runtime_factory.item_store_apply_delta_count != 0 ||

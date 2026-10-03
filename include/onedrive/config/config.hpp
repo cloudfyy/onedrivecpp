@@ -26,6 +26,7 @@ struct Config {
     std::size_t graph_maximum_throttle_retries{4};
     std::chrono::seconds graph_initial_throttle_delay{1};
     std::chrono::seconds graph_maximum_throttle_delay{300};
+    std::size_t download_concurrency{4};
     FilesystemMetadataMode filesystem_metadata{
         FilesystemMetadataMode::automatic
     };

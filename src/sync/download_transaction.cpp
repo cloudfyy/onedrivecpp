@@ -9,9 +9,8 @@
 
 namespace onedrive::sync::detail {
 
-storage::ItemState download_atomically(
+PreparedDownload prepare_download(
     graph::GraphClient& graph,
-    storage::ItemStore& items,
     const graph::RemoteItem& item,
     storage::ItemState state,
     const std::filesystem::path& destination,
@@ -19,7 +18,6 @@ storage::ItemState download_atomically(
     const graph::DownloadProgress& progress
 ) {
     const auto temporary = temporary_path_for(destination);
-    bool journaled = false;
     spdlog::trace(
         "Downloading '{}' through a same-directory temporary file",
         item.remote_path
@@ -39,40 +37,76 @@ storage::ItemState download_atomically(
         }
         const std::string fingerprint = content_fingerprint(temporary);
         metadata.write_remote_identity(item, temporary);
-        state.local_path = destination;
-        items.save_pending_download({
-            .item = state,
+        return {
+            .item = item,
+            .state = std::move(state),
+            .destination = destination,
             .temporary_path = temporary,
             .content_fingerprint = fingerprint,
+            .downloaded_size = downloaded_size,
+        };
+    } catch (const std::exception& error) {
+        PreparedDownload incomplete;
+        incomplete.temporary_path = temporary;
+        discard_prepared_download(incomplete);
+        spdlog::warn(
+            "Download preparation failed for '{}': {}",
+            item.remote_path,
+            error.what()
+        );
+        throw;
+    } catch (...) {
+        PreparedDownload incomplete;
+        incomplete.temporary_path = temporary;
+        discard_prepared_download(incomplete);
+        spdlog::warn(
+            "Download preparation failed for '{}' due to an unknown error",
+            item.remote_path
+        );
+        throw;
+    }
+}
+
+storage::ItemState commit_download(
+    storage::ItemStore& items,
+    PreparedDownload download
+) {
+    bool journaled = false;
+    try {
+        download.state.local_path = download.destination;
+        items.save_pending_download({
+            .item = download.state,
+            .temporary_path = download.temporary_path,
+            .content_fingerprint = download.content_fingerprint,
         });
         journaled = true;
-        std::filesystem::rename(temporary, destination);
-        fsync_directory(destination.parent_path());
-        state.local_size = static_cast<std::int64_t>(downloaded_size);
-        state.local_modified_ticks = modified_ticks(destination);
-        items.upsert(state);
-        items.remove_pending_download(state.drive_id, state.remote_id);
+        std::filesystem::rename(
+            download.temporary_path,
+            download.destination
+        );
+        fsync_directory(download.destination.parent_path());
+        download.state.local_size =
+            static_cast<std::int64_t>(download.downloaded_size);
+        download.state.local_modified_ticks =
+            modified_ticks(download.destination);
+        items.upsert(download.state);
+        items.remove_pending_download(
+            download.state.drive_id,
+            download.state.remote_id
+        );
         spdlog::debug(
             "Atomically installed '{}' ({} bytes)",
-            item.remote_path,
-            downloaded_size
+            download.item.remote_path,
+            download.downloaded_size
         );
-        return state;
+        return download.state;
     } catch (const std::exception& error) {
         if (!journaled) {
-            std::error_code cleanup_error;
-            std::filesystem::remove(temporary, cleanup_error);
-            if (cleanup_error) {
-                spdlog::warn(
-                    "Could not remove incomplete download '{}': {}",
-                    temporary.string(),
-                    cleanup_error.message()
-                );
-            }
+            discard_prepared_download(download);
         }
         spdlog::warn(
             "Download installation failed for '{}'; {}: {}",
-            item.remote_path,
+            download.item.remote_path,
             journaled ? "recovery journal retained" :
                         "no recovery journal was created",
             error.what()
@@ -80,24 +114,53 @@ storage::ItemState download_atomically(
         throw;
     } catch (...) {
         if (!journaled) {
-            std::error_code cleanup_error;
-            std::filesystem::remove(temporary, cleanup_error);
-            if (cleanup_error) {
-                spdlog::warn(
-                    "Could not remove incomplete download '{}': {}",
-                    temporary.string(),
-                    cleanup_error.message()
-                );
-            }
+            discard_prepared_download(download);
         }
         spdlog::warn(
             "Download installation failed for '{}'; {} due to an unknown error",
-            item.remote_path,
+            download.item.remote_path,
             journaled ? "recovery journal retained" :
                         "no recovery journal was created"
         );
         throw;
     }
+}
+
+void discard_prepared_download(const PreparedDownload& download) noexcept {
+    if (download.temporary_path.empty()) {
+        return;
+    }
+    std::error_code cleanup_error;
+    std::filesystem::remove(download.temporary_path, cleanup_error);
+    if (cleanup_error) {
+        spdlog::warn(
+            "Could not remove incomplete download '{}': {}",
+            download.temporary_path.string(),
+            cleanup_error.message()
+        );
+    }
+}
+
+storage::ItemState download_atomically(
+    graph::GraphClient& graph,
+    storage::ItemStore& items,
+    const graph::RemoteItem& item,
+    storage::ItemState state,
+    const std::filesystem::path& destination,
+    const FilesystemMetadata& metadata,
+    const graph::DownloadProgress& progress
+) {
+    return commit_download(
+        items,
+        prepare_download(
+            graph,
+            item,
+            std::move(state),
+            destination,
+            metadata,
+            progress
+        )
+    );
 }
 
 }  // namespace onedrive::sync::detail

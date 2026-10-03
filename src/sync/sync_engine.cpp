@@ -10,12 +10,18 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
+#include <exception>
 #include <filesystem>
 #include <format>
+#include <mutex>
 #include <optional>
+#include <stop_token>
 #include <stdexcept>
+#include <thread>
 #include <unordered_set>
+#include <vector>
 
 namespace onedrive::sync {
 namespace {
@@ -25,6 +31,117 @@ struct ExecutionSummary {
     std::size_t reused{0};
     std::size_t directories{0};
 };
+
+struct DownloadTask {
+    graph::RemoteItem item;
+    storage::ItemState state;
+    std::filesystem::path destination;
+    std::size_t file_index{0};
+    std::size_t file_count{0};
+};
+
+struct PreparedDownloadBatch {
+    std::vector<std::optional<detail::PreparedDownload>> downloads;
+    std::vector<std::exception_ptr> errors;
+};
+
+PreparedDownloadBatch prepare_downloads(
+    const std::vector<DownloadTask>& tasks,
+    std::size_t concurrency,
+    graph::GraphClient& graph,
+    const detail::FilesystemMetadata& metadata,
+    const cli::Console& console
+) {
+    PreparedDownloadBatch batch{
+        .downloads = std::vector<std::optional<detail::PreparedDownload>>(
+            tasks.size()
+        ),
+        .errors = std::vector<std::exception_ptr>(tasks.size()),
+    };
+    if (tasks.empty()) {
+        return batch;
+    }
+
+    std::atomic_size_t next_task{0};
+    std::stop_source stop;
+    std::mutex console_mutex;
+    const auto worker = [&](std::stop_token thread_stop) {
+        while (!thread_stop.stop_requested() && !stop.stop_requested()) {
+            const std::size_t index =
+                next_task.fetch_add(1, std::memory_order_relaxed);
+            if (index >= tasks.size()) {
+                return;
+            }
+            const auto& task = tasks[index];
+            const auto expected_size =
+                static_cast<std::uint64_t>(task.item.size);
+            std::uint64_t last_reported_percentage = 0;
+            try {
+                batch.downloads[index].emplace(detail::prepare_download(
+                    graph,
+                    task.item,
+                    task.state,
+                    task.destination,
+                    metadata,
+                    [&](std::uint64_t downloaded, std::uint64_t reported_total) {
+                        const auto total =
+                            expected_size == 0 ? reported_total : expected_size;
+                        if (total == 0 || downloaded >= total) {
+                            return;
+                        }
+                        const auto percentage = static_cast<std::uint64_t>(
+                            static_cast<long double>(downloaded) * 100.0L /
+                            static_cast<long double>(total)
+                        );
+                        if (percentage < last_reported_percentage + 5) {
+                            return;
+                        }
+                        last_reported_percentage = percentage;
+                        const std::scoped_lock lock{console_mutex};
+                        console.download_progress(
+                            task.item.remote_path,
+                            task.file_index,
+                            task.file_count,
+                            downloaded,
+                            total,
+                            false
+                        );
+                    }
+                ));
+            } catch (...) {
+                batch.errors[index] = std::current_exception();
+                stop.request_stop();
+            }
+        }
+    };
+
+    std::vector<std::jthread> workers;
+    const auto worker_count = std::min(concurrency, tasks.size());
+    workers.reserve(worker_count);
+    try {
+        for (std::size_t index = 0; index < worker_count; ++index) {
+            workers.emplace_back(worker);
+        }
+    } catch (...) {
+        stop.request_stop();
+        for (auto& thread : workers) {
+            thread.request_stop();
+        }
+        for (auto& thread : workers) {
+            thread.join();
+        }
+        for (const auto& download : batch.downloads) {
+            if (download) {
+                detail::discard_prepared_download(*download);
+            }
+        }
+        throw;
+    }
+    for (auto& thread : workers) {
+        thread.join();
+    }
+    return batch;
+}
 
 graph::RemoteItem remote_item(const storage::BlockedItem& item) {
     return {
@@ -226,7 +343,8 @@ ExecutionSummary execute_plan(
     graph::GraphClient& graph,
     storage::ItemStore& items,
     const detail::FilesystemMetadata& metadata,
-    const cli::Console& console
+    const cli::Console& console,
+    std::size_t download_concurrency
 ) {
     std::vector<std::string> blocked_directories;
     for (std::size_t index = 0; index < plan.blocked_count(); ++index) {
@@ -270,6 +388,8 @@ ExecutionSummary execute_plan(
 
     std::size_t downloaded_count = 0;
     std::size_t reused_count = 0;
+    std::vector<DownloadTask> download_tasks;
+    download_tasks.reserve(plan.download_count());
     for (std::size_t index = 0; index < plan.download_count(); ++index) {
         const auto& item = plan.download(index);
         if (below_blocked_directory(item.remote_path, blocked_directories)) {
@@ -354,7 +474,6 @@ ExecutionSummary execute_plan(
             );
             const auto expected_size =
                 static_cast<std::uint64_t>(item.size);
-            std::uint64_t last_reported_percentage = 0;
             console.download_progress(
                 item.remote_path,
                 index + 1,
@@ -363,52 +482,74 @@ ExecutionSummary execute_plan(
                 expected_size,
                 false
             );
-            try {
-                state = detail::download_atomically(
-                    graph,
-                    items,
-                    item,
-                    state,
-                    destination,
-                    metadata,
-                    [&](std::uint64_t downloaded, std::uint64_t reported_total) {
-                        const auto total =
-                            expected_size == 0 ? reported_total : expected_size;
-                        if (total == 0 || downloaded >= total) {
-                            return;
-                        }
-                        const auto percentage = static_cast<std::uint64_t>(
-                            static_cast<long double>(downloaded) * 100.0L /
-                            static_cast<long double>(total)
-                        );
-                        if (percentage < last_reported_percentage + 5) {
-                            return;
-                        }
-                        last_reported_percentage = percentage;
-                        console.download_progress(
-                            item.remote_path,
-                            index + 1,
-                            plan.download_count(),
-                            downloaded,
-                            total,
-                            false
-                        );
-                    }
-                );
-            } catch (...) {
-                console.end_download_progress();
-                throw;
-            }
-            console.download_progress(
-                item.remote_path,
-                index + 1,
-                plan.download_count(),
-                expected_size,
-                expected_size,
-                true
-            );
-            ++downloaded_count;
+            download_tasks.push_back({
+                .item = item,
+                .state = state,
+                .destination = destination,
+                .file_index = index + 1,
+                .file_count = plan.download_count(),
+            });
         }
+    }
+
+    spdlog::info(
+        "Preparing {} downloads with concurrency {}",
+        download_tasks.size(),
+        download_concurrency
+    );
+    auto prepared = prepare_downloads(
+        download_tasks,
+        download_concurrency,
+        graph,
+        metadata,
+        console
+    );
+    const auto discard_from = [&](std::size_t first) {
+        for (std::size_t index = first;
+             index < prepared.downloads.size();
+             ++index) {
+            if (prepared.downloads[index]) {
+                detail::discard_prepared_download(
+                    *prepared.downloads[index]
+                );
+            }
+        }
+    };
+    for (std::size_t index = 0; index < download_tasks.size(); ++index) {
+        if (prepared.errors[index]) {
+            discard_from(index);
+            console.end_download_progress();
+            std::rethrow_exception(prepared.errors[index]);
+        }
+        if (!prepared.downloads[index]) {
+            discard_from(index);
+            console.end_download_progress();
+            throw std::runtime_error(
+                "download preparation stopped before all earlier tasks completed"
+            );
+        }
+        try {
+            auto state = detail::commit_download(
+                items,
+                std::move(*prepared.downloads[index])
+            );
+            plan.state_for(download_tasks[index].item.id) = std::move(state);
+        } catch (...) {
+            discard_from(index + 1);
+            console.end_download_progress();
+            throw;
+        }
+        const auto expected_size =
+            static_cast<std::uint64_t>(download_tasks[index].item.size);
+        console.download_progress(
+            download_tasks[index].item.remote_path,
+            download_tasks[index].file_index,
+            download_tasks[index].file_count,
+            expected_size,
+            expected_size,
+            true
+        );
+        ++downloaded_count;
     }
     spdlog::info(
         "Download execution completed: {} downloaded, {} reused, {} "
@@ -488,6 +629,13 @@ int SyncEngine::synchronize() const {
                             "{}-{} seconds",
                             config_.graph_initial_throttle_delay.count(),
                             config_.graph_maximum_throttle_delay.count()
+                        ),
+                    },
+                    {
+                        .label = "download concurrency:",
+                        .key = "download_concurrency",
+                        .value = std::to_string(
+                            config_.download_concurrency
                         ),
                     },
                     {
@@ -593,7 +741,8 @@ int SyncEngine::synchronize() const {
                 graph_,
                 items_,
                 *metadata,
-                console
+                console,
+                config_.download_concurrency
             );
             console.section(
                 "execution_summary",

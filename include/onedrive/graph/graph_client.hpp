@@ -6,6 +6,7 @@
 #include <functional>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -108,6 +109,7 @@ private:
     GraphOptions options_;
     std::unique_ptr<auth::DeviceAuthClient> auth_client_;
     SleepFunction sleep_;
+    mutable std::mutex access_token_mutex_;
     mutable std::string cached_access_token_;
     mutable std::chrono::system_clock::time_point access_token_expires_at_{};
 

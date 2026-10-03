@@ -4,6 +4,7 @@
 #include <spdlog/spdlog.h>
 
 #include <array>
+#include <atomic>
 #include <cerrno>
 #include <chrono>
 #include <climits>
@@ -262,13 +263,13 @@ std::string content_fingerprint(const std::filesystem::path& path) {
 std::filesystem::path temporary_path_for(
     const std::filesystem::path& destination
 ) {
-    static std::uint64_t sequence = 0;
+    static std::atomic_uint64_t sequence{0};
     return destination.parent_path() /
            std::format(
                ".{}.onedrive-partial-{}-{}",
                destination.filename().string(),
                ::getpid(),
-               ++sequence
+               sequence.fetch_add(1, std::memory_order_relaxed) + 1
            );
 }
 

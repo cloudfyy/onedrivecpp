@@ -5,6 +5,7 @@ config_version = 1
 directory = "/home/USER/OneDrive"
 drive_id = "me"
 dry_run = true
+download_concurrency = 4
 
 [state]
 directory = "/home/USER/.local/state/onedrive-cpp"
