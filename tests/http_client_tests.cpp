@@ -143,6 +143,16 @@ int main() {
 
     const auto port = ntohs(address.sin_port);
     onedrive::http::CurlHttpClient client;
+    const auto invalid_transport_options = client.perform({
+        .url = "http://127.0.0.1:" + std::to_string(port) + "/invalid",
+        .connect_timeout = std::chrono::seconds::zero(),
+    });
+    if (invalid_transport_options ||
+        !invalid_transport_options.error().message.contains(
+            "invalid transport options"
+        )) {
+        return fail("invalid HTTP transport options were accepted");
+    }
     const auto response = client.perform({
         .method = onedrive::http::HttpMethod::post,
         .url = "http://127.0.0.1:" + std::to_string(port) + "/token",
@@ -408,6 +418,68 @@ int main() {
             onedrive::http::HttpErrorCode::cancelled ||
         cancelled_contents != "prefix") {
         return fail("cancelled HTTP chunk did not roll back to its offset");
+    }
+
+    server_error.clear();
+    std::jthread stalled_download_server{[&] {
+        pollfd descriptor{
+            .fd = listener.get(),
+            .events = POLLIN,
+            .revents = 0,
+        };
+        if (::poll(&descriptor, 1, 10'000) != 1) {
+            server_error = "timed out waiting for stalled download request";
+            return;
+        }
+        Socket connection{
+            ::accept4(listener.get(), nullptr, nullptr, SOCK_CLOEXEC)
+        };
+        std::string request;
+        char buffer[4096];
+        while (!request.contains("\r\n\r\n")) {
+            const auto count =
+                ::recv(connection.get(), buffer, sizeof(buffer), 0);
+            if (count <= 0) {
+                server_error = "cannot read stalled download request";
+                return;
+            }
+            request.append(buffer, static_cast<std::size_t>(count));
+        }
+        constexpr std::string_view response_start{
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Length: 10\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "x"
+        };
+        if (::send(
+                connection.get(),
+                response_start.data(),
+                response_start.size(),
+                MSG_NOSIGNAL
+            ) != static_cast<ssize_t>(response_start.size())) {
+            server_error = "cannot start stalled download response";
+            return;
+        }
+        std::this_thread::sleep_for(std::chrono::seconds{2});
+    }};
+    const auto stalled_download = client.download(
+        {
+            .url = "http://127.0.0.1:" + std::to_string(port) + "/stall",
+            .connect_timeout = std::chrono::seconds{2},
+            .operation_timeout = std::chrono::seconds{5},
+            .low_speed_timeout = std::chrono::seconds{1},
+            .low_speed_limit_bytes_per_second = 100,
+        },
+        destination
+    );
+    stalled_download_server.join();
+    if (!server_error.empty()) {
+        return fail(server_error);
+    }
+    if (stalled_download || std::filesystem::exists(destination)) {
+        std::filesystem::remove(destination, ignored);
+        return fail("stalled HTTP download was not aborted and cleaned up");
     }
 
     return EXIT_SUCCESS;

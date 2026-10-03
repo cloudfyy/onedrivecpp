@@ -2,6 +2,7 @@
 
 #include "onedrive/account/account_state.hpp"
 #include "onedrive/file_hash.hpp"
+#include "onedrive/http/http_options.hpp"
 #include "onedrive/proxy_service.hpp"
 
 #include <chrono>
@@ -80,6 +81,7 @@ struct GraphOptions {
     std::uint64_t download_chunk_threshold_bytes{
         std::uint64_t{8} * 1024U * 1024U
     };
+    http::DownloadTransportOptions download_transport;
 };
 
 PRO_DEF_MEM_DISPATCH(GraphDriveIdentityDispatch, drive_identity);

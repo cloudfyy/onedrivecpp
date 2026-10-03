@@ -8,6 +8,16 @@ dry_run = true
 download_concurrency = 4
 # Files larger than this value are downloaded in HTTP Range chunks of this size.
 download_chunk_threshold_bytes = 8388608
+# Connection and per-request transfer limits for file downloads.
+download_connect_timeout_seconds = 30
+download_operation_timeout_seconds = 3600
+# Abort transfers below this rate for this many seconds. Set timeout to 0 to disable.
+download_stall_timeout_seconds = 60
+download_stall_minimum_bytes_per_second = 1
+# Zero disables the receive-rate limit.
+download_maximum_rate_bytes_per_second = 0
+# Supported values: "auto", "1.1", and "2".
+download_http_version = "auto"
 
 [state]
 directory = "/home/USER/.local/state/onedrive-cpp"

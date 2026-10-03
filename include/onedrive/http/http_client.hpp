@@ -1,5 +1,6 @@
 #pragma once
 
+#include "onedrive/http/http_options.hpp"
 #include "onedrive/proxy_service.hpp"
 
 #include <chrono>
@@ -30,6 +31,10 @@ struct HttpRequest {
     std::string body;
     std::chrono::seconds connect_timeout{10};
     std::chrono::seconds operation_timeout{60};
+    std::chrono::seconds low_speed_timeout{0};
+    std::uint64_t low_speed_limit_bytes_per_second{0};
+    std::uint64_t maximum_receive_speed_bytes_per_second{0};
+    HttpVersion http_version{HttpVersion::automatic};
     std::size_t maximum_response_size{
         std::size_t{16} * 1024U * 1024U
     };

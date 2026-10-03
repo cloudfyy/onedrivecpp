@@ -155,6 +155,21 @@ FilesystemMetadataMode parse_filesystem_metadata(std::string_view value) {
     );
 }
 
+http::HttpVersion parse_http_version(std::string_view value) {
+    if (value == "auto") {
+        return http::HttpVersion::automatic;
+    }
+    if (value == "1.1") {
+        return http::HttpVersion::http_1_1;
+    }
+    if (value == "2") {
+        return http::HttpVersion::http_2;
+    }
+    throw std::runtime_error(
+        "invalid TOML configuration value for 'sync.download_http_version'"
+    );
+}
+
 }  // namespace
 
 Config Config::defaults() {
@@ -180,6 +195,7 @@ Config Config::defaults() {
         .download_concurrency = 4,
         .download_chunk_threshold_bytes =
             std::uint64_t{8} * 1024U * 1024U,
+        .download_transport = {},
         .filesystem_metadata = FilesystemMetadataMode::automatic,
         .dry_run = false,
     };
@@ -221,6 +237,7 @@ Config Config::load(const std::filesystem::path& path) {
     }
 
     if (const auto* sync = optional_table(root, "sync", "sync")) {
+        auto& download_transport = config.download_transport;
         validate_keys(
             *sync,
             {
@@ -229,6 +246,12 @@ Config Config::load(const std::filesystem::path& path) {
                 "dry_run",
                 "download_concurrency",
                 "download_chunk_threshold_bytes",
+                "download_connect_timeout_seconds",
+                "download_operation_timeout_seconds",
+                "download_stall_timeout_seconds",
+                "download_stall_minimum_bytes_per_second",
+                "download_maximum_rate_bytes_per_second",
+                "download_http_version",
             },
             "sync"
         );
@@ -282,6 +305,76 @@ Config Config::load(const std::filesystem::path& path) {
                 );
             }
             config.download_chunk_threshold_bytes = threshold;
+        }
+        if (sync->contains("download_connect_timeout_seconds")) {
+            download_transport.connect_timeout = seconds_value(
+                *sync,
+                "download_connect_timeout_seconds",
+                "sync.download_connect_timeout_seconds"
+            );
+            if (download_transport.connect_timeout ==
+                std::chrono::seconds::zero()) {
+                throw std::runtime_error(
+                    "sync.download_connect_timeout_seconds must be greater "
+                    "than 0"
+                );
+            }
+        }
+        if (sync->contains("download_operation_timeout_seconds")) {
+            download_transport.operation_timeout = seconds_value(
+                *sync,
+                "download_operation_timeout_seconds",
+                "sync.download_operation_timeout_seconds"
+            );
+            if (download_transport.operation_timeout ==
+                std::chrono::seconds::zero()) {
+                throw std::runtime_error(
+                    "sync.download_operation_timeout_seconds must be greater "
+                    "than 0"
+                );
+            }
+        }
+        if (sync->contains("download_stall_timeout_seconds")) {
+            download_transport.low_speed_timeout = seconds_value(
+                *sync,
+                "download_stall_timeout_seconds",
+                "sync.download_stall_timeout_seconds"
+            );
+        }
+        if (sync->contains(
+                "download_stall_minimum_bytes_per_second"
+            )) {
+            download_transport.low_speed_limit_bytes_per_second =
+                unsigned_value(
+                    *sync,
+                    "download_stall_minimum_bytes_per_second",
+                    "sync.download_stall_minimum_bytes_per_second"
+                );
+            if (download_transport.low_speed_limit_bytes_per_second == 0) {
+                throw std::runtime_error(
+                    "sync.download_stall_minimum_bytes_per_second must be "
+                    "greater than 0"
+                );
+            }
+        }
+        if (sync->contains(
+                "download_maximum_rate_bytes_per_second"
+            )) {
+            download_transport.maximum_receive_speed_bytes_per_second =
+                unsigned_value(
+                    *sync,
+                    "download_maximum_rate_bytes_per_second",
+                    "sync.download_maximum_rate_bytes_per_second"
+                );
+        }
+        if (const auto value = optional_value<std::string>(
+                *sync,
+                "download_http_version",
+                "sync.download_http_version",
+                "a string"
+            )) {
+            download_transport.http_version =
+                parse_http_version(*value);
         }
     }
 

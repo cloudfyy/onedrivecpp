@@ -361,6 +361,18 @@ MicrosoftGraphClient::MicrosoftGraphClient(
             "Microsoft Graph client requires valid throttle retry delays"
         );
     }
+    const auto& download_transport = options_.download_transport;
+    if (options_.download_chunk_threshold_bytes == 0 ||
+        download_transport.connect_timeout <=
+            std::chrono::seconds::zero() ||
+        download_transport.operation_timeout <=
+            std::chrono::seconds::zero() ||
+        download_transport.low_speed_timeout < std::chrono::seconds::zero() ||
+        download_transport.low_speed_limit_bytes_per_second == 0) {
+        throw std::invalid_argument(
+            "Microsoft Graph client requires valid download transport options"
+        );
+    }
     auth_client_ =
         std::make_unique<auth::DeviceAuthClient>(
             transport_.get(),
@@ -939,6 +951,7 @@ void MicrosoftGraphClient::download_file(
     const DownloadProgress& progress,
     const DownloadCheckpoint& checkpoint
 ) const {
+    const auto& download_transport = options_.download_transport;
     if (remote_id.empty()) {
         throw std::invalid_argument("cannot download a drive item without an ID");
     }
@@ -976,7 +989,7 @@ void MicrosoftGraphClient::download_file(
                     "Authorization: Bearer " + access_token(),
                 },
                 .body = {},
-                .connect_timeout = std::chrono::seconds{30},
+                .connect_timeout = download_transport.connect_timeout,
                 .operation_timeout = std::chrono::seconds{60},
                 .maximum_response_size = std::size_t{64} * 1024U,
                 .stop_token = stop_token,
@@ -1012,6 +1025,10 @@ void MicrosoftGraphClient::download_file(
         "Received HTTPS download redirect for Microsoft Graph drive item '{}'",
         remote_id
     );
+    const auto low_speed_limit =
+        download_transport.low_speed_limit_bytes_per_second;
+    const auto maximum_receive_speed =
+        download_transport.maximum_receive_speed_bytes_per_second;
     const auto download = [&](const std::vector<std::string>& headers,
                               std::uint64_t offset,
                               const DownloadProgress& chunk_progress,
@@ -1024,8 +1041,17 @@ void MicrosoftGraphClient::download_file(
                         .url = *location,
                         .headers = headers,
                         .body = {},
-                        .connect_timeout = std::chrono::seconds{30},
-                        .operation_timeout = std::chrono::hours{1},
+                        .connect_timeout =
+                            download_transport.connect_timeout,
+                        .operation_timeout =
+                            download_transport.operation_timeout,
+                        .low_speed_timeout =
+                            download_transport.low_speed_timeout,
+                        .low_speed_limit_bytes_per_second =
+                            low_speed_limit,
+                        .maximum_receive_speed_bytes_per_second =
+                            maximum_receive_speed,
+                        .http_version = download_transport.http_version,
                         .maximum_response_size = 0,
                         .download_offset = offset,
                         .stop_token = stop_token,

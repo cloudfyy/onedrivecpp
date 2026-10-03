@@ -86,6 +86,23 @@ std::string_view method_name(HttpMethod method) {
     return method == HttpMethod::post ? "POST" : "GET";
 }
 
+long curl_http_version(HttpVersion version) {
+    switch (version) {
+    case HttpVersion::automatic:
+        return CURL_HTTP_VERSION_NONE;
+    case HttpVersion::http_1_1:
+        return CURL_HTTP_VERSION_1_1;
+    case HttpVersion::http_2:
+        return CURL_HTTP_VERSION_2TLS;
+    }
+    return CURL_HTTP_VERSION_NONE;
+}
+
+bool fits_curl_long(std::uint64_t value) {
+    return value <=
+           static_cast<std::uint64_t>(std::numeric_limits<long>::max());
+}
+
 std::size_t write_response(char* data, std::size_t size, std::size_t count, void* context) {
     if (count != 0 && size > std::numeric_limits<std::size_t>::max() / count) {
         return 0;
@@ -228,6 +245,25 @@ HttpResult perform_request(
     const DownloadProgress& progress = {}
 ) {
     spdlog::trace("Performing HTTP {} request", method_name(request.method));
+    const auto connect_timeout = request.connect_timeout.count();
+    const auto operation_timeout = request.operation_timeout.count();
+    const auto low_speed_timeout = request.low_speed_timeout.count();
+    if (connect_timeout <= 0 || operation_timeout <= 0 ||
+        low_speed_timeout < 0 ||
+        connect_timeout > std::numeric_limits<long>::max() ||
+        operation_timeout > std::numeric_limits<long>::max() ||
+        low_speed_timeout > std::numeric_limits<long>::max() ||
+        (low_speed_timeout > 0 &&
+         request.low_speed_limit_bytes_per_second == 0) ||
+        !fits_curl_long(request.low_speed_limit_bytes_per_second) ||
+        request.maximum_receive_speed_bytes_per_second >
+            static_cast<std::uint64_t>(
+                std::numeric_limits<curl_off_t>::max()
+            )) {
+        return std::unexpected(HttpError{
+            .message = "HTTP request contains invalid transport options",
+        });
+    }
     static const CurlRuntime runtime;
     if (runtime.result() != CURLE_OK) {
         return std::unexpected(HttpError{
@@ -289,10 +325,42 @@ HttpResult perform_request(
         result = set_option(CURLOPT_HEADERDATA, &header_context);
     }
     if (result == CURLE_OK) {
-        result = set_option(CURLOPT_CONNECTTIMEOUT, request.connect_timeout.count());
+        result = set_option(
+            CURLOPT_CONNECTTIMEOUT,
+            static_cast<long>(connect_timeout)
+        );
     }
     if (result == CURLE_OK) {
-        result = set_option(CURLOPT_TIMEOUT, request.operation_timeout.count());
+        result = set_option(
+            CURLOPT_TIMEOUT,
+            static_cast<long>(operation_timeout)
+        );
+    }
+    if (result == CURLE_OK && low_speed_timeout > 0) {
+        result = set_option(
+            CURLOPT_LOW_SPEED_TIME,
+            static_cast<long>(low_speed_timeout)
+        );
+    }
+    if (result == CURLE_OK && low_speed_timeout > 0) {
+        result = set_option(
+            CURLOPT_LOW_SPEED_LIMIT,
+            static_cast<long>(request.low_speed_limit_bytes_per_second)
+        );
+    }
+    if (result == CURLE_OK) {
+        result = set_option(
+            CURLOPT_MAX_RECV_SPEED_LARGE,
+            static_cast<curl_off_t>(
+                request.maximum_receive_speed_bytes_per_second
+            )
+        );
+    }
+    if (result == CURLE_OK) {
+        result = set_option(
+            CURLOPT_HTTP_VERSION,
+            curl_http_version(request.http_version)
+        );
     }
     if (result == CURLE_OK) {
         result = set_option(CURLOPT_USERAGENT, build_info::user_agent);

@@ -27,6 +27,7 @@ inline graph::GraphOptions graph_options(const config::Config& config) {
         .maximum_throttle_delay = config.graph_maximum_throttle_delay,
         .download_chunk_threshold_bytes =
             config.download_chunk_threshold_bytes,
+        .download_transport = config.download_transport,
     };
 }
 

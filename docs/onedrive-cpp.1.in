@@ -232,6 +232,41 @@ Maximum accepted or calculated Graph throttling delay. The default is
 seconds. This value must be greater than or equal to
 .BR graph.throttle.initial_delay_seconds .
 .TP
+.B sync.download_connect_timeout_seconds
+Connection timeout for each file download request. The default is
+.B 30
+seconds and the value must be greater than zero.
+.TP
+.B sync.download_operation_timeout_seconds
+Maximum duration of each file download request. The default is
+.B 3600
+seconds and the value must be greater than zero.
+.TP
+.B sync.download_stall_timeout_seconds
+Abort a download that remains below the configured minimum rate for this many
+seconds. The default is
+.BR 60 ;
+zero disables stall detection.
+.TP
+.B sync.download_stall_minimum_bytes_per_second
+Minimum transfer rate used by stall detection. The default is
+.B 1
+byte per second and the value must be greater than zero.
+.TP
+.B sync.download_maximum_rate_bytes_per_second
+Maximum receive rate for each download. The default is
+.BR 0 ,
+which disables rate limiting.
+.TP
+.B sync.download_http_version
+HTTP version preference for file downloads:
+.BR auto ,
+.BR 1.1 ,
+or
+.BR 2 .
+The default is
+.BR auto .
+.TP
 .B filesystem.metadata
 File-system metadata policy:
 .B auto

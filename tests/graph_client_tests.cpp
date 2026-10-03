@@ -168,6 +168,33 @@ bool has_header(
     return false;
 }
 
+int test_invalid_download_transport_options() {
+    try {
+        onedrive::graph::MicrosoftGraphClient client{
+            wrap_transport(
+                std::make_unique<FakeTransport>(
+                    std::deque<onedrive::http::HttpResult>{}
+                )
+            ),
+            wrap_token_store(
+                std::make_unique<FakeTokenStore>(
+                    std::string{"existing-refresh"}
+                )
+            ),
+            auth_options(),
+            {
+                .download_transport = {
+                    .connect_timeout = std::chrono::seconds::zero(),
+                },
+            },
+        };
+        static_cast<void>(client);
+        return fail("invalid Graph download transport options were accepted");
+    } catch (const std::invalid_argument&) {
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_list_root_with_refresh_and_pagination() {
     auto transport = std::make_unique<FakeTransport>(
         std::deque<onedrive::http::HttpResult>{
@@ -749,6 +776,14 @@ int test_file_download_redirect() {
         {
             .drive_id = "drive id",
             .endpoint = "https://graph.example.test/v1.0",
+            .download_transport = {
+                .connect_timeout = std::chrono::seconds{12},
+                .operation_timeout = std::chrono::seconds{600},
+                .low_speed_timeout = std::chrono::seconds{15},
+                .low_speed_limit_bytes_per_second = 128,
+                .maximum_receive_speed_bytes_per_second = 1'048'576,
+                .http_version = onedrive::http::HttpVersion::http_2,
+            },
         },
     };
     std::vector<std::pair<std::uint64_t, std::uint64_t>> progress;
@@ -780,6 +815,20 @@ int test_file_download_redirect() {
             "https://download.example.test/content" ||
         transport_pointer->download_requests[0].headers !=
             std::vector<std::string>{"Accept: application/octet-stream"} ||
+        transport_pointer->download_requests[0].connect_timeout !=
+            std::chrono::seconds{12} ||
+        transport_pointer->download_requests[0].operation_timeout !=
+            std::chrono::seconds{600} ||
+        transport_pointer->download_requests[0].low_speed_timeout !=
+            std::chrono::seconds{15} ||
+        transport_pointer->download_requests[0].
+                low_speed_limit_bytes_per_second !=
+            128 ||
+        transport_pointer->download_requests[0].
+                maximum_receive_speed_bytes_per_second !=
+            1'048'576 ||
+        transport_pointer->download_requests[0].http_version !=
+            onedrive::http::HttpVersion::http_2 ||
         progress !=
             std::vector<std::pair<std::uint64_t, std::uint64_t>>{{8, 8}}) {
         return fail("Graph file download redirect was not handled safely");
@@ -1138,6 +1187,10 @@ int test_drive_identity_and_profile_photo() {
 }  // namespace
 
 int main() {
+    if (const int result = test_invalid_download_transport_options();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
     if (const int result = test_list_root_with_refresh_and_pagination();
         result != EXIT_SUCCESS) {
         return result;

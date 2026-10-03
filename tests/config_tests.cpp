@@ -1,3 +1,4 @@
+#include "onedrive/app/runtime_options.hpp"
 #include "onedrive/config/config.hpp"
 
 #include <chrono>
@@ -18,6 +19,12 @@ int main() {
                << "dry_run = true\n"
                << "download_concurrency = 6\n"
                << "download_chunk_threshold_bytes = 4096\n"
+               << "download_connect_timeout_seconds = 12\n"
+               << "download_operation_timeout_seconds = 600\n"
+               << "download_stall_timeout_seconds = 15\n"
+               << "download_stall_minimum_bytes_per_second = 128\n"
+               << "download_maximum_rate_bytes_per_second = 1048576\n"
+               << "download_http_version = \"2\"\n"
                << "[state]\n"
                << "directory = \"/tmp/onedrive-state\"\n"
                << "[auth]\n"
@@ -37,6 +44,7 @@ int main() {
 
     const auto config = onedrive::config::Config::load(path);
     std::filesystem::remove(path);
+    const auto graph_options = onedrive::app::graph_options(config);
 
     if (config.sync_directory != "/tmp/OneDrive" ||
         config.state_directory != "/tmp/onedrive-state" ||
@@ -51,6 +59,19 @@ int main() {
         config.graph_maximum_throttle_delay != std::chrono::seconds{90} ||
         config.download_concurrency != 6 ||
         config.download_chunk_threshold_bytes != 4096 ||
+        config.download_transport.connect_timeout !=
+            std::chrono::seconds{12} ||
+        config.download_transport.operation_timeout !=
+            std::chrono::seconds{600} ||
+        config.download_transport.low_speed_timeout !=
+            std::chrono::seconds{15} ||
+        config.download_transport.low_speed_limit_bytes_per_second != 128 ||
+        config.download_transport.
+                maximum_receive_speed_bytes_per_second !=
+            1'048'576 ||
+        config.download_transport.http_version !=
+            onedrive::http::HttpVersion::http_2 ||
+        graph_options.download_transport != config.download_transport ||
         config.filesystem_metadata !=
             onedrive::config::FilesystemMetadataMode::database ||
         !config.dry_run) {
@@ -68,6 +89,48 @@ int main() {
         static_cast<void>(onedrive::config::Config::load(path));
         std::filesystem::remove(path);
         std::cerr << "invalid throttle retry count was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error&) {
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 1\n"
+               << "[sync]\n"
+               << "download_http_version = \"3\"\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "invalid download HTTP version was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error&) {
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 1\n"
+               << "[sync]\n"
+               << "download_operation_timeout_seconds = 0\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "zero download operation timeout was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error&) {
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 1\n"
+               << "[sync]\n"
+               << "download_stall_minimum_bytes_per_second = 0\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "zero download stall minimum was accepted\n";
         return EXIT_FAILURE;
     } catch (const std::runtime_error&) {
     }

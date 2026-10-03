@@ -372,6 +372,12 @@ For example:
 drive_id = "me"
 download_concurrency = 4
 download_chunk_threshold_bytes = 8388608
+download_connect_timeout_seconds = 30
+download_operation_timeout_seconds = 3600
+download_stall_timeout_seconds = 60
+download_stall_minimum_bytes_per_second = 1
+download_maximum_rate_bytes_per_second = 0
+download_http_version = "auto"
 
 # Another OneDrive or SharePoint document library
 # drive_id = "b!YOUR_DRIVE_ID"
@@ -398,6 +404,15 @@ larger than this value are downloaded sequentially with HTTP byte-range
 requests, using the same value as the maximum chunk size. It defaults to
 `8388608` (8 MiB) and must be greater than zero. Files at or below the
 threshold use a single request.
+
+Download transport settings control each file-content request. Connection and
+operation timeouts default to `30` and `3600` seconds. A transfer that remains
+below `download_stall_minimum_bytes_per_second` (default `1`) for
+`download_stall_timeout_seconds` (default `60`) is aborted; set the stall
+timeout to `0` to disable this check. `download_maximum_rate_bytes_per_second`
+defaults to `0`, meaning unlimited. `download_http_version` accepts `"auto"`,
+`"1.1"`, or `"2"`; HTTP/2 is negotiated over TLS and may fall back according
+to libcurl capabilities.
 
 State is separated by the stable Microsoft user ID and canonical Drive ID while
 retaining friendly directory names:
