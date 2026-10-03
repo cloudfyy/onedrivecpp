@@ -115,6 +115,11 @@ int test_insufficient_capacity_and_cancellation() {
     if (!cancellation_observed.load(std::memory_order_relaxed)) {
         return fail("waiting space reservation did not observe cancellation");
     }
+    try {
+        static_cast<void>(cancelled.acquire(1));
+        return fail("cancelled coordinator accepted a later reservation");
+    } catch (const detail::DownloadSpaceCancelledError&) {
+    }
     return EXIT_SUCCESS;
 }
 

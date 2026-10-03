@@ -321,6 +321,13 @@ int main() {
             .completed_bytes = 2,
         }
     );
+    detail::DownloadSpaceCoordinator resume_space{
+        root,
+        0,
+        [](const std::filesystem::path&) {
+            return std::uintmax_t{2};
+        }
+    };
     static_cast<void>(detail::download_atomically(
         graph,
         items,
@@ -328,7 +335,7 @@ int main() {
         item_state(truncated_item, truncated_destination),
         truncated_destination,
         metadata,
-        space
+        resume_space
     ));
     std::ifstream truncated_input{truncated_destination, std::ios::binary};
     const std::string truncated_contents{
@@ -358,6 +365,15 @@ int main() {
             .completed_bytes = 4,
         }
     );
+    detail::DownloadSpaceCoordinator complete_space{
+        root,
+        0,
+        [](const std::filesystem::path&) -> std::uintmax_t {
+            throw std::runtime_error{
+                "zero-byte reservation queried filesystem capacity"
+            };
+        }
+    };
     static_cast<void>(detail::download_atomically(
         graph,
         items,
@@ -365,7 +381,7 @@ int main() {
         item_state(complete_item, complete_destination),
         complete_destination,
         metadata,
-        space
+        complete_space
     ));
     if (graph.last_initial_offset != 4 ||
         !std::filesystem::exists(complete_destination) ||

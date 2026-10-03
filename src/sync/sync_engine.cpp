@@ -182,6 +182,7 @@ DownloadBatch download_files(
             workers.emplace_back(worker);
         }
     } catch (...) {
+        space.cancel();
         stop.request_stop();
         for (auto& thread : workers) {
             thread.request_stop();
