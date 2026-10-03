@@ -38,20 +38,21 @@ struct DownloadTask {
     std::filesystem::path destination;
 };
 
-struct PreparedDownloadBatch {
-    std::vector<std::optional<detail::PreparedDownload>> downloads;
+struct DownloadBatch {
+    std::vector<std::optional<storage::ItemState>> states;
     std::vector<std::exception_ptr> errors;
 };
 
-PreparedDownloadBatch prepare_downloads(
+DownloadBatch download_files(
     const std::vector<DownloadTask>& tasks,
     std::size_t concurrency,
     graph::GraphClient& graph,
+    storage::ItemStore& items,
     const detail::FilesystemMetadata& metadata,
     const cli::Console& console
 ) {
-    PreparedDownloadBatch batch{
-        .downloads = std::vector<std::optional<detail::PreparedDownload>>(
+    DownloadBatch batch{
+        .states = std::vector<std::optional<storage::ItemState>>(
             tasks.size()
         ),
         .errors = std::vector<std::exception_ptr>(tasks.size()),
@@ -125,20 +126,26 @@ PreparedDownloadBatch prepare_downloads(
             const auto expected_size =
                 static_cast<std::uint64_t>(task.item.size);
             try {
-                batch.downloads[index].emplace(detail::prepare_download(
-                    graph,
-                    task.item,
-                    task.state,
-                    task.destination,
-                    metadata,
-                    [&](std::uint64_t downloaded, std::uint64_t reported_total) {
-                        const auto total =
-                            expected_size == 0 ? reported_total : expected_size;
-                        if (total == 0 || downloaded >= total) {
-                            return;
+                batch.states[index].emplace(detail::commit_download(
+                    items,
+                    detail::prepare_download(
+                        graph,
+                        task.item,
+                        task.state,
+                        task.destination,
+                        metadata,
+                        [&](std::uint64_t downloaded,
+                            std::uint64_t reported_total) {
+                            const auto total =
+                                expected_size == 0 ?
+                                    reported_total :
+                                    expected_size;
+                            if (total == 0 || downloaded >= total) {
+                                return;
+                            }
+                            report_progress(index, downloaded, false);
                         }
-                        report_progress(index, downloaded, false);
-                    }
+                    )
                 ));
                 report_progress(index, expected_size, true);
             } catch (...) {
@@ -162,11 +169,6 @@ PreparedDownloadBatch prepare_downloads(
         }
         for (auto& thread : workers) {
             thread.join();
-        }
-        for (const auto& download : batch.downloads) {
-            if (download) {
-                detail::discard_prepared_download(*download);
-            }
         }
         throw;
     }
@@ -515,53 +517,32 @@ ExecutionSummary execute_plan(
     }
 
     spdlog::info(
-        "Preparing {} downloads with concurrency {}",
+        "Executing {} downloads with concurrency {}",
         download_tasks.size(),
         download_concurrency
     );
-    auto prepared = prepare_downloads(
+    auto downloads = download_files(
         download_tasks,
         download_concurrency,
         graph,
+        items,
         metadata,
         console
     );
-    const auto discard_from = [&](std::size_t first) {
-        for (std::size_t index = first;
-             index < prepared.downloads.size();
-             ++index) {
-            if (prepared.downloads[index]) {
-                detail::discard_prepared_download(
-                    *prepared.downloads[index]
-                );
-            }
-        }
-    };
     for (std::size_t index = 0; index < download_tasks.size(); ++index) {
-        if (prepared.errors[index]) {
-            discard_from(index);
+        if (downloads.errors[index]) {
             console.end_download_progress();
-            std::rethrow_exception(prepared.errors[index]);
+            std::rethrow_exception(downloads.errors[index]);
         }
-        auto download = std::move(prepared.downloads[index]);
-        if (!download) {
-            discard_from(index);
+        auto state = std::move(downloads.states[index]);
+        if (!state) {
             console.end_download_progress();
             throw std::runtime_error(
-                "download preparation stopped before all earlier tasks completed"
+                "download execution stopped before all earlier tasks completed"
             );
         }
-        try {
-            auto state = detail::commit_download(
-                items,
-                std::move(download).value()
-            );
-            plan.state_for(download_tasks[index].item.id) = std::move(state);
-        } catch (...) {
-            discard_from(index + 1);
-            console.end_download_progress();
-            throw;
-        }
+        plan.state_for(download_tasks[index].item.id) =
+            std::move(state).value();
         ++downloaded_count;
     }
     spdlog::info(

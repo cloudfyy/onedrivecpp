@@ -640,10 +640,13 @@ does not lose unapplied changes.
 downloads, download bytes, and local removals, but does not create files or
 update SQLite state. Normal mode creates remote directories and downloads
 added or changed files. Each download is written to a temporary file in the
-target directory, size-checked, flushed, and atomically replaced. The
-`deltaLink` advances after every change is either applied successfully or
-durably recorded as blocked in the same SQLite transaction. Local snapshots
-for completed files support safe retries after a systemic failure.
+target directory, size-checked, flushed, and atomically replaced. Each
+concurrent worker commits its completed file immediately instead of retaining
+the entire batch as temporary files, so a later independent failure does not
+discard completed transfers. The `deltaLink` advances after every change is
+either applied successfully or durably recorded as blocked in the same SQLite
+transaction. Local snapshots for completed files support safe retries after a
+systemic failure.
 
 The client refuses to overwrite a local file that it cannot prove is
 unchanged. Invalid remote paths, local modifications, symbolic links, local

@@ -12,6 +12,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <mutex>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -89,6 +90,10 @@ public:
             std::this_thread::sleep_for(download_delay);
         }
         if (remote_id == failing_id) {
+            while (download_count.load(std::memory_order_relaxed) <
+                   downloads_started_before_failure) {
+                std::this_thread::yield();
+            }
             throw std::runtime_error{"simulated download failure"};
         }
         std::ofstream output{destination, std::ios::binary};
@@ -105,6 +110,7 @@ public:
     std::string failing_id;
     bool reject_saved_cursor{false};
     std::chrono::milliseconds download_delay{0};
+    int downloads_started_before_failure{0};
     mutable std::atomic_int download_count{0};
     mutable std::atomic_int active_downloads{0};
     mutable std::atomic_int maximum_concurrent_downloads{0};
@@ -116,6 +122,7 @@ public:
     void open() {}
 
     void upsert(onedrive::storage::ItemState item) {
+        const std::scoped_lock lock{mutex};
         if (fail_upsert) {
             throw std::runtime_error{"simulated item persistence failure"};
         }
@@ -124,6 +131,7 @@ public:
     }
 
     void apply_delta(onedrive::storage::ItemDelta delta) {
+        const std::scoped_lock lock{mutex};
         ++apply_count;
         applied_delta = std::move(delta);
     }
@@ -131,6 +139,7 @@ public:
     void save_pending_download(
         onedrive::storage::PendingDownload download
     ) {
+        const std::scoped_lock lock{mutex};
         pending.insert_or_assign(
             download.item.remote_id,
             std::move(download)
@@ -141,11 +150,13 @@ public:
         const std::string&,
         const std::string& remote_id
     ) {
+        const std::scoped_lock lock{mutex};
         pending.erase(remote_id);
     }
 
     [[nodiscard]] std::vector<onedrive::storage::PendingDownload>
     pending_downloads(const std::string&) const {
+        const std::scoped_lock lock{mutex};
         std::vector<onedrive::storage::PendingDownload> result;
         for (const auto& [remote_id, download] : pending) {
             static_cast<void>(remote_id);
@@ -157,6 +168,7 @@ public:
     [[nodiscard]] std::vector<onedrive::storage::BlockedItem> blocked_items(
         const std::string&
     ) const {
+        const std::scoped_lock lock{mutex};
         return blocked;
     }
 
@@ -178,6 +190,7 @@ public:
         const std::string&,
         const std::string& remote_id
     ) const {
+        const std::scoped_lock lock{mutex};
         const auto iterator = items.find(remote_id);
         return iterator == items.end() ?
                    std::nullopt :
@@ -186,7 +199,8 @@ public:
                    };
     }
 
-    [[nodiscard]] std::size_t size() const noexcept {
+    [[nodiscard]] std::size_t size() const {
+        const std::scoped_lock lock{mutex};
         return items.size();
     }
 
@@ -198,6 +212,7 @@ public:
     int upsert_count{0};
     int apply_count{0};
     bool fail_upsert{false};
+    mutable std::mutex mutex;
 };
 
 class FakeMetrics final {
@@ -351,6 +366,44 @@ int test_failure_and_conflict() {
         !std::filesystem::exists(root / "first.txt") ||
         std::filesystem::exists(root / "second.txt") || metrics.last_success) {
         return fail("failed download advanced state or left an invalid file");
+    }
+
+    const auto independent_root = temporary.path() / "independent";
+    FakeGraphClient independent_graph;
+    independent_graph.changes = {
+        file("failed-first", "failed-first.txt", 4),
+        file("completed-second", "completed-second.txt", 4),
+    };
+    independent_graph.contents["completed-second"] = "data";
+    independent_graph.failing_id = "failed-first";
+    independent_graph.downloads_started_before_failure = 2;
+    FakeItemStore independent_items;
+    FakeMetrics independent_metrics;
+    auto independent_config = config_for(independent_root, false);
+    independent_config.download_concurrency = 2;
+    try {
+        static_cast<void>(
+            onedrive::sync::SyncEngine{
+                independent_config,
+                independent_graph,
+                independent_items,
+                independent_metrics
+            }.synchronize()
+        );
+        return fail("concurrent download failure was accepted");
+    } catch (const std::runtime_error&) {
+    }
+    if (independent_items.upsert_count != 1 ||
+        !std::filesystem::exists(
+            independent_root / "completed-second.txt"
+        ) ||
+        std::filesystem::exists(
+            independent_root / "failed-first.txt"
+        ) ||
+        independent_metrics.last_success) {
+        return fail(
+            "an independently completed download was discarded after failure"
+        );
     }
 
     const auto conflict_root = temporary.path() / "conflict";
