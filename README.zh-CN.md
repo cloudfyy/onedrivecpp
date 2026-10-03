@@ -312,7 +312,7 @@ sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 # 当前账号的默认 OneDrive
 drive_id = "me"
 download_concurrency = 4
-download_chunk_threshold_bytes = 104857600
+download_chunk_threshold_bytes = 8388608
 
 # 指定其他 OneDrive 或 SharePoint 文档库
 # drive_id = "b!YOUR_DRIVE_ID"
@@ -323,7 +323,7 @@ download_chunk_threshold_bytes = 104857600
 
 `download_chunk_threshold_bytes` 设置大文件阈值（字节）。超过该值的文件会通过
 HTTP 字节范围请求顺序分片下载，并以该值作为单个分片的最大大小。默认值为
-`104857600`（100 MiB），且必须大于零。等于或小于阈值的文件仍使用单次请求。
+`8388608`（8 MiB），且必须大于零。等于或小于阈值的文件仍使用单次请求。
 
 状态按稳定的 Microsoft 用户 ID 和真实 Drive ID 隔离，同时保留友好的目录名：
 
