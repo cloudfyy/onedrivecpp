@@ -1,3 +1,10 @@
+onedrive-cpp (0.6.3-1~ubuntu24.04) noble; urgency=medium
+
+  * Preserve configured Drive references in reset-state success output.
+  * Reuse shared Proxy ownership, runtime option, and test support code.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sat, 03 Oct 2026 10:29:36 +0000
+
 onedrive-cpp (0.6.2-1~ubuntu24.04) noble; urgency=medium
 
   * Retry transient Microsoft Graph and download failures.
