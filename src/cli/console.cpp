@@ -4,6 +4,7 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
@@ -51,6 +52,30 @@ bool suppressed(const ConsoleOptions& options, MessageKind kind) {
     return options.quiet &&
            kind != MessageKind::warning &&
            kind != MessageKind::error;
+}
+
+std::string format_bytes(std::uint64_t bytes) {
+    constexpr std::uint64_t unit_size = 1024;
+    constexpr std::array<std::string_view, 3> units{
+        "KiB",
+        "MiB",
+        "GiB",
+    };
+    if (bytes < unit_size) {
+        return fmt::format("{} B", bytes);
+    }
+
+    double value = static_cast<double>(bytes);
+    std::size_t unit = 0;
+    do {
+        value /= static_cast<double>(unit_size);
+        if (value < static_cast<double>(unit_size) ||
+            unit + 1 == units.size()) {
+            break;
+        }
+        ++unit;
+    } while (true);
+    return fmt::format("{:.1f} {}", value, units[unit]);
 }
 
 }  // namespace
@@ -234,13 +259,13 @@ void Console::download_progress(
     }
 
     const auto line = fmt::format(
-        "{}: {}/{} files, {}% ({}/{} bytes)",
+        "{}: {}/{} files, {}% ({}/{})",
         completed ? "Done" : "DL",
         completed_files,
         file_count,
         percentage,
-        downloaded,
-        total
+        format_bytes(downloaded),
+        format_bytes(total)
     );
     if (interactive_) {
         output_ << '\r' << "\033[2K" << line;

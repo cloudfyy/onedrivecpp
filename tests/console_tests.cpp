@@ -49,13 +49,31 @@ int main() {
     plain.download_progress(1, 2, 5, 10, false);
     plain.download_progress(1, 2, 10, 10, false);
     plain.download_progress(2, 2, 10, 10, true);
+    plain.download_progress(0, 1, 1'536, 3'072, false);
+    plain.download_progress(
+        0,
+        1,
+        1024U * 1024U,
+        2U * 1024U * 1024U,
+        false
+    );
+    plain.download_progress(
+        0,
+        1,
+        1024ULL * 1024ULL * 1024ULL,
+        2ULL * 1024ULL * 1024ULL * 1024ULL,
+        false
+    );
     if (plain_output.str() !=
         "Completed.\nSummary\n  Files: 12\n  Bytes: 42\n"
         "Microsoft Graph delta: 2 pages, 350 items scanned (continuing)\n"
         "Microsoft Graph delta: 3 pages, 412 items scanned (complete)\n"
-        "DL: 1/2 files, 50% (5/10 bytes)\n"
-        "DL: 1/2 files, 99% (10/10 bytes)\n"
-        "Done: 2/2 files, 100% (10/10 bytes)\n" ||
+        "DL: 1/2 files, 50% (5 B/10 B)\n"
+        "DL: 1/2 files, 99% (10 B/10 B)\n"
+        "Done: 2/2 files, 100% (10 B/10 B)\n"
+        "DL: 0/1 files, 50% (1.5 KiB/3.0 KiB)\n"
+        "DL: 0/1 files, 50% (1.0 MiB/2.0 MiB)\n"
+        "DL: 0/1 files, 50% (1.0 GiB/2.0 GiB)\n" ||
         plain_error.str() !=
             "Blocked 'conflict.txt': local file was modified "
             "(local_modification)\n") {
