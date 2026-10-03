@@ -213,6 +213,7 @@ graph::RemoteItem remote_item(const storage::BlockedItem& item) {
         .directory = item.directory,
         .deleted = false,
         .root = false,
+        .malware = item.reason_code == "malware_detected",
         .content_hash = item.content_hash,
     };
 }

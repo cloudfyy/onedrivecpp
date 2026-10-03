@@ -729,10 +729,12 @@ modification time, and SHA-256 fingerprint, then checks that baseline before
 journaling and immediately before the atomic replacement. A file created or
 modified during transfer is retained and persisted as a `local_modification`
 blocked item. Invalid remote paths, symbolic links, local path-type conflicts,
-and descendants of blocked directories are also persisted as blocked items.
-Independent files continue, and `sync` exits with status 2 after safely
-advancing the cursor. Blocked items are retried on every later incremental
-sync; a successful retry or remote deletion clears the record.
+files marked with the Microsoft Graph `malware` facet, and descendants of
+blocked directories are also persisted as blocked items. Malware-marked files
+are never downloaded or allowed to replace existing local data. Independent
+files continue, and `sync` exits with status 2 after safely advancing the
+cursor. Blocked items are retried on every later incremental sync; a successful
+retry or remote deletion clears the record.
 Authentication, Graph, database, root-permission, disk-capacity, and download
 transport failures remain fatal. The client does not yet upload local changes
 or remove local files for remote deletion records.
@@ -745,10 +747,11 @@ the next attempt restarts from byte zero. The separate local SHA-256
 fingerprint below protects crash recovery state and is not treated as a
 substitute for a remote integrity hash.
 
-Installed files receive the Graph `lastModifiedDateTime` value when available.
-New download files are created with permissions derived from `0666` and the
-process `umask` (normally `0644` with `umask 0022`); executable bits are never
-added.
+Installed files receive the authoritative Graph
+`fileSystemInfo.lastModifiedDateTime` value. Files without a valid authoritative
+timestamp are rejected before download. New download files are created with
+permissions derived from `0666` and the process `umask` (normally `0644` with
+`umask 0022`); executable bits are never added.
 
 After a download completes, the client writes the temporary path, destination,
 remote metadata, size, and SHA-256 content fingerprint to a SQLite

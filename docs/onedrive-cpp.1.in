@@ -68,11 +68,14 @@ remote metadata and the final delta link after creating directories and safely
 downloading added or changed files. Downloads use same-directory temporary
 files, size validation, flushing, and atomic replacement. Existing local files
 that cannot be proven unchanged are persisted as blocked items instead of being
-overwritten. Invalid names, local path conflicts, and descendants of blocked
-directories are also isolated while independent files continue. A partial
-completion exits with status 2, and blocked items are retried on later syncs.
-Installed files use the remote modification time when available and permissions
-derived from mode 0666 and the process umask.
+overwritten. Invalid names, local path conflicts, files marked with the
+Microsoft Graph malware facet, and descendants of blocked directories are also
+isolated while independent files continue. Malware-marked files are not
+downloaded or allowed to replace local data. A partial completion exits with
+status 2, and blocked items are retried on later syncs. Installed files use the
+authoritative fileSystemInfo.lastModifiedDateTime value; files without a valid
+value are rejected before download. Permissions are derived from mode 0666 and
+the process umask.
 SQLite pending-download records and SHA-256 content fingerprints provide
 crash recovery independently of target-file-system extended attributes.
 Microsoft Graph HTTP 408, 429, 502, 503, and 504 responses are retried using

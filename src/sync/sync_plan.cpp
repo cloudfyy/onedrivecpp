@@ -35,6 +35,14 @@ SyncPlan SyncPlan::build(
             spdlog::trace("Ignoring remote drive root item '{}'", item.id);
             continue;
         }
+        if (item.malware) {
+            plan.block(
+                item,
+                "malware_detected",
+                "Microsoft Graph marked the remote file as malware"
+            );
+            continue;
+        }
         spdlog::trace(
             "Remote item changed: path='{}', id='{}', eTag='{}', type={}",
             item.remote_path,

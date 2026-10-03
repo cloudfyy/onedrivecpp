@@ -438,6 +438,48 @@ int test_dry_run_and_success() {
     return EXIT_SUCCESS;
 }
 
+int test_malware_file_is_blocked_without_overwriting_local_data() {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path() / "files";
+    std::filesystem::create_directories(root);
+    const auto destination = root / "reported-malware.exe";
+    {
+        std::ofstream output{destination, std::ios::binary};
+        output << "local data";
+    }
+
+    FakeGraphClient graph;
+    auto malware = file("malware", "reported-malware.exe", 4);
+    malware.malware = true;
+    graph.changes = {malware};
+    graph.contents["malware"] = "evil";
+    FakeItemStore items;
+    FakeMetrics metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(root, false),
+            graph,
+            items,
+            metrics
+        }.synchronize() != 2 ||
+        graph.download_count != 0 ||
+        items.applied_delta.upserts.size() != 0 ||
+        items.applied_delta.blocked_upserts.size() != 1 ||
+        items.applied_delta.blocked_upserts[0].reason_code !=
+            "malware_detected" ||
+        !metrics.last_success) {
+        return fail("Graph malware item was not isolated from downloads");
+    }
+    std::ifstream input{destination, std::ios::binary};
+    const std::string contents{
+        std::istreambuf_iterator<char>{input},
+        std::istreambuf_iterator<char>{}
+    };
+    if (contents != "local data") {
+        return fail("Graph malware item overwrote an existing local file");
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_failure_and_conflict() {
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "files";
@@ -744,6 +786,43 @@ int test_blocked_items_continue_and_retry() {
         !hash_retry_items.partials.empty() ||
         hash_retry_metrics.last_success) {
         return fail("failed blocked hash retry retained resumable state");
+    }
+
+    const auto malware_retry_root = temporary.path() / "malware-retry";
+    FakeGraphClient malware_retry_graph;
+    malware_retry_graph.contents["malware-retry"] = "evil";
+    FakeItemStore malware_retry_items;
+    malware_retry_items.saved_delta_link =
+        "https://graph.example.test/delta?token=saved";
+    malware_retry_items.blocked = {
+        {
+            .drive_id = "me",
+            .remote_id = "malware-retry",
+            .parent_id = "root",
+            .name = "malware-retry.exe",
+            .etag = "retry-etag",
+            .remote_path = "malware-retry.exe",
+            .last_modified = "2026-10-02T00:00:00Z",
+            .size = 4,
+            .reason_code = "malware_detected",
+            .reason_message =
+                "Microsoft Graph marked the remote file as malware",
+            .attempt_count = 1,
+        },
+    };
+    FakeMetrics malware_retry_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(malware_retry_root, false),
+            malware_retry_graph,
+            malware_retry_items,
+            malware_retry_metrics
+        }.synchronize() != 2 ||
+        malware_retry_graph.download_count != 0 ||
+        malware_retry_items.applied_delta.blocked_upserts.size() != 1 ||
+        malware_retry_items.applied_delta.blocked_upserts[0].reason_code !=
+            "malware_detected" ||
+        !malware_retry_metrics.last_success) {
+        return fail("persisted malware item was retried as a download");
     }
     return EXIT_SUCCESS;
 }
@@ -1121,6 +1200,11 @@ int test_bounded_concurrent_downloads() {
 
 int main() {
     if (const int result = test_dry_run_and_success(); result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result =
+            test_malware_file_is_blocked_without_overwriting_local_data();
+        result != EXIT_SUCCESS) {
         return result;
     }
     if (const int result = test_failure_and_conflict(); result != EXIT_SUCCESS) {

@@ -319,6 +319,36 @@ std::optional<std::string> authoritative_last_modified(const Json& value) {
     return file_system_last_modified(value, "drive item");
 }
 
+bool has_malware_facet(const Json& value, std::string_view description) {
+    const auto malware = value.find("malware");
+    if (malware == value.end()) {
+        return false;
+    }
+    if (!malware->is_object()) {
+        throw std::runtime_error(
+            "Microsoft Graph returned an invalid " +
+            std::string{description} + " malware facet"
+        );
+    }
+    return true;
+}
+
+bool item_is_malware(const Json& value) {
+    if (has_malware_facet(value, "drive item")) {
+        return true;
+    }
+    const auto remote_item = value.find("remoteItem");
+    if (remote_item == value.end()) {
+        return false;
+    }
+    if (!remote_item->is_object()) {
+        throw std::runtime_error(
+            "Microsoft Graph returned an invalid remoteItem facet"
+        );
+    }
+    return has_malware_facet(*remote_item, "remoteItem");
+}
+
 std::optional<FileHash> item_content_hash(const Json& value) {
     const auto file = value.find("file");
     if (file == value.end()) {
@@ -741,6 +771,7 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
                     );
                 }
                 item.content_hash = item_content_hash(value);
+                item.malware = item_is_malware(value);
                 items.push_back(std::move(item));
             }
 
@@ -936,6 +967,7 @@ DeltaResult MicrosoftGraphClient::list_delta(
                         item.size = size->get<std::int64_t>();
                     }
                     item.content_hash = item_content_hash(value);
+                    item.malware = item_is_malware(value);
                     if (item.name.empty() ||
                         (!item.root && item.remote_path.empty()) || item.size < 0) {
                         throw std::runtime_error(

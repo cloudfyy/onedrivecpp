@@ -73,6 +73,24 @@ int main() {
         return fail("planned persistent delta was incorrect");
     }
 
+    auto malware = item("malware", "blocked.exe");
+    malware.malware = true;
+    auto malware_plan = detail::SyncPlan::build(
+        {
+            .changes = {malware},
+            .delta_link = "https://graph.example.test/malware",
+        },
+        "me",
+        "/sync",
+        false
+    );
+    if (malware_plan.download_count() != 0 ||
+        malware_plan.download_bytes() != 0 ||
+        malware_plan.blocked_count() != 1 ||
+        malware_plan.blocked(0).reason_code != "malware_detected") {
+        return fail("Graph malware item was not blocked before download");
+    }
+
     auto invalid = item("invalid", "invalid.txt");
     invalid.size = -1;
     try {

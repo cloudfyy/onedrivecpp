@@ -54,6 +54,7 @@ struct RemoteItem {
     bool directory{false};
     bool deleted{false};
     bool root{false};
+    bool malware{false};
     std::optional<FileHash> content_hash;
     bool validate_content{true};
 };
