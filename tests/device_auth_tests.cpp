@@ -14,14 +14,14 @@
 
 namespace {
 
-class FakeTransport final : public onedrive::http::HttpTransport {
+class FakeTransport final {
 public:
     explicit FakeTransport(std::deque<onedrive::http::HttpResult> responses)
         : responses_{std::move(responses)} {}
 
     onedrive::http::HttpResult perform(
         const onedrive::http::HttpRequest& request
-    ) const override {
+    ) const {
         requests.push_back(request);
         if (responses_.empty()) {
             return std::unexpected(
@@ -37,7 +37,7 @@ public:
         const onedrive::http::HttpRequest&,
         const std::filesystem::path&,
         const onedrive::http::DownloadProgress&
-    ) const override {
+    ) const {
         return std::unexpected(
             onedrive::http::HttpError{.message = "download was not expected"}
         );
@@ -112,8 +112,9 @@ int test_device_flow() {
 
     std::vector<std::chrono::seconds> sleeps;
     const auto fixed_time = std::chrono::steady_clock::now();
+    onedrive::http::HttpTransport transport_proxy{transport};
     onedrive::auth::DeviceAuthClient client{
-        &transport,
+        &transport_proxy,
         test_options(),
         [&sleeps](std::chrono::seconds duration) { sleeps.push_back(duration); },
         [fixed_time] { return fixed_time; },
@@ -151,7 +152,8 @@ int test_refresh_and_token_store() {
             .body = R"({"expires_in":3600,"access_token":"new-access"})",
         },
     }};
-    onedrive::auth::DeviceAuthClient client{&transport, test_options()};
+    onedrive::http::HttpTransport transport_proxy{transport};
+    onedrive::auth::DeviceAuthClient client{&transport_proxy, test_options()};
     auto tokens = client.refresh_access_token("existing-refresh");
     if (!tokens || tokens->refresh_token != "existing-refresh") {
         return fail("refresh response did not preserve the existing refresh token");
@@ -204,8 +206,9 @@ int test_declined_authorization() {
         },
     }};
     const auto fixed_time = std::chrono::steady_clock::now();
+    onedrive::http::HttpTransport transport_proxy{transport};
     onedrive::auth::DeviceAuthClient client{
-        &transport,
+        &transport_proxy,
         test_options(),
         [](std::chrono::seconds) {},
         [fixed_time] { return fixed_time; },

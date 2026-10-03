@@ -48,10 +48,10 @@ private:
     std::filesystem::path path_;
 };
 
-class FakeGraphClient final : public onedrive::graph::GraphClient {
+class FakeGraphClient final {
 public:
     [[nodiscard]] onedrive::account::DriveIdentity drive_identity()
-        const override {
+        const {
         return {
             .user_id = "user-id",
             .user_display_name = "Test User",
@@ -61,14 +61,14 @@ public:
         };
     }
 
-    [[nodiscard]] std::vector<onedrive::graph::RemoteItem> list_root() const override {
+    [[nodiscard]] std::vector<onedrive::graph::RemoteItem> list_root() const {
         return {};
     }
 
     [[nodiscard]] onedrive::graph::DeltaResult list_delta(
         const std::optional<std::string>& delta_link,
         const onedrive::graph::DeltaProgress& progress
-    ) const override {
+    ) const {
         delta_requests.push_back(delta_link);
         if (delta_link && reject_saved_cursor) {
             throw onedrive::graph::DeltaCursorInvalidError{
@@ -89,7 +89,7 @@ public:
         std::uint64_t,
         const std::filesystem::path& destination,
         const onedrive::graph::DownloadProgress& progress
-    ) const override {
+    ) const {
         ++download_count;
         const int active =
             active_downloads.fetch_add(1, std::memory_order_relaxed) + 1;
@@ -134,11 +134,11 @@ public:
     mutable std::vector<std::optional<std::string>> delta_requests;
 };
 
-class FakeItemStore final : public onedrive::storage::ItemStore {
+class FakeItemStore final {
 public:
-    void open() override {}
+    void open() {}
 
-    void upsert(onedrive::storage::ItemState item) override {
+    void upsert(onedrive::storage::ItemState item) {
         if (fail_upsert) {
             throw std::runtime_error{"simulated item persistence failure"};
         }
@@ -146,14 +146,14 @@ public:
         items.insert_or_assign(item.remote_id, std::move(item));
     }
 
-    void apply_delta(onedrive::storage::ItemDelta delta) override {
+    void apply_delta(onedrive::storage::ItemDelta delta) {
         ++apply_count;
         applied_delta = std::move(delta);
     }
 
     void save_pending_download(
         onedrive::storage::PendingDownload download
-    ) override {
+    ) {
         pending.insert_or_assign(
             download.item.remote_id,
             std::move(download)
@@ -163,12 +163,12 @@ public:
     void remove_pending_download(
         const std::string&,
         const std::string& remote_id
-    ) override {
+    ) {
         pending.erase(remote_id);
     }
 
     [[nodiscard]] std::vector<onedrive::storage::PendingDownload>
-    pending_downloads(const std::string&) const override {
+    pending_downloads(const std::string&) const {
         std::vector<onedrive::storage::PendingDownload> result;
         for (const auto& [remote_id, download] : pending) {
             static_cast<void>(remote_id);
@@ -179,28 +179,28 @@ public:
 
     [[nodiscard]] std::vector<onedrive::storage::BlockedItem> blocked_items(
         const std::string&
-    ) const override {
+    ) const {
         return blocked;
     }
 
-    bool reset(const std::string&) override {
+    bool reset(const std::string&) {
         return false;
     }
 
-    onedrive::storage::ClearedState clear(const std::string&) override {
+    onedrive::storage::ClearedState clear(const std::string&) {
         return {};
     }
 
     [[nodiscard]] std::optional<std::string> delta_link(
         const std::string&
-    ) const override {
+    ) const {
         return saved_delta_link;
     }
 
     [[nodiscard]] std::optional<onedrive::storage::ItemState> find(
         const std::string&,
         const std::string& remote_id
-    ) const override {
+    ) const {
         const auto iterator = items.find(remote_id);
         return iterator == items.end() ?
                    std::nullopt :
@@ -209,7 +209,7 @@ public:
                    };
     }
 
-    [[nodiscard]] std::size_t size() const noexcept override {
+    [[nodiscard]] std::size_t size() const noexcept {
         return items.size();
     }
 
@@ -223,12 +223,12 @@ public:
     bool fail_upsert{false};
 };
 
-class FakeMetrics final : public onedrive::metrics::Metrics {
+class FakeMetrics final {
 public:
     void record_sync_run(
         bool success,
         std::chrono::duration<double>
-    ) noexcept override {
+    ) noexcept {
         last_success = success;
     }
 

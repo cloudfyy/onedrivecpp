@@ -15,4 +15,15 @@ void recover_pending_downloads(
     const FilesystemMetadata& metadata
 );
 
+template <typename StoreImplementation>
+void recover_pending_downloads(
+    StoreImplementation& items,
+    const std::filesystem::path& sync_root,
+    const std::string& drive_id,
+    const FilesystemMetadata& metadata
+) {
+    storage::ItemStore store_proxy{items};
+    recover_pending_downloads(store_proxy, sync_root, drive_id, metadata);
+}
+
 }  // namespace onedrive::sync::detail

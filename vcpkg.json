@@ -5,6 +5,7 @@
   "description": "A modern C++ OneDrive synchronization client scaffold",
   "license": "GPL-3.0-or-later",
   "dependencies": [
-    "ms-gsl"
+    "ms-gsl",
+    "proxy"
   ]
 }

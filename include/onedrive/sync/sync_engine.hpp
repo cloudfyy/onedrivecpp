@@ -15,21 +15,31 @@ namespace onedrive::sync {
 
 class SyncEngine {
 public:
+    template <
+        typename GraphImplementation,
+        typename StoreImplementation,
+        typename MetricsImplementation
+    >
     SyncEngine(
         const config::Config& config,
-        graph::GraphClient& graph,
-        storage::ItemStore& items,
-        metrics::Metrics& metrics,
+        GraphImplementation& graph,
+        StoreImplementation& items,
+        MetricsImplementation& metrics,
         const cli::Console* console = nullptr
-    );
+    )
+        : config_{&config},
+          graph_{graph},
+          items_{items},
+          metrics_{metrics},
+          console_{console} {}
 
     [[nodiscard]] int synchronize() const;
 
 private:
     gsl::not_null<const config::Config*> config_;
-    gsl::not_null<graph::GraphClient*> graph_;
-    gsl::not_null<storage::ItemStore*> items_;
-    gsl::not_null<metrics::Metrics*> metrics_;
+    mutable graph::GraphClient graph_;
+    mutable storage::ItemStore items_;
+    mutable metrics::Metrics metrics_;
     const cli::Console* console_;
 };
 

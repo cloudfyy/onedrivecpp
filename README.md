@@ -39,6 +39,8 @@ runtime factory creates the libcurl, file-token, SQLite, monitor, Graph, and
 metrics adapters after configuration is loaded; tests inject in-memory fakes.
 This keeps business orchestration independent of infrastructure and leaves a
 stable metrics port for a future Linux metrics exporter.
+Runtime ports use Proxy 4 type erasure, so adapters satisfy the required
+operations without inheriting from project-owned abstract base classes.
 
 The directories correspond to the responsibilities of
 `main/config/curlEngine/onedrive/sync/itemdb/monitor` in the reference project:
@@ -91,6 +93,9 @@ cmake --version
 The compiled libraries are resolved from the operating system and linked
 dynamically. This lets Debian security updates replace libcurl, OpenSSL,
 SQLite, spdlog, and fmt without rebuilding `onedrive-cpp`.
+Proxy 4 is header-only. CMake uses an installed `msft_proxy4` package when
+available and otherwise downloads the pinned ngcpp/proxy 4.1.0 release.
+The vcpkg manifest resolves it through the `proxy` port.
 
 ## Build and Test Locally
 
@@ -237,7 +242,8 @@ cmake --build --preset lint
 
 The policy excludes only reviewed noise from required C/POSIX APIs, protocol
 constants, and checked buffer boundaries. Microsoft GSL is used to express
-non-null borrowed dependencies at API and RAII boundaries.
+non-null borrowed dependencies at API and RAII boundaries. ngcpp/proxy
+provides type-erased runtime ports with explicit owning and borrowed adapters.
 
 ## Build DEB Packages
 

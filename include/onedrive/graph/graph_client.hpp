@@ -10,9 +10,11 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <proxy/proxy.h>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace onedrive::auth {
@@ -69,30 +71,98 @@ struct GraphOptions {
     };
 };
 
+PRO_DEF_MEM_DISPATCH(GraphDriveIdentityDispatch, drive_identity);
+PRO_DEF_MEM_DISPATCH(GraphListRootDispatch, list_root);
+PRO_DEF_MEM_DISPATCH(GraphListDeltaDispatch, list_delta);
+PRO_DEF_MEM_DISPATCH(GraphDownloadFileDispatch, download_file);
+
+struct GraphClientFacade : pro::facade_builder
+    ::add_convention<
+        GraphDriveIdentityDispatch,
+        account::DriveIdentity() const
+    >
+    ::add_convention<
+        GraphListRootDispatch,
+        std::vector<RemoteItem>() const
+    >
+    ::add_convention<
+        GraphListDeltaDispatch,
+        DeltaResult(
+            const std::optional<std::string>&,
+            const DeltaProgress&
+        ) const
+    >
+    ::add_convention<
+        GraphDownloadFileDispatch,
+        void(
+            const std::string&,
+            std::uint64_t,
+            const std::filesystem::path&,
+            const DownloadProgress&
+        ) const
+    >
+    ::build {};
+
 class GraphClient {
 public:
-    GraphClient() = default;
-    virtual ~GraphClient() = default;
+    template <typename Implementation, typename... Args>
+    explicit GraphClient(
+        std::in_place_type_t<Implementation>,
+        Args&&... args
+    )
+        : implementation_{pro::make_proxy<
+              GraphClientFacade,
+              Implementation
+          >(std::forward<Args>(args)...)} {}
+
+    template <typename Implementation>
+    explicit GraphClient(std::unique_ptr<Implementation> implementation)
+        : implementation_{std::move(implementation)} {}
+
+    template <typename Implementation>
+    explicit GraphClient(Implementation& implementation)
+        : implementation_{&implementation} {}
+
+    ~GraphClient() = default;
     GraphClient(const GraphClient&) = delete;
     GraphClient& operator=(const GraphClient&) = delete;
-    GraphClient(GraphClient&&) = delete;
-    GraphClient& operator=(GraphClient&&) = delete;
+    GraphClient(GraphClient&&) noexcept = default;
+    GraphClient& operator=(GraphClient&&) noexcept = default;
 
-    [[nodiscard]] virtual account::DriveIdentity drive_identity() const = 0;
-    [[nodiscard]] virtual std::vector<RemoteItem> list_root() const = 0;
-    [[nodiscard]] virtual DeltaResult list_delta(
+    [[nodiscard]] account::DriveIdentity drive_identity() const {
+        return implementation_->drive_identity();
+    }
+
+    [[nodiscard]] std::vector<RemoteItem> list_root() const {
+        return implementation_->list_root();
+    }
+
+    [[nodiscard]] DeltaResult list_delta(
         const std::optional<std::string>& delta_link,
         const DeltaProgress& progress = {}
-    ) const = 0;
-    virtual void download_file(
+    ) const {
+        return implementation_->list_delta(delta_link, progress);
+    }
+
+    void download_file(
         const std::string& remote_id,
         std::uint64_t expected_size,
         const std::filesystem::path& destination,
         const DownloadProgress& progress = {}
-    ) const = 0;
+    ) const {
+        implementation_->download_file(
+            remote_id,
+            expected_size,
+            destination,
+            progress
+        );
+    }
+
+private:
+    pro::proxy<GraphClientFacade> implementation_;
 };
 
-class MicrosoftGraphClient final : public GraphClient {
+class MicrosoftGraphClient final {
 public:
     using SleepFunction = std::function<void(std::chrono::seconds)>;
 
@@ -103,24 +173,24 @@ public:
         GraphOptions options = {},
         SleepFunction sleep = {}
     );
-    ~MicrosoftGraphClient() override;
+    ~MicrosoftGraphClient();
     MicrosoftGraphClient(const MicrosoftGraphClient&) = delete;
     MicrosoftGraphClient& operator=(const MicrosoftGraphClient&) = delete;
     MicrosoftGraphClient(MicrosoftGraphClient&&) = delete;
     MicrosoftGraphClient& operator=(MicrosoftGraphClient&&) = delete;
 
-    [[nodiscard]] account::DriveIdentity drive_identity() const override;
-    [[nodiscard]] std::vector<RemoteItem> list_root() const override;
+    [[nodiscard]] account::DriveIdentity drive_identity() const;
+    [[nodiscard]] std::vector<RemoteItem> list_root() const;
     [[nodiscard]] DeltaResult list_delta(
         const std::optional<std::string>& delta_link,
         const DeltaProgress& progress = {}
-    ) const override;
+    ) const;
     void download_file(
         const std::string& remote_id,
         std::uint64_t expected_size,
         const std::filesystem::path& destination,
         const DownloadProgress& progress = {}
-    ) const override;
+    ) const;
 
 private:
     std::unique_ptr<http::HttpTransport> transport_;

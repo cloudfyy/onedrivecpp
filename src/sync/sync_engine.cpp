@@ -580,23 +580,10 @@ ExecutionSummary execute_plan(
 
 }  // namespace
 
-SyncEngine::SyncEngine(
-    const config::Config& config,
-    graph::GraphClient& graph,
-    storage::ItemStore& items,
-    metrics::Metrics& metrics,
-    const cli::Console* console
-)
-    : config_{&config},
-      graph_{&graph},
-      items_{&items},
-      metrics_{&metrics},
-      console_{console} {}
-
 int SyncEngine::synchronize() const {
     const auto started_at = std::chrono::steady_clock::now();
     const auto record_result = [this, started_at](bool success) {
-        metrics_->record_sync_run(
+        metrics_.record_sync_run(
             success,
             std::chrono::steady_clock::now() - started_at
         );
@@ -654,11 +641,11 @@ int SyncEngine::synchronize() const {
                     {
                         .label = "tracked items:",
                         .key = "tracked_items",
-                        .value = std::to_string(items_->size()),
+                        .value = std::to_string(items_.size()),
                     },
                 }
             );
-            const auto pending = items_->pending_downloads(config_->drive_id);
+            const auto pending = items_.pending_downloads(config_->drive_id);
             if (!pending.empty()) {
                 spdlog::info(
                     "Dry run found {} pending downloads; recovery is deferred",
@@ -672,19 +659,19 @@ int SyncEngine::synchronize() const {
                 sync_root
             ));
             detail::recover_pending_downloads(
-                *items_,
+                items_,
                 sync_root,
                 config_->drive_id,
                 *metadata
             );
         }
 
-        const auto previous_delta_link = items_->delta_link(config_->drive_id);
+        const auto previous_delta_link = items_.delta_link(config_->drive_id);
         spdlog::debug(
             "Preparing Microsoft Graph delta query for drive '{}': {} tracked "
             "items, saved cursor {}",
             config_->drive_id,
-            items_->size(),
+            items_.size(),
             previous_delta_link ? "present" : "absent"
         );
         console.message(
@@ -699,7 +686,7 @@ int SyncEngine::synchronize() const {
                 console.delta_progress(pages, items, completed);
             };
         try {
-            delta = graph_->list_delta(previous_delta_link, delta_progress);
+            delta = graph_.list_delta(previous_delta_link, delta_progress);
         } catch (const graph::DeltaCursorInvalidError& error) {
             spdlog::warn(
                 "{}; retrying with a full Microsoft Graph delta query",
@@ -711,11 +698,11 @@ int SyncEngine::synchronize() const {
                 "The saved Microsoft Graph cursor is no longer valid; "
                 "fetching the full remote state..."
             );
-            delta = graph_->list_delta(std::nullopt, delta_progress);
+            delta = graph_.list_delta(std::nullopt, delta_progress);
             replace_drive_items = true;
         }
         const auto previously_blocked =
-            items_->blocked_items(config_->drive_id);
+            items_.blocked_items(config_->drive_id);
         if (!replace_drive_items && !previously_blocked.empty()) {
             add_blocked_retries(delta, previously_blocked);
             spdlog::debug(
@@ -751,8 +738,8 @@ int SyncEngine::synchronize() const {
                 plan,
                 sync_root,
                 config_->drive_id,
-                *graph_,
-                *items_,
+                graph_,
+                items_,
                 *metadata,
                 console,
                 config_->download_concurrency
@@ -788,7 +775,7 @@ int SyncEngine::synchronize() const {
                 config_->drive_id
             );
             blocked_count = plan.blocked_count();
-            items_->apply_delta(plan.release_state_delta());
+            items_.apply_delta(plan.release_state_delta());
         }
 
         record_result(true);

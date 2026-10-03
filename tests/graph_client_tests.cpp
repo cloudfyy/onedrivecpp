@@ -20,14 +20,14 @@
 
 namespace {
 
-class FakeTransport final : public onedrive::http::HttpTransport {
+class FakeTransport final {
 public:
     explicit FakeTransport(std::deque<onedrive::http::HttpResult> responses)
         : responses_{std::move(responses)} {}
 
     onedrive::http::HttpResult perform(
         const onedrive::http::HttpRequest& request
-    ) const override {
+    ) const {
         requests.push_back(request);
         if (responses_.empty()) {
             return std::unexpected(
@@ -43,7 +43,7 @@ public:
         const onedrive::http::HttpRequest& request,
         const std::filesystem::path& destination,
         const onedrive::http::DownloadProgress& progress
-    ) const override {
+    ) const {
         download_requests.push_back(request);
         std::string body = download_body;
         long status_code = 200;
@@ -91,27 +91,27 @@ private:
     mutable std::deque<onedrive::http::HttpResult> responses_;
 };
 
-class FakeTokenStore final : public onedrive::auth::TokenStore {
+class FakeTokenStore final {
 public:
     explicit FakeTokenStore(std::optional<std::string> refresh_token)
         : refresh_token_{std::move(refresh_token)} {}
 
-    [[nodiscard]] std::optional<std::string> load_refresh_token() const override {
+    [[nodiscard]] std::optional<std::string> load_refresh_token() const {
         return refresh_token_;
     }
 
-    void save_refresh_token(const std::string& refresh_token) const override {
+    void save_refresh_token(const std::string& refresh_token) const {
         saved_tokens.push_back(refresh_token);
         refresh_token_ = refresh_token;
     }
 
-    [[nodiscard]] bool remove_refresh_token() const override {
+    [[nodiscard]] bool remove_refresh_token() const {
         const bool present = refresh_token_.has_value();
         refresh_token_.reset();
         return present;
     }
 
-    [[nodiscard]] const std::filesystem::path& path() const noexcept override {
+    [[nodiscard]] const std::filesystem::path& path() const noexcept {
         return path_;
     }
 
@@ -121,6 +121,24 @@ private:
     mutable std::optional<std::string> refresh_token_;
     std::filesystem::path path_{"/fake/refresh_token"};
 };
+
+template <typename Implementation>
+std::unique_ptr<onedrive::http::HttpTransport> wrap_transport(
+    std::unique_ptr<Implementation> implementation
+) {
+    return std::make_unique<onedrive::http::HttpTransport>(
+        std::move(implementation)
+    );
+}
+
+template <typename Implementation>
+std::unique_ptr<onedrive::auth::TokenStore> wrap_token_store(
+    std::unique_ptr<Implementation> implementation
+) {
+    return std::make_unique<onedrive::auth::TokenStore>(
+        std::move(implementation)
+    );
+}
 
 int fail(const std::string& message) {
     std::cerr << message << '\n';
@@ -182,8 +200,8 @@ int test_list_root_with_refresh_and_pagination() {
     auto* token_store_pointer = token_store.get();
 
     onedrive::graph::MicrosoftGraphClient client{
-        std::move(transport),
-        std::move(token_store),
+        wrap_transport(std::move(transport)),
+        wrap_token_store(std::move(token_store)),
         auth_options(),
         {
             .drive_id = "drive id",
@@ -225,8 +243,8 @@ int test_missing_authentication() {
     );
     auto* transport_pointer = transport.get();
     onedrive::graph::MicrosoftGraphClient client{
-        std::move(transport),
-        std::make_unique<FakeTokenStore>(std::nullopt),
+        wrap_transport(std::move(transport)),
+        wrap_token_store(std::make_unique<FakeTokenStore>(std::nullopt)),
         auth_options(),
     };
 
@@ -261,8 +279,8 @@ int test_graph_error() {
         }
     );
     onedrive::graph::MicrosoftGraphClient client{
-        std::move(transport),
-        std::make_unique<FakeTokenStore>(std::string{"existing-refresh"}),
+        wrap_transport(std::move(transport)),
+        wrap_token_store(std::make_unique<FakeTokenStore>(std::string{"existing-refresh"})),
         auth_options(),
     };
 
@@ -295,8 +313,8 @@ int test_untrusted_pagination_url() {
     );
     auto* transport_pointer = transport.get();
     onedrive::graph::MicrosoftGraphClient client{
-        std::move(transport),
-        std::make_unique<FakeTokenStore>(std::string{"existing-refresh"}),
+        wrap_transport(std::move(transport)),
+        wrap_token_store(std::make_unique<FakeTokenStore>(std::string{"existing-refresh"})),
         auth_options(),
     };
 
@@ -338,8 +356,8 @@ int test_throttling_retry_after() {
     auto* transport_pointer = transport.get();
     std::vector<std::chrono::seconds> sleeps;
     onedrive::graph::MicrosoftGraphClient client{
-        std::move(transport),
-        std::make_unique<FakeTokenStore>(std::string{"existing-refresh"}),
+        wrap_transport(std::move(transport)),
+        wrap_token_store(std::make_unique<FakeTokenStore>(std::string{"existing-refresh"})),
         auth_options(),
         {},
         [&sleeps](std::chrono::seconds duration) {
@@ -380,8 +398,8 @@ int test_throttling_fallback_and_limit() {
     );
     std::vector<std::chrono::seconds> sleeps;
     onedrive::graph::MicrosoftGraphClient client{
-        std::move(transport),
-        std::make_unique<FakeTokenStore>(std::string{"existing-refresh"}),
+        wrap_transport(std::move(transport)),
+        wrap_token_store(std::make_unique<FakeTokenStore>(std::string{"existing-refresh"})),
         auth_options(),
         {
             .drive_id = "me",
@@ -436,8 +454,8 @@ int test_transient_service_retries() {
     auto* transport_pointer = transport.get();
     std::vector<std::chrono::seconds> sleeps;
     onedrive::graph::MicrosoftGraphClient client{
-        std::move(transport),
-        std::make_unique<FakeTokenStore>(std::string{"existing-refresh"}),
+        wrap_transport(std::move(transport)),
+        wrap_token_store(std::make_unique<FakeTokenStore>(std::string{"existing-refresh"})),
         auth_options(),
         {
             .maximum_throttle_retries = 3,
@@ -501,8 +519,8 @@ int test_delta_with_pagination() {
     );
     auto* transport_pointer = transport.get();
     onedrive::graph::MicrosoftGraphClient client{
-        std::move(transport),
-        std::make_unique<FakeTokenStore>(std::string{"existing-refresh"}),
+        wrap_transport(std::move(transport)),
+        wrap_token_store(std::make_unique<FakeTokenStore>(std::string{"existing-refresh"})),
         auth_options(),
         {
             .drive_id = "drive id",
@@ -565,8 +583,8 @@ int test_delta_resume_and_url_validation() {
     );
     auto* transport_pointer = transport.get();
     onedrive::graph::MicrosoftGraphClient client{
-        std::move(transport),
-        std::make_unique<FakeTokenStore>(std::string{"existing-refresh"}),
+        wrap_transport(std::move(transport)),
+        wrap_token_store(std::make_unique<FakeTokenStore>(std::string{"existing-refresh"})),
         auth_options(),
         {
             .drive_id = "me",
@@ -598,8 +616,8 @@ int test_delta_resume_and_url_validation() {
         }
     );
     onedrive::graph::MicrosoftGraphClient untrusted_client{
-        std::move(untrusted_transport),
-        std::make_unique<FakeTokenStore>(std::string{"existing-refresh"}),
+        wrap_transport(std::move(untrusted_transport)),
+        wrap_token_store(std::make_unique<FakeTokenStore>(std::string{"existing-refresh"})),
         auth_options(),
         {
             .drive_id = "me",
@@ -638,8 +656,8 @@ int test_invalid_delta_cursor_error() {
     );
     auto* transport_pointer = transport.get();
     onedrive::graph::MicrosoftGraphClient client{
-        std::move(transport),
-        std::make_unique<FakeTokenStore>(std::string{"existing-refresh"}),
+        wrap_transport(std::move(transport)),
+        wrap_token_store(std::make_unique<FakeTokenStore>(std::string{"existing-refresh"})),
         auth_options(),
         {
             .drive_id = "me",
@@ -688,8 +706,8 @@ int test_file_download_redirect() {
     std::filesystem::remove(destination, ignored);
 
     onedrive::graph::MicrosoftGraphClient client{
-        std::move(transport),
-        std::make_unique<FakeTokenStore>(std::string{"existing-refresh"}),
+        wrap_transport(std::move(transport)),
+        wrap_token_store(std::make_unique<FakeTokenStore>(std::string{"existing-refresh"})),
         auth_options(),
         {
             .drive_id = "drive id",
@@ -769,8 +787,8 @@ int test_large_file_chunked_download() {
 
     std::vector<std::chrono::seconds> sleeps;
     onedrive::graph::MicrosoftGraphClient client{
-        std::move(transport),
-        std::make_unique<FakeTokenStore>(std::string{"existing-refresh"}),
+        wrap_transport(std::move(transport)),
+        wrap_token_store(std::make_unique<FakeTokenStore>(std::string{"existing-refresh"})),
         auth_options(),
         {
             .drive_id = "me",
@@ -841,8 +859,9 @@ int test_drive_identity_and_profile_photo() {
             },
         }
     };
+    onedrive::http::HttpTransport transport_proxy{transport};
     const auto identity = onedrive::graph::fetch_drive_identity(
-        transport,
+        transport_proxy,
         "access-token",
         {
             .drive_id = "me",
@@ -882,8 +901,9 @@ int test_drive_identity_and_profile_photo() {
             onedrive::http::HttpResponse{.status_code = 404},
         }
     };
+    onedrive::http::HttpTransport without_photo_proxy{without_photo};
     if (onedrive::graph::fetch_drive_identity(
-            without_photo,
+            without_photo_proxy,
             "access-token",
             {
                 .drive_id = "me",

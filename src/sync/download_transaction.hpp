@@ -5,6 +5,7 @@
 #include "onedrive/storage/item_store.hpp"
 
 #include <filesystem>
+#include <utility>
 
 namespace onedrive::sync::detail {
 
@@ -40,5 +41,28 @@ void discard_prepared_download(const PreparedDownload& download) noexcept;
     const FilesystemMetadata& metadata,
     const graph::DownloadProgress& progress = {}
 );
+
+template <typename GraphImplementation, typename StoreImplementation>
+[[nodiscard]] storage::ItemState download_atomically(
+    GraphImplementation& graph,
+    StoreImplementation& items,
+    const graph::RemoteItem& item,
+    storage::ItemState state,
+    const std::filesystem::path& destination,
+    const FilesystemMetadata& metadata,
+    const graph::DownloadProgress& progress = {}
+) {
+    graph::GraphClient graph_proxy{graph};
+    storage::ItemStore store_proxy{items};
+    return download_atomically(
+        graph_proxy,
+        store_proxy,
+        item,
+        std::move(state),
+        destination,
+        metadata,
+        progress
+    );
+}
 
 }  // namespace onedrive::sync::detail

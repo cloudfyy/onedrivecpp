@@ -34,6 +34,8 @@ main（composition root）
 composition root。生产 runtime factory 在配置加载后创建 libcurl、文件 token、
 SQLite、monitor、Graph 和 metrics 适配器；测试则注入内存 fake。这样业务编排
 不再依赖基础设施实现，并为后续 Linux metrics exporter 保留稳定端口。
+运行时端口使用 Proxy 4 类型擦除，因此适配器只需满足所需操作，无需继承项目
+定义的抽象基类。
 
 目录与参考项目中的 `main/config/curlEngine/onedrive/sync/itemdb/monitor`
 职责相对应：
@@ -84,6 +86,8 @@ cmake --version
 
 编译库从操作系统解析并动态链接。这样 Debian 的安全更新可以替换 libcurl、
 OpenSSL、SQLite、spdlog 和 fmt，而无需重新构建 `onedrive-cpp`。
+Proxy 4 是 header-only 库。CMake 优先使用已安装的 `msft_proxy4` 包，否则下载
+固定版本的 ngcpp/proxy 4.1.0；vcpkg manifest 则通过 `proxy` port 解析它。
 
 ## 本地构建与测试
 
@@ -220,7 +224,8 @@ cmake --build --preset lint
 ```
 
 策略只排除经过审查的必要 C/POSIX API、协议常量和已检查缓冲区边界噪声。
-项目使用 Microsoft GSL 在 API 和 RAII 边界表达非空借用依赖。
+项目使用 Microsoft GSL 在 API 和 RAII 边界表达非空借用依赖，并使用
+ngcpp/proxy 提供具有明确拥有/借用适配方式的类型擦除运行时端口。
 
 ## 构建 DEB 包
 

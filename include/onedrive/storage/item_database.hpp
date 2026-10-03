@@ -10,43 +10,43 @@
 
 namespace onedrive::storage {
 
-class ItemDatabase final : public ItemStore {
+class ItemDatabase final {
 public:
     ItemDatabase(
         std::filesystem::path state_directory,
         account::DriveIdentity identity
     );
-    ~ItemDatabase() override;
+    ~ItemDatabase();
 
     ItemDatabase(const ItemDatabase&) = delete;
     ItemDatabase& operator=(const ItemDatabase&) = delete;
     ItemDatabase(ItemDatabase&&) = delete;
     ItemDatabase& operator=(ItemDatabase&&) = delete;
 
-    void open() override;
-    void upsert(ItemState item) override;
-    void apply_delta(ItemDelta delta) override;
-    void save_pending_download(PendingDownload download) override;
+    void open();
+    void upsert(ItemState item);
+    void apply_delta(ItemDelta delta);
+    void save_pending_download(PendingDownload download);
     void remove_pending_download(
         const std::string& drive_id,
         const std::string& remote_id
-    ) override;
+    );
     [[nodiscard]] std::vector<PendingDownload> pending_downloads(
         const std::string& drive_id
-    ) const override;
+    ) const;
     [[nodiscard]] std::vector<BlockedItem> blocked_items(
         const std::string& drive_id
-    ) const override;
-    bool reset(const std::string& drive_id) override;
-    ClearedState clear(const std::string& drive_id) override;
+    ) const;
+    bool reset(const std::string& drive_id);
+    ClearedState clear(const std::string& drive_id);
     [[nodiscard]] std::optional<std::string> delta_link(
         const std::string& drive_id
-    ) const override;
+    ) const;
     [[nodiscard]] std::optional<ItemState> find(
         const std::string& drive_id,
         const std::string& remote_id
-    ) const override;
-    [[nodiscard]] std::size_t size() const noexcept override;
+    ) const;
+    [[nodiscard]] std::size_t size() const noexcept;
 
 private:
     struct Impl;

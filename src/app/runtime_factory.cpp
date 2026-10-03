@@ -16,7 +16,9 @@ namespace onedrive::app {
 
 std::unique_ptr<http::HttpTransport>
 ProductionRuntimeFactory::create_http_transport() const {
-    return std::make_unique<http::CurlHttpClient>();
+    return std::make_unique<http::HttpTransport>(
+        std::in_place_type<http::CurlHttpClient>
+    );
 }
 
 std::unique_ptr<auth::DeviceAuthClient>
@@ -38,7 +40,8 @@ ProductionRuntimeFactory::create_device_auth_client(
 std::unique_ptr<auth::TokenStore> ProductionRuntimeFactory::create_token_store(
     const config::Config& config
 ) const {
-    return std::make_unique<auth::FileTokenStore>(
+    return std::make_unique<auth::TokenStore>(
+        std::in_place_type<auth::FileTokenStore>,
         account::AccountState::active_token_directory(config.state_directory)
     );
 }
@@ -46,7 +49,8 @@ std::unique_ptr<auth::TokenStore> ProductionRuntimeFactory::create_token_store(
 std::unique_ptr<graph::GraphClient> ProductionRuntimeFactory::create_graph_client(
     const config::Config& config
 ) const {
-    return std::make_unique<graph::MicrosoftGraphClient>(
+    return std::make_unique<graph::GraphClient>(
+        std::in_place_type<graph::MicrosoftGraphClient>,
         create_http_transport(),
         create_token_store(config),
         auth::DeviceAuthOptions{
@@ -74,7 +78,8 @@ std::unique_ptr<storage::ItemStore> ProductionRuntimeFactory::create_item_store(
 ) const {
     const auto paths =
         account::AccountState::prepare(config.state_directory, identity);
-    return std::make_unique<storage::ItemDatabase>(
+    return std::make_unique<storage::ItemStore>(
+        std::in_place_type<storage::ItemDatabase>,
         paths.drive_directory,
         identity
     );
@@ -83,11 +88,16 @@ std::unique_ptr<storage::ItemStore> ProductionRuntimeFactory::create_item_store(
 std::unique_ptr<monitor::FileMonitor> ProductionRuntimeFactory::create_monitor(
     const config::Config& config
 ) const {
-    return std::make_unique<monitor::Monitor>(config.sync_directory);
+    return std::make_unique<monitor::FileMonitor>(
+        std::in_place_type<monitor::Monitor>,
+        config.sync_directory
+    );
 }
 
 std::unique_ptr<metrics::Metrics> ProductionRuntimeFactory::create_metrics() const {
-    return std::make_unique<metrics::NullMetrics>();
+    return std::make_unique<metrics::Metrics>(
+        std::in_place_type<metrics::NullMetrics>
+    );
 }
 
 }  // namespace onedrive::app

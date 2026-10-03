@@ -55,11 +55,11 @@ struct RunResult {
     std::string standard_error;
 };
 
-class FakeTokenStore final : public onedrive::auth::TokenStore {
+class FakeTokenStore final {
 public:
     explicit FakeTokenStore(std::filesystem::path path) : path_{std::move(path)} {}
 
-    [[nodiscard]] std::optional<std::string> load_refresh_token() const override {
+    [[nodiscard]] std::optional<std::string> load_refresh_token() const {
         std::ifstream input{path_};
         if (!input) {
             return std::nullopt;
@@ -70,16 +70,16 @@ public:
         };
     }
 
-    void save_refresh_token(const std::string& token) const override {
+    void save_refresh_token(const std::string& token) const {
         std::ofstream output{path_};
         output << token;
     }
 
-    [[nodiscard]] bool remove_refresh_token() const override {
+    [[nodiscard]] bool remove_refresh_token() const {
         return std::filesystem::remove(path_);
     }
 
-    [[nodiscard]] const std::filesystem::path& path() const noexcept override {
+    [[nodiscard]] const std::filesystem::path& path() const noexcept {
         return path_;
     }
 
@@ -87,11 +87,11 @@ private:
     std::filesystem::path path_;
 };
 
-class FakeAuthenticationTransport final : public onedrive::http::HttpTransport {
+class FakeAuthenticationTransport final {
 public:
     [[nodiscard]] onedrive::http::HttpResult perform(
         const onedrive::http::HttpRequest& request
-    ) const override {
+    ) const {
         if (request.url.ends_with("/oauth2/v2.0/devicecode")) {
             return onedrive::http::HttpResponse{
                 .status_code = 200,
@@ -143,7 +143,7 @@ public:
         const onedrive::http::HttpRequest&,
         const std::filesystem::path&,
         const onedrive::http::DownloadProgress&
-    ) const override {
+    ) const {
         return std::unexpected(
             onedrive::http::HttpError{
                 .message = "authentication download was not expected",
@@ -152,13 +152,13 @@ public:
     }
 };
 
-class FakeGraphClient final : public onedrive::graph::GraphClient {
+class FakeGraphClient final {
 public:
     explicit FakeGraphClient(std::string configured_drive_id)
         : configured_drive_id_{std::move(configured_drive_id)} {}
 
     [[nodiscard]] onedrive::account::DriveIdentity drive_identity()
-        const override {
+        const {
         return {
             .user_id = "user-id",
             .user_display_name = "Test User",
@@ -168,14 +168,14 @@ public:
         };
     }
 
-    [[nodiscard]] std::vector<onedrive::graph::RemoteItem> list_root() const override {
+    [[nodiscard]] std::vector<onedrive::graph::RemoteItem> list_root() const {
         return {};
     }
 
     [[nodiscard]] onedrive::graph::DeltaResult list_delta(
         const std::optional<std::string>&,
         const onedrive::graph::DeltaProgress& progress
-    ) const override {
+    ) const {
         if (progress) {
             progress(1, 1, true);
         }
@@ -201,7 +201,7 @@ public:
         std::uint64_t,
         const std::filesystem::path& destination,
         const onedrive::graph::DownloadProgress&
-    ) const override {
+    ) const {
         std::ofstream output{destination, std::ios::binary};
         output << std::string(42, 'x');
     }
@@ -210,7 +210,7 @@ private:
     std::string configured_drive_id_;
 };
 
-class FakeItemStore final : public onedrive::storage::ItemStore {
+class FakeItemStore final {
 public:
     FakeItemStore(
         int& open_count,
@@ -227,37 +227,37 @@ public:
           clear_count_{clear_count},
           clear_drive_id_{clear_drive_id} {}
 
-    void open() override {
+    void open() {
         ++open_count_;
     }
 
-    void upsert(onedrive::storage::ItemState) override {}
+    void upsert(onedrive::storage::ItemState) {}
 
-    void apply_delta(onedrive::storage::ItemDelta) override {
+    void apply_delta(onedrive::storage::ItemDelta) {
         ++apply_delta_count_;
     }
 
     void save_pending_download(
         onedrive::storage::PendingDownload
-    ) override {}
+    ) {}
 
     void remove_pending_download(
         const std::string&,
         const std::string&
-    ) override {}
+    ) {}
 
     [[nodiscard]] std::vector<onedrive::storage::PendingDownload>
-    pending_downloads(const std::string&) const override {
+    pending_downloads(const std::string&) const {
         return {};
     }
 
     [[nodiscard]] std::vector<onedrive::storage::BlockedItem> blocked_items(
         const std::string&
-    ) const override {
+    ) const {
         return {};
     }
 
-    bool reset(const std::string& drive_id) override {
+    bool reset(const std::string& drive_id) {
         ++reset_count_;
         reset_drive_id_ = drive_id;
         return true;
@@ -265,7 +265,7 @@ public:
 
     onedrive::storage::ClearedState clear(
         const std::string& drive_id
-    ) override {
+    ) {
         ++clear_count_;
         clear_drive_id_ = drive_id;
         return {
@@ -278,18 +278,18 @@ public:
 
     [[nodiscard]] std::optional<std::string> delta_link(
         const std::string&
-    ) const override {
+    ) const {
         return std::nullopt;
     }
 
     [[nodiscard]] std::optional<onedrive::storage::ItemState> find(
         const std::string&,
         const std::string&
-    ) const override {
+    ) const {
         return std::nullopt;
     }
 
-    [[nodiscard]] std::size_t size() const noexcept override {
+    [[nodiscard]] std::size_t size() const noexcept {
         return 0;
     }
 
@@ -302,11 +302,11 @@ private:
     std::string& clear_drive_id_;
 };
 
-class FakeMonitor final : public onedrive::monitor::FileMonitor {
+class FakeMonitor final {
 public:
     explicit FakeMonitor(int& run_count) : run_count_{run_count} {}
 
-    [[nodiscard]] int run() const override {
+    [[nodiscard]] int run() const {
         ++run_count_;
         return 0;
     }
@@ -315,26 +315,28 @@ private:
     int& run_count_;
 };
 
-class FakeMetrics final : public onedrive::metrics::Metrics {
+class FakeMetrics final {
 public:
     void record_sync_run(
         bool,
         std::chrono::duration<double>
-    ) noexcept override {}
+    ) noexcept {}
 };
 
-class FakeRuntimeFactory final : public onedrive::app::RuntimeFactory {
+class FakeRuntimeFactory final {
 public:
     [[nodiscard]] std::unique_ptr<onedrive::http::HttpTransport>
-    create_http_transport() const override {
-        return std::make_unique<FakeAuthenticationTransport>();
+    create_http_transport() const {
+        return std::make_unique<onedrive::http::HttpTransport>(
+            std::in_place_type<FakeAuthenticationTransport>
+        );
     }
 
     [[nodiscard]] std::unique_ptr<onedrive::auth::DeviceAuthClient>
     create_device_auth_client(
         const onedrive::config::Config& config,
         const onedrive::http::HttpTransport& transport
-    ) const override {
+    ) const {
         return std::make_unique<onedrive::auth::DeviceAuthClient>(
             &transport,
             onedrive::auth::DeviceAuthOptions{
@@ -349,9 +351,10 @@ public:
 
     [[nodiscard]] std::unique_ptr<onedrive::auth::TokenStore> create_token_store(
         const onedrive::config::Config& config
-    ) const override {
+    ) const {
         ++token_store_count;
-        return std::make_unique<FakeTokenStore>(
+        return std::make_unique<onedrive::auth::TokenStore>(
+            std::in_place_type<FakeTokenStore>,
             onedrive::account::AccountState::active_token_directory(
                 config.state_directory
             ) / "refresh_token"
@@ -359,17 +362,21 @@ public:
     }
 
     [[nodiscard]] std::unique_ptr<onedrive::graph::GraphClient>
-    create_graph_client(const onedrive::config::Config&) const override {
+    create_graph_client(const onedrive::config::Config&) const {
         ++graph_client_count;
-        return std::make_unique<FakeGraphClient>(configured_drive_id);
+        return std::make_unique<onedrive::graph::GraphClient>(
+            std::in_place_type<FakeGraphClient>,
+            configured_drive_id
+        );
     }
 
     [[nodiscard]] std::unique_ptr<onedrive::storage::ItemStore> create_item_store(
         const onedrive::config::Config&,
         const onedrive::account::DriveIdentity&
-    ) const override {
+    ) const {
         ++item_store_count;
-        return std::make_unique<FakeItemStore>(
+        return std::make_unique<onedrive::storage::ItemStore>(
+            std::in_place_type<FakeItemStore>,
             item_store_open_count,
             item_store_apply_delta_count,
             item_store_reset_count,
@@ -381,15 +388,20 @@ public:
 
     [[nodiscard]] std::unique_ptr<onedrive::monitor::FileMonitor> create_monitor(
         const onedrive::config::Config&
-    ) const override {
+    ) const {
         ++monitor_count;
-        return std::make_unique<FakeMonitor>(monitor_run_count);
+        return std::make_unique<onedrive::monitor::FileMonitor>(
+            std::in_place_type<FakeMonitor>,
+            monitor_run_count
+        );
     }
 
     [[nodiscard]] std::unique_ptr<onedrive::metrics::Metrics>
-    create_metrics() const override {
+    create_metrics() const {
         ++metrics_count;
-        return std::make_unique<FakeMetrics>();
+        return std::make_unique<onedrive::metrics::Metrics>(
+            std::in_place_type<FakeMetrics>
+        );
     }
 
     std::string configured_drive_id{"me"};
@@ -425,7 +437,8 @@ RunResult run_application(
     auto* original_output = std::cout.rdbuf(standard_output.rdbuf());
     auto* original_error = std::cerr.rdbuf(standard_error.rdbuf());
 
-    onedrive::app::Application application{&runtime_factory};
+    onedrive::app::RuntimeFactory runtime_factory_proxy{runtime_factory};
+    onedrive::app::Application application{&runtime_factory_proxy};
     const int exit_code = application.run(
         static_cast<int>(argument_pointers.size()),
         argument_pointers.data()
