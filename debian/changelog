@@ -1,3 +1,20 @@
+onedrive-cpp (0.6.1-1~ubuntu24.04) noble; urgency=medium
+
+  * Replace per-file download output with concise aggregate progress.
+  * Format download sizes using human-readable binary units.
+  * Reserve 100% progress for fully completed download batches.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sat, 03 Oct 2026 08:15:15 +0000
+
+onedrive-cpp (0.6.0-1~ubuntu24.04) noble; urgency=medium
+
+  * Add configurable HTTP range downloads for large files.
+  * Default the download chunk threshold to 8 MiB.
+  * Improve destructive Drive reset confirmation and reduce Delta progress
+    logging noise.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sat, 03 Oct 2026 06:40:23 +0000
+
 onedrive-cpp (0.5.0-1~ubuntu24.04) noble; urgency=medium
 
   * Add configurable bounded concurrent downloads.
