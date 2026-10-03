@@ -28,9 +28,9 @@ public:
         const cli::Console* console = nullptr
     )
         : config_{&config},
-          graph_{graph},
-          items_{items},
-          metrics_{metrics},
+          graph_{onedrive::detail::borrowed_proxy, graph},
+          items_{onedrive::detail::borrowed_proxy, items},
+          metrics_{onedrive::detail::borrowed_proxy, metrics},
           console_{console} {}
 
     [[nodiscard]] int synchronize() const;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "onedrive/account/account_state.hpp"
+#include "onedrive/proxy_service.hpp"
 
 #include <chrono>
 #include <cstddef>
@@ -103,45 +104,25 @@ struct GraphClientFacade : pro::facade_builder
     >
     ::build {};
 
-class GraphClient {
+class GraphClient : private detail::ProxyService<GraphClientFacade> {
+    using Base = detail::ProxyService<GraphClientFacade>;
+
 public:
-    template <typename Implementation, typename... Args>
-    explicit GraphClient(
-        std::in_place_type_t<Implementation>,
-        Args&&... args
-    )
-        : implementation_{pro::make_proxy<
-              GraphClientFacade,
-              Implementation
-          >(std::forward<Args>(args)...)} {}
-
-    template <typename Implementation>
-    explicit GraphClient(std::unique_ptr<Implementation> implementation)
-        : implementation_{std::move(implementation)} {}
-
-    template <typename Implementation>
-    explicit GraphClient(Implementation& implementation)
-        : implementation_{&implementation} {}
-
-    ~GraphClient() = default;
-    GraphClient(const GraphClient&) = delete;
-    GraphClient& operator=(const GraphClient&) = delete;
-    GraphClient(GraphClient&&) noexcept = default;
-    GraphClient& operator=(GraphClient&&) noexcept = default;
+    using Base::Base;
 
     [[nodiscard]] account::DriveIdentity drive_identity() const {
-        return implementation_->drive_identity();
+        return implementation()->drive_identity();
     }
 
     [[nodiscard]] std::vector<RemoteItem> list_root() const {
-        return implementation_->list_root();
+        return implementation()->list_root();
     }
 
     [[nodiscard]] DeltaResult list_delta(
         const std::optional<std::string>& delta_link,
         const DeltaProgress& progress = {}
     ) const {
-        return implementation_->list_delta(delta_link, progress);
+        return implementation()->list_delta(delta_link, progress);
     }
 
     void download_file(
@@ -150,16 +131,13 @@ public:
         const std::filesystem::path& destination,
         const DownloadProgress& progress = {}
     ) const {
-        implementation_->download_file(
+        implementation()->download_file(
             remote_id,
             expected_size,
             destination,
             progress
         );
     }
-
-private:
-    pro::proxy<GraphClientFacade> implementation_;
 };
 
 class MicrosoftGraphClient final {

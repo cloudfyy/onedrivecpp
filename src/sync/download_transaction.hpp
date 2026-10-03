@@ -52,8 +52,14 @@ template <typename GraphImplementation, typename StoreImplementation>
     const FilesystemMetadata& metadata,
     const graph::DownloadProgress& progress = {}
 ) {
-    graph::GraphClient graph_proxy{graph};
-    storage::ItemStore store_proxy{items};
+    graph::GraphClient graph_proxy{
+        onedrive::detail::borrowed_proxy,
+        graph
+    };
+    storage::ItemStore store_proxy{
+        onedrive::detail::borrowed_proxy,
+        items
+    };
     return download_atomically(
         graph_proxy,
         store_proxy,

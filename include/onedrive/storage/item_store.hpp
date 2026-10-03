@@ -1,5 +1,7 @@
 #pragma once
 
+#include "onedrive/proxy_service.hpp"
+
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -111,94 +113,71 @@ struct ItemStoreFacade : pro::facade_builder
     ::add_convention<StoreSizeDispatch, std::size_t() const noexcept>
     ::build {};
 
-class ItemStore {
+class ItemStore : private detail::ProxyService<ItemStoreFacade> {
+    using Base = detail::ProxyService<ItemStoreFacade>;
+
 public:
-    template <typename Implementation, typename... Args>
-    explicit ItemStore(
-        std::in_place_type_t<Implementation>,
-        Args&&... args
-    )
-        : implementation_{pro::make_proxy<
-              ItemStoreFacade,
-              Implementation
-          >(std::forward<Args>(args)...)} {}
-
-    template <typename Implementation>
-    explicit ItemStore(std::unique_ptr<Implementation> implementation)
-        : implementation_{std::move(implementation)} {}
-
-    template <typename Implementation>
-    explicit ItemStore(Implementation& implementation)
-        : implementation_{&implementation} {}
-
-    ~ItemStore() = default;
-    ItemStore(const ItemStore&) = delete;
-    ItemStore& operator=(const ItemStore&) = delete;
-    ItemStore(ItemStore&&) noexcept = default;
-    ItemStore& operator=(ItemStore&&) noexcept = default;
+    using Base::Base;
 
     void open() {
-        implementation_->open();
+        implementation()->open();
     }
 
     void upsert(ItemState item) {
-        implementation_->upsert(std::move(item));
+        implementation()->upsert(std::move(item));
     }
 
     void apply_delta(ItemDelta delta) {
-        implementation_->apply_delta(std::move(delta));
+        implementation()->apply_delta(std::move(delta));
     }
 
     void save_pending_download(PendingDownload download) {
-        implementation_->save_pending_download(std::move(download));
+        implementation()->save_pending_download(std::move(download));
     }
 
     void remove_pending_download(
         const std::string& drive_id,
         const std::string& remote_id
     ) {
-        implementation_->remove_pending_download(drive_id, remote_id);
+        implementation()->remove_pending_download(drive_id, remote_id);
     }
 
     [[nodiscard]] std::vector<PendingDownload> pending_downloads(
         const std::string& drive_id
     ) const {
-        return implementation_->pending_downloads(drive_id);
+        return implementation()->pending_downloads(drive_id);
     }
 
     [[nodiscard]] std::vector<BlockedItem> blocked_items(
         const std::string& drive_id
     ) const {
-        return implementation_->blocked_items(drive_id);
+        return implementation()->blocked_items(drive_id);
     }
 
     bool reset(const std::string& drive_id) {
-        return implementation_->reset(drive_id);
+        return implementation()->reset(drive_id);
     }
 
     ClearedState clear(const std::string& drive_id) {
-        return implementation_->clear(drive_id);
+        return implementation()->clear(drive_id);
     }
 
     [[nodiscard]] std::optional<std::string> delta_link(
         const std::string& drive_id
     ) const {
-        return implementation_->delta_link(drive_id);
+        return implementation()->delta_link(drive_id);
     }
 
     [[nodiscard]] std::optional<ItemState> find(
         const std::string& drive_id,
         const std::string& remote_id
     ) const {
-        return implementation_->find(drive_id, remote_id);
+        return implementation()->find(drive_id, remote_id);
     }
 
     [[nodiscard]] std::size_t size() const noexcept {
-        return implementation_->size();
+        return implementation()->size();
     }
-
-private:
-    pro::proxy<ItemStoreFacade> implementation_;
 };
 
 }  // namespace onedrive::storage

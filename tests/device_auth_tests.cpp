@@ -1,6 +1,7 @@
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
 #include "onedrive/http/http_client.hpp"
+#include "test_support.hpp"
 
 #include <chrono>
 #include <cstdlib>
@@ -13,6 +14,8 @@
 #include <vector>
 
 namespace {
+
+using onedrive::test::TemporaryDirectory;
 
 class FakeTransport final {
 public:
@@ -47,30 +50,6 @@ public:
 
 private:
     mutable std::deque<onedrive::http::HttpResult> responses_;
-};
-
-class TemporaryDirectory {
-public:
-    TemporaryDirectory()
-        : path_{
-              std::filesystem::temp_directory_path() /
-              ("onedrive-cpp-auth-" +
-               std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()))
-          } {
-        std::filesystem::create_directories(path_);
-    }
-
-    ~TemporaryDirectory() {
-        std::error_code error;
-        std::filesystem::remove_all(path_, error);
-    }
-
-    [[nodiscard]] const std::filesystem::path& path() const noexcept {
-        return path_;
-    }
-
-private:
-    std::filesystem::path path_;
 };
 
 int fail(const std::string& message) {
@@ -112,7 +91,10 @@ int test_device_flow() {
 
     std::vector<std::chrono::seconds> sleeps;
     const auto fixed_time = std::chrono::steady_clock::now();
-    onedrive::http::HttpTransport transport_proxy{transport};
+    onedrive::http::HttpTransport transport_proxy{
+        onedrive::detail::borrowed_proxy,
+        transport
+    };
     onedrive::auth::DeviceAuthClient client{
         &transport_proxy,
         test_options(),
@@ -152,7 +134,10 @@ int test_refresh_and_token_store() {
             .body = R"({"expires_in":3600,"access_token":"new-access"})",
         },
     }};
-    onedrive::http::HttpTransport transport_proxy{transport};
+    onedrive::http::HttpTransport transport_proxy{
+        onedrive::detail::borrowed_proxy,
+        transport
+    };
     onedrive::auth::DeviceAuthClient client{&transport_proxy, test_options()};
     auto tokens = client.refresh_access_token("existing-refresh");
     if (!tokens || tokens->refresh_token != "existing-refresh") {
@@ -206,7 +191,10 @@ int test_declined_authorization() {
         },
     }};
     const auto fixed_time = std::chrono::steady_clock::now();
-    onedrive::http::HttpTransport transport_proxy{transport};
+    onedrive::http::HttpTransport transport_proxy{
+        onedrive::detail::borrowed_proxy,
+        transport
+    };
     onedrive::auth::DeviceAuthClient client{
         &transport_proxy,
         test_options(),

@@ -4,6 +4,7 @@
 #include "onedrive/metrics/metrics.hpp"
 #include "onedrive/storage/item_store.hpp"
 #include "onedrive/sync/sync_engine.hpp"
+#include "test_support.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -22,31 +23,7 @@
 
 namespace {
 
-class TemporaryDirectory {
-public:
-    TemporaryDirectory()
-        : path_{
-              std::filesystem::temp_directory_path() /
-              ("onedrive-cpp-sync-" +
-               std::to_string(
-                   std::chrono::steady_clock::now().time_since_epoch().count()
-               ))
-          } {
-        std::filesystem::create_directories(path_);
-    }
-
-    ~TemporaryDirectory() {
-        std::error_code error;
-        std::filesystem::remove_all(path_, error);
-    }
-
-    [[nodiscard]] const std::filesystem::path& path() const noexcept {
-        return path_;
-    }
-
-private:
-    std::filesystem::path path_;
-};
+using onedrive::test::TemporaryDirectory;
 
 class FakeGraphClient final {
 public:

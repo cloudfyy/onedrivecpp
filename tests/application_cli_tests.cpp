@@ -1,5 +1,6 @@
 #include "onedrive/app/application.hpp"
 #include "onedrive/app/runtime_factory.hpp"
+#include "onedrive/app/runtime_options.hpp"
 #include "onedrive/account/account_state.hpp"
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
@@ -9,6 +10,7 @@
 #include "onedrive/metrics/metrics.hpp"
 #include "onedrive/monitor/monitor.hpp"
 #include "onedrive/storage/item_store.hpp"
+#include "test_support.hpp"
 
 #include <chrono>
 #include <cstdlib>
@@ -25,29 +27,7 @@
 
 namespace {
 
-class TemporaryDirectory {
-public:
-    TemporaryDirectory()
-        : path_{
-              std::filesystem::temp_directory_path() /
-              ("onedrive-cpp-cli-" +
-               std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()))
-          } {
-        std::filesystem::create_directories(path_);
-    }
-
-    ~TemporaryDirectory() {
-        std::error_code error;
-        std::filesystem::remove_all(path_, error);
-    }
-
-    [[nodiscard]] const std::filesystem::path& path() const noexcept {
-        return path_;
-    }
-
-private:
-    std::filesystem::path path_;
-};
+using onedrive::test::TemporaryDirectory;
 
 struct RunResult {
     int exit_code;
@@ -339,12 +319,7 @@ public:
     ) const {
         return std::make_unique<onedrive::auth::DeviceAuthClient>(
             &transport,
-            onedrive::auth::DeviceAuthOptions{
-                .application_id = config.application_id,
-                .tenant_id = config.azure_tenant_id,
-                .auth_endpoint = config.auth_endpoint,
-                .scope = config.auth_scope,
-            },
+            onedrive::app::device_auth_options(config),
             [](std::chrono::seconds) {}
         );
     }
@@ -437,7 +412,10 @@ RunResult run_application(
     auto* original_output = std::cout.rdbuf(standard_output.rdbuf());
     auto* original_error = std::cerr.rdbuf(standard_error.rdbuf());
 
-    onedrive::app::RuntimeFactory runtime_factory_proxy{runtime_factory};
+    onedrive::app::RuntimeFactory runtime_factory_proxy{
+        onedrive::detail::borrowed_proxy,
+        runtime_factory
+    };
     onedrive::app::Application application{&runtime_factory_proxy};
     const int exit_code = application.run(
         static_cast<int>(argument_pointers.size()),

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "onedrive/proxy_service.hpp"
+
 #include <filesystem>
 #include <memory>
 #include <proxy/proxy.h>
@@ -13,38 +15,15 @@ struct FileMonitorFacade : pro::facade_builder
     ::add_convention<MonitorRunDispatch, int() const>
     ::build {};
 
-class FileMonitor {
+class FileMonitor : private detail::ProxyService<FileMonitorFacade> {
+    using Base = detail::ProxyService<FileMonitorFacade>;
+
 public:
-    template <typename Implementation, typename... Args>
-    explicit FileMonitor(
-        std::in_place_type_t<Implementation>,
-        Args&&... args
-    )
-        : implementation_{pro::make_proxy<
-              FileMonitorFacade,
-              Implementation
-          >(std::forward<Args>(args)...)} {}
-
-    template <typename Implementation>
-    explicit FileMonitor(std::unique_ptr<Implementation> implementation)
-        : implementation_{std::move(implementation)} {}
-
-    template <typename Implementation>
-    explicit FileMonitor(Implementation& implementation)
-        : implementation_{&implementation} {}
-
-    ~FileMonitor() = default;
-    FileMonitor(const FileMonitor&) = delete;
-    FileMonitor& operator=(const FileMonitor&) = delete;
-    FileMonitor(FileMonitor&&) noexcept = default;
-    FileMonitor& operator=(FileMonitor&&) noexcept = default;
+    using Base::Base;
 
     [[nodiscard]] int run() const {
-        return implementation_->run();
+        return implementation()->run();
     }
-
-private:
-    pro::proxy<FileMonitorFacade> implementation_;
 };
 
 class Monitor final {

@@ -8,6 +8,7 @@
 #include "onedrive/http/http_client.hpp"
 #include "onedrive/metrics/metrics.hpp"
 #include "onedrive/monitor/monitor.hpp"
+#include "onedrive/proxy_service.hpp"
 #include "onedrive/storage/item_store.hpp"
 
 #include <memory>
@@ -94,35 +95,15 @@ struct RuntimeFactoryFacade : pro::facade_builder
     >
     ::build {};
 
-class RuntimeFactory {
+class RuntimeFactory : private detail::ProxyService<RuntimeFactoryFacade> {
+    using Base = detail::ProxyService<RuntimeFactoryFacade>;
+
 public:
-    template <typename Implementation, typename... Args>
-    explicit RuntimeFactory(
-        std::in_place_type_t<Implementation>,
-        Args&&... args
-    )
-        : implementation_{pro::make_proxy<
-              RuntimeFactoryFacade,
-              Implementation
-          >(std::forward<Args>(args)...)} {}
-
-    template <typename Implementation>
-    explicit RuntimeFactory(std::unique_ptr<Implementation> implementation)
-        : implementation_{std::move(implementation)} {}
-
-    template <typename Implementation>
-    explicit RuntimeFactory(Implementation& implementation)
-        : implementation_{&implementation} {}
-
-    ~RuntimeFactory() = default;
-    RuntimeFactory(const RuntimeFactory&) = delete;
-    RuntimeFactory& operator=(const RuntimeFactory&) = delete;
-    RuntimeFactory(RuntimeFactory&&) noexcept = default;
-    RuntimeFactory& operator=(RuntimeFactory&&) noexcept = default;
+    using Base::Base;
 
     [[nodiscard]] std::unique_ptr<http::HttpTransport>
     create_http_transport() const {
-        return implementation_->create_http_transport();
+        return implementation()->create_http_transport();
     }
 
     [[nodiscard]] std::unique_ptr<auth::DeviceAuthClient>
@@ -130,40 +111,37 @@ public:
         const config::Config& config,
         const http::HttpTransport& transport
     ) const {
-        return implementation_->create_device_auth_client(config, transport);
+        return implementation()->create_device_auth_client(config, transport);
     }
 
     [[nodiscard]] std::unique_ptr<auth::TokenStore> create_token_store(
         const config::Config& config
     ) const {
-        return implementation_->create_token_store(config);
+        return implementation()->create_token_store(config);
     }
 
     [[nodiscard]] std::unique_ptr<graph::GraphClient> create_graph_client(
         const config::Config& config
     ) const {
-        return implementation_->create_graph_client(config);
+        return implementation()->create_graph_client(config);
     }
 
     [[nodiscard]] std::unique_ptr<storage::ItemStore> create_item_store(
         const config::Config& config,
         const account::DriveIdentity& identity
     ) const {
-        return implementation_->create_item_store(config, identity);
+        return implementation()->create_item_store(config, identity);
     }
 
     [[nodiscard]] std::unique_ptr<monitor::FileMonitor> create_monitor(
         const config::Config& config
     ) const {
-        return implementation_->create_monitor(config);
+        return implementation()->create_monitor(config);
     }
 
     [[nodiscard]] std::unique_ptr<metrics::Metrics> create_metrics() const {
-        return implementation_->create_metrics();
+        return implementation()->create_metrics();
     }
-
-private:
-    pro::proxy<RuntimeFactoryFacade> implementation_;
 };
 
 class ProductionRuntimeFactory final {

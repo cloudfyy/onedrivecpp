@@ -1,5 +1,7 @@
 #pragma once
 
+#include "onedrive/proxy_service.hpp"
+
 #include <filesystem>
 #include <memory>
 #include <optional>
@@ -30,50 +32,27 @@ struct TokenStoreFacade : pro::facade_builder
     >
     ::build {};
 
-class TokenStore {
+class TokenStore : private detail::ProxyService<TokenStoreFacade> {
+    using Base = detail::ProxyService<TokenStoreFacade>;
+
 public:
-    template <typename Implementation, typename... Args>
-    explicit TokenStore(
-        std::in_place_type_t<Implementation>,
-        Args&&... args
-    )
-        : implementation_{pro::make_proxy<
-              TokenStoreFacade,
-              Implementation
-          >(std::forward<Args>(args)...)} {}
-
-    template <typename Implementation>
-    explicit TokenStore(std::unique_ptr<Implementation> implementation)
-        : implementation_{std::move(implementation)} {}
-
-    template <typename Implementation>
-    explicit TokenStore(Implementation& implementation)
-        : implementation_{&implementation} {}
-
-    ~TokenStore() = default;
-    TokenStore(const TokenStore&) = delete;
-    TokenStore& operator=(const TokenStore&) = delete;
-    TokenStore(TokenStore&&) noexcept = default;
-    TokenStore& operator=(TokenStore&&) noexcept = default;
+    using Base::Base;
 
     [[nodiscard]] std::optional<std::string> load_refresh_token() const {
-        return implementation_->load_refresh_token();
+        return implementation()->load_refresh_token();
     }
 
     void save_refresh_token(const std::string& refresh_token) const {
-        implementation_->save_refresh_token(refresh_token);
+        implementation()->save_refresh_token(refresh_token);
     }
 
     [[nodiscard]] bool remove_refresh_token() const {
-        return implementation_->remove_refresh_token();
+        return implementation()->remove_refresh_token();
     }
 
     [[nodiscard]] const std::filesystem::path& path() const noexcept {
-        return implementation_->path();
+        return implementation()->path();
     }
-
-private:
-    pro::proxy<TokenStoreFacade> implementation_;
 };
 
 class FileTokenStore final {

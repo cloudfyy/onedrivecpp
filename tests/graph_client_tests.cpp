@@ -859,7 +859,10 @@ int test_drive_identity_and_profile_photo() {
             },
         }
     };
-    onedrive::http::HttpTransport transport_proxy{transport};
+    onedrive::http::HttpTransport transport_proxy{
+        onedrive::detail::borrowed_proxy,
+        transport
+    };
     const auto identity = onedrive::graph::fetch_drive_identity(
         transport_proxy,
         "access-token",
@@ -901,7 +904,10 @@ int test_drive_identity_and_profile_photo() {
             onedrive::http::HttpResponse{.status_code = 404},
         }
     };
-    onedrive::http::HttpTransport without_photo_proxy{without_photo};
+    onedrive::http::HttpTransport without_photo_proxy{
+        onedrive::detail::borrowed_proxy,
+        without_photo
+    };
     if (onedrive::graph::fetch_drive_identity(
             without_photo_proxy,
             "access-token",

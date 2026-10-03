@@ -1,6 +1,7 @@
 #include "onedrive/app/application.hpp"
 
 #include "onedrive/account/account_state.hpp"
+#include "onedrive/app/runtime_options.hpp"
 #include "onedrive/app/runtime_factory.hpp"
 #include "runtime_preflight.hpp"
 #include "onedrive/auth/device_auth.hpp"
@@ -28,19 +29,6 @@
 
 namespace onedrive::app {
 namespace {
-
-graph::GraphOptions graph_options(const config::Config& config) {
-    return {
-        .drive_id = config.drive_id,
-        .endpoint = config.graph_endpoint,
-        .maximum_throttle_retries =
-            config.graph_maximum_throttle_retries,
-        .initial_throttle_delay = config.graph_initial_throttle_delay,
-        .maximum_throttle_delay = config.graph_maximum_throttle_delay,
-        .download_chunk_threshold_bytes =
-            config.download_chunk_threshold_bytes,
-    };
-}
 
 std::filesystem::path default_config_path() {
     if (const char* home = std::getenv("HOME"); home != nullptr) {

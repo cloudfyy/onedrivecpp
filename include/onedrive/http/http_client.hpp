@@ -1,5 +1,7 @@
 #pragma once
 
+#include "onedrive/proxy_service.hpp"
+
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -70,34 +72,14 @@ struct HttpTransportFacade : pro::facade_builder
     >
     ::build {};
 
-class HttpTransport {
+class HttpTransport : private detail::ProxyService<HttpTransportFacade> {
+    using Base = detail::ProxyService<HttpTransportFacade>;
+
 public:
-    template <typename Implementation, typename... Args>
-    explicit HttpTransport(
-        std::in_place_type_t<Implementation>,
-        Args&&... args
-    )
-        : implementation_{pro::make_proxy<
-              HttpTransportFacade,
-              Implementation
-          >(std::forward<Args>(args)...)} {}
-
-    template <typename Implementation>
-    explicit HttpTransport(std::unique_ptr<Implementation> implementation)
-        : implementation_{std::move(implementation)} {}
-
-    template <typename Implementation>
-    explicit HttpTransport(Implementation& implementation)
-        : implementation_{&implementation} {}
-
-    ~HttpTransport() = default;
-    HttpTransport(const HttpTransport&) = delete;
-    HttpTransport& operator=(const HttpTransport&) = delete;
-    HttpTransport(HttpTransport&&) noexcept = default;
-    HttpTransport& operator=(HttpTransport&&) noexcept = default;
+    using Base::Base;
 
     [[nodiscard]] HttpResult perform(const HttpRequest& request) const {
-        return implementation_->perform(request);
+        return implementation()->perform(request);
     }
 
     [[nodiscard]] HttpResult download(
@@ -105,11 +87,8 @@ public:
         const std::filesystem::path& destination,
         const DownloadProgress& progress = {}
     ) const {
-        return implementation_->download(request, destination, progress);
+        return implementation()->download(request, destination, progress);
     }
-
-private:
-    pro::proxy<HttpTransportFacade> implementation_;
 };
 
 class CurlHttpClient final {

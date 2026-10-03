@@ -1,6 +1,7 @@
 #include "download_recovery.hpp"
 #include "download_transaction.hpp"
 #include "filesystem_metadata.hpp"
+#include "test_support.hpp"
 
 #include <chrono>
 #include <cstdlib>
@@ -16,31 +17,7 @@
 
 namespace {
 
-class TemporaryDirectory {
-public:
-    TemporaryDirectory()
-        : path_{
-              std::filesystem::temp_directory_path() /
-              ("onedrive-cpp-download-components-" +
-               std::to_string(
-                   std::chrono::steady_clock::now().time_since_epoch().count()
-               ))
-          } {
-        std::filesystem::create_directories(path_);
-    }
-
-    ~TemporaryDirectory() {
-        std::error_code error;
-        std::filesystem::remove_all(path_, error);
-    }
-
-    [[nodiscard]] const std::filesystem::path& path() const noexcept {
-        return path_;
-    }
-
-private:
-    std::filesystem::path path_;
-};
+using onedrive::test::TemporaryDirectory;
 
 class FakeGraphClient final {
 public:
