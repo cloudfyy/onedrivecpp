@@ -160,6 +160,7 @@ int main() {
         .body = "payload=hello",
         .connect_timeout = std::chrono::seconds{2},
         .operation_timeout = std::chrono::seconds{5},
+        .http_version = onedrive::http::HttpVersion::http_1_1,
     });
     server.join();
 
@@ -237,6 +238,7 @@ int main() {
             .url = "http://127.0.0.1:" + std::to_string(port) + "/download",
             .connect_timeout = std::chrono::seconds{2},
             .operation_timeout = std::chrono::seconds{5},
+            .http_version = onedrive::http::HttpVersion::http_2,
         },
         destination,
         [&](std::uint64_t downloaded, std::uint64_t total) {
