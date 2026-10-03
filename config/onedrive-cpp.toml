@@ -24,6 +24,13 @@ scopes = [
   "offline_access",
 ]
 
+[graph]
+# Microsoft Graph endpoint for the global Microsoft 365 cloud.
+endpoint = "https://graph.microsoft.com/v1.0"
+# For Microsoft 365 operated by 21Vianet in China, use:
+# endpoint = "https://microsoftgraph.chinacloudapi.cn/v1.0"
+# Also set auth.endpoint to "https://login.chinacloudapi.cn".
+
 [graph.throttle]
 maximum_retries = 4
 initial_delay_seconds = 1

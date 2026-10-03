@@ -32,7 +32,7 @@ namespace {
 graph::GraphOptions graph_options(const config::Config& config) {
     return {
         .drive_id = config.drive_id,
-        .endpoint = "https://graph.microsoft.com/v1.0",
+        .endpoint = config.graph_endpoint,
         .maximum_throttle_retries =
             config.graph_maximum_throttle_retries,
         .initial_throttle_delay = config.graph_initial_throttle_delay,

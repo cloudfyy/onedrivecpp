@@ -173,6 +173,7 @@ Config Config::defaults() {
         .auth_scope =
             "User.Read Files.ReadWrite Files.ReadWrite.All Sites.ReadWrite.All "
             "offline_access",
+        .graph_endpoint = "https://graph.microsoft.com/v1.0",
         .graph_maximum_throttle_retries = 4,
         .graph_initial_throttle_delay = std::chrono::seconds{1},
         .graph_maximum_throttle_delay = std::chrono::seconds{300},
@@ -333,7 +334,15 @@ Config Config::load(const std::filesystem::path& path) {
     }
 
     if (const auto* graph = optional_table(root, "graph", "graph")) {
-        validate_keys(*graph, {"throttle"}, "graph");
+        validate_keys(*graph, {"endpoint", "throttle"}, "graph");
+        if (const auto value = optional_value<std::string>(
+                *graph,
+                "endpoint",
+                "graph.endpoint",
+                "a string"
+            )) {
+            config.graph_endpoint = *value;
+        }
         if (const auto* throttle =
                 optional_table(*graph, "throttle", "graph.throttle")) {
             validate_keys(

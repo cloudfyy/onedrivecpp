@@ -25,6 +25,7 @@ struct Config {
         "User.Read Files.ReadWrite Files.ReadWrite.All Sites.ReadWrite.All "
         "offline_access"
     };
+    std::string graph_endpoint{"https://graph.microsoft.com/v1.0"};
     std::size_t graph_maximum_throttle_retries{4};
     std::chrono::seconds graph_initial_throttle_delay{1};
     std::chrono::seconds graph_maximum_throttle_delay{300};

@@ -338,6 +338,18 @@ download_chunk_threshold_bytes = 8388608
 # drive_id = "b!YOUR_DRIVE_ID"
 ```
 
+`graph.endpoint` 用于选择 Microsoft Graph 云端点，默认使用全球服务，并不与
+某个具体 SharePoint 主机名绑定。访问由世纪互联运营的 Microsoft 365 中国区
+SharePoint 文档库时，应同时配置 Graph 和认证云端点：
+
+```toml
+[auth]
+endpoint = "https://login.chinacloudapi.cn"
+
+[graph]
+endpoint = "https://microsoftgraph.chinacloudapi.cn/v1.0"
+```
+
 `download_concurrency` 控制可同时下载的文件数量，默认值为 `4`，允许范围为
 `1` 到 `16`。
 

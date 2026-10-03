@@ -25,6 +25,8 @@ int main() {
                << "tenant_id = \"test-tenant\"\n"
                << "endpoint = \"https://login.example.test\"\n"
                << "scopes = [\"Files.Read\", \"offline_access\"]\n"
+               << "[graph]\n"
+               << "endpoint = \"https://graph.example.test/v1.0\"\n"
                << "[graph.throttle]\n"
                << "maximum_retries = 7\n"
                << "initial_delay_seconds = 2\n"
@@ -43,6 +45,7 @@ int main() {
         config.azure_tenant_id != "test-tenant" ||
         config.auth_endpoint != "https://login.example.test" ||
         config.auth_scope != "Files.Read offline_access" ||
+        config.graph_endpoint != "https://graph.example.test/v1.0" ||
         config.graph_maximum_throttle_retries != 7 ||
         config.graph_initial_throttle_delay != std::chrono::seconds{2} ||
         config.graph_maximum_throttle_delay != std::chrono::seconds{90} ||

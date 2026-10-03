@@ -369,6 +369,19 @@ download_chunk_threshold_bytes = 8388608
 # drive_id = "b!YOUR_DRIVE_ID"
 ```
 
+`graph.endpoint` selects the Microsoft Graph cloud endpoint and defaults to
+the global service. It is not tied to a specific SharePoint host. For a
+SharePoint library in the Microsoft 365 China cloud, configure both the Graph
+and authentication cloud endpoints:
+
+```toml
+[auth]
+endpoint = "https://login.chinacloudapi.cn"
+
+[graph]
+endpoint = "https://microsoftgraph.chinacloudapi.cn/v1.0"
+```
+
 `download_concurrency` controls how many files can be downloaded at the same
 time. It defaults to `4` and accepts values from `1` through `16`.
 
