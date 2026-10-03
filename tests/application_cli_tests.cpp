@@ -154,12 +154,15 @@ public:
 
 class FakeGraphClient final : public onedrive::graph::GraphClient {
 public:
+    explicit FakeGraphClient(std::string configured_drive_id)
+        : configured_drive_id_{std::move(configured_drive_id)} {}
+
     [[nodiscard]] onedrive::account::DriveIdentity drive_identity()
         const override {
         return {
             .user_id = "user-id",
             .user_display_name = "Test User",
-            .configured_drive_id = "me",
+            .configured_drive_id = configured_drive_id_,
             .drive_id = "drive-id",
             .drive_name = "Test Drive",
         };
@@ -202,6 +205,9 @@ public:
         std::ofstream output{destination, std::ios::binary};
         output << std::string(42, 'x');
     }
+
+private:
+    std::string configured_drive_id_;
 };
 
 class FakeItemStore final : public onedrive::storage::ItemStore {
@@ -355,7 +361,7 @@ public:
     [[nodiscard]] std::unique_ptr<onedrive::graph::GraphClient>
     create_graph_client(const onedrive::config::Config&) const override {
         ++graph_client_count;
-        return std::make_unique<FakeGraphClient>();
+        return std::make_unique<FakeGraphClient>(configured_drive_id);
     }
 
     [[nodiscard]] std::unique_ptr<onedrive::storage::ItemStore> create_item_store(
@@ -386,6 +392,7 @@ public:
         return std::make_unique<FakeMetrics>();
     }
 
+    std::string configured_drive_id{"me"};
     mutable int token_store_count{0};
     mutable int graph_client_count{0};
     mutable int item_store_count{0};
@@ -668,9 +675,13 @@ int main() {
             "--log-file",
             log_path.string(),
         },
-        "drive-id\n"
+        "me\n"
     );
     if (confirmed_clear.exit_code != 0 ||
+        !confirmed_clear.standard_output.contains("drive 'me' (drive-id)") ||
+        !confirmed_clear.standard_output.contains(
+            "Type the configured drive reference 'me'"
+        ) ||
         !confirmed_clear.standard_output.contains(
             "7 item snapshots, 2 pending downloads, and 3 blocked items removed"
         ) ||
@@ -696,7 +707,9 @@ int main() {
         }
     );
     if (automated_clear.exit_code != 0 ||
-        automated_clear.standard_output.contains("Type the drive ID") ||
+        automated_clear.standard_output.contains(
+            "Type the configured drive reference"
+        ) ||
         runtime_factory.clear_count_ != 2 ||
         runtime_factory.item_store_count != 3 ||
         runtime_factory.item_store_open_count != 3) {

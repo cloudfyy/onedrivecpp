@@ -517,9 +517,10 @@ download 恢复记录、blocked item 以及其他 Drive 的状态。下一次 `s
 onedrive-cpp reset-state --clear-all
 ```
 
-命令要求准确输入当前配置的 Drive ID，确认后才会删除 item 快照、Delta 游标和
-pending download 恢复记录以及 blocked item。本地文件和其他 Drive 的状态不会
-被修改。由于本地快照已被清除，下一次同步可能报告本地修改冲突。自动化场景必须使用
+命令要求准确输入当前配置的 Drive 引用（例如 `me`），确认后才会删除 item
+快照、Delta 游标、pending download 恢复记录以及 blocked item。没有可用的配置
+引用时，改为要求输入原始 Drive ID。本地文件和其他 Drive 的状态不会被修改。
+由于本地快照已被清除，下一次同步可能报告本地修改冲突。自动化场景必须使用
 `reset-state --clear-all --yes` 显式承担该风险；未指定 `--clear-all` 时
 `--yes` 会被拒绝。
 

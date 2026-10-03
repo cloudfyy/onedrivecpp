@@ -778,7 +778,7 @@ DeltaResult MicrosoftGraphClient::list_delta(
             );
             scanned_item_count += page_item_count;
             const bool completed = next_url.empty();
-            spdlog::info(
+            spdlog::trace(
                 "Microsoft Graph delta progress: {} pages, {} items scanned ({})",
                 page_number,
                 scanned_item_count,

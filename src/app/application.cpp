@@ -287,13 +287,22 @@ int Application::run(int argc, char* argv[]) {
             auto graph = runtime_factory_.create_graph_client(config);
             const auto identity = graph->drive_identity();
             config.drive_id = identity.drive_id;
+            const auto& confirmation_drive_reference =
+                identity.configured_drive_id.empty() ?
+                    identity.drive_id :
+                    identity.configured_drive_id;
+            const auto warning_drive =
+                confirmation_drive_reference == identity.drive_id ?
+                    "'" + identity.drive_id + "'" :
+                    "'" + confirmation_drive_reference + "' (" +
+                        identity.drive_id + ")";
             if (clear_all_state && !assume_yes) {
                 console.message(
                     cli::MessageKind::warning,
                     "full_state_clear_warning",
                     "WARNING: This will remove all saved item snapshots, the "
                     "Delta cursor, and pending-download recovery records for "
-                    "drive '" + config.drive_id + "'."
+                    "drive " + warning_drive + "."
                 );
                 console.message(
                     cli::MessageKind::warning,
@@ -312,9 +321,10 @@ int Application::run(int argc, char* argv[]) {
                 }
                 if (!console.confirm(
                         "full_state_clear_confirmation",
-                        "Type the drive ID '" + config.drive_id +
+                        "Type the configured drive reference '" +
+                            confirmation_drive_reference +
                             "' to confirm: ",
-                        config.drive_id
+                        confirmation_drive_reference
                     )) {
                     spdlog::warn(
                         "Full synchronization state clear cancelled for drive "

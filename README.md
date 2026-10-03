@@ -577,11 +577,13 @@ explicitly destructive mode:
 onedrive-cpp reset-state --clear-all
 ```
 
-The command requires the configured Drive ID to be typed exactly before it
-removes item snapshots, the Delta cursor, pending-download recovery records,
-and blocked items. Local files and other Drives remain untouched. Because local
-snapshots are no longer available, the next sync may report local modification
-conflicts. Automation must acknowledge this risk explicitly with
+The command requires the configured Drive reference (for example, `me`) to be
+typed exactly before it removes item snapshots, the Delta cursor,
+pending-download recovery records, and blocked items. If no configured
+reference is available, it requires the raw Drive ID instead. Local files and
+other Drives remain untouched. Because local snapshots are no longer
+available, the next sync may report local modification conflicts. Automation
+must acknowledge this risk explicitly with
 `reset-state --clear-all --yes`; `--yes` is rejected without `--clear-all`.
 
 The `sync` command refreshes the OAuth access token, securely persists a
