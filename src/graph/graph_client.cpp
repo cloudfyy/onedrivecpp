@@ -128,6 +128,59 @@ std::chrono::seconds fallback_retry_delay(
     return delay;
 }
 
+bool retryable_status(long status_code) {
+    return status_code == 429 || status_code == 502 ||
+           status_code == 503 || status_code == 504;
+}
+
+template <typename Operation>
+http::HttpResult perform_with_retries(
+    Operation&& operation,
+    const GraphOptions& options,
+    const MicrosoftGraphClient::SleepFunction& sleep,
+    std::string_view description
+) {
+    std::size_t retries = 0;
+    while (true) {
+        auto response = operation();
+        if (!response || !retryable_status(response->status_code)) {
+            return response;
+        }
+        if (retries >= options.maximum_throttle_retries) {
+            throw std::runtime_error(
+                std::format(
+                    "{} failed with HTTP {} after {} retries",
+                    description,
+                    response->status_code,
+                    retries
+                )
+            );
+        }
+
+        const auto server_delay = retry_after(*response);
+        if (server_delay &&
+            *server_delay > options.maximum_throttle_delay) {
+            throw std::runtime_error(
+                "Microsoft Graph Retry-After exceeds the configured maximum "
+                "throttle delay"
+            );
+        }
+        const auto delay = server_delay.value_or(
+            fallback_retry_delay(options, retries)
+        );
+        spdlog::warn(
+            "{} returned HTTP {}; retrying in {} seconds ({}/{})",
+            description,
+            response->status_code,
+            delay.count(),
+            retries + 1,
+            options.maximum_throttle_retries
+        );
+        sleep(delay);
+        ++retries;
+    }
+}
+
 std::string item_remote_path(const Json& value, const std::string& name) {
     const auto parent = value.find("parentReference");
     if (parent == value.end() || !parent->is_object()) {
@@ -405,15 +458,13 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
             );
         }
 
-        http::HttpResult response;
-        std::size_t throttle_retries = 0;
-        while (true) {
+        const auto response = perform_with_retries(
+            [&] {
             spdlog::debug(
-                "Requesting Microsoft Graph root page {} (attempt {})",
-                page_number,
-                throttle_retries + 1
+                "Requesting Microsoft Graph root page {}",
+                page_number
             );
-            response = transport_->perform(http::HttpRequest{
+            return transport_->perform(http::HttpRequest{
                 .method = http::HttpMethod::get,
                 .url = next_url,
                 .headers = {
@@ -422,44 +473,15 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
                 },
                 .body = {},
             });
-            if (!response) {
-                throw std::runtime_error(
-                    "Microsoft Graph request failed: " + response.error().message
-                );
-            }
-            if (response->status_code != 429) {
-                break;
-            }
-            if (throttle_retries >= options_.maximum_throttle_retries) {
-                throw std::runtime_error(
-                    std::format(
-                        "Microsoft Graph throttling persisted after {} retries",
-                        throttle_retries
-                    )
-                );
-            }
-
-            const auto server_delay = retry_after(*response);
-            if (server_delay &&
-                *server_delay > options_.maximum_throttle_delay) {
-                throw std::runtime_error(
-                    "Microsoft Graph Retry-After exceeds the configured maximum "
-                    "throttle delay"
-                );
-            }
-            const auto delay = server_delay.value_or(
-                fallback_retry_delay(options_, throttle_retries)
+            },
+            options_,
+            sleep_,
+            std::format("Microsoft Graph root page {}", page_number)
+        );
+        if (!response) {
+            throw std::runtime_error(
+                "Microsoft Graph request failed: " + response.error().message
             );
-            spdlog::warn(
-                "Microsoft Graph throttled root page {}; retrying in {} seconds "
-                "({}/{})",
-                page_number,
-                delay.count(),
-                throttle_retries + 1,
-                options_.maximum_throttle_retries
-            );
-            sleep_(delay);
-            ++throttle_retries;
         }
 
         Json json;
@@ -596,15 +618,13 @@ DeltaResult MicrosoftGraphClient::list_delta(
             );
         }
 
-        http::HttpResult response;
-        std::size_t throttle_retries = 0;
-        while (true) {
+        const auto response = perform_with_retries(
+            [&] {
             spdlog::debug(
-                "Requesting Microsoft Graph delta page {} (attempt {})",
-                page_number,
-                throttle_retries + 1
+                "Requesting Microsoft Graph delta page {}",
+                page_number
             );
-            response = transport_->perform(http::HttpRequest{
+            return transport_->perform(http::HttpRequest{
                 .method = http::HttpMethod::get,
                 .url = next_url,
                 .headers = {
@@ -613,45 +633,16 @@ DeltaResult MicrosoftGraphClient::list_delta(
                 },
                 .body = {},
             });
-            if (!response) {
-                throw std::runtime_error(
-                    "Microsoft Graph delta request failed: " +
-                    response.error().message
-                );
-            }
-            if (response->status_code != 429) {
-                break;
-            }
-            if (throttle_retries >= options_.maximum_throttle_retries) {
-                throw std::runtime_error(
-                    std::format(
-                        "Microsoft Graph throttling persisted after {} retries",
-                        throttle_retries
-                    )
-                );
-            }
-
-            const auto server_delay = retry_after(*response);
-            if (server_delay &&
-                *server_delay > options_.maximum_throttle_delay) {
-                throw std::runtime_error(
-                    "Microsoft Graph Retry-After exceeds the configured maximum "
-                    "throttle delay"
-                );
-            }
-            const auto delay = server_delay.value_or(
-                fallback_retry_delay(options_, throttle_retries)
+            },
+            options_,
+            sleep_,
+            std::format("Microsoft Graph delta page {}", page_number)
+        );
+        if (!response) {
+            throw std::runtime_error(
+                "Microsoft Graph delta request failed: " +
+                response.error().message
             );
-            spdlog::warn(
-                "Microsoft Graph throttled delta page {}; retrying in {} seconds "
-                "({}/{})",
-                page_number,
-                delay.count(),
-                throttle_retries + 1,
-                options_.maximum_throttle_retries
-            );
-            sleep_(delay);
-            ++throttle_retries;
         }
 
         Json json;
@@ -821,18 +812,25 @@ void MicrosoftGraphClient::download_file(
             options_.endpoint + "/drives/" + percent_encode(options_.drive_id) +
                 "/items/" + percent_encode(remote_id) + "/content";
 
-    auto redirect = transport_->perform(http::HttpRequest{
-        .method = http::HttpMethod::get,
-        .url = content_url,
-        .headers = {
-            "Accept: application/octet-stream",
-            "Authorization: Bearer " + access_token(),
+    const auto redirect = perform_with_retries(
+        [&] {
+            return transport_->perform(http::HttpRequest{
+                .method = http::HttpMethod::get,
+                .url = content_url,
+                .headers = {
+                    "Accept: application/octet-stream",
+                    "Authorization: Bearer " + access_token(),
+                },
+                .body = {},
+                .connect_timeout = std::chrono::seconds{30},
+                .operation_timeout = std::chrono::seconds{60},
+                .maximum_response_size = 64U * 1024U,
+            });
         },
-        .body = {},
-        .connect_timeout = std::chrono::seconds{30},
-        .operation_timeout = std::chrono::seconds{60},
-        .maximum_response_size = 64U * 1024U,
-    });
+        options_,
+        sleep_,
+        "Microsoft Graph download redirect"
+    );
     if (!redirect) {
         throw std::runtime_error(
             "Microsoft Graph download request failed: " + redirect.error().message
@@ -857,22 +855,30 @@ void MicrosoftGraphClient::download_file(
         "Received HTTPS download redirect for Microsoft Graph drive item '{}'",
         remote_id
     );
-    const auto download = [&](std::vector<std::string> headers,
+    const auto download = [&](const std::vector<std::string>& headers,
                               std::uint64_t offset,
-                              const DownloadProgress& chunk_progress) {
-        return transport_->download(
-            http::HttpRequest{
-                .method = http::HttpMethod::get,
-                .url = *location,
-                .headers = std::move(headers),
-                .body = {},
-                .connect_timeout = std::chrono::seconds{30},
-                .operation_timeout = std::chrono::hours{1},
-                .maximum_response_size = 0,
-                .download_offset = offset,
+                              const DownloadProgress& chunk_progress,
+                              std::string_view description) {
+        return perform_with_retries(
+            [&] {
+                return transport_->download(
+                    http::HttpRequest{
+                        .method = http::HttpMethod::get,
+                        .url = *location,
+                        .headers = headers,
+                        .body = {},
+                        .connect_timeout = std::chrono::seconds{30},
+                        .operation_timeout = std::chrono::hours{1},
+                        .maximum_response_size = 0,
+                        .download_offset = offset,
+                    },
+                    destination,
+                    chunk_progress
+                );
             },
-            destination,
-            chunk_progress
+            options_,
+            sleep_,
+            description
         );
     };
 
@@ -881,7 +887,8 @@ void MicrosoftGraphClient::download_file(
         auto response = download(
             {"Accept: application/octet-stream"},
             0,
-            progress
+            progress,
+            "Microsoft Graph file download"
         );
         if (!response) {
             throw std::runtime_error(
@@ -925,7 +932,12 @@ void MicrosoftGraphClient::download_file(
                         );
                     }
                 } :
-                DownloadProgress{}
+                DownloadProgress{},
+            std::format(
+                "Microsoft Graph chunk download (bytes {}-{})",
+                offset,
+                end
+            )
         );
         if (!response) {
             throw std::runtime_error(

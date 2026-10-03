@@ -620,10 +620,13 @@ remote metadata, size, and SHA-256 content fingerprint to a SQLite
 processes this journal first, making SQLite authoritative rather than relying
 on target-file-system extended attributes.
 
-During each file transfer, text output shows the current file number, remote
-path, percentage, and transferred bytes. Interactive terminals update the
-current line in place; redirected text and JSON output receive progress events
-at five-percentage-point intervals. `--quiet` suppresses progress output.
+Download progress is aggregated across concurrent transfers. Text output shows
+completed and total file counts, overall byte percentage, and transferred size
+using B, KiB, MiB, or GiB. Interactive terminals update one concise line in
+place; redirected text and JSON output receive progress events at
+one-percentage-point intervals. JSON events retain exact byte counts and include
+`completed_files`, `file_count`, `downloaded_bytes`, `total_bytes`,
+`percentage`, and `completed`. `--quiet` suppresses progress output.
 
 If Microsoft Graph rejects a saved Delta cursor with `410 Gone`, synchronization
 automatically retries with a full Delta query. Existing local snapshots remain
@@ -646,9 +649,12 @@ metadata = "auto"
 Capability detection probes the target synchronization directory instead of
 using a file-system-name allowlist.
 
-When Microsoft Graph returns HTTP 429, the client honors a numeric `Retry-After`
-header and otherwise uses bounded exponential backoff. Retries are limited so
-persistent throttling fails explicitly instead of waiting forever.
+Microsoft Graph page requests, download redirects, file downloads, and ranged
+chunks retry HTTP 429, 502, 503, and 504 responses. The client honors a numeric
+`Retry-After` header and otherwise uses bounded exponential backoff. Failed
+ranged requests roll the temporary file back to the chunk boundary before
+retrying. Retries are limited so persistent service failures fail explicitly
+instead of waiting forever.
 
 The throttling policy can be adjusted in the configuration file:
 
@@ -659,9 +665,9 @@ initial_delay_seconds = 1
 maximum_delay_seconds = 300
 ```
 
-The initial delay is doubled after each 429 response without a valid numeric
-`Retry-After`, up to the configured maximum. A server-provided delay above
-the configured maximum is rejected instead of sleeping unexpectedly long.
+The initial delay is doubled after each retryable response without a valid
+numeric `Retry-After`, up to the configured maximum. A server-provided delay
+above the configured maximum is rejected instead of sleeping unexpectedly long.
 
 After installing the DEB package, enable the user service:
 

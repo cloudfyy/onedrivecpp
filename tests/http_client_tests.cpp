@@ -250,5 +250,76 @@ int main() {
         return fail("HTTP response was not streamed to the download file");
     }
 
+    {
+        std::ofstream partial{destination, std::ios::binary};
+        partial << "prefix-existing";
+    }
+    server_error.clear();
+    std::jthread failed_chunk_server{[&] {
+        pollfd descriptor{
+            .fd = listener.get(),
+            .events = POLLIN,
+            .revents = 0,
+        };
+        if (::poll(&descriptor, 1, 10'000) != 1) {
+            server_error = "timed out waiting for failed chunk request";
+            return;
+        }
+        Socket connection{
+            ::accept4(listener.get(), nullptr, nullptr, SOCK_CLOEXEC)
+        };
+        std::string request;
+        char buffer[4096];
+        while (!request.contains("\r\n\r\n")) {
+            const auto count =
+                ::recv(connection.get(), buffer, sizeof(buffer), 0);
+            if (count <= 0) {
+                server_error = "cannot read failed chunk request";
+                return;
+            }
+            request.append(buffer, static_cast<std::size_t>(count));
+        }
+        constexpr std::string_view response{
+            "HTTP/1.1 503 Service Unavailable\r\n"
+            "Content-Length: 5\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "error"
+        };
+        if (::send(
+                connection.get(),
+                response.data(),
+                response.size(),
+                MSG_NOSIGNAL
+            ) != static_cast<ssize_t>(response.size())) {
+            server_error = "cannot send failed chunk response";
+        }
+    }};
+    const auto failed_chunk_response = client.download(
+        {
+            .url = "http://127.0.0.1:" + std::to_string(port) + "/chunk",
+            .headers = {"Range: bytes=6-10"},
+            .connect_timeout = std::chrono::seconds{2},
+            .operation_timeout = std::chrono::seconds{5},
+            .download_offset = 6,
+        },
+        destination
+    );
+    failed_chunk_server.join();
+    std::ifstream partial{destination, std::ios::binary};
+    const std::string partial_contents{
+        std::istreambuf_iterator<char>{partial},
+        std::istreambuf_iterator<char>{}
+    };
+    std::filesystem::remove(destination, ignored);
+    if (!server_error.empty()) {
+        return fail(server_error);
+    }
+    if (!failed_chunk_response ||
+        failed_chunk_response->status_code != 503 ||
+        partial_contents != "prefix") {
+        return fail("failed HTTP chunk did not preserve completed data");
+    }
+
     return EXIT_SUCCESS;
 }

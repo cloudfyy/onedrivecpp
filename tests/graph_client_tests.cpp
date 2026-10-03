@@ -74,11 +74,17 @@ public:
         if (progress) {
             progress(body.size(), body.size());
         }
+        if (!download_responses.empty()) {
+            auto response = std::move(download_responses.front());
+            download_responses.pop_front();
+            return response;
+        }
         return onedrive::http::HttpResponse{.status_code = status_code};
     }
 
     mutable std::vector<onedrive::http::HttpRequest> requests;
     mutable std::vector<onedrive::http::HttpRequest> download_requests;
+    mutable std::deque<onedrive::http::HttpResult> download_responses;
     std::string download_body{"download"};
 
 private:
@@ -407,6 +413,55 @@ int test_throttling_fallback_and_limit() {
     return EXIT_SUCCESS;
 }
 
+int test_transient_service_retries() {
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"expires_in":3600,"access_token":"access-secret"})",
+            },
+            onedrive::http::HttpResponse{.status_code = 502},
+            onedrive::http::HttpResponse{
+                .status_code = 503,
+                .headers = {{"Retry-After", "3"}},
+            },
+            onedrive::http::HttpResponse{.status_code = 504},
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body = R"({"value":[]})",
+            },
+        }
+    );
+    auto* transport_pointer = transport.get();
+    std::vector<std::chrono::seconds> sleeps;
+    onedrive::graph::MicrosoftGraphClient client{
+        std::move(transport),
+        std::make_unique<FakeTokenStore>(std::string{"existing-refresh"}),
+        auth_options(),
+        {
+            .maximum_throttle_retries = 3,
+            .initial_throttle_delay = std::chrono::seconds{1},
+            .maximum_throttle_delay = std::chrono::seconds{10},
+        },
+        [&sleeps](std::chrono::seconds duration) {
+            sleeps.push_back(duration);
+        },
+    };
+
+    if (!client.list_root().empty() ||
+        sleeps !=
+            std::vector{
+                std::chrono::seconds{1},
+                std::chrono::seconds{3},
+                std::chrono::seconds{4},
+            } ||
+        transport_pointer->requests.size() != 5) {
+        return fail("transient Graph service errors were not retried correctly");
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_delta_with_pagination() {
     auto transport = std::make_unique<FakeTransport>(
         std::deque<onedrive::http::HttpResult>{
@@ -697,12 +752,22 @@ int test_large_file_chunked_download() {
         }
     );
     auto* transport_pointer = transport.get();
+    transport_pointer->download_responses = {
+        onedrive::http::HttpResponse{.status_code = 206},
+        onedrive::http::HttpResponse{
+            .status_code = 503,
+            .headers = {{"Retry-After", "0"}},
+        },
+        onedrive::http::HttpResponse{.status_code = 206},
+        onedrive::http::HttpResponse{.status_code = 206},
+    };
     const auto destination =
         std::filesystem::temp_directory_path() /
         "onedrive-cpp-chunked-download-test";
     std::error_code ignored;
     std::filesystem::remove(destination, ignored);
 
+    std::vector<std::chrono::seconds> sleeps;
     onedrive::graph::MicrosoftGraphClient client{
         std::move(transport),
         std::make_unique<FakeTokenStore>(std::string{"existing-refresh"}),
@@ -711,6 +776,9 @@ int test_large_file_chunked_download() {
             .drive_id = "me",
             .endpoint = "https://graph.example.test/v1.0",
             .download_chunk_threshold_bytes = 3,
+        },
+        [&sleeps](std::chrono::seconds duration) {
+            sleeps.push_back(duration);
         },
     };
     std::vector<std::pair<std::uint64_t, std::uint64_t>> progress;
@@ -730,17 +798,21 @@ int test_large_file_chunked_download() {
     };
     std::filesystem::remove(destination, ignored);
     if (contents != "download" ||
-        transport_pointer->download_requests.size() != 3 ||
+        transport_pointer->download_requests.size() != 4 ||
         transport_pointer->download_requests[0].headers.back() !=
             "Range: bytes=0-2" ||
         transport_pointer->download_requests[1].headers.back() !=
             "Range: bytes=3-5" ||
         transport_pointer->download_requests[2].headers.back() !=
+            "Range: bytes=3-5" ||
+        transport_pointer->download_requests[3].headers.back() !=
             "Range: bytes=6-7" ||
         transport_pointer->download_requests[1].download_offset != 3 ||
+        sleeps != std::vector{std::chrono::seconds{0}} ||
         progress !=
             std::vector<std::pair<std::uint64_t, std::uint64_t>>{
                 {3, 8},
+                {6, 8},
                 {6, 8},
                 {8, 8},
             }) {
@@ -845,6 +917,10 @@ int main() {
         return result;
     }
     if (const int result = test_throttling_fallback_and_limit();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_transient_service_retries();
         result != EXIT_SUCCESS) {
         return result;
     }

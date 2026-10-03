@@ -394,6 +394,16 @@ HttpResult CurlHttpClient::download(
 
     auto response = perform_request(request, descriptor, progress);
     std::string close_error;
+    std::string truncate_error;
+    if ((!response || response->status_code < 200 ||
+         response->status_code >= 300) &&
+        request.download_offset != 0 &&
+        ::ftruncate(
+            descriptor,
+            static_cast<off_t>(request.download_offset)
+        ) == -1) {
+        truncate_error = std::strerror(errno);
+    }
     if (response && response->status_code >= 200 && response->status_code < 300 &&
         ::fsync(descriptor) == -1) {
         response = std::unexpected(HttpError{
@@ -404,10 +414,17 @@ HttpResult CurlHttpClient::download(
     if (::close(descriptor) == -1) {
         close_error = std::strerror(errno);
     }
-    if (!response || response->status_code < 200 || response->status_code >= 300 ||
-        !close_error.empty()) {
+    if ((!response || response->status_code < 200 ||
+         response->status_code >= 300 || !close_error.empty()) &&
+        request.download_offset == 0) {
         std::error_code ignored;
         std::filesystem::remove(destination, ignored);
+    }
+    if (!truncate_error.empty()) {
+        return std::unexpected(HttpError{
+            .message = "cannot roll back partial download file '" +
+                       destination.string() + "': " + truncate_error,
+        });
     }
     if (!close_error.empty()) {
         return std::unexpected(HttpError{
