@@ -6,6 +6,7 @@
 #include <array>
 #include <cerrno>
 #include <chrono>
+#include <climits>
 #include <cstring>
 #include <fcntl.h>
 #include <format>
@@ -17,23 +18,170 @@
 #include <unistd.h>
 
 namespace onedrive::sync::detail {
+namespace {
+
+std::string escaped_path(std::string_view path) {
+    std::string escaped;
+    escaped.reserve(path.size());
+    for (const char byte : path) {
+        const auto character = static_cast<unsigned char>(byte);
+        if (character == '\\') {
+            escaped += "\\\\";
+        } else if (character == '\'') {
+            escaped += "\\'";
+        } else if (character < 0x20U || character == 0x7FU) {
+            escaped += std::format("\\x{:02X}", character);
+        } else {
+            escaped.push_back(static_cast<char>(character));
+        }
+    }
+    return escaped;
+}
+
+std::filesystem::path existing_ancestor(std::filesystem::path path) {
+    while (!path.empty()) {
+        std::error_code error;
+        if (std::filesystem::exists(path, error)) {
+            return path;
+        }
+        if (error) {
+            throw std::runtime_error(
+                "cannot inspect synchronization path '" + path.string() +
+                "' while validating remote filenames: " + error.message()
+            );
+        }
+        const auto parent = path.parent_path();
+        if (parent == path) {
+            break;
+        }
+        path = parent;
+    }
+    return ".";
+}
+
+std::size_t filesystem_limit(
+    const std::filesystem::path& sync_directory,
+    int name,
+    std::size_t fallback,
+    std::string_view description
+) {
+    const auto probe = existing_ancestor(sync_directory);
+    errno = 0;
+    const long limit = ::pathconf(probe.c_str(), name);
+    if (limit > 0) {
+        return static_cast<std::size_t>(limit);
+    }
+    if (limit == -1 && errno == 0) {
+        return fallback;
+    }
+    throw std::runtime_error(
+        "cannot determine the target filesystem " + std::string{description} +
+        " at '" + probe.string() + "': " + std::strerror(errno)
+    );
+}
+
+[[noreturn]] void invalid_remote_path(
+    std::string_view remote_path,
+    std::string_view reason
+) {
+    throw std::runtime_error(
+        "invalid Microsoft Graph remote path '" + escaped_path(remote_path) +
+        "': " + std::string{reason}
+    );
+}
+
+}  // namespace
 
 std::filesystem::path local_path_for(
     const std::filesystem::path& sync_directory,
     const std::string& remote_path
 ) {
-    const std::filesystem::path relative_path{remote_path};
-    if (relative_path.empty() || relative_path.is_absolute()) {
-        throw std::runtime_error("Microsoft Graph returned an invalid remote path");
+    if (remote_path.empty()) {
+        invalid_remote_path(remote_path, "the path is empty");
     }
-    for (const auto& component : relative_path) {
-        if (component == "." || component == "..") {
-            throw std::runtime_error(
-                "Microsoft Graph returned an unsafe remote path"
+    if (remote_path.front() == '/') {
+        invalid_remote_path(remote_path, "absolute paths are not allowed");
+    }
+
+    const auto name_limit = filesystem_limit(
+        sync_directory,
+        _PC_NAME_MAX,
+        NAME_MAX,
+        "filename length limit"
+    );
+    std::size_t component_begin = 0;
+    while (component_begin <= remote_path.size()) {
+        const auto separator = remote_path.find('/', component_begin);
+        const auto component_end =
+            separator == std::string::npos ? remote_path.size() : separator;
+        const std::string_view component{
+            remote_path.data() + component_begin,
+            component_end - component_begin
+        };
+        if (component.empty()) {
+            invalid_remote_path(
+                remote_path,
+                "empty path components are not allowed"
             );
         }
+        if (component == "." || component == "..") {
+            invalid_remote_path(
+                remote_path,
+                "reserved component '" + std::string{component} +
+                    "' is not allowed"
+            );
+        }
+        if (component.contains('\0')) {
+            invalid_remote_path(
+                remote_path,
+                "component '" + escaped_path(component) +
+                    "' contains a NUL byte"
+            );
+        }
+        for (const char byte : component) {
+            const auto character = static_cast<unsigned char>(byte);
+            if (character < 0x20U || character == 0x7FU) {
+                invalid_remote_path(
+                    remote_path,
+                    "component '" + escaped_path(component) +
+                        "' contains unsupported control byte " +
+                        std::format("0x{:02X}", character)
+                );
+            }
+        }
+        if (component.size() > name_limit) {
+            invalid_remote_path(
+                remote_path,
+                "component '" + escaped_path(component) + "' is " +
+                    std::to_string(component.size()) +
+                    " bytes, exceeding the target filesystem limit of " +
+                    std::to_string(name_limit) + " bytes"
+            );
+        }
+        if (separator == std::string::npos) {
+            break;
+        }
+        component_begin = separator + 1;
     }
-    return sync_directory / relative_path;
+
+    const std::filesystem::path local_path =
+        sync_directory / std::filesystem::path{remote_path};
+    const auto path_limit = filesystem_limit(
+        sync_directory,
+        _PC_PATH_MAX,
+        PATH_MAX,
+        "path length limit"
+    );
+    if (local_path.native().size() >= path_limit) {
+        invalid_remote_path(
+            remote_path,
+            "the resulting local path is " +
+                std::to_string(local_path.native().size()) +
+                " bytes, exceeding the target filesystem limit of " +
+                std::to_string(path_limit - 1) + " bytes"
+        );
+    }
+    return local_path;
 }
 
 std::int64_t modified_ticks(const std::filesystem::path& path) {

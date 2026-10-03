@@ -8,6 +8,9 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace {
 
@@ -42,6 +45,21 @@ int fail(const std::string& message) {
     return EXIT_FAILURE;
 }
 
+bool rejects_path_with(
+    const std::filesystem::path& root,
+    const std::string& path,
+    std::string_view expected
+) {
+    try {
+        static_cast<void>(
+            onedrive::sync::detail::local_path_for(root, path)
+        );
+    } catch (const std::runtime_error& error) {
+        return std::string_view{error.what()}.contains(expected);
+    }
+    return false;
+}
+
 }  // namespace
 
 int main() {
@@ -54,12 +72,38 @@ int main() {
         root / "Documents/file.txt") {
         return fail("safe remote path was not mapped below the sync root");
     }
-    for (const std::string path : {"", "/absolute", "../escape", "a/../escape"}) {
-        try {
-            static_cast<void>(detail::local_path_for(root, path));
-            return fail("unsafe remote path was accepted");
-        } catch (const std::runtime_error&) {
+    const std::vector<std::pair<std::string, std::string_view>> invalid_paths{
+        {"", "the path is empty"},
+        {"/absolute", "absolute paths are not allowed"},
+        {"../escape", "reserved component '..'"},
+        {"a/../escape", "reserved component '..'"},
+        {"a//file", "empty path components"},
+        {"directory/", "empty path components"},
+        {std::string{"bad\0name", 8}, "bad\\x00name"},
+        {"line\nbreak", "control byte 0x0A"},
+        {std::string(256, 'x'), "256 bytes"},
+    };
+    for (const auto& [path, expected] : invalid_paths) {
+        if (!rejects_path_with(root, path, expected)) {
+            return fail(
+                "invalid remote path did not report the expected reason: " +
+                std::string{expected}
+            );
         }
+    }
+    std::string excessive_path;
+    for (int index = 0; index < 20; ++index) {
+        if (!excessive_path.empty()) {
+            excessive_path += '/';
+        }
+        excessive_path += std::string(240, 'a' + index % 26);
+    }
+    if (!rejects_path_with(
+            root,
+            excessive_path,
+            "resulting local path"
+        )) {
+        return fail("excessive complete path length was accepted");
     }
 
     const auto file = root / "data.txt";

@@ -527,6 +527,14 @@ with `pages`, `items`, and `completed` fields. Microsoft Graph does not provide
 the total number of Delta items in advance, so an accurate percentage is not
 available. `--quiet` suppresses console progress but not configured log output.
 
+Before creating directories or downloading files, synchronization validates
+every remote path. Empty, absolute, dot-segment, NUL-containing, control-byte,
+and empty components are rejected. Component and complete-path byte lengths
+are checked against the target filesystem limits. The error identifies the
+remote path, offending component, actual size, and supported limit; control
+bytes are escaped so diagnostics remain safe to display. Invalid names stop
+the sync before its Delta cursor is advanced and must be renamed in OneDrive.
+
 To discard all saved synchronization state for the configured Drive, use the
 explicitly destructive mode:
 
