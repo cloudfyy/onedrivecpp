@@ -100,6 +100,27 @@ bool create_version_six_database(const std::filesystem::path& path) {
     return succeeded;
 }
 
+bool create_version_seven_database(const std::filesystem::path& path) {
+    if (!create_version_six_database(path)) {
+        return false;
+    }
+    sqlite3* database = nullptr;
+    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
+        sqlite3_close(database);
+        return false;
+    }
+    constexpr const char* schema =
+        "CREATE TABLE drive_mapping ("
+        "configured_drive_id TEXT PRIMARY KEY NOT NULL, "
+        "canonical_drive_id TEXT NOT NULL, "
+        "last_resolved INTEGER NOT NULL DEFAULT (unixepoch()));"
+        "PRAGMA user_version = 7;";
+    const bool succeeded =
+        sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
+    sqlite3_close(database);
+    return succeeded;
+}
+
 bool identity_row_is_valid(const std::filesystem::path& path) {
     sqlite3* database = nullptr;
     if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
@@ -378,8 +399,39 @@ int main() {
             .temporary_path = temporary_directory.path() / "pending-other.tmp",
             .content_fingerprint = "fingerprint-other",
         });
+        database.save_partial_download({
+            .item = {
+                .drive_id = "me",
+                .remote_id = "partial-me",
+                .name = "partial-me.txt",
+                .etag = "partial-etag",
+                .remote_path = "partial-me.txt",
+                .local_path = temporary_directory.path() / "partial-me.txt",
+                .size = 4,
+            },
+            .temporary_path =
+                temporary_directory.path() / ".partial-me.tmp",
+            .completed_bytes = 2,
+        });
+        database.save_partial_download({
+            .item = {
+                .drive_id = "other-drive",
+                .remote_id = "partial-other",
+                .name = "partial-other.txt",
+                .etag = "partial-etag",
+                .remote_path = "partial-other.txt",
+                .local_path =
+                    temporary_directory.path() / "partial-other.txt",
+                .size = 5,
+            },
+            .temporary_path =
+                temporary_directory.path() / ".partial-other.tmp",
+            .completed_bytes = 3,
+        });
         if (database.pending_downloads("me").size() != 1 ||
             database.pending_downloads("other-drive").size() != 1 ||
+            !database.partial_download("me", "partial-me") ||
+            !database.partial_download("other-drive", "partial-other") ||
             database.blocked_items("me").size() != 1 ||
             database.blocked_items("other-drive").size() != 1 ||
             database.blocked_items("me")[0].attempt_count != 1) {
@@ -392,6 +444,8 @@ int main() {
             database.delta_link("me").has_value() ||
             database.pending_downloads("me").size() != 1 ||
             database.pending_downloads("other-drive").size() != 1 ||
+            !database.partial_download("me", "partial-me") ||
+            !database.partial_download("other-drive", "partial-other") ||
             database.blocked_items("me").size() != 1 ||
             database.blocked_items("other-drive").size() != 1 ||
             database.delta_link("other-drive") !=
@@ -417,6 +471,8 @@ int main() {
             database.delta_link("me").has_value() ||
             database.pending_downloads("me").size() != 1 ||
             database.pending_downloads("other-drive").size() != 1 ||
+            !database.partial_download("me", "partial-me") ||
+            !database.partial_download("other-drive", "partial-other") ||
             database.blocked_items("me").size() != 1 ||
             database.blocked_items("other-drive").size() != 1 ||
             database.delta_link("other-drive") !=
@@ -458,6 +514,8 @@ int main() {
             !database.find("", "remote-2") ||
             database.pending_downloads("me").size() != 1 ||
             database.pending_downloads("other-drive").size() != 1 ||
+            !database.partial_download("me", "partial-me") ||
+            !database.partial_download("other-drive", "partial-other") ||
             database.blocked_items("me").size() != 1 ||
             database.blocked_items("me")[0].remote_id != "fresh-blocked-me" ||
             database.blocked_items("other-drive").size() != 1) {
@@ -466,6 +524,7 @@ int main() {
 
         const auto cleared = database.clear("me");
         if (cleared.items != 1 || cleared.pending_downloads != 1 ||
+            cleared.partial_downloads != 1 ||
             cleared.blocked_items != 1 || !cleared.delta_link ||
             database.size() != 3 ||
             database.find("me", "fresh-me") ||
@@ -474,6 +533,8 @@ int main() {
             !database.find("", "remote-2") ||
             !database.pending_downloads("me").empty() ||
             database.pending_downloads("other-drive").size() != 1 ||
+            database.partial_download("me", "partial-me") ||
+            !database.partial_download("other-drive", "partial-other") ||
             !database.blocked_items("me").empty() ||
             database.blocked_items("other-drive").size() != 1 ||
             database.delta_link("me").has_value() ||
@@ -667,6 +728,42 @@ int main() {
             version_six_directory / "items.sqlite3"
         )) {
         return fail("version six database did not gain the Drive ID mapping");
+    }
+
+    const auto version_seven_directory =
+        temporary_directory.path() / "version-seven";
+    std::filesystem::create_directories(version_seven_directory);
+    if (!create_version_seven_database(
+            version_seven_directory / "items.sqlite3"
+        )) {
+        return fail("version seven migration fixture could not be created");
+    }
+    {
+        onedrive::storage::ItemDatabase database{
+            version_seven_directory,
+            identity()
+        };
+        database.open();
+        database.save_partial_download({
+            .item = {
+                .drive_id = "me",
+                .remote_id = "migrated-partial",
+                .name = "migrated-partial.txt",
+                .etag = "etag",
+                .remote_path = "migrated-partial.txt",
+                .local_path =
+                    version_seven_directory / "migrated-partial.txt",
+                .size = 4,
+            },
+            .temporary_path =
+                version_seven_directory / ".migrated-partial.tmp",
+            .completed_bytes = 2,
+        });
+        if (!database.partial_download("me", "migrated-partial")) {
+            return fail(
+                "version seven database did not gain partial download state"
+            );
+        }
     }
 
     return EXIT_SUCCESS;

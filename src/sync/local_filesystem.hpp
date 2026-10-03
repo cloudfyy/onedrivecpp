@@ -55,6 +55,14 @@ struct LocalFileBaseline {
 [[nodiscard]] std::filesystem::path temporary_path_for(
     const std::filesystem::path& destination
 );
+[[nodiscard]] bool paths_share_parent(
+    const std::filesystem::path& left,
+    const std::filesystem::path& right
+);
+[[nodiscard]] bool is_temporary_path_for(
+    const std::filesystem::path& destination,
+    const std::filesystem::path& candidate
+);
 void fsync_directory(const std::filesystem::path& directory);
 void ensure_directory_tree(
     const std::filesystem::path& root,

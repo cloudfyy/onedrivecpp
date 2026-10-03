@@ -802,6 +802,24 @@ int test_resumed_file_download() {
             checkpoints.push_back(completed);
         }
     );
+    std::vector<std::pair<std::uint64_t, std::uint64_t>> completed_progress;
+    client.download_file(
+        "item-id",
+        8,
+        destination,
+        8,
+        [&](std::uint64_t downloaded, std::uint64_t total) {
+            completed_progress.emplace_back(downloaded, total);
+        },
+        [&](std::uint64_t completed) {
+            checkpoints.push_back(completed);
+        }
+    );
+    try {
+        client.download_file("item-id", 8, destination, 9, {}, {});
+        return fail("Graph download accepted a resume offset beyond file size");
+    } catch (const std::invalid_argument&) {
+    }
 
     std::ifstream input{destination, std::ios::binary};
     const std::string contents{
@@ -815,7 +833,9 @@ int test_resumed_file_download() {
         transport_pointer->download_requests[0].download_offset != 4 ||
         transport_pointer->download_requests[0].headers.back() !=
             "Range: bytes=4-7" ||
-        checkpoints != std::vector<std::uint64_t>{8}) {
+        checkpoints != std::vector<std::uint64_t>{8, 8} ||
+        completed_progress !=
+            std::vector<std::pair<std::uint64_t, std::uint64_t>>{{8, 8}}) {
         return fail("Graph file download did not resume from its byte offset");
     }
     return EXIT_SUCCESS;
@@ -871,12 +891,17 @@ int test_large_file_chunked_download() {
         },
     };
     std::vector<std::pair<std::uint64_t, std::uint64_t>> progress;
+    std::vector<std::uint64_t> checkpoints;
     client.download_file(
         "item-id",
         8,
         destination,
+        0,
         [&](std::uint64_t downloaded, std::uint64_t total) {
             progress.emplace_back(downloaded, total);
+        },
+        [&](std::uint64_t completed) {
+            checkpoints.push_back(completed);
         }
     );
 
@@ -904,7 +929,8 @@ int test_large_file_chunked_download() {
                 {6, 8},
                 {6, 8},
                 {8, 8},
-            }) {
+            } ||
+        checkpoints != std::vector<std::uint64_t>{3, 6, 8}) {
         return fail("large Graph file was not downloaded in byte ranges");
     }
     return EXIT_SUCCESS;

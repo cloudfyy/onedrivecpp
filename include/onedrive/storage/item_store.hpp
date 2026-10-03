@@ -69,6 +69,7 @@ struct PartialDownload {
 struct ClearedState {
     std::size_t items{0};
     std::size_t pending_downloads{0};
+    std::size_t partial_downloads{0};
     std::size_t blocked_items{0};
     bool delta_link{false};
 };

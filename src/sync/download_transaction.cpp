@@ -33,12 +33,9 @@ PreparedDownload prepare_download(
         const auto normalized_temporary =
             partial.temporary_path.lexically_normal();
         const auto normalized_destination = destination.lexically_normal();
-        const auto expected_prefix =
-            "." + destination.filename().string() + ".onedrive-partial-";
-        if (normalized_temporary.parent_path() !=
-                normalized_destination.parent_path() ||
-            !normalized_temporary.filename().string().starts_with(
-                expected_prefix
+        if (!is_temporary_path_for(
+                normalized_destination,
+                normalized_temporary
             )) {
             throw std::runtime_error(
                 "partial download path is outside the destination directory: " +

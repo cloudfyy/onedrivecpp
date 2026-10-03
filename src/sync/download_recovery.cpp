@@ -55,7 +55,7 @@ void validate_pending_download(
         );
     }
     if (outside_root(temporary_relative) ||
-        temporary.parent_path() != destination.parent_path()) {
+        !paths_share_parent(temporary, destination)) {
         throw std::runtime_error(
             "pending download temporary path is outside the destination "
             "directory: " + temporary.string()

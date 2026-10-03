@@ -52,6 +52,7 @@ public:
         const onedrive::graph::DownloadProgress&,
         const onedrive::graph::DownloadCheckpoint& checkpoint
     ) const {
+        last_initial_offset = initial_offset;
         if (initial_offset == 0) {
             std::ofstream output{destination, std::ios::binary};
             output << contents;
@@ -69,6 +70,7 @@ public:
     }
 
     std::string contents{"data"};
+    mutable std::uint64_t last_initial_offset{0};
 };
 
 class FakeItemStore final {
@@ -240,7 +242,7 @@ int main() {
         metadata
     );
     if (!std::filesystem::exists(destination) || !items.pending.empty() ||
-        !items.find("me", "installed") ||
+        !items.partials.empty() || !items.find("me", "installed") ||
         installed.local_size != 4 || installed.local_modified_ticks == 0) {
         return fail("atomic download transaction did not commit");
     }
@@ -292,6 +294,108 @@ int main() {
         return fail("size mismatch left installed or journaled state");
     }
     graph.contents = "data";
+
+    const auto truncated_item = remote_item("truncated", "truncated.txt");
+    const auto truncated_destination = root / "truncated.txt";
+    const auto truncated_partial =
+        root / ".truncated.txt.onedrive-partial-previous";
+    {
+        std::ofstream output{truncated_partial, std::ios::binary};
+        output << "dauncommitted";
+    }
+    items.partials.emplace(
+        "truncated",
+        onedrive::storage::PartialDownload{
+            .item = item_state(truncated_item, truncated_destination),
+            .temporary_path = truncated_partial,
+            .completed_bytes = 2,
+        }
+    );
+    static_cast<void>(detail::download_atomically(
+        graph,
+        items,
+        truncated_item,
+        item_state(truncated_item, truncated_destination),
+        truncated_destination,
+        metadata
+    ));
+    std::ifstream truncated_input{truncated_destination, std::ios::binary};
+    const std::string truncated_contents{
+        std::istreambuf_iterator<char>{truncated_input},
+        std::istreambuf_iterator<char>{}
+    };
+    if (graph.last_initial_offset != 2 || truncated_contents != "data" ||
+        items.partials.contains("truncated")) {
+        return fail(
+            "partial download tail was not truncated to its durable checkpoint"
+        );
+    }
+
+    const auto stale_item = remote_item("stale", "stale.txt");
+    const auto stale_destination = root / "stale.txt";
+    const auto stale_partial =
+        root / ".stale.txt.onedrive-partial-previous";
+    {
+        std::ofstream output{stale_partial, std::ios::binary};
+        output << "ol";
+    }
+    auto stale_state = item_state(stale_item, stale_destination);
+    stale_state.etag = "old-etag";
+    items.partials.emplace(
+        "stale",
+        onedrive::storage::PartialDownload{
+            .item = stale_state,
+            .temporary_path = stale_partial,
+            .completed_bytes = 2,
+        }
+    );
+    static_cast<void>(detail::download_atomically(
+        graph,
+        items,
+        stale_item,
+        item_state(stale_item, stale_destination),
+        stale_destination,
+        metadata
+    ));
+    if (graph.last_initial_offset != 0 ||
+        std::filesystem::exists(stale_partial) ||
+        items.partials.contains("stale")) {
+        return fail("stale partial download was not restarted safely");
+    }
+
+    const auto unsafe_item = remote_item("unsafe-partial", "unsafe.txt");
+    const auto unsafe_destination = root / "unsafe.txt";
+    const auto unsafe_partial =
+        temporary.path() / ".unsafe.txt.onedrive-partial-outside";
+    {
+        std::ofstream output{unsafe_partial, std::ios::binary};
+        output << "da";
+    }
+    items.partials.emplace(
+        "unsafe-partial",
+        onedrive::storage::PartialDownload{
+            .item = item_state(unsafe_item, unsafe_destination),
+            .temporary_path = unsafe_partial,
+            .completed_bytes = 2,
+        }
+    );
+    try {
+        static_cast<void>(detail::download_atomically(
+            graph,
+            items,
+            unsafe_item,
+            item_state(unsafe_item, unsafe_destination),
+            unsafe_destination,
+            metadata
+        ));
+        return fail("unsafe partial download path was accepted");
+    } catch (const std::runtime_error&) {
+    }
+    if (!std::filesystem::exists(unsafe_partial) ||
+        !items.partials.contains("unsafe-partial") ||
+        std::filesystem::exists(unsafe_destination)) {
+        return fail("unsafe partial download path changed recovery state");
+    }
 
     const auto duplicate_destination = root / "duplicate.txt";
     const auto duplicate_temporary = root / ".duplicate.partial";

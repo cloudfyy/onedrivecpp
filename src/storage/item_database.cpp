@@ -1479,6 +1479,8 @@ ClearedState ItemDatabase::clear_on_worker(const std::string& drive_id) {
             std::string{sqlite3_errmsg(database)}
         );
     }
+    cleared.partial_downloads =
+        static_cast<std::size_t>(sqlite3_changes(database));
 
     Statement blocked_statement{
         database,
@@ -1497,10 +1499,12 @@ ClearedState ItemDatabase::clear_on_worker(const std::string& drive_id) {
 
     spdlog::warn(
         "Cleared all synchronization state for drive '{}': {} item snapshots, "
-        "{} pending downloads, {} blocked items, saved delta cursor {}",
+        "{} pending downloads, {} partial downloads, {} blocked items, saved "
+        "delta cursor {}",
         drive_id,
         cleared.items,
         cleared.pending_downloads,
+        cleared.partial_downloads,
         cleared.blocked_items,
         cleared.delta_link ? "removed" : "not present"
     );

@@ -361,6 +361,26 @@ std::filesystem::path temporary_path_for(
            );
 }
 
+bool paths_share_parent(
+    const std::filesystem::path& left,
+    const std::filesystem::path& right
+) {
+    return left.lexically_normal().parent_path() ==
+           right.lexically_normal().parent_path();
+}
+
+bool is_temporary_path_for(
+    const std::filesystem::path& destination,
+    const std::filesystem::path& candidate
+) {
+    const auto prefix =
+        "." + destination.filename().string() + ".onedrive-partial-";
+    return paths_share_parent(destination, candidate) &&
+           candidate.lexically_normal().filename().string().starts_with(
+               prefix
+           );
+}
+
 void fsync_directory(const std::filesystem::path& directory) {
     const int descriptor = ::open(
         directory.c_str(),
