@@ -45,6 +45,7 @@ set(
 
 add_library(onedrive_core
     src/app/application.cpp
+    src/app/runtime_preflight.cpp
     src/app/runtime_factory.cpp
     src/auth/device_auth.cpp
     src/auth/token_store.cpp
@@ -151,6 +152,17 @@ if(BUILD_TESTING)
     add_executable(application_cli_tests tests/application_cli_tests.cpp)
     target_link_libraries(application_cli_tests PRIVATE onedrive_core)
     add_test(NAME application_cli_tests COMMAND application_cli_tests)
+
+    add_executable(
+        runtime_preflight_tests
+        tests/runtime_preflight_tests.cpp
+    )
+    target_include_directories(
+        runtime_preflight_tests
+        PRIVATE src/app
+    )
+    target_link_libraries(runtime_preflight_tests PRIVATE onedrive_core)
+    add_test(NAME runtime_preflight_tests COMMAND runtime_preflight_tests)
 
     add_executable(sync_engine_tests tests/sync_engine_tests.cpp)
     target_link_libraries(sync_engine_tests PRIVATE onedrive_core)

@@ -41,6 +41,20 @@ std::optional<std::string> FileTokenStore::load_refresh_token() const {
             "refresh token path is not a regular file: " + path_.string()
         );
     }
+    struct stat status {};
+    if (::lstat(path_.c_str(), &status) == -1) {
+        throw std::runtime_error(
+            "cannot inspect refresh token file '" + path_.string() + "': " +
+            std::strerror(errno)
+        );
+    }
+    if (status.st_uid != ::geteuid() ||
+        (status.st_mode & 07777) != (S_IRUSR | S_IWUSR)) {
+        throw std::runtime_error(
+            "refresh token file must be owned by the current user with 0600 "
+            "permissions: " + path_.string()
+        );
+    }
 
     std::ifstream input{path_};
     if (!input) {

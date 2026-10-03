@@ -172,6 +172,16 @@ int test_refresh_and_token_store() {
     if ((permissions & std::filesystem::perms::all) != expected) {
         return fail("refresh token permissions are not 0600");
     }
+    std::filesystem::permissions(
+        store.path(),
+        expected | std::filesystem::perms::group_read
+    );
+    try {
+        static_cast<void>(store.load_refresh_token());
+        return fail("overly broad refresh token permissions were accepted");
+    } catch (const std::runtime_error&) {
+    }
+    std::filesystem::permissions(store.path(), expected);
     if (!store.remove_refresh_token() || store.load_refresh_token()) {
         return fail("refresh token was not removed");
     }

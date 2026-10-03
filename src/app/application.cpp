@@ -1,6 +1,7 @@
 #include "onedrive/app/application.hpp"
 
 #include "onedrive/app/runtime_factory.hpp"
+#include "runtime_preflight.hpp"
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
 #include "onedrive/cli/console.hpp"
@@ -232,6 +233,13 @@ int Application::run(int argc, char* argv[]) {
         );
         auto config = config::Config::load(config_path);
         config.dry_run = config.dry_run || force_dry_run;
+        const auto operation =
+            *auth_command ? detail::Operation::authenticate :
+            *logout_command ? detail::Operation::logout :
+            *reset_state_command ? detail::Operation::reset_state :
+            *monitor_command ? detail::Operation::monitor :
+                               detail::Operation::synchronize;
+        const detail::RuntimePreflight runtime_preflight{config, operation};
 
         if (*auth_command) {
             spdlog::info("Starting Microsoft authentication");

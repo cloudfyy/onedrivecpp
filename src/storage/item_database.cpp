@@ -3,11 +3,14 @@
 #include <sqlite3.h>
 #include <spdlog/spdlog.h>
 
+#include <cerrno>
+#include <cstring>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <sys/stat.h>
 #include <utility>
 
 namespace onedrive::storage {
@@ -318,7 +321,7 @@ void ItemDatabase::open() {
     const int result = sqlite3_open_v2(
         database_path.string().c_str(),
         &database,
-        SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE,
+        SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOFOLLOW,
         nullptr
     );
     if (result != SQLITE_OK) {
@@ -330,6 +333,12 @@ void ItemDatabase::open() {
         );
     }
     impl_->database.reset(database);
+    if (::chmod(database_path.c_str(), S_IRUSR | S_IWUSR) == -1) {
+        throw std::runtime_error(
+            "cannot secure state database '" + database_path.string() + "': " +
+            std::strerror(errno)
+        );
+    }
 
     execute(database, "PRAGMA journal_mode = WAL;");
     migrate_schema(database);

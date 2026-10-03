@@ -292,6 +292,21 @@ sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 Configuration files use TOML and must declare `config_version = 1`. Unknown
 keys and invalid value types are rejected instead of being silently ignored.
 
+Before running a command, the client secures `state.directory` to owner-only
+`0700`, validates token and SQLite paths, and acquires an exclusive
+`onedrive-cpp.lock` in that directory. A second process using the same state
+directory fails immediately. Existing private state files are tightened to
+`0600` when owned by the current user; symbolic links and files owned by
+another user are rejected.
+
+For synchronization, `sync.directory` and `state.directory` must not contain
+one another, the filesystem root cannot be used as the sync directory, and
+every existing path component must be free of symbolic links. Normal sync
+performs a create/write/fsync/remove probe before contacting Graph. Dry-run
+keeps its non-mutating sync-directory behavior. Downloads also reserve the
+larger of 256 MiB or 5% of the planned transfer in addition to the download
+bytes.
+
 `sync.drive_id` selects the remote OneDrive drive to access. The default value,
 `me`, selects the signed-in user's default OneDrive and lists its root through
 the Microsoft Graph path `/me/drive/root/children`. To access another OneDrive

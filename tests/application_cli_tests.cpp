@@ -393,23 +393,40 @@ int main() {
     TemporaryDirectory temporary_directory;
     const auto config_path = temporary_directory.path() / "config.toml";
     const auto state_path = temporary_directory.path() / "state";
+    const auto sync_path = temporary_directory.path() / "files";
     const auto log_path = temporary_directory.path() / "onedrive-cpp.log";
     {
         std::ofstream config{config_path};
         config << "config_version = 1\n"
                << "[sync]\n"
                << "directory = \""
-               << temporary_directory.path().string()
+               << sync_path.string()
                << "\"\n"
                << "[state]\n"
                << "directory = \""
                << state_path.string()
                << "\"\n"
+               << "[auth]\n"
+               << "application_id = \"test-application\"\n"
                << "[graph.throttle]\n"
                << "maximum_retries = 6\n"
                << "initial_delay_seconds = 3\n"
                << "maximum_delay_seconds = 120\n";
     }
+    std::filesystem::create_directories(state_path);
+    std::filesystem::permissions(
+        state_path,
+        std::filesystem::perms::owner_all
+    );
+    {
+        std::ofstream token{state_path / "refresh_token"};
+        token << "test-refresh-token";
+    }
+    std::filesystem::permissions(
+        state_path / "refresh_token",
+        std::filesystem::perms::owner_read |
+            std::filesystem::perms::owner_write
+    );
 
     const auto logout = run_application(
         runtime_factory,

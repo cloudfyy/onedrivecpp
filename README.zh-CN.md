@@ -273,6 +273,16 @@ sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 配置文件使用 TOML，并且必须声明 `config_version = 1`。未知配置项和错误的
 值类型会直接报错，不会被静默忽略。
 
+执行子命令前，客户端会把 `state.directory` 收紧为仅所有者可访问的 `0700`，
+校验 token 和 SQLite 路径，并在该目录持有独占的 `onedrive-cpp.lock`。第二个
+使用同一状态目录的进程会立即失败。当前用户拥有的既有私有状态文件会收紧为
+`0600`；符号链接或其他用户拥有的文件会被拒绝。
+
+同步时，`sync.directory` 和 `state.directory` 不能互相包含，不能把文件系统
+根目录用作同步目录，并且所有已存在的路径组件都不能是符号链接。普通同步会在
+访问 Graph 前执行创建、写入、`fsync`、删除探测；dry-run 仍保持不修改同步目录。
+下载空间除计划字节外，还会预留 256 MiB 或计划传输量 5% 中的较大值。
+
 `sync.drive_id` 指定要访问的远端 OneDrive Drive。默认值 `me` 表示当前登录账号的
 默认 OneDrive，程序使用 Microsoft Graph 路径 `/me/drive/root/children`
 列出其根目录。若要访问账号有权使用的其他 OneDrive 或 SharePoint 文档库，

@@ -9,6 +9,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <format>
@@ -114,22 +115,31 @@ void check_download_capacity(
     const std::filesystem::path& sync_directory,
     std::uintmax_t required
 ) {
+    if (required == 0) {
+        return;
+    }
     const auto space = std::filesystem::space(
         std::filesystem::exists(sync_directory) ?
             sync_directory :
             sync_directory.parent_path()
     );
+    constexpr std::uintmax_t minimum_reserve = 256U * 1024U * 1024U;
+    const auto reserve = std::max(minimum_reserve, required / 20U);
     spdlog::debug(
-        "Download capacity check: {} bytes required, {} bytes available",
+        "Download capacity check: {} bytes required, {} bytes reserved, {} "
+        "bytes available",
         required,
+        reserve,
         space.available
     );
-    if (required > space.available) {
+    if (required > space.available ||
+        reserve > space.available - required) {
         throw std::runtime_error(
             std::format(
-                "synchronization requires {} bytes, but only {} bytes are "
-                "available",
+                "synchronization requires {} bytes plus a {} byte safety "
+                "reserve, but only {} bytes are available",
                 required,
+                reserve,
                 space.available
             )
         );

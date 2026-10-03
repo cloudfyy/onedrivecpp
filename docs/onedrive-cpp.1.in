@@ -166,6 +166,20 @@ The configuration file uses TOML and must declare
 .BR "config_version = 1" .
 Unknown keys, invalid types, and unsupported configuration versions are
 rejected.
+.PP
+Before a command runs, the state directory is restricted to mode 0700 and an
+exclusive
+.I onedrive-cpp.lock
+is held there. Token and SQLite paths must be regular files owned by the
+current user; private state files are restricted to mode 0600. Symbolic links
+in state paths are rejected.
+.PP
+For synchronization, the sync and state directories must not overlap, the
+filesystem root cannot be used as the sync directory, and symbolic-link path
+components are rejected. Normal synchronization verifies create, write,
+flush, and removal behavior with a temporary probe. Download capacity retains
+a safety reserve of 256 MiB or five percent of planned transfer bytes,
+whichever is larger.
 .TP
 .B sync.directory
 Local directory used for OneDrive synchronization.

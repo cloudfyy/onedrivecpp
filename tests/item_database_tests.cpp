@@ -47,7 +47,14 @@ int main() {
     {
         onedrive::storage::ItemDatabase database{temporary_directory.path()};
         database.open();
-        if (database.size() != 0) {
+        const auto database_permissions =
+            std::filesystem::status(
+                temporary_directory.path() / "items.sqlite3"
+            ).permissions();
+        if (database.size() != 0 ||
+            (database_permissions & std::filesystem::perms::all) !=
+                (std::filesystem::perms::owner_read |
+                 std::filesystem::perms::owner_write)) {
             return fail("new state database is not empty");
         }
 
