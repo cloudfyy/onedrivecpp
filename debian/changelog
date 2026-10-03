@@ -1,3 +1,11 @@
+onedrive-cpp (0.5.0-1~ubuntu24.04) noble; urgency=medium
+
+  * Add configurable bounded concurrent downloads.
+  * Separate state by stable Microsoft account and canonical Drive identity.
+  * Persist profile photos and configured-to-canonical Drive ID mappings.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sat, 03 Oct 2026 02:28:21 +0000
+
 onedrive-cpp (0.4.1-1~ubuntu24.04) noble; urgency=medium
 
   * Simplify text download progress to show percentages only.
