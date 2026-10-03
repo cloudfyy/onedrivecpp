@@ -55,6 +55,7 @@ struct RemoteItem {
     bool deleted{false};
     bool root{false};
     std::optional<FileHash> content_hash;
+    bool validate_content{true};
 };
 
 struct DeltaResult {
@@ -82,6 +83,7 @@ struct GraphOptions {
         std::uint64_t{8} * 1024U * 1024U
     };
     http::DownloadTransportOptions download_transport;
+    bool relaxed_download_validation{false};
 };
 
 PRO_DEF_MEM_DISPATCH(GraphDriveIdentityDispatch, drive_identity);

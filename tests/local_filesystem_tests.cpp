@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <sys/stat.h>
 #include <utility>
 #include <vector>
 
@@ -115,6 +116,33 @@ int main() {
     }
     if (detail::local_file_matches_baseline(file, baseline)) {
         return fail("same-size local content change was not detected");
+    }
+    detail::apply_remote_modified_time(
+        file,
+        "2026-10-02T03:04:05.123456789Z"
+    );
+    struct stat remote_status {};
+    if (::stat(file.c_str(), &remote_status) == -1) {
+        return fail("cannot inspect applied remote modification time");
+    }
+    const auto expected_remote_time =
+        std::chrono::sys_days{
+            std::chrono::year{2026} / std::chrono::October / 2
+        } +
+        std::chrono::hours{3} +
+        std::chrono::minutes{4} +
+        std::chrono::seconds{5};
+    if (remote_status.st_mtim.tv_sec !=
+            std::chrono::duration_cast<std::chrono::seconds>(
+                expected_remote_time.time_since_epoch()
+            ).count() ||
+        remote_status.st_mtim.tv_nsec != 123'456'789) {
+        return fail("remote modification time was not applied precisely");
+    }
+    try {
+        detail::apply_remote_modified_time(file, "2026-02-30T00:00:00Z");
+        return fail("invalid remote modification time was accepted");
+    } catch (const std::runtime_error&) {
     }
     const auto created_during_download = root / "created-later.txt";
     const auto missing_baseline =

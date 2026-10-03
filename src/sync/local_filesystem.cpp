@@ -16,6 +16,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string_view>
+#include <sys/stat.h>
 #include <unistd.h>
 
 namespace onedrive::sync::detail {
@@ -89,6 +90,30 @@ std::size_t filesystem_limit(
         "invalid Microsoft Graph remote path '" + escaped_path(remote_path) +
         "': " + std::string{reason}
     );
+}
+
+[[noreturn]] void invalid_remote_modified_time(std::string_view timestamp) {
+    throw std::runtime_error(
+        "invalid Microsoft Graph modification time '" +
+        std::string{timestamp} + "'"
+    );
+}
+
+unsigned parse_decimal(
+    std::string_view timestamp,
+    std::size_t offset,
+    std::size_t count
+) {
+    unsigned result = 0;
+    for (std::size_t index = 0; index < count; ++index) {
+        const char character = timestamp[offset + index];
+        if (character < '0' || character > '9') {
+            invalid_remote_modified_time(timestamp);
+        }
+        result = result * 10U +
+                 static_cast<unsigned>(character - '0');
+    }
+    return result;
 }
 
 }  // namespace
@@ -189,6 +214,108 @@ std::int64_t modified_ticks(const std::filesystem::path& path) {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(
                std::filesystem::last_write_time(path).time_since_epoch()
     ).count();
+}
+
+void apply_remote_modified_time(
+    const std::filesystem::path& path,
+    std::string_view remote_modified
+) {
+    if (remote_modified.empty()) {
+        return;
+    }
+    if (remote_modified.size() < 20 ||
+        remote_modified[4] != '-' ||
+        remote_modified[7] != '-' ||
+        remote_modified[10] != 'T' ||
+        remote_modified[13] != ':' ||
+        remote_modified[16] != ':') {
+        invalid_remote_modified_time(remote_modified);
+    }
+
+    const auto year = static_cast<int>(
+        parse_decimal(remote_modified, 0, 4)
+    );
+    const auto month = parse_decimal(remote_modified, 5, 2);
+    const auto day = parse_decimal(remote_modified, 8, 2);
+    const auto hour = parse_decimal(remote_modified, 11, 2);
+    const auto minute = parse_decimal(remote_modified, 14, 2);
+    const auto second = parse_decimal(remote_modified, 17, 2);
+    std::size_t position = 19;
+    std::chrono::nanoseconds fraction{};
+    if (position < remote_modified.size() &&
+        remote_modified[position] == '.') {
+        ++position;
+        const auto fraction_begin = position;
+        std::uint64_t nanoseconds = 0;
+        while (position < remote_modified.size() &&
+               remote_modified[position] >= '0' &&
+               remote_modified[position] <= '9') {
+            if (position - fraction_begin >= 9) {
+                invalid_remote_modified_time(remote_modified);
+            }
+            nanoseconds = nanoseconds * 10U +
+                          static_cast<unsigned>(
+                              remote_modified[position] - '0'
+                          );
+            ++position;
+        }
+        const auto digits = position - fraction_begin;
+        if (digits == 0) {
+            invalid_remote_modified_time(remote_modified);
+        }
+        for (std::size_t index = digits; index < 9; ++index) {
+            nanoseconds *= 10U;
+        }
+        fraction = std::chrono::nanoseconds{nanoseconds};
+    }
+    if (position + 1 != remote_modified.size() ||
+        remote_modified[position] != 'Z' ||
+        hour > 23 || minute > 59 || second > 59) {
+        invalid_remote_modified_time(remote_modified);
+    }
+
+    const std::chrono::year_month_day date{
+        std::chrono::year{year},
+        std::chrono::month{month},
+        std::chrono::day{day},
+    };
+    if (!date.ok()) {
+        invalid_remote_modified_time(remote_modified);
+    }
+    const auto timestamp =
+        std::chrono::sys_days{date} +
+        std::chrono::hours{hour} +
+        std::chrono::minutes{minute} +
+        std::chrono::seconds{second} +
+        fraction;
+    const auto whole_seconds =
+        std::chrono::floor<std::chrono::seconds>(timestamp.time_since_epoch());
+    if (whole_seconds.count() < std::numeric_limits<time_t>::min() ||
+        whole_seconds.count() > std::numeric_limits<time_t>::max()) {
+        invalid_remote_modified_time(remote_modified);
+    }
+    const auto remainder =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            timestamp.time_since_epoch() - whole_seconds
+        );
+    const timespec times[] = {
+        {.tv_sec = 0, .tv_nsec = UTIME_OMIT},
+        {
+            .tv_sec = static_cast<time_t>(whole_seconds.count()),
+            .tv_nsec = static_cast<long>(remainder.count()),
+        },
+    };
+    if (::utimensat(
+            AT_FDCWD,
+            path.c_str(),
+            times,
+            AT_SYMLINK_NOFOLLOW
+        ) == -1) {
+        throw std::runtime_error(
+            "cannot apply remote modification time to '" + path.string() +
+            "': " + std::strerror(errno)
+        );
+    }
 }
 
 bool local_snapshot_matches(
@@ -379,6 +506,33 @@ bool is_temporary_path_for(
            candidate.lexically_normal().filename().string().starts_with(
                prefix
            );
+}
+
+void fsync_file(const std::filesystem::path& path) {
+    const int descriptor = ::open(
+        path.c_str(),
+        O_RDONLY | O_CLOEXEC | O_NOFOLLOW
+    );
+    if (descriptor == -1) {
+        throw std::runtime_error(
+            "cannot open downloaded file '" + path.string() + "': " +
+            std::strerror(errno)
+        );
+    }
+    if (::fsync(descriptor) == -1) {
+        const std::string message = std::strerror(errno);
+        ::close(descriptor);
+        throw std::runtime_error(
+            "cannot flush downloaded file metadata for '" + path.string() +
+            "': " + message
+        );
+    }
+    if (::close(descriptor) == -1) {
+        throw std::runtime_error(
+            "cannot close downloaded file '" + path.string() + "': " +
+            std::strerror(errno)
+        );
+    }
 }
 
 void fsync_directory(const std::filesystem::path& directory) {

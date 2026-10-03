@@ -28,6 +28,9 @@ inline graph::GraphOptions graph_options(const config::Config& config) {
         .download_chunk_threshold_bytes =
             config.download_chunk_threshold_bytes,
         .download_transport = config.download_transport,
+        .relaxed_download_validation =
+            config.download_validation ==
+                config::DownloadValidationMode::relaxed,
     };
 }
 

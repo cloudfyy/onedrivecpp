@@ -12,6 +12,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <sys/stat.h>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -219,6 +220,21 @@ onedrive::storage::ItemState item_state(
     };
 }
 
+bool has_remote_modified_time(const std::filesystem::path& path) {
+    struct stat status {};
+    if (::stat(path.c_str(), &status) == -1) {
+        return false;
+    }
+    const auto expected =
+        std::chrono::sys_days{
+            std::chrono::year{2026} / std::chrono::October / 2
+        };
+    return status.st_mtim.tv_sec ==
+           std::chrono::duration_cast<std::chrono::seconds>(
+               expected.time_since_epoch()
+           ).count();
+}
+
 }  // namespace
 
 int main() {
@@ -252,7 +268,8 @@ int main() {
     );
     if (!std::filesystem::exists(destination) || !items.pending.empty() ||
         !items.partials.empty() || !items.find("me", "installed") ||
-        installed.local_size != 4 || installed.local_modified_ticks == 0) {
+        installed.local_size != 4 || installed.local_modified_ticks == 0 ||
+        !has_remote_modified_time(destination)) {
         return fail("atomic download transaction did not commit");
     }
 
@@ -280,7 +297,8 @@ int main() {
     items.fail_upsert = false;
     detail::recover_pending_downloads(items, root, "me", metadata);
     if (!items.pending.empty() || !items.find("me", "recover") ||
-        !std::filesystem::exists(recover_destination)) {
+        !std::filesystem::exists(recover_destination) ||
+        !has_remote_modified_time(recover_destination)) {
         return fail("pending installed download was not recovered");
     }
 
@@ -305,6 +323,67 @@ int main() {
         return fail("size mismatch left installed or journaled state");
     }
     graph.contents = "data";
+
+    auto relaxed_item = remote_item("relaxed", "protected.heic");
+    relaxed_item.size = 2;
+    relaxed_item.content_hash = onedrive::FileHash{
+        .algorithm = onedrive::FileHashAlgorithm::sha256,
+        .value =
+            "0000000000000000000000000000000000000000000000000000000000000000",
+    };
+    relaxed_item.validate_content = false;
+    const auto relaxed_destination = root / "protected.heic";
+    const auto relaxed = detail::download_atomically(
+        graph,
+        items,
+        relaxed_item,
+        item_state(relaxed_item, relaxed_destination),
+        relaxed_destination,
+        metadata,
+        space
+    );
+    if (!std::filesystem::exists(relaxed_destination) ||
+        relaxed.local_size != 4 || relaxed.size != 4) {
+        return fail(
+            "relaxed download validation did not accept actual file metadata"
+        );
+    }
+    const auto relaxed_partial =
+        root / ".protected-partial.heic.onedrive-partial-previous";
+    {
+        std::ofstream output{relaxed_partial, std::ios::binary};
+        output << "da";
+    }
+    auto relaxed_partial_item =
+        remote_item("relaxed-partial", "protected-partial.heic");
+    relaxed_partial_item.validate_content = false;
+    const auto relaxed_partial_destination =
+        root / "protected-partial.heic";
+    items.partials.emplace(
+        relaxed_partial_item.id,
+        onedrive::storage::PartialDownload{
+            .item = item_state(
+                relaxed_partial_item,
+                relaxed_partial_destination
+            ),
+            .temporary_path = relaxed_partial,
+            .completed_bytes = 2,
+        }
+    );
+    static_cast<void>(detail::download_atomically(
+        graph,
+        items,
+        relaxed_partial_item,
+        item_state(relaxed_partial_item, relaxed_partial_destination),
+        relaxed_partial_destination,
+        metadata,
+        space
+    ));
+    if (graph.last_initial_offset != 0 ||
+        std::filesystem::exists(relaxed_partial) ||
+        items.partials.contains(relaxed_partial_item.id)) {
+        return fail("relaxed download reused a remote-size partial file");
+    }
 
     const auto truncated_item = remote_item("truncated", "truncated.txt");
     const auto truncated_destination = root / "truncated.txt";

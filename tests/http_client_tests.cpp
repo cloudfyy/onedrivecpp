@@ -13,6 +13,7 @@
 #include <stop_token>
 #include <string>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <thread>
 #include <unistd.h>
 
@@ -39,6 +40,21 @@ private:
     int descriptor_;
 };
 
+class ScopedUmask {
+public:
+    explicit ScopedUmask(mode_t value) : previous_{::umask(value)} {}
+
+    ~ScopedUmask() {
+        ::umask(previous_);
+    }
+
+    ScopedUmask(const ScopedUmask&) = delete;
+    ScopedUmask& operator=(const ScopedUmask&) = delete;
+
+private:
+    mode_t previous_;
+};
+
 int fail(const std::string& message) {
     std::cerr << message << '\n';
     return EXIT_FAILURE;
@@ -47,6 +63,7 @@ int fail(const std::string& message) {
 }  // namespace
 
 int main() {
+    const ScopedUmask download_umask{0022};
     Socket listener{::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0)};
     if (listener.get() == -1) {
         return fail("cannot create HTTP test socket");
@@ -251,6 +268,11 @@ int main() {
         std::istreambuf_iterator<char>{downloaded},
         std::istreambuf_iterator<char>{}
     };
+    struct stat downloaded_status {};
+    const bool inspected_download = ::stat(
+        destination.c_str(),
+        &downloaded_status
+    ) == 0;
     std::filesystem::remove(destination, ignored);
     if (!server_error.empty()) {
         return fail(server_error);
@@ -259,7 +281,9 @@ int main() {
         downloaded_contents != "download" ||
         !download_request.starts_with("GET /download HTTP/1.1") ||
         download_progress.empty() || download_progress.back().first != 8 ||
-        download_progress.back().second != 8) {
+        download_progress.back().second != 8 ||
+        !inspected_download ||
+        (downloaded_status.st_mode & 0777) != 0644) {
         return fail("HTTP response was not streamed to the download file");
     }
 

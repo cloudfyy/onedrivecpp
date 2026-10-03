@@ -128,6 +128,24 @@ std::optional<std::string> header_value(
     );
 }
 
+void require_successful_download(
+    const http::HttpResult& response,
+    std::string_view description
+) {
+    if (!response) {
+        throw_download_error(description, response.error());
+    }
+    if (response->status_code < 200 || response->status_code >= 300) {
+        throw std::runtime_error(
+            std::format(
+                "{} failed with HTTP {}",
+                description,
+                response->status_code
+            )
+        );
+    }
+}
+
 std::chrono::seconds fallback_retry_delay(
     const GraphOptions& options,
     std::size_t retry_number
@@ -145,8 +163,12 @@ std::chrono::seconds fallback_retry_delay(
 }
 
 bool retryable_status(long status_code) {
-    return status_code == 429 || status_code == 502 ||
+    return status_code == 408 || status_code == 429 || status_code == 502 ||
            status_code == 503 || status_code == 504;
+}
+
+bool stale_download_url_status(long status_code) {
+    return status_code == 401 || status_code == 403;
 }
 
 http::HttpResult cancelled_http_result() {
@@ -661,6 +683,8 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
                     .deleted = false,
                     .root = false,
                     .content_hash = std::nullopt,
+                    .validate_content =
+                        !options_.relaxed_download_validation,
                 };
                 if (item.id.empty() || item.name.empty() || item.etag.empty()) {
                     throw std::runtime_error(
@@ -821,6 +845,8 @@ DeltaResult MicrosoftGraphClient::list_delta(
             const std::size_t page_item_count = values.size();
             for (const auto& value : values) {
                 RemoteItem item{};
+                item.validate_content =
+                    !options_.relaxed_download_validation;
                 item.id = value.at("id").get<std::string>();
                 item.deleted = value.contains("deleted");
                 if (item.id.empty()) {
@@ -963,7 +989,14 @@ void MicrosoftGraphClient::download_file(
     if (stop_token.stop_requested()) {
         throw DownloadCancelledError("Microsoft Graph download was cancelled");
     }
-    if (initial_offset == expected_size) {
+    if (options_.relaxed_download_validation && initial_offset != 0) {
+        throw std::invalid_argument(
+            "relaxed Graph downloads cannot resume from a partial file"
+        );
+    }
+    if (!options_.relaxed_download_validation &&
+        initial_offset != 0 &&
+        initial_offset == expected_size) {
         if (progress) {
             progress(expected_size, expected_size);
         }
@@ -979,52 +1012,57 @@ void MicrosoftGraphClient::download_file(
             options_.endpoint + "/drives/" + percent_encode(options_.drive_id) +
                 "/items/" + percent_encode(remote_id) + "/content";
 
-    const auto redirect = perform_with_retries(
-        [&] {
-            return transport_->perform(http::HttpRequest{
-                .method = http::HttpMethod::get,
-                .url = content_url,
-                .headers = {
-                    "Accept: application/octet-stream",
-                    "Authorization: Bearer " + access_token(),
-                },
-                .body = {},
-                .connect_timeout = download_transport.connect_timeout,
-                .operation_timeout = std::chrono::seconds{60},
-                .maximum_response_size = std::size_t{64} * 1024U,
-                .stop_token = stop_token,
-            });
-        },
-        options_,
-        sleep_,
-        "Microsoft Graph download redirect",
-        stop_token
-    );
-    if (!redirect) {
-        throw_download_error(
-            "Microsoft Graph download request",
-            redirect.error()
+    const auto request_download_url = [&]() {
+        const auto redirect = perform_with_retries(
+            [&] {
+                return transport_->perform(http::HttpRequest{
+                    .method = http::HttpMethod::get,
+                    .url = content_url,
+                    .headers = {
+                        "Accept: application/octet-stream",
+                        "Authorization: Bearer " + access_token(),
+                    },
+                    .body = {},
+                    .connect_timeout = download_transport.connect_timeout,
+                    .operation_timeout = std::chrono::seconds{60},
+                    .maximum_response_size = std::size_t{64} * 1024U,
+                    .stop_token = stop_token,
+                });
+            },
+            options_,
+            sleep_,
+            "Microsoft Graph download redirect",
+            stop_token
         );
-    }
-    if (redirect->status_code < 300 || redirect->status_code >= 400) {
-        throw std::runtime_error(
-            std::format(
-                "Microsoft Graph download did not return a redirect (HTTP {})",
-                redirect->status_code
-            )
+        if (!redirect) {
+            throw_download_error(
+                "Microsoft Graph download request",
+                redirect.error()
+            );
+        }
+        if (redirect->status_code < 300 || redirect->status_code >= 400) {
+            throw std::runtime_error(
+                std::format(
+                    "Microsoft Graph download did not return a redirect "
+                    "(HTTP {})",
+                    redirect->status_code
+                )
+            );
+        }
+        const auto location = header_value(*redirect, "Location");
+        if (!location || !location->starts_with("https://")) {
+            throw std::runtime_error(
+                "Microsoft Graph download returned an invalid HTTPS redirect"
+            );
+        }
+        spdlog::trace(
+            "Received HTTPS download redirect for Microsoft Graph drive item "
+            "'{}'",
+            remote_id
         );
-    }
-    const auto location = header_value(*redirect, "Location");
-    if (!location || !location->starts_with("https://")) {
-        throw std::runtime_error(
-            "Microsoft Graph download returned an invalid HTTPS redirect"
-        );
-    }
-
-    spdlog::trace(
-        "Received HTTPS download redirect for Microsoft Graph drive item '{}'",
-        remote_id
-    );
+        return *location;
+    };
+    auto location = request_download_url();
     const auto low_speed_limit =
         download_transport.low_speed_limit_bytes_per_second;
     const auto maximum_receive_speed =
@@ -1033,41 +1071,75 @@ void MicrosoftGraphClient::download_file(
                               std::uint64_t offset,
                               const DownloadProgress& chunk_progress,
                               std::string_view description) {
-        return perform_with_retries(
-            [&] {
-                return transport_->download(
-                    http::HttpRequest{
-                        .method = http::HttpMethod::get,
-                        .url = *location,
-                        .headers = headers,
-                        .body = {},
-                        .connect_timeout =
-                            download_transport.connect_timeout,
-                        .operation_timeout =
-                            download_transport.operation_timeout,
-                        .low_speed_timeout =
-                            download_transport.low_speed_timeout,
-                        .low_speed_limit_bytes_per_second =
-                            low_speed_limit,
-                        .maximum_receive_speed_bytes_per_second =
-                            maximum_receive_speed,
-                        .http_version = download_transport.http_version,
-                        .maximum_response_size = 0,
-                        .download_offset = offset,
-                        .stop_token = stop_token,
-                    },
-                    destination,
-                    chunk_progress
-                );
-            },
-            options_,
-            sleep_,
-            description,
-            stop_token
-        );
+        const auto perform_download = [&] {
+            return perform_with_retries(
+                [&] {
+                    return transport_->download(
+                        http::HttpRequest{
+                            .method = http::HttpMethod::get,
+                            .url = location,
+                            .headers = headers,
+                            .body = {},
+                            .connect_timeout =
+                                download_transport.connect_timeout,
+                            .operation_timeout =
+                                download_transport.operation_timeout,
+                            .low_speed_timeout =
+                                download_transport.low_speed_timeout,
+                            .low_speed_limit_bytes_per_second =
+                                low_speed_limit,
+                            .maximum_receive_speed_bytes_per_second =
+                                maximum_receive_speed,
+                            .http_version =
+                                download_transport.http_version,
+                            .maximum_response_size = 0,
+                            .download_offset = offset,
+                            .stop_token = stop_token,
+                        },
+                        destination,
+                        chunk_progress
+                    );
+                },
+                options_,
+                sleep_,
+                description,
+                stop_token
+            );
+        };
+        auto response = perform_download();
+        if (response &&
+            stale_download_url_status(response->status_code)) {
+            spdlog::warn(
+                "{} returned HTTP {}; refreshing the Microsoft Graph download "
+                "redirect",
+                description,
+                response->status_code
+            );
+            location = request_download_url();
+            response = perform_download();
+        }
+        return response;
     };
 
     spdlog::debug("Downloading Microsoft Graph drive item '{}'", remote_id);
+    if (options_.relaxed_download_validation) {
+        auto response = download(
+            {"Accept: application/octet-stream"},
+            0,
+            progress,
+            "Microsoft Graph relaxed file download"
+        );
+        require_successful_download(
+            response,
+            "Microsoft Graph relaxed file download"
+        );
+        spdlog::warn(
+            "Downloaded Microsoft Graph drive item '{}' without relying on "
+            "remote size or hash metadata",
+            remote_id
+        );
+        return;
+    }
     if (initial_offset == 0 &&
         expected_size <= options_.download_chunk_threshold_bytes) {
         auto response = download(
@@ -1076,20 +1148,10 @@ void MicrosoftGraphClient::download_file(
             progress,
             "Microsoft Graph file download"
         );
-        if (!response) {
-            throw_download_error(
-                "Microsoft Graph file download",
-                response.error()
-            );
-        }
-        if (response->status_code < 200 || response->status_code >= 300) {
-            throw std::runtime_error(
-                std::format(
-                    "Microsoft Graph file download failed with HTTP {}",
-                    response->status_code
-                )
-            );
-        }
+        require_successful_download(
+            response,
+            "Microsoft Graph file download"
+        );
         if (checkpoint) {
             checkpoint(expected_size);
         }

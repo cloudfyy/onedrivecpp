@@ -3,6 +3,7 @@
 #include "onedrive/graph/graph_client.hpp"
 #include "onedrive/http/http_client.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <deque>
@@ -505,6 +506,7 @@ int test_transient_service_retries() {
                 .body =
                     R"({"expires_in":3600,"access_token":"access-secret"})",
             },
+            onedrive::http::HttpResponse{.status_code = 408},
             onedrive::http::HttpResponse{.status_code = 502},
             onedrive::http::HttpResponse{
                 .status_code = 503,
@@ -524,7 +526,7 @@ int test_transient_service_retries() {
         wrap_token_store(std::make_unique<FakeTokenStore>(std::string{"existing-refresh"})),
         auth_options(),
         {
-            .maximum_throttle_retries = 3,
+            .maximum_throttle_retries = 4,
             .initial_throttle_delay = std::chrono::seconds{1},
             .maximum_throttle_delay = std::chrono::seconds{10},
         },
@@ -537,10 +539,11 @@ int test_transient_service_retries() {
         sleeps !=
             std::vector{
                 std::chrono::seconds{1},
+                std::chrono::seconds{2},
                 std::chrono::seconds{3},
-                std::chrono::seconds{4},
+                std::chrono::seconds{8},
             } ||
-        transport_pointer->requests.size() != 5) {
+        transport_pointer->requests.size() != 6) {
         return fail("transient Graph service errors were not retried correctly");
     }
     return EXIT_SUCCESS;
@@ -583,6 +586,7 @@ int test_delta_with_pagination() {
         {
             .drive_id = "drive id",
             .endpoint = "https://graph.example.test/v1.0",
+            .relaxed_download_validation = true,
         },
     };
 
@@ -608,6 +612,7 @@ int test_delta_with_pagination() {
             onedrive::FileHashAlgorithm::sha256 ||
         delta.changes[2].content_hash->value !=
             "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" ||
+        delta.changes[2].validate_content ||
         !delta.changes[3].deleted ||
         progress !=
             std::vector<std::tuple<std::size_t, std::size_t, bool>>{
@@ -761,6 +766,15 @@ int test_file_download_redirect() {
                     },
                 },
             },
+            onedrive::http::HttpResponse{
+                .status_code = 302,
+                .headers = {
+                    {
+                        .name = "Location",
+                        .value = "https://download.example.test/empty",
+                    },
+                },
+            },
         }
     );
     auto* transport_pointer = transport.get();
@@ -802,7 +816,14 @@ int test_file_download_redirect() {
         std::istreambuf_iterator<char>{}
     };
     std::filesystem::remove(destination, ignored);
-    if (contents != "download" || transport_pointer->requests.size() != 2 ||
+    transport_pointer->download_body.clear();
+    client.download_file("empty-item", 0, destination);
+    const bool empty_file_downloaded =
+        std::filesystem::is_regular_file(destination) &&
+        std::filesystem::file_size(destination) == 0;
+    std::filesystem::remove(destination, ignored);
+    if (contents != "download" || !empty_file_downloaded ||
+        transport_pointer->requests.size() != 3 ||
         transport_pointer->requests[1].url !=
             "https://graph.example.test/v1.0/drives/drive%20id/items/"
             "item%20id/content" ||
@@ -810,7 +831,7 @@ int test_file_download_redirect() {
             transport_pointer->requests[1],
             "Authorization: Bearer access-secret"
         ) ||
-        transport_pointer->download_requests.size() != 1 ||
+        transport_pointer->download_requests.size() != 2 ||
         transport_pointer->download_requests[0].url !=
             "https://download.example.test/content" ||
         transport_pointer->download_requests[0].headers !=
@@ -829,9 +850,211 @@ int test_file_download_redirect() {
             1'048'576 ||
         transport_pointer->download_requests[0].http_version !=
             onedrive::http::HttpVersion::http_2 ||
+        transport_pointer->download_requests[1].url !=
+            "https://download.example.test/empty" ||
         progress !=
             std::vector<std::pair<std::uint64_t, std::uint64_t>>{{8, 8}}) {
         return fail("Graph file download redirect was not handled safely");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_relaxed_file_download_ignores_remote_size() {
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"expires_in":3600,"access_token":"access-secret"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 302,
+                .headers = {
+                    {
+                        .name = "Location",
+                        .value = "https://download.example.test/protected",
+                    },
+                },
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 302,
+                .headers = {
+                    {
+                        .name = "Location",
+                        .value =
+                            "https://download.example.test/protected-empty",
+                    },
+                },
+            },
+        }
+    );
+    auto* transport_pointer = transport.get();
+    const auto destination =
+        std::filesystem::temp_directory_path() /
+        "onedrive-cpp-relaxed-download-test";
+    std::error_code ignored;
+    std::filesystem::remove(destination, ignored);
+
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(
+                std::string{"existing-refresh"}
+            )
+        ),
+        auth_options(),
+        {
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+            .download_chunk_threshold_bytes = 4,
+            .relaxed_download_validation = true,
+        },
+    };
+    client.download_file("protected-item", 100, destination);
+
+    std::ifstream input{destination, std::ios::binary};
+    const std::string contents{
+        std::istreambuf_iterator<char>{input},
+        std::istreambuf_iterator<char>{}
+    };
+    std::filesystem::remove(destination, ignored);
+    transport_pointer->download_body.clear();
+    client.download_file("protected-empty", 0, destination);
+    const bool empty_file_downloaded =
+        std::filesystem::is_regular_file(destination) &&
+        std::filesystem::file_size(destination) == 0;
+    std::filesystem::remove(destination, ignored);
+    if (contents != "download" ||
+        !empty_file_downloaded ||
+        transport_pointer->download_requests.size() != 2 ||
+        transport_pointer->download_requests[0].headers !=
+            std::vector<std::string>{"Accept: application/octet-stream"} ||
+        transport_pointer->download_requests[0].download_offset != 0) {
+        return fail(
+            "relaxed Graph download relied on remote size or chunk ranges"
+        );
+    }
+    try {
+        client.download_file(
+            "protected-item",
+            100,
+            destination,
+            1,
+            {},
+            {},
+            {}
+        );
+        return fail("relaxed Graph download accepted a resume offset");
+    } catch (const std::invalid_argument&) {
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_expired_download_redirect_is_refreshed() {
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"expires_in":3600,"access_token":"access-secret"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 302,
+                .headers = {
+                    {
+                        .name = "Location",
+                        .value = "https://download.example.test/expired",
+                    },
+                },
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 302,
+                .headers = {
+                    {
+                        .name = "Location",
+                        .value = "https://download.example.test/refreshed",
+                    },
+                },
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 302,
+                .headers = {
+                    {
+                        .name = "Location",
+                        .value =
+                            "https://download.example.test/expired-again",
+                    },
+                },
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 302,
+                .headers = {
+                    {
+                        .name = "Location",
+                        .value =
+                            "https://download.example.test/refreshed-again",
+                    },
+                },
+            },
+        }
+    );
+    transport->download_responses = {
+        onedrive::http::HttpResponse{.status_code = 403},
+        onedrive::http::HttpResponse{.status_code = 200},
+        onedrive::http::HttpResponse{.status_code = 403},
+        onedrive::http::HttpResponse{.status_code = 403},
+    };
+    auto* transport_pointer = transport.get();
+    const auto destination =
+        std::filesystem::temp_directory_path() /
+        "onedrive-cpp-refreshed-redirect-test";
+    std::error_code ignored;
+    std::filesystem::remove(destination, ignored);
+
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(
+                std::string{"existing-refresh"}
+            )
+        ),
+        auth_options(),
+        {
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+        },
+    };
+    client.download_file("item-id", 8, destination);
+    std::filesystem::remove(destination, ignored);
+    try {
+        client.download_file("item-id", 8, destination);
+        std::filesystem::remove(destination, ignored);
+        return fail("persistently expired download redirect was accepted");
+    } catch (const std::runtime_error& error) {
+        if (!std::string_view{error.what()}.contains("HTTP 403")) {
+            std::filesystem::remove(destination, ignored);
+            return fail("persistent expired redirect error was not reported");
+        }
+    }
+    std::filesystem::remove(destination, ignored);
+
+    if (transport_pointer->requests.size() != 5 ||
+        transport_pointer->download_requests.size() != 4 ||
+        transport_pointer->download_requests[0].url !=
+            "https://download.example.test/expired" ||
+        transport_pointer->download_requests[1].url !=
+            "https://download.example.test/refreshed" ||
+        transport_pointer->download_requests[2].url !=
+            "https://download.example.test/expired-again" ||
+        transport_pointer->download_requests[3].url !=
+            "https://download.example.test/refreshed-again" ||
+        std::ranges::any_of(
+            transport_pointer->download_requests,
+            [](const onedrive::http::HttpRequest& request) {
+                return has_header(request, "Authorization: ******");
+            }
+        )) {
+        return fail("expired Graph download redirect was not refreshed safely");
     }
     return EXIT_SUCCESS;
 }
@@ -1233,6 +1456,14 @@ int main() {
         return result;
     }
     if (const int result = test_file_download_redirect();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_relaxed_file_download_ignores_remote_size();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_expired_download_redirect_is_refreshed();
         result != EXIT_SUCCESS) {
         return result;
     }

@@ -16,6 +16,11 @@ enum class FilesystemMetadataMode {
     database,
 };
 
+enum class DownloadValidationMode {
+    strict,
+    relaxed,
+};
+
 struct Config {
     std::filesystem::path sync_directory;
     std::filesystem::path state_directory;
@@ -36,6 +41,9 @@ struct Config {
         std::uint64_t{8} * 1024U * 1024U
     };
     http::DownloadTransportOptions download_transport;
+    DownloadValidationMode download_validation{
+        DownloadValidationMode::strict
+    };
     FilesystemMetadataMode filesystem_metadata{
         FilesystemMetadataMode::automatic
     };

@@ -71,12 +71,15 @@ that cannot be proven unchanged are persisted as blocked items instead of being
 overwritten. Invalid names, local path conflicts, and descendants of blocked
 directories are also isolated while independent files continue. A partial
 completion exits with status 2, and blocked items are retried on later syncs.
+Installed files use the remote modification time when available and permissions
+derived from mode 0666 and the process umask.
 SQLite pending-download records and SHA-256 content fingerprints provide
 crash recovery independently of target-file-system extended attributes.
-Microsoft Graph HTTP 429 responses are retried using
+Microsoft Graph HTTP 408, 429, 502, 503, and 504 responses are retried using
 .B Retry-After
-or bounded exponential backoff, with a finite retry limit. Remote deletion
-records do not remove local files. Use
+or bounded exponential backoff, with a finite retry limit. A pre-authenticated
+download URL that returns HTTP 401 or 403 is refreshed through Graph once.
+Remote deletion records do not remove local files. Use
 .B \-\-dry\-run
 to display the download plan without creating files or updating synchronization
 state.
@@ -215,13 +218,12 @@ start with
 .BR [\(dqFiles.ReadWrite\(dq,\ \(dqoffline_access\(dq] .
 .TP
 .B graph.throttle.maximum_retries
-Maximum number of retries for a Microsoft Graph HTTP 429 response. The default
-is
+Maximum number of retries for a retryable Microsoft Graph or file-download
+response. The default is
 .BR 4 .
 .TP
 .B graph.throttle.initial_delay_seconds
-Initial exponential-backoff delay when a Graph 429 response has no valid
-numeric
+Initial exponential-backoff delay when a retryable response has no valid numeric
 .B Retry-After
 header. The default is
 .BR 1 .
@@ -266,6 +268,16 @@ or
 .BR 2 .
 The default is
 .BR auto .
+.TP
+.B sync.download_validation
+Remote metadata validation policy:
+.B strict
+requires the downloaded size and any Graph-provided content hash to match;
+.B relaxed
+accepts SharePoint, AIP, or HEIC content that differs from Graph metadata and
+disables resumable and chunked downloads. The default is
+.BR strict .
+Relaxed mode weakens integrity guarantees.
 .TP
 .B filesystem.metadata
 File-system metadata policy:

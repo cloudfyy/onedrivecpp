@@ -159,7 +159,10 @@ void recover_pending_downloads(
         item.id = download.item.remote_id;
         item.name = download.item.name;
         item.etag = download.item.etag;
+        item.last_modified = download.item.last_modified;
+        apply_remote_modified_time(destination, item.last_modified);
         metadata.write_remote_identity(item, destination);
+        fsync_file(destination);
         download.item.local_size = static_cast<std::int64_t>(
             std::filesystem::file_size(destination)
         );

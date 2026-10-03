@@ -25,6 +25,7 @@ int main() {
                << "download_stall_minimum_bytes_per_second = 128\n"
                << "download_maximum_rate_bytes_per_second = 1048576\n"
                << "download_http_version = \"2\"\n"
+               << "download_validation = \"relaxed\"\n"
                << "[state]\n"
                << "directory = \"/tmp/onedrive-state\"\n"
                << "[auth]\n"
@@ -71,12 +72,37 @@ int main() {
             1'048'576 ||
         config.download_transport.http_version !=
             onedrive::http::HttpVersion::http_2 ||
+        config.download_validation !=
+            onedrive::config::DownloadValidationMode::relaxed ||
         graph_options.download_transport != config.download_transport ||
+        !graph_options.relaxed_download_validation ||
         config.filesystem_metadata !=
             onedrive::config::FilesystemMetadataMode::database ||
         !config.dry_run) {
         std::cerr << "configuration values were not parsed correctly\n";
         return EXIT_FAILURE;
+    }
+    const auto defaults = onedrive::config::Config::load(path);
+    if (defaults.download_validation !=
+            onedrive::config::DownloadValidationMode::strict ||
+        onedrive::app::graph_options(defaults).
+            relaxed_download_validation) {
+        std::cerr << "strict download validation was not the default\n";
+        return EXIT_FAILURE;
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 1\n"
+               << "[sync]\n"
+               << "download_validation = \"unsafe\"\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "invalid download validation mode was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error&) {
     }
 
     {

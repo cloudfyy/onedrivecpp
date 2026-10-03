@@ -378,6 +378,7 @@ sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 drive_id = "me"
 download_concurrency = 4
 download_chunk_threshold_bytes = 8388608
+download_validation = "strict"
 
 # 指定其他 OneDrive 或 SharePoint 文档库
 # drive_id = "b!YOUR_DRIVE_ID"
@@ -401,6 +402,13 @@ endpoint = "https://microsoftgraph.chinacloudapi.cn/v1.0"
 `download_chunk_threshold_bytes` 设置大文件阈值（字节）。超过该值的文件会通过
 HTTP 字节范围请求顺序分片下载，并以该值作为单个分片的最大大小。默认值为
 `8388608`（8 MiB），且必须大于零。等于或小于阈值的文件仍使用单次请求。
+
+`download_validation` 默认为 `"strict"`，要求下载大小以及 Graph 提供的内容哈希
+与远端元数据一致。部分 SharePoint、Azure Information Protection（AIP）和
+HEIC 文件实际下载的字节可能与 Graph 元数据不同；`"relaxed"` 会接受这类文件，
+但会禁用断点续传、分块下载和远端大小/哈希校验。HTTP 成功状态、可靠写盘、
+原子安装以及用于崩溃恢复的本地 SHA-256 指纹仍会强制执行。由于 Graph 无法在
+下载前可靠识别 AIP 文件，宽松模式会作用于所有下载，并会降低完整性保证。
 
 状态按稳定的 Microsoft 用户 ID 和真实 Drive ID 隔离，同时保留友好的目录名：
 
@@ -635,6 +643,10 @@ Microsoft Graph 提供文件内容哈希时，程序会在临时文件进入待�
 哈希不匹配会删除 partial 检查点和临时文件，使下次尝试从 byte 0 重新下载。
 下述本地 SHA-256 指纹仅用于保护崩溃恢复状态，不能替代远端完整性哈希。
 
+安装后的文件会在 Graph 提供时间时采用远端 `lastModifiedDateTime`。新下载文件的
+权限由 `0666` 和进程 `umask` 共同决定（`umask 0022` 时通常为 `0644`），程序
+不会添加可执行位。
+
 下载完成后，程序先把临时路径、目标路径、远端元数据、大小和 SHA-256 内容
 指纹写入 SQLite `pending_download` journal，再执行原子替换。程序重启时会先
 恢复 journal，因此 SQLite 是崩溃恢复的权威来源，不依赖目标文件系统的
@@ -683,10 +695,11 @@ metadata = "auto"
 能力判断基于目标同步目录中的实际读写探测，而不是文件系统名称白名单。
 
 Microsoft Graph 分页请求、下载重定向、文件下载和 Range 分片请求会重试 HTTP
-429、502、503 和 504 响应。客户端会遵循数值形式的 `Retry-After` 响应头；
-响应头缺失或无效时使用有上限的指数退避。失败的 Range 请求会先把临时文件
-回滚到当前分片边界再重试。重试次数受到限制，持续服务故障会明确失败，而不是
-无限等待。
+408、429、502、503 和 504 响应。客户端会遵循数值形式的 `Retry-After`
+响应头；响应头缺失或无效时使用有上限的指数退避。如果预认证下载 URL 返回
+HTTP 401 或 403，客户端会从 Graph 获取新的 redirect 并重试一次，且不会把
+Graph bearer token 发给下载主机。失败的 Range 请求会先把临时文件回滚到当前
+分片边界再重试。重试次数受到限制，持续服务故障会明确失败，而不是无限等待。
 
 可在配置文件中调整节流策略：
 

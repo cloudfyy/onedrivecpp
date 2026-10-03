@@ -1,4 +1,5 @@
 #include "filesystem_metadata.hpp"
+#include "local_filesystem.hpp"
 #include "test_support.hpp"
 
 #include <sys/xattr.h>
@@ -110,10 +111,15 @@ int main() {
             .name = "metadata.txt",
             .etag = "remote-etag",
         };
+        detail::apply_remote_modified_time(
+            file,
+            "2026-10-02T03:04:05.123456789Z"
+        );
         automatic.write_remote_identity(item, file);
         if (read_xattr(file, "user.onedrive.remote_id") != item.id ||
             read_xattr(file, "user.onedrive.etag") != item.etag ||
-            read_xattr(file, "user.onedrive.local_modified_ticks").empty()) {
+            read_xattr(file, "user.onedrive.local_modified_ticks") !=
+                std::to_string(detail::modified_ticks(file))) {
             return fail("remote identity xattrs did not round-trip");
         }
         try {

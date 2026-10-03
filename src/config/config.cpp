@@ -170,6 +170,18 @@ http::HttpVersion parse_http_version(std::string_view value) {
     );
 }
 
+DownloadValidationMode parse_download_validation(std::string_view value) {
+    if (value == "strict") {
+        return DownloadValidationMode::strict;
+    }
+    if (value == "relaxed") {
+        return DownloadValidationMode::relaxed;
+    }
+    throw std::runtime_error(
+        "invalid TOML configuration value for 'sync.download_validation'"
+    );
+}
+
 }  // namespace
 
 Config Config::defaults() {
@@ -196,6 +208,7 @@ Config Config::defaults() {
         .download_chunk_threshold_bytes =
             std::uint64_t{8} * 1024U * 1024U,
         .download_transport = {},
+        .download_validation = DownloadValidationMode::strict,
         .filesystem_metadata = FilesystemMetadataMode::automatic,
         .dry_run = false,
     };
@@ -252,6 +265,7 @@ Config Config::load(const std::filesystem::path& path) {
                 "download_stall_minimum_bytes_per_second",
                 "download_maximum_rate_bytes_per_second",
                 "download_http_version",
+                "download_validation",
             },
             "sync"
         );
@@ -375,6 +389,15 @@ Config Config::load(const std::filesystem::path& path) {
             )) {
             download_transport.http_version =
                 parse_http_version(*value);
+        }
+        if (const auto value = optional_value<std::string>(
+                *sync,
+                "download_validation",
+                "sync.download_validation",
+                "a string"
+            )) {
+            config.download_validation =
+                parse_download_validation(*value);
         }
     }
 

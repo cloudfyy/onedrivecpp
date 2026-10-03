@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 namespace onedrive::sync::detail {
 
@@ -38,6 +39,10 @@ struct LocalFileBaseline {
 [[nodiscard]] std::int64_t modified_ticks(
     const std::filesystem::path& path
 );
+void apply_remote_modified_time(
+    const std::filesystem::path& path,
+    std::string_view remote_modified
+);
 [[nodiscard]] bool local_snapshot_matches(
     const storage::ItemState& state,
     const std::filesystem::path& path
@@ -63,6 +68,7 @@ struct LocalFileBaseline {
     const std::filesystem::path& destination,
     const std::filesystem::path& candidate
 );
+void fsync_file(const std::filesystem::path& path);
 void fsync_directory(const std::filesystem::path& directory);
 void ensure_directory_tree(
     const std::filesystem::path& root,

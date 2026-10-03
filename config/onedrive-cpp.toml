@@ -18,6 +18,9 @@ download_stall_minimum_bytes_per_second = 1
 download_maximum_rate_bytes_per_second = 0
 # Supported values: "auto", "1.1", and "2".
 download_http_version = "auto"
+# "relaxed" accepts SharePoint/AIP/HEIC content whose downloaded size or hash
+# differs from Graph metadata. This weakens integrity guarantees.
+download_validation = "strict"
 
 [state]
 directory = "/home/USER/.local/state/onedrive-cpp"

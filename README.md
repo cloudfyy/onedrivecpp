@@ -417,6 +417,7 @@ download_stall_timeout_seconds = 60
 download_stall_minimum_bytes_per_second = 1
 download_maximum_rate_bytes_per_second = 0
 download_http_version = "auto"
+download_validation = "strict"
 
 # Another OneDrive or SharePoint document library
 # drive_id = "b!YOUR_DRIVE_ID"
@@ -452,6 +453,16 @@ timeout to `0` to disable this check. `download_maximum_rate_bytes_per_second`
 defaults to `0`, meaning unlimited. `download_http_version` accepts `"auto"`,
 `"1.1"`, or `"2"`; HTTP/2 is negotiated over TLS and may fall back according
 to libcurl capabilities.
+
+`download_validation` defaults to `"strict"`, which requires downloaded size
+and any Graph-provided content hash to match the remote metadata. Some
+SharePoint, Azure Information Protection (AIP), and HEIC files are served with
+bytes that differ from their Graph metadata. `"relaxed"` accepts those files,
+but disables resumable/chunked downloads and remote size/hash verification.
+HTTP success, durable writes, atomic installation, and the local SHA-256
+recovery fingerprint remain enforced. Because Graph cannot reliably identify
+AIP-protected files in advance, relaxed mode applies to all downloads and
+weakens integrity guarantees.
 
 State is separated by the stable Microsoft user ID and canonical Drive ID while
 retaining friendly directory names:
@@ -734,6 +745,11 @@ the next attempt restarts from byte zero. The separate local SHA-256
 fingerprint below protects crash recovery state and is not treated as a
 substitute for a remote integrity hash.
 
+Installed files receive the Graph `lastModifiedDateTime` value when available.
+New download files are created with permissions derived from `0666` and the
+process `umask` (normally `0644` with `umask 0022`); executable bits are never
+added.
+
 After a download completes, the client writes the temporary path, destination,
 remote metadata, size, and SHA-256 content fingerprint to a SQLite
 `pending_download` journal before the atomic replacement. Startup recovery
@@ -778,11 +794,13 @@ Capability detection probes the target synchronization directory instead of
 using a file-system-name allowlist.
 
 Microsoft Graph page requests, download redirects, file downloads, and ranged
-chunks retry HTTP 429, 502, 503, and 504 responses. The client honors a numeric
-`Retry-After` header and otherwise uses bounded exponential backoff. Failed
-ranged requests roll the temporary file back to the chunk boundary before
-retrying. Retries are limited so persistent service failures fail explicitly
-instead of waiting forever.
+chunks retry HTTP 408, 429, 502, 503, and 504 responses. The client honors a
+numeric `Retry-After` header and otherwise uses bounded exponential backoff.
+If a pre-authenticated download URL returns HTTP 401 or 403, the client obtains
+a fresh redirect from Graph and retries once without sending the Graph bearer
+token to the download host. Failed ranged requests roll the temporary file
+back to the chunk boundary before retrying. Retries are limited so persistent
+service failures fail explicitly instead of waiting forever.
 
 The throttling policy can be adjusted in the configuration file:
 

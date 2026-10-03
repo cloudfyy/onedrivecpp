@@ -6,6 +6,7 @@
 #include <spdlog/spdlog.h>
 
 #include <format>
+#include <limits>
 #include <stdexcept>
 
 namespace onedrive::sync::detail {
@@ -62,6 +63,7 @@ PreparedDownload prepare_download(
             );
         }
         const bool metadata_matches =
+            item.validate_content &&
             partial.item.etag == item.etag &&
             partial.item.size == item.size &&
             partial.item.local_path.lexically_normal() ==
@@ -142,7 +144,8 @@ PreparedDownload prepare_download(
             }
         );
         const auto downloaded_size = std::filesystem::file_size(temporary);
-        if (downloaded_size != static_cast<std::uintmax_t>(item.size)) {
+        if (item.validate_content &&
+            downloaded_size != static_cast<std::uintmax_t>(item.size)) {
             throw std::runtime_error(
                 std::format(
                     "downloaded size mismatch for '{}': expected {}, received {}",
@@ -153,8 +156,28 @@ PreparedDownload prepare_download(
             );
         }
         const std::string fingerprint = content_fingerprint(temporary);
-        verify_download_integrity(temporary, item, fingerprint);
+        if (item.validate_content) {
+            verify_download_integrity(temporary, item, fingerprint);
+        } else {
+            if (downloaded_size >
+                static_cast<std::uintmax_t>(
+                    std::numeric_limits<std::int64_t>::max()
+                )) {
+                throw std::runtime_error(
+                    "downloaded file is too large to track: " +
+                    temporary.string()
+                );
+            }
+            spdlog::warn(
+                "Skipping remote size and hash validation for '{}' because "
+                "relaxed download validation is enabled",
+                item.remote_path
+            );
+            state.size = static_cast<std::int64_t>(downloaded_size);
+        }
+        apply_remote_modified_time(temporary, item.last_modified);
         metadata.write_remote_identity(item, temporary);
+        fsync_file(temporary);
         return {
             .item = item,
             .state = std::move(state),
