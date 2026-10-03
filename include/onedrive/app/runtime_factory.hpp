@@ -7,6 +7,10 @@ class DeviceAuthClient;
 class TokenStore;
 }
 
+namespace onedrive::account {
+struct DriveIdentity;
+}
+
 namespace onedrive::config {
 struct Config;
 }
@@ -51,7 +55,8 @@ public:
         const config::Config& config
     ) const = 0;
     [[nodiscard]] virtual std::unique_ptr<storage::ItemStore> create_item_store(
-        const config::Config& config
+        const config::Config& config,
+        const account::DriveIdentity& identity
     ) const = 0;
     [[nodiscard]] virtual std::unique_ptr<monitor::FileMonitor> create_monitor(
         const config::Config& config
@@ -75,7 +80,8 @@ public:
         const config::Config& config
     ) const override;
     [[nodiscard]] std::unique_ptr<storage::ItemStore> create_item_store(
-        const config::Config& config
+        const config::Config& config,
+        const account::DriveIdentity& identity
     ) const override;
     [[nodiscard]] std::unique_ptr<monitor::FileMonitor> create_monitor(
         const config::Config& config

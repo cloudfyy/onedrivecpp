@@ -1,5 +1,6 @@
 #include "onedrive/app/application.hpp"
 
+#include "onedrive/account/account_state.hpp"
 #include "onedrive/app/runtime_factory.hpp"
 #include "runtime_preflight.hpp"
 #include "onedrive/auth/device_auth.hpp"
@@ -27,6 +28,17 @@
 
 namespace onedrive::app {
 namespace {
+
+graph::GraphOptions graph_options(const config::Config& config) {
+    return {
+        .drive_id = config.drive_id,
+        .endpoint = "https://graph.microsoft.com/v1.0",
+        .maximum_throttle_retries =
+            config.graph_maximum_throttle_retries,
+        .initial_throttle_delay = config.graph_initial_throttle_delay,
+        .maximum_throttle_delay = config.graph_maximum_throttle_delay,
+    };
+}
 
 std::filesystem::path default_config_path() {
     if (const char* home = std::getenv("HOME"); home != nullptr) {
@@ -81,14 +93,22 @@ int authenticate(
         return 1;
     }
 
-    auto token_store = runtime_factory.create_token_store(config);
-    token_store->save_refresh_token(tokens->refresh_token);
+    const auto identity = graph::fetch_drive_identity(
+        *transport,
+        tokens->access_token,
+        graph_options(config)
+    );
+    const auto paths = account::AccountState::activate(
+        config.state_directory,
+        identity,
+        tokens->refresh_token
+    );
     spdlog::info("Microsoft authentication succeeded");
     console.message(
         cli::MessageKind::success,
         "authentication_succeeded",
         "Authentication succeeded. Refresh token saved to " +
-            token_store->path().string()
+            (paths.token_directory / "refresh_token").string()
     );
     return 0;
 }
@@ -248,7 +268,11 @@ int Application::run(int argc, char* argv[]) {
         if (*logout_command) {
             spdlog::info("Removing locally saved authentication");
             const bool removed =
-                runtime_factory_.create_token_store(config)->remove_refresh_token();
+                account::AccountState::find_active_token_directory(
+                    config.state_directory
+                ) &&
+                runtime_factory_.create_token_store(config)
+                    ->remove_refresh_token();
             console.message(
                 cli::MessageKind::success,
                 "logout_completed",
@@ -258,6 +282,9 @@ int Application::run(int argc, char* argv[]) {
             return 0;
         }
         if (*reset_state_command) {
+            auto graph = runtime_factory_.create_graph_client(config);
+            const auto identity = graph->drive_identity();
+            config.drive_id = identity.drive_id;
             if (clear_all_state && !assume_yes) {
                 console.message(
                     cli::MessageKind::warning,
@@ -305,7 +332,8 @@ int Application::run(int argc, char* argv[]) {
                     "Clearing all synchronization state for drive '{}'",
                     config.drive_id
                 );
-                auto items = runtime_factory_.create_item_store(config);
+                auto items =
+                    runtime_factory_.create_item_store(config, identity);
                 items->open();
                 const auto cleared = items->clear(config.drive_id);
                 spdlog::warn(
@@ -344,7 +372,7 @@ int Application::run(int argc, char* argv[]) {
                 "Resetting synchronization state for drive '{}'",
                 config.drive_id
             );
-            auto items = runtime_factory_.create_item_store(config);
+            auto items = runtime_factory_.create_item_store(config, identity);
             items->open();
             const bool removed = items->reset(config.drive_id);
             spdlog::info(
@@ -391,9 +419,11 @@ int Application::run(int argc, char* argv[]) {
         }
 
         spdlog::info("Starting synchronization{}", config.dry_run ? " dry run" : "");
-        auto items = runtime_factory_.create_item_store(config);
-        items->open();
         auto graph = runtime_factory_.create_graph_client(config);
+        const auto identity = graph->drive_identity();
+        config.drive_id = identity.drive_id;
+        auto items = runtime_factory_.create_item_store(config, identity);
+        items->open();
         auto metrics = runtime_factory_.create_metrics();
         return sync::SyncEngine{
             config,

@@ -50,23 +50,28 @@ onedrive::config::Config config_for(const TemporaryDirectory& temporary) {
     config.application_id = "test-application";
     config.azure_tenant_id = "common";
     config.auth_endpoint = "https://login.example.test";
-    config.auth_scope = "Files.ReadWrite offline_access";
+    config.auth_scope = "User.Read Files.ReadWrite offline_access";
     config.drive_id = "me";
     return config;
 }
 
-void write_token(
+std::filesystem::path write_token(
     const std::filesystem::path& state_directory,
     std::filesystem::perms permissions
 ) {
-    std::filesystem::create_directories(state_directory);
-    std::ofstream output{state_directory / "refresh_token"};
+    const auto account_directory =
+        state_directory / "accounts/Test-User--12345678";
+    std::filesystem::create_directories(account_directory);
+    {
+        std::ofstream marker{state_directory / "active_account"};
+        marker << account_directory.filename().string() << '\n';
+    }
+    const auto token_path = account_directory / "refresh_token";
+    std::ofstream output{token_path};
     output << "test-refresh-token";
     output.close();
-    std::filesystem::permissions(
-        state_directory / "refresh_token",
-        permissions
-    );
+    std::filesystem::permissions(token_path, permissions);
+    return token_path;
 }
 
 template <typename Action>
@@ -119,7 +124,7 @@ int test_sync_directory_and_token() {
 
     TemporaryDirectory temporary;
     auto config = config_for(temporary);
-    write_token(
+    const auto token_path = write_token(
         config.state_directory,
         std::filesystem::perms::owner_read |
             std::filesystem::perms::owner_write |
@@ -131,9 +136,7 @@ int test_sync_directory_and_token() {
             return fail("sync preflight did not create the sync directory");
         }
         const auto token_permissions =
-            std::filesystem::status(
-                config.state_directory / "refresh_token"
-            ).permissions();
+            std::filesystem::status(token_path).permissions();
         if ((token_permissions & std::filesystem::perms::all) !=
             (std::filesystem::perms::owner_read |
              std::filesystem::perms::owner_write)) {
@@ -149,7 +152,7 @@ int test_sync_directory_and_token() {
         }
     }
 
-    std::filesystem::remove(config.state_directory / "refresh_token");
+    std::filesystem::remove(token_path);
     if (!throws_with(
             [&] {
                 const RuntimePreflight preflight{
@@ -184,6 +187,20 @@ int test_unsafe_paths_and_configuration() {
         return fail("invalid authentication configuration was accepted");
     }
     config.application_id = "test-application";
+
+    config.auth_scope = "Files.ReadWrite offline_access";
+    if (!throws_with(
+            [&] {
+                const RuntimePreflight preflight{
+                    config,
+                    Operation::authenticate
+                };
+            },
+            "User.Read"
+        )) {
+        return fail("authentication without User.Read was accepted");
+    }
+    config.auth_scope = "User.Read Files.ReadWrite offline_access";
 
     config.sync_directory = config.state_directory / "files";
     if (!throws_with(
@@ -235,22 +252,29 @@ int test_unsafe_paths_and_configuration() {
         config.state_directory,
         std::filesystem::perms::owner_all
     );
-    const auto outside_database = temporary.path() / "outside-database";
+    const auto outside_token = temporary.path() / "outside-token";
     {
-        std::ofstream output{outside_database};
-        output << "not a database";
+        std::ofstream output{outside_token};
+        output << "token";
+    }
+    const auto account_directory =
+        config.state_directory / "accounts/Test-User--12345678";
+    std::filesystem::create_directories(account_directory);
+    {
+        std::ofstream marker{config.state_directory / "active_account"};
+        marker << account_directory.filename().string() << '\n';
     }
     std::filesystem::create_symlink(
-        outside_database,
-        config.state_directory / "items.sqlite3"
+        outside_token,
+        account_directory / "refresh_token"
     );
     if (!throws_with(
             [&] {
                 const RuntimePreflight preflight{config, Operation::logout};
             },
-            "state database"
+            "refresh token"
         )) {
-        return fail("symbolic-link state database was accepted");
+        return fail("symbolic-link refresh token was accepted");
     }
 
     const auto real_state = temporary.path() / "real-state";

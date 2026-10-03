@@ -1,5 +1,6 @@
 #pragma once
 
+#include "onedrive/account/account_state.hpp"
 #include "onedrive/storage/item_store.hpp"
 
 #include <filesystem>
@@ -11,7 +12,10 @@ namespace onedrive::storage {
 
 class ItemDatabase final : public ItemStore {
 public:
-    explicit ItemDatabase(std::filesystem::path state_directory);
+    ItemDatabase(
+        std::filesystem::path state_directory,
+        account::DriveIdentity identity
+    );
     ~ItemDatabase() override;
 
     ItemDatabase(const ItemDatabase&) = delete;
@@ -46,6 +50,7 @@ private:
     struct Impl;
 
     std::filesystem::path state_directory_;
+    account::DriveIdentity identity_;
     std::unordered_map<std::string, ItemState> items_;
     std::unordered_map<std::string, BlockedItem> blocked_items_;
     std::unordered_map<std::string, std::string> delta_links_;

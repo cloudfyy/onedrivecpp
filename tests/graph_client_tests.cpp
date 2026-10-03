@@ -652,6 +652,79 @@ int test_file_download_redirect() {
     return EXIT_SUCCESS;
 }
 
+int test_drive_identity_and_profile_photo() {
+    FakeTransport transport{
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body = R"({"id":"user-id","displayName":"Alice Example"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body = R"({"id":"canonical-drive-id","name":"Alice Drive"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .headers = {
+                    {.name = "Content-Type", .value = "image/png"},
+                },
+                .body = "photo-bytes",
+            },
+        }
+    };
+    const auto identity = onedrive::graph::fetch_drive_identity(
+        transport,
+        "access-token",
+        {
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+        }
+    );
+    if (identity.user_id != "user-id" ||
+        identity.user_display_name != "Alice Example" ||
+        identity.drive_id != "canonical-drive-id" ||
+        identity.drive_name != "Alice Drive" || !identity.photo ||
+        identity.photo->content_type != "image/png" ||
+        std::string{
+            identity.photo->bytes.begin(),
+            identity.photo->bytes.end()
+        } != "photo-bytes" ||
+        transport.requests.size() != 3 ||
+        transport.requests[0].url !=
+            "https://graph.example.test/v1.0/me?$select=id,displayName" ||
+        transport.requests[1].url !=
+            "https://graph.example.test/v1.0/me/drive?$select=id,name" ||
+        transport.requests[2].url !=
+            "https://graph.example.test/v1.0/me/photo/$value" ||
+        !has_header(transport.requests[2], "Authorization: ******")) {
+        return fail("Graph account and drive identity were not loaded");
+    }
+    FakeTransport without_photo{
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body = R"({"id":"user-id","displayName":"Alice Example"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body = R"({"id":"canonical-drive-id","name":"Alice Drive"})",
+            },
+            onedrive::http::HttpResponse{.status_code = 404},
+        }
+    };
+    if (onedrive::graph::fetch_drive_identity(
+            without_photo,
+            "access-token",
+            {
+                .drive_id = "me",
+                .endpoint = "https://graph.example.test/v1.0",
+            }
+        ).photo) {
+        return fail("missing Graph profile photo was not treated as optional");
+    }
+    return EXIT_SUCCESS;
+}
+
 }  // namespace
 
 int main() {
@@ -689,5 +762,9 @@ int main() {
         result != EXIT_SUCCESS) {
         return result;
     }
-    return test_file_download_redirect();
+    if (const int result = test_file_download_redirect();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return test_drive_identity_and_profile_photo();
 }

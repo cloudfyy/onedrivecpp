@@ -292,7 +292,7 @@ sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 值类型会直接报错，不会被静默忽略。
 
 执行子命令前，客户端会把 `state.directory` 收紧为仅所有者可访问的 `0700`，
-校验 token 和 SQLite 路径，并在该目录持有独占的 `onedrive-cpp.lock`。第二个
+校验当前账号 token 路径，并在该目录持有独占的 `onedrive-cpp.lock`。第二个
 使用同一状态目录的进程会立即失败。当前用户拥有的既有私有状态文件会收紧为
 `0600`；符号链接或其他用户拥有的文件会被拒绝。
 
@@ -320,9 +320,26 @@ download_concurrency = 4
 `download_concurrency` 控制可同时下载的文件数量，默认值为 `4`，允许范围为
 `1` 到 `16`。
 
-远端 ID、ETag 和本地路径状态保存在
-`<state.directory>/items.sqlite3`。数据库使用 SQLite WAL 模式，并在程序
-启动时加载。
+状态按稳定的 Microsoft 用户 ID 和真实 Drive ID 隔离，同时保留友好的目录名：
+
+```text
+<state.directory>/accounts/<显示名称>--<用户-ID-哈希>/
+  account.json
+  avatar.<图片扩展名>
+  refresh_token
+  drives/<Drive-名称>--<Drive-ID-哈希>/
+    drive.json
+    items.sqlite3
+```
+
+账号和 Drive 目录包含稳定 ID 哈希，因此显示名称改变时不会创建第二套状态目录。
+Drive 数据库除远端 ID、ETag 和本地路径外，还会保存并校验用户 ID、显示名称、
+真实 Drive ID、Drive 名称、头像 MIME 类型和头像二进制内容。SQLite 使用 WAL
+模式。
+
+旧的平面 `<state.directory>/items.sqlite3` 和
+`<state.directory>/refresh_token` 布局不会自动迁移。升级后需要重新运行
+`onedrive-cpp auth` 初始化账号目录，并重新建立同步状态。
 
 ### Microsoft 认证
 
@@ -369,13 +386,15 @@ Microsoft 当前要求账号具有有效的 Azure 订阅、可访问的 Microsof
 打开 **API 权限（API permissions）> 添加权限（Add a permission）>
 Microsoft Graph > 委托的权限（Delegated permissions）**。
 
-个人 OneDrive 账号建议从最小权限开始：
+个人 OneDrive 账号应配置以下委托权限：
 
 ```text
+User.Read
 Files.ReadWrite
 ```
 
-客户端还会请求 `offline_access`，以便 Microsoft 返回 refresh token。只有在
+`User.Read` 用于识别当前登录账号和下载头像。客户端还会请求
+`offline_access`，以便 Microsoft 返回 refresh token。只有在
 组织版 OneDrive、共享文档库或 SharePoint 场景确实需要时，才添加更广泛的
 委托权限：
 
@@ -406,7 +425,7 @@ sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 application_id = "YOUR_APPLICATION_CLIENT_ID"
 tenant_id = "consumers"
 endpoint = "https://login.microsoftonline.com"
-scopes = ["Files.ReadWrite", "offline_access"]
+scopes = ["User.Read", "Files.ReadWrite", "offline_access"]
 ```
 
 如果应用注册类型为 **任何 Entra ID 租户和个人 Microsoft 账号
@@ -418,7 +437,7 @@ scopes = ["Files.ReadWrite", "offline_access"]
 application_id = "YOUR_APPLICATION_CLIENT_ID"
 tenant_id = "common"
 endpoint = "https://login.microsoftonline.com"
-scopes = ["Files.ReadWrite", "offline_access"]
+scopes = ["User.Read", "Files.ReadWrite", "offline_access"]
 ```
 
 单租户组织应用应将 `common` 替换为 Directory (tenant) ID。只有组织场景确实
@@ -434,8 +453,9 @@ onedrive-cpp auth
 ```
 
 打开终端显示的网址，输入用户代码，使用与应用支持账号类型相符的账号登录，
-并确认所请求的权限。成功后，refresh token 会以原子方式保存到
-`<state.directory>/refresh_token`，权限限制为仅文件所有者可读写的 `0600`。
+并确认所请求的权限。成功后，客户端会读取稳定的用户和 Drive 身份以及头像，
+并将 refresh token 和头像原子保存到友好的账号状态目录，权限限制为仅文件
+所有者可访问。
 
 如果 Microsoft 提示账号类型不受支持，请检查应用注册中的
 **Supported account types**：仅个人账号注册应使用 `consumers`，同时支持个人
@@ -461,7 +481,7 @@ tenant_id = "common"
 
 ```toml
 [auth]
-scopes = ["Files.ReadWrite", "offline_access"]
+scopes = ["User.Read", "Files.ReadWrite", "offline_access"]
 ```
 
 修改权限后必须重新运行 `onedrive-cpp auth`；已有设备代码仍绑定原来的权限，
@@ -499,8 +519,8 @@ pending download 恢复记录以及 blocked item。本地文件和其他 Drive �
 
 `sync` 命令会刷新 OAuth access token，在 Microsoft 返回轮换后的 refresh
 token 时安全持久化，并通过分页的 Microsoft Graph Delta 请求获取配置 Drive
-中的递归文件树。首次成功查询会把远端元数据和最终 `deltaLink` 原子写入
-`<state.directory>/items.sqlite3`；后续运行复用该链接，只获取新增、修改和
+中的递归文件树。首次成功查询会把远端元数据和最终 `deltaLink` 原子写入所选
+账号和 Drive 的 `items.sqlite3`；后续运行复用该链接，只获取新增、修改和
 删除的项目。仅当所有分页均成功处理后才推进 `deltaLink`，因此中途失败不会
 丢失尚未应用的变更。
 

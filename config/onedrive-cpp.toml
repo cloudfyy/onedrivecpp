@@ -15,6 +15,7 @@ application_id = ""
 tenant_id = "common"
 endpoint = "https://login.microsoftonline.com"
 scopes = [
+  "User.Read",
   "Files.ReadWrite",
   "Files.ReadWrite.All",
   "Sites.ReadWrite.All",

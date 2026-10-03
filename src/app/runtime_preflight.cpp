@@ -1,5 +1,7 @@
 #include "runtime_preflight.hpp"
 
+#include "onedrive/account/account_state.hpp"
+
 #include <spdlog/spdlog.h>
 
 #include <cerrno>
@@ -363,11 +365,12 @@ void prepare_sync_directory(
 void validate_authentication_config(const config::Config& config) {
     if (config.application_id.empty() || config.azure_tenant_id.empty() ||
         config.auth_scope.empty() ||
-        !has_scope(config.auth_scope, "offline_access") ||
+    !has_scope(config.auth_scope, "User.Read") ||
+    !has_scope(config.auth_scope, "offline_access") ||
         !config.auth_endpoint.starts_with("https://")) {
         throw std::runtime_error(
             "authentication requires auth.application_id, auth.tenant_id, an "
-            "HTTPS auth.endpoint, and an offline_access scope"
+            "HTTPS auth.endpoint, and User.Read and offline_access scopes"
         );
     }
 }
@@ -454,25 +457,30 @@ RuntimePreflight::RuntimePreflight(
 
     try {
         validate_private_file(
-        config.state_directory / "refresh_token",
-        "refresh token",
-        operation == Operation::synchronize
-        );
-        validate_private_file(
-            config.state_directory / "items.sqlite3",
-            "state database",
+            config.state_directory / "active_account",
+            "active account marker",
             false
         );
-        validate_private_file(
-            config.state_directory / "items.sqlite3-wal",
-            "state database WAL",
-            false
-        );
-        validate_private_file(
-            config.state_directory / "items.sqlite3-shm",
-            "state database shared memory",
-            false
-        );
+        const bool authentication_required =
+            operation == Operation::reset_state ||
+            operation == Operation::synchronize;
+        const auto token_directory =
+            account::AccountState::find_active_token_directory(
+                config.state_directory
+            );
+        if (authentication_required && !token_directory) {
+            throw std::runtime_error(
+                "active Microsoft account is missing; run 'onedrive-cpp auth' "
+                "to initialize the account-based state layout"
+            );
+        }
+        if (token_directory) {
+            validate_private_file(
+                *token_directory / "refresh_token",
+                "refresh token",
+                authentication_required
+            );
+        }
         if (operation == Operation::synchronize ||
             operation == Operation::monitor) {
             prepare_sync_directory(config, operation);

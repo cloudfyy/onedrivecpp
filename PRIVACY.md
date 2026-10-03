@@ -26,6 +26,8 @@ Depending on the features you use, the Software may process:
 - configuration values, including local paths, account/tenant settings, and
   requested permission scopes;
 - OAuth access and refresh tokens issued by Microsoft;
+- Microsoft account identifiers, display names, Drive identifiers and names,
+  and profile photos;
 - OneDrive file and folder names, identifiers, metadata, and content;
 - local file and folder names, metadata, and content;
 - synchronization state and operational error information.
@@ -37,9 +39,11 @@ operational results.
 ## 3. Local storage
 
 By default, the Software stores state under
-`~/.local/state/onedrive-cpp`. The OAuth refresh token is stored in a local
-file with owner-only `0600` permissions. Synchronization metadata may be
-stored in a local SQLite database.
+`~/.local/state/onedrive-cpp`. Account and Drive state is separated into
+friendly directories with stable identifier hashes. The OAuth refresh token
+and profile photo are stored in the account directory with owner-only
+permissions. Account and Drive identity metadata, including profile-photo
+bytes, is also stored in the Drive's local SQLite database.
 
 Anyone who can access your operating-system account, backups, storage device,
 or state directory may be able to access this information. You are

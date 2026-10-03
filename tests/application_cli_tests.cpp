@@ -1,5 +1,6 @@
 #include "onedrive/app/application.hpp"
 #include "onedrive/app/runtime_factory.hpp"
+#include "onedrive/account/account_state.hpp"
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
 #include "onedrive/config/config.hpp"
@@ -59,13 +60,23 @@ public:
     explicit FakeTokenStore(std::filesystem::path path) : path_{std::move(path)} {}
 
     [[nodiscard]] std::optional<std::string> load_refresh_token() const override {
-        return std::nullopt;
+        std::ifstream input{path_};
+        if (!input) {
+            return std::nullopt;
+        }
+        return std::string{
+            std::istreambuf_iterator<char>{input},
+            std::istreambuf_iterator<char>{}
+        };
     }
 
-    void save_refresh_token(const std::string&) const override {}
+    void save_refresh_token(const std::string& token) const override {
+        std::ofstream output{path_};
+        output << token;
+    }
 
     [[nodiscard]] bool remove_refresh_token() const override {
-        return false;
+        return std::filesystem::remove(path_);
     }
 
     [[nodiscard]] const std::filesystem::path& path() const noexcept override {
@@ -76,8 +87,83 @@ private:
     std::filesystem::path path_;
 };
 
+class FakeAuthenticationTransport final : public onedrive::http::HttpTransport {
+public:
+    [[nodiscard]] onedrive::http::HttpResult perform(
+        const onedrive::http::HttpRequest& request
+    ) const override {
+        if (request.url.ends_with("/oauth2/v2.0/devicecode")) {
+            return onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"device_code":"device-code","user_code":"ABCD-EFGH",)"
+                    R"("verification_uri":"https://microsoft.com/link",)"
+                    R"("message":"Authenticate the test account",)"
+                    R"("expires_in":900,"interval":1})",
+            };
+        }
+        if (request.url.ends_with("/oauth2/v2.0/token")) {
+            return onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"token_type":"Bearer","expires_in":3600,)"
+                    R"("access_token":"access-token",)"
+                    R"("refresh_token":"refresh-token"})",
+            };
+        }
+        if (request.url.ends_with("/me?$select=id,displayName")) {
+            return onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body = R"({"id":"user-id","displayName":"Test User"})",
+            };
+        }
+        if (request.url.ends_with("/me/drive?$select=id,name")) {
+            return onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body = R"({"id":"drive-id","name":"Test Drive"})",
+            };
+        }
+        if (request.url.ends_with("/me/photo/$value")) {
+            return onedrive::http::HttpResponse{
+                .status_code = 200,
+                .headers = {
+                    {.name = "Content-Type", .value = "image/jpeg"},
+                },
+                .body = "avatar",
+            };
+        }
+        return std::unexpected(
+            onedrive::http::HttpError{
+                .message = "unexpected authentication request: " + request.url,
+            }
+        );
+    }
+
+    [[nodiscard]] onedrive::http::HttpResult download(
+        const onedrive::http::HttpRequest&,
+        const std::filesystem::path&,
+        const onedrive::http::DownloadProgress&
+    ) const override {
+        return std::unexpected(
+            onedrive::http::HttpError{
+                .message = "authentication download was not expected",
+            }
+        );
+    }
+};
+
 class FakeGraphClient final : public onedrive::graph::GraphClient {
 public:
+    [[nodiscard]] onedrive::account::DriveIdentity drive_identity()
+        const override {
+        return {
+            .user_id = "user-id",
+            .user_display_name = "Test User",
+            .drive_id = "drive-id",
+            .drive_name = "Test Drive",
+        };
+    }
+
     [[nodiscard]] std::vector<onedrive::graph::RemoteItem> list_root() const override {
         return {};
     }
@@ -233,15 +319,24 @@ class FakeRuntimeFactory final : public onedrive::app::RuntimeFactory {
 public:
     [[nodiscard]] std::unique_ptr<onedrive::http::HttpTransport>
     create_http_transport() const override {
-        throw std::logic_error{"authentication transport was not expected"};
+        return std::make_unique<FakeAuthenticationTransport>();
     }
 
     [[nodiscard]] std::unique_ptr<onedrive::auth::DeviceAuthClient>
     create_device_auth_client(
-        const onedrive::config::Config&,
-        const onedrive::http::HttpTransport&
+        const onedrive::config::Config& config,
+        const onedrive::http::HttpTransport& transport
     ) const override {
-        throw std::logic_error{"authentication client was not expected"};
+        return std::make_unique<onedrive::auth::DeviceAuthClient>(
+            transport,
+            onedrive::auth::DeviceAuthOptions{
+                .application_id = config.application_id,
+                .tenant_id = config.azure_tenant_id,
+                .auth_endpoint = config.auth_endpoint,
+                .scope = config.auth_scope,
+            },
+            [](std::chrono::seconds) {}
+        );
     }
 
     [[nodiscard]] std::unique_ptr<onedrive::auth::TokenStore> create_token_store(
@@ -249,7 +344,9 @@ public:
     ) const override {
         ++token_store_count;
         return std::make_unique<FakeTokenStore>(
-            config.state_directory / "refresh_token"
+            onedrive::account::AccountState::active_token_directory(
+                config.state_directory
+            ) / "refresh_token"
         );
     }
 
@@ -260,7 +357,8 @@ public:
     }
 
     [[nodiscard]] std::unique_ptr<onedrive::storage::ItemStore> create_item_store(
-        const onedrive::config::Config&
+        const onedrive::config::Config&,
+        const onedrive::account::DriveIdentity&
     ) const override {
         ++item_store_count;
         return std::make_unique<FakeItemStore>(
@@ -429,15 +527,30 @@ int main() {
         state_path,
         std::filesystem::perms::owner_all
     );
-    {
-        std::ofstream token{state_path / "refresh_token"};
-        token << "test-refresh-token";
-    }
-    std::filesystem::permissions(
-        state_path / "refresh_token",
-        std::filesystem::perms::owner_read |
-            std::filesystem::perms::owner_write
+    const auto authentication = run_application(
+        runtime_factory,
+        {
+            "onedrive-cpp",
+            "auth",
+            "--config",
+            config_path.string(),
+        }
     );
+    const auto account_path =
+        onedrive::account::AccountState::active_token_directory(state_path);
+    if (authentication.exit_code != 0 ||
+        !authentication.standard_output.contains(
+            "Authentication succeeded"
+        ) ||
+        !account_path.filename().string().starts_with("Test-User--") ||
+        !std::filesystem::exists(account_path / "avatar.jpg") ||
+        !std::filesystem::exists(account_path / "account.json") ||
+        !std::filesystem::exists(account_path / "refresh_token") ||
+        std::filesystem::directory_iterator{
+            account_path / "drives"
+        } == std::filesystem::directory_iterator{}) {
+        return fail("authentication did not initialize account state");
+    }
 
     const auto logout = run_application(
         runtime_factory,
@@ -453,7 +566,7 @@ int main() {
         }
     );
     if (logout.exit_code != 0 ||
-        !logout.standard_output.contains("No saved authentication") ||
+        !logout.standard_output.contains("Saved authentication removed") ||
         runtime_factory.token_store_count != 1) {
         return fail("logout did not accept a subcommand configuration path");
     }
@@ -466,6 +579,17 @@ int main() {
         if (!contents.contains("Removing locally saved authentication")) {
             return fail("configured log file did not receive application logs");
         }
+    }
+    if (run_application(
+            runtime_factory,
+            {
+                "onedrive-cpp",
+                "auth",
+                "--config",
+                config_path.string(),
+            }
+        ).exit_code != 0) {
+        return fail("reauthentication did not restore account state");
     }
 
     const auto reset_state = run_application(
@@ -481,7 +605,7 @@ int main() {
     );
     if (reset_state.exit_code != 0 ||
         !reset_state.standard_output.contains(
-            "Reset synchronization cursor for drive 'me': saved cursor removed"
+            "Reset synchronization cursor for drive 'drive-id': saved cursor removed"
         ) ||
         !reset_state.standard_output.contains(
             "Item snapshots, pending downloads, and blocked items were preserved"
@@ -492,8 +616,8 @@ int main() {
         runtime_factory.item_store_count != 1 ||
         runtime_factory.item_store_open_count != 1 ||
         runtime_factory.item_store_reset_count != 1 ||
-        runtime_factory.reset_drive_id != "me" ||
-        runtime_factory.graph_client_count != 0 ||
+        runtime_factory.reset_drive_id != "drive-id" ||
+        runtime_factory.graph_client_count != 1 ||
         runtime_factory.metrics_count != 0) {
         return fail("reset-state command was not dispatched to the item store");
     }
@@ -504,7 +628,7 @@ int main() {
             std::istreambuf_iterator<char>{}
         };
         if (!contents.contains(
-                "Synchronization cursor reset completed for drive 'me': saved "
+                "Synchronization cursor reset completed for drive 'drive-id': saved "
                 "cursor removed; item snapshots, pending downloads, and blocked "
                 "items preserved; next sync will use an initial delta query"
             )) {
@@ -542,7 +666,7 @@ int main() {
             "--log-file",
             log_path.string(),
         },
-        "me\n"
+        "drive-id\n"
     );
     if (confirmed_clear.exit_code != 0 ||
         !confirmed_clear.standard_output.contains(
@@ -552,7 +676,7 @@ int main() {
             "Local files were not deleted"
         ) ||
         runtime_factory.clear_count_ != 1 ||
-        runtime_factory.clear_drive_id_ != "me" ||
+        runtime_factory.clear_drive_id_ != "drive-id" ||
         runtime_factory.item_store_count != 2 ||
         runtime_factory.item_store_open_count != 2) {
         return fail("confirmed full state clear was not executed");
@@ -604,7 +728,7 @@ int main() {
         runtime_factory.item_store_count != 4 ||
         runtime_factory.item_store_open_count != 4 ||
         runtime_factory.item_store_apply_delta_count != 0 ||
-        runtime_factory.graph_client_count != 1 ||
+        runtime_factory.graph_client_count != 5 ||
         runtime_factory.metrics_count != 1) {
         return fail("sync dry-run command was not parsed or executed");
     }
@@ -615,18 +739,18 @@ int main() {
             std::istreambuf_iterator<char>{}
         };
         if (!contents.contains(
-                "Preparing Microsoft Graph delta query for drive 'me': 0 tracked "
+                "Preparing Microsoft Graph delta query for drive 'drive-id': 0 tracked "
                 "items, saved cursor absent"
             ) ||
             !contents.contains(
-                "Remote delta prepared for drive 'me': 1 upserts, 0 removals"
+                "Remote delta prepared for drive 'drive-id': 1 upserts, 0 removals"
             ) ||
             !contents.contains(
-                "Synchronization plan for drive 'me': 0 directories, 1 "
+                "Synchronization plan for drive 'drive-id': 0 directories, 1 "
                 "downloads, 42 bytes, 0 deferred local removals"
             ) ||
             !contents.contains(
-                "Dry run left synchronization state unchanged for drive 'me'"
+                "Dry run left synchronization state unchanged for drive 'drive-id'"
             ) ||
             !contents.contains("Synchronization dry run completed")) {
             return fail("sync dry-run diagnostics were not written to the log");
@@ -660,9 +784,9 @@ int main() {
             std::istreambuf_iterator<char>{}
         };
         if (!contents.contains(
-                "Remote delta prepared for drive 'me': 1 upserts, 0 removals"
+                "Remote delta prepared for drive 'drive-id': 1 upserts, 0 removals"
             ) ||
-            !contents.contains("Persisting remote delta for drive 'me'") ||
+            !contents.contains("Persisting remote delta for drive 'drive-id'") ||
             !contents.contains("Downloading 'notes.txt' (42 bytes)") ||
             !contents.contains(
                 "Atomically installed 'notes.txt' (42 bytes)"

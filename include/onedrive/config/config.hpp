@@ -21,7 +21,8 @@ struct Config {
     std::string azure_tenant_id{"common"};
     std::string auth_endpoint{"https://login.microsoftonline.com"};
     std::string auth_scope{
-        "Files.ReadWrite Files.ReadWrite.All Sites.ReadWrite.All offline_access"
+        "User.Read Files.ReadWrite Files.ReadWrite.All Sites.ReadWrite.All "
+        "offline_access"
     };
     std::size_t graph_maximum_throttle_retries{4};
     std::chrono::seconds graph_initial_throttle_delay{1};

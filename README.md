@@ -314,7 +314,7 @@ Configuration files use TOML and must declare `config_version = 1`. Unknown
 keys and invalid value types are rejected instead of being silently ignored.
 
 Before running a command, the client secures `state.directory` to owner-only
-`0700`, validates token and SQLite paths, and acquires an exclusive
+`0700`, validates the active account token path, and acquires an exclusive
 `onedrive-cpp.lock` in that directory. A second process using the same state
 directory fails immediately. Existing private state files are tightened to
 `0600` when owned by the current user; symbolic links and files owned by
@@ -348,9 +348,29 @@ download_concurrency = 4
 `download_concurrency` controls how many files can be downloaded at the same
 time. It defaults to `4` and accepts values from `1` through `16`.
 
-Tracked remote IDs, ETags, and local paths are stored in
-`<state.directory>/items.sqlite3`. The database uses SQLite WAL mode and is
-loaded when the application starts.
+State is separated by the stable Microsoft user ID and canonical Drive ID while
+retaining friendly directory names:
+
+```text
+<state.directory>/accounts/<display-name>--<user-id-hash>/
+  account.json
+  avatar.<image-extension>
+  refresh_token
+  drives/<drive-name>--<drive-id-hash>/
+    drive.json
+    items.sqlite3
+```
+
+The account and Drive metadata use stable ID hashes so display-name changes do
+not create a second state tree. The Drive database stores and validates the
+user ID, display name, canonical Drive ID, Drive name, profile-photo MIME type,
+and profile-photo bytes in addition to remote IDs, ETags, and local paths.
+SQLite uses WAL mode.
+
+The former flat `<state.directory>/items.sqlite3` and
+`<state.directory>/refresh_token` layout is intentionally not migrated. Run
+`onedrive-cpp auth` again to initialize the account-based layout and rebuild
+synchronization state.
 
 ### Microsoft authentication
 
@@ -401,15 +421,16 @@ Microsoft's corresponding documentation is:
 Open **API permissions > Add a permission > Microsoft Graph > Delegated
 permissions**.
 
-For a personal OneDrive account, start with the least-privilege delegated
-permission:
+For a personal OneDrive account, configure these delegated permissions:
 
 ```text
+User.Read
 Files.ReadWrite
 ```
 
-The client also requests `offline_access` so Microsoft can issue a refresh
-token. For organizational OneDrive, shared libraries, and SharePoint
+`User.Read` allows the client to identify the signed-in account and download
+its profile photo. The client also requests `offline_access` so Microsoft can
+issue a refresh token. For organizational OneDrive, shared libraries, and SharePoint
 scenarios, add the broader delegated permissions only when required:
 
 ```text
@@ -440,7 +461,7 @@ For an application registered as **Personal Microsoft accounts only**, use:
 application_id = "YOUR_APPLICATION_CLIENT_ID"
 tenant_id = "consumers"
 endpoint = "https://login.microsoftonline.com"
-scopes = ["Files.ReadWrite", "offline_access"]
+scopes = ["User.Read", "Files.ReadWrite", "offline_access"]
 ```
 
 For an application registered as **Any Entra ID Tenant + Personal Microsoft
@@ -451,7 +472,7 @@ accounts**, use `common` even when the user signing in has a personal account:
 application_id = "YOUR_APPLICATION_CLIENT_ID"
 tenant_id = "common"
 endpoint = "https://login.microsoftonline.com"
-scopes = ["Files.ReadWrite", "offline_access"]
+scopes = ["User.Read", "Files.ReadWrite", "offline_access"]
 ```
 
 For a single-tenant organizational application, replace `common` with the
@@ -469,8 +490,9 @@ onedrive-cpp auth
 
 Open the displayed URL, enter the user code, sign in with the account matching
 the registration's supported account type, and review the requested
-permissions. On success, the refresh token is atomically saved to
-`<state.directory>/refresh_token` with owner-only `0600` permissions.
+permissions. On success, the client retrieves the stable user and Drive
+identities plus the profile photo. The refresh token and photo are atomically
+saved under the friendly account state directory with owner-only permissions.
 
 If Microsoft reports that the account is unsupported, verify the selected
 **Supported account types** and use `consumers` for personal-only
@@ -500,7 +522,7 @@ use:
 
 ```toml
 [auth]
-scopes = ["Files.ReadWrite", "offline_access"]
+scopes = ["User.Read", "Files.ReadWrite", "offline_access"]
 ```
 
 After changing scopes, restart `onedrive-cpp auth`; an existing device code
@@ -558,7 +580,7 @@ The `sync` command refreshes the OAuth access token, securely persists a
 rotated refresh token when Microsoft returns one, and obtains the configured
 drive's recursive file tree through paginated Microsoft Graph delta requests.
 The first successful query atomically writes remote metadata and the final
-`deltaLink` to `<state.directory>/items.sqlite3`; later runs reuse that link
+`deltaLink` to the selected account and Drive's `items.sqlite3`; later runs reuse that link
 and retrieve only added, changed, and deleted items. The `deltaLink` advances
 only after every page has been processed successfully, so a partial failure
 does not lose unapplied changes.

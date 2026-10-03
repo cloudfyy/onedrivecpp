@@ -1,5 +1,7 @@
 #pragma once
 
+#include "onedrive/account/account_state.hpp"
+
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -10,6 +12,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace onedrive::auth {
@@ -67,6 +70,7 @@ class GraphClient {
 public:
     virtual ~GraphClient() = default;
 
+    [[nodiscard]] virtual account::DriveIdentity drive_identity() const = 0;
     [[nodiscard]] virtual std::vector<RemoteItem> list_root() const = 0;
     [[nodiscard]] virtual DeltaResult list_delta(
         const std::optional<std::string>& delta_link,
@@ -92,6 +96,7 @@ public:
     );
     ~MicrosoftGraphClient() override;
 
+    [[nodiscard]] account::DriveIdentity drive_identity() const override;
     [[nodiscard]] std::vector<RemoteItem> list_root() const override;
     [[nodiscard]] DeltaResult list_delta(
         const std::optional<std::string>& delta_link,
@@ -115,5 +120,11 @@ private:
 
     [[nodiscard]] std::string access_token() const;
 };
+
+[[nodiscard]] account::DriveIdentity fetch_drive_identity(
+    const http::HttpTransport& transport,
+    std::string_view access_token,
+    GraphOptions options = {}
+);
 
 }  // namespace onedrive::graph

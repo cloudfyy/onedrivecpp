@@ -41,6 +41,19 @@ int fail(const std::string& message) {
     return EXIT_FAILURE;
 }
 
+onedrive::account::DriveIdentity identity() {
+    return {
+        .user_id = "user-id",
+        .user_display_name = "Test User",
+        .drive_id = "me",
+        .drive_name = "Test Drive",
+        .photo = onedrive::account::ProfilePhoto{
+            .content_type = "image/jpeg",
+            .bytes = {1, 2, 3, 4},
+        },
+    };
+}
+
 bool create_version_four_database(const std::filesystem::path& path) {
     sqlite3* database = nullptr;
     if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
@@ -72,13 +85,55 @@ bool create_version_four_database(const std::filesystem::path& path) {
     return succeeded;
 }
 
+bool identity_row_is_valid(const std::filesystem::path& path) {
+    sqlite3* database = nullptr;
+    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
+        sqlite3_close(database);
+        return false;
+    }
+    sqlite3_stmt* statement = nullptr;
+    const bool prepared = sqlite3_prepare_v2(
+        database,
+        "SELECT user_id, user_display_name, drive_id, drive_name, "
+        "avatar_content_type, length(avatar_bytes) FROM identity "
+        "WHERE singleton = 1;",
+        -1,
+        &statement,
+        nullptr
+    ) == SQLITE_OK;
+    const bool valid =
+        prepared && sqlite3_step(statement) == SQLITE_ROW &&
+        std::string{
+            reinterpret_cast<const char*>(sqlite3_column_text(statement, 0))
+        } == "user-id" &&
+        std::string{
+            reinterpret_cast<const char*>(sqlite3_column_text(statement, 1))
+        } == "Test User" &&
+        std::string{
+            reinterpret_cast<const char*>(sqlite3_column_text(statement, 2))
+        } == "me" &&
+        std::string{
+            reinterpret_cast<const char*>(sqlite3_column_text(statement, 3))
+        } == "Test Drive" &&
+        std::string{
+            reinterpret_cast<const char*>(sqlite3_column_text(statement, 4))
+        } == "image/jpeg" &&
+        sqlite3_column_int(statement, 5) == 4;
+    sqlite3_finalize(statement);
+    sqlite3_close(database);
+    return valid;
+}
+
 }  // namespace
 
 int main() {
     TemporaryDirectory temporary_directory;
 
     {
-        onedrive::storage::ItemDatabase database{temporary_directory.path()};
+        onedrive::storage::ItemDatabase database{
+            temporary_directory.path(),
+            identity()
+        };
         database.open();
         const auto database_permissions =
             std::filesystem::status(
@@ -136,7 +191,10 @@ int main() {
     }
 
     {
-        onedrive::storage::ItemDatabase database{temporary_directory.path()};
+        onedrive::storage::ItemDatabase database{
+            temporary_directory.path(),
+            identity()
+        };
         database.open();
 
         const auto* first = database.find("", "remote-1");
@@ -206,7 +264,10 @@ int main() {
     }
 
     {
-        onedrive::storage::ItemDatabase database{temporary_directory.path()};
+        onedrive::storage::ItemDatabase database{
+            temporary_directory.path(),
+            identity()
+        };
         database.open();
         if (database.size() != 2 || database.find("me", "remote-3") != nullptr ||
             database.delta_link("me") !=
@@ -316,7 +377,10 @@ int main() {
     }
 
     {
-        onedrive::storage::ItemDatabase database{temporary_directory.path()};
+        onedrive::storage::ItemDatabase database{
+            temporary_directory.path(),
+            identity()
+        };
         database.open();
         if (database.size() != 4 ||
             database.find("me", "reset-me") == nullptr ||
@@ -395,6 +459,22 @@ int main() {
     if (!std::filesystem::exists(temporary_directory.path() / "items.sqlite3")) {
         return fail("SQLite state database was not created");
     }
+    if (!identity_row_is_valid(
+            temporary_directory.path() / "items.sqlite3"
+        )) {
+        return fail("account identity and avatar were not saved");
+    }
+    auto mismatched_identity = identity();
+    mismatched_identity.user_id = "different-user";
+    try {
+        onedrive::storage::ItemDatabase database{
+            temporary_directory.path(),
+            std::move(mismatched_identity)
+        };
+        database.open();
+        return fail("mismatched account identity was accepted");
+    } catch (const std::runtime_error&) {
+    }
 
     const auto migration_directory =
         temporary_directory.path() / "version-four";
@@ -405,7 +485,10 @@ int main() {
         return fail("version four migration fixture could not be created");
     }
     {
-        onedrive::storage::ItemDatabase database{migration_directory};
+        onedrive::storage::ItemDatabase database{
+            migration_directory,
+            identity()
+        };
         database.open();
         database.apply_delta({
             .drive_id = "me",
@@ -426,7 +509,10 @@ int main() {
         }
     }
     {
-        onedrive::storage::ItemDatabase database{migration_directory};
+        onedrive::storage::ItemDatabase database{
+            migration_directory,
+            identity()
+        };
         database.open();
         if (database.blocked_items("me").size() != 1 ||
             database.blocked_items("me")[0].remote_id !=

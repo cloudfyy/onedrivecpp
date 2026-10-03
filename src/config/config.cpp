@@ -171,7 +171,8 @@ Config Config::defaults() {
         .azure_tenant_id = "common",
         .auth_endpoint = "https://login.microsoftonline.com",
         .auth_scope =
-            "Files.ReadWrite Files.ReadWrite.All Sites.ReadWrite.All offline_access",
+            "User.Read Files.ReadWrite Files.ReadWrite.All Sites.ReadWrite.All "
+            "offline_access",
         .graph_maximum_throttle_retries = 4,
         .graph_initial_throttle_delay = std::chrono::seconds{1},
         .graph_maximum_throttle_delay = std::chrono::seconds{300},

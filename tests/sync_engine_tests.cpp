@@ -50,6 +50,16 @@ private:
 
 class FakeGraphClient final : public onedrive::graph::GraphClient {
 public:
+    [[nodiscard]] onedrive::account::DriveIdentity drive_identity()
+        const override {
+        return {
+            .user_id = "user-id",
+            .user_display_name = "Test User",
+            .drive_id = "drive-id",
+            .drive_name = "Test Drive",
+        };
+    }
+
     [[nodiscard]] std::vector<onedrive::graph::RemoteItem> list_root() const override {
         return {};
     }

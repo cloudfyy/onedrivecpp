@@ -85,6 +85,29 @@ void bind_integer(
     }
 }
 
+void bind_blob(
+    sqlite3* database,
+    sqlite3_stmt* statement,
+    int index,
+    const std::vector<std::uint8_t>& value
+) {
+    const int result =
+        value.empty() ?
+            sqlite3_bind_zeroblob64(statement, index, 0) :
+            sqlite3_bind_blob64(
+                statement,
+                index,
+                value.data(),
+                static_cast<sqlite3_uint64>(value.size()),
+                SQLITE_TRANSIENT
+            );
+    if (result != SQLITE_OK) {
+        throw std::runtime_error(
+            "cannot bind SQLite blob: " + std::string{sqlite3_errmsg(database)}
+        );
+    }
+}
+
 std::string column_text(sqlite3_stmt* statement, int column) {
     const auto* value = sqlite3_column_text(statement, column);
     return value == nullptr ? std::string{} :
@@ -159,6 +182,21 @@ void create_blocked_item_schema(sqlite3* database) {
     );
 }
 
+void create_identity_schema(sqlite3* database) {
+    execute(
+        database,
+        "CREATE TABLE IF NOT EXISTS identity ("
+        "singleton INTEGER PRIMARY KEY NOT NULL CHECK (singleton = 1),"
+        "user_id TEXT NOT NULL,"
+        "user_display_name TEXT NOT NULL,"
+        "drive_id TEXT NOT NULL,"
+        "drive_name TEXT NOT NULL,"
+        "avatar_content_type TEXT NOT NULL,"
+        "avatar_bytes BLOB NOT NULL"
+        ");"
+    );
+}
+
 void create_current_schema(sqlite3* database) {
     execute(
         database,
@@ -198,7 +236,8 @@ void create_current_schema(sqlite3* database) {
         ");"
     );
     create_blocked_item_schema(database);
-    execute(database, "PRAGMA user_version = 5;");
+    create_identity_schema(database);
+    execute(database, "PRAGMA user_version = 6;");
 }
 
 void migrate_schema(sqlite3* database) {
@@ -256,7 +295,8 @@ void migrate_schema(sqlite3* database) {
             "PRAGMA user_version = 4;"
         );
         create_blocked_item_schema(database);
-        execute(database, "PRAGMA user_version = 5;");
+        create_identity_schema(database);
+        execute(database, "PRAGMA user_version = 6;");
         transaction.commit();
         return;
     }
@@ -285,7 +325,8 @@ void migrate_schema(sqlite3* database) {
             "PRAGMA user_version = 4;"
         );
         create_blocked_item_schema(database);
-        execute(database, "PRAGMA user_version = 5;");
+        create_identity_schema(database);
+        execute(database, "PRAGMA user_version = 6;");
         transaction.commit();
         return;
     }
@@ -311,18 +352,27 @@ void migrate_schema(sqlite3* database) {
             "PRAGMA user_version = 4;"
         );
         create_blocked_item_schema(database);
-        execute(database, "PRAGMA user_version = 5;");
+        create_identity_schema(database);
+        execute(database, "PRAGMA user_version = 6;");
         transaction.commit();
         return;
     }
     if (version == 4) {
         Transaction transaction{database};
         create_blocked_item_schema(database);
-        execute(database, "PRAGMA user_version = 5;");
+        create_identity_schema(database);
+        execute(database, "PRAGMA user_version = 6;");
         transaction.commit();
         return;
     }
-    if (version != 5) {
+    if (version == 5) {
+        Transaction transaction{database};
+        create_identity_schema(database);
+        execute(database, "PRAGMA user_version = 6;");
+        transaction.commit();
+        return;
+    }
+    if (version != 6) {
         throw std::runtime_error(
             "unsupported state database schema version " + std::to_string(version)
         );
@@ -342,13 +392,24 @@ struct ItemDatabase::Impl {
     std::unique_ptr<sqlite3, DatabaseCloser> database;
 };
 
-ItemDatabase::ItemDatabase(std::filesystem::path state_directory)
-    : state_directory_{std::move(state_directory)}, impl_{std::make_unique<Impl>()} {}
+ItemDatabase::ItemDatabase(
+    std::filesystem::path state_directory,
+    account::DriveIdentity identity
+)
+    : state_directory_{std::move(state_directory)},
+      identity_{std::move(identity)},
+      impl_{std::make_unique<Impl>()} {}
 
 ItemDatabase::~ItemDatabase() = default;
 
 void ItemDatabase::open() {
     spdlog::debug("Opening synchronization state database");
+    if (identity_.user_id.empty() || identity_.user_display_name.empty() ||
+        identity_.drive_id.empty() || identity_.drive_name.empty()) {
+        throw std::invalid_argument(
+            "state database requires a complete account and drive identity"
+        );
+    }
     std::filesystem::create_directories(state_directory_);
     items_.clear();
     blocked_items_.clear();
@@ -381,6 +442,61 @@ void ItemDatabase::open() {
 
     execute(database, "PRAGMA journal_mode = WAL;");
     migrate_schema(database);
+
+    Statement identity_query{
+        database,
+        "SELECT user_id, drive_id FROM identity WHERE singleton = 1;"
+    };
+    const int identity_result = sqlite3_step(identity_query.get());
+    if (identity_result == SQLITE_ROW &&
+        (column_text(identity_query.get(), 0) != identity_.user_id ||
+         column_text(identity_query.get(), 1) != identity_.drive_id)) {
+        throw std::runtime_error(
+            "state database identity does not match the current Microsoft "
+            "account and drive"
+        );
+    }
+    if (identity_result != SQLITE_ROW && identity_result != SQLITE_DONE) {
+        throw std::runtime_error(
+            "cannot read state database identity: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+    const std::string avatar_content_type =
+        identity_.photo ? identity_.photo->content_type : "";
+    const std::vector<std::uint8_t> avatar_bytes =
+        identity_.photo ? identity_.photo->bytes : std::vector<std::uint8_t>{};
+    Statement identity_upsert{
+        database,
+        "INSERT INTO identity ("
+        "singleton, user_id, user_display_name, drive_id, drive_name, "
+        "avatar_content_type, avatar_bytes"
+        ") VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6) "
+        "ON CONFLICT(singleton) DO UPDATE SET "
+        "user_display_name = excluded.user_display_name, "
+        "drive_name = excluded.drive_name, "
+        "avatar_content_type = CASE WHEN length(excluded.avatar_bytes) > 0 "
+        "THEN excluded.avatar_content_type ELSE identity.avatar_content_type END, "
+        "avatar_bytes = CASE WHEN length(excluded.avatar_bytes) > 0 "
+        "THEN excluded.avatar_bytes ELSE identity.avatar_bytes END;"
+    };
+    bind_text(database, identity_upsert.get(), 1, identity_.user_id);
+    bind_text(
+        database,
+        identity_upsert.get(),
+        2,
+        identity_.user_display_name
+    );
+    bind_text(database, identity_upsert.get(), 3, identity_.drive_id);
+    bind_text(database, identity_upsert.get(), 4, identity_.drive_name);
+    bind_text(database, identity_upsert.get(), 5, avatar_content_type);
+    bind_blob(database, identity_upsert.get(), 6, avatar_bytes);
+    if (sqlite3_step(identity_upsert.get()) != SQLITE_DONE) {
+        throw std::runtime_error(
+            "cannot update state database identity: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
 
     Statement query{
         database,

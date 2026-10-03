@@ -44,6 +44,7 @@ set(
 )
 
 add_library(onedrive_core
+    src/account/account_state.cpp
     src/app/application.cpp
     src/app/runtime_preflight.cpp
     src/app/runtime_factory.cpp
@@ -116,6 +117,10 @@ install(
 
 if(BUILD_TESTING)
     find_program(BASH_EXECUTABLE bash REQUIRED)
+
+    add_executable(account_state_tests tests/account_state_tests.cpp)
+    target_link_libraries(account_state_tests PRIVATE onedrive_core)
+    add_test(NAME account_state_tests COMMAND account_state_tests)
 
     add_executable(config_tests tests/config_tests.cpp)
     target_link_libraries(config_tests PRIVATE onedrive_core)

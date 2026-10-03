@@ -1,5 +1,6 @@
 #include "onedrive/app/runtime_factory.hpp"
 
+#include "onedrive/account/account_state.hpp"
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
 #include "onedrive/config/config.hpp"
@@ -37,7 +38,9 @@ ProductionRuntimeFactory::create_device_auth_client(
 std::unique_ptr<auth::TokenStore> ProductionRuntimeFactory::create_token_store(
     const config::Config& config
 ) const {
-    return std::make_unique<auth::FileTokenStore>(config.state_directory);
+    return std::make_unique<auth::FileTokenStore>(
+        account::AccountState::active_token_directory(config.state_directory)
+    );
 }
 
 std::unique_ptr<graph::GraphClient> ProductionRuntimeFactory::create_graph_client(
@@ -64,9 +67,15 @@ std::unique_ptr<graph::GraphClient> ProductionRuntimeFactory::create_graph_clien
 }
 
 std::unique_ptr<storage::ItemStore> ProductionRuntimeFactory::create_item_store(
-    const config::Config& config
+    const config::Config& config,
+    const account::DriveIdentity& identity
 ) const {
-    return std::make_unique<storage::ItemDatabase>(config.state_directory);
+    const auto paths =
+        account::AccountState::prepare(config.state_directory, identity);
+    return std::make_unique<storage::ItemDatabase>(
+        paths.drive_directory,
+        identity
+    );
 }
 
 std::unique_ptr<monitor::FileMonitor> ProductionRuntimeFactory::create_monitor(

@@ -14,7 +14,8 @@ struct DeviceAuthOptions {
     std::string tenant_id{"common"};
     std::string auth_endpoint{"https://login.microsoftonline.com"};
     std::string scope{
-        "Files.ReadWrite Files.ReadWrite.All Sites.ReadWrite.All offline_access"
+        "User.Read Files.ReadWrite Files.ReadWrite.All Sites.ReadWrite.All "
+        "offline_access"
     };
 };
 

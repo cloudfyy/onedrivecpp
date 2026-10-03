@@ -191,6 +191,136 @@ MicrosoftGraphClient::MicrosoftGraphClient(
 
 MicrosoftGraphClient::~MicrosoftGraphClient() = default;
 
+account::DriveIdentity fetch_drive_identity(
+    const http::HttpTransport& transport,
+    std::string_view access_token,
+    GraphOptions options
+) {
+    options.endpoint = normalized_endpoint(std::move(options.endpoint));
+    if (access_token.empty() || !options.endpoint.starts_with("https://") ||
+        options.drive_id.empty()) {
+        throw std::invalid_argument(
+            "Microsoft Graph identity query requires a token, HTTPS endpoint, "
+            "and drive ID"
+        );
+    }
+    const auto request_json = [&](const std::string& url, std::string_view name) {
+        const auto response = transport.perform(http::HttpRequest{
+            .method = http::HttpMethod::get,
+            .url = url,
+            .headers = {
+                "Accept: application/json",
+                "Authorization: Bearer " + std::string{access_token},
+            },
+            .body = {},
+            .connect_timeout = std::chrono::seconds{30},
+            .operation_timeout = std::chrono::seconds{60},
+            .maximum_response_size = 1024U * 1024U,
+        });
+        if (!response) {
+            throw std::runtime_error(
+                "Microsoft Graph " + std::string{name} +
+                " request failed: " + response.error().message
+            );
+        }
+        Json json;
+        try {
+            json = Json::parse(response->body);
+        } catch (const Json::exception& error) {
+            throw std::runtime_error(
+                "Microsoft Graph returned invalid " + std::string{name} +
+                " JSON: " + error.what()
+            );
+        }
+        if (response->status_code < 200 || response->status_code >= 300) {
+            throw std::runtime_error(
+                "Microsoft Graph " + std::string{name} + " query failed: " +
+                graph_error_message(json, response->status_code)
+            );
+        }
+        return json;
+    };
+
+    const auto user = request_json(
+        options.endpoint + "/me?$select=id,displayName",
+        "user identity"
+    );
+    const auto drive_url =
+        options.drive_id == "me" ?
+            options.endpoint + "/me/drive?$select=id,name" :
+            options.endpoint + "/drives/" + percent_encode(options.drive_id) +
+                "?$select=id,name";
+    const auto drive = request_json(drive_url, "drive identity");
+
+    account::DriveIdentity identity;
+    try {
+        identity.user_id = user.at("id").get<std::string>();
+        identity.user_display_name =
+            user.at("displayName").get<std::string>();
+        identity.drive_id = drive.at("id").get<std::string>();
+        identity.drive_name = drive.value("name", std::string{"OneDrive"});
+    } catch (const Json::exception& error) {
+        throw std::runtime_error(
+            "Microsoft Graph identity response is missing required data: " +
+            std::string{error.what()}
+        );
+    }
+    if (identity.user_id.empty() || identity.user_display_name.empty() ||
+        identity.drive_id.empty()) {
+        throw std::runtime_error(
+            "Microsoft Graph returned an incomplete user or drive identity"
+        );
+    }
+    if (identity.drive_name.empty()) {
+        identity.drive_name = "OneDrive";
+    }
+
+    const auto photo = transport.perform(http::HttpRequest{
+        .method = http::HttpMethod::get,
+        .url = options.endpoint + "/me/photo/$value",
+        .headers = {
+            "Accept: image/*",
+            "Authorization: Bearer " + std::string{access_token},
+        },
+        .body = {},
+        .connect_timeout = std::chrono::seconds{30},
+        .operation_timeout = std::chrono::seconds{60},
+        .maximum_response_size = 8U * 1024U * 1024U,
+    });
+    if (!photo) {
+        throw std::runtime_error(
+            "Microsoft Graph profile photo request failed: " +
+            photo.error().message
+        );
+    }
+    if (photo->status_code == 404) {
+        spdlog::debug("Microsoft account has no profile photo");
+    } else if (photo->status_code >= 200 && photo->status_code < 300) {
+        const auto content_type =
+            header_value(*photo, "Content-Type").value_or("image/jpeg");
+        if (!content_type.starts_with("image/")) {
+            throw std::runtime_error(
+                "Microsoft Graph profile photo has an invalid content type"
+            );
+        }
+        identity.photo = account::ProfilePhoto{
+            .content_type = content_type,
+            .bytes = std::vector<std::uint8_t>{
+                photo->body.begin(),
+                photo->body.end()
+            },
+        };
+    } else {
+        throw std::runtime_error(
+            std::format(
+                "Microsoft Graph profile photo query failed with HTTP {}",
+                photo->status_code
+            )
+        );
+    }
+    return identity;
+}
+
 std::string MicrosoftGraphClient::access_token() const {
     const std::scoped_lock lock{access_token_mutex_};
     constexpr auto expiry_margin = std::chrono::minutes{1};
@@ -221,6 +351,10 @@ std::string MicrosoftGraphClient::access_token() const {
     access_token_expires_at_ = tokens->expires_at;
     spdlog::debug("Microsoft access token refreshed");
     return cached_access_token_;
+}
+
+account::DriveIdentity MicrosoftGraphClient::drive_identity() const {
+    return fetch_drive_identity(*transport_, access_token(), options_);
 }
 
 std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
