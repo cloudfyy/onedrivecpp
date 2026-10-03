@@ -62,7 +62,7 @@ The directories correspond to the responsibilities of
 - Clang 20 with `-std=c++2c` / CMake `CXX_STANDARD 26`.
 - CMake 3.28 or later.
 - Development packages for CLI11, libcurl/OpenSSL, nlohmann/json, spdlog/fmt,
-  and SQLite from the system package manager.
+  SQLite, and toml++ from the system package manager.
 
 Ubuntu 24.04 provides the required CMake, Ninja, and Clang 20 packages through
 its official repositories. GCC 13 is not used because its C++26 support is not

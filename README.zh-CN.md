@@ -57,7 +57,7 @@ SQLite、monitor、Graph 和 metrics 适配器；测试则注入内存 fake。�
 - Clang 20，使用 `-std=c++2c`/CMake `CXX_STANDARD 26`。
 - CMake 3.28 或更高版本。
 - 使用系统包管理器提供 CLI11、libcurl/OpenSSL、nlohmann/json、
-  spdlog/fmt 和 SQLite 开发包。
+  spdlog/fmt、SQLite 和 toml++ 开发包。
 
 Ubuntu 24.04 的官方仓库已经提供项目所需的 CMake、Ninja 和 Clang 20。
 项目不使用默认的 GCC 13，因为它的 C++26 支持不足以满足当前配置。
