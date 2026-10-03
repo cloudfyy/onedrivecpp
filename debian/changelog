@@ -1,3 +1,11 @@
+onedrive-cpp (0.4.0-1) unstable; urgency=medium
+
+  * Migrate configuration to strict, grouped TOML.
+  * Add command-aware startup checks and single-process state locking.
+  * Harden token, SQLite, synchronization-path, and disk-capacity handling.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sat, 03 Oct 2026 00:04:36 +0000
+
 onedrive-cpp (0.3.0-1) unstable; urgency=medium
 
   * Add safe one-way synchronization with atomic downloads and recovery.
