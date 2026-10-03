@@ -1,6 +1,7 @@
 #include "download_recovery.hpp"
 
 #include "local_filesystem.hpp"
+#include "onedrive/remote_time.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -71,12 +72,15 @@ void validate_pending_download(
             }
         );
     if (download.item.directory || download.item.size < 0 ||
-        !valid_fingerprint) {
+        download.item.last_modified.empty() || !valid_fingerprint) {
         throw std::runtime_error(
             "pending download journal contains invalid metadata for '" +
             download.item.remote_path + "'"
         );
     }
+    static_cast<void>(
+        parse_remote_modified_time(download.item.last_modified)
+    );
 }
 
 }  // namespace

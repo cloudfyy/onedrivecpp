@@ -3,6 +3,7 @@
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
 #include "onedrive/http/http_client.hpp"
+#include "onedrive/remote_time.hpp"
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -268,6 +269,54 @@ std::string item_remote_path(const Json& value, const std::string& name) {
         relative_parent.erase(relative_parent.begin());
     }
     return relative_parent.empty() ? name : relative_parent + '/' + name;
+}
+
+std::optional<std::string> file_system_last_modified(
+    const Json& value,
+    std::string_view description
+) {
+    const auto file_system_info = value.find("fileSystemInfo");
+    if (file_system_info == value.end()) {
+        return std::nullopt;
+    }
+    if (!file_system_info->is_object()) {
+        throw std::runtime_error(
+            "Microsoft Graph returned an invalid " +
+            std::string{description} + " fileSystemInfo facet"
+        );
+    }
+    const auto modified = file_system_info->find("lastModifiedDateTime");
+    if (modified == file_system_info->end()) {
+        return std::nullopt;
+    }
+    if (!modified->is_string() ||
+        modified->get_ref<const std::string&>().empty()) {
+        throw std::runtime_error(
+            "Microsoft Graph returned an invalid " +
+            std::string{description} +
+            " fileSystemInfo.lastModifiedDateTime"
+        );
+    }
+    auto timestamp = modified->get<std::string>();
+    static_cast<void>(parse_remote_modified_time(timestamp));
+    return timestamp;
+}
+
+std::optional<std::string> authoritative_last_modified(const Json& value) {
+    const auto remote_item = value.find("remoteItem");
+    if (remote_item != value.end()) {
+        if (!remote_item->is_object()) {
+            throw std::runtime_error(
+                "Microsoft Graph returned an invalid remoteItem facet"
+            );
+        }
+        if (auto modified =
+                file_system_last_modified(*remote_item, "remoteItem");
+            modified.has_value()) {
+            return modified;
+        }
+    }
+    return file_system_last_modified(value, "drive item");
 }
 
 std::optional<FileHash> item_content_hash(const Json& value) {
@@ -878,9 +927,9 @@ DeltaResult MicrosoftGraphClient::list_delta(
                             item.parent_id = parent_id->get<std::string>();
                         }
                     }
-                    if (const auto modified = value.find("lastModifiedDateTime");
-                        modified != value.end() && modified->is_string()) {
-                        item.last_modified = modified->get<std::string>();
+                    if (auto modified = authoritative_last_modified(value);
+                        modified.has_value()) {
+                        item.last_modified = std::move(modified.value());
                     }
                     if (const auto size = value.find("size");
                         size != value.end() && size->is_number_integer()) {
@@ -891,6 +940,12 @@ DeltaResult MicrosoftGraphClient::list_delta(
                         (!item.root && item.remote_path.empty()) || item.size < 0) {
                         throw std::runtime_error(
                             "Microsoft Graph returned a delta item with invalid metadata"
+                        );
+                    }
+                    if (!item.directory && item.last_modified.empty()) {
+                        throw std::runtime_error(
+                            "Microsoft Graph delta file is missing "
+                            "fileSystemInfo.lastModifiedDateTime"
                         );
                     }
                 }

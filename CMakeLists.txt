@@ -90,6 +90,7 @@ add_library(onedrive_core
     src/logging/logging.cpp
     src/metrics/metrics.cpp
     src/monitor/monitor.cpp
+    src/remote_time.cpp
     src/storage/item_database.cpp
     src/sync/download_integrity.cpp
     src/sync/download_recovery.cpp
