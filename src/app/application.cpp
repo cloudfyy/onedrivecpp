@@ -293,7 +293,7 @@ int Application::run(int argc, char* argv[]) {
                 identity.configured_drive_id.empty() ?
                     identity.drive_id :
                     identity.configured_drive_id;
-            const auto warning_drive =
+            const auto display_drive =
                 confirmation_drive_reference == identity.drive_id ?
                     "'" + identity.drive_id + "'" :
                     "'" + confirmation_drive_reference + "' (" +
@@ -304,7 +304,7 @@ int Application::run(int argc, char* argv[]) {
                     "full_state_clear_warning",
                     "WARNING: This will remove all saved item snapshots, the "
                     "Delta cursor, and pending-download recovery records for "
-                    "drive " + warning_drive + "."
+                    "drive " + display_drive + "."
                 );
                 console.message(
                     cli::MessageKind::warning,
@@ -364,10 +364,10 @@ int Application::run(int argc, char* argv[]) {
                     cli::MessageKind::success,
                     "full_state_clear_completed",
                     std::format(
-                        "Cleared all synchronization state for drive '{}': {} "
+                        "Cleared all synchronization state for drive {}: {} "
                         "item snapshots, {} pending downloads, and {} blocked "
                         "items removed; saved cursor {}.",
-                        config.drive_id,
+                        display_drive,
                         cleared.items,
                         cleared.pending_downloads,
                         cleared.blocked_items,
@@ -399,8 +399,8 @@ int Application::run(int argc, char* argv[]) {
             console.message(
                 cli::MessageKind::success,
                 "state_cursor_reset",
-                "Reset synchronization cursor for drive '" + config.drive_id +
-                    "': saved cursor " +
+                "Reset synchronization cursor for drive " + display_drive +
+                    ": saved cursor " +
                     (removed ? "removed" : "not present") + "."
             );
             console.message(

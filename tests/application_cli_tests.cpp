@@ -627,7 +627,8 @@ int main() {
     );
     if (reset_state.exit_code != 0 ||
         !reset_state.standard_output.contains(
-            "Reset synchronization cursor for drive 'drive-id': saved cursor removed"
+            "Reset synchronization cursor for drive 'me' (drive-id): saved "
+            "cursor removed"
         ) ||
         !reset_state.standard_output.contains(
             "Item snapshots, pending downloads, and blocked items were preserved"
@@ -697,6 +698,9 @@ int main() {
         ) ||
         !confirmed_clear.standard_output.contains(
             "7 item snapshots, 2 pending downloads, and 3 blocked items removed"
+        ) ||
+        !confirmed_clear.standard_output.contains(
+            "Cleared all synchronization state for drive 'me' (drive-id)"
         ) ||
         !confirmed_clear.standard_output.contains(
             "Local files were not deleted"
