@@ -41,6 +41,11 @@ This keeps business orchestration independent of infrastructure and leaves a
 stable metrics port for a future Linux metrics exporter.
 Runtime ports use Proxy 4 type erasure, so adapters satisfy the required
 operations without inheriting from project-owned abstract base classes.
+The SQLite ItemStore owns a dedicated database thread. Calls from download,
+monitor, and future upload workers are queued and completed synchronously, so
+one thread owns the SQLite connection and transaction order while errors are
+returned to the caller. SQLite is the authoritative state source; the adapter
+does not maintain duplicate mutable item caches.
 
 The directories correspond to the responsibilities of
 `main/config/curlEngine/onedrive/sync/itemdb/monitor` in the reference project:

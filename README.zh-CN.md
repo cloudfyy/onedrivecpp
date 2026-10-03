@@ -36,6 +36,9 @@ SQLite、monitor、Graph 和 metrics 适配器；测试则注入内存 fake。�
 不再依赖基础设施实现，并为后续 Linux metrics exporter 保留稳定端口。
 运行时端口使用 Proxy 4 类型擦除，因此适配器只需满足所需操作，无需继承项目
 定义的抽象基类。
+SQLite ItemStore 拥有专用数据库线程。下载、监控和未来上传工作线程发起的调用
+都会排队并同步等待完成，因此 SQLite 连接和事务顺序始终由一个线程负责，错误
+则返回给调用方。SQLite 是状态的权威来源，适配器不再维护重复的可变条目缓存。
 
 目录与参考项目中的 `main/config/curlEngine/onedrive/sync/itemdb/monitor`
 职责相对应：

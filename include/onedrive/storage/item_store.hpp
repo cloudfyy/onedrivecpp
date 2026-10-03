@@ -110,7 +110,7 @@ struct ItemStoreFacade : pro::facade_builder
             const std::string&
         ) const
     >
-    ::add_convention<StoreSizeDispatch, std::size_t() const noexcept>
+    ::add_convention<StoreSizeDispatch, std::size_t() const>
     ::build {};
 
 class ItemStore : private detail::ProxyService<ItemStoreFacade> {
@@ -175,7 +175,7 @@ public:
         return implementation()->find(drive_id, remote_id);
     }
 
-    [[nodiscard]] std::size_t size() const noexcept {
+    [[nodiscard]] std::size_t size() const {
         return implementation()->size();
     }
 };

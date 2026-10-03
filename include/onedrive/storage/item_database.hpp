@@ -6,7 +6,6 @@
 #include <filesystem>
 #include <memory>
 #include <string>
-#include <unordered_map>
 
 namespace onedrive::storage {
 
@@ -46,16 +45,38 @@ public:
         const std::string& drive_id,
         const std::string& remote_id
     ) const;
-    [[nodiscard]] std::size_t size() const noexcept;
+    [[nodiscard]] std::size_t size() const;
 
 private:
     struct Impl;
 
+    void open_on_worker();
+    void upsert_on_worker(const ItemState& item);
+    void apply_delta_on_worker(ItemDelta delta);
+    void save_pending_download_on_worker(const PendingDownload& download);
+    void remove_pending_download_on_worker(
+        const std::string& drive_id,
+        const std::string& remote_id
+    );
+    [[nodiscard]] std::vector<PendingDownload> pending_downloads_on_worker(
+        const std::string& drive_id
+    ) const;
+    [[nodiscard]] std::vector<BlockedItem> blocked_items_on_worker(
+        const std::string& drive_id
+    ) const;
+    bool reset_on_worker(const std::string& drive_id);
+    ClearedState clear_on_worker(const std::string& drive_id);
+    [[nodiscard]] std::optional<std::string> delta_link_on_worker(
+        const std::string& drive_id
+    ) const;
+    [[nodiscard]] std::optional<ItemState> find_on_worker(
+        const std::string& drive_id,
+        const std::string& remote_id
+    ) const;
+    [[nodiscard]] std::size_t size_on_worker() const;
+
     std::filesystem::path state_directory_;
     account::DriveIdentity identity_;
-    std::unordered_map<std::string, ItemState> items_;
-    std::unordered_map<std::string, BlockedItem> blocked_items_;
-    std::unordered_map<std::string, std::string> delta_links_;
     std::unique_ptr<Impl> impl_;
 };
 

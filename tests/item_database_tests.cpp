@@ -4,12 +4,15 @@
 #include <sqlite3.h>
 
 #include <chrono>
+#include <atomic>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
+#include <vector>
 
 namespace {
 
@@ -500,6 +503,60 @@ int main() {
         database.open();
         return fail("mismatched account identity was accepted");
     } catch (const std::runtime_error&) {
+    }
+
+    const auto concurrent_directory =
+        temporary_directory.path() / "concurrent";
+    {
+        onedrive::storage::ItemDatabase database{
+            concurrent_directory,
+            identity()
+        };
+        try {
+            static_cast<void>(database.size());
+            return fail("unopened database query did not propagate its error");
+        } catch (const std::runtime_error&) {
+        }
+        database.open();
+
+        constexpr std::size_t thread_count = 8;
+        constexpr std::size_t items_per_thread = 50;
+        std::atomic_bool succeeded{true};
+        std::vector<std::jthread> workers;
+        workers.reserve(thread_count);
+        for (std::size_t thread = 0; thread < thread_count; ++thread) {
+            workers.emplace_back([&, thread] {
+                try {
+                    for (std::size_t index = 0;
+                         index < items_per_thread;
+                         ++index) {
+                        const auto remote_id =
+                            "thread-" + std::to_string(thread) + "-item-" +
+                            std::to_string(index);
+                        database.upsert({
+                            .drive_id = "concurrent-drive",
+                            .remote_id = remote_id,
+                            .etag = "etag-" + std::to_string(index),
+                            .local_path = remote_id,
+                        });
+                        const auto stored =
+                            database.find("concurrent-drive", remote_id);
+                        if (!stored || stored->remote_id != remote_id) {
+                            succeeded = false;
+                            return;
+                        }
+                    }
+                } catch (...) {
+                    succeeded = false;
+                }
+            });
+        }
+        workers.clear();
+
+        if (!succeeded ||
+            database.size() != thread_count * items_per_thread) {
+            return fail("concurrent ItemDatabase access was not serialized");
+        }
     }
 
     const auto migration_directory =

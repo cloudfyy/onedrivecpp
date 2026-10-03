@@ -4,15 +4,20 @@
 #include <spdlog/spdlog.h>
 #include <gsl/pointers>
 
-#include <algorithm>
 #include <cerrno>
+#include <condition_variable>
 #include <cstring>
+#include <deque>
+#include <functional>
+#include <future>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
-#include <string_view>
 #include <sys/stat.h>
+#include <thread>
+#include <type_traits>
 #include <utility>
 
 namespace onedrive::storage {
@@ -125,13 +130,26 @@ std::string column_text(sqlite3_stmt* statement, int column) {
                               std::string{reinterpret_cast<const char*>(value)};
 }
 
-std::string item_key(std::string_view drive_id, std::string_view remote_id) {
-    std::string key;
-    key.reserve(drive_id.size() + remote_id.size() + 1);
-    key.append(drive_id);
-    key.push_back('\0');
-    key.append(remote_id);
-    return key;
+std::size_t query_count(
+    sqlite3* database,
+    const char* sql,
+    const std::string* value = nullptr
+) {
+    Statement statement{database, sql};
+    if (value != nullptr) {
+        bind_text(database, statement.get(), 1, *value);
+    }
+    if (sqlite3_step(statement.get()) != SQLITE_ROW) {
+        throw std::runtime_error(
+            "cannot count synchronization state rows: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+    const auto count = sqlite3_column_int64(statement.get(), 0);
+    if (count < 0) {
+        throw std::runtime_error("SQLite returned a negative row count");
+    }
+    return static_cast<std::size_t>(count);
 }
 
 class Transaction {
@@ -421,7 +439,82 @@ struct ItemDatabase::Impl {
         }
     };
 
+    Impl()
+        : worker{[this] {
+              run();
+          }} {}
+
+    ~Impl() {
+        {
+            std::lock_guard lock{mutex};
+            stopping = true;
+        }
+        condition.notify_one();
+        worker.join();
+    }
+
+    Impl(const Impl&) = delete;
+    Impl& operator=(const Impl&) = delete;
+    Impl(Impl&&) = delete;
+    Impl& operator=(Impl&&) = delete;
+
+    template <typename Function>
+    auto invoke(Function&& function) {
+        using Result = std::invoke_result_t<Function>;
+
+        std::promise<Result> promise;
+        auto future = promise.get_future();
+        {
+            std::lock_guard lock{mutex};
+            if (stopping) {
+                throw std::runtime_error("state database is shutting down");
+            }
+            commands.emplace_back(
+                [function = std::forward<Function>(function),
+                 promise = std::move(promise)]() mutable {
+                    try {
+                        if constexpr (std::is_void_v<Result>) {
+                            std::invoke(std::move(function));
+                            promise.set_value();
+                        } else {
+                            promise.set_value(
+                                std::invoke(std::move(function))
+                            );
+                        }
+                    } catch (...) {
+                        promise.set_exception(std::current_exception());
+                    }
+                }
+            );
+        }
+        condition.notify_one();
+        return future.get();
+    }
+
+    void run() {
+        while (true) {
+            std::move_only_function<void()> command;
+            {
+                std::unique_lock lock{mutex};
+                condition.wait(lock, [this] {
+                    return stopping || !commands.empty();
+                });
+                if (stopping && commands.empty()) {
+                    return;
+                }
+                command = std::move(commands.front());
+                commands.pop_front();
+            }
+            command();
+        }
+    }
+
     std::unique_ptr<sqlite3, DatabaseCloser> database;
+    std::mutex mutex;
+    std::condition_variable condition;
+    std::deque<std::move_only_function<void()>> commands;
+    bool stopping{false};
+    std::jthread worker;
 };
 
 ItemDatabase::ItemDatabase(
@@ -435,6 +528,12 @@ ItemDatabase::ItemDatabase(
 ItemDatabase::~ItemDatabase() = default;
 
 void ItemDatabase::open() {
+    impl_->invoke([this] {
+        open_on_worker();
+    });
+}
+
+void ItemDatabase::open_on_worker() {
     spdlog::debug("Opening synchronization state database");
     if (identity_.user_id.empty() || identity_.user_display_name.empty() ||
         identity_.configured_drive_id.empty() || identity_.drive_id.empty() ||
@@ -444,9 +543,6 @@ void ItemDatabase::open() {
         );
     }
     std::filesystem::create_directories(state_directory_);
-    items_.clear();
-    blocked_items_.clear();
-    delta_links_.clear();
     impl_->database.reset();
 
     sqlite3* database = nullptr;
@@ -553,109 +649,25 @@ void ItemDatabase::open() {
         );
     }
 
-    Statement query{
-        database,
-        "SELECT drive_id, remote_id, parent_id, name, etag, remote_path, "
-        "local_path, last_modified, size, local_size, local_modified_ticks, "
-        "directory "
-        "FROM item ORDER BY drive_id, remote_id;"
-    };
-    while (true) {
-        const int step_result = sqlite3_step(query.get());
-        if (step_result == SQLITE_DONE) {
-            break;
-        }
-        if (step_result != SQLITE_ROW) {
-            throw std::runtime_error(
-                "cannot read state database: " + std::string{sqlite3_errmsg(database)}
-            );
-        }
-
-        ItemState item{
-            .drive_id = column_text(query.get(), 0),
-            .remote_id = column_text(query.get(), 1),
-            .parent_id = column_text(query.get(), 2),
-            .name = column_text(query.get(), 3),
-            .etag = column_text(query.get(), 4),
-            .remote_path = column_text(query.get(), 5),
-            .local_path = column_text(query.get(), 6),
-            .last_modified = column_text(query.get(), 7),
-            .size = sqlite3_column_int64(query.get(), 8),
-            .local_size = sqlite3_column_int64(query.get(), 9),
-            .local_modified_ticks = sqlite3_column_int64(query.get(), 10),
-            .directory = sqlite3_column_int(query.get(), 11) != 0,
-        };
-        const std::string key = item_key(item.drive_id, item.remote_id);
-        items_.insert_or_assign(key, std::move(item));
-    }
-
-    Statement blocked_query{
-        database,
-        "SELECT drive_id, remote_id, parent_id, name, etag, remote_path, "
-        "last_modified, size, directory, reason_code, reason_message, "
-        "attempt_count FROM blocked_item ORDER BY drive_id, remote_id;"
-    };
-    while (true) {
-        const int step_result = sqlite3_step(blocked_query.get());
-        if (step_result == SQLITE_DONE) {
-            break;
-        }
-        if (step_result != SQLITE_ROW) {
-            throw std::runtime_error(
-                "cannot read blocked synchronization items: " +
-                std::string{sqlite3_errmsg(database)}
-            );
-        }
-        BlockedItem item{
-            .drive_id = column_text(blocked_query.get(), 0),
-            .remote_id = column_text(blocked_query.get(), 1),
-            .parent_id = column_text(blocked_query.get(), 2),
-            .name = column_text(blocked_query.get(), 3),
-            .etag = column_text(blocked_query.get(), 4),
-            .remote_path = column_text(blocked_query.get(), 5),
-            .last_modified = column_text(blocked_query.get(), 6),
-            .size = sqlite3_column_int64(blocked_query.get(), 7),
-            .directory = sqlite3_column_int(blocked_query.get(), 8) != 0,
-            .reason_code = column_text(blocked_query.get(), 9),
-            .reason_message = column_text(blocked_query.get(), 10),
-            .attempt_count = static_cast<std::uint64_t>(
-                sqlite3_column_int64(blocked_query.get(), 11)
-            ),
-        };
-        blocked_items_.insert_or_assign(
-            item_key(item.drive_id, item.remote_id),
-            std::move(item)
-        );
-    }
-
-    Statement drive_query{
-        database,
-        "SELECT drive_id, delta_link FROM drive_state ORDER BY drive_id;"
-    };
-    while (true) {
-        const int step_result = sqlite3_step(drive_query.get());
-        if (step_result == SQLITE_DONE) {
-            break;
-        }
-        if (step_result != SQLITE_ROW) {
-            throw std::runtime_error(
-                "cannot read drive state: " + std::string{sqlite3_errmsg(database)}
-            );
-        }
-        delta_links_.insert_or_assign(
-            column_text(drive_query.get(), 0),
-            column_text(drive_query.get(), 1)
-        );
-    }
+    const auto item_count =
+        query_count(database, "SELECT COUNT(*) FROM item;");
+    const auto blocked_count =
+        query_count(database, "SELECT COUNT(*) FROM blocked_item;");
     spdlog::info(
         "Synchronization state database ready with {} tracked items and {} "
         "blocked items",
-        items_.size(),
-        blocked_items_.size()
+        item_count,
+        blocked_count
     );
 }
 
 void ItemDatabase::upsert(ItemState item) {
+    impl_->invoke([this, item = std::move(item)] {
+        upsert_on_worker(item);
+    });
+}
+
+void ItemDatabase::upsert_on_worker(const ItemState& item) {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
         throw std::runtime_error("state database is not open");
@@ -695,15 +707,20 @@ void ItemDatabase::upsert(ItemState item) {
             "cannot update state database: " + std::string{sqlite3_errmsg(database)}
         );
     }
-    const std::string key = item_key(item.drive_id, item.remote_id);
-    items_.insert_or_assign(key, std::move(item));
     spdlog::trace(
-        "Updated synchronization state; {} items tracked",
-        items_.size()
+        "Updated synchronization state for drive '{}', item '{}'",
+        item.drive_id,
+        item.remote_id
     );
 }
 
 void ItemDatabase::apply_delta(ItemDelta delta) {
+    impl_->invoke([this, delta = std::move(delta)]() mutable {
+        apply_delta_on_worker(std::move(delta));
+    });
+}
+
+void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
         throw std::runtime_error("state database is not open");
@@ -910,41 +927,6 @@ void ItemDatabase::apply_delta(ItemDelta delta) {
     }
     transaction.commit();
 
-    if (delta.replace_drive_items) {
-        for (auto iterator = items_.begin(); iterator != items_.end();) {
-            if (iterator->second.drive_id == delta.drive_id) {
-                iterator = items_.erase(iterator);
-            } else {
-                ++iterator;
-            }
-        }
-        for (auto iterator = blocked_items_.begin();
-             iterator != blocked_items_.end();) {
-            if (iterator->second.drive_id == delta.drive_id) {
-                iterator = blocked_items_.erase(iterator);
-            } else {
-                ++iterator;
-            }
-        }
-    }
-    for (auto& item : delta.upserts) {
-        const std::string key = item_key(delta.drive_id, item.remote_id);
-        items_.insert_or_assign(key, std::move(item));
-    }
-    for (const auto& remote_id : delta.removals) {
-        items_.erase(item_key(delta.drive_id, remote_id));
-    }
-    for (const auto& remote_id : delta.blocked_removals) {
-        blocked_items_.erase(item_key(delta.drive_id, remote_id));
-    }
-    for (auto& item : delta.blocked_upserts) {
-        const std::string key = item_key(delta.drive_id, item.remote_id);
-        const auto previous = blocked_items_.find(key);
-        item.attempt_count =
-            previous == blocked_items_.end() ? 1 : previous->second.attempt_count + 1;
-        blocked_items_.insert_or_assign(key, std::move(item));
-    }
-    delta_links_.insert_or_assign(delta.drive_id, std::move(delta.delta_link));
     spdlog::debug(
         "Committed remote delta for drive '{}': {} upserts, {} removals, {} "
         "blocked, inventory {}, delta cursor advanced, {} total items tracked",
@@ -953,11 +935,19 @@ void ItemDatabase::apply_delta(ItemDelta delta) {
         delta.removals.size(),
         delta.blocked_upserts.size(),
         delta.replace_drive_items ? "replaced" : "updated",
-        items_.size()
+        query_count(database, "SELECT COUNT(*) FROM item;")
     );
 }
 
 void ItemDatabase::save_pending_download(PendingDownload download) {
+    impl_->invoke([this, download = std::move(download)] {
+        save_pending_download_on_worker(download);
+    });
+}
+
+void ItemDatabase::save_pending_download_on_worker(
+    const PendingDownload& download
+) {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
         throw std::runtime_error("state database is not open");
@@ -1021,6 +1011,15 @@ void ItemDatabase::remove_pending_download(
     const std::string& drive_id,
     const std::string& remote_id
 ) {
+    impl_->invoke([this, drive_id, remote_id] {
+        remove_pending_download_on_worker(drive_id, remote_id);
+    });
+}
+
+void ItemDatabase::remove_pending_download_on_worker(
+    const std::string& drive_id,
+    const std::string& remote_id
+) {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
         throw std::runtime_error("state database is not open");
@@ -1045,6 +1044,14 @@ void ItemDatabase::remove_pending_download(
 }
 
 std::vector<PendingDownload> ItemDatabase::pending_downloads(
+    const std::string& drive_id
+) const {
+    return impl_->invoke([this, drive_id] {
+        return pending_downloads_on_worker(drive_id);
+    });
+}
+
+std::vector<PendingDownload> ItemDatabase::pending_downloads_on_worker(
     const std::string& drive_id
 ) const {
     sqlite3* database = impl_->database.get();
@@ -1096,18 +1103,65 @@ std::vector<PendingDownload> ItemDatabase::pending_downloads(
 std::vector<BlockedItem> ItemDatabase::blocked_items(
     const std::string& drive_id
 ) const {
-    std::vector<BlockedItem> result;
-    for (const auto& [key, item] : blocked_items_) {
-        static_cast<void>(key);
-        if (item.drive_id == drive_id) {
-            result.push_back(item);
-        }
+    return impl_->invoke([this, drive_id] {
+        return blocked_items_on_worker(drive_id);
+    });
+}
+
+std::vector<BlockedItem> ItemDatabase::blocked_items_on_worker(
+    const std::string& drive_id
+) const {
+    sqlite3* database = impl_->database.get();
+    if (database == nullptr) {
+        throw std::runtime_error("state database is not open");
     }
-    std::ranges::sort(result, {}, &BlockedItem::remote_path);
+    Statement statement{
+        database,
+        "SELECT drive_id, remote_id, parent_id, name, etag, remote_path, "
+        "last_modified, size, directory, reason_code, reason_message, "
+        "attempt_count FROM blocked_item WHERE drive_id = ?1 "
+        "ORDER BY remote_path;"
+    };
+    bind_text(database, statement.get(), 1, drive_id);
+    std::vector<BlockedItem> result;
+    while (true) {
+        const int step_result = sqlite3_step(statement.get());
+        if (step_result == SQLITE_DONE) {
+            break;
+        }
+        if (step_result != SQLITE_ROW) {
+            throw std::runtime_error(
+                "cannot read blocked synchronization items: " +
+                std::string{sqlite3_errmsg(database)}
+            );
+        }
+        result.push_back({
+            .drive_id = column_text(statement.get(), 0),
+            .remote_id = column_text(statement.get(), 1),
+            .parent_id = column_text(statement.get(), 2),
+            .name = column_text(statement.get(), 3),
+            .etag = column_text(statement.get(), 4),
+            .remote_path = column_text(statement.get(), 5),
+            .last_modified = column_text(statement.get(), 6),
+            .size = sqlite3_column_int64(statement.get(), 7),
+            .directory = sqlite3_column_int(statement.get(), 8) != 0,
+            .reason_code = column_text(statement.get(), 9),
+            .reason_message = column_text(statement.get(), 10),
+            .attempt_count = static_cast<std::uint64_t>(
+                sqlite3_column_int64(statement.get(), 11)
+            ),
+        });
+    }
     return result;
 }
 
 bool ItemDatabase::reset(const std::string& drive_id) {
+    return impl_->invoke([this, drive_id] {
+        return reset_on_worker(drive_id);
+    });
+}
+
+bool ItemDatabase::reset_on_worker(const std::string& drive_id) {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
         throw std::runtime_error("state database is not open");
@@ -1118,7 +1172,6 @@ bool ItemDatabase::reset(const std::string& drive_id) {
         );
     }
 
-    const bool had_delta_link = delta_links_.contains(drive_id);
     Transaction transaction{database};
     Statement state_statement{
         database,
@@ -1131,14 +1184,14 @@ bool ItemDatabase::reset(const std::string& drive_id) {
             std::string{sqlite3_errmsg(database)}
         );
     }
+    const bool had_delta_link = sqlite3_changes(database) != 0;
     transaction.commit();
 
-    std::size_t retained_items = 0;
-    for (const auto& [key, item] : items_) {
-        static_cast<void>(key);
-        retained_items += item.drive_id == drive_id ? 1U : 0U;
-    }
-    delta_links_.erase(drive_id);
+    const auto retained_items = query_count(
+        database,
+        "SELECT COUNT(*) FROM item WHERE drive_id = ?1;",
+        &drive_id
+    );
     spdlog::debug(
         "Reset synchronization cursor for drive '{}': saved cursor {}, "
         "{} item snapshots retained",
@@ -1150,6 +1203,12 @@ bool ItemDatabase::reset(const std::string& drive_id) {
 }
 
 ClearedState ItemDatabase::clear(const std::string& drive_id) {
+    return impl_->invoke([this, drive_id] {
+        return clear_on_worker(drive_id);
+    });
+}
+
+ClearedState ItemDatabase::clear_on_worker(const std::string& drive_id) {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
         throw std::runtime_error("state database is not open");
@@ -1160,9 +1219,7 @@ ClearedState ItemDatabase::clear(const std::string& drive_id) {
         );
     }
 
-    ClearedState cleared{
-        .delta_link = delta_links_.contains(drive_id),
-    };
+    ClearedState cleared;
     Transaction transaction{database};
     Statement item_statement{
         database,
@@ -1188,6 +1245,7 @@ ClearedState ItemDatabase::clear(const std::string& drive_id) {
             std::string{sqlite3_errmsg(database)}
         );
     }
+    cleared.delta_link = sqlite3_changes(database) != 0;
 
     Statement pending_statement{
         database,
@@ -1218,22 +1276,6 @@ ClearedState ItemDatabase::clear(const std::string& drive_id) {
         static_cast<std::size_t>(sqlite3_changes(database));
     transaction.commit();
 
-    for (auto iterator = items_.begin(); iterator != items_.end();) {
-        if (iterator->second.drive_id == drive_id) {
-            iterator = items_.erase(iterator);
-        } else {
-            ++iterator;
-        }
-    }
-    for (auto iterator = blocked_items_.begin();
-         iterator != blocked_items_.end();) {
-        if (iterator->second.drive_id == drive_id) {
-            iterator = blocked_items_.erase(iterator);
-        } else {
-            ++iterator;
-        }
-    }
-    delta_links_.erase(drive_id);
     spdlog::warn(
         "Cleared all synchronization state for drive '{}': {} item snapshots, "
         "{} pending downloads, {} blocked items, saved delta cursor {}",
@@ -1249,24 +1291,99 @@ ClearedState ItemDatabase::clear(const std::string& drive_id) {
 std::optional<std::string> ItemDatabase::delta_link(
     const std::string& drive_id
 ) const {
-    const auto iterator = delta_links_.find(drive_id);
-    return iterator == delta_links_.end() ?
-               std::nullopt :
-               std::optional<std::string>{iterator->second};
+    return impl_->invoke([this, drive_id] {
+        return delta_link_on_worker(drive_id);
+    });
+}
+
+std::optional<std::string> ItemDatabase::delta_link_on_worker(
+    const std::string& drive_id
+) const {
+    sqlite3* database = impl_->database.get();
+    if (database == nullptr) {
+        throw std::runtime_error("state database is not open");
+    }
+    Statement statement{
+        database,
+        "SELECT delta_link FROM drive_state WHERE drive_id = ?1;"
+    };
+    bind_text(database, statement.get(), 1, drive_id);
+    const int result = sqlite3_step(statement.get());
+    if (result == SQLITE_DONE) {
+        return std::nullopt;
+    }
+    if (result != SQLITE_ROW) {
+        throw std::runtime_error(
+            "cannot read drive delta link: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+    return column_text(statement.get(), 0);
 }
 
 std::optional<ItemState> ItemDatabase::find(
     const std::string& drive_id,
     const std::string& remote_id
 ) const {
-    const auto iterator = items_.find(item_key(drive_id, remote_id));
-    return iterator == items_.end() ?
-               std::nullopt :
-               std::optional<ItemState>{iterator->second};
+    return impl_->invoke([this, drive_id, remote_id] {
+        return find_on_worker(drive_id, remote_id);
+    });
 }
 
-std::size_t ItemDatabase::size() const noexcept {
-    return items_.size();
+std::optional<ItemState> ItemDatabase::find_on_worker(
+    const std::string& drive_id,
+    const std::string& remote_id
+) const {
+    sqlite3* database = impl_->database.get();
+    if (database == nullptr) {
+        throw std::runtime_error("state database is not open");
+    }
+    Statement statement{
+        database,
+        "SELECT drive_id, remote_id, parent_id, name, etag, remote_path, "
+        "local_path, last_modified, size, local_size, local_modified_ticks, "
+        "directory FROM item WHERE drive_id = ?1 AND remote_id = ?2;"
+    };
+    bind_text(database, statement.get(), 1, drive_id);
+    bind_text(database, statement.get(), 2, remote_id);
+    const int result = sqlite3_step(statement.get());
+    if (result == SQLITE_DONE) {
+        return std::nullopt;
+    }
+    if (result != SQLITE_ROW) {
+        throw std::runtime_error(
+            "cannot read synchronization item: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+    return ItemState{
+        .drive_id = column_text(statement.get(), 0),
+        .remote_id = column_text(statement.get(), 1),
+        .parent_id = column_text(statement.get(), 2),
+        .name = column_text(statement.get(), 3),
+        .etag = column_text(statement.get(), 4),
+        .remote_path = column_text(statement.get(), 5),
+        .local_path = column_text(statement.get(), 6),
+        .last_modified = column_text(statement.get(), 7),
+        .size = sqlite3_column_int64(statement.get(), 8),
+        .local_size = sqlite3_column_int64(statement.get(), 9),
+        .local_modified_ticks = sqlite3_column_int64(statement.get(), 10),
+        .directory = sqlite3_column_int(statement.get(), 11) != 0,
+    };
+}
+
+std::size_t ItemDatabase::size() const {
+    return impl_->invoke([this] {
+        return size_on_worker();
+    });
+}
+
+std::size_t ItemDatabase::size_on_worker() const {
+    sqlite3* database = impl_->database.get();
+    if (database == nullptr) {
+        throw std::runtime_error("state database is not open");
+    }
+    return query_count(database, "SELECT COUNT(*) FROM item;");
 }
 
 }  // namespace onedrive::storage
