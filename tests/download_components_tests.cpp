@@ -50,7 +50,8 @@ public:
     }
 
     [[nodiscard]] onedrive::graph::DeltaResult list_delta(
-        const std::optional<std::string>&
+        const std::optional<std::string>&,
+        const onedrive::graph::DeltaProgress&
     ) const override {
         return {};
     }

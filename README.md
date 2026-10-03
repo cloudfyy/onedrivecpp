@@ -521,6 +521,12 @@ Delta query. Existing snapshots are used to detect local modifications safely;
 after all planned operations succeed, the complete remote inventory replaces
 the configured Drive's old item metadata.
 
+During a Delta query, text output and logs report each completed page and the
+cumulative number of scanned items. JSON output emits a `delta_progress` event
+with `pages`, `items`, and `completed` fields. Microsoft Graph does not provide
+the total number of Delta items in advance, so an accurate percentage is not
+available. `--quiet` suppresses console progress but not configured log output.
+
 To discard all saved synchronization state for the configured Drive, use the
 explicitly destructive mode:
 

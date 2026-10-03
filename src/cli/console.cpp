@@ -137,6 +137,33 @@ void Console::section(
     }
 }
 
+void Console::delta_progress(
+    std::size_t pages,
+    std::size_t items,
+    bool completed
+) const {
+    if (options_.quiet) {
+        return;
+    }
+    if (options_.output == OutputMode::json) {
+        output_ << nlohmann::json{
+            {"event", "delta_progress"},
+            {"pages", pages},
+            {"items", items},
+            {"completed", completed},
+        }.dump() << '\n';
+        return;
+    }
+    output_ << fmt::format(
+        "Microsoft Graph delta: {} page{}, {} item{} scanned ({})\n",
+        pages,
+        pages == 1 ? "" : "s",
+        items,
+        items == 1 ? "" : "s",
+        completed ? "complete" : "continuing"
+    );
+}
+
 void Console::download_progress(
     std::string_view path,
     std::size_t file_index,

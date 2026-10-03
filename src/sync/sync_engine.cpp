@@ -394,8 +394,12 @@ int SyncEngine::synchronize() const {
         );
         bool replace_drive_items = !previous_delta_link.has_value();
         graph::DeltaResult delta;
+        const auto delta_progress =
+            [&console](std::size_t pages, std::size_t items, bool completed) {
+                console.delta_progress(pages, items, completed);
+            };
         try {
-            delta = graph_.list_delta(previous_delta_link);
+            delta = graph_.list_delta(previous_delta_link, delta_progress);
         } catch (const graph::DeltaCursorInvalidError& error) {
             spdlog::warn(
                 "{}; retrying with a full Microsoft Graph delta query",
@@ -407,7 +411,7 @@ int SyncEngine::synchronize() const {
                 "The saved Microsoft Graph cursor is no longer valid; "
                 "fetching the full remote state..."
             );
-            delta = graph_.list_delta(std::nullopt);
+            delta = graph_.list_delta(std::nullopt, delta_progress);
             replace_drive_items = true;
         }
         auto plan = detail::SyncPlan::build(

@@ -25,6 +25,11 @@ namespace onedrive::graph {
 
 using DownloadProgress =
     std::function<void(std::uint64_t downloaded, std::uint64_t total)>;
+using DeltaProgress = std::function<void(
+    std::size_t pages,
+    std::size_t items,
+    bool completed
+)>;
 
 struct RemoteItem {
     std::string id;
@@ -63,7 +68,8 @@ public:
 
     [[nodiscard]] virtual std::vector<RemoteItem> list_root() const = 0;
     [[nodiscard]] virtual DeltaResult list_delta(
-        const std::optional<std::string>& delta_link
+        const std::optional<std::string>& delta_link,
+        const DeltaProgress& progress = {}
     ) const = 0;
     virtual void download_file(
         const std::string& remote_id,
@@ -87,7 +93,8 @@ public:
 
     [[nodiscard]] std::vector<RemoteItem> list_root() const override;
     [[nodiscard]] DeltaResult list_delta(
-        const std::optional<std::string>& delta_link
+        const std::optional<std::string>& delta_link,
+        const DeltaProgress& progress = {}
     ) const override;
     void download_file(
         const std::string& remote_id,

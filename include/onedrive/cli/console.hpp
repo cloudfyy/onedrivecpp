@@ -57,6 +57,11 @@ public:
         std::string_view title,
         const std::vector<Field>& fields
     ) const;
+    void delta_progress(
+        std::size_t pages,
+        std::size_t items,
+        bool completed
+    ) const;
     void download_progress(
         std::string_view path,
         std::size_t file_index,

@@ -53,13 +53,17 @@ public:
     }
 
     [[nodiscard]] onedrive::graph::DeltaResult list_delta(
-        const std::optional<std::string>& delta_link
+        const std::optional<std::string>& delta_link,
+        const onedrive::graph::DeltaProgress& progress
     ) const override {
         delta_requests.push_back(delta_link);
         if (delta_link && reject_saved_cursor) {
             throw onedrive::graph::DeltaCursorInvalidError{
                 "simulated invalid delta cursor"
             };
+        }
+        if (progress) {
+            progress(1, changes.size(), true);
         }
         return {
             .changes = changes,

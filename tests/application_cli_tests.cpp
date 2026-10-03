@@ -83,8 +83,12 @@ public:
     }
 
     [[nodiscard]] onedrive::graph::DeltaResult list_delta(
-        const std::optional<std::string>&
+        const std::optional<std::string>&,
+        const onedrive::graph::DeltaProgress& progress
     ) const override {
+        if (progress) {
+            progress(1, 1, true);
+        }
         return {
             .changes = {
                 {

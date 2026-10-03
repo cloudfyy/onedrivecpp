@@ -39,10 +39,14 @@ int main() {
             {.label = "Bytes:", .key = "bytes", .value = "42"},
         }
     );
+    plain.delta_progress(2, 350, false);
+    plain.delta_progress(3, 412, true);
     plain.download_progress("file.bin", 1, 2, 5, 10, false);
     plain.download_progress("file.bin", 1, 2, 10, 10, true);
     if (plain_output.str() !=
         "Completed.\nSummary\n  Files: 12\n  Bytes: 42\n"
+        "Microsoft Graph delta: 2 pages, 350 items scanned (continuing)\n"
+        "Microsoft Graph delta: 3 pages, 412 items scanned (complete)\n"
         "[1/2] Downloading 'file.bin': 50% (5/10 bytes)\n"
         "[1/2] Downloading 'file.bin': 100% (10/10 bytes)\n" ||
         !plain_error.str().empty()) {
@@ -84,6 +88,7 @@ int main() {
             {.label = "Files", .key = "files", .value = "12"},
         }
     );
+    json.delta_progress(4, 625, false);
     json.download_progress("file.bin", 1, 1, 4, 8, false);
     std::istringstream json_lines{json_output.str()};
     std::string line;
@@ -92,17 +97,23 @@ int main() {
     std::getline(json_lines, line);
     const auto section = nlohmann::json::parse(line);
     std::getline(json_lines, line);
-    const auto progress = nlohmann::json::parse(line);
+    const auto delta_progress = nlohmann::json::parse(line);
+    std::getline(json_lines, line);
+    const auto download_progress = nlohmann::json::parse(line);
     if (message.at("event") != "phase" ||
         message.at("message") != "Working" ||
         section.at("event") != "summary" ||
         section.at("values").at("files") != "12" ||
-        progress.at("event") != "download_progress" ||
-        progress.at("path") != "file.bin" ||
-        progress.at("downloaded_bytes") != 4 ||
-        progress.at("total_bytes") != 8 ||
-        progress.at("percentage") != 50 ||
-        progress.at("completed") != false ||
+        delta_progress.at("event") != "delta_progress" ||
+        delta_progress.at("pages") != 4 ||
+        delta_progress.at("items") != 625 ||
+        delta_progress.at("completed") != false ||
+        download_progress.at("event") != "download_progress" ||
+        download_progress.at("path") != "file.bin" ||
+        download_progress.at("downloaded_bytes") != 4 ||
+        download_progress.at("total_bytes") != 8 ||
+        download_progress.at("percentage") != 50 ||
+        download_progress.at("completed") != false ||
         json_output.str().contains("\033[")) {
         return fail("JSON console output was invalid");
     }
@@ -125,6 +136,7 @@ int main() {
         "Hidden",
         {{.label = "Files", .key = "files", .value = "12"}}
     );
+    quiet.delta_progress(1, 200, false);
     quiet.download_progress("hidden.bin", 1, 1, 1, 2, false);
     quiet.message(MessageKind::warning, "warning", "Visible warning");
     quiet.message(MessageKind::error, "error", "Visible error");

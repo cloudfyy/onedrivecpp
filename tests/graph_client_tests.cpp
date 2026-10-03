@@ -14,6 +14,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -430,7 +431,13 @@ int test_delta_with_pagination() {
         },
     };
 
-    const auto delta = client.list_delta(std::nullopt);
+    std::vector<std::tuple<std::size_t, std::size_t, bool>> progress;
+    const auto delta = client.list_delta(
+        std::nullopt,
+        [&progress](std::size_t pages, std::size_t items, bool completed) {
+            progress.emplace_back(pages, items, completed);
+        }
+    );
     if (delta.changes.size() != 4 ||
         delta.delta_link !=
             "https://graph.example.test/v1.0/delta?token=final" ||
@@ -440,7 +447,12 @@ int test_delta_with_pagination() {
         delta.changes[1].remote_path != "Documents" ||
         delta.changes[2].remote_path != "Documents/notes.txt" ||
         delta.changes[2].parent_id != "folder-id" ||
-        delta.changes[2].size != 42 || !delta.changes[3].deleted) {
+        delta.changes[2].size != 42 || !delta.changes[3].deleted ||
+        progress !=
+            std::vector<std::tuple<std::size_t, std::size_t, bool>>{
+                {1, 2, false},
+                {2, 4, true},
+            }) {
         return fail("Graph delta items or final link were not parsed");
     }
     if (transport_pointer->requests.size() != 3 ||

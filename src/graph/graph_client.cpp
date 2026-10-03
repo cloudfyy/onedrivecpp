@@ -403,7 +403,8 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
 }
 
 DeltaResult MicrosoftGraphClient::list_delta(
-    const std::optional<std::string>& delta_link
+    const std::optional<std::string>& delta_link,
+    const DeltaProgress& progress
 ) const {
     spdlog::debug("Loading saved Microsoft authentication");
     const auto refresh_token = token_store_->load_refresh_token();
@@ -446,6 +447,7 @@ DeltaResult MicrosoftGraphClient::list_delta(
     std::unordered_map<std::string, std::size_t> change_indexes;
     DeltaResult result;
     std::size_t page_number = 1;
+    std::size_t scanned_item_count = 0;
     while (!next_url.empty()) {
         if (!next_url.starts_with(allowed_url_prefix)) {
             throw std::runtime_error(
@@ -638,6 +640,17 @@ DeltaResult MicrosoftGraphClient::list_delta(
                 page_item_count,
                 result.changes.size()
             );
+            scanned_item_count += page_item_count;
+            const bool completed = next_url.empty();
+            spdlog::info(
+                "Microsoft Graph delta progress: {} pages, {} items scanned ({})",
+                page_number,
+                scanned_item_count,
+                completed ? "complete" : "continuing"
+            );
+            if (progress) {
+                progress(page_number, scanned_item_count, completed);
+            }
             ++page_number;
         } catch (const Json::exception& error) {
             throw std::runtime_error(
