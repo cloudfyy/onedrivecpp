@@ -217,7 +217,7 @@ int test_list_root_with_refresh_and_pagination() {
             onedrive::http::HttpResponse{
                 .status_code = 200,
                 .body =
-                    R"json({"value":[{"id":"file-id","name":"notes.txt","eTag":"file-etag","file":{"mimeType":"text/plain","hashes":{"quickXorHash":"SgAAAAAAAAAAAAAAAQAAAAAAAAA="}}}]})json",
+                    R"json({"value":[{"id":"file-id","name":"notes.txt","eTag":"file-etag","malware":{},"file":{"mimeType":"text/plain","hashes":{"quickXorHash":"SgAAAAAAAAAAAAAAAQAAAAAAAAA="}}}]})json",
             },
         }
     );
@@ -239,6 +239,7 @@ int test_list_root_with_refresh_and_pagination() {
 
     if (items.size() != 2 || !items[0].directory || items[1].directory ||
         items[0].name != "Documents" || items[1].etag != "file-etag" ||
+        !items[1].malware ||
         !items[1].content_hash ||
         items[1].content_hash->algorithm !=
             onedrive::FileHashAlgorithm::quick_xor ||
@@ -699,6 +700,18 @@ int test_delta_requires_valid_file_system_modified_time() {
             "invalid drive item malware facet"
         )) {
         return fail("Graph delta file with invalid malware metadata was accepted");
+    }
+
+    constexpr std::string_view invalid_remote_malware{
+        R"json({"value":[{"id":"file-id","name":"notes.txt","eTag":"etag","size":4,"fileSystemInfo":{"lastModifiedDateTime":"2026-10-02T00:00:00Z"},"remoteItem":{"malware":true},"parentReference":{"id":"root","path":"/drive/root:"},"file":{"mimeType":"text/plain"}}],"@odata.deltaLink":"https://graph.example.test/v1.0/delta?done"})json"
+    };
+    if (!rejected(
+            std::string{invalid_remote_malware},
+            "invalid remoteItem malware facet"
+        )) {
+        return fail(
+            "Graph delta file with invalid remote malware metadata was accepted"
+        );
     }
     return EXIT_SUCCESS;
 }

@@ -824,6 +824,47 @@ int test_blocked_items_continue_and_retry() {
         !malware_retry_metrics.last_success) {
         return fail("persisted malware item was retried as a download");
     }
+
+    const auto cleared_root = temporary.path() / "malware-cleared";
+    FakeGraphClient cleared_graph;
+    cleared_graph.changes = {
+        file("malware-cleared", "malware-cleared.txt", 4),
+    };
+    cleared_graph.contents["malware-cleared"] = "data";
+    FakeItemStore cleared_items;
+    cleared_items.saved_delta_link =
+        "https://graph.example.test/delta?token=saved";
+    cleared_items.blocked = {
+        {
+            .drive_id = "me",
+            .remote_id = "malware-cleared",
+            .parent_id = "root",
+            .name = "malware-cleared.txt",
+            .etag = "old-malware-etag",
+            .remote_path = "malware-cleared.txt",
+            .last_modified = "2026-10-01T00:00:00Z",
+            .size = 4,
+            .reason_code = "malware_detected",
+            .reason_message =
+                "Microsoft Graph marked the remote file as malware",
+            .attempt_count = 1,
+        },
+    };
+    FakeMetrics cleared_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(cleared_root, false),
+            cleared_graph,
+            cleared_items,
+            cleared_metrics
+        }.synchronize() != 0 ||
+        cleared_graph.download_count != 1 ||
+        !std::filesystem::exists(cleared_root / "malware-cleared.txt") ||
+        !cleared_items.applied_delta.blocked_upserts.empty() ||
+        cleared_items.applied_delta.blocked_removals !=
+            std::vector<std::string>{"malware-cleared"} ||
+        !cleared_metrics.last_success) {
+        return fail("cleared Graph malware marker did not resume downloading");
+    }
     return EXIT_SUCCESS;
 }
 

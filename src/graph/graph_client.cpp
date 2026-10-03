@@ -302,14 +302,22 @@ std::optional<std::string> file_system_last_modified(
     return timestamp;
 }
 
-std::optional<std::string> authoritative_last_modified(const Json& value) {
+const Json* remote_item_facet(const Json& value) {
     const auto remote_item = value.find("remoteItem");
-    if (remote_item != value.end()) {
-        if (!remote_item->is_object()) {
-            throw std::runtime_error(
-                "Microsoft Graph returned an invalid remoteItem facet"
-            );
-        }
+    if (remote_item == value.end()) {
+        return nullptr;
+    }
+    if (!remote_item->is_object()) {
+        throw std::runtime_error(
+            "Microsoft Graph returned an invalid remoteItem facet"
+        );
+    }
+    return &*remote_item;
+}
+
+std::optional<std::string> authoritative_last_modified(const Json& value) {
+    if (const auto* remote_item = remote_item_facet(value);
+        remote_item != nullptr) {
         if (auto modified =
                 file_system_last_modified(*remote_item, "remoteItem");
             modified.has_value()) {
@@ -334,19 +342,10 @@ bool has_malware_facet(const Json& value, std::string_view description) {
 }
 
 bool item_is_malware(const Json& value) {
-    if (has_malware_facet(value, "drive item")) {
-        return true;
-    }
-    const auto remote_item = value.find("remoteItem");
-    if (remote_item == value.end()) {
-        return false;
-    }
-    if (!remote_item->is_object()) {
-        throw std::runtime_error(
-            "Microsoft Graph returned an invalid remoteItem facet"
-        );
-    }
-    return has_malware_facet(*remote_item, "remoteItem");
+    const auto* remote_item = remote_item_facet(value);
+    return has_malware_facet(value, "drive item") ||
+           (remote_item != nullptr &&
+            has_malware_facet(*remote_item, "remoteItem"));
 }
 
 std::optional<FileHash> item_content_hash(const Json& value) {
