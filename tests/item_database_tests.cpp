@@ -248,6 +248,34 @@ bool create_version_thirteen_database(const std::filesystem::path& path) {
     return succeeded;
 }
 
+bool create_version_fourteen_database(const std::filesystem::path& path) {
+    if (!create_version_thirteen_database(path)) {
+        return false;
+    }
+    sqlite3* database = nullptr;
+    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
+        sqlite3_close(database);
+        return false;
+    }
+    constexpr const char* schema =
+        "CREATE TABLE pending_move ("
+        "drive_id TEXT NOT NULL, remote_id TEXT NOT NULL, "
+        "source_path TEXT NOT NULL, destination_path TEXT NOT NULL, "
+        "source_device INTEGER NOT NULL, source_inode INTEGER NOT NULL, "
+        "directory INTEGER NOT NULL, "
+        "PRIMARY KEY (drive_id, remote_id));"
+        "INSERT INTO pending_move ("
+        "drive_id, remote_id, source_path, destination_path, "
+        "source_device, source_inode, directory"
+        ") VALUES ('me', 'legacy-move', '/sync/old', '/sync/new', "
+        "123, 456, 0);"
+        "PRAGMA user_version = 14;";
+    const bool succeeded =
+        sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
+    sqlite3_close(database);
+    return succeeded;
+}
+
 bool identity_row_is_valid(const std::filesystem::path& path) {
     sqlite3* database = nullptr;
     if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
@@ -1175,6 +1203,54 @@ int main() {
         if (!database.pending_uploads("me").empty() ||
             !database.find("me", "uploaded-id")) {
             return fail("pending upload commit was not atomic");
+        }
+    }
+
+    const auto version_fourteen_directory =
+        temporary_directory.path() / "version-fourteen";
+    std::filesystem::create_directories(version_fourteen_directory);
+    if (!create_version_fourteen_database(
+            version_fourteen_directory / "items.sqlite3"
+        )) {
+        return fail("version fourteen migration fixture could not be created");
+    }
+    {
+        onedrive::storage::ItemDatabase database{
+            version_fourteen_directory,
+            identity()
+        };
+        database.open();
+        auto moves = database.pending_moves("me");
+        if (moves.size() != 1 ||
+            moves[0].remote_id != "legacy-move" ||
+            !moves[0].staging_path.empty()) {
+            return fail(
+                "version fourteen pending move did not migrate to staging"
+            );
+        }
+        const onedrive::storage::PendingMove staged{
+            .drive_id = "me",
+            .remote_id = "staged-move",
+            .source_path = version_fourteen_directory / "A.txt",
+            .destination_path = version_fourteen_directory / "B.txt",
+            .staging_path =
+                version_fourteen_directory /
+                ".A.txt.onedrive-move-test",
+            .source_device = 789,
+            .source_inode = 987,
+        };
+        database.save_pending_move(staged);
+        moves = database.pending_moves("me");
+        const auto saved = std::ranges::find(
+            moves,
+            "staged-move",
+            &onedrive::storage::PendingMove::remote_id
+        );
+        if (saved == moves.end() ||
+            saved->staging_path != staged.staging_path ||
+            saved->source_device != staged.source_device ||
+            saved->source_inode != staged.source_inode) {
+            return fail("staged pending move did not round trip");
         }
     }
 

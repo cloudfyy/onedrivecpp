@@ -89,6 +89,7 @@ struct PendingMove {
     std::string remote_id;
     std::filesystem::path source_path;
     std::filesystem::path destination_path;
+    std::filesystem::path staging_path;
     std::uint64_t source_device{0};
     std::uint64_t source_inode{0};
     bool directory{false};

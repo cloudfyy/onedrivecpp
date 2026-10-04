@@ -14,9 +14,8 @@ copy the reference project's D implementation.
 > systemd user service, and Debian packaging. Synchronization currently
 > creates remote directories, downloads added or changed remote files, and
 > safely removes unchanged local snapshots after remote deletion, and uploads
-> new or modified local files. Cyclic remote move staging, local deletion
-> propagation, large resumable uploads, and full two-way conflict resolution
-> are not implemented.
+> new or modified local files. Local deletion propagation, large resumable
+> uploads, and full two-way conflict resolution are not implemented.
 
 ## Architecture
 
@@ -1057,22 +1056,23 @@ Directory moves remap all tracked descendants even when Graph reports only the
 changed directory. Dependent moves are ordered so a destination occupied by
 another moving item is vacated first. Parent directory moves remap the
 effective source paths of explicit child renames. Name exchanges and other
-dependency cycles are retained as `move_dependency_cycle` blocked items until
-temporary staging is implemented. Unchanged files are reused using Graph
-content hashes when available, with size and authoritative
-content-modification time as the fallback; a simultaneously changed file is
-downloaded after the move.
+dependency cycles are broken by moving one item to a private hidden staging
+path, installing the remaining moves in dependency order, and then installing
+the staged item. Unchanged files are reused using Graph content hashes when
+available, with size and authoritative content-modification time as the
+fallback; a simultaneously changed file is downloaded after the move.
 Locally modified sources, symbolic links, type conflicts, and occupied
 destinations are retained as retryable blocked items. Move operations and both
 parent directories are flushed before the Delta cursor advances, and a retry
 can adopt an already-moved destination after an interruption.
 Moves across filesystem boundaries are retained as `cross_device_move` blocked
 items; the client does not copy and delete data across mount points.
-Before an atomic move, schema-v14 SQLite state records the source and
-destination paths plus the source device/inode identity. The journal is removed
-in the same transaction that commits the moved item and Delta cursor. After an
-interruption, only a destination with the recorded filesystem identity is
-adopted; `reset-state` preserves these records and `--clear-all` removes them.
+Before an atomic move, schema-v15 SQLite state records the source and
+destination paths, optional staging path, and source device/inode identity.
+The journal is removed in the same transaction that commits the moved item and
+Delta cursor. After an interruption, recovery locates the recorded identity at
+the original, staging, or destination path; `reset-state` preserves these
+records and `--clear-all` removes them.
 
 Remote deletion records remove a regular local file only while its size and
 modification time still match the trusted synchronized snapshot. Missing local
@@ -1192,7 +1192,7 @@ or modify the synchronization directory.
 
 ## Suggested Next Steps
 
-1. Stage name exchanges and cyclic remote moves through private temporary paths.
+1. Test remote moves across selective-sync include/exclude boundaries.
 2. Connect the monitor to inotify.
 3. Extend uploads with directories, deletion propagation, and resumable
    sessions.

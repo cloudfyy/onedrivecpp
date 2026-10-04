@@ -73,7 +73,8 @@ bool reserved_local_name(const std::filesystem::path& path) {
     const auto name = path.filename().string();
     return name.contains(".safeBackup-") ||
            name.contains(".onedrive-partial-") ||
-           name.contains(".onedrive-upload-");
+           name.contains(".onedrive-upload-") ||
+           name.contains(".onedrive-move-");
 }
 
 std::filesystem::path upload_snapshot_path(

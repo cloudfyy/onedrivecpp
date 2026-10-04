@@ -447,6 +447,19 @@ std::filesystem::path temporary_path_for(
            );
 }
 
+std::filesystem::path move_staging_path_for(
+    const std::filesystem::path& source
+) {
+    static std::atomic_uint64_t sequence{0};
+    return source.parent_path() /
+           std::format(
+               ".{}.onedrive-move-{}-{}",
+               source.filename().string(),
+               ::getpid(),
+               sequence.fetch_add(1, std::memory_order_relaxed) + 1
+           );
+}
+
 bool paths_share_parent(
     const std::filesystem::path& left,
     const std::filesystem::path& right

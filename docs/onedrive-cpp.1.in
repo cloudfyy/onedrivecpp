@@ -33,8 +33,7 @@ The current release includes configuration loading, device-code
 authentication, authenticated Microsoft Graph delta queries, local state and
 delta-link storage, safe downloads, local uploads, remote-deletion handling,
 dry-run support, logging, monitoring scaffolding, and packaging integration.
-Cyclic remote move staging, local-deletion propagation, and resumable large
-uploads are not implemented.
+Local-deletion propagation and resumable large uploads are not implemented.
 .SH COMMANDS
 .TP
 .B auth
@@ -121,9 +120,8 @@ moved locally without replacing an existing destination. Directory moves
 remap tracked descendants even when Graph reports only the directory.
 Dependent moves vacate occupied destinations first, and parent directory moves
 remap the effective source of explicit child renames. Name exchanges and other
-dependency cycles are retained as
-.B move_dependency_cycle
-blocked items until temporary staging is implemented.
+dependency cycles move one breaker to a private hidden staging path, install
+the remaining moves in dependency order, and then install the staged item.
 Content-identical files are reused; files whose remote content also changed
 are downloaded after the move. Locally modified sources, symbolic links,
 unexpected types, and occupied destinations are persisted as retryable blocked
@@ -132,10 +130,10 @@ interrupted move safe to retry.
 Moves across filesystem boundaries are persisted as
 .B cross_device_move
 blocked items; data is not copied and deleted across mount points.
-Before rename, a schema-v14 SQLite pending-move journal records both paths and
-the source device/inode identity. The moved item, Delta cursor, and journal
-removal commit atomically. Recovery adopts only a destination with the recorded
-identity.
+Before rename, a schema-v15 SQLite pending-move journal records the source,
+destination, optional staging path, and source device/inode identity. The moved
+item, Delta cursor, and journal removal commit atomically. Recovery searches
+the original, staging, and destination paths for the recorded identity.
 .PP
 Use
 .B \-\-dry\-run

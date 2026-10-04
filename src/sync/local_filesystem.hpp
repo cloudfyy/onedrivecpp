@@ -69,6 +69,9 @@ void apply_remote_modified_time(
 [[nodiscard]] std::filesystem::path temporary_path_for(
     const std::filesystem::path& destination
 );
+[[nodiscard]] std::filesystem::path move_staging_path_for(
+    const std::filesystem::path& source
+);
 [[nodiscard]] bool paths_share_parent(
     const std::filesystem::path& left,
     const std::filesystem::path& right

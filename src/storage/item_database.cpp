@@ -310,6 +310,7 @@ void create_pending_move_schema(sqlite3* database) {
         "remote_id TEXT NOT NULL,"
         "source_path TEXT NOT NULL,"
         "destination_path TEXT NOT NULL,"
+        "staging_path TEXT NOT NULL DEFAULT '',"
         "source_device INTEGER NOT NULL,"
         "source_inode INTEGER NOT NULL,"
         "directory INTEGER NOT NULL,"
@@ -364,7 +365,7 @@ void create_current_schema(sqlite3* database) {
     create_partial_download_schema(database);
     create_pending_upload_schema(database);
     create_pending_move_schema(database);
-    execute(database, "PRAGMA user_version = 14;");
+    execute(database, "PRAGMA user_version = 15;");
 }
 
 void add_sync_filter_fingerprint(sqlite3* database) {
@@ -381,6 +382,14 @@ void add_pending_download_backup(sqlite3* database) {
         "ALTER TABLE pending_download ADD COLUMN backup_path "
         "TEXT NOT NULL DEFAULT '';"
         "ALTER TABLE pending_download ADD COLUMN backup_fingerprint "
+        "TEXT NOT NULL DEFAULT '';"
+    );
+}
+
+void add_pending_move_staging(sqlite3* database) {
+    execute(
+        database,
+        "ALTER TABLE pending_move ADD COLUMN staging_path "
         "TEXT NOT NULL DEFAULT '';"
     );
 }
@@ -446,7 +455,7 @@ void migrate_schema(sqlite3* database) {
         add_pending_download_backup(database);
         create_pending_upload_schema(database);
         create_pending_move_schema(database);
-        execute(database, "PRAGMA user_version = 14;");
+        execute(database, "PRAGMA user_version = 15;");
         transaction.commit();
         return;
     }
@@ -481,7 +490,7 @@ void migrate_schema(sqlite3* database) {
         add_pending_download_backup(database);
         create_pending_upload_schema(database);
         create_pending_move_schema(database);
-        execute(database, "PRAGMA user_version = 14;");
+        execute(database, "PRAGMA user_version = 15;");
         transaction.commit();
         return;
     }
@@ -513,7 +522,7 @@ void migrate_schema(sqlite3* database) {
         add_pending_download_backup(database);
         create_pending_upload_schema(database);
         create_pending_move_schema(database);
-        execute(database, "PRAGMA user_version = 14;");
+        execute(database, "PRAGMA user_version = 15;");
         transaction.commit();
         return;
     }
@@ -526,7 +535,7 @@ void migrate_schema(sqlite3* database) {
         add_pending_download_backup(database);
         create_pending_upload_schema(database);
         create_pending_move_schema(database);
-        execute(database, "PRAGMA user_version = 14;");
+        execute(database, "PRAGMA user_version = 15;");
         transaction.commit();
         return;
     }
@@ -540,7 +549,7 @@ void migrate_schema(sqlite3* database) {
         add_pending_download_backup(database);
         create_pending_upload_schema(database);
         create_pending_move_schema(database);
-        execute(database, "PRAGMA user_version = 14;");
+        execute(database, "PRAGMA user_version = 15;");
         transaction.commit();
         return;
     }
@@ -554,7 +563,7 @@ void migrate_schema(sqlite3* database) {
         add_pending_download_backup(database);
         create_pending_upload_schema(database);
         create_pending_move_schema(database);
-        execute(database, "PRAGMA user_version = 14;");
+        execute(database, "PRAGMA user_version = 15;");
         transaction.commit();
         return;
     }
@@ -567,7 +576,7 @@ void migrate_schema(sqlite3* database) {
         add_pending_download_backup(database);
         create_pending_upload_schema(database);
         create_pending_move_schema(database);
-        execute(database, "PRAGMA user_version = 14;");
+        execute(database, "PRAGMA user_version = 15;");
         transaction.commit();
         return;
     }
@@ -579,7 +588,7 @@ void migrate_schema(sqlite3* database) {
         add_pending_download_backup(database);
         create_pending_upload_schema(database);
         create_pending_move_schema(database);
-        execute(database, "PRAGMA user_version = 14;");
+        execute(database, "PRAGMA user_version = 15;");
         transaction.commit();
         return;
     }
@@ -590,7 +599,7 @@ void migrate_schema(sqlite3* database) {
         add_blocked_item_deleted_column(database);
         create_pending_upload_schema(database);
         create_pending_move_schema(database);
-        execute(database, "PRAGMA user_version = 14;");
+        execute(database, "PRAGMA user_version = 15;");
         transaction.commit();
         return;
     }
@@ -600,7 +609,7 @@ void migrate_schema(sqlite3* database) {
         add_blocked_item_deleted_column(database);
         create_pending_upload_schema(database);
         create_pending_move_schema(database);
-        execute(database, "PRAGMA user_version = 14;");
+        execute(database, "PRAGMA user_version = 15;");
         transaction.commit();
         return;
     }
@@ -608,7 +617,7 @@ void migrate_schema(sqlite3* database) {
         Transaction transaction{database};
         create_pending_upload_schema(database);
         create_pending_move_schema(database);
-        execute(database, "PRAGMA user_version = 14;");
+        execute(database, "PRAGMA user_version = 15;");
         transaction.commit();
         return;
     }
@@ -617,18 +626,25 @@ void migrate_schema(sqlite3* database) {
         add_blocked_item_deleted_column(database);
         create_pending_upload_schema(database);
         create_pending_move_schema(database);
-        execute(database, "PRAGMA user_version = 14;");
+        execute(database, "PRAGMA user_version = 15;");
         transaction.commit();
         return;
     }
     if (version == 13) {
         Transaction transaction{database};
         create_pending_move_schema(database);
-        execute(database, "PRAGMA user_version = 14;");
+        execute(database, "PRAGMA user_version = 15;");
         transaction.commit();
         return;
     }
-    if (version != 14) {
+    if (version == 14) {
+        Transaction transaction{database};
+        add_pending_move_staging(database);
+        execute(database, "PRAGMA user_version = 15;");
+        transaction.commit();
+        return;
+    }
+    if (version != 15) {
         throw std::runtime_error(
             "unsupported state database schema version " + std::to_string(version)
         );
@@ -1752,6 +1768,9 @@ void ItemDatabase::save_pending_move_on_worker(
     if (move.drive_id.empty() || move.remote_id.empty() ||
         move.source_path.empty() || move.destination_path.empty() ||
         move.source_path == move.destination_path ||
+        (!move.staging_path.empty() &&
+         (move.staging_path == move.source_path ||
+          move.staging_path == move.destination_path)) ||
         move.source_device >
             static_cast<std::uint64_t>(
                 std::numeric_limits<std::int64_t>::max()
@@ -1765,12 +1784,13 @@ void ItemDatabase::save_pending_move_on_worker(
     Statement statement{
         database,
         "INSERT INTO pending_move ("
-        "drive_id, remote_id, source_path, destination_path, source_device, "
-        "source_inode, directory"
-        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) "
+        "drive_id, remote_id, source_path, destination_path, staging_path, "
+        "source_device, source_inode, directory"
+        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) "
         "ON CONFLICT(drive_id, remote_id) DO UPDATE SET "
         "source_path = excluded.source_path, "
         "destination_path = excluded.destination_path, "
+        "staging_path = excluded.staging_path, "
         "source_device = excluded.source_device, "
         "source_inode = excluded.source_inode, "
         "directory = excluded.directory;"
@@ -1784,19 +1804,20 @@ void ItemDatabase::save_pending_move_on_worker(
         4,
         move.destination_path.string()
     );
+    bind_text(database, statement.get(), 5, move.staging_path.string());
     bind_integer(
         database,
         statement.get(),
-        5,
+        6,
         static_cast<std::int64_t>(move.source_device)
     );
     bind_integer(
         database,
         statement.get(),
-        6,
+        7,
         static_cast<std::int64_t>(move.source_inode)
     );
-    bind_integer(database, statement.get(), 7, move.directory ? 1 : 0);
+    bind_integer(database, statement.get(), 8, move.directory ? 1 : 0);
     if (sqlite3_step(statement.get()) != SQLITE_DONE) {
         throw std::runtime_error(
             "cannot persist pending move: " +
@@ -1854,7 +1875,8 @@ std::vector<PendingMove> ItemDatabase::pending_moves_on_worker(
     Statement statement{
         database,
         "SELECT drive_id, remote_id, source_path, destination_path, "
-        "source_device, source_inode, directory FROM pending_move "
+        "staging_path, source_device, source_inode, directory "
+        "FROM pending_move "
         "WHERE drive_id = ?1 ORDER BY remote_id;"
     };
     bind_text(database, statement.get(), 1, drive_id);
@@ -1870,8 +1892,8 @@ std::vector<PendingMove> ItemDatabase::pending_moves_on_worker(
                 std::string{sqlite3_errmsg(database)}
             );
         }
-        const auto device = sqlite3_column_int64(statement.get(), 4);
-        const auto inode = sqlite3_column_int64(statement.get(), 5);
+        const auto device = sqlite3_column_int64(statement.get(), 5);
+        const auto inode = sqlite3_column_int64(statement.get(), 6);
         if (device < 0 || inode < 0) {
             throw std::runtime_error(
                 "pending move contains invalid filesystem identity"
@@ -1882,9 +1904,10 @@ std::vector<PendingMove> ItemDatabase::pending_moves_on_worker(
             .remote_id = column_text(statement.get(), 1),
             .source_path = column_text(statement.get(), 2),
             .destination_path = column_text(statement.get(), 3),
+            .staging_path = column_text(statement.get(), 4),
             .source_device = static_cast<std::uint64_t>(device),
             .source_inode = static_cast<std::uint64_t>(inode),
-            .directory = sqlite3_column_int(statement.get(), 6) != 0,
+            .directory = sqlite3_column_int(statement.get(), 7) != 0,
         });
     }
     return moves;

@@ -11,8 +11,8 @@
 > HTTP 传输层、经过认证的 Microsoft Graph Delta 查询、SQLite 远端状态和
 > deltaLink 持久化、安全下载与本地上传、dry-run、systemd 用户服务和 Debian
 > 打包。当前同步会创建远端目录、下载新增或修改的远端文件，并在远端删除后
-> 安全移除未修改的本地快照，并上传本地新增或修改的文件。循环远端移动的临时
-> staging、本地删除传播、可恢复大文件上传以及完整双向冲突解决尚未实现。
+> 安全移除未修改的本地快照，并上传本地新增或修改的文件。本地删除传播、可恢复
+> 大文件上传以及完整双向冲突解决尚未实现。
 
 ## 架构
 
@@ -511,15 +511,17 @@ pending-upload journal；恢复时会下载已经出现的远端文件并比较 
 移动，并且绝不覆盖已经存在的目标。Graph 只报告被移动目录本身时，程序也会重映射
 SQLite 中所有已跟踪后代的路径。远端内容指纹匹配的文件会直接复用；没有指纹时使用
 大小和权威内容修改时间判断。若文件在移动同时发生内容变化，则先移动再下载新内容。
+当名称交换或其他依赖环出现时，程序会把一个 breaker 原子移动到同步根目录内的
+私有隐藏 staging 路径，按依赖顺序完成其余移动，再安装被暂存的项目。
 本地已修改的源文件、符号链接、类型冲突和已占用目标会作为可重试 blocked item
 保留。文件系统移动及源、目标父目录会在推进 Delta 游标前刷盘；中断后的重试可以
 安全认领已经移动完成的目标。
 跨文件系统边界的移动会保留为 `cross_device_move` blocked item；程序不会跨挂载
 点复制后删除数据。
-执行原子移动前，schema v14 SQLite 状态会记录源、目标路径及源对象的
-device/inode 身份。移动后的 item 与 Delta 游标提交会在同一事务中删除 journal。
-中断恢复时只有 filesystem identity 完全匹配的目标才会被认领；`reset-state`
-保留这些记录，`--clear-all` 会删除它们。
+执行原子移动前，schema v15 SQLite 状态会记录源路径、目标路径、可选 staging
+路径及源对象的 device/inode 身份。移动后的 item 与 Delta 游标提交会在同一事务
+中删除 journal。中断恢复会在原路径、staging 路径和最终目标中查找完全匹配的
+filesystem identity；`reset-state` 保留这些记录，`--clear-all` 会删除它们。
 
 `graph.endpoint` 用于选择 Microsoft Graph 云端点，默认使用全球服务，并不与
 某个具体 SharePoint 主机名绑定。访问由世纪互联运营的 Microsoft 365 中国区
@@ -916,11 +918,12 @@ Graph、数据库、同步根目录权限、整体磁盘容量和下载传输错
 Delta 项目保留相同远端 ID 但路径变化时，客户端会在不覆盖已有目标的前提下，
 在本地执行重命名或移动。Graph 只报告目录本身时，也会重新映射所有已跟踪后代。
 当一个移动的目标由另一个待移动项目占用时，会先执行腾空目标的移动；父目录移动
-后，显式子项重命名也会使用重新映射后的实际源路径。名称交换和其他依赖环暂时
-记录为 `move_dependency_cycle` blocked item，等待后续实现私有临时 staging。
+后，显式子项重命名也会使用重新映射后的实际源路径。名称交换和其他依赖环会通过
+私有隐藏 staging 路径安全打破，并使用持久 filesystem identity 恢复任意中断点。
 内容未变化的文件无需重新下载；远端内容同时变化时则在移动后下载。移动前会将
-源路径、目标路径和源 device/inode 写入 SQLite pending-move journal，项目状态、
-Delta 游标和 journal 清理在同一事务中提交。恢复时只认领身份完全匹配的目标。
+源路径、目标路径、可选 staging 路径和源 device/inode 写入 SQLite pending-move
+journal，项目状态、Delta 游标和 journal 清理在同一事务中提交。恢复时只认领
+身份完全匹配的对象。
 跨文件系统移动记录为 `cross_device_move`，不会执行复制后删除。
 
 远端删除记录只有在本地普通文件的大小和修改时间仍与可信同步快照一致时，才会
@@ -1030,7 +1033,7 @@ journalctl --user -u onedrive-cpp.service -f
 
 ## 后续实现建议
 
-1. 通过私有临时路径 staging 名称交换和循环远端移动。
+1. 测试远端移动跨越 selective-sync 包含/排除边界的行为。
 2. 使用 inotify 接入 monitor。
 3. 为上传增加目录、删除传播和可恢复分片 session。
 4. 为 Graph 和文件系统边界增加更多集成测试。
