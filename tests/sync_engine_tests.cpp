@@ -1581,6 +1581,294 @@ int test_remote_deletions() {
     return EXIT_SUCCESS;
 }
 
+int test_remote_moves() {
+    TemporaryDirectory temporary;
+
+    const auto renamed_root = temporary.path() / "renamed";
+    std::filesystem::create_directories(renamed_root);
+    {
+        std::ofstream output{renamed_root / "old.txt"};
+        output << "data";
+    }
+    FakeGraphClient renamed_graph;
+    renamed_graph.changes = {file("renamed", "new.txt", 4)};
+    FakeItemStore renamed_items;
+    renamed_items.saved_delta_link = "saved";
+    renamed_items.items.emplace(
+        "renamed",
+        tracked_item(renamed_root, "renamed", "old.txt")
+    );
+    FakeMetrics renamed_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(renamed_root, false),
+            renamed_graph,
+            renamed_items,
+            renamed_metrics
+        }.synchronize() != 0 ||
+        std::filesystem::exists(renamed_root / "old.txt") ||
+        !std::filesystem::exists(renamed_root / "new.txt") ||
+        renamed_graph.download_count != 0 ||
+        renamed_items.applied_delta.upserts.size() != 1 ||
+        renamed_items.applied_delta.upserts[0].remote_path != "new.txt" ||
+        renamed_items.applied_delta.upserts[0].local_path !=
+            renamed_root / "new.txt" ||
+        renamed_items.applied_delta.upserts[0].local_size != 4 ||
+        !renamed_metrics.last_success) {
+        return fail("remote file rename was not applied locally");
+    }
+
+    const auto adopted_root = temporary.path() / "adopted";
+    std::filesystem::create_directories(adopted_root);
+    {
+        std::ofstream output{adopted_root / "new.txt"};
+        output << "data";
+    }
+    FakeGraphClient adopted_graph;
+    adopted_graph.changes = {file("adopted", "new.txt", 4)};
+    FakeItemStore adopted_items;
+    adopted_items.saved_delta_link = "saved";
+    auto adopted_state =
+        tracked_item(adopted_root, "adopted", "new.txt");
+    adopted_state.name = "old.txt";
+    adopted_state.remote_path = "old.txt";
+    adopted_state.local_path = adopted_root / "old.txt";
+    adopted_items.items.emplace("adopted", std::move(adopted_state));
+    FakeMetrics adopted_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(adopted_root, false),
+            adopted_graph,
+            adopted_items,
+            adopted_metrics
+        }.synchronize() != 0 ||
+        adopted_graph.download_count != 0 ||
+        adopted_items.applied_delta.upserts.size() != 1 ||
+        adopted_items.applied_delta.upserts[0].local_path !=
+            adopted_root / "new.txt") {
+        return fail("interrupted remote move destination was not adopted");
+    }
+
+    const auto changed_root = temporary.path() / "changed";
+    std::filesystem::create_directories(changed_root);
+    {
+        std::ofstream output{changed_root / "old.txt"};
+        output << "data";
+    }
+    auto changed = file("changed", "folder/new.txt", 4);
+    changed.etag = "changed-etag";
+    changed.last_modified = "2026-10-04T10:00:00Z";
+    changed.content_hash = onedrive::FileHash{
+        .algorithm = onedrive::FileHashAlgorithm::sha256,
+        .value =
+            "c6c1c9a9c8543f1e4cd980064cf1625eeb61a90703b2464fff039f21682508b3",
+    };
+    FakeGraphClient changed_graph;
+    changed_graph.changes = {changed};
+    changed_graph.contents["changed"] = "next";
+    FakeItemStore changed_items;
+    changed_items.saved_delta_link = "saved";
+    changed_items.items.emplace(
+        "changed",
+        tracked_item(changed_root, "changed", "old.txt")
+    );
+    FakeMetrics changed_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(changed_root, false),
+            changed_graph,
+            changed_items,
+            changed_metrics
+        }.synchronize() != 0 ||
+        std::filesystem::exists(changed_root / "old.txt") ||
+        changed_graph.download_count != 1) {
+        return fail("moved file with changed content was not downloaded");
+    }
+    {
+        std::ifstream input{changed_root / "folder" / "new.txt"};
+        const std::string content{
+            std::istreambuf_iterator<char>{input},
+            std::istreambuf_iterator<char>{}
+        };
+        if (content != "next") {
+            return fail("moved file did not receive changed remote content");
+        }
+    }
+
+    const auto directory_root = temporary.path() / "directory";
+    std::filesystem::create_directories(directory_root / "Old");
+    {
+        std::ofstream output{directory_root / "Old" / "child.txt"};
+        output << "data";
+    }
+    FakeGraphClient directory_graph;
+    directory_graph.changes = {
+        {
+            .id = "directory",
+            .name = "New",
+            .etag = "directory-etag-2",
+            .parent_id = "root",
+            .remote_path = "New",
+            .directory = true,
+        },
+    };
+    FakeItemStore directory_items;
+    directory_items.saved_delta_link = "saved";
+    directory_items.items.emplace(
+        "directory",
+        tracked_item(directory_root, "directory", "Old", true)
+    );
+    directory_items.items.emplace(
+        "child",
+        tracked_item(directory_root, "child", "Old/child.txt")
+    );
+    FakeMetrics directory_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(directory_root, false),
+            directory_graph,
+            directory_items,
+            directory_metrics
+        }.synchronize() != 0 ||
+        std::filesystem::exists(directory_root / "Old") ||
+        !std::filesystem::exists(
+            directory_root / "New" / "child.txt"
+        ) ||
+        directory_graph.download_count != 0 ||
+        directory_items.applied_delta.upserts.size() != 2) {
+        return fail("remote directory move did not move its tracked subtree");
+    }
+    const auto child_state = std::ranges::find(
+        directory_items.applied_delta.upserts,
+        "child",
+        &onedrive::storage::ItemState::remote_id
+    );
+    if (child_state == directory_items.applied_delta.upserts.end() ||
+        child_state->remote_path != "New/child.txt" ||
+        child_state->local_path !=
+            directory_root / "New" / "child.txt") {
+        return fail("remote directory move did not remap descendant state");
+    }
+
+    const auto modified_root = temporary.path() / "modified-move";
+    std::filesystem::create_directories(modified_root);
+    {
+        std::ofstream output{modified_root / "old.txt"};
+        output << "data";
+    }
+    FakeItemStore modified_items;
+    modified_items.saved_delta_link = "saved";
+    modified_items.items.emplace(
+        "modified",
+        tracked_item(modified_root, "modified", "old.txt")
+    );
+    {
+        std::ofstream output{modified_root / "old.txt"};
+        output << "user data";
+    }
+    FakeGraphClient modified_graph;
+    modified_graph.changes = {file("modified", "new.txt", 4)};
+    FakeMetrics modified_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(modified_root, false),
+            modified_graph,
+            modified_items,
+            modified_metrics
+        }.synchronize() != 2 ||
+        !std::filesystem::exists(modified_root / "old.txt") ||
+        std::filesystem::exists(modified_root / "new.txt") ||
+        modified_items.applied_delta.blocked_upserts.size() != 1 ||
+        modified_items.applied_delta.blocked_upserts[0].reason_code !=
+            "local_modification") {
+        return fail("remote move overwrote a locally modified source");
+    }
+
+    const auto collision_root = temporary.path() / "collision";
+    std::filesystem::create_directories(collision_root);
+    {
+        std::ofstream source{collision_root / "old.txt"};
+        source << "data";
+        std::ofstream destination{collision_root / "new.txt"};
+        destination << "local";
+    }
+    FakeItemStore collision_items;
+    collision_items.saved_delta_link = "saved";
+    collision_items.items.emplace(
+        "collision",
+        tracked_item(collision_root, "collision", "old.txt")
+    );
+    FakeGraphClient collision_graph;
+    collision_graph.changes = {file("collision", "new.txt", 4)};
+    FakeMetrics collision_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(collision_root, false),
+            collision_graph,
+            collision_items,
+            collision_metrics
+        }.synchronize() != 2 ||
+        !std::filesystem::exists(collision_root / "old.txt") ||
+        collision_items.applied_delta.blocked_upserts.size() != 1 ||
+        collision_items.applied_delta.blocked_upserts[0].reason_code !=
+            "local_path_conflict") {
+        return fail("remote move replaced an existing local destination");
+    }
+
+    const auto dry_root = temporary.path() / "dry-move";
+    std::filesystem::create_directories(dry_root);
+    {
+        std::ofstream output{dry_root / "old.txt"};
+        output << "data";
+    }
+    FakeItemStore dry_items;
+    dry_items.saved_delta_link = "saved";
+    dry_items.items.emplace(
+        "dry",
+        tracked_item(dry_root, "dry", "old.txt")
+    );
+    FakeGraphClient dry_graph;
+    dry_graph.changes = {file("dry", "new.txt", 4)};
+    FakeMetrics dry_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(dry_root, true),
+            dry_graph,
+            dry_items,
+            dry_metrics
+        }.synchronize() != 0 ||
+        !std::filesystem::exists(dry_root / "old.txt") ||
+        std::filesystem::exists(dry_root / "new.txt") ||
+        dry_items.apply_count != 0) {
+        return fail("remote move dry run changed local state");
+    }
+
+    const auto symlink_root = temporary.path() / "symlink-move";
+    const auto outside = temporary.path() / "outside.txt";
+    std::filesystem::create_directories(symlink_root);
+    {
+        std::ofstream output{outside};
+        output << "data";
+    }
+    std::filesystem::create_symlink(outside, symlink_root / "old.txt");
+    FakeItemStore symlink_items;
+    symlink_items.saved_delta_link = "saved";
+    auto symlink_state =
+        tracked_item(symlink_root, "symlink", "old.txt");
+    symlink_state.local_modified_ticks = 0;
+    symlink_items.items.emplace("symlink", std::move(symlink_state));
+    FakeGraphClient symlink_graph;
+    symlink_graph.changes = {file("symlink", "new.txt", 4)};
+    FakeMetrics symlink_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(symlink_root, false),
+            symlink_graph,
+            symlink_items,
+            symlink_metrics
+        }.synchronize() != 2 ||
+        !std::filesystem::is_symlink(symlink_root / "old.txt") ||
+        std::filesystem::exists(symlink_root / "new.txt") ||
+        symlink_items.applied_delta.blocked_upserts.size() != 1 ||
+        symlink_items.applied_delta.blocked_upserts[0].reason_code !=
+            "local_path_conflict") {
+        return fail("remote move followed or replaced a symbolic link");
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_pending_download_recovery() {
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "files";
@@ -2275,6 +2563,10 @@ int main() {
         return result;
     }
     if (const int result = test_remote_deletions();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_remote_moves();
         result != EXIT_SUCCESS) {
         return result;
     }

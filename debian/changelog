@@ -1,3 +1,14 @@
+onedrive-cpp (0.7.1-1~ubuntu24.04) noble; urgency=medium
+
+  * Apply remote file and directory moves locally using stable remote IDs and
+    no-replace filesystem renames.
+  * Remap tracked directory descendants, reuse content-identical files, and
+    download files whose content changed during a move.
+  * Block modified sources, symbolic links, type conflicts, and occupied move
+    destinations without overwriting local data.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 11:00:00 +0000
+
 onedrive-cpp (0.7.0-1~ubuntu24.04) noble; urgency=medium
 
   * Upload new and modified local files with fail-on-conflict creation and

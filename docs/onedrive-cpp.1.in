@@ -113,6 +113,17 @@ symbolic links, unexpected path types, and nonempty directories are retained
 as retryable blocked items. Missing targets are accepted. Full Delta refreshes
 reconcile the Graph inventory with prior snapshots, while items excluded only
 by selective synchronization retain their local files. Use
+.PP
+Delta items that retain their remote ID while changing path are renamed or
+moved locally without replacing an existing destination. Directory moves
+remap tracked descendants even when Graph reports only the directory.
+Content-identical files are reused; files whose remote content also changed
+are downloaded after the move. Locally modified sources, symbolic links,
+unexpected types, and occupied destinations are persisted as retryable blocked
+items. Durable parent-directory flushes and destination adoption make an
+interrupted move safe to retry.
+.PP
+Use
 .B \-\-dry\-run
 to display the download plan without creating files or updating synchronization
 state.

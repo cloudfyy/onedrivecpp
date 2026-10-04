@@ -76,6 +76,31 @@ int main() {
         return fail("planned persistent delta was incorrect");
     }
 
+    auto move_plan = detail::SyncPlan::build(
+        {
+            .changes = {item("moved", "new/name.txt")},
+            .delta_link = "https://graph.example.test/move",
+        },
+        "me",
+        "/sync",
+        false,
+        "",
+        {},
+        {
+            {
+                .drive_id = "me",
+                .remote_id = "moved",
+                .name = "name.txt",
+                .remote_path = "old/name.txt",
+                .local_path = "/sync/old/name.txt",
+            },
+        }
+    );
+    if (move_plan.move_count() != 1 ||
+        move_plan.move(0).id != "moved") {
+        return fail("remote path change was not planned as a local move");
+    }
+
     auto blocked_removal_plan = detail::SyncPlan::build(
         {
             .changes = {removed},

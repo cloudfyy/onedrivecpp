@@ -3,6 +3,7 @@
 #include "onedrive/cli/console.hpp"
 #include "onedrive/path_security.hpp"
 #include "download_recovery.hpp"
+#include "download_integrity.hpp"
 #include "download_progress.hpp"
 #include "download_space_coordinator.hpp"
 #include "download_transaction.hpp"
@@ -42,6 +43,7 @@ struct ExecutionSummary {
     std::size_t reused{0};
     std::size_t directories{0};
     std::size_t removed{0};
+    std::size_t moved{0};
 };
 
 struct DownloadTask {
@@ -353,6 +355,61 @@ void add_deleted_descendants(
     }
 }
 
+void add_moved_descendants(
+    graph::DeltaResult& delta,
+    const std::vector<storage::ItemState>& tracked
+) {
+    std::unordered_set<std::string> changed_ids;
+    changed_ids.reserve(delta.changes.size());
+    for (const auto& item : delta.changes) {
+        changed_ids.insert(item.id);
+    }
+
+    std::vector<graph::RemoteItem> descendants;
+    for (const auto& change : delta.changes) {
+        if (change.deleted || !change.directory) {
+            continue;
+        }
+        const auto previous = std::ranges::find(
+            tracked,
+            change.id,
+            &storage::ItemState::remote_id
+        );
+        if (previous == tracked.end() ||
+            previous->remote_path == change.remote_path) {
+            continue;
+        }
+        for (const auto& item : tracked) {
+            if (changed_ids.contains(item.remote_id) ||
+                item.remote_path.size() <= previous->remote_path.size() ||
+                !item.remote_path.starts_with(previous->remote_path) ||
+                item.remote_path[previous->remote_path.size()] != '/') {
+                continue;
+            }
+            auto remote_path =
+                change.remote_path +
+                item.remote_path.substr(previous->remote_path.size());
+            descendants.push_back({
+                .id = item.remote_id,
+                .name = item.name,
+                .etag = item.etag,
+                .parent_id = item.parent_id,
+                .remote_path = std::move(remote_path),
+                .last_modified = item.last_modified,
+                .size = item.size,
+                .directory = item.directory,
+                .content_hash = std::nullopt,
+            });
+            changed_ids.insert(item.remote_id);
+        }
+    }
+    delta.changes.insert(
+        delta.changes.end(),
+        std::make_move_iterator(descendants.begin()),
+        std::make_move_iterator(descendants.end())
+    );
+}
+
 void report_blocked(
     const storage::BlockedItem& item,
     const cli::Console& console
@@ -514,6 +571,223 @@ std::size_t execute_removals(
     return removed;
 }
 
+struct MoveSummary {
+    std::size_t moved{0};
+    std::unordered_set<std::string> reusable_files;
+    std::unordered_set<std::string> blocked;
+};
+
+bool remote_file_content_unchanged(
+    const graph::RemoteItem& item,
+    const storage::ItemState& previous,
+    const std::filesystem::path& path
+) {
+    if (!item.content_hash) {
+        return item.size == previous.size &&
+               item.last_modified == previous.last_modified;
+    }
+    detail::DownloadHashes hashes;
+    if (item.content_hash->algorithm == FileHashAlgorithm::sha256) {
+        hashes.sha256 = detail::content_fingerprint(path);
+    } else {
+        hashes.quick_xor = detail::quick_xor_hash(path);
+    }
+    try {
+        detail::verify_download_integrity(item, hashes);
+        return true;
+    } catch (const detail::DownloadIntegrityError&) {
+        return false;
+    }
+}
+
+MoveSummary execute_moves(
+    detail::SyncPlan& plan,
+    const detail::SafeSyncRoot& safe_root,
+    const std::string& drive_id,
+    storage::ItemStore& items,
+    detail::ItemOperationCoordinator& operations,
+    const cli::Console& console,
+    bool private_permissions
+) {
+    struct Move {
+        graph::RemoteItem item;
+        storage::ItemState previous;
+    };
+    std::vector<Move> moves;
+    for (std::size_t index = 0; index < plan.move_count(); ++index) {
+        const auto& item = plan.move(index);
+        if (auto previous = items.find(drive_id, item.id);
+            previous.has_value()) {
+            moves.push_back({
+                .item = item,
+                .previous = std::move(previous).value(),
+            });
+        }
+    }
+    std::ranges::sort(
+        moves,
+        {},
+        [](const Move& move) {
+            return std::ranges::count(move.previous.remote_path, '/');
+        }
+    );
+
+    MoveSummary summary;
+    for (const auto& move : moves) {
+        if (summary.blocked.contains(move.item.id)) {
+            continue;
+        }
+        auto& state = plan.state_for(move.item.id);
+        const auto& source = move.previous.local_path;
+        const auto& destination = state.local_path;
+        const auto block = [&](std::string code, std::string message) {
+            plan.block(move.item, std::move(code), std::move(message));
+            summary.blocked.insert(move.item.id);
+            report_blocked(
+                plan.blocked(plan.blocked_count() - 1),
+                console
+            );
+        };
+        try {
+            auto operation =
+                operations.acquire(drive_id, move.previous.remote_id);
+            auto source_operation =
+                operations.acquire_destination(source);
+            auto destination_operation =
+                operations.acquire_destination(destination);
+            static_cast<void>(safe_root.relative_path(source));
+            static_cast<void>(safe_root.relative_path(destination));
+
+            std::error_code source_error;
+            const auto source_status =
+                std::filesystem::symlink_status(source, source_error);
+            const bool source_exists =
+                !source_error && std::filesystem::exists(source_status);
+            if (source_error &&
+                source_error != std::errc::no_such_file_or_directory) {
+                throw std::runtime_error(
+                    "cannot inspect local move source '" + source.string() +
+                    "': " + source_error.message()
+                );
+            }
+
+            std::error_code destination_error;
+            const auto destination_status =
+                std::filesystem::symlink_status(
+                    destination,
+                    destination_error
+                );
+            const bool destination_exists =
+                !destination_error &&
+                std::filesystem::exists(destination_status);
+            if (destination_error &&
+                destination_error !=
+                    std::errc::no_such_file_or_directory) {
+                throw std::runtime_error(
+                    "cannot inspect local move destination '" +
+                    destination.string() + "': " +
+                    destination_error.message()
+                );
+            }
+
+            const auto expected_type = [&](auto status) {
+                return !std::filesystem::is_symlink(status) &&
+                       (move.previous.directory ?
+                            std::filesystem::is_directory(status) :
+                            std::filesystem::is_regular_file(status));
+            };
+            if (!source_exists) {
+                if (!destination_exists ||
+                    !expected_type(destination_status) ||
+                    (!move.previous.directory &&
+                     !detail::local_snapshot_matches(
+                         move.previous,
+                         destination
+                     ))) {
+                    block(
+                        "local_path_conflict",
+                        "remote move source is missing and its destination "
+                        "cannot be safely adopted: " + source.string()
+                    );
+                    continue;
+                }
+            } else {
+                if (!expected_type(source_status)) {
+                    block(
+                        "local_path_conflict",
+                        "remote move source has an unexpected local type: " +
+                            source.string()
+                    );
+                    continue;
+                }
+                if (!move.previous.directory &&
+                    !detail::local_snapshot_matches(
+                        move.previous,
+                        source
+                    )) {
+                    block(
+                        "local_modification",
+                        "local file changed before applying remote move: " +
+                            source.string()
+                    );
+                    continue;
+                }
+                if (destination_exists) {
+                    block(
+                        "local_path_conflict",
+                        "remote move destination already exists: " +
+                            destination.string()
+                    );
+                    continue;
+                }
+                safe_root.ensure_directory_tree(
+                    destination.parent_path(),
+                    private_permissions
+                );
+                if (!safe_root.rename_no_replace(source, destination)) {
+                    block(
+                        "local_path_conflict",
+                        "remote move destination already exists: " +
+                            destination.string()
+                    );
+                    continue;
+                }
+                safe_root.fsync_directory(source.parent_path());
+                if (source.parent_path() != destination.parent_path()) {
+                    safe_root.fsync_directory(destination.parent_path());
+                }
+                ++summary.moved;
+                console.message(
+                    cli::MessageKind::information,
+                    "local_item_moved",
+                    "Moved remotely renamed item from '" + source.string() +
+                        "' to '" + destination.string() + "'."
+                );
+            }
+
+            if (!move.previous.directory) {
+                state.local_size = static_cast<std::int64_t>(
+                    std::filesystem::file_size(destination)
+                );
+                state.local_modified_ticks =
+                    detail::modified_ticks(destination);
+                if (remote_file_content_unchanged(
+                        move.item,
+                        move.previous,
+                        destination
+                    )) {
+                    summary.reusable_files.insert(move.item.id);
+                }
+            }
+        } catch (const detail::SafePathConflictError& error) {
+            block("local_path_conflict", error.what());
+        } catch (const detail::LocalPathConflictError& error) {
+            block("local_path_conflict", error.what());
+        }
+    }
+    return summary;
+}
+
 void report_plan(
     const detail::SyncPlan& plan,
     const std::string& drive_id,
@@ -526,19 +800,21 @@ void report_plan(
         "remote_delta",
         std::format(
             "Remote delta contains {} changes ({} upserts, {} removals, {} "
-            "blocked).",
+            "moves, {} blocked).",
             plan.change_count(),
             upsert_count,
             plan.removal_count(),
+            plan.move_count(),
             plan.blocked_count()
         )
     );
     spdlog::info(
         "Remote delta prepared for drive '{}': {} upserts, {} removals, {} "
-        "blocked",
+        "moves, {} blocked",
         drive_id,
         upsert_count,
         plan.removal_count(),
+        plan.move_count(),
         plan.blocked_count()
     );
     spdlog::info(
@@ -581,6 +857,11 @@ void report_plan(
                 .value = std::to_string(plan.blocked_count()),
             },
             {
+                .label = "local moves:",
+                .key = "local_moves",
+                .value = std::to_string(plan.move_count()),
+            },
+            {
                 .label = "local removals:",
                 .key = "local_removals",
                 .value = std::to_string(plan.removal_count()),
@@ -615,9 +896,21 @@ ExecutionSummary execute_plan(
         operations,
         console
     );
+    auto move_summary = execute_moves(
+        plan,
+        safe_root,
+        drive_id,
+        items,
+        operations,
+        console,
+        private_permissions
+    );
+    std::unordered_set<std::string> blocked_ids =
+        std::move(move_summary.blocked);
     std::vector<std::string> blocked_directories;
     for (std::size_t index = 0; index < plan.blocked_count(); ++index) {
         const auto& blocked = plan.blocked(index);
+        blocked_ids.insert(blocked.remote_id);
         if (blocked.directory) {
             blocked_directories.push_back(blocked.remote_path);
         }
@@ -626,6 +919,9 @@ ExecutionSummary execute_plan(
     std::size_t prepared_directory_count = 0;
     for (std::size_t index = 0; index < plan.directory_count(); ++index) {
         const auto& item = plan.directory(index);
+        if (blocked_ids.contains(item.id)) {
+            continue;
+        }
         if (below_blocked_directory(item.remote_path, blocked_directories)) {
             plan.block(
                 item,
@@ -668,6 +964,9 @@ ExecutionSummary execute_plan(
     download_tasks.reserve(plan.download_count());
     for (std::size_t index = 0; index < plan.download_count(); ++index) {
         const auto& item = plan.download(index);
+        if (blocked_ids.contains(item.id)) {
+            continue;
+        }
         if (below_blocked_directory(item.remote_path, blocked_directories)) {
             plan.block(
                 item,
@@ -718,6 +1017,10 @@ ExecutionSummary execute_plan(
         }
 
         const auto previous = items.find(drive_id, item.id);
+        if (move_summary.reusable_files.contains(item.id)) {
+            ++reused_count;
+            continue;
+        }
         const bool exists = std::filesystem::exists(destination);
         const bool snapshot_matches =
             exists && previous.has_value() &&
@@ -892,6 +1195,7 @@ ExecutionSummary execute_plan(
         .reused = reused_count,
         .directories = prepared_directory_count,
         .removed = removed_count,
+        .moved = move_summary.moved,
     };
 }
 
@@ -1110,6 +1414,7 @@ int SyncEngine::synchronize() const {
             );
         }
         add_deleted_descendants(delta, tracked_items);
+        add_moved_descendants(delta, tracked_items);
         const auto previously_blocked =
             items_.blocked_items(config_->drive_id);
         if (!replace_drive_items && !previously_blocked.empty()) {
@@ -1150,7 +1455,8 @@ int SyncEngine::synchronize() const {
             sync_root,
             replace_drive_items,
             sync_filter_fingerprint,
-            std::move(snapshot_removals)
+            std::move(snapshot_removals),
+            tracked_items
         );
         report_plan(plan, config_->drive_id, console);
 
@@ -1249,6 +1555,11 @@ int SyncEngine::synchronize() const {
                         .label = "directories prepared:",
                         .key = "directories_prepared",
                         .value = std::to_string(summary.directories),
+                    },
+                    {
+                        .label = "local moves:",
+                        .key = "local_moves",
+                        .value = std::to_string(summary.moved),
                     },
                     {
                         .label = "local removals:",

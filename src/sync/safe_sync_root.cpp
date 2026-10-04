@@ -241,7 +241,7 @@ bool SafeSyncRoot::rename_no_replace(
     )};
     if (source_parent.get() == -1 || destination_parent.get() == -1) {
         throw std::runtime_error(
-            "cannot safely open synchronization directory for safeBackup: " +
+            "cannot safely open synchronization directory for rename: " +
             std::string{std::strerror(errno)}
         );
     }
@@ -258,7 +258,8 @@ bool SafeSyncRoot::rename_no_replace(
         return false;
     }
     throw std::runtime_error(
-        "cannot install safeBackup '" + destination.string() + "': " +
+        "cannot rename synchronization item to '" + destination.string() +
+        "': " +
         std::strerror(errno)
     );
 }

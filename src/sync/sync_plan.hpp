@@ -18,7 +18,8 @@ public:
         const std::filesystem::path& sync_directory,
         bool replace_drive_items,
         std::string sync_filter_fingerprint,
-        std::vector<std::string> snapshot_removals = {}
+        std::vector<std::string> snapshot_removals = {},
+        const std::vector<storage::ItemState>& tracked_items = {}
     );
 
     [[nodiscard]] const graph::RemoteItem& directory(
@@ -30,6 +31,7 @@ public:
     [[nodiscard]] const graph::RemoteItem& removal(
         std::size_t index
     ) const;
+    [[nodiscard]] const graph::RemoteItem& move(std::size_t index) const;
     [[nodiscard]] storage::ItemState& state_for(
         const std::string& remote_id
     );
@@ -53,6 +55,7 @@ public:
     [[nodiscard]] std::size_t directory_count() const noexcept;
     [[nodiscard]] std::size_t download_count() const noexcept;
     [[nodiscard]] std::size_t removal_count() const noexcept;
+    [[nodiscard]] std::size_t move_count() const noexcept;
     [[nodiscard]] std::size_t blocked_count() const noexcept;
     [[nodiscard]] std::uintmax_t download_bytes() const noexcept;
 
@@ -62,6 +65,7 @@ private:
     std::vector<std::size_t> directories_;
     std::vector<std::size_t> downloads_;
     std::vector<std::size_t> removals_;
+    std::vector<std::size_t> moves_;
     std::uintmax_t download_bytes_{0};
 };
 

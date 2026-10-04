@@ -1030,9 +1030,9 @@ systemic failure.
 Each download holds an operation-coordinator lease keyed by
 `(drive_id, remote_id)` from preparation through the final ItemStore update.
 Operations for the same remote item are serialized while different items and
-drives remain concurrent. Future upload, delete, and rename paths must acquire
-the same lease so their network, filesystem, and state transitions cannot
-overlap for one item.
+drives remain concurrent. Upload, deletion, and remote-move paths acquire the
+same lease so their network, filesystem, and state transitions cannot overlap
+for one item.
 
 The client refuses to overwrite a local file that it cannot prove is
 unchanged. Before downloading, it captures the destination's existence, size,
@@ -1047,8 +1047,18 @@ files continue, and `sync` exits with status 2 after safely advancing the
 cursor. Blocked items are retried on every later incremental sync; a successful
 retry or remote deletion clears the record.
 Authentication, Graph, database, root-permission, disk-capacity, and download
-transport failures remain fatal. The client does not yet upload local changes
-or apply remote moves.
+transport failures remain fatal.
+
+When a Delta item retains its remote ID but changes path, the client safely
+renames the synchronized local item without replacing an existing destination.
+Directory moves remap all tracked descendants even when Graph reports only the
+changed directory. Unchanged files are reused using Graph content hashes when
+available, with size and authoritative content-modification time as the
+fallback; a simultaneously changed file is downloaded after the move.
+Locally modified sources, symbolic links, type conflicts, and occupied
+destinations are retained as retryable blocked items. Move operations and both
+parent directories are flushed before the Delta cursor advances, and a retry
+can adopt an already-moved destination after an interruption.
 
 Remote deletion records remove a regular local file only while its size and
 modification time still match the trusted synchronized snapshot. Missing local

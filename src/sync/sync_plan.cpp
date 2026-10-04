@@ -17,7 +17,8 @@ SyncPlan SyncPlan::build(
     const std::filesystem::path& sync_directory,
     bool replace_drive_items,
     std::string sync_filter_fingerprint,
-    std::vector<std::string> snapshot_removals
+    std::vector<std::string> snapshot_removals,
+    const std::vector<storage::ItemState>& tracked_items
 ) {
     SyncPlan plan;
     plan.delta_ = std::move(delta);
@@ -62,6 +63,15 @@ SyncPlan SyncPlan::build(
             continue;
         }
         plan.state_delta_.blocked_removals.push_back(item.id);
+        const auto previous = std::ranges::find(
+            tracked_items,
+            item.id,
+            &storage::ItemState::remote_id
+        );
+        if (previous != tracked_items.end() &&
+            previous->remote_path != item.remote_path) {
+            plan.moves_.push_back(index);
+        }
         if (item.directory) {
             plan.directories_.push_back(index);
         } else {
@@ -114,6 +124,10 @@ const graph::RemoteItem& SyncPlan::download(std::size_t index) const {
 
 const graph::RemoteItem& SyncPlan::removal(std::size_t index) const {
     return delta_.changes.at(removals_.at(index));
+}
+
+const graph::RemoteItem& SyncPlan::move(std::size_t index) const {
+    return delta_.changes.at(moves_.at(index));
 }
 
 storage::ItemState& SyncPlan::state_for(const std::string& remote_id) {
@@ -218,6 +232,10 @@ std::size_t SyncPlan::download_count() const noexcept {
 
 std::size_t SyncPlan::removal_count() const noexcept {
     return removals_.size();
+}
+
+std::size_t SyncPlan::move_count() const noexcept {
+    return moves_.size();
 }
 
 std::size_t SyncPlan::blocked_count() const noexcept {
