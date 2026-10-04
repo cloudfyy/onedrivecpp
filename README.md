@@ -409,6 +409,7 @@ For example:
 [sync]
 # Default OneDrive of the signed-in user
 drive_id = "me"
+permissions = "private"
 download_concurrency = 4
 download_chunk_threshold_bytes = 8388608
 download_connect_timeout_seconds = 30
@@ -465,6 +466,13 @@ from actual transfer progress rather than untrusted Graph size metadata, and
 the transfer is aborted if the reservation cannot grow safely. Because Graph
 cannot reliably identify AIP-protected files in advance, relaxed mode applies
 to all downloads and weakens integrity guarantees.
+
+`permissions` defaults to `"private"`. New synchronized files are created as
+`0600`, and the synchronization root and new directories are secured as
+`0700`, so other local users cannot read synchronized content. Set it to
+`"umask"` only when synchronized data must intentionally follow the process
+umask, such as a directory shared through Unix group permissions. The packaged
+systemd user service also uses `UMask=0077` as defense in depth.
 
 `sync.directory` is the common root for synchronized data. Actual Drive
 contents are isolated with the same stable, friendly account and Drive

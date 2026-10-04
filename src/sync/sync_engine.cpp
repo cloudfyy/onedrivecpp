@@ -14,7 +14,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cerrno>
 #include <chrono>
+#include <cstring>
 #include <exception>
 #include <filesystem>
 #include <format>
@@ -25,6 +27,7 @@
 #include <thread>
 #include <unordered_set>
 #include <vector>
+#include <sys/stat.h>
 
 namespace onedrive::sync {
 namespace {
@@ -267,7 +270,8 @@ bool below_blocked_directory(
 }
 
 std::filesystem::path prepare_sync_root(
-    const std::filesystem::path& configured_root
+    const std::filesystem::path& configured_root,
+    bool private_permissions
 ) {
     const auto absolute_root =
         onedrive::detail::normalized_absolute(configured_root);
@@ -280,6 +284,13 @@ std::filesystem::path prepare_sync_root(
         absolute_root,
         "synchronization directory"
     );
+    if (private_permissions &&
+        ::chmod(absolute_root.c_str(), S_IRWXU) == -1) {
+        throw std::runtime_error(
+            "cannot secure synchronization root '" +
+            absolute_root.string() + "': " + std::strerror(errno)
+        );
+    }
     const auto root = std::filesystem::weakly_canonical(absolute_root);
     if (created) {
         spdlog::debug("Created synchronization root '{}'", root.string());
@@ -379,7 +390,8 @@ ExecutionSummary execute_plan(
     storage::ItemStore& items,
     const detail::FilesystemMetadata& metadata,
     const cli::Console& console,
-    std::size_t download_concurrency
+    std::size_t download_concurrency,
+    bool private_permissions
 ) {
     std::vector<std::string> blocked_directories;
     for (std::size_t index = 0; index < plan.blocked_count(); ++index) {
@@ -408,7 +420,8 @@ ExecutionSummary execute_plan(
         try {
             detail::ensure_directory_tree(
                 sync_root,
-                plan.state_for(item.id).local_path
+                plan.state_for(item.id).local_path,
+                private_permissions
             );
             ++prepared_directory_count;
         } catch (const detail::LocalPathConflictError& error) {
@@ -442,7 +455,11 @@ ExecutionSummary execute_plan(
         auto& state = plan.state_for(item.id);
         const auto destination = state.local_path;
         try {
-            detail::ensure_directory_tree(sync_root, destination.parent_path());
+            detail::ensure_directory_tree(
+                sync_root,
+                destination.parent_path(),
+                private_permissions
+            );
         } catch (const detail::LocalPathConflictError& error) {
             plan.block(item, "local_path_conflict", error.what());
             report_blocked(
@@ -695,7 +712,10 @@ int SyncEngine::synchronize() const {
                 );
             }
         } else {
-            sync_root = prepare_sync_root(sync_root);
+            const bool private_permissions =
+                config_->sync_permissions ==
+                config::SyncPermissionsMode::private_access;
+            sync_root = prepare_sync_root(sync_root, private_permissions);
             metadata.emplace(detail::FilesystemMetadata::detect(
                 config_->filesystem_metadata,
                 sync_root
@@ -704,7 +724,8 @@ int SyncEngine::synchronize() const {
                 items_,
                 sync_root,
                 config_->drive_id,
-                *metadata
+                *metadata,
+                private_permissions
             );
         }
 
@@ -780,7 +801,9 @@ int SyncEngine::synchronize() const {
                 items_,
                 *metadata,
                 console,
-                config_->download_concurrency
+                config_->download_concurrency,
+                config_->sync_permissions ==
+                    config::SyncPermissionsMode::private_access
             );
             console.section(
                 "execution_summary",

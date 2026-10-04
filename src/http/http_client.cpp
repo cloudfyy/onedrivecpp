@@ -512,9 +512,11 @@ HttpResult CurlHttpClient::download(
     const int descriptor = ::open(
         destination.c_str(),
         flags,
-        S_IRUSR | S_IWUSR |
-            S_IRGRP | S_IWGRP |
-            S_IROTH | S_IWOTH
+        request.private_download_permissions ?
+            S_IRUSR | S_IWUSR :
+            S_IRUSR | S_IWUSR |
+                S_IRGRP | S_IWGRP |
+                S_IROTH | S_IWOTH
     );
     if (descriptor == -1) {
         return std::unexpected(HttpError{

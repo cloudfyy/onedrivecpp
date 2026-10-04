@@ -72,7 +72,8 @@ void fsync_file(const std::filesystem::path& path);
 void fsync_directory(const std::filesystem::path& directory);
 void ensure_directory_tree(
     const std::filesystem::path& root,
-    const std::filesystem::path& directory
+    const std::filesystem::path& directory,
+    bool private_permissions = true
 );
 
 }  // namespace onedrive::sync::detail

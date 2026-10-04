@@ -182,6 +182,18 @@ DownloadValidationMode parse_download_validation(std::string_view value) {
     );
 }
 
+SyncPermissionsMode parse_sync_permissions(std::string_view value) {
+    if (value == "private") {
+        return SyncPermissionsMode::private_access;
+    }
+    if (value == "umask") {
+        return SyncPermissionsMode::umask;
+    }
+    throw std::runtime_error(
+        "invalid TOML configuration value for 'sync.permissions'"
+    );
+}
+
 }  // namespace
 
 Config Config::defaults() {
@@ -209,6 +221,7 @@ Config Config::defaults() {
             std::uint64_t{8} * 1024U * 1024U,
         .download_transport = {},
         .download_validation = DownloadValidationMode::strict,
+        .sync_permissions = SyncPermissionsMode::private_access,
         .filesystem_metadata = FilesystemMetadataMode::automatic,
         .dry_run = false,
     };
@@ -266,6 +279,7 @@ Config Config::load(const std::filesystem::path& path) {
                 "download_maximum_rate_bytes_per_second",
                 "download_http_version",
                 "download_validation",
+                "permissions",
             },
             "sync"
         );
@@ -398,6 +412,14 @@ Config Config::load(const std::filesystem::path& path) {
             )) {
             config.download_validation =
                 parse_download_validation(*value);
+        }
+        if (const auto value = optional_value<std::string>(
+                *sync,
+                "permissions",
+                "sync.permissions",
+                "a string"
+            )) {
+            config.sync_permissions = parse_sync_permissions(*value);
         }
     }
 

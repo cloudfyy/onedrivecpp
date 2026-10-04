@@ -31,6 +31,9 @@ inline graph::GraphOptions graph_options(const config::Config& config) {
         .relaxed_download_validation =
             config.download_validation ==
                 config::DownloadValidationMode::relaxed,
+        .private_download_permissions =
+            config.sync_permissions ==
+                config::SyncPermissionsMode::private_access,
     };
 }
 

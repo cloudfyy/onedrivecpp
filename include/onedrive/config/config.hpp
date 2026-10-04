@@ -21,6 +21,11 @@ enum class DownloadValidationMode {
     relaxed,
 };
 
+enum class SyncPermissionsMode {
+    private_access,
+    umask,
+};
+
 struct Config {
     std::filesystem::path sync_directory;
     std::filesystem::path state_directory;
@@ -43,6 +48,9 @@ struct Config {
     http::DownloadTransportOptions download_transport;
     DownloadValidationMode download_validation{
         DownloadValidationMode::strict
+    };
+    SyncPermissionsMode sync_permissions{
+        SyncPermissionsMode::private_access
     };
     FilesystemMetadataMode filesystem_metadata{
         FilesystemMetadataMode::automatic

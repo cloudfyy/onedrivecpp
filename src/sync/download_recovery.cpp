@@ -89,7 +89,8 @@ void recover_pending_downloads(
     storage::ItemStore& items,
     const std::filesystem::path& sync_root,
     const std::string& drive_id,
-    const FilesystemMetadata& metadata
+    const FilesystemMetadata& metadata,
+    bool private_permissions
 ) {
     const auto pending = items.pending_downloads(drive_id);
     if (pending.empty()) {
@@ -108,7 +109,11 @@ void recover_pending_downloads(
             download.item.remote_path,
             destination.string()
         );
-        ensure_directory_tree(sync_root, destination.parent_path());
+        ensure_directory_tree(
+            sync_root,
+            destination.parent_path(),
+            private_permissions
+        );
         if (std::filesystem::is_symlink(
                 std::filesystem::symlink_status(destination)
             ) ||

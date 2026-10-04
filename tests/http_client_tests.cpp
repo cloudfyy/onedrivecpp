@@ -296,7 +296,7 @@ int main() {
         streamed_download_offsets != std::vector<std::uint64_t>{0} ||
         streamed_download_data != "download" ||
         !inspected_download ||
-        (downloaded_status.st_mode & 0777) != 0644) {
+        (downloaded_status.st_mode & 0777) != 0600) {
         return fail("HTTP response was not streamed to the download file");
     }
 

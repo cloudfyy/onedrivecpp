@@ -202,6 +202,16 @@ Root directory for synchronized data. Actual content is stored under
 so multiple Microsoft users and Drives remain isolated. Files from the former
 flat layout are not moved automatically.
 .TP
+.B sync.permissions
+Local permission policy for synchronized data.
+.B private
+creates files as 0600 and secures the synchronization root and new directories
+as 0700.
+.B umask
+uses the process umask and is intended only for explicitly shared directories.
+The default is
+.BR private .
+.TP
 .B state.directory
 Directory containing the refresh token and SQLite synchronization state.
 .TP

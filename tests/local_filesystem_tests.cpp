@@ -167,8 +167,11 @@ int main() {
 
     const auto nested = root / "nested" / "directory";
     detail::ensure_directory_tree(root, nested);
-    if (!std::filesystem::is_directory(nested)) {
-        return fail("safe directory tree was not created");
+    struct stat nested_status {};
+    if (!std::filesystem::is_directory(nested) ||
+        ::stat(nested.c_str(), &nested_status) == -1 ||
+        (nested_status.st_mode & 0777) != 0700) {
+        return fail("private directory tree was not created securely");
     }
     const auto conflicting_file = root / "not-a-directory";
     {

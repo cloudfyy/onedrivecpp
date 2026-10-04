@@ -104,6 +104,50 @@ void secure_state_directory(const std::filesystem::path& directory) {
     }
 }
 
+void secure_sync_directory(const std::filesystem::path& directory) {
+    const int descriptor = ::open(
+        directory.c_str(),
+        O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+    );
+    if (descriptor == -1) {
+        throw std::runtime_error(
+            "cannot open sync directory '" + directory.string() + "': " +
+            std::strerror(errno)
+        );
+    }
+    struct stat status {};
+    if (::fstat(descriptor, &status) == -1) {
+        const std::string message = std::strerror(errno);
+        ::close(descriptor);
+        throw std::runtime_error(
+            "cannot inspect sync directory '" + directory.string() + "': " +
+            message
+        );
+    }
+    if (!S_ISDIR(status.st_mode) || status.st_uid != ::geteuid()) {
+        ::close(descriptor);
+        throw std::runtime_error(
+            "sync directory must be owned by the current user: " +
+            directory.string()
+        );
+    }
+    if ((status.st_mode & 07777) != private_directory_mode &&
+        ::fchmod(descriptor, private_directory_mode) == -1) {
+        const std::string message = std::strerror(errno);
+        ::close(descriptor);
+        throw std::runtime_error(
+            "cannot secure sync directory '" + directory.string() + "': " +
+            message
+        );
+    }
+    if (::close(descriptor) == -1) {
+        throw std::runtime_error(
+            "cannot close sync directory '" + directory.string() + "': " +
+            std::strerror(errno)
+        );
+    }
+}
+
 void validate_private_file(
     const std::filesystem::path& path,
     std::string_view description,
@@ -339,6 +383,10 @@ void prepare_sync_directory(
         config.sync_directory,
         "sync directory"
     );
+    if (config.sync_permissions ==
+        config::SyncPermissionsMode::private_access) {
+        secure_sync_directory(config.sync_directory);
+    }
     probe_writable_directory(config.sync_directory);
 }
 

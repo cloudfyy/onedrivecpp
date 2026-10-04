@@ -478,7 +478,8 @@ void fsync_directory(const std::filesystem::path& directory) {
 
 void ensure_directory_tree(
     const std::filesystem::path& root,
-    const std::filesystem::path& directory
+    const std::filesystem::path& directory,
+    bool private_permissions
 ) {
     const auto relative = directory.lexically_relative(root);
     if (relative.empty() && directory != root) {
@@ -507,6 +508,13 @@ void ensure_directory_tree(
             continue;
         }
         std::filesystem::create_directory(current);
+        if (private_permissions &&
+            ::chmod(current.c_str(), S_IRWXU) == -1) {
+            throw std::runtime_error(
+                "cannot secure local synchronization directory '" +
+                current.string() + "': " + std::strerror(errno)
+            );
+        }
         spdlog::trace("Created local directory '{}'", current.string());
     }
 }

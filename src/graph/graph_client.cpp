@@ -1313,6 +1313,8 @@ void MicrosoftGraphClient::download_file(
                                 download_transport.http_version,
                             .maximum_response_size = 0,
                             .download_offset = offset,
+                            .private_download_permissions =
+                                options_.private_download_permissions,
                             .stop_token = stop_token,
                         },
                         destination,

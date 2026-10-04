@@ -90,6 +90,7 @@ struct GraphOptions {
     };
     http::DownloadTransportOptions download_transport;
     bool relaxed_download_validation{false};
+    bool private_download_permissions{true};
 };
 
 PRO_DEF_MEM_DISPATCH(GraphDriveIdentityDispatch, drive_identity);

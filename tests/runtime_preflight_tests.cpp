@@ -112,6 +112,12 @@ int test_sync_directory_and_token() {
         if (!std::filesystem::is_directory(config.sync_directory)) {
             return fail("sync preflight did not create the sync directory");
         }
+        const auto sync_permissions =
+            std::filesystem::status(config.sync_directory).permissions();
+        if ((sync_permissions & std::filesystem::perms::all) !=
+            std::filesystem::perms::owner_all) {
+            return fail("sync preflight did not secure the sync directory");
+        }
         const auto token_permissions =
             std::filesystem::status(token_path).permissions();
         if ((token_permissions & std::filesystem::perms::all) !=

@@ -376,6 +376,7 @@ sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 [sync]
 # 当前账号的默认 OneDrive
 drive_id = "me"
+permissions = "private"
 download_concurrency = 4
 download_chunk_threshold_bytes = 8388608
 download_validation = "strict"
@@ -411,6 +412,11 @@ HEIC 文件实际下载的字节可能与 Graph 元数据不同；`"relaxed"` �
 实际传输进度动态预留，而不是信任 Graph 的大小元数据；无法安全扩充预留时会
 中止传输。由于 Graph 无法在下载前可靠识别 AIP 文件，宽松模式会作用于所有
 下载，并会降低完整性保证。
+
+`permissions` 默认为 `"private"`。新同步文件使用 `0600` 创建，同步根目录和
+新目录会设置为 `0700`，防止本机其他用户读取同步内容。只有确实需要通过 Unix
+组权限共享同步目录时，才应设置为 `"umask"`，让权限遵循进程 umask。打包的
+systemd 用户服务还会使用 `UMask=0077` 作为纵深防御。
 
 `sync.directory` 是同步数据的公共根目录。实际 Drive 内容会使用与 state 相同的
 稳定 ID 和友好名称组件进行隔离：

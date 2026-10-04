@@ -45,6 +45,7 @@ struct HttpRequest {
         std::size_t{16} * 1024U * 1024U
     };
     std::uint64_t download_offset{0};
+    bool private_download_permissions{true};
     std::stop_token stop_token;
 };
 
