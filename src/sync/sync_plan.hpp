@@ -19,7 +19,8 @@ public:
         bool replace_drive_items,
         std::string sync_filter_fingerprint,
         std::vector<std::string> snapshot_removals = {},
-        const std::vector<storage::ItemState>& tracked_items = {}
+        const std::vector<storage::ItemState>& tracked_items = {},
+        std::vector<storage::UploadSuppression> upload_suppressions = {}
     );
 
     [[nodiscard]] const graph::RemoteItem& directory(

@@ -531,8 +531,15 @@ server-side Graph filtering. A fingerprint of the effective rules is committed
 atomically with the Delta cursor. Adding, changing, removing, or reordering
 rules automatically causes the next synchronization to fetch the full remote
 state. Excluded files already present locally are deliberately retained because
-selection changes are not remote deletion records. The explicit
-`download REMOTE_PATH` command is not restricted by `sync.sync_list`.
+selection changes are not remote deletion records. When a tracked file moves
+from an included path to an excluded path, schema-v16 SQLite state binds an
+upload suppression to the retained object's device/inode identity. The same
+object is not uploaded again from its old path, even after local modification.
+If it disappears or a different filesystem object replaces it, the stale
+suppression is removed during the next upload scan. Moving the remote item back
+into the selected set downloads its current path without releasing protection
+for the retained old copy. The explicit `download REMOTE_PATH` command is not
+restricted by `sync.sync_list`.
 
 When `sync.sync_list` is configured, `sync.sync_root_files = true`
 automatically includes ordinary files located directly in the Drive root.
@@ -947,11 +954,11 @@ onedrive-cpp reset-state
 
 This preserves authentication tokens, configuration, local files, item
 snapshots, pending-download, pending-upload, and pending-move recovery records,
-and state for other drives. The next `sync` recovers pending operations first,
-then performs a full initial Delta query. Existing snapshots are used to detect
-local modifications safely; blocked-item records are preserved for diagnosis,
-and the complete remote inventory replaces the configured Drive's old item
-metadata.
+selectively retained upload suppressions, and state for other drives. The next
+`sync` recovers pending operations first, then performs a full initial Delta
+query. Existing snapshots are used to detect local modifications safely;
+blocked-item records are preserved for diagnosis, and the complete remote
+inventory replaces the configured Drive's old item metadata.
 
 During a Delta query, text output and logs report each completed page and the
 cumulative number of scanned items. JSON output emits a `delta_progress` event
@@ -977,9 +984,10 @@ onedrive-cpp reset-state --clear-all
 
 The command requires the configured Drive reference (for example, `me`) to be
 typed exactly before it removes item snapshots, the Delta cursor,
-pending-download, pending-upload, and pending-move recovery records, and
-blocked items. If no configured reference is available, it requires the raw
-Drive ID instead. Local files and other Drives remain untouched. Because local
+pending-download, pending-upload, pending-move recovery records, selectively
+retained upload suppressions, and blocked items. If no configured reference is
+available, it requires the raw Drive ID instead. Local files and other Drives
+remain untouched. Because local
 snapshots are no longer available, the next sync may report local modification
 conflicts. Automation must acknowledge this risk explicitly with
 `reset-state --clear-all --yes`; `--yes` is rejected without `--clear-all`.
@@ -1067,7 +1075,7 @@ parent directories are flushed before the Delta cursor advances, and a retry
 can adopt an already-moved destination after an interruption.
 Moves across filesystem boundaries are retained as `cross_device_move` blocked
 items; the client does not copy and delete data across mount points.
-Before an atomic move, schema-v15 SQLite state records the source and
+Before an atomic move, schema-v16 SQLite state records the source and
 destination paths, optional staging path, and source device/inode identity.
 The journal is removed in the same transaction that commits the moved item and
 Delta cursor. After an interruption, recovery locates the recorded identity at
@@ -1192,7 +1200,7 @@ or modify the synchronization directory.
 
 ## Suggested Next Steps
 
-1. Test remote moves across selective-sync include/exclude boundaries.
+1. Test remote file and directory moves against the live Microsoft Graph API.
 2. Connect the monitor to inotify.
 3. Extend uploads with directories, deletion propagation, and resumable
    sessions.

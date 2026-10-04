@@ -480,7 +480,11 @@ Pictures/*.jpg
 传输，但不是 Graph 服务端过滤。有效规则的摘要会与 Delta 游标在同一个 SQLite
 事务中提交。增加、修改、删除或重新排序规则后，下次同步会自动获取完整远端
 状态。选择范围变化不是远端删除记录，因此已经存在于本地但后来被排除的文件会
-被明确保留。用户执行的 `download REMOTE_PATH` 不受 `sync.sync_list` 限制。
+被明确保留。当已跟踪文件从包含路径移动到排除路径时，schema v16 SQLite 状态会
+用该保留对象的 device/inode 身份建立上传抑制；即使同一对象随后被本地修改，也
+不会从旧路径错误上传。对象消失或被不同 filesystem identity 替换后，下次上传
+扫描会清理失效抑制。远端项目重新移入选择范围时会下载当前路径，但不会解除旧保留
+副本的保护。用户执行的 `download REMOTE_PATH` 不受 `sync.sync_list` 限制。
 
 配置 `sync.sync_list` 后，设置 `sync.sync_root_files = true` 会自动包含直接位于
 Drive 根目录中的普通文件。根目录下的目录及其后代仍然必须由包含规则选中，
@@ -518,7 +522,7 @@ SQLite 中所有已跟踪后代的路径。远端内容指纹匹配的文件会�
 安全认领已经移动完成的目标。
 跨文件系统边界的移动会保留为 `cross_device_move` blocked item；程序不会跨挂载
 点复制后删除数据。
-执行原子移动前，schema v15 SQLite 状态会记录源路径、目标路径、可选 staging
+执行原子移动前，schema v16 SQLite 状态会记录源路径、目标路径、可选 staging
 路径及源对象的 device/inode 身份。移动后的 item 与 Delta 游标提交会在同一事务
 中删除 journal。中断恢复会在原路径、staging 路径和最终目标中查找完全匹配的
 filesystem identity；`reset-state` 保留这些记录，`--clear-all` 会删除它们。
@@ -848,10 +852,10 @@ onedrive-cpp reset-state
 ```
 
 该命令保留认证 token、配置、同步目录中的本地文件、item 快照、pending
-download、pending upload 和 pending move 恢复记录、blocked item 以及其他
-Drive 的状态。下一次 `sync` 会先恢复 pending 操作，再执行完整的初始 Delta
-查询。同步过程中继续使用旧快照安全判断本地文件是否被修改，并用完整远端清单
-替换当前 Drive 的旧 item 元数据。
+download、pending upload 和 pending move 恢复记录、选择性保留副本的上传抑制、
+blocked item 以及其他 Drive 的状态。下一次 `sync` 会先恢复 pending 操作，再
+执行完整的初始 Delta 查询。同步过程中继续使用旧快照安全判断本地文件是否被
+修改，并用完整远端清单替换当前 Drive 的旧 item 元数据。
 
 如果需要丢弃当前配置 Drive 的全部同步状态，必须显式使用危险模式：
 
@@ -860,9 +864,9 @@ onedrive-cpp reset-state --clear-all
 ```
 
 命令要求准确输入当前配置的 Drive 引用（例如 `me`），确认后才会删除 item
-快照、Delta 游标、pending download、pending upload、pending move 恢复记录以及
-blocked item。没有可用的配置引用时，改为要求输入原始 Drive ID。本地文件和
-其他 Drive 的状态不会被修改。由于本地快照已被清除，下一次同步可能报告本地
+快照、Delta 游标、pending download、pending upload、pending move 恢复记录、
+选择性保留副本的上传抑制以及 blocked item。没有可用的配置引用时，改为要求输入
+原始 Drive ID。本地文件和其他 Drive 的状态不会被修改。由于本地快照已被清除，下一次同步可能报告本地
 修改冲突。自动化场景必须使用
 `reset-state --clear-all --yes` 显式承担该风险；未指定 `--clear-all` 时
 `--yes` 会被拒绝。
@@ -932,8 +936,8 @@ journal，项目状态、Delta 游标和 journal 清理在同一事务中提交�
 链接、意外路径类型和非空目录都会被保留并记录为可重试 blocked item；即使
 `sync.local_conflict = "backup"` 也不会自动备份后删除。Delta 游标推进后，后续
 同步仍会重试。完整 Delta 刷新会用 Graph 完整清单与旧快照对账，因此重置或失效
-游标不会漏掉远端删除。仅因 `sync_list` 排除的项目只移除数据库快照，保留本地
-文件。
+游标不会漏掉远端删除。仅因 `sync_list` 排除的项目会移除同步快照并保留本地
+文件，同时用持久 filesystem identity 抑制该保留对象从旧路径重新上传。
 
 Microsoft Graph 提供文件内容哈希时，程序会在临时文件进入待安装 journal 前
 进行校验：优先使用 SHA-256，否则校验 OneDrive/SharePoint QuickXorHash。
@@ -1033,7 +1037,7 @@ journalctl --user -u onedrive-cpp.service -f
 
 ## 后续实现建议
 
-1. 测试远端移动跨越 selective-sync 包含/排除边界的行为。
+1. 使用真实 Microsoft Graph API 测试远端文件和目录移动。
 2. 使用 inotify 接入 monitor。
 3. 为上传增加目录、删除传播和可恢复分片 session。
 4. 为 Graph 和文件系统边界增加更多集成测试。

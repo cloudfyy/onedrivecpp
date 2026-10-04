@@ -165,10 +165,11 @@ UploadSnapshot create_upload_snapshot(
 std::vector<UploadCandidate> discover_uploads(
     const SafeSyncRoot& sync_root,
     const std::string& drive_id,
-    const storage::ItemStore& items,
+    storage::ItemStore& items,
     const SyncList* sync_list,
     std::size_t& blocked,
-    const cli::Console& console
+    const cli::Console& console,
+    bool cleanup_suppressions
 ) {
     std::unordered_map<std::string, storage::ItemState> tracked;
     for (auto item : items.drive_items(drive_id)) {
@@ -182,6 +183,45 @@ std::vector<UploadCandidate> discover_uploads(
     for (const auto& item : items.blocked_items(drive_id)) {
         blocked_ids.insert(item.remote_id);
         blocked_paths.insert(item.remote_path);
+    }
+    std::unordered_set<std::string> suppressed_paths;
+    for (const auto& suppression : items.upload_suppressions(drive_id)) {
+        std::error_code suppression_error;
+        const auto status = std::filesystem::symlink_status(
+            suppression.local_path,
+            suppression_error
+        );
+        bool matches = false;
+        if (!suppression_error &&
+            std::filesystem::is_regular_file(status)) {
+            const auto identity = sync_root.identity(
+                suppression.local_path,
+                false
+            );
+            matches =
+                identity.device == suppression.source_device &&
+                identity.inode == suppression.source_inode;
+        } else if (
+            suppression_error &&
+            suppression_error !=
+                std::errc::no_such_file_or_directory
+        ) {
+            throw std::runtime_error(
+                "cannot inspect selectively retained local file '" +
+                suppression.local_path.string() + "': " +
+                suppression_error.message()
+            );
+        }
+        if (matches) {
+            suppressed_paths.insert(
+                suppression.local_path.lexically_normal().string()
+            );
+        } else if (cleanup_suppressions) {
+            items.remove_upload_suppression(
+                drive_id,
+                suppression.local_path
+            );
+        }
     }
     std::vector<UploadCandidate> uploads;
     std::error_code error;
@@ -245,6 +285,17 @@ std::vector<UploadCandidate> discover_uploads(
             continue;
         }
         const auto previous = tracked.find(path.lexically_normal().string());
+        if (suppressed_paths.contains(
+                path.lexically_normal().string()
+            )) {
+            iterator.increment(error);
+            if (error) {
+                throw std::runtime_error(
+                    "cannot continue local upload scan: " + error.message()
+                );
+            }
+            continue;
+        }
         if (blocked_paths.contains(remote_path) ||
             (previous != tracked.end() &&
              blocked_ids.contains(previous->second.remote_id))) {
@@ -417,7 +468,8 @@ UploadSummary upload_local_changes(
         items,
         sync_list,
         summary.blocked,
-        console
+        console,
+        !dry_run
     );
     summary.planned = uploads.size();
     if (dry_run) {

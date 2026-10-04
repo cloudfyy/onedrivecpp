@@ -30,6 +30,14 @@ struct ItemState {
     bool directory{false};
 };
 
+struct UploadSuppression {
+    std::string drive_id;
+    std::string remote_id;
+    std::filesystem::path local_path;
+    std::uint64_t source_device{0};
+    std::uint64_t source_inode{0};
+};
+
 struct BlockedItem {
     std::string drive_id;
     std::string remote_id;
@@ -53,6 +61,7 @@ struct ItemDelta {
     std::vector<std::string> removals;
     std::vector<BlockedItem> blocked_upserts;
     std::vector<std::string> blocked_removals;
+    std::vector<UploadSuppression> upload_suppressions;
     std::string delta_link;
     std::string sync_filter_fingerprint;
     bool replace_drive_items{false};
@@ -101,6 +110,7 @@ struct ClearedState {
     std::size_t partial_downloads{0};
     std::size_t pending_uploads{0};
     std::size_t pending_moves{0};
+    std::size_t upload_suppressions{0};
     std::size_t blocked_items{0};
     bool delta_link{false};
 };
@@ -120,6 +130,14 @@ PRO_DEF_MEM_DISPATCH(StoreCommitUploadDispatch, commit_upload);
 PRO_DEF_MEM_DISPATCH(StoreSavePendingMoveDispatch, save_pending_move);
 PRO_DEF_MEM_DISPATCH(StoreRemovePendingMoveDispatch, remove_pending_move);
 PRO_DEF_MEM_DISPATCH(StorePendingMovesDispatch, pending_moves);
+PRO_DEF_MEM_DISPATCH(
+    StoreUploadSuppressionsDispatch,
+    upload_suppressions
+);
+PRO_DEF_MEM_DISPATCH(
+    StoreRemoveUploadSuppressionDispatch,
+    remove_upload_suppression
+);
 PRO_DEF_MEM_DISPATCH(StoreBlockedDispatch, blocked_items);
 PRO_DEF_MEM_DISPATCH(StoreResetDispatch, reset);
 PRO_DEF_MEM_DISPATCH(StoreClearDispatch, clear);
@@ -174,6 +192,14 @@ struct ItemStoreFacade : pro::facade_builder
     ::add_convention<
         StorePendingMovesDispatch,
         std::vector<PendingMove>(const std::string&) const
+    >
+    ::add_convention<
+        StoreUploadSuppressionsDispatch,
+        std::vector<UploadSuppression>(const std::string&) const
+    >
+    ::add_convention<
+        StoreRemoveUploadSuppressionDispatch,
+        void(const std::string&, const std::filesystem::path&)
     >
     ::add_convention<
         StoreBlockedDispatch,
@@ -288,6 +314,22 @@ public:
         const std::string& drive_id
     ) const {
         return implementation()->pending_moves(drive_id);
+    }
+
+    [[nodiscard]] std::vector<UploadSuppression> upload_suppressions(
+        const std::string& drive_id
+    ) const {
+        return implementation()->upload_suppressions(drive_id);
+    }
+
+    void remove_upload_suppression(
+        const std::string& drive_id,
+        const std::filesystem::path& local_path
+    ) {
+        implementation()->remove_upload_suppression(
+            drive_id,
+            local_path
+        );
     }
 
     [[nodiscard]] std::vector<BlockedItem> blocked_items(

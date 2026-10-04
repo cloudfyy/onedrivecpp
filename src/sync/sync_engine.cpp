@@ -2036,6 +2036,7 @@ int SyncEngine::synchronize() const {
         }
         const auto tracked_items =
             items_.drive_items(config_->drive_id);
+        std::vector<storage::UploadSuppression> upload_suppressions;
         if (replace_drive_items) {
             add_full_refresh_deletions(
                 delta,
@@ -2076,6 +2077,50 @@ int SyncEngine::synchronize() const {
                 filtered.excluded
             );
             snapshot_removals = std::move(filtered.snapshot_removals);
+            if (safe_root) {
+                for (const auto& remote_id :
+                     filtered.retained_remote_ids) {
+                    const auto previous = std::ranges::find(
+                        tracked_items,
+                        remote_id,
+                        &storage::ItemState::remote_id
+                    );
+                    if (previous == tracked_items.end() ||
+                        previous->directory) {
+                        continue;
+                    }
+                    std::error_code error;
+                    const auto status = std::filesystem::symlink_status(
+                        previous->local_path,
+                        error
+                    );
+                    if (error ==
+                        std::errc::no_such_file_or_directory) {
+                        continue;
+                    }
+                    if (error) {
+                        throw std::runtime_error(
+                            "cannot inspect selectively retained local file '" +
+                            previous->local_path.string() + "': " +
+                            error.message()
+                        );
+                    }
+                    if (!std::filesystem::is_regular_file(status)) {
+                        continue;
+                    }
+                    const auto identity = safe_root->identity(
+                        previous->local_path,
+                        false
+                    );
+                    upload_suppressions.push_back({
+                        .drive_id = config_->drive_id,
+                        .remote_id = previous->remote_id,
+                        .local_path = previous->local_path,
+                        .source_device = identity.device,
+                        .source_inode = identity.inode,
+                    });
+                }
+            }
             delta = std::move(filtered.delta);
         }
         auto plan = detail::SyncPlan::build(
@@ -2085,7 +2130,8 @@ int SyncEngine::synchronize() const {
             replace_drive_items,
             sync_filter_fingerprint,
             std::move(snapshot_removals),
-            tracked_items
+            tracked_items,
+            std::move(upload_suppressions)
         );
         report_plan(plan, config_->drive_id, console);
 

@@ -48,8 +48,8 @@ settings when required.
 .B reset-state
 Reset the saved delta link for the configured drive. This preserves
 authentication, configuration, local files, item snapshots, pending-download,
-pending-upload, and pending-move recovery records, blocked-item records, and
-state for other drives. The next
+pending-upload, pending-move recovery records, selectively retained upload
+suppressions, blocked-item records, and state for other drives. The next
 .B sync
 recovers pending downloads and performs a full initial delta query for the
 configured drive. The complete remote inventory replaces old item metadata;
@@ -58,8 +58,8 @@ items that still conflict are recorded as blocked.
 With
 .BR \-\-clear\-all ,
 remove item snapshots, the delta link, pending-download, pending-upload, and
-pending-move recovery records, and blocked items for the configured drive. The
-command requires the configured
+pending-move recovery records, selectively retained upload suppressions, and
+blocked items for the configured drive. The command requires the configured
 drive ID as interactive confirmation. Local files and other drives remain
 untouched, but the next sync may report local modification conflicts. For automation,
 .B \-\-yes
@@ -113,7 +113,11 @@ are processed child-first and removed only when empty. Modified files,
 symbolic links, unexpected path types, and nonempty directories are retained
 as retryable blocked items. Missing targets are accepted. Full Delta refreshes
 reconcile the Graph inventory with prior snapshots, while items excluded only
-by selective synchronization retain their local files. Use
+by selective synchronization retain their local files. A schema-v16 upload
+suppression binds an included-to-excluded retained file to its device/inode,
+preventing the same object from being uploaded again at its old path. Missing
+or identity-replaced objects release stale suppressions during upload scanning.
+Use
 .PP
 Delta items that retain their remote ID while changing path are renamed or
 moved locally without replacing an existing destination. Directory moves
@@ -130,7 +134,7 @@ interrupted move safe to retry.
 Moves across filesystem boundaries are persisted as
 .B cross_device_move
 blocked items; data is not copied and deleted across mount points.
-Before rename, a schema-v15 SQLite pending-move journal records the source,
+Before rename, a schema-v16 SQLite pending-move journal records the source,
 destination, optional staging path, and source device/inode identity. The moved
 item, Delta cursor, and journal removal commit atomically. Recovery searches
 the original, staging, and destination paths for the recorded identity.

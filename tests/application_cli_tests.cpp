@@ -306,6 +306,16 @@ public:
         return {};
     }
 
+    [[nodiscard]] std::vector<onedrive::storage::UploadSuppression>
+    upload_suppressions(const std::string&) const {
+        return {};
+    }
+
+    void remove_upload_suppression(
+        const std::string&,
+        const std::filesystem::path&
+    ) {}
+
     [[nodiscard]] std::vector<onedrive::storage::BlockedItem> blocked_items(
         const std::string&
     ) const {
@@ -329,6 +339,7 @@ public:
             .partial_downloads = 4,
             .pending_uploads = 1,
             .pending_moves = 5,
+            .upload_suppressions = 6,
             .blocked_items = 3,
             .delta_link = true,
         };
@@ -712,7 +723,8 @@ int main() {
         ) ||
         !reset_state.standard_output.contains(
             "Item snapshots, pending downloads, partial downloads, pending "
-            "uploads, and blocked items were preserved"
+            "uploads, pending moves, upload suppressions, and blocked items "
+            "were preserved"
         ) ||
         !reset_state.standard_output.contains(
             "next sync will perform a full Microsoft Graph delta query"
@@ -734,8 +746,9 @@ int main() {
         if (!contents.contains(
                 "Synchronization cursor reset completed for drive 'drive-id': saved "
                 "cursor removed; item snapshots, pending downloads, partial "
-                "downloads, pending uploads, pending moves, and blocked items "
-                "preserved; next sync will use an initial delta query"
+                "downloads, pending uploads, pending moves, upload "
+                "suppressions, and blocked items preserved; next sync will "
+                "use an initial delta query"
             )) {
             return fail("reset-state completion was not written to the log");
         }
@@ -780,7 +793,8 @@ int main() {
         ) ||
         !confirmed_clear.standard_output.contains(
             "7 item snapshots, 2 pending downloads, 4 partial downloads, 1 "
-            "pending uploads, 5 pending moves, and 3 blocked items removed"
+            "pending uploads, 5 pending moves, 6 upload suppressions, and 3 "
+            "blocked items removed"
         ) ||
         !confirmed_clear.standard_output.contains(
             "Cleared all synchronization state for drive 'me' (drive-id)"

@@ -254,11 +254,24 @@ public:
             throw std::runtime_error{"simulated delta persistence failure"};
         }
         ++apply_count;
+        if (delta.replace_drive_items) {
+            items.clear();
+        }
+        for (const auto& remote_id : delta.removals) {
+            items.erase(remote_id);
+        }
         for (const auto& item : delta.upserts) {
             pending_moves_by_id.erase(item.remote_id);
+            items.insert_or_assign(item.remote_id, item);
         }
         for (const auto& remote_id : delta.removals) {
             pending_moves_by_id.erase(remote_id);
+        }
+        for (const auto& suppression : delta.upload_suppressions) {
+            upload_suppressions_by_path.insert_or_assign(
+                suppression.local_path.lexically_normal().string(),
+                suppression
+            );
         }
         applied_delta = std::move(delta);
     }
@@ -383,6 +396,28 @@ public:
         return result;
     }
 
+    [[nodiscard]] std::vector<onedrive::storage::UploadSuppression>
+    upload_suppressions(const std::string&) const {
+        const std::scoped_lock lock{mutex};
+        std::vector<onedrive::storage::UploadSuppression> result;
+        for (const auto& [path, suppression] :
+             upload_suppressions_by_path) {
+            static_cast<void>(path);
+            result.push_back(suppression);
+        }
+        return result;
+    }
+
+    void remove_upload_suppression(
+        const std::string&,
+        const std::filesystem::path& local_path
+    ) {
+        const std::scoped_lock lock{mutex};
+        upload_suppressions_by_path.erase(
+            local_path.lexically_normal().string()
+        );
+    }
+
     [[nodiscard]] std::vector<onedrive::storage::BlockedItem> blocked_items(
         const std::string&
     ) const {
@@ -448,6 +483,8 @@ public:
         pending_uploads_by_path;
     std::unordered_map<std::string, onedrive::storage::PendingMove>
         pending_moves_by_id;
+    std::unordered_map<std::string, onedrive::storage::UploadSuppression>
+        upload_suppressions_by_path;
     std::vector<onedrive::storage::BlockedItem> blocked;
     onedrive::storage::ItemDelta applied_delta;
     std::optional<std::string> saved_delta_link;
@@ -717,6 +754,245 @@ int test_selective_sync_refreshes_delta_state() {
         return fail(
             "enabling root files did not force and apply a filtered full delta"
         );
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_selective_sync_remote_moves() {
+    TemporaryDirectory temporary;
+    const auto sync_list = temporary.path() / "sync_list";
+    {
+        std::ofstream output{sync_list};
+        output << "/Documents/\n";
+    }
+    const auto root = temporary.path() / "file-move";
+    std::filesystem::create_directories(root / "Documents");
+    {
+        std::ofstream output{root / "Documents" / "A.txt"};
+        output << "data";
+    }
+    FakeItemStore items;
+    items.items.emplace(
+        "selective-move",
+        tracked_item(
+            root,
+            "selective-move",
+            "Documents/A.txt"
+        )
+    );
+    FakeGraphClient graph;
+    graph.changes = {
+        file("selective-move", "Archive/A.txt", 4),
+    };
+    FakeMetrics metrics;
+    auto config = config_for(root, false);
+    config.sync_list = sync_list;
+    config.upload = true;
+    if (onedrive::sync::SyncEngine{
+            config,
+            graph,
+            items,
+            metrics
+        }.synchronize() != 0 ||
+        !std::filesystem::exists(root / "Documents" / "A.txt") ||
+        std::filesystem::exists(root / "Archive" / "A.txt") ||
+        graph.upload_count != 0 ||
+        items.upload_suppressions_by_path.size() != 1 ||
+        items.items.contains("selective-move")) {
+        return fail(
+            "move from included to excluded path was not retained safely"
+        );
+    }
+    items.saved_delta_link = items.applied_delta.delta_link;
+    items.saved_sync_filter_fingerprint =
+        items.applied_delta.sync_filter_fingerprint;
+
+    {
+        std::ofstream output{
+            root / "Documents" / "A.txt",
+            std::ios::trunc
+        };
+        output << "user";
+    }
+    graph.changes.clear();
+    if (onedrive::sync::SyncEngine{
+            config,
+            graph,
+            items,
+            metrics
+        }.synchronize() != 0 ||
+        graph.upload_count != 0 ||
+        items.upload_suppressions_by_path.size() != 1) {
+        return fail(
+            "modified selectively retained file was uploaded unexpectedly"
+        );
+    }
+
+    graph.changes = {
+        file("selective-move", "Documents/B.txt", 4),
+    };
+    graph.contents["selective-move"] = "data";
+    if (onedrive::sync::SyncEngine{
+            config,
+            graph,
+            items,
+            metrics
+        }.synchronize() != 0 ||
+        graph.download_count != 1 ||
+        graph.upload_count != 0 ||
+        !std::filesystem::exists(root / "Documents" / "A.txt") ||
+        !std::filesystem::exists(root / "Documents" / "B.txt") ||
+        items.upload_suppressions_by_path.size() != 1) {
+        return fail(
+            "move from excluded to included path lost retained protection"
+        );
+    }
+
+    std::filesystem::rename(
+        root / "Documents" / "A.txt",
+        root / "retained-A.txt"
+    );
+    {
+        std::ofstream output{root / "Documents" / "A.txt"};
+        output << "new!";
+    }
+    graph.changes.clear();
+    if (onedrive::sync::SyncEngine{
+            config,
+            graph,
+            items,
+            metrics
+        }.synchronize() != 0 ||
+        graph.upload_count != 1 ||
+        graph.uploaded_paths !=
+            std::vector<std::string>{"Documents/A.txt"} ||
+        !items.upload_suppressions_by_path.empty()) {
+        return fail(
+            "replacement of selectively retained file stayed suppressed"
+        );
+    }
+
+    const auto directory_root = temporary.path() / "directory-move";
+    std::filesystem::create_directories(
+        directory_root / "Documents" / "Project"
+    );
+    {
+        std::ofstream output{
+            directory_root / "Documents" / "Project" / "one.txt"
+        };
+        output << "data";
+    }
+    {
+        std::ofstream output{
+            directory_root / "Documents" / "Project" / "two.txt"
+        };
+        output << "data";
+    }
+    FakeItemStore directory_items;
+    directory_items.items.emplace(
+        "selective-directory",
+        tracked_item(
+            directory_root,
+            "selective-directory",
+            "Documents/Project",
+            true
+        )
+    );
+    directory_items.items.emplace(
+        "selective-child-one",
+        tracked_item(
+            directory_root,
+            "selective-child-one",
+            "Documents/Project/one.txt"
+        )
+    );
+    directory_items.items.emplace(
+        "selective-child-two",
+        tracked_item(
+            directory_root,
+            "selective-child-two",
+            "Documents/Project/two.txt"
+        )
+    );
+    FakeGraphClient directory_graph;
+    directory_graph.changes = {
+        {
+            .id = "selective-directory",
+            .name = "Project",
+            .etag = "directory-etag-2",
+            .parent_id = "archive",
+            .remote_path = "Archive/Project",
+            .directory = true,
+        },
+        file(
+            "selective-child-one",
+            "Archive/Project/one.txt",
+            4
+        ),
+        file(
+            "selective-child-two",
+            "Archive/Project/two.txt",
+            4
+        ),
+    };
+    FakeMetrics directory_metrics;
+    auto directory_config = config_for(directory_root, false);
+    directory_config.sync_list = sync_list;
+    directory_config.upload = true;
+    if (onedrive::sync::SyncEngine{
+            directory_config,
+            directory_graph,
+            directory_items,
+            directory_metrics
+        }.synchronize() != 0 ||
+        directory_graph.upload_count != 0 ||
+        directory_items.upload_suppressions_by_path.size() != 2 ||
+        !directory_items.items.empty() ||
+        !std::filesystem::exists(
+            directory_root / "Documents" / "Project" / "one.txt"
+        ) ||
+        !std::filesystem::exists(
+            directory_root / "Documents" / "Project" / "two.txt"
+        )) {
+        return fail(
+            "directory move outside selective sync did not retain descendants"
+        );
+    }
+
+    const auto dry_root = temporary.path() / "dry-move";
+    std::filesystem::create_directories(dry_root / "Documents");
+    {
+        std::ofstream output{dry_root / "Documents" / "A.txt"};
+        output << "data";
+    }
+    FakeItemStore dry_items;
+    dry_items.items.emplace(
+        "dry-selective-move",
+        tracked_item(
+            dry_root,
+            "dry-selective-move",
+            "Documents/A.txt"
+        )
+    );
+    FakeGraphClient dry_graph;
+    dry_graph.changes = {
+        file("dry-selective-move", "Archive/A.txt", 4),
+    };
+    FakeMetrics dry_metrics;
+    auto dry_config = config_for(dry_root, true);
+    dry_config.sync_list = sync_list;
+    dry_config.upload = true;
+    if (onedrive::sync::SyncEngine{
+            dry_config,
+            dry_graph,
+            dry_items,
+            dry_metrics
+        }.synchronize() != 0 ||
+        dry_items.apply_count != 0 ||
+        !dry_items.upload_suppressions_by_path.empty() ||
+        dry_graph.upload_count != 0 ||
+        !std::filesystem::exists(dry_root / "Documents" / "A.txt")) {
+        return fail("selective move dry run changed local or durable state");
     }
     return EXIT_SUCCESS;
 }
@@ -3446,6 +3722,10 @@ int main() {
         return result;
     }
     if (const int result = test_selective_sync_refreshes_delta_state();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_selective_sync_remote_moves();
         result != EXIT_SUCCESS) {
         return result;
     }

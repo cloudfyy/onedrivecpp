@@ -55,6 +55,13 @@ public:
     [[nodiscard]] std::vector<PendingMove> pending_moves(
         const std::string& drive_id
     ) const;
+    [[nodiscard]] std::vector<UploadSuppression> upload_suppressions(
+        const std::string& drive_id
+    ) const;
+    void remove_upload_suppression(
+        const std::string& drive_id,
+        const std::filesystem::path& local_path
+    );
     [[nodiscard]] std::vector<BlockedItem> blocked_items(
         const std::string& drive_id
     ) const;
@@ -114,6 +121,12 @@ private:
     [[nodiscard]] std::vector<PendingMove> pending_moves_on_worker(
         const std::string& drive_id
     ) const;
+    [[nodiscard]] std::vector<UploadSuppression>
+    upload_suppressions_on_worker(const std::string& drive_id) const;
+    void remove_upload_suppression_on_worker(
+        const std::string& drive_id,
+        const std::filesystem::path& local_path
+    );
     [[nodiscard]] std::vector<BlockedItem> blocked_items_on_worker(
         const std::string& drive_id
     ) const;

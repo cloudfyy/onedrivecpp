@@ -219,6 +219,16 @@ public:
         return {};
     }
 
+    [[nodiscard]] std::vector<onedrive::storage::UploadSuppression>
+    upload_suppressions(const std::string&) const {
+        return {};
+    }
+
+    void remove_upload_suppression(
+        const std::string&,
+        const std::filesystem::path&
+    ) {}
+
     [[nodiscard]] std::vector<onedrive::storage::BlockedItem> blocked_items(
         const std::string&
     ) const {

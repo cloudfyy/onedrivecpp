@@ -176,6 +176,8 @@ int main() {
     if (!filtered.delta.changes.empty() ||
         filtered.snapshot_removals !=
             std::vector<std::string>{"tracked"} ||
+        filtered.retained_remote_ids !=
+            std::vector<std::string>{"tracked"} ||
         filtered.excluded != 2) {
         return fail("incremental filtering did not remove excluded snapshots");
     }

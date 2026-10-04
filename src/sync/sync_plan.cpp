@@ -18,7 +18,8 @@ SyncPlan SyncPlan::build(
     bool replace_drive_items,
     std::string sync_filter_fingerprint,
     std::vector<std::string> snapshot_removals,
-    const std::vector<storage::ItemState>& tracked_items
+    const std::vector<storage::ItemState>& tracked_items,
+    std::vector<storage::UploadSuppression> upload_suppressions
 ) {
     SyncPlan plan;
     plan.delta_ = std::move(delta);
@@ -28,6 +29,8 @@ SyncPlan SyncPlan::build(
         std::move(sync_filter_fingerprint);
     plan.state_delta_.replace_drive_items = replace_drive_items;
     plan.state_delta_.removals = std::move(snapshot_removals);
+    plan.state_delta_.upload_suppressions =
+        std::move(upload_suppressions);
 
     for (std::size_t index = 0; index < plan.delta_.changes.size(); ++index) {
         const auto& item = plan.delta_.changes[index];

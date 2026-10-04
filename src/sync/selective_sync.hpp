@@ -55,6 +55,7 @@ private:
 struct FilteredDelta {
     graph::DeltaResult delta;
     std::vector<std::string> snapshot_removals;
+    std::vector<std::string> retained_remote_ids;
     std::size_t excluded{0};
 };
 

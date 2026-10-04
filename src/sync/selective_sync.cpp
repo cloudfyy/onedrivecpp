@@ -344,6 +344,7 @@ FilteredDelta filter_delta(
             .delta_link = std::move(delta.delta_link),
         },
         .snapshot_removals = {},
+        .retained_remote_ids = {},
     };
     result.delta.changes.reserve(delta.changes.size());
     for (std::size_t index = 0; index < delta.changes.size(); ++index) {
@@ -353,8 +354,11 @@ FilteredDelta filter_delta(
             continue;
         }
         ++result.excluded;
-        if (!replace_drive_items && is_tracked(item.id)) {
-            result.snapshot_removals.push_back(item.id);
+        if (is_tracked(item.id)) {
+            result.retained_remote_ids.push_back(item.id);
+            if (!replace_drive_items) {
+                result.snapshot_removals.push_back(item.id);
+            }
         }
     }
     return result;

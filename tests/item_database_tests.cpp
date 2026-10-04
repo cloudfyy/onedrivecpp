@@ -276,6 +276,31 @@ bool create_version_fourteen_database(const std::filesystem::path& path) {
     return succeeded;
 }
 
+bool create_version_fifteen_database(const std::filesystem::path& path) {
+    if (!create_version_fourteen_database(path)) {
+        return false;
+    }
+    sqlite3* database = nullptr;
+    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
+        sqlite3_close(database);
+        return false;
+    }
+    constexpr const char* migration =
+        "ALTER TABLE pending_move ADD COLUMN staging_path "
+        "TEXT NOT NULL DEFAULT '';"
+        "PRAGMA user_version = 15;";
+    const bool succeeded =
+        sqlite3_exec(
+            database,
+            migration,
+            nullptr,
+            nullptr,
+            nullptr
+        ) == SQLITE_OK;
+    sqlite3_close(database);
+    return succeeded;
+}
+
 bool identity_row_is_valid(const std::filesystem::path& path) {
     sqlite3* database = nullptr;
     if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
@@ -622,6 +647,32 @@ int main() {
             .source_device = 30,
             .source_inode = 40,
         });
+        database.apply_delta({
+            .drive_id = "me",
+            .upload_suppressions = {
+                {
+                    .remote_id = "suppressed-me",
+                    .local_path =
+                        temporary_directory.path() / "suppressed-me.txt",
+                    .source_device = 50,
+                    .source_inode = 60,
+                },
+            },
+            .delta_link = "https://graph.example.test/delta-me",
+        });
+        database.apply_delta({
+            .drive_id = "other-drive",
+            .upload_suppressions = {
+                {
+                    .remote_id = "suppressed-other",
+                    .local_path =
+                        temporary_directory.path() / "suppressed-other.txt",
+                    .source_device = 70,
+                    .source_inode = 80,
+                },
+            },
+            .delta_link = "https://graph.example.test/delta-other",
+        });
         const auto pending_me = database.pending_downloads("me");
         if (pending_me.size() != 1 ||
             database.pending_downloads("other-drive").size() != 1 ||
@@ -633,6 +684,8 @@ int main() {
             !database.partial_download("other-drive", "partial-other") ||
             database.pending_moves("me").size() != 1 ||
             database.pending_moves("other-drive").size() != 1 ||
+            database.upload_suppressions("me").size() != 1 ||
+            database.upload_suppressions("other-drive").size() != 1 ||
             database.blocked_items("me").size() != 1 ||
             database.blocked_items("other-drive").size() != 1 ||
             database.blocked_items("me")[0].attempt_count != 1 ||
@@ -670,6 +723,8 @@ int main() {
             !database.partial_download("other-drive", "partial-other") ||
             database.pending_moves("me").size() != 1 ||
             database.pending_moves("other-drive").size() != 1 ||
+            database.upload_suppressions("me").size() != 1 ||
+            database.upload_suppressions("other-drive").size() != 1 ||
             database.blocked_items("me").size() != 1 ||
             database.blocked_items("other-drive").size() != 1 ||
             database.delta_link("other-drive") !=
@@ -699,6 +754,8 @@ int main() {
             !database.partial_download("other-drive", "partial-other") ||
             database.pending_moves("me").size() != 1 ||
             database.pending_moves("other-drive").size() != 1 ||
+            database.upload_suppressions("me").size() != 1 ||
+            database.upload_suppressions("other-drive").size() != 1 ||
             database.blocked_items("me").size() != 1 ||
             database.blocked_items("other-drive").size() != 1 ||
             database.delta_link("other-drive") !=
@@ -744,6 +801,8 @@ int main() {
             !database.partial_download("other-drive", "partial-other") ||
             database.pending_moves("me").size() != 1 ||
             database.pending_moves("other-drive").size() != 1 ||
+            database.upload_suppressions("me").size() != 1 ||
+            database.upload_suppressions("other-drive").size() != 1 ||
             database.blocked_items("me").size() != 1 ||
             database.blocked_items("me")[0].remote_id != "fresh-blocked-me" ||
             database.blocked_items("other-drive").size() != 1) {
@@ -754,6 +813,7 @@ int main() {
         if (cleared.items != 1 || cleared.pending_downloads != 1 ||
             cleared.partial_downloads != 1 ||
             cleared.pending_moves != 1 ||
+            cleared.upload_suppressions != 1 ||
             cleared.blocked_items != 1 || !cleared.delta_link ||
             database.size() != 3 ||
             database.find("me", "fresh-me") ||
@@ -764,6 +824,8 @@ int main() {
             database.pending_downloads("other-drive").size() != 1 ||
             !database.pending_moves("me").empty() ||
             database.pending_moves("other-drive").size() != 1 ||
+            !database.upload_suppressions("me").empty() ||
+            database.upload_suppressions("other-drive").size() != 1 ||
             database.partial_download("me", "partial-me") ||
             !database.partial_download("other-drive", "partial-other") ||
             !database.blocked_items("me").empty() ||
@@ -774,6 +836,13 @@ int main() {
                     "https://graph.example.test/delta-other"
                 }) {
             return fail("full clear did not isolate the configured drive");
+        }
+        database.remove_upload_suppression(
+            "other-drive",
+            temporary_directory.path() / "suppressed-other.txt"
+        );
+        if (!database.upload_suppressions("other-drive").empty()) {
+            return fail("upload suppression removal was not persisted");
         }
     }
 
@@ -1203,6 +1272,44 @@ int main() {
         if (!database.pending_uploads("me").empty() ||
             !database.find("me", "uploaded-id")) {
             return fail("pending upload commit was not atomic");
+        }
+    }
+
+    const auto version_fifteen_directory =
+        temporary_directory.path() / "version-fifteen";
+    std::filesystem::create_directories(version_fifteen_directory);
+    if (!create_version_fifteen_database(
+            version_fifteen_directory / "items.sqlite3"
+        )) {
+        return fail("version fifteen migration fixture could not be created");
+    }
+    {
+        onedrive::storage::ItemDatabase database{
+            version_fifteen_directory,
+            identity()
+        };
+        database.open();
+        database.apply_delta({
+            .drive_id = "me",
+            .upload_suppressions = {
+                {
+                    .remote_id = "migrated-suppression",
+                    .local_path =
+                        version_fifteen_directory / "retained.txt",
+                    .source_device = 111,
+                    .source_inode = 222,
+                },
+            },
+            .delta_link = "https://graph.example.test/v16",
+        });
+        const auto suppressions = database.upload_suppressions("me");
+        if (suppressions.size() != 1 ||
+            suppressions[0].remote_id != "migrated-suppression" ||
+            suppressions[0].source_device != 111 ||
+            suppressions[0].source_inode != 222) {
+            return fail(
+                "version fifteen database did not gain upload suppressions"
+            );
         }
     }
 
