@@ -1,4 +1,5 @@
 #include "onedrive/http/http_client.hpp"
+#include "network_test_support.hpp"
 #include "test_support.hpp"
 
 #include <arpa/inet.h>
@@ -21,147 +22,13 @@
 
 namespace {
 
-class Socket {
-public:
-    Socket() = default;
-
-    explicit Socket(int descriptor) : descriptor_{descriptor} {}
-
-    ~Socket() {
-        if (descriptor_ != -1) {
-            ::close(descriptor_);
-        }
-    }
-
-    Socket(const Socket&) = delete;
-    Socket& operator=(const Socket&) = delete;
-
-    Socket(Socket&& other) noexcept
-        : descriptor_{std::exchange(other.descriptor_, -1)} {}
-
-    Socket& operator=(Socket&& other) noexcept {
-        if (this != &other) {
-            if (descriptor_ != -1) {
-                ::close(descriptor_);
-            }
-            descriptor_ = std::exchange(other.descriptor_, -1);
-        }
-        return *this;
-    }
-
-    [[nodiscard]] int get() const noexcept {
-        return descriptor_;
-    }
-
-private:
-    int descriptor_;
-};
-
-struct Listener {
-    Socket socket;
-    std::uint16_t port{};
-};
-
 using onedrive::test::fail;
-
-Listener create_listener() {
-    Socket socket{::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0)};
-    if (socket.get() == -1) {
-        return {};
-    }
-    const int reuse_address = 1;
-    if (::setsockopt(
-            socket.get(),
-            SOL_SOCKET,
-            SO_REUSEADDR,
-            &reuse_address,
-            sizeof(reuse_address)
-        ) == -1) {
-        return {};
-    }
-    sockaddr_in address{
-        .sin_family = AF_INET,
-        .sin_port = 0,
-        .sin_addr = {.s_addr = htonl(INADDR_LOOPBACK)},
-        .sin_zero = {},
-    };
-    if (::bind(
-            socket.get(),
-            reinterpret_cast<const sockaddr*>(&address),
-            sizeof(address)
-        ) == -1 ||
-        ::listen(socket.get(), 1) == -1) {
-        return {};
-    }
-    socklen_t length = sizeof(address);
-    if (::getsockname(
-            socket.get(),
-            reinterpret_cast<sockaddr*>(&address),
-            &length
-        ) == -1) {
-        return {};
-    }
-    return {
-        .socket = std::move(socket),
-        .port = ntohs(address.sin_port),
-    };
-}
-
-bool wait_for_connection(int listener) {
-    pollfd descriptor{
-        .fd = listener,
-        .events = POLLIN,
-        .revents = 0,
-    };
-    return ::poll(&descriptor, 1, 10'000) == 1;
-}
-
-bool receive_exact(int socket, std::span<std::byte> data) {
-    std::size_t received = 0;
-    while (received < data.size()) {
-        const auto count = ::recv(
-            socket,
-            data.data() + received,
-            data.size() - received,
-            0
-        );
-        if (count <= 0) {
-            return false;
-        }
-        received += static_cast<std::size_t>(count);
-    }
-    return true;
-}
-
-bool send_all(int socket, std::span<const std::byte> data) {
-    std::size_t sent = 0;
-    while (sent < data.size()) {
-        const auto count = ::send(
-            socket,
-            data.data() + sent,
-            data.size() - sent,
-            MSG_NOSIGNAL
-        );
-        if (count <= 0) {
-            return false;
-        }
-        sent += static_cast<std::size_t>(count);
-    }
-    return true;
-}
-
-bool receive_http_headers(int socket, std::string& headers) {
-    std::array<char, 1024> buffer{};
-    while (!headers.contains("\r\n\r\n")) {
-        const auto count =
-            ::recv(socket, buffer.data(), buffer.size(), 0);
-        if (count <= 0) {
-            return false;
-        }
-        headers.append(buffer.data(), static_cast<std::size_t>(count));
-    }
-    return true;
-}
+using onedrive::test::Socket;
+using onedrive::test::create_loopback_listener;
+using onedrive::test::receive_exact;
+using onedrive::test::receive_http_headers;
+using onedrive::test::send_all;
+using onedrive::test::wait_for_connection;
 
 bool send_http_ok(int socket) {
     constexpr std::string_view response{
@@ -190,17 +57,12 @@ bool proxy_password_rejected(
     }
 }
 
-template <std::size_t Size>
-bool send_all(int socket, const std::array<std::byte, Size>& data) {
-    return send_all(socket, std::span<const std::byte>{data});
-}
-
 }  // namespace
 
 int main() {
     const onedrive::test::TemporaryDirectory temporary;
     using onedrive::test::write_file;
-    auto socks_listener = create_listener();
+    auto socks_listener = create_loopback_listener();
     if (socks_listener.socket.get() == -1) {
         return fail("cannot create SOCKS5 test listener");
     }
@@ -416,7 +278,7 @@ int main() {
         return fail("SOCKS5 proxy credentials were not applied correctly");
     }
 
-    auto basic_proxy_listener = create_listener();
+    auto basic_proxy_listener = create_loopback_listener();
     if (basic_proxy_listener.socket.get() == -1) {
         return fail("cannot create HTTP Basic proxy test listener");
     }
@@ -482,7 +344,7 @@ int main() {
     ::unsetenv("NO_PROXY");
     ::unsetenv("no_proxy");
 
-    auto bypass_listener = create_listener();
+    auto bypass_listener = create_loopback_listener();
     if (bypass_listener.socket.get() == -1) {
         return fail("cannot create no-proxy test listener");
     }
@@ -526,7 +388,7 @@ int main() {
         return fail("configured no-proxy destination used the proxy");
     }
 
-    auto download_proxy_listener = create_listener();
+    auto download_proxy_listener = create_loopback_listener();
     if (download_proxy_listener.socket.get() == -1) {
         return fail("cannot create proxied download test listener");
     }
@@ -584,7 +446,7 @@ int main() {
         return fail("file download did not use the configured proxy");
     }
 
-    auto https_listener = create_listener();
+    auto https_listener = create_loopback_listener();
     if (https_listener.socket.get() == -1) {
         return fail("cannot create HTTPS proxy test listener");
     }
@@ -634,7 +496,7 @@ int main() {
 
     const auto invalid_ca_path = temporary.path() / "invalid-proxy-ca.pem";
     write_file(invalid_ca_path, "not a certificate\n");
-    auto ca_listener = create_listener();
+    auto ca_listener = create_loopback_listener();
     if (ca_listener.socket.get() == -1) {
         return fail("cannot create proxy CA test listener");
     }

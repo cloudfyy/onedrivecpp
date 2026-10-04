@@ -1,4 +1,5 @@
 #include "onedrive/http/http_client.hpp"
+#include "network_test_support.hpp"
 #include "test_support.hpp"
 
 #include <spdlog/sinks/ostream_sink.h>
@@ -24,27 +25,6 @@
 
 namespace {
 
-class Socket {
-public:
-    explicit Socket(int descriptor) : descriptor_{descriptor} {}
-
-    ~Socket() {
-        if (descriptor_ != -1) {
-            ::close(descriptor_);
-        }
-    }
-
-    Socket(const Socket&) = delete;
-    Socket& operator=(const Socket&) = delete;
-
-    [[nodiscard]] int get() const noexcept {
-        return descriptor_;
-    }
-
-private:
-    int descriptor_;
-};
-
 class ScopedUmask {
 public:
     explicit ScopedUmask(mode_t value) : previous_{::umask(value)} {}
@@ -61,6 +41,7 @@ private:
 };
 
 using onedrive::test::fail;
+using onedrive::test::Socket;
 
 }  // namespace
 
@@ -68,44 +49,10 @@ int main() {
     const ScopedUmask download_umask{0022};
     const onedrive::test::TemporaryDirectory temporary;
     std::error_code ignored;
-    Socket listener{::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0)};
+    auto http_listener = onedrive::test::create_loopback_listener(4);
+    auto& listener = http_listener.socket;
     if (listener.get() == -1) {
         return fail("cannot create HTTP test socket");
-    }
-
-    const int reuse_address = 1;
-    if (::setsockopt(
-            listener.get(),
-            SOL_SOCKET,
-            SO_REUSEADDR,
-            &reuse_address,
-            sizeof(reuse_address)
-        ) == -1) {
-        return fail("cannot configure HTTP test socket");
-    }
-
-    sockaddr_in address{
-        .sin_family = AF_INET,
-        .sin_port = 0,
-        .sin_addr = {.s_addr = htonl(INADDR_LOOPBACK)},
-        .sin_zero = {},
-    };
-    if (::bind(
-            listener.get(),
-            reinterpret_cast<const sockaddr*>(&address),
-            sizeof(address)
-        ) == -1 ||
-        ::listen(listener.get(), 4) == -1) {
-        return fail("cannot listen on HTTP test socket");
-    }
-
-    socklen_t address_length = sizeof(address);
-    if (::getsockname(
-            listener.get(),
-            reinterpret_cast<sockaddr*>(&address),
-            &address_length
-        ) == -1) {
-        return fail("cannot determine HTTP test port");
     }
 
     std::string received_request;
@@ -162,7 +109,7 @@ int main() {
         }
     }};
 
-    const auto port = ntohs(address.sin_port);
+    const auto port = http_listener.port;
     onedrive::http::CurlHttpClient client;
     const auto invalid_transport_options = client.perform({
         .url = "http://127.0.0.1:" + std::to_string(port) + "/invalid",
