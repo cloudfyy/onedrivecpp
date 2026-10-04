@@ -27,6 +27,7 @@ int main() {
                << "download_stall_minimum_bytes_per_second = 128\n"
                << "download_maximum_rate_bytes_per_second = 1048576\n"
                << "download_http_version = \"2\"\n"
+               << "download_ip_version = \"6\"\n"
                << "download_validation = \"relaxed\"\n"
                << "permissions = \"umask\"\n"
                << "[state]\n"
@@ -77,6 +78,8 @@ int main() {
             1'048'576 ||
         config.download_transport.http_version !=
             onedrive::http::HttpVersion::http_2 ||
+        config.download_transport.ip_version !=
+            onedrive::http::IpVersion::ipv6 ||
         config.download_validation !=
             onedrive::config::DownloadValidationMode::relaxed ||
         config.sync_permissions !=
@@ -115,6 +118,8 @@ int main() {
         defaults.sync_permissions !=
             onedrive::config::SyncPermissionsMode::private_access ||
         defaults.download_maximum_retries != 4 ||
+        defaults.download_transport.ip_version !=
+            onedrive::http::IpVersion::automatic ||
         defaults.download_checkpoint_interval_bytes !=
             std::uint64_t{1024} * 1024U ||
         onedrive::app::graph_options(defaults).
@@ -137,6 +142,27 @@ int main() {
         std::cerr << "invalid download validation mode was accepted\n";
         return EXIT_FAILURE;
     } catch (const std::runtime_error&) {
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 1\n"
+               << "[sync]\n"
+               << "download_ip_version = \"5\"\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "invalid download IP version was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains(
+                "sync.download_ip_version"
+            )) {
+            std::filesystem::remove(path);
+            std::cerr << "invalid download IP version reported wrong error\n";
+            return EXIT_FAILURE;
+        }
     }
 
     {

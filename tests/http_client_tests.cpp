@@ -210,6 +210,52 @@ int main() {
         return fail("HTTP request method or headers were not sent correctly");
     }
 
+    bool unexpected_ipv4_connection = false;
+    std::jthread forced_ipv6_server{[&] {
+        pollfd descriptor{
+            .fd = listener.get(),
+            .events = POLLIN,
+            .revents = 0,
+        };
+        const auto poll_result = ::poll(&descriptor, 1, 1'000);
+        if (poll_result == -1) {
+            server_error = "cannot poll for forced IPv6 request";
+            return;
+        }
+        if (poll_result == 0) {
+            return;
+        }
+        unexpected_ipv4_connection = true;
+        Socket connection{
+            ::accept4(listener.get(), nullptr, nullptr, SOCK_CLOEXEC)
+        };
+        constexpr std::string_view response{
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Length: 0\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+        };
+        static_cast<void>(::send(
+            connection.get(),
+            response.data(),
+            response.size(),
+            MSG_NOSIGNAL
+        ));
+    }};
+    const auto forced_ipv6_response = client.perform({
+        .url = "http://127.0.0.1:" + std::to_string(port) + "/ipv6-only",
+        .connect_timeout = std::chrono::seconds{1},
+        .operation_timeout = std::chrono::seconds{2},
+        .ip_version = onedrive::http::IpVersion::ipv6,
+    });
+    forced_ipv6_server.join();
+    if (!server_error.empty()) {
+        return fail(server_error);
+    }
+    if (forced_ipv6_response || unexpected_ipv4_connection) {
+        return fail("forced IPv6 request used an IPv4 destination");
+    }
+
     std::string download_request;
     server_error.clear();
     std::jthread download_server{[&] {

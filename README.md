@@ -420,6 +420,7 @@ download_stall_timeout_seconds = 60
 download_stall_minimum_bytes_per_second = 1
 download_maximum_rate_bytes_per_second = 0
 download_http_version = "auto"
+download_ip_version = "auto"
 download_validation = "strict"
 
 # Another OneDrive or SharePoint document library
@@ -477,13 +478,16 @@ below `download_stall_minimum_bytes_per_second` (default `1`) for
 timeout to `0` to disable this check. `download_maximum_rate_bytes_per_second`
 defaults to `0`, meaning unlimited. `download_http_version` accepts `"auto"`,
 `"1.1"`, or `"2"`; HTTP/2 is negotiated over TLS and may fall back according
-to libcurl capabilities. Each download worker safely reuses its reset libcurl
-easy handle, allowing DNS, TCP, TLS, and HTTP/2 connection state to be reused
-across chunks, retries, and subsequent files without carrying request headers,
-bodies, or callbacks between operations. Trace logging reports the negotiated
-HTTP version, number of newly opened connections, and DNS, TCP, TLS, server
-wait, body-transfer, and total timings in microseconds. These diagnostics do
-not include request URLs, headers, or bodies.
+to libcurl capabilities. `download_ip_version` accepts `"auto"`, `"4"`, or
+`"6"` and defaults to `"auto"`; forcing an address family can work around
+broken IPv6 or IPv4 routing, but fails when the download host has no address in
+that family. Each download worker safely reuses its reset libcurl easy handle,
+allowing DNS, TCP, TLS, and HTTP/2 connection state to be reused across chunks,
+retries, and subsequent files without carrying request headers, bodies, or
+callbacks between operations. Trace logging reports the negotiated HTTP
+version, number of newly opened connections, and DNS, TCP, TLS, server wait,
+body-transfer, and total timings in microseconds. These diagnostics do not
+include request URLs, headers, or bodies.
 
 Download progress reports aggregate all active files and include the current
 smoothed transfer rate and estimated time remaining. The final report includes

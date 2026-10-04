@@ -324,6 +324,17 @@ or
 The default is
 .BR auto .
 .TP
+.B sync.download_ip_version
+IP address family for file-content requests:
+.BR auto ,
+.BR 4 ,
+or
+.BR 6 .
+The default is
+.BR auto .
+Forcing an address family can work around broken IPv6 or IPv4 routing, but the
+request fails when the download host has no address in that family.
+.TP
 .B sync.download_validation
 Remote metadata validation policy:
 .B strict

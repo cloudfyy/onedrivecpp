@@ -421,6 +421,10 @@ HTTP 字节范围请求顺序分片下载，并以该值作为单个分片的最
 `graph.throttle.maximum_retries`，后者仍控制 Microsoft Graph API 请求重试。
 下载重试继续使用 Graph 的退避延迟配置。
 
+`download_ip_version` 接受 `"auto"`、`"4"` 或 `"6"`，默认值为 `"auto"`。
+强制指定地址族可绕过异常的 IPv6 或 IPv4 路由，但下载主机在该地址族下没有
+可用地址时，请求会明确失败。
+
 每个下载工作线程都会安全复用经过完整重置的 libcurl easy handle，使分片、
 重试和后续文件能够复用 DNS、TCP、TLS 与 HTTP/2 连接状态，同时不会在不同
 请求之间遗留 header、正文或回调。trace 日志会以微秒为单位记录协商的 HTTP

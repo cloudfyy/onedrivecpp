@@ -185,6 +185,21 @@ http::HttpVersion parse_http_version(std::string_view value) {
     );
 }
 
+http::IpVersion parse_ip_version(std::string_view value) {
+    if (value == "auto") {
+        return http::IpVersion::automatic;
+    }
+    if (value == "4") {
+        return http::IpVersion::ipv4;
+    }
+    if (value == "6") {
+        return http::IpVersion::ipv6;
+    }
+    throw std::runtime_error(
+        "invalid TOML configuration value for 'sync.download_ip_version'"
+    );
+}
+
 DownloadValidationMode parse_download_validation(std::string_view value) {
     if (value == "strict") {
         return DownloadValidationMode::strict;
@@ -296,6 +311,7 @@ Config Config::load(const std::filesystem::path& path) {
                 "download_stall_minimum_bytes_per_second",
                 "download_maximum_rate_bytes_per_second",
                 "download_http_version",
+                "download_ip_version",
                 "download_validation",
                 "permissions",
             },
@@ -442,6 +458,15 @@ Config Config::load(const std::filesystem::path& path) {
             )) {
             download_transport.http_version =
                 parse_http_version(*value);
+        }
+        if (const auto value = optional_value<std::string>(
+                *sync,
+                "download_ip_version",
+                "sync.download_ip_version",
+                "a string"
+            )) {
+            download_transport.ip_version =
+                parse_ip_version(*value);
         }
         if (const auto value = optional_value<std::string>(
                 *sync,

@@ -202,6 +202,18 @@ long curl_http_version(HttpVersion version) {
     return CURL_HTTP_VERSION_NONE;
 }
 
+long curl_ip_version(IpVersion version) {
+    switch (version) {
+    case IpVersion::automatic:
+        return CURL_IPRESOLVE_WHATEVER;
+    case IpVersion::ipv4:
+        return CURL_IPRESOLVE_V4;
+    case IpVersion::ipv6:
+        return CURL_IPRESOLVE_V6;
+    }
+    return CURL_IPRESOLVE_WHATEVER;
+}
+
 bool fits_curl_long(std::uint64_t value) {
     return value <=
            static_cast<std::uint64_t>(std::numeric_limits<long>::max());
@@ -648,6 +660,12 @@ HttpResult perform_request(
         result = set_option(
             CURLOPT_HTTP_VERSION,
             curl_http_version(request.http_version)
+        );
+    }
+    if (result == CURLE_OK) {
+        result = set_option(
+            CURLOPT_IPRESOLVE,
+            curl_ip_version(request.ip_version)
         );
     }
     if (result == CURLE_OK) {

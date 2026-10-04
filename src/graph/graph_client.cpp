@@ -1378,6 +1378,8 @@ void MicrosoftGraphClient::download_file(
                                 maximum_receive_speed,
                             .http_version =
                                 download_transport.http_version,
+                            .ip_version =
+                                download_transport.ip_version,
                             .maximum_response_size = 0,
                             .download_offset = offset,
                             .download_checkpoint_interval_bytes =
