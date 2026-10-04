@@ -297,6 +297,19 @@ bytes and the value must be greater than zero. Smaller values reduce repeated
 downloads after interruption but increase synchronization and database
 overhead.
 .TP
+.B transfer.order
+Order in which file transfers enter the worker queue:
+.BR default ,
+.BR size_asc ,
+.BR size_dsc ,
+.BR name_asc ,
+or
+.BR name_dsc .
+The default preserves synchronization-plan order, and equal sort keys remain
+stable. With concurrent workers this controls start order rather than
+completion order. The setting currently applies to downloads and is shared
+with future upload support.
+.TP
 .B transfer.connect_timeout_seconds
 Connection timeout for each file download request. The default is
 .B 30

@@ -405,6 +405,7 @@ permissions = "private"
 # drive_id = "b!YOUR_DRIVE_ID"
 
 [transfer]
+order = "default"
 connect_timeout_seconds = 30
 operation_timeout_seconds = 3600
 stall_timeout_seconds = 60
@@ -436,6 +437,11 @@ endpoint = "https://microsoftgraph.chinacloudapi.cn/v1.0"
 `download.concurrency` 控制可同时下载的文件数量，默认值为 `4`，允许范围为
 `1` 到 `16`。指向同一规范化本地路径的下载始终会串行执行，包括常见的仅
 ASCII 大小写不同的路径；无关目标仍可并发下载。
+
+`transfer.order` 控制文件传输进入 worker 队列的顺序。支持 `default`、
+`size_asc`、`size_dsc`、`name_asc` 和 `name_dsc`。默认保留同步计划顺序，
+排序键相同时也保持原顺序。并发执行时，它控制任务开始顺序而非完成顺序。
+该设置目前作用于下载，并放在共享传输配置中以供未来上传功能复用。
 
 `download.chunk_threshold_bytes` 设置大文件阈值（字节）。超过该值的文件会通过
 HTTP 字节范围请求顺序分片下载，并以该值作为单个分片的最大大小。默认值为

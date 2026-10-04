@@ -25,6 +25,7 @@ int main() {
                << "stall_minimum_bytes_per_second = 128\n"
                << "http_version = \"2\"\n"
                << "ip_version = \"6\"\n"
+               << "order = \"size_dsc\"\n"
                << "[download]\n"
                << "concurrency = 6\n"
                << "maximum_retries = 3\n"
@@ -64,6 +65,8 @@ int main() {
         config.graph_maximum_throttle_retries != 7 ||
         config.graph_initial_throttle_delay != std::chrono::seconds{2} ||
         config.graph_maximum_throttle_delay != std::chrono::seconds{90} ||
+        config.transfer_order !=
+            onedrive::config::TransferOrder::size_descending ||
         config.download_concurrency != 6 ||
         config.download_maximum_retries != 3 ||
         config.download_chunk_threshold_bytes != 4096 ||
@@ -122,6 +125,8 @@ int main() {
         ) ||
         defaults.sync_permissions !=
             onedrive::config::SyncPermissionsMode::private_access ||
+        defaults.transfer_order !=
+            onedrive::config::TransferOrder::default_order ||
         defaults.download_maximum_retries != 4 ||
         defaults.transfer_transport.ip_version !=
             onedrive::http::IpVersion::automatic ||
@@ -166,6 +171,27 @@ int main() {
             )) {
             std::filesystem::remove(path);
             std::cerr << "invalid download IP version reported wrong error\n";
+            return EXIT_FAILURE;
+        }
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[transfer]\n"
+               << "order = \"fastest\"\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "invalid transfer order was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains(
+                "transfer.order"
+            )) {
+            std::filesystem::remove(path);
+            std::cerr << "invalid transfer order reported wrong error\n";
             return EXIT_FAILURE;
         }
     }

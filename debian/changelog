@@ -1,3 +1,12 @@
+onedrive-cpp (0.6.28-1~ubuntu24.04) noble; urgency=medium
+
+  * Add reusable transfer ordering by file size or name.
+  * Preserve synchronization-plan order for equal sort keys.
+  * Apply the configured order before concurrent downloads enter the worker
+    queue.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 04:07:01 +0000
+
 onedrive-cpp (0.6.27-1~ubuntu24.04) noble; urgency=medium
 
   * Add an opt-in live Microsoft Graph download E2E preset.

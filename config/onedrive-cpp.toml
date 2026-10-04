@@ -12,6 +12,8 @@ dry_run = true
 
 [transfer]
 # Connection and per-request transfer limits for file content.
+# Supported values: "default", "size_asc", "size_dsc", "name_asc", and "name_dsc".
+order = "default"
 connect_timeout_seconds = 30
 operation_timeout_seconds = 3600
 # Abort transfers below this rate for this many seconds. Set timeout to 0 to disable.

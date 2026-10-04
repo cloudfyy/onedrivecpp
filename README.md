@@ -444,6 +444,7 @@ permissions = "private"
 # drive_id = "b!YOUR_DRIVE_ID"
 
 [transfer]
+order = "default"
 connect_timeout_seconds = 30
 operation_timeout_seconds = 3600
 stall_timeout_seconds = 60
@@ -478,6 +479,13 @@ time. It defaults to `4` and accepts values from `1` through `16`. Downloads
 targeting the same normalized local path are always serialized, including
 common ASCII case-only path variants, while unrelated destinations remain
 concurrent.
+
+`transfer.order` controls the order in which file transfers enter the worker
+queue. Supported values are `default`, `size_asc`, `size_dsc`, `name_asc`, and
+`name_dsc`. The default preserves synchronization-plan order. Equal sort keys
+also preserve plan order. With concurrent workers this controls start order,
+not completion order. The setting currently applies to downloads and is shared
+so future upload support can use the same policy.
 
 `download.chunk_threshold_bytes` sets the large-file threshold in bytes. Files
 larger than this value are downloaded sequentially with HTTP byte-range

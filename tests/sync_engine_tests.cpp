@@ -1284,6 +1284,78 @@ int test_bounded_concurrent_downloads() {
     return EXIT_SUCCESS;
 }
 
+int test_configured_download_order() {
+    const std::vector<onedrive::graph::RemoteItem> changes{
+        file("alpha", "alpha.txt", 3),
+        file("gamma", "gamma.txt", 1),
+        file("beta", "beta.txt", 2),
+        file("delta", "delta.txt", 2),
+    };
+    const std::vector<std::pair<
+        onedrive::config::TransferOrder,
+        std::vector<std::string>
+    >> cases{
+        {
+            onedrive::config::TransferOrder::default_order,
+            {"alpha", "gamma", "beta", "delta"},
+        },
+        {
+            onedrive::config::TransferOrder::size_ascending,
+            {"gamma", "beta", "delta", "alpha"},
+        },
+        {
+            onedrive::config::TransferOrder::size_descending,
+            {"alpha", "beta", "delta", "gamma"},
+        },
+        {
+            onedrive::config::TransferOrder::name_ascending,
+            {"alpha", "beta", "delta", "gamma"},
+        },
+        {
+            onedrive::config::TransferOrder::name_descending,
+            {"gamma", "delta", "beta", "alpha"},
+        },
+    };
+
+    TemporaryDirectory temporary;
+    for (std::size_t index = 0; index < cases.size(); ++index) {
+        const auto root =
+            temporary.path() / ("order-" + std::to_string(index));
+        FakeGraphClient graph;
+        graph.changes = changes;
+        graph.contents = {
+            {"alpha", "aaa"},
+            {"gamma", "g"},
+            {"beta", "bb"},
+            {"delta", "dd"},
+        };
+        std::vector<std::string> started;
+        graph.before_download_write =
+            [&started](const std::string& remote_id) {
+                started.push_back(remote_id);
+            };
+        FakeItemStore items;
+        FakeMetrics metrics;
+        auto config = config_for(root, false);
+        config.download_concurrency = 1;
+        config.transfer_order = cases[index].first;
+
+        if (onedrive::sync::SyncEngine{
+                config,
+                graph,
+                items,
+                metrics
+            }.synchronize() != 0 ||
+            started != cases[index].second ||
+            graph.download_count != 4 ||
+            items.upsert_count != 4 ||
+            !metrics.last_success) {
+            return fail("downloads did not follow transfer.order");
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_duplicate_destination_downloads_are_serialized() {
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "files";
@@ -1361,6 +1433,10 @@ int main() {
         return result;
     }
     if (const int result = test_bounded_concurrent_downloads();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_configured_download_order();
         result != EXIT_SUCCESS) {
         return result;
     }

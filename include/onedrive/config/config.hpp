@@ -27,6 +27,14 @@ enum class SyncPermissionsMode {
     umask,
 };
 
+enum class TransferOrder {
+    default_order,
+    size_ascending,
+    size_descending,
+    name_ascending,
+    name_descending,
+};
+
 struct Config {
     std::filesystem::path sync_directory;
     std::filesystem::path state_directory;
@@ -49,6 +57,7 @@ struct Config {
     std::uint64_t download_checkpoint_interval_bytes{
         std::uint64_t{1024} * 1024U
     };
+    TransferOrder transfer_order{TransferOrder::default_order};
     http::TransferTransportOptions transfer_transport;
     std::uint64_t download_maximum_rate_bytes_per_second{0};
     DownloadValidationMode download_validation{

@@ -212,6 +212,27 @@ DownloadValidationMode parse_download_validation(std::string_view value) {
     );
 }
 
+TransferOrder parse_transfer_order(std::string_view value) {
+    if (value == "default") {
+        return TransferOrder::default_order;
+    }
+    if (value == "size_asc") {
+        return TransferOrder::size_ascending;
+    }
+    if (value == "size_dsc") {
+        return TransferOrder::size_descending;
+    }
+    if (value == "name_asc") {
+        return TransferOrder::name_ascending;
+    }
+    if (value == "name_dsc") {
+        return TransferOrder::name_descending;
+    }
+    throw std::runtime_error(
+        "invalid TOML configuration value for 'transfer.order'"
+    );
+}
+
 SyncPermissionsMode parse_sync_permissions(std::string_view value) {
     if (value == "private") {
         return SyncPermissionsMode::private_access;
@@ -250,6 +271,7 @@ Config Config::defaults() {
             std::uint64_t{8} * 1024U * 1024U,
         .download_checkpoint_interval_bytes =
             std::uint64_t{1024} * 1024U,
+        .transfer_order = TransferOrder::default_order,
         .transfer_transport = {},
         .download_maximum_rate_bytes_per_second = 0,
         .download_validation = DownloadValidationMode::strict,
@@ -360,9 +382,18 @@ Config Config::load(const std::filesystem::path& path) {
                 "stall_minimum_bytes_per_second",
                 "http_version",
                 "ip_version",
+                "order",
             },
             "transfer"
         );
+        if (const auto value = optional_value<std::string>(
+                *transfer,
+                "order",
+                "transfer.order",
+                "a string"
+            )) {
+            config.transfer_order = parse_transfer_order(*value);
+        }
         if (transfer->contains("connect_timeout_seconds")) {
             options.connect_timeout = seconds_value(
                 *transfer,

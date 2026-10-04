@@ -11,6 +11,7 @@
 #include "local_filesystem.hpp"
 #include "safe_sync_root.hpp"
 #include "sync_plan.hpp"
+#include "transfer_order.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -413,6 +414,7 @@ ExecutionSummary execute_plan(
     const detail::FilesystemMetadata& metadata,
     const cli::Console& console,
     std::size_t download_concurrency,
+    config::TransferOrder transfer_order,
     bool private_permissions
 ) {
     const auto& sync_root = safe_root.path();
@@ -601,6 +603,16 @@ ExecutionSummary execute_plan(
             });
         }
     }
+    detail::order_transfers(
+        download_tasks,
+        transfer_order,
+        [](const DownloadTask& task) {
+            return task.item.size;
+        },
+        [](const DownloadTask& task) -> const std::string& {
+            return task.item.name;
+        }
+    );
 
     spdlog::info(
         "Executing {} downloads with concurrency {}",
@@ -840,6 +852,7 @@ int SyncEngine::synchronize() const {
                 *metadata,
                 console,
                 config_->download_concurrency,
+                config_->transfer_order,
                 config_->sync_permissions ==
                     config::SyncPermissionsMode::private_access
             );
