@@ -403,6 +403,9 @@ endpoint = "https://microsoftgraph.chinacloudapi.cn/v1.0"
 `download_chunk_threshold_bytes` 设置大文件阈值（字节）。超过该值的文件会通过
 HTTP 字节范围请求顺序分片下载，并以该值作为单个分片的最大大小。默认值为
 `8388608`（8 MiB），且必须大于零。等于或小于阈值的文件仍使用单次请求。
+程序会在写入响应正文前验证 Range 响应元数据，并在大型传输过程中定期可靠
+写盘和记录 checkpoint；请求中断后会从最后一个安全落盘的偏移量继续，而不是
+重新下载整个分片。
 
 `download_validation` 默认为 `"strict"`，要求下载大小以及 Graph 提供的内容哈希
 与远端元数据一致。部分 SharePoint、Azure Information Protection（AIP）和

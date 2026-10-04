@@ -169,7 +169,7 @@ ContentRange parse_content_range(std::string_view header) {
     return range;
 }
 
-void validate_chunk_response(
+void validate_chunk_response_metadata(
     const http::HttpResponse& response,
     std::uint64_t expected_first,
     std::uint64_t expected_last,
@@ -217,6 +217,20 @@ void validate_chunk_response(
             )
         );
     }
+}
+
+void validate_chunk_response(
+    const http::HttpResponse& response,
+    std::uint64_t expected_first,
+    std::uint64_t expected_last,
+    std::uint64_t expected_total
+) {
+    validate_chunk_response_metadata(
+        response,
+        expected_first,
+        expected_last,
+        expected_total
+    );
     const auto expected_bytes = expected_last - expected_first + 1;
     if (response.received_size != expected_bytes) {
         throw std::runtime_error(
@@ -333,7 +347,8 @@ http::HttpResult perform_with_retries(
     const GraphOptions& options,
     const MicrosoftGraphClient::SleepFunction& sleep,
     std::string_view description,
-    const std::stop_token& stop_token = {}
+    const std::stop_token& stop_token = {},
+    bool retry_transport_errors = false
 ) {
     std::size_t retries = 0;
     while (true) {
@@ -341,21 +356,39 @@ http::HttpResult perform_with_retries(
             return cancelled_http_result();
         }
         auto response = operation();
-        if (!response || !retryable_status(response->status_code)) {
+        const bool transport_error = !response;
+        if (transport_error &&
+            (response.error().code == http::HttpErrorCode::cancelled ||
+             !retry_transport_errors)) {
+            return response;
+        }
+        if (!transport_error &&
+            !retryable_status(response->status_code)) {
             return response;
         }
         if (retries >= options.maximum_throttle_retries) {
-            throw std::runtime_error(
-                std::format(
-                    "{} failed with HTTP {} after {} retries",
-                    description,
-                    response->status_code,
-                    retries
-                )
-            );
+            if (transport_error) {
+                throw std::runtime_error(
+                    std::format(
+                        "{} failed after {} retries: {}",
+                        description,
+                        retries,
+                        response.error().message
+                    )
+                );
+            }
+            throw std::runtime_error(std::format(
+                "{} failed with HTTP {} after {} retries",
+                description,
+                response->status_code,
+                retries
+            ));
         }
 
-        const auto server_delay = retry_after(*response);
+        const auto server_delay =
+            transport_error ?
+                std::optional<std::chrono::seconds>{} :
+                retry_after(*response);
         if (server_delay &&
             *server_delay > options.maximum_throttle_delay) {
             throw std::runtime_error(
@@ -366,14 +399,25 @@ http::HttpResult perform_with_retries(
         const auto delay = server_delay.value_or(
             fallback_retry_delay(options, retries)
         );
-        spdlog::warn(
-            "{} returned HTTP {}; retrying in {} seconds ({}/{})",
-            description,
-            response->status_code,
-            delay.count(),
-            retries + 1,
-            options.maximum_throttle_retries
-        );
+        if (transport_error) {
+            spdlog::warn(
+                "{} failed: {}; retrying in {} seconds ({}/{})",
+                description,
+                response.error().message,
+                delay.count(),
+                retries + 1,
+                options.maximum_throttle_retries
+            );
+        } else {
+            spdlog::warn(
+                "{} returned HTTP {}; retrying in {} seconds ({}/{})",
+                description,
+                response->status_code,
+                delay.count(),
+                retries + 1,
+                options.maximum_throttle_retries
+            );
+        }
         if (wait_for_retry(delay, sleep, stop_token)) {
             return cancelled_http_result();
         }
@@ -1286,13 +1330,20 @@ void MicrosoftGraphClient::download_file(
         download_transport.low_speed_limit_bytes_per_second;
     const auto maximum_receive_speed =
         download_transport.maximum_receive_speed_bytes_per_second;
-    const auto download = [&](const std::vector<std::string>& headers,
-                              std::uint64_t offset,
+    using DownloadRequest = std::pair<
+        std::vector<std::string>,
+        std::uint64_t
+    >;
+    const auto download = [&](const std::function<DownloadRequest()>& request,
                               const DownloadProgress& chunk_progress,
-                              std::string_view description) {
+                              std::string_view description,
+                              const DownloadCheckpoint& chunk_checkpoint = {},
+                              const http::DownloadResponseGate& response_gate =
+                                  {}) {
         const auto perform_download = [&] {
             return perform_with_retries(
                 [&] {
+                    auto [headers, offset] = request();
                     return transport_->download(
                         http::HttpRequest{
                             .method = http::HttpMethod::get,
@@ -1313,19 +1364,24 @@ void MicrosoftGraphClient::download_file(
                                 download_transport.http_version,
                             .maximum_response_size = 0,
                             .download_offset = offset,
+                            .download_checkpoint_interval_bytes =
+                                std::uint64_t{1024} * 1024U,
                             .private_download_permissions =
                                 options_.private_download_permissions,
                             .stop_token = stop_token,
                         },
                         destination,
                         chunk_progress,
-                        data
+                        data,
+                        chunk_checkpoint,
+                        response_gate
                     );
                 },
                 options_,
                 sleep_,
                 description,
-                stop_token
+                stop_token,
+                true
             );
         };
         auto response = perform_download();
@@ -1346,8 +1402,12 @@ void MicrosoftGraphClient::download_file(
     spdlog::debug("Downloading Microsoft Graph drive item '{}'", remote_id);
     if (options_.relaxed_download_validation) {
         auto response = download(
-            {"Accept: application/octet-stream"},
-            0,
+            [] {
+                return DownloadRequest{
+                    {"Accept: application/octet-stream"},
+                    0,
+                };
+            },
             progress,
             "Microsoft Graph relaxed file download"
         );
@@ -1365,18 +1425,20 @@ void MicrosoftGraphClient::download_file(
     if (initial_offset == 0 &&
         expected_size <= options_.download_chunk_threshold_bytes) {
         auto response = download(
-            {"Accept: application/octet-stream"},
-            0,
+            [] {
+                return DownloadRequest{
+                    {"Accept: application/octet-stream"},
+                    0,
+                };
+            },
             progress,
-            "Microsoft Graph file download"
+            "Microsoft Graph file download",
+            checkpoint
         );
         require_successful_download(
             response,
             "Microsoft Graph file download"
         );
-        if (checkpoint) {
-            checkpoint(expected_size);
-        }
         spdlog::debug("Downloaded Microsoft Graph drive item '{}'", remote_id);
         return;
     }
@@ -1390,17 +1452,31 @@ void MicrosoftGraphClient::download_file(
     for (std::uint64_t offset = initial_offset; offset < expected_size;) {
         const auto bytes = std::min(chunk_size, expected_size - offset);
         const auto end = offset + bytes - 1;
+        std::uint64_t durable_offset = offset;
+        std::uint64_t attempt_offset = offset;
         auto response = download(
-            {
-                "Accept: application/octet-stream",
-                std::format("Range: bytes={}-{}", offset, end),
+            [&] {
+                attempt_offset = durable_offset;
+                return DownloadRequest{
+                    {
+                        "Accept: application/octet-stream",
+                        std::format(
+                            "Range: bytes={}-{}",
+                            attempt_offset,
+                            end
+                        ),
+                    },
+                    attempt_offset,
+                };
             },
-            offset,
             progress ?
                 DownloadProgress{
-                    [&, offset](std::uint64_t downloaded, std::uint64_t) {
+                    [&](std::uint64_t downloaded, std::uint64_t) {
                         progress(
-                            std::min(offset + downloaded, expected_size),
+                            std::min(
+                                attempt_offset + downloaded,
+                                expected_size
+                            ),
                             expected_size
                         );
                     }
@@ -1410,7 +1486,43 @@ void MicrosoftGraphClient::download_file(
                 "Microsoft Graph chunk download (bytes {}-{})",
                 offset,
                 end
-            )
+            ),
+            [&](std::uint64_t completed) {
+                if (completed < durable_offset || completed > end + 1) {
+                    throw std::logic_error(
+                        "download transport checkpoint is outside the "
+                        "requested byte range"
+                    );
+                }
+                durable_offset = completed;
+                if (checkpoint) {
+                    checkpoint(completed);
+                }
+            },
+            [&](
+                long status_code,
+                std::span<const http::HttpHeader> headers
+            ) {
+                try {
+                    validate_chunk_response_metadata(
+                        http::HttpResponse{
+                            .status_code = status_code,
+                            .headers = {
+                                headers.begin(),
+                                headers.end(),
+                            },
+                            .body = {},
+                            .received_size = 0,
+                        },
+                        attempt_offset,
+                        end,
+                        expected_size
+                    );
+                    return true;
+                } catch (...) {
+                    return false;
+                }
+            }
         );
         if (!response) {
             throw_download_error(
@@ -1421,7 +1533,7 @@ void MicrosoftGraphClient::download_file(
         try {
             validate_chunk_response(
                 *response,
-                offset,
+                attempt_offset,
                 end,
                 expected_size
             );
@@ -1429,10 +1541,7 @@ void MicrosoftGraphClient::download_file(
             roll_back_chunk(destination, offset);
             throw;
         }
-        offset += bytes;
-        if (checkpoint) {
-            checkpoint(offset);
-        }
+        offset = end + 1;
     }
     spdlog::debug("Downloaded Microsoft Graph drive item '{}'", remote_id);
 }

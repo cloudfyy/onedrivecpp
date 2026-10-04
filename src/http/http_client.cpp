@@ -13,6 +13,7 @@
 #include <fcntl.h>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <sys/stat.h>
@@ -56,6 +57,12 @@ struct HeaderListDeleter {
     }
 };
 
+struct DownloadState {
+    std::uint64_t durable_offset{};
+    std::uint64_t file_offset{};
+    bool response_accepted{true};
+};
+
 struct WriteContext {
     std::string body;
     std::size_t maximum_size;
@@ -66,6 +73,14 @@ struct WriteContext {
     std::size_t received_size{};
     std::uint64_t file_offset{};
     const DownloadData* download_data{};
+    const DownloadCheckpoint* checkpoint{};
+    const DownloadResponseGate* response_gate{};
+    const std::vector<HttpHeader>* response_headers{};
+    CURL* handle{};
+    std::uint64_t checkpoint_interval{};
+    std::uint64_t durable_offset{};
+    DownloadState* download_state{};
+    std::optional<bool> response_accepted;
     bool data_callback_failed{false};
     std::string data_callback_error;
 };
@@ -121,6 +136,42 @@ std::size_t write_response(char* data, std::size_t size, std::size_t count, void
     }
     write_context.received_size += byte_count;
     if (write_context.descriptor != -1) {
+        if (!write_context.response_accepted.has_value()) {
+            bool accepted = true;
+            if (write_context.response_gate != nullptr &&
+                *write_context.response_gate) {
+                long status_code = 0;
+                if (curl_easy_getinfo(
+                        write_context.handle,
+                        CURLINFO_RESPONSE_CODE,
+                        &status_code
+                    ) != CURLE_OK) {
+                    write_context.data_callback_failed = true;
+                    write_context.data_callback_error =
+                        "cannot inspect download response status";
+                    return 0;
+                }
+                try {
+                    accepted = (*write_context.response_gate)(
+                        status_code,
+                        *write_context.response_headers
+                    );
+                } catch (const std::exception& error) {
+                    write_context.data_callback_failed = true;
+                    write_context.data_callback_error = error.what();
+                    return 0;
+                } catch (...) {
+                    write_context.data_callback_failed = true;
+                    write_context.data_callback_error = "unknown error";
+                    return 0;
+                }
+            }
+            write_context.response_accepted = accepted;
+            write_context.download_state->response_accepted = accepted;
+        }
+        if (!*write_context.response_accepted) {
+            return byte_count;
+        }
         const auto block_offset = write_context.file_offset;
         std::size_t written = 0;
         while (written < byte_count) {
@@ -149,6 +200,8 @@ std::size_t write_response(char* data, std::size_t size, std::size_t count, void
             written += static_cast<std::size_t>(result);
         }
         write_context.file_offset += static_cast<std::uint64_t>(byte_count);
+        write_context.download_state->file_offset =
+            write_context.file_offset;
         if (write_context.download_data != nullptr &&
             *write_context.download_data) {
             try {
@@ -165,6 +218,32 @@ std::size_t write_response(char* data, std::size_t size, std::size_t count, void
                 write_context.data_callback_error = "unknown error";
                 return 0;
             }
+        }
+        if (write_context.checkpoint_interval != 0 &&
+            write_context.file_offset - write_context.durable_offset >=
+                write_context.checkpoint_interval) {
+            if (::fdatasync(write_context.descriptor) == -1) {
+                write_context.write_failed = true;
+                write_context.write_error = errno;
+                return 0;
+            }
+            if (write_context.checkpoint != nullptr &&
+                *write_context.checkpoint) {
+                try {
+                    (*write_context.checkpoint)(write_context.file_offset);
+                } catch (const std::exception& error) {
+                    write_context.data_callback_failed = true;
+                    write_context.data_callback_error = error.what();
+                    return 0;
+                } catch (...) {
+                    write_context.data_callback_failed = true;
+                    write_context.data_callback_error = "unknown error";
+                    return 0;
+                }
+            }
+            write_context.durable_offset = write_context.file_offset;
+            write_context.download_state->durable_offset =
+                write_context.file_offset;
         }
         return byte_count;
     }
@@ -266,7 +345,10 @@ HttpResult perform_request(
     const HttpRequest& request,
     int descriptor,
     const DownloadProgress& progress = {},
-    const DownloadData& data = {}
+    const DownloadData& data = {},
+    const DownloadCheckpoint& checkpoint = {},
+    const DownloadResponseGate& response_gate = {},
+    DownloadState* download_state = nullptr
 ) {
     spdlog::trace("Performing HTTP {} request", method_name(request.method));
     const auto connect_timeout = request.connect_timeout.count();
@@ -301,15 +383,34 @@ HttpResult perform_request(
         return std::unexpected(HttpError{.message = "cannot create libcurl handle"});
     }
 
+    DownloadState local_download_state{
+        .durable_offset = request.download_offset,
+        .file_offset = request.download_offset,
+        .response_accepted = true,
+    };
+    if (download_state == nullptr) {
+        download_state = &local_download_state;
+    } else {
+        *download_state = local_download_state;
+    }
+    HeaderContext header_context;
     WriteContext write_context{
         .body = {},
         .maximum_size = request.maximum_response_size,
         .descriptor = descriptor,
         .file_offset = request.download_offset,
         .download_data = &data,
+        .checkpoint = &checkpoint,
+        .response_gate = &response_gate,
+        .response_headers = &header_context.headers,
+        .handle = handle.get(),
+        .checkpoint_interval =
+            request.download_checkpoint_interval_bytes,
+        .durable_offset = request.download_offset,
+        .download_state = download_state,
+        .response_accepted = std::nullopt,
         .data_callback_error = {},
     };
-    HeaderContext header_context;
     ProgressContext progress_context{
         .callback = &progress,
         .stop_token = request.stop_token,
@@ -475,6 +576,36 @@ HttpResult perform_request(
         });
     }
 
+    if (descriptor != -1 && !write_context.response_accepted.has_value() &&
+        response_gate) {
+        try {
+            write_context.response_accepted = response_gate(
+                status_code,
+                header_context.headers
+            );
+            download_state->response_accepted =
+                *write_context.response_accepted;
+        } catch (const std::exception& error) {
+            return std::unexpected(HttpError{
+                .message = "download response gate failed: " +
+                           std::string{error.what()},
+            });
+        } catch (...) {
+            return std::unexpected(HttpError{
+                .message = "download response gate failed: unknown error",
+            });
+        }
+    }
+    if (descriptor != -1 && status_code >= 200 && status_code < 300 &&
+        download_state->response_accepted) {
+        if (::fsync(descriptor) == -1) {
+            return std::unexpected(HttpError{
+                .message = "cannot flush downloaded response: " +
+                           std::string{std::strerror(errno)},
+            });
+        }
+    }
+
     spdlog::trace(
         "HTTP {} request completed with status {} and {} response bytes",
         method_name(request.method),
@@ -500,7 +631,9 @@ HttpResult CurlHttpClient::download(
     const HttpRequest& request,
     const std::filesystem::path& destination,
     const DownloadProgress& progress,
-    const DownloadData& data
+    const DownloadData& data,
+    const DownloadCheckpoint& checkpoint,
+    const DownloadResponseGate& response_gate
 ) const {
     if (request.download_offset >
         static_cast<std::uint64_t>(std::numeric_limits<off_t>::max())) {
@@ -527,31 +660,69 @@ HttpResult CurlHttpClient::download(
         return std::unexpected(HttpError{.message = error.what()});
     }
 
-    auto response = perform_request(request, descriptor, progress, data);
+    DownloadState download_state;
+    auto response = perform_request(
+        request,
+        descriptor,
+        progress,
+        data,
+        checkpoint,
+        response_gate,
+        &download_state
+    );
     std::string close_error;
     std::string truncate_error;
+    const bool accepted = download_state.response_accepted;
     if ((!response || response->status_code < 200 ||
-         response->status_code >= 300) &&
-        request.download_offset != 0 &&
+         response->status_code >= 300 || !accepted) &&
+        download_state.durable_offset != 0 &&
         ::ftruncate(
             descriptor,
-            static_cast<off_t>(request.download_offset)
+            static_cast<off_t>(download_state.durable_offset)
         ) == -1) {
         truncate_error = std::strerror(errno);
-    }
-    if (response && response->status_code >= 200 && response->status_code < 300 &&
-        ::fsync(descriptor) == -1) {
-        response = std::unexpected(HttpError{
-            .message = "cannot flush download file '" + destination.string() +
-                       "': " + std::strerror(errno),
-        });
     }
     if (::close(descriptor) == -1) {
         close_error = std::strerror(errno);
     }
+    bool checkpoint_failed = false;
+    if (response && response->status_code >= 200 &&
+        response->status_code < 300 && accepted && close_error.empty() &&
+        checkpoint &&
+        download_state.file_offset > download_state.durable_offset) {
+        try {
+            checkpoint(download_state.file_offset);
+            download_state.durable_offset = download_state.file_offset;
+        } catch (const std::exception& error) {
+            checkpoint_failed = true;
+            response = std::unexpected(HttpError{
+                .message = "download checkpoint callback failed: " +
+                           std::string{error.what()},
+            });
+        } catch (...) {
+            checkpoint_failed = true;
+            response = std::unexpected(HttpError{
+                .message =
+                    "download checkpoint callback failed: unknown error",
+            });
+        }
+    }
+    if ((checkpoint_failed || !close_error.empty()) &&
+        download_state.durable_offset != 0) {
+        std::error_code error;
+        std::filesystem::resize_file(
+            destination,
+            download_state.durable_offset,
+            error
+        );
+        if (error) {
+            truncate_error = error.message();
+        }
+    }
     if ((!response || response->status_code < 200 ||
-         response->status_code >= 300 || !close_error.empty()) &&
-        request.download_offset == 0) {
+         response->status_code >= 300 || !accepted ||
+         !close_error.empty()) &&
+        download_state.durable_offset == 0) {
         std::error_code ignored;
         std::filesystem::remove(destination, ignored);
     }

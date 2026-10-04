@@ -45,7 +45,9 @@ public:
         const onedrive::http::HttpRequest& request,
         const std::filesystem::path& destination,
         const onedrive::http::DownloadProgress& progress,
-        const onedrive::http::DownloadData& data
+        const onedrive::http::DownloadData& data,
+        const onedrive::http::DownloadCheckpoint& checkpoint,
+        const onedrive::http::DownloadResponseGate& response_gate
     ) const {
         download_requests.push_back(request);
         std::string body = download_body;
@@ -65,31 +67,6 @@ public:
             status_code = 206;
             range = {start, end};
         }
-        if (request.download_offset == 0) {
-            std::ofstream output{destination, std::ios::binary};
-            output << body;
-        } else {
-            std::fstream output{
-                destination,
-                std::ios::binary | std::ios::in | std::ios::out
-            };
-            output.seekp(static_cast<std::streamoff>(request.download_offset));
-            output << body;
-        }
-        if (data) {
-            data(
-                request.download_offset,
-                std::as_bytes(std::span{body})
-            );
-        }
-        if (progress) {
-            progress(body.size(), body.size());
-        }
-        if (!download_responses.empty()) {
-            auto response = std::move(download_responses.front());
-            download_responses.pop_front();
-            return response;
-        }
         onedrive::http::HttpResponse response{
             .status_code = status_code,
             .received_size = static_cast<std::uint64_t>(body.size()),
@@ -105,12 +82,72 @@ public:
                 ),
             });
         }
+        std::optional<onedrive::http::HttpError> transfer_error;
+        if (!download_responses.empty()) {
+            auto configured = std::move(download_responses.front());
+            download_responses.pop_front();
+            if (!configured) {
+                if (partial_failure_bytes == 0) {
+                    return configured;
+                }
+                const auto retained = std::min(
+                    partial_failure_bytes,
+                    static_cast<std::uint64_t>(body.size())
+                );
+                body.resize(static_cast<std::size_t>(retained));
+                response.received_size = retained;
+                transfer_error = configured.error();
+                partial_failure_bytes = 0;
+            } else {
+                response = std::move(*configured);
+            }
+        }
+        const bool accepted =
+            !response_gate ||
+            response_gate(response.status_code, response.headers);
+        if (accepted && request.download_offset == 0) {
+            std::ofstream output{destination, std::ios::binary};
+            output << body;
+        } else if (accepted) {
+            std::fstream output{
+                destination,
+                std::ios::binary | std::ios::in | std::ios::out
+            };
+            output.seekp(static_cast<std::streamoff>(request.download_offset));
+            output << body;
+        }
+        if (accepted && data) {
+            data(
+                request.download_offset,
+                std::as_bytes(std::span{body})
+            );
+        }
+        if (accepted && progress) {
+            progress(body.size(), body.size());
+        }
+        if (request.stop_token.stop_requested()) {
+            return std::unexpected(onedrive::http::HttpError{
+                .code = onedrive::http::HttpErrorCode::cancelled,
+                .message = "fake download was cancelled",
+            });
+        }
+        if (accepted && checkpoint &&
+            response.status_code >= 200 && response.status_code < 300) {
+            checkpoint(
+                request.download_offset +
+                static_cast<std::uint64_t>(body.size())
+            );
+        }
+        if (transfer_error.has_value()) {
+            return std::unexpected(std::move(*transfer_error));
+        }
         return response;
     }
 
     mutable std::vector<onedrive::http::HttpRequest> requests;
     mutable std::vector<onedrive::http::HttpRequest> download_requests;
     mutable std::deque<onedrive::http::HttpResult> download_responses;
+    mutable std::uint64_t partial_failure_bytes{0};
     std::string download_body{"download"};
 
 private:
@@ -1302,10 +1339,11 @@ int test_cancelled_download_is_not_retried_or_checkpointed() {
     );
     transport->download_responses.push_back(
         onedrive::http::HttpResponse{
-            .status_code = 503,
+            .status_code = 206,
             .headers = {
-                {.name = "Retry-After", .value = "5"},
+                {.name = "Content-Range", .value = "bytes 0-2/8"},
             },
+            .received_size = 3,
         }
     );
     auto* transport_pointer = transport.get();
@@ -1463,11 +1501,95 @@ int test_large_file_chunked_download() {
             std::vector<std::pair<std::uint64_t, std::uint64_t>>{
                 {3, 8},
                 {6, 8},
-                {6, 8},
                 {8, 8},
             } ||
         checkpoints != std::vector<std::uint64_t>{3, 6, 8}) {
         return fail("large Graph file was not downloaded in byte ranges");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_chunk_retry_resumes_from_durable_checkpoint() {
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"expires_in":3600,"access_token":"access-secret"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 302,
+                .headers = {
+                    {
+                        .name = "Location",
+                        .value = "https://download.example.test/content",
+                    },
+                },
+            },
+        }
+    );
+    transport->download_responses.push_back(
+        std::unexpected(onedrive::http::HttpError{
+            .message = "simulated interrupted range",
+        })
+    );
+    transport->partial_failure_bytes = 1;
+    auto* transport_pointer = transport.get();
+    const auto destination =
+        std::filesystem::temp_directory_path() /
+        "onedrive-cpp-durable-range-retry-test";
+    std::error_code ignored;
+    std::filesystem::remove(destination, ignored);
+
+    std::vector<std::chrono::seconds> sleeps;
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(
+                std::string{"existing-refresh"}
+            )
+        ),
+        auth_options(),
+        {
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+            .download_chunk_threshold_bytes = 3,
+        },
+        [&](std::chrono::seconds duration) {
+            sleeps.push_back(duration);
+        },
+    };
+    std::vector<std::uint64_t> checkpoints;
+    client.download_file(
+        "item-id",
+        8,
+        destination,
+        0,
+        {},
+        {},
+        [&](std::uint64_t completed) {
+            checkpoints.push_back(completed);
+        }
+    );
+
+    std::ifstream input{destination, std::ios::binary};
+    const std::string contents{
+        std::istreambuf_iterator<char>{input},
+        std::istreambuf_iterator<char>{}
+    };
+    std::filesystem::remove(destination, ignored);
+    if (contents != "download" ||
+        transport_pointer->download_requests.size() != 4 ||
+        transport_pointer->download_requests[0].headers.back() !=
+            "Range: bytes=0-2" ||
+        transport_pointer->download_requests[1].headers.back() !=
+            "Range: bytes=1-2" ||
+        transport_pointer->download_requests[1].download_offset != 1 ||
+        checkpoints != std::vector<std::uint64_t>{1, 3, 6, 8} ||
+        sleeps != std::vector{std::chrono::seconds{1}}) {
+        return fail(
+            "interrupted Graph chunk did not resume from its durable checkpoint"
+        );
     }
     return EXIT_SUCCESS;
 }
@@ -1910,6 +2032,11 @@ int main() {
         return result;
     }
     if (const int result = test_large_file_chunked_download();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result =
+            test_chunk_retry_resumes_from_durable_checkpoint();
         result != EXIT_SUCCESS) {
         return result;
     }

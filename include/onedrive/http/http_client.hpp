@@ -20,9 +20,17 @@
 
 namespace onedrive::http {
 
+struct HttpHeader;
+
 using DownloadData = std::function<void(
     std::uint64_t offset,
     std::span<const std::byte> data
+)>;
+using DownloadCheckpoint =
+    std::function<void(std::uint64_t completed_bytes)>;
+using DownloadResponseGate = std::function<bool(
+    long status_code,
+    std::span<const HttpHeader> headers
 )>;
 
 enum class HttpMethod {
@@ -45,6 +53,7 @@ struct HttpRequest {
         std::size_t{16} * 1024U * 1024U
     };
     std::uint64_t download_offset{0};
+    std::uint64_t download_checkpoint_interval_bytes{0};
     bool private_download_permissions{true};
     std::stop_token stop_token;
 };
@@ -89,7 +98,9 @@ struct HttpTransportFacade : pro::facade_builder
             const HttpRequest&,
             const std::filesystem::path&,
             const DownloadProgress&,
-            const DownloadData&
+            const DownloadData&,
+            const DownloadCheckpoint&,
+            const DownloadResponseGate&
         ) const
     >
     ::build {};
@@ -108,13 +119,17 @@ public:
         const HttpRequest& request,
         const std::filesystem::path& destination,
         const DownloadProgress& progress = {},
-        const DownloadData& data = {}
+        const DownloadData& data = {},
+        const DownloadCheckpoint& checkpoint = {},
+        const DownloadResponseGate& response_gate = {}
     ) const {
         return implementation()->download(
             request,
             destination,
             progress,
-            data
+            data,
+            checkpoint,
+            response_gate
         );
     }
 };
@@ -126,7 +141,9 @@ public:
         const HttpRequest& request,
         const std::filesystem::path& destination,
         const DownloadProgress& progress = {},
-        const DownloadData& data = {}
+        const DownloadData& data = {},
+        const DownloadCheckpoint& checkpoint = {},
+        const DownloadResponseGate& response_gate = {}
     ) const;
 };
 

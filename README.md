@@ -444,7 +444,10 @@ time. It defaults to `4` and accepts values from `1` through `16`.
 larger than this value are downloaded sequentially with HTTP byte-range
 requests, using the same value as the maximum chunk size. It defaults to
 `8388608` (8 MiB) and must be greater than zero. Files at or below the
-threshold use a single request.
+threshold use a single request. Range response metadata is validated before
+response bytes are written, and large transfers periodically flush durable
+checkpoints so an interrupted request retries from the last safely stored
+offset instead of the beginning of the chunk.
 
 Download transport settings control each file-content request. Connection and
 operation timeouts default to `30` and `3600` seconds. A transfer that remains
