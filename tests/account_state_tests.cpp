@@ -55,19 +55,14 @@ int main() {
         ) != paths.token_directory) {
         return fail("friendly account state layout was not created");
     }
-    std::ifstream avatar{*paths.avatar_path, std::ios::binary};
-    const std::string avatar_bytes{
-        std::istreambuf_iterator<char>{avatar},
-        std::istreambuf_iterator<char>{}
-    };
+    const auto avatar_bytes =
+        onedrive::test::read_file(*paths.avatar_path);
     if (avatar_bytes != "photo") {
         return fail("profile photo was not persisted");
     }
-    std::ifstream drive_metadata{paths.drive_directory / "drive.json"};
-    const std::string drive_metadata_contents{
-        std::istreambuf_iterator<char>{drive_metadata},
-        std::istreambuf_iterator<char>{}
-    };
+    const auto drive_metadata_contents = onedrive::test::read_file(
+        paths.drive_directory / "drive.json"
+    );
     if (!drive_metadata_contents.contains(
             R"("configured_drive_id": "me")"
         ) ||

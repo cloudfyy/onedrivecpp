@@ -174,17 +174,6 @@ bool send_http_ok(int socket) {
     return send_all(socket, std::as_bytes(std::span{response}));
 }
 
-void write_file(
-    const std::filesystem::path& path,
-    std::string_view contents
-) {
-    std::ofstream output{path, std::ios::binary | std::ios::trunc};
-    output.write(
-        contents.data(),
-        static_cast<std::streamsize>(contents.size())
-    );
-}
-
 bool proxy_password_rejected(
     const std::filesystem::path& path,
     std::string_view expected_error
@@ -210,6 +199,7 @@ bool send_all(int socket, const std::array<std::byte, Size>& data) {
 
 int main() {
     const onedrive::test::TemporaryDirectory temporary;
+    using onedrive::test::write_file;
     auto socks_listener = create_listener();
     if (socks_listener.socket.get() == -1) {
         return fail("cannot create SOCKS5 test listener");

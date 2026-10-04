@@ -22,6 +22,11 @@
 
 namespace {
 
+const std::filesystem::path& test_directory() {
+    static const onedrive::test::TemporaryDirectory temporary;
+    return temporary.path();
+}
+
 class FakeTransport final {
 public:
     explicit FakeTransport(std::deque<onedrive::http::HttpResult> responses)
@@ -1012,10 +1017,8 @@ int test_file_download_redirect() {
         }
     );
     auto* transport_pointer = transport.get();
-    const auto destination =
-        std::filesystem::temp_directory_path() / "onedrive-cpp-download-test";
+    const auto destination = test_directory() / "download";
     std::error_code ignored;
-    std::filesystem::remove(destination, ignored);
 
     onedrive::graph::MicrosoftGraphClient client{
         wrap_transport(std::move(transport)),
@@ -1062,11 +1065,7 @@ int test_file_download_redirect() {
         }
     );
 
-    std::ifstream input{destination, std::ios::binary};
-    const std::string contents{
-        std::istreambuf_iterator<char>{input},
-        std::istreambuf_iterator<char>{}
-    };
+    const auto contents = onedrive::test::read_file(destination);
     std::filesystem::remove(destination, ignored);
     transport_pointer->download_body.clear();
     client.download_file("empty-item", "\"empty-etag\"", 0, destination);
@@ -1168,11 +1167,8 @@ int test_changed_file_download_is_not_retried() {
             sleeps.push_back(duration);
         },
     };
-    const auto destination =
-        std::filesystem::temp_directory_path() /
-        "onedrive-cpp-changed-download-test";
+    const auto destination = test_directory() / "changed-download";
     std::error_code ignored;
-    std::filesystem::remove(destination, ignored);
     try {
         client.download_file(
             "item-id",
@@ -1245,11 +1241,8 @@ int test_relaxed_file_download_ignores_remote_size() {
         }
     );
     auto* transport_pointer = transport.get();
-    const auto destination =
-        std::filesystem::temp_directory_path() /
-        "onedrive-cpp-relaxed-download-test";
+    const auto destination = test_directory() / "relaxed-download";
     std::error_code ignored;
-    std::filesystem::remove(destination, ignored);
 
     onedrive::graph::MicrosoftGraphClient client{
         wrap_transport(std::move(transport)),
@@ -1273,11 +1266,7 @@ int test_relaxed_file_download_ignores_remote_size() {
         destination
     );
 
-    std::ifstream input{destination, std::ios::binary};
-    const std::string contents{
-        std::istreambuf_iterator<char>{input},
-        std::istreambuf_iterator<char>{}
-    };
+    const auto contents = onedrive::test::read_file(destination);
     std::filesystem::remove(destination, ignored);
     transport_pointer->download_body.clear();
     client.download_file(
@@ -1349,11 +1338,8 @@ int test_whole_file_download_rejects_error_body_before_retry() {
         },
     };
     auto* transport_pointer = transport.get();
-    const auto destination =
-        std::filesystem::temp_directory_path() /
-        "onedrive-cpp-whole-download-gate-test";
+    const auto destination = test_directory() / "whole-download-gate";
     std::error_code ignored;
-    std::filesystem::remove(destination, ignored);
 
     onedrive::graph::MicrosoftGraphClient client{
         wrap_transport(std::move(transport)),
@@ -1387,11 +1373,7 @@ int test_whole_file_download_rejects_error_body_before_retry() {
         }
     );
 
-    std::ifstream input{destination, std::ios::binary};
-    const std::string contents{
-        std::istreambuf_iterator<char>{input},
-        std::istreambuf_iterator<char>{}
-    };
+    const auto contents = onedrive::test::read_file(destination);
     std::filesystem::remove(destination, ignored);
     if (contents != "download" ||
         transport_pointer->download_requests.size() != 2 ||
@@ -1460,11 +1442,8 @@ int test_expired_download_redirect_is_refreshed() {
         onedrive::http::HttpResponse{.status_code = 403},
     };
     auto* transport_pointer = transport.get();
-    const auto destination =
-        std::filesystem::temp_directory_path() /
-        "onedrive-cpp-refreshed-redirect-test";
+    const auto destination = test_directory() / "refreshed-redirect";
     std::error_code ignored;
-    std::filesystem::remove(destination, ignored);
 
     onedrive::graph::MicrosoftGraphClient client{
         wrap_transport(std::move(transport)),
@@ -1534,9 +1513,7 @@ int test_resumed_file_download() {
         }
     );
     auto* transport_pointer = transport.get();
-    const auto destination =
-        std::filesystem::temp_directory_path() /
-        "onedrive-cpp-resumed-download-test";
+    const auto destination = test_directory() / "resumed-download";
     {
         std::ofstream output{destination, std::ios::binary};
         output << "down";
@@ -1602,11 +1579,7 @@ int test_resumed_file_download() {
     } catch (const std::invalid_argument&) {
     }
 
-    std::ifstream input{destination, std::ios::binary};
-    const std::string contents{
-        std::istreambuf_iterator<char>{input},
-        std::istreambuf_iterator<char>{}
-    };
+    const auto contents = onedrive::test::read_file(destination);
     std::error_code ignored;
     std::filesystem::remove(destination, ignored);
     if (contents != "download" ||
@@ -1652,11 +1625,8 @@ int test_cancelled_download_is_not_retried_or_checkpointed() {
         }
     );
     auto* transport_pointer = transport.get();
-    const auto destination =
-        std::filesystem::temp_directory_path() /
-        "onedrive-cpp-cancelled-download-test";
+    const auto destination = test_directory() / "cancelled-download";
     std::error_code ignored;
-    std::filesystem::remove(destination, ignored);
 
     onedrive::graph::MicrosoftGraphClient client{
         wrap_transport(std::move(transport)),
@@ -1749,11 +1719,8 @@ int test_large_file_chunked_download() {
             .received_size = 2,
         },
     };
-    const auto destination =
-        std::filesystem::temp_directory_path() /
-        "onedrive-cpp-chunked-download-test";
+    const auto destination = test_directory() / "chunked-download";
     std::error_code ignored;
-    std::filesystem::remove(destination, ignored);
 
     std::vector<std::chrono::seconds> sleeps;
     onedrive::graph::MicrosoftGraphClient client{
@@ -1789,11 +1756,7 @@ int test_large_file_chunked_download() {
         }
     );
 
-    std::ifstream input{destination, std::ios::binary};
-    const std::string contents{
-        std::istreambuf_iterator<char>{input},
-        std::istreambuf_iterator<char>{}
-    };
+    const auto contents = onedrive::test::read_file(destination);
     std::filesystem::remove(destination, ignored);
     if (contents != "download" ||
         transport_pointer->download_requests.size() != 4 ||
@@ -1847,11 +1810,8 @@ int test_chunk_retry_resumes_from_durable_checkpoint() {
     );
     transport->partial_failure_bytes = 1;
     auto* transport_pointer = transport.get();
-    const auto destination =
-        std::filesystem::temp_directory_path() /
-        "onedrive-cpp-durable-range-retry-test";
+    const auto destination = test_directory() / "durable-range-retry";
     std::error_code ignored;
-    std::filesystem::remove(destination, ignored);
 
     std::vector<std::chrono::seconds> sleeps;
     onedrive::graph::MicrosoftGraphClient client{
@@ -1885,11 +1845,7 @@ int test_chunk_retry_resumes_from_durable_checkpoint() {
         }
     );
 
-    std::ifstream input{destination, std::ios::binary};
-    const std::string contents{
-        std::istreambuf_iterator<char>{input},
-        std::istreambuf_iterator<char>{}
-    };
+    const auto contents = onedrive::test::read_file(destination);
     std::filesystem::remove(destination, ignored);
     if (contents != "download" ||
         transport_pointer->download_requests.size() != 4 ||
@@ -2044,9 +2000,7 @@ int test_invalid_chunk_responses_are_rejected() {
         },
     };
 
-    const auto destination =
-        std::filesystem::temp_directory_path() /
-        "onedrive-cpp-invalid-chunk-response-test";
+    const auto destination = test_directory() / "invalid-chunk-response";
     std::error_code ignored;
     for (auto& [response, expected_message] : cases) {
         std::filesystem::remove(destination, ignored);
@@ -2179,11 +2133,8 @@ int test_invalid_chunk_responses_are_rejected() {
         return fail("invalid later Graph chunk response was accepted");
     } catch (const std::runtime_error&) {
     }
-    std::ifstream partial{destination, std::ios::binary};
-    const std::string partial_contents{
-        std::istreambuf_iterator<char>{partial},
-        std::istreambuf_iterator<char>{}
-    };
+    const auto partial_contents =
+        onedrive::test::read_file(destination);
     std::filesystem::remove(destination, ignored);
     if (partial_contents != "dow" ||
         checkpoints != std::vector<std::uint64_t>{3} ||

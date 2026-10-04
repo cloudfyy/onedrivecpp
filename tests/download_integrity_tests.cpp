@@ -12,17 +12,7 @@ namespace {
 
 using onedrive::test::TemporaryDirectory;
 using onedrive::test::fail;
-
-void write_file(
-    const std::filesystem::path& path,
-    std::string_view contents
-) {
-    std::ofstream output{path, std::ios::binary};
-    output.write(
-        contents.data(),
-        static_cast<std::streamsize>(contents.size())
-    );
-}
+using onedrive::test::write_file;
 
 onedrive::graph::RemoteItem remote_item(onedrive::FileHash hash) {
     return {

@@ -66,6 +66,8 @@ using onedrive::test::fail;
 
 int main() {
     const ScopedUmask download_umask{0022};
+    const onedrive::test::TemporaryDirectory temporary;
+    std::error_code ignored;
     Socket listener{::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0)};
     if (listener.get() == -1) {
         return fail("cannot create HTTP test socket");
@@ -450,10 +452,7 @@ int main() {
             server_error = "cannot send download response";
         }
     }};
-    const auto destination =
-        std::filesystem::temp_directory_path() / "onedrive-cpp-http-download";
-    std::error_code ignored;
-    std::filesystem::remove(destination, ignored);
+    const auto destination = temporary.path() / "download";
     std::vector<std::pair<std::uint64_t, std::uint64_t>> download_progress;
     std::string streamed_download_data;
     std::vector<std::uint64_t> streamed_download_offsets;
@@ -483,11 +482,8 @@ int main() {
         }
     );
     download_server.join();
-    std::ifstream downloaded{destination, std::ios::binary};
-    const std::string downloaded_contents{
-        std::istreambuf_iterator<char>{downloaded},
-        std::istreambuf_iterator<char>{}
-    };
+    const auto downloaded_contents =
+        onedrive::test::read_file(destination);
     struct stat downloaded_status {};
     const bool inspected_download = ::stat(
         destination.c_str(),
@@ -733,11 +729,7 @@ int main() {
         }
     );
     failed_chunk_server.join();
-    std::ifstream partial{destination, std::ios::binary};
-    const std::string partial_contents{
-        std::istreambuf_iterator<char>{partial},
-        std::istreambuf_iterator<char>{}
-    };
+    const auto partial_contents = onedrive::test::read_file(destination);
     std::filesystem::remove(destination, ignored);
     if (!server_error.empty()) {
         return fail(server_error);
@@ -920,11 +912,8 @@ int main() {
         }
     );
     cancelled_chunk_server.join();
-    std::ifstream cancelled_partial{destination, std::ios::binary};
-    const std::string cancelled_contents{
-        std::istreambuf_iterator<char>{cancelled_partial},
-        std::istreambuf_iterator<char>{}
-    };
+    const auto cancelled_contents =
+        onedrive::test::read_file(destination);
     std::filesystem::remove(destination, ignored);
     if (!server_error.empty()) {
         return fail(server_error);
@@ -1029,11 +1018,8 @@ int main() {
         }
     );
     checkpointed_cancel_server.join();
-    std::ifstream checkpointed_partial{destination, std::ios::binary};
-    const std::string checkpointed_contents{
-        std::istreambuf_iterator<char>{checkpointed_partial},
-        std::istreambuf_iterator<char>{}
-    };
+    const auto checkpointed_contents =
+        onedrive::test::read_file(destination);
     std::filesystem::remove(destination, ignored);
     if (!server_error.empty()) {
         return fail(server_error);

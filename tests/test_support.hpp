@@ -3,8 +3,11 @@
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <iterator>
 #include <source_location>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 
@@ -13,6 +16,52 @@ namespace onedrive::test {
 [[nodiscard]] inline int fail(std::string_view message) {
     std::cerr << message << '\n';
     return EXIT_FAILURE;
+}
+
+inline void write_file(
+    const std::filesystem::path& path,
+    std::string_view contents
+) {
+    std::ofstream output{
+        path,
+        std::ios::binary | std::ios::trunc
+    };
+    if (!output) {
+        throw std::runtime_error(
+            "cannot open test file for writing: " + path.string()
+        );
+    }
+    output.write(
+        contents.data(),
+        static_cast<std::streamsize>(contents.size())
+    );
+    output.close();
+    if (!output) {
+        throw std::runtime_error(
+            "cannot write test file: " + path.string()
+        );
+    }
+}
+
+[[nodiscard]] inline std::string read_file(
+    const std::filesystem::path& path
+) {
+    std::ifstream input{path, std::ios::binary};
+    if (!input) {
+        throw std::runtime_error(
+            "cannot open test file for reading: " + path.string()
+        );
+    }
+    std::string contents{
+        std::istreambuf_iterator<char>{input},
+        std::istreambuf_iterator<char>{}
+    };
+    if (input.bad()) {
+        throw std::runtime_error(
+            "cannot read test file: " + path.string()
+        );
+    }
+    return contents;
 }
 
 class TemporaryDirectory {

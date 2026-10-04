@@ -1,5 +1,6 @@
 #include "onedrive/app/runtime_options.hpp"
 #include "onedrive/config/config.hpp"
+#include "test_support.hpp"
 
 #include <array>
 #include <chrono>
@@ -9,8 +10,8 @@
 #include <iostream>
 
 int main() {
-    const auto path =
-        std::filesystem::temp_directory_path() / "onedrive-cpp-config-test.toml";
+    const onedrive::test::TemporaryDirectory temporary;
+    const auto path = temporary.path() / "config.toml";
     {
         std::ofstream output{path};
         output << "config_version = 2\n"
