@@ -102,10 +102,20 @@ public:
                     progress(downloaded, contents.size());
                 }
             }
+
         }
         if (send_checkpoint && checkpoint) {
             checkpoint(expected_size);
         }
+    }
+
+    [[nodiscard]] onedrive::graph::RemoteItem upload_file(
+        const std::string&,
+        const std::optional<std::string>&,
+        const std::string&,
+        const std::filesystem::path&
+    ) const {
+        throw std::logic_error{"upload was not expected"};
     }
 
     std::string contents{"data"};
@@ -184,6 +194,20 @@ public:
                    std::optional<onedrive::storage::PartialDownload>{
                        iterator->second
                    };
+    }
+
+    void save_pending_upload(onedrive::storage::PendingUpload) {}
+
+    [[nodiscard]] std::vector<onedrive::storage::PendingUpload>
+    pending_uploads(const std::string&) const {
+        return {};
+    }
+
+    void commit_upload(
+        const onedrive::storage::PendingUpload&,
+        onedrive::storage::ItemState item
+    ) {
+        upsert(std::move(item));
     }
 
     [[nodiscard]] std::vector<onedrive::storage::BlockedItem> blocked_items(

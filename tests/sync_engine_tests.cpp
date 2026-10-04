@@ -44,8 +44,11 @@ public:
     }
 
     [[nodiscard]] onedrive::graph::RemoteItem item_by_path(
-        const std::string&
+        const std::string& path
     ) const {
+        if (lookup_item && lookup_item->remote_path == path) {
+            return *lookup_item;
+        }
         throw std::logic_error{"single path lookup was not expected"};
     }
 
@@ -113,6 +116,7 @@ public:
                 std::this_thread::sleep_for(std::chrono::milliseconds{1});
             }
         }
+
         if (remote_id == failing_id) {
             while (download_count.load(std::memory_order_relaxed) <
                        downloads_started_before_failure ||
@@ -180,17 +184,49 @@ public:
         }
     }
 
+    [[nodiscard]] onedrive::graph::RemoteItem upload_file(
+        const std::string& remote_path,
+        const std::optional<std::string>& remote_id,
+        const std::string&,
+        const std::filesystem::path& source
+    ) const {
+        ++upload_count;
+        uploaded_paths.push_back(remote_path);
+        if (upload_conflict) {
+            throw onedrive::graph::UploadConflictError{
+                "simulated completed upload"
+            };
+        }
+        return {
+            .id = remote_id.value_or(
+                "uploaded-" + std::to_string(upload_count)
+            ),
+            .name = std::filesystem::path{remote_path}.filename().string(),
+            .etag = "uploaded-etag-" + std::to_string(upload_count),
+            .parent_id = "root-id",
+            .remote_path = remote_path,
+            .last_modified = "2026-10-04T09:00:00Z",
+            .size = static_cast<std::int64_t>(
+                std::filesystem::file_size(source)
+            ),
+        };
+    }
+
     std::vector<onedrive::graph::RemoteItem> changes;
+    std::optional<onedrive::graph::RemoteItem> lookup_item;
     std::unordered_map<std::string, std::string> contents;
     std::string failing_id;
     std::string cancellable_id;
     std::function<void(const std::string&)> before_download_write;
     bool reject_saved_cursor{false};
+    bool upload_conflict{false};
     std::chrono::milliseconds download_delay{0};
     int downloads_started_before_failure{0};
     int checkpoints_before_failure{0};
     std::size_t cancellation_checkpoint{0};
     mutable std::atomic_int download_count{0};
+    mutable int upload_count{0};
+    mutable std::vector<std::string> uploaded_paths;
     mutable std::atomic_int checkpoint_count{0};
     mutable std::atomic_int active_downloads{0};
     mutable std::atomic_int maximum_concurrent_downloads{0};
@@ -278,6 +314,38 @@ public:
                    };
     }
 
+    void save_pending_upload(onedrive::storage::PendingUpload upload) {
+        const std::scoped_lock lock{mutex};
+        pending_uploads_by_path.insert_or_assign(
+            upload.remote_path,
+            std::move(upload)
+        );
+    }
+
+    [[nodiscard]] std::vector<onedrive::storage::PendingUpload>
+    pending_uploads(const std::string&) const {
+        const std::scoped_lock lock{mutex};
+        std::vector<onedrive::storage::PendingUpload> result;
+        for (const auto& [path, upload] : pending_uploads_by_path) {
+            static_cast<void>(path);
+            result.push_back(upload);
+        }
+        return result;
+    }
+
+    void commit_upload(
+        const onedrive::storage::PendingUpload& upload,
+        onedrive::storage::ItemState item
+    ) {
+        const std::scoped_lock lock{mutex};
+        if (fail_commit_upload) {
+            throw std::runtime_error{"simulated upload commit failure"};
+        }
+        ++upsert_count;
+        items.insert_or_assign(item.remote_id, std::move(item));
+        pending_uploads_by_path.erase(upload.remote_path);
+    }
+
     [[nodiscard]] std::vector<onedrive::storage::BlockedItem> blocked_items(
         const std::string&
     ) const {
@@ -339,6 +407,8 @@ public:
     std::unordered_map<std::string, onedrive::storage::ItemState> items;
     std::unordered_map<std::string, onedrive::storage::PendingDownload> pending;
     std::unordered_map<std::string, onedrive::storage::PartialDownload> partials;
+    std::unordered_map<std::string, onedrive::storage::PendingUpload>
+        pending_uploads_by_path;
     std::vector<onedrive::storage::BlockedItem> blocked;
     onedrive::storage::ItemDelta applied_delta;
     std::optional<std::string> saved_delta_link;
@@ -346,6 +416,7 @@ public:
     int upsert_count{0};
     int apply_count{0};
     bool fail_upsert{false};
+    bool fail_commit_upload{false};
     mutable std::mutex mutex;
 };
 
@@ -372,6 +443,7 @@ onedrive::config::Config config_for(
     config.state_directory = root.parent_path() / "state";
     config.filesystem_metadata =
         onedrive::config::FilesystemMetadataMode::database;
+    config.upload = false;
     config.dry_run = dry_run;
     return config;
 }
@@ -1955,6 +2027,227 @@ int test_duplicate_destination_downloads_are_serialized() {
     return EXIT_SUCCESS;
 }
 
+int test_local_file_uploads() {
+    onedrive::test::TemporaryDirectory temporary;
+    const auto dry_root = temporary.path() / "dry-uploads";
+    std::filesystem::create_directories(dry_root);
+    {
+        std::ofstream output{dry_root / "new.txt"};
+        output << "new";
+    }
+    FakeItemStore dry_items;
+    dry_items.saved_delta_link = "saved";
+    FakeGraphClient dry_graph;
+    FakeMetrics dry_metrics;
+    auto dry_config = config_for(dry_root, true);
+    dry_config.upload = true;
+    if (onedrive::sync::SyncEngine{
+            dry_config,
+            dry_graph,
+            dry_items,
+            dry_metrics
+        }.synchronize() != 0 ||
+        dry_graph.upload_count != 0 || dry_items.apply_count != 0) {
+        return fail("upload dry run changed remote or local state");
+    }
+
+    const auto root = temporary.path() / "uploads";
+    std::filesystem::create_directories(root);
+    {
+        std::ofstream output{root / "new.txt"};
+        output << "new";
+    }
+    {
+        std::ofstream output{root / "modified.txt"};
+        output << "data";
+    }
+    {
+        std::ofstream output{root / "unchanged.txt"};
+        output << "data";
+    }
+    {
+        std::ofstream output{root / "tracked-directory"};
+        output << "conflict";
+    }
+    {
+        std::ofstream output{root / "report.safeBackup-20261004-0001.txt"};
+        output << "backup";
+    }
+    std::filesystem::create_symlink("new.txt", root / "linked.txt");
+
+    FakeItemStore items;
+    items.saved_delta_link = "saved";
+    items.items.emplace(
+        "modified",
+        tracked_item(root, "modified", "modified.txt")
+    );
+    items.items.emplace(
+        "unchanged",
+        tracked_item(root, "unchanged", "unchanged.txt")
+    );
+    items.items.emplace(
+        "tracked-directory",
+        tracked_item(root, "tracked-directory", "tracked-directory", true)
+    );
+    {
+        std::ofstream output{root / "modified.txt"};
+        output << "changed";
+    }
+
+    FakeGraphClient graph;
+    FakeMetrics metrics;
+    auto config = config_for(root, false);
+    config.upload = true;
+    const auto result = onedrive::sync::SyncEngine{
+        config,
+        graph,
+        items,
+        metrics
+    }.synchronize();
+    std::ranges::sort(graph.uploaded_paths);
+    bool upload_snapshot_found = false;
+    for (const auto& entry : std::filesystem::directory_iterator{root}) {
+        if (entry.path().filename().string().contains(".onedrive-upload-")) {
+            upload_snapshot_found = true;
+        }
+    }
+    const auto modified = items.find("me", "modified");
+    if (result != 2 || graph.upload_count != 2 ||
+        graph.uploaded_paths !=
+            std::vector<std::string>{"modified.txt", "new.txt"} ||
+        !modified ||
+        (modified->etag != "uploaded-etag-1" &&
+         modified->etag != "uploaded-etag-2") ||
+        modified->local_size != 7 ||
+        (!items.find("me", "uploaded-1") &&
+         !items.find("me", "uploaded-2")) ||
+        upload_snapshot_found || !metrics.last_success) {
+        return fail(
+            "new and modified local files were not uploaded safely"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_pending_upload_recovery() {
+    onedrive::test::TemporaryDirectory temporary;
+    const auto root = temporary.path() / "pending-upload";
+    std::filesystem::create_directories(root);
+    const auto local = root / "recover.txt";
+    {
+        std::ofstream output{local};
+        output << "payload";
+    }
+    FakeItemStore items;
+    items.saved_delta_link = "saved";
+    items.fail_commit_upload = true;
+    FakeGraphClient graph;
+    FakeMetrics metrics;
+    auto config = config_for(root, false);
+    config.upload = true;
+    try {
+        static_cast<void>(onedrive::sync::SyncEngine{
+            config,
+            graph,
+            items,
+            metrics
+        }.synchronize());
+        return fail("upload commit failure was not reported");
+    } catch (const std::runtime_error&) {
+    }
+    if (items.pending_uploads_by_path.size() != 1 ||
+        !std::filesystem::exists(
+            items.pending_uploads_by_path.begin()->second.snapshot_path
+        ) ||
+        metrics.last_success) {
+        return fail("failed upload commit did not preserve its journal");
+    }
+
+    items.fail_commit_upload = false;
+    graph.upload_conflict = true;
+    graph.lookup_item = file("recovered-upload", "recover.txt", 7);
+    graph.contents.emplace("recovered-upload", "payload");
+    if (onedrive::sync::SyncEngine{
+            config,
+            graph,
+            items,
+            metrics
+        }.synchronize() != 0 ||
+        graph.upload_count != 2 || graph.download_count != 1 ||
+        !items.pending_uploads_by_path.empty() ||
+        !items.find("me", "recovered-upload") ||
+        std::ranges::any_of(
+            std::filesystem::directory_iterator{root},
+            [](const auto& entry) {
+                return entry.path().filename().string().contains(
+                    ".onedrive-upload-"
+                );
+            }
+        ) ||
+        !metrics.last_success) {
+        return fail(
+            "completed pending upload was not verified and recovered"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_pending_upload_recovery_conflict() {
+    onedrive::test::TemporaryDirectory temporary;
+    const auto root = temporary.path() / "pending-upload-conflict";
+    std::filesystem::create_directories(root);
+    const auto local = root / "conflict.txt";
+    const auto snapshot = root / ".conflict.txt.onedrive-upload-crash";
+    {
+        std::ofstream output{local};
+        output << "payload";
+    }
+    std::filesystem::copy_file(local, snapshot);
+    const auto baseline = tracked_item(root, "remote-conflict", "conflict.txt");
+    FakeItemStore items;
+    items.saved_delta_link = "saved";
+    items.pending_uploads_by_path.emplace(
+        "conflict.txt",
+        onedrive::storage::PendingUpload{
+            .drive_id = "me",
+            .remote_path = "conflict.txt",
+            .local_path = local,
+            .snapshot_path = snapshot,
+            .content_fingerprint =
+                "239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5",
+            .local_size = 7,
+            .local_modified_ticks = baseline.local_modified_ticks,
+        }
+    );
+    FakeGraphClient graph;
+    graph.upload_conflict = true;
+    graph.lookup_item = file("remote-conflict", "conflict.txt", 7);
+    graph.contents.emplace("remote-conflict", "changed");
+    FakeMetrics metrics;
+    auto config = config_for(root, false);
+    config.upload = true;
+    try {
+        static_cast<void>(onedrive::sync::SyncEngine{
+            config,
+            graph,
+            items,
+            metrics
+        }.synchronize());
+        return fail("conflicting pending upload recovery was accepted");
+    } catch (const std::runtime_error& error) {
+        if (!std::string_view{error.what()}.contains(
+                "remote upload recovery content conflicts"
+            )) {
+            throw;
+        }
+    }
+    if (items.pending_uploads_by_path.size() != 1 ||
+        !std::filesystem::exists(snapshot) || metrics.last_success) {
+        return fail("conflicting pending upload journal was not preserved");
+    }
+    return EXIT_SUCCESS;
+}
+
 }  // namespace
 
 int main() {
@@ -2007,6 +2300,18 @@ int main() {
     }
     if (const int result =
             test_duplicate_destination_downloads_are_serialized();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_local_file_uploads();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_pending_upload_recovery();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_pending_upload_recovery_conflict();
         result != EXIT_SUCCESS) {
         return result;
     }

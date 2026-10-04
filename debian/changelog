@@ -1,3 +1,14 @@
+onedrive-cpp (0.7.0-1~ubuntu24.04) noble; urgency=medium
+
+  * Upload new and modified local files with fail-on-conflict creation and
+    eTag-conditioned replacement.
+  * Protect transfers with stable private snapshots and durable pending-upload
+    SQLite recovery verified by SHA-256.
+  * Add HTTP PUT, Graph upload parsing, dry-run planning, selective-sync
+    filtering, schema v13 migration, and upload safety tests.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 10:15:00 +0000
+
 onedrive-cpp (0.6.38-1~ubuntu24.04) noble; urgency=medium
 
   * Safely execute remote file and empty-directory deletions only while local

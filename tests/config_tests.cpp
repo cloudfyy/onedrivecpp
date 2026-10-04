@@ -21,6 +21,7 @@ int main() {
                << "sync_list = \"rules/sync_list\"\n"
                << "sync_root_files = true\n"
                << "local_conflict = \"backup\"\n"
+               << "upload = false\n"
                << "dry_run = true\n"
                << "permissions = \"umask\"\n"
                << "[proxy]\n"
@@ -110,6 +111,7 @@ int main() {
             onedrive::config::SyncPermissionsMode::umask ||
         config.local_conflict !=
             onedrive::config::LocalConflictPolicy::backup ||
+        config.upload ||
         config.proxy.url !=
             std::optional<std::string>{
                 "https://proxy.example.test:8443"
@@ -169,6 +171,7 @@ int main() {
         ) ||
         defaults.sync_permissions !=
             onedrive::config::SyncPermissionsMode::private_access ||
+        !defaults.upload ||
         defaults.local_conflict !=
             onedrive::config::LocalConflictPolicy::block ||
         defaults.sync_root_files ||

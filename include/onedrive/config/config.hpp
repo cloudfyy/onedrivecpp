@@ -80,6 +80,7 @@ struct Config {
     FilesystemMetadataMode filesystem_metadata{
         FilesystemMetadataMode::automatic
     };
+    bool upload{true};
     bool dry_run{false};
 
     [[nodiscard]] static Config defaults();

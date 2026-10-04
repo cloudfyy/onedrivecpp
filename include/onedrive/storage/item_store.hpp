@@ -72,10 +72,23 @@ struct PartialDownload {
     std::uint64_t completed_bytes{0};
 };
 
+struct PendingUpload {
+    std::string drive_id;
+    std::string remote_path;
+    std::filesystem::path local_path;
+    std::filesystem::path snapshot_path;
+    std::string content_fingerprint;
+    std::int64_t local_size{0};
+    std::int64_t local_modified_ticks{0};
+    std::optional<std::string> remote_id;
+    std::string expected_etag;
+};
+
 struct ClearedState {
     std::size_t items{0};
     std::size_t pending_downloads{0};
     std::size_t partial_downloads{0};
+    std::size_t pending_uploads{0};
     std::size_t blocked_items{0};
     bool delta_link{false};
 };
@@ -89,6 +102,9 @@ PRO_DEF_MEM_DISPATCH(StorePendingDispatch, pending_downloads);
 PRO_DEF_MEM_DISPATCH(StoreSavePartialDispatch, save_partial_download);
 PRO_DEF_MEM_DISPATCH(StoreRemovePartialDispatch, remove_partial_download);
 PRO_DEF_MEM_DISPATCH(StorePartialDispatch, partial_download);
+PRO_DEF_MEM_DISPATCH(StoreSavePendingUploadDispatch, save_pending_upload);
+PRO_DEF_MEM_DISPATCH(StorePendingUploadsDispatch, pending_uploads);
+PRO_DEF_MEM_DISPATCH(StoreCommitUploadDispatch, commit_upload);
 PRO_DEF_MEM_DISPATCH(StoreBlockedDispatch, blocked_items);
 PRO_DEF_MEM_DISPATCH(StoreResetDispatch, reset);
 PRO_DEF_MEM_DISPATCH(StoreClearDispatch, clear);
@@ -125,6 +141,15 @@ struct ItemStoreFacade : pro::facade_builder
             const std::string&,
             const std::string&
         ) const
+    >
+    ::add_convention<StoreSavePendingUploadDispatch, void(PendingUpload)>
+    ::add_convention<
+        StorePendingUploadsDispatch,
+        std::vector<PendingUpload>(const std::string&) const
+    >
+    ::add_convention<
+        StoreCommitUploadDispatch,
+        void(const PendingUpload&, ItemState)
     >
     ::add_convention<
         StoreBlockedDispatch,
@@ -205,6 +230,23 @@ public:
         const std::string& remote_id
     ) const {
         return implementation()->partial_download(drive_id, remote_id);
+    }
+
+    void save_pending_upload(PendingUpload upload) {
+        implementation()->save_pending_upload(std::move(upload));
+    }
+
+    [[nodiscard]] std::vector<PendingUpload> pending_uploads(
+        const std::string& drive_id
+    ) const {
+        return implementation()->pending_uploads(drive_id);
+    }
+
+    void commit_upload(
+        const PendingUpload& upload,
+        ItemState item
+    ) {
+        implementation()->commit_upload(upload, std::move(item));
     }
 
     [[nodiscard]] std::vector<BlockedItem> blocked_items(

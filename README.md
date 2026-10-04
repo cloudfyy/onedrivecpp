@@ -10,11 +10,12 @@ copy the reference project's D implementation.
 > The current version provides a buildable architecture scaffold,
 > configuration loading, a CLI, Microsoft device-code authentication, an HTTP
 > transport layer, authenticated Microsoft Graph delta queries, SQLite remote
-> state and delta-link persistence, safe one-way downloads, dry-run support, a
+> state and delta-link persistence, safe downloads and local uploads, dry-run support, a
 > systemd user service, and Debian packaging. Synchronization currently
 > creates remote directories, downloads added or changed remote files, and
-> safely removes unchanged local snapshots after remote deletion; uploads,
-> remote moves, and two-way conflict resolution are not implemented.
+> safely removes unchanged local snapshots after remote deletion, and uploads
+> new or modified local files. Remote moves, local deletion propagation, large
+> resumable uploads, and full two-way conflict resolution are not implemented.
 
 ## Architecture
 
@@ -458,6 +459,7 @@ local_conflict = "block"
 # Optional; resolved relative to this TOML file
 # sync_list = "sync_list"
 sync_root_files = false
+upload = true
 
 # Another OneDrive or SharePoint document library
 # drive_id = "b!YOUR_DRIVE_ID"
@@ -555,6 +557,17 @@ replacing its inode. Backup creation requires additional disk space equal to
 the local file and fails safely without replacing the destination. This policy
 applies to normal synchronization and `download REMOTE_PATH`; it does not
 change remote deletion or future upload-conflict behavior.
+
+`sync.upload` defaults to `true`. After remote changes are applied, normal
+synchronization uploads new and modified local regular files selected by the
+same sync-list rules. New files use fail-on-conflict creation; tracked files
+use their saved eTag as an `If-Match` precondition. Symbolic links, reserved
+safeBackup and transfer-temporary names, blocked remote paths, and type
+conflicts are never uploaded. Each transfer uses a stable private snapshot and
+a durable SQLite pending-upload journal. Recovery verifies an already-created
+remote file by downloading it and comparing SHA-256 before committing state.
+Simple uploads are limited to 250 MB; larger files require future upload-session
+support. Set `upload = false` to retain download-only behavior.
 
 `graph.endpoint` selects the Microsoft Graph cloud endpoint and defaults to
 the global service. It is not tied to a specific SharePoint host. For a

@@ -204,6 +204,25 @@ bool create_version_eleven_database(const std::filesystem::path& path) {
     return succeeded;
 }
 
+bool create_version_twelve_database(const std::filesystem::path& path) {
+    if (!create_version_eleven_database(path)) {
+        return false;
+    }
+    sqlite3* database = nullptr;
+    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
+        sqlite3_close(database);
+        return false;
+    }
+    constexpr const char* schema =
+        "ALTER TABLE blocked_item ADD COLUMN deleted "
+        "INTEGER NOT NULL DEFAULT 0;"
+        "PRAGMA user_version = 12;";
+    const bool succeeded =
+        sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
+    sqlite3_close(database);
+    return succeeded;
+}
+
 bool identity_row_is_valid(const std::filesystem::path& path) {
     sqlite3* database = nullptr;
     if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
@@ -1052,6 +1071,58 @@ int main() {
             return fail(
                 "version eleven database did not gain deletion retry state"
             );
+        }
+    }
+
+    const auto version_twelve_directory =
+        temporary_directory.path() / "version-twelve";
+    std::filesystem::create_directories(version_twelve_directory);
+    if (!create_version_twelve_database(
+            version_twelve_directory / "items.sqlite3"
+        )) {
+        return fail("version twelve migration fixture could not be created");
+    }
+    {
+        onedrive::storage::ItemDatabase database{
+            version_twelve_directory,
+            identity()
+        };
+        database.open();
+        const onedrive::storage::PendingUpload pending{
+            .drive_id = "me",
+            .remote_path = "upload.txt",
+            .local_path = version_twelve_directory / "upload.txt",
+            .snapshot_path =
+                version_twelve_directory / ".upload.onedrive-upload-1",
+            .content_fingerprint =
+                "239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5",
+            .local_size = 7,
+            .local_modified_ticks = 123,
+        };
+        database.save_pending_upload(pending);
+        const auto uploads = database.pending_uploads("me");
+        if (uploads.size() != 1 ||
+            uploads[0].remote_path != "upload.txt" ||
+            uploads[0].local_size != 7) {
+            return fail(
+                "version twelve database did not gain pending upload state"
+            );
+        }
+        database.commit_upload(pending, {
+            .drive_id = "me",
+            .remote_id = "uploaded-id",
+            .name = "upload.txt",
+            .etag = "uploaded-etag",
+            .remote_path = "upload.txt",
+            .local_path = pending.local_path,
+            .last_modified = "2026-10-04T09:00:00Z",
+            .size = 7,
+            .local_size = 7,
+            .local_modified_ticks = 123,
+        });
+        if (!database.pending_uploads("me").empty() ||
+            !database.find("me", "uploaded-id")) {
+            return fail("pending upload commit was not atomic");
         }
     }
 

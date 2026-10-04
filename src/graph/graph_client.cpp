@@ -14,8 +14,10 @@
 #include <charconv>
 #include <chrono>
 #include <condition_variable>
+#include <fstream>
 
 #include <format>
+#include <limits>
 #include <optional>
 #include <mutex>
 #include <stdexcept>
@@ -641,6 +643,60 @@ std::optional<FileHash> item_content_hash(const Json& value) {
     return std::nullopt;
 }
 
+RemoteItem parse_drive_item(
+    const Json& json,
+    std::string_view description,
+    bool validate_content
+) {
+    try {
+        RemoteItem item{
+            .id = json.at("id").get<std::string>(),
+            .name = json.at("name").get<std::string>(),
+            .etag = json.at("eTag").get<std::string>(),
+            .parent_id = {},
+            .remote_path = {},
+            .last_modified = {},
+            .size = 0,
+            .directory = json.contains("folder"),
+            .deleted = json.contains("deleted"),
+            .root = json.contains("root"),
+            .malware = item_is_malware(json),
+            .content_hash = item_content_hash(json),
+            .validate_content = validate_content,
+        };
+        item.remote_path = item_remote_path(json, item.name);
+        if (const auto parent = json.find("parentReference");
+            parent != json.end() && parent->is_object()) {
+            if (const auto parent_id = parent->find("id");
+                parent_id != parent->end() && parent_id->is_string()) {
+                item.parent_id = parent_id->get<std::string>();
+            }
+        }
+        if (const auto size = json.find("size");
+            size != json.end() && size->is_number_integer()) {
+            item.size = size->get<std::int64_t>();
+        }
+        if (auto modified = authoritative_last_modified(json);
+            modified.has_value()) {
+            item.last_modified = std::move(modified.value());
+        }
+        if (item.id.empty() || item.name.empty() || item.etag.empty() ||
+            item.remote_path.empty() || item.deleted || item.root ||
+            item.directory || item.size < 0 || item.last_modified.empty()) {
+            throw std::runtime_error(
+                "Microsoft Graph returned invalid " +
+                std::string{description} + " metadata"
+            );
+        }
+        return item;
+    } catch (const Json::exception& error) {
+        throw std::runtime_error(
+            "Microsoft Graph " + std::string{description} +
+            " is missing required drive item data: " + error.what()
+        );
+    }
+}
+
 }  // namespace
 
 MicrosoftGraphClient::MicrosoftGraphClient(
@@ -1084,58 +1140,119 @@ RemoteItem MicrosoftGraphClient::item_by_path(
         );
     }
 
+    return parse_drive_item(
+        json,
+        "path lookup",
+        !options_.relaxed_download_validation
+    );
+}
+
+RemoteItem MicrosoftGraphClient::upload_file(
+    const std::string& remote_path,
+    const std::optional<std::string>& remote_id,
+    const std::string& expected_etag,
+    const std::filesystem::path& source
+) const {
+    constexpr std::uintmax_t maximum_simple_upload_size =
+        std::uintmax_t{250} * 1000U * 1000U;
+    if (remote_id.has_value() != !expected_etag.empty() ||
+        expected_etag.find_first_of("\r\n") != std::string::npos) {
+        throw std::invalid_argument(
+            "modified uploads require both a remote ID and a valid eTag"
+        );
+    }
+    const auto size = std::filesystem::file_size(source);
+    if (size > maximum_simple_upload_size ||
+        size > static_cast<std::uintmax_t>(
+                   std::numeric_limits<std::size_t>::max()
+               )) {
+        throw std::runtime_error(
+            "local file exceeds the 250 MB simple-upload limit: " +
+            source.string()
+        );
+    }
+    std::ifstream input{source, std::ios::binary};
+    if (!input) {
+        throw std::runtime_error(
+            "cannot open local upload snapshot: " + source.string()
+        );
+    }
+    std::string body(static_cast<std::size_t>(size), '\0');
+    input.read(body.data(), static_cast<std::streamsize>(body.size()));
+    if (input.gcount() != static_cast<std::streamsize>(body.size()) ||
+        input.peek() != std::ifstream::traits_type::eof()) {
+        throw std::runtime_error(
+            "cannot read stable local upload snapshot: " + source.string()
+        );
+    }
+
+    const std::string drive_prefix =
+        options_.drive_id == "me" ?
+            options_.endpoint + "/me/drive" :
+            options_.endpoint + "/drives/" +
+                percent_encode(options_.drive_id);
+    const std::string url = remote_id ?
+        drive_prefix + "/items/" + percent_encode(*remote_id) + "/content" :
+        drive_prefix + "/root:/" + percent_encode_remote_path(remote_path) +
+            ":/content?@microsoft.graph.conflictBehavior=fail";
+    std::vector<std::string> headers{
+        "Accept: application/json",
+        "Authorization: Bearer " + access_token(),
+        "Content-Type: application/octet-stream",
+    };
+    if (remote_id) {
+        headers.push_back("If-Match: " + expected_etag);
+    }
+    const auto response = perform_with_retries(
+        [&] {
+            return transport_->perform(http::HttpRequest{
+                .method = http::HttpMethod::put,
+                .url = url,
+                .headers = headers,
+                .body = body,
+                .connect_timeout =
+                    options_.download_transport.transfer.connect_timeout,
+                .operation_timeout =
+                    options_.download_transport.transfer.operation_timeout,
+                .maximum_response_size = std::size_t{1024} * 1024U,
+                .stop_token = {},
+            });
+        },
+        options_,
+        options_.maximum_throttle_retries,
+        sleep_,
+        "Microsoft Graph file upload"
+    );
+    if (!response) {
+        throw std::runtime_error(
+            "Microsoft Graph upload failed: " + response.error().message
+        );
+    }
+    Json json;
     try {
-        RemoteItem item{
-            .id = json.at("id").get<std::string>(),
-            .name = json.at("name").get<std::string>(),
-            .etag = json.at("eTag").get<std::string>(),
-            .parent_id = {},
-            .remote_path = {},
-            .last_modified = {},
-            .size = 0,
-            .directory = json.contains("folder"),
-            .deleted = json.contains("deleted"),
-            .root = json.contains("root"),
-            .malware = item_is_malware(json),
-            .content_hash = item_content_hash(json),
-            .validate_content = !options_.relaxed_download_validation,
-        };
-        item.remote_path = item_remote_path(json, item.name);
-        if (const auto parent = json.find("parentReference");
-            parent != json.end() && parent->is_object()) {
-            if (const auto parent_id = parent->find("id");
-                parent_id != parent->end() && parent_id->is_string()) {
-                item.parent_id = parent_id->get<std::string>();
-            }
-        }
-        if (const auto size = json.find("size");
-            size != json.end() && size->is_number_integer()) {
-            item.size = size->get<std::int64_t>();
-        }
-        if (auto modified = authoritative_last_modified(json);
-            modified.has_value()) {
-            item.last_modified = std::move(modified.value());
-        }
-        if (item.id.empty() || item.name.empty() || item.etag.empty() ||
-            item.remote_path.empty() ||
-            item.deleted || item.root || item.size < 0) {
-            throw std::runtime_error(
-                "Microsoft Graph returned invalid path lookup metadata"
-            );
-        }
-        if (!item.directory && item.last_modified.empty()) {
-            throw std::runtime_error(
-                "Microsoft Graph path lookup file is missing "
-                "fileSystemInfo.lastModifiedDateTime"
-            );
-        }
-        return item;
+        json = Json::parse(response->body);
     } catch (const Json::exception& error) {
         throw std::runtime_error(
-            "Microsoft Graph path lookup is missing required drive item data: " +
+            "Microsoft Graph returned invalid upload JSON: " +
             std::string{error.what()}
         );
     }
+    if (response->status_code < 200 || response->status_code >= 300) {
+        if (response->status_code == 409 ||
+            response->status_code == 412) {
+            throw UploadConflictError(
+                graph_error_message(json, response->status_code)
+            );
+        }
+        throw std::runtime_error(
+            graph_error_message(json, response->status_code)
+        );
+    }
+    return parse_drive_item(
+        json,
+        "upload response",
+        !options_.relaxed_download_validation
+    );
 }
 
 DeltaResult MicrosoftGraphClient::list_delta(

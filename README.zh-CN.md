@@ -9,9 +9,10 @@
 
 > 当前版本提供可编译的架构骨架、配置加载、CLI、Microsoft 设备代码认证、
 > HTTP 传输层、经过认证的 Microsoft Graph Delta 查询、SQLite 远端状态和
-> deltaLink 持久化、安全的单向文件下载、dry-run、systemd 用户服务和 Debian
+> deltaLink 持久化、安全下载与本地上传、dry-run、systemd 用户服务和 Debian
 > 打包。当前同步会创建远端目录、下载新增或修改的远端文件，并在远端删除后
-> 安全移除未修改的本地快照；上传、远端移动以及双向冲突解决尚未实现。
+> 安全移除未修改的本地快照，并上传本地新增或修改的文件。远端移动、本地删除
+> 传播、可恢复大文件上传以及完整双向冲突解决尚未实现。
 
 ## 架构
 
@@ -413,6 +414,7 @@ local_conflict = "block"
 # 可选；相对路径以本 TOML 文件所在目录为基准
 # sync_list = "sync_list"
 sync_root_files = false
+upload = true
 
 # 指定其他 OneDrive 或 SharePoint 文档库
 # drive_id = "b!YOUR_DRIVE_ID"
@@ -496,6 +498,14 @@ Drive 根目录中的普通文件。根目录下的目录及其后代仍然必�
 inode，而是直接采用现有文件。创建备份需要额外占用约等于本地文件大小的磁盘
 空间；失败时程序会安全停止，不会替换目标。该策略同时作用于普通同步和
 `download REMOTE_PATH`，不会改变远端删除或未来上传冲突的行为。
+
+`sync.upload` 默认为 `true`。应用远端变化后，普通同步会上传符合相同 sync-list
+规则的本地新增和修改普通文件。新文件使用“冲突即失败”创建，已跟踪文件使用保存
+的 eTag 作为 `If-Match` 前置条件。符号链接、safeBackup 和传输临时名称、被阻止
+的远端路径以及类型冲突都不会上传。每次传输使用稳定的私有快照和持久 SQLite
+pending-upload journal；恢复时会下载已经出现的远端文件并比较 SHA-256，匹配后
+才提交状态。简单上传上限为 250 MB，更大的文件需要后续 upload session 支持。
+设置 `upload = false` 可保持仅下载行为。
 
 `graph.endpoint` 用于选择 Microsoft Graph 云端点，默认使用全球服务，并不与
 某个具体 SharePoint 主机名绑定。访问由世纪互联运营的 Microsoft 365 中国区

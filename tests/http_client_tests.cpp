@@ -156,6 +156,56 @@ int main() {
         return fail("HTTP request method or headers were not sent correctly");
     }
 
+    std::string put_request;
+    server_error.clear();
+    std::jthread put_server{[&] {
+        Socket client{::accept4(listener.get(), nullptr, nullptr, SOCK_CLOEXEC)};
+        if (client.get() == -1) {
+            server_error = "cannot accept HTTP PUT test connection";
+            return;
+        }
+        char buffer[4096];
+        while (!put_request.contains("upload-body")) {
+            const auto count = ::recv(client.get(), buffer, sizeof(buffer), 0);
+            if (count <= 0) {
+                server_error = "cannot read complete HTTP PUT request";
+                return;
+            }
+            put_request.append(buffer, static_cast<std::size_t>(count));
+        }
+        constexpr std::string_view response{
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Length: 2\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "OK"
+        };
+        static_cast<void>(::send(
+            client.get(),
+            response.data(),
+            response.size(),
+            MSG_NOSIGNAL
+        ));
+    }};
+    const auto put_response = client.perform({
+        .method = onedrive::http::HttpMethod::put,
+        .url = "http://127.0.0.1:" + std::to_string(port) + "/content",
+        .headers = {"Content-Type: application/octet-stream"},
+        .body = "upload-body",
+        .connect_timeout = std::chrono::seconds{2},
+        .operation_timeout = std::chrono::seconds{5},
+        .http_version = onedrive::http::HttpVersion::http_1_1,
+    });
+    put_server.join();
+    if (!server_error.empty()) {
+        return fail(server_error);
+    }
+    if (!put_response || put_response->status_code != 200 ||
+        !put_request.starts_with("PUT /content HTTP/1.1") ||
+        !put_request.ends_with("upload-body")) {
+        return fail("HTTP PUT request body was not sent correctly");
+    }
+
     bool unexpected_ipv4_connection = false;
     std::jthread forced_ipv6_server{[&] {
         pollfd descriptor{

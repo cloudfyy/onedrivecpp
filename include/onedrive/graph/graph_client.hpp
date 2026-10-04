@@ -85,6 +85,10 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+class UploadConflictError final : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
 struct GraphOptions {
     std::string drive_id{"me"};
     std::string endpoint{"https://graph.microsoft.com/v1.0"};
@@ -108,6 +112,7 @@ PRO_DEF_MEM_DISPATCH(GraphListRootDispatch, list_root);
 PRO_DEF_MEM_DISPATCH(GraphItemByPathDispatch, item_by_path);
 PRO_DEF_MEM_DISPATCH(GraphListDeltaDispatch, list_delta);
 PRO_DEF_MEM_DISPATCH(GraphDownloadFileDispatch, download_file);
+PRO_DEF_MEM_DISPATCH(GraphUploadFileDispatch, upload_file);
 
 struct GraphClientFacade : pro::facade_builder
     ::add_convention<
@@ -141,6 +146,15 @@ struct GraphClientFacade : pro::facade_builder
             const DownloadProgress&,
             const DownloadCheckpoint&,
             const DownloadData&
+        ) const
+    >
+    ::add_convention<
+        GraphUploadFileDispatch,
+        RemoteItem(
+            const std::string&,
+            const std::optional<std::string>&,
+            const std::string&,
+            const std::filesystem::path&
         ) const
     >
     ::build {};
@@ -196,6 +210,20 @@ public:
         );
     }
 
+    [[nodiscard]] RemoteItem upload_file(
+        const std::string& remote_path,
+        const std::optional<std::string>& remote_id,
+        const std::string& expected_etag,
+        const std::filesystem::path& source
+    ) const {
+        return implementation()->upload_file(
+            remote_path,
+            remote_id,
+            expected_etag,
+            source
+        );
+    }
+
     void download_file(
         const std::string& remote_id,
         const std::string& expected_etag,
@@ -238,6 +266,12 @@ public:
     [[nodiscard]] std::vector<RemoteItem> list_root() const;
     [[nodiscard]] RemoteItem item_by_path(
         const std::string& remote_path
+    ) const;
+    [[nodiscard]] RemoteItem upload_file(
+        const std::string& remote_path,
+        const std::optional<std::string>& remote_id,
+        const std::string& expected_etag,
+        const std::filesystem::path& source
     ) const;
     [[nodiscard]] DeltaResult list_delta(
         const std::optional<std::string>& delta_link,

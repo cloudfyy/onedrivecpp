@@ -216,6 +216,15 @@ public:
         }
     }
 
+    [[nodiscard]] onedrive::graph::RemoteItem upload_file(
+        const std::string&,
+        const std::optional<std::string>&,
+        const std::string&,
+        const std::filesystem::path&
+    ) const {
+        throw std::logic_error{"upload was not expected"};
+    }
+
 private:
     std::string configured_drive_id_;
 };
@@ -276,6 +285,18 @@ public:
         return std::nullopt;
     }
 
+    void save_pending_upload(onedrive::storage::PendingUpload) {}
+
+    [[nodiscard]] std::vector<onedrive::storage::PendingUpload>
+    pending_uploads(const std::string&) const {
+        return {};
+    }
+
+    void commit_upload(
+        const onedrive::storage::PendingUpload&,
+        onedrive::storage::ItemState
+    ) {}
+
     [[nodiscard]] std::vector<onedrive::storage::BlockedItem> blocked_items(
         const std::string&
     ) const {
@@ -297,6 +318,7 @@ public:
             .items = 7,
             .pending_downloads = 2,
             .partial_downloads = 4,
+            .pending_uploads = 1,
             .blocked_items = 3,
             .delta_link = true,
         };
@@ -575,6 +597,7 @@ int main() {
                << "directory = \""
                << sync_path.string()
                << "\"\n"
+               << "upload = false\n"
                << "[state]\n"
                << "directory = \""
                << state_path.string()
@@ -678,8 +701,8 @@ int main() {
             "cursor removed"
         ) ||
         !reset_state.standard_output.contains(
-            "Item snapshots, pending downloads, partial downloads, and blocked "
-            "items were preserved"
+            "Item snapshots, pending downloads, partial downloads, pending "
+            "uploads, and blocked items were preserved"
         ) ||
         !reset_state.standard_output.contains(
             "next sync will perform a full Microsoft Graph delta query"
@@ -701,8 +724,8 @@ int main() {
         if (!contents.contains(
                 "Synchronization cursor reset completed for drive 'drive-id': saved "
                 "cursor removed; item snapshots, pending downloads, partial "
-                "downloads, and blocked items preserved; next sync will use an "
-                "initial delta query"
+                "downloads, pending uploads, and blocked items preserved; next "
+                "sync will use an initial delta query"
             )) {
             return fail("reset-state completion was not written to the log");
         }
@@ -746,8 +769,8 @@ int main() {
             "Type the configured drive reference 'me'"
         ) ||
         !confirmed_clear.standard_output.contains(
-            "7 item snapshots, 2 pending downloads, 4 partial downloads, and 3 "
-            "blocked items removed"
+            "7 item snapshots, 2 pending downloads, 4 partial downloads, 1 "
+            "pending uploads, and 3 blocked items removed"
         ) ||
         !confirmed_clear.standard_output.contains(
             "Cleared all synchronization state for drive 'me' (drive-id)"

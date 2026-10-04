@@ -424,6 +424,91 @@ int test_item_lookup_by_encoded_path() {
     return EXIT_SUCCESS;
 }
 
+int test_simple_file_uploads() {
+    const auto uploaded_json =
+        R"json({"id":"file-id","name":"new #1.txt","eTag":"new-etag","size":7,"fileSystemInfo":{"lastModifiedDateTime":"2026-10-04T09:00:00Z"},"parentReference":{"id":"folder-id","path":"/drive/root:/Folder A"},"file":{}})json";
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"token_type":"Bearer","expires_in":3600,)"
+                    R"("access_token":"access-secret",)"
+                    R"("refresh_token":"existing-refresh"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 201,
+                .body = uploaded_json,
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body = uploaded_json,
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 409,
+                .body =
+                    R"json({"error":{"message":"name already exists"}})json",
+            },
+        }
+    );
+    auto* transport_pointer = transport.get();
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(
+                std::string{"existing-refresh"}
+            )
+        ),
+        auth_options(),
+        {
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+        },
+    };
+    const auto source = test_directory() / "upload-source.txt";
+    {
+        std::ofstream output{source, std::ios::binary};
+        output << "payload";
+    }
+    const auto created = client.upload_file(
+        "Folder A/new #1.txt",
+        std::nullopt,
+        "",
+        source
+    );
+    const auto updated = client.upload_file(
+        "Folder A/new #1.txt",
+        std::string{"file/id"},
+        "old-etag",
+        source
+    );
+    try {
+        static_cast<void>(client.upload_file(
+            "Folder A/new #1.txt",
+            std::nullopt,
+            "",
+            source
+        ));
+        return fail("Graph upload conflict was accepted");
+    } catch (const onedrive::graph::UploadConflictError&) {
+    }
+    if (created.id != "file-id" || updated.etag != "new-etag" ||
+        transport_pointer->requests.size() != 4 ||
+        transport_pointer->requests[1].method !=
+            onedrive::http::HttpMethod::put ||
+        transport_pointer->requests[1].url !=
+            "https://graph.example.test/v1.0/me/drive/root:/Folder%20A/"
+            "new%20%231.txt:/content?"
+            "@microsoft.graph.conflictBehavior=fail" ||
+        transport_pointer->requests[1].body != "payload" ||
+        transport_pointer->requests[2].url !=
+            "https://graph.example.test/v1.0/me/drive/items/file%2Fid/content" ||
+        !has_header(transport_pointer->requests[2], "If-Match: old-etag")) {
+        return fail("Graph simple uploads were not conditional or encoded");
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_missing_authentication() {
     auto transport = std::make_unique<FakeTransport>(
         std::deque<onedrive::http::HttpResult>{}
@@ -2236,6 +2321,10 @@ int main() {
         return result;
     }
     if (const int result = test_item_lookup_by_encoded_path();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_simple_file_uploads();
         result != EXIT_SUCCESS) {
         return result;
     }

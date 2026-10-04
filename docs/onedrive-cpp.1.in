@@ -31,9 +31,10 @@ and synchronize files through Microsoft Graph and OneDrive.
 .PP
 The current release includes configuration loading, device-code
 authentication, authenticated Microsoft Graph delta queries, local state and
-delta-link storage, safe one-way downloads, dry-run support, logging,
-monitoring scaffolding, and packaging integration. Uploads and local removal
-of remotely deleted files are not implemented.
+delta-link storage, safe downloads, local uploads, remote-deletion handling,
+dry-run support, logging, monitoring scaffolding, and packaging integration.
+Remote moves, local-deletion propagation, and resumable large uploads are not
+implemented.
 .SH COMMANDS
 .TP
 .B auth
@@ -548,6 +549,14 @@ Boolean value
 .B true
 or
 .BR false .
+.TP
+.B sync.upload
+Boolean controlling upload of new and modified local regular files after
+remote changes are applied. The default is
+.BR true .
+New files fail on remote name conflicts, and tracked modifications use the
+saved eTag as an If-Match precondition. Uploads use stable private snapshots
+and a durable SQLite recovery journal. Simple uploads are limited to 250 MB.
 .SH SHELL COMPLETION
 Bash and Zsh completion definitions are installed with the package. They
 complete subcommands, command options, enumerated option values, and paths for

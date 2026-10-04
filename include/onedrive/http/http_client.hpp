@@ -40,6 +40,7 @@ using DownloadThrottle = std::function<bool(
 enum class HttpMethod {
     get,
     post,
+    put,
 };
 
 struct HttpRequest {

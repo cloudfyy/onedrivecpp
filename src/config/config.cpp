@@ -381,6 +381,7 @@ Config Config::defaults() {
         .sync_permissions = SyncPermissionsMode::private_access,
         .local_conflict = LocalConflictPolicy::block,
         .filesystem_metadata = FilesystemMetadataMode::automatic,
+        .upload = true,
         .dry_run = false,
     };
 }
@@ -441,6 +442,7 @@ Config Config::load(const std::filesystem::path& path) {
                 "sync_list",
                 "sync_root_files",
                 "local_conflict",
+                "upload",
             },
             "sync"
         );
@@ -467,6 +469,14 @@ Config Config::load(const std::filesystem::path& path) {
                 "a string"
             )) {
             config.drive_id = *value;
+        }
+        if (const auto value = optional_value<bool>(
+                *sync,
+                "upload",
+                "sync.upload",
+                "a boolean"
+            )) {
+            config.upload = *value;
         }
         if (const auto value = optional_value<bool>(
                 *sync,

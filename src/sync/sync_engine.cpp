@@ -9,6 +9,7 @@
 #include "filesystem_metadata.hpp"
 #include "item_operation_coordinator.hpp"
 #include "local_filesystem.hpp"
+#include "local_upload.hpp"
 #include "safe_sync_root.hpp"
 #include "selective_sync.hpp"
 #include "sync_plan.hpp"
@@ -986,6 +987,15 @@ int SyncEngine::synchronize() const {
                     pending.size()
                 );
             }
+            if (std::filesystem::is_directory(sync_root)) {
+                safe_root.emplace(sync_root);
+                metadata.emplace(
+                    detail::FilesystemMetadata::from_detected_support(
+                        config_->filesystem_metadata,
+                        false
+                    )
+                );
+            }
         } else {
             const bool private_permissions =
                 config_->sync_permissions ==
@@ -1006,6 +1016,15 @@ int SyncEngine::synchronize() const {
                 *metadata,
                 private_permissions
             );
+            if (config_->upload) {
+                detail::recover_pending_uploads(
+                    config_->drive_id,
+                    graph_,
+                    items_,
+                    *metadata,
+                    console
+                );
+            }
         }
 
         const auto sync_list = config_->sync_list.has_value() ?
@@ -1136,7 +1155,39 @@ int SyncEngine::synchronize() const {
         report_plan(plan, config_->drive_id, console);
 
         std::size_t blocked_count = plan.blocked_count();
+        detail::UploadSummary upload_summary;
         if (config_->dry_run) {
+            if (config_->upload && safe_root && metadata) {
+                upload_summary = detail::upload_local_changes(
+                    *safe_root,
+                    config_->drive_id,
+                    graph_,
+                    items_,
+                    *metadata,
+                    sync_list ? &*sync_list : nullptr,
+                    console,
+                    true
+                );
+                blocked_count += upload_summary.blocked;
+                console.section(
+                    "upload_plan",
+                    "Local upload plan:",
+                    {
+                        {
+                            .label = "upload files:",
+                            .key = "upload_files",
+                            .value =
+                                std::to_string(upload_summary.planned),
+                        },
+                        {
+                            .label = "blocked:",
+                            .key = "blocked",
+                            .value =
+                                std::to_string(upload_summary.blocked),
+                        },
+                    }
+                );
+            }
             spdlog::debug(
                 "Dry run left synchronization state unchanged for drive '{}'",
                 config_->drive_id
@@ -1161,6 +1212,25 @@ int SyncEngine::synchronize() const {
                 config_->sync_permissions ==
                     config::SyncPermissionsMode::private_access
             );
+            spdlog::debug(
+                "Persisting remote delta for drive '{}'",
+                config_->drive_id
+            );
+            blocked_count = plan.blocked_count();
+            items_.apply_delta(plan.release_state_delta());
+            if (config_->upload) {
+                upload_summary = detail::upload_local_changes(
+                    *safe_root,
+                    config_->drive_id,
+                    graph_,
+                    items_,
+                    *metadata,
+                    sync_list ? &*sync_list : nullptr,
+                    console,
+                    false
+                );
+                blocked_count += upload_summary.blocked;
+            }
             console.section(
                 "execution_summary",
                 "Synchronization summary:",
@@ -1186,18 +1256,17 @@ int SyncEngine::synchronize() const {
                         .value = std::to_string(summary.removed),
                     },
                     {
+                        .label = "uploaded:",
+                        .key = "uploaded",
+                        .value = std::to_string(upload_summary.uploaded),
+                    },
+                    {
                         .label = "blocked:",
                         .key = "blocked",
-                        .value = std::to_string(plan.blocked_count()),
+                        .value = std::to_string(blocked_count),
                     },
                 }
             );
-            spdlog::debug(
-                "Persisting remote delta for drive '{}'",
-                config_->drive_id
-            );
-            blocked_count = plan.blocked_count();
-            items_.apply_delta(plan.release_state_delta());
         }
 
         record_result(true);

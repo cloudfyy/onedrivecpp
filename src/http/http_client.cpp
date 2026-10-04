@@ -198,7 +198,15 @@ constexpr int curl_progress_continue = 0;
 constexpr int curl_progress_abort = 1;
 
 std::string_view method_name(HttpMethod method) {
-    return method == HttpMethod::post ? "POST" : "GET";
+    switch (method) {
+        case HttpMethod::get:
+            return "GET";
+        case HttpMethod::post:
+            return "POST";
+        case HttpMethod::put:
+            return "PUT";
+    }
+    std::unreachable();
 }
 
 long curl_http_version(HttpVersion version) {
@@ -907,10 +915,13 @@ HttpResult perform_request(
     if (result == CURLE_OK && request.method == HttpMethod::post) {
         result = set_option(CURLOPT_POST, 1L);
     }
-    if (result == CURLE_OK && request.method == HttpMethod::post) {
+    if (result == CURLE_OK && request.method == HttpMethod::put) {
+        result = set_option(CURLOPT_CUSTOMREQUEST, "PUT");
+    }
+    if (result == CURLE_OK && request.method != HttpMethod::get) {
         result = set_option(CURLOPT_POSTFIELDS, request.body.data());
     }
-    if (result == CURLE_OK && request.method == HttpMethod::post) {
+    if (result == CURLE_OK && request.method != HttpMethod::get) {
         result = set_option(
             CURLOPT_POSTFIELDSIZE_LARGE,
             static_cast<curl_off_t>(request.body.size())

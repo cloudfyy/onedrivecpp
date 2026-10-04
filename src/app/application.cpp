@@ -375,11 +375,13 @@ int Application::run(int argc, char* argv[]) {
                 spdlog::warn(
                     "Full synchronization state clear completed for drive '{}': "
                     "{} item snapshots, {} pending downloads, {} partial "
-                    "downloads, and {} blocked items removed; saved cursor {}",
+                    "downloads, {} pending uploads, and {} blocked items "
+                    "removed; saved cursor {}",
                     config.drive_id,
                     cleared.items,
                     cleared.pending_downloads,
                     cleared.partial_downloads,
+                    cleared.pending_uploads,
                     cleared.blocked_items,
                     cleared.delta_link ? "removed" : "not present"
                 );
@@ -389,12 +391,13 @@ int Application::run(int argc, char* argv[]) {
                     std::format(
                         "Cleared all synchronization state for drive {}: {} "
                         "item snapshots, {} pending downloads, {} partial "
-                        "downloads, and {} blocked items removed; saved cursor "
-                        "{}.",
+                        "downloads, {} pending uploads, and {} blocked items "
+                        "removed; saved cursor {}.",
                         display_drive,
                         cleared.items,
                         cleared.pending_downloads,
                         cleared.partial_downloads,
+                        cleared.pending_uploads,
                         cleared.blocked_items,
                         cleared.delta_link ? "removed" : "not present"
                     )
@@ -417,8 +420,8 @@ int Application::run(int argc, char* argv[]) {
             spdlog::info(
                 "Synchronization cursor reset completed for drive '{}': saved "
                 "cursor {}; item snapshots, pending downloads, partial "
-                "downloads, and blocked items preserved; next sync will use an "
-                "initial delta query",
+                "downloads, pending uploads, and blocked items preserved; next "
+                "sync will use an initial delta query",
                 config.drive_id,
                 removed ? "removed" : "not present"
             );
@@ -432,8 +435,8 @@ int Application::run(int argc, char* argv[]) {
             console.message(
                 cli::MessageKind::information,
                 "state_preserved",
-                "Item snapshots, pending downloads, partial downloads, and "
-                "blocked items were preserved."
+                "Item snapshots, pending downloads, partial downloads, pending "
+                "uploads, and blocked items were preserved."
             );
             console.message(
                 cli::MessageKind::information,
