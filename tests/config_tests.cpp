@@ -89,6 +89,16 @@ int main() {
     const auto defaults = onedrive::config::Config::load(path);
     if (defaults.download_validation !=
             onedrive::config::DownloadValidationMode::strict ||
+        defaults.auth_scope !=
+            "User.Read Files.ReadWrite offline_access" ||
+        !onedrive::config::has_auth_scope(
+            defaults.auth_scope,
+            "Files.ReadWrite"
+        ) ||
+        onedrive::config::has_auth_scope(
+            defaults.auth_scope,
+            "Files.ReadWrite.All"
+        ) ||
         defaults.sync_permissions !=
             onedrive::config::SyncPermissionsMode::private_access ||
         onedrive::app::graph_options(defaults).

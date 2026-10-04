@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <string_view>
 
 namespace onedrive::config {
 
@@ -34,8 +35,7 @@ struct Config {
     std::string azure_tenant_id{"common"};
     std::string auth_endpoint{"https://login.microsoftonline.com"};
     std::string auth_scope{
-        "User.Read Files.ReadWrite Files.ReadWrite.All Sites.ReadWrite.All "
-        "offline_access"
+        "User.Read Files.ReadWrite offline_access"
     };
     std::string graph_endpoint{"https://graph.microsoft.com/v1.0"};
     std::size_t graph_maximum_throttle_retries{4};
@@ -60,5 +60,10 @@ struct Config {
     [[nodiscard]] static Config defaults();
     [[nodiscard]] static Config load(const std::filesystem::path& path);
 };
+
+[[nodiscard]] bool has_auth_scope(
+    std::string_view scopes,
+    std::string_view expected
+);
 
 }  // namespace onedrive::config

@@ -554,7 +554,9 @@ scopes = ["User.Read", "Files.ReadWrite", "offline_access"]
 
 单租户组织应用应将 `common` 替换为 Directory (tenant) ID。只有组织场景确实
 需要时才添加 `Files.ReadWrite.All` 或 `Sites.ReadWrite.All`；
-`Sites.ReadWrite.All` 不支持个人 Microsoft 账号。
+`Sites.ReadWrite.All` 不支持个人 Microsoft 账号。默认 scope 为
+`User.Read Files.ReadWrite offline_access`；配置任一更广泛的组织级 scope 时，
+认证会输出警告。
 
 #### 授权客户端
 

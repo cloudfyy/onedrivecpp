@@ -24,22 +24,6 @@ namespace {
 constexpr mode_t private_directory_mode = S_IRWXU;
 constexpr mode_t private_file_mode = S_IRUSR | S_IWUSR;
 
-bool has_scope(std::string_view scopes, std::string_view expected) {
-    std::size_t position = 0;
-    while (position < scopes.size()) {
-        const auto start = scopes.find_first_not_of(" \t\r\n", position);
-        if (start == std::string_view::npos) {
-            return false;
-        }
-        const auto end = scopes.find_first_of(" \t\r\n", start);
-        if (scopes.substr(start, end - start) == expected) {
-            return true;
-        }
-        position = end == std::string_view::npos ? scopes.size() : end;
-    }
-    return false;
-}
-
 void secure_state_directory(const std::filesystem::path& directory) {
     if (directory.empty()) {
         throw std::runtime_error("state.directory must not be empty");
@@ -393,8 +377,8 @@ void prepare_sync_directory(
 void validate_authentication_config(const config::Config& config) {
     if (config.application_id.empty() || config.azure_tenant_id.empty() ||
         config.auth_scope.empty() ||
-    !has_scope(config.auth_scope, "User.Read") ||
-    !has_scope(config.auth_scope, "offline_access") ||
+    !config::has_auth_scope(config.auth_scope, "User.Read") ||
+    !config::has_auth_scope(config.auth_scope, "offline_access") ||
         !config.auth_endpoint.starts_with("https://")) {
         throw std::runtime_error(
             "authentication requires auth.application_id, auth.tenant_id, an "

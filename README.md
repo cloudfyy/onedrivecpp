@@ -619,7 +619,9 @@ scopes = ["User.Read", "Files.ReadWrite", "offline_access"]
 For a single-tenant organizational application, replace `common` with the
 tenant's Directory (tenant) ID. Add `Files.ReadWrite.All` or
 `Sites.ReadWrite.All` only for organizational scenarios that require them;
-`Sites.ReadWrite.All` is not supported for personal Microsoft accounts.
+`Sites.ReadWrite.All` is not supported for personal Microsoft accounts. The
+default scopes are `User.Read Files.ReadWrite offline_access`; authentication
+prints a warning when either broader organizational scope is configured.
 
 #### Authorize the client
 

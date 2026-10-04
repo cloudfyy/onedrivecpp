@@ -209,9 +209,7 @@ Config Config::defaults() {
         .application_id = {},
         .azure_tenant_id = "common",
         .auth_endpoint = "https://login.microsoftonline.com",
-        .auth_scope =
-            "User.Read Files.ReadWrite Files.ReadWrite.All Sites.ReadWrite.All "
-            "offline_access",
+        .auth_scope = "User.Read Files.ReadWrite offline_access",
         .graph_endpoint = "https://graph.microsoft.com/v1.0",
         .graph_maximum_throttle_retries = 4,
         .graph_initial_throttle_delay = std::chrono::seconds{1},
@@ -546,6 +544,25 @@ Config Config::load(const std::filesystem::path& path) {
     }
     spdlog::debug("TOML configuration loaded and validated");
     return config;
+}
+
+bool has_auth_scope(
+    std::string_view scopes,
+    std::string_view expected
+) {
+    std::size_t position = 0;
+    while (position < scopes.size()) {
+        const auto start = scopes.find_first_not_of(" \t\r\n", position);
+        if (start == std::string_view::npos) {
+            return false;
+        }
+        const auto end = scopes.find_first_of(" \t\r\n", start);
+        if (scopes.substr(start, end - start) == expected) {
+            return true;
+        }
+        position = end == std::string_view::npos ? scopes.size() : end;
+    }
+    return false;
 }
 
 }  // namespace onedrive::config

@@ -237,7 +237,13 @@ Microsoft identity endpoint. The default is
 .B auth.scopes
 Array of delegated OAuth scope strings. Personal Microsoft accounts should
 start with
-.BR [\(dqFiles.ReadWrite\(dq,\ \(dqoffline_access\(dq] .
+.BR [\(dqUser.Read\(dq,\ \(dqFiles.ReadWrite\(dq,\ \(dqoffline_access\(dq] .
+The broader
+.B Files.ReadWrite.All
+and
+.B Sites.ReadWrite.All
+scopes must be configured explicitly and produce a warning during
+authentication.
 .TP
 .B graph.throttle.maximum_retries
 Maximum number of retries for a retryable Microsoft Graph or file-download

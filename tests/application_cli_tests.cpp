@@ -547,6 +547,8 @@ int main() {
                << "\"\n"
                << "[auth]\n"
                << "application_id = \"test-application\"\n"
+               << "scopes = [\"User.Read\", \"Files.ReadWrite.All\", "
+                  "\"offline_access\"]\n"
                << "[graph.throttle]\n"
                << "maximum_retries = 6\n"
                << "initial_delay_seconds = 3\n"
@@ -571,6 +573,9 @@ int main() {
     if (authentication.exit_code != 0 ||
         !authentication.standard_output.contains(
             "Authentication succeeded"
+        ) ||
+        !authentication.standard_output.contains(
+            "WARNING: Authentication requests broad organizational"
         ) ||
         !account_path.filename().string().starts_with("Test-User--") ||
         !std::filesystem::exists(account_path / "avatar.jpg") ||
