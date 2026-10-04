@@ -220,7 +220,9 @@ public:
         const std::string&,
         const std::optional<std::string>&,
         const std::string&,
-        const std::filesystem::path&
+        const std::filesystem::path&,
+        const std::optional<onedrive::graph::UploadSession>&,
+        const onedrive::graph::UploadCheckpoint&
     ) const {
         throw std::logic_error{"upload was not expected"};
     }

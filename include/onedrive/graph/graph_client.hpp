@@ -89,6 +89,15 @@ class UploadConflictError final : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
 };
+
+struct UploadSession {
+    std::string upload_url;
+    std::string expiration;
+    std::uint64_t completed_bytes{0};
+};
+
+using UploadCheckpoint = std::function<void(const UploadSession&)>;
+
 struct GraphOptions {
     std::string drive_id{"me"};
     std::string endpoint{"https://graph.microsoft.com/v1.0"};
@@ -161,7 +170,9 @@ struct GraphClientFacade : pro::facade_builder
             const std::string&,
             const std::optional<std::string>&,
             const std::string&,
-            const std::filesystem::path&
+            const std::filesystem::path&,
+            const std::optional<UploadSession>&,
+            const UploadCheckpoint&
         ) const
     >
     ::build {};
@@ -221,13 +232,17 @@ public:
         const std::string& remote_path,
         const std::optional<std::string>& remote_id,
         const std::string& expected_etag,
-        const std::filesystem::path& source
+        const std::filesystem::path& source,
+        const std::optional<UploadSession>& session = std::nullopt,
+        const UploadCheckpoint& checkpoint = {}
     ) const {
         return implementation()->upload_file(
             remote_path,
             remote_id,
             expected_etag,
-            source
+            source,
+            session,
+            checkpoint
         );
     }
 
@@ -278,7 +293,9 @@ public:
         const std::string& remote_path,
         const std::optional<std::string>& remote_id,
         const std::string& expected_etag,
-        const std::filesystem::path& source
+        const std::filesystem::path& source,
+        const std::optional<UploadSession>& session = std::nullopt,
+        const UploadCheckpoint& checkpoint = {}
     ) const;
     [[nodiscard]] DeltaResult list_delta(
         const std::optional<std::string>& delta_link,

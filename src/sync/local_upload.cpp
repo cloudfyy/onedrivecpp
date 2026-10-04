@@ -366,15 +366,32 @@ storage::ItemState uploaded_state(
 }
 
 graph::RemoteItem recover_uploaded_item(
-    const storage::PendingUpload& upload,
-    graph::GraphClient& graph
+    storage::PendingUpload& upload,
+    graph::GraphClient& graph,
+    storage::ItemStore& items
 ) {
+    const auto session = upload.upload_url.empty() ?
+        std::nullopt :
+        std::optional{graph::UploadSession{
+            .upload_url = upload.upload_url,
+            .expiration = upload.upload_expiration,
+            .completed_bytes = upload.completed_bytes,
+        }};
+    const graph::UploadCheckpoint checkpoint =
+        [&](const graph::UploadSession& state) {
+            upload.upload_url = state.upload_url;
+            upload.upload_expiration = state.expiration;
+            upload.completed_bytes = state.completed_bytes;
+            items.save_pending_upload(upload);
+        };
     try {
         return graph.upload_file(
             upload.remote_path,
             upload.remote_id,
             upload.expected_etag,
-            upload.snapshot_path
+            upload.snapshot_path,
+            session,
+            checkpoint
         );
     } catch (const graph::UploadConflictError&) {
         const auto remote = graph.item_by_path(upload.remote_path);
@@ -419,7 +436,7 @@ void recover_pending_uploads(
     const FilesystemMetadata& metadata,
     const cli::Console& console
 ) {
-    for (const auto& upload : items.pending_uploads(drive_id)) {
+    for (auto upload : items.pending_uploads(drive_id)) {
         if (!std::filesystem::is_regular_file(upload.snapshot_path) ||
             content_fingerprint(upload.snapshot_path) !=
                 upload.content_fingerprint) {
@@ -428,7 +445,7 @@ void recover_pending_uploads(
                 upload.snapshot_path.string()
             );
         }
-        const auto remote = recover_uploaded_item(upload, graph);
+        const auto remote = recover_uploaded_item(upload, graph, items);
         auto state = uploaded_state(
             remote,
             upload.local_path,
@@ -493,14 +510,26 @@ UploadSummary upload_local_changes(
                 std::optional{upload.previous->remote_id} :
                 std::nullopt,
             .expected_etag = upload.previous ? upload.previous->etag : "",
+            .upload_url = {},
+            .upload_expiration = {},
+            .completed_bytes = 0,
         };
         items.save_pending_upload(pending);
         pending.snapshot_path = snapshot.release();
+        const graph::UploadCheckpoint checkpoint =
+            [&](const graph::UploadSession& state) {
+                pending.upload_url = state.upload_url;
+                pending.upload_expiration = state.expiration;
+                pending.completed_bytes = state.completed_bytes;
+                items.save_pending_upload(pending);
+            };
         const auto remote = graph.upload_file(
             upload.remote_path,
             pending.remote_id,
             pending.expected_etag,
-            pending.snapshot_path
+            pending.snapshot_path,
+            std::nullopt,
+            checkpoint
         );
         if (remote.remote_path != upload.remote_path ||
             remote.size != baseline.size) {

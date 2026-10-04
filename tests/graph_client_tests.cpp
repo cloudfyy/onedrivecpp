@@ -575,11 +575,16 @@ int test_upload_sessions() {
         std::ofstream output{source, std::ios::binary};
         output << std::string(total_size, 'x');
     }
+    std::vector<onedrive::graph::UploadSession> upload_checkpoints;
     const auto uploaded = client.upload_file(
         "Folder/large.bin",
         std::nullopt,
         "",
-        source
+        source,
+        std::nullopt,
+        [&](const onedrive::graph::UploadSession& checkpoint) {
+            upload_checkpoints.push_back(checkpoint);
+        }
     );
     const auto& requests = transport_pointer->requests;
     if (uploaded.id != "session-file" || requests.size() != 5 ||
@@ -609,7 +614,12 @@ int test_upload_sessions() {
         ) ||
         requests[2].maximum_send_speed_bytes_per_second != 700 ||
         requests[4].maximum_send_speed_bytes_per_second != 700 ||
-        sleeps != std::vector{std::chrono::seconds{0}}) {
+        sleeps != std::vector{std::chrono::seconds{0}} ||
+        upload_checkpoints.size() != 2 ||
+        upload_checkpoints[0].completed_bytes != 0 ||
+        upload_checkpoints[1].completed_bytes != chunk_size ||
+        upload_checkpoints[1].expiration !=
+            "2026-10-05T09:00:00Z") {
         return fail("Graph upload session did not send contiguous fragments");
     }
 
@@ -685,6 +695,319 @@ int test_upload_sessions() {
             "Authorization: ******"
         )) {
         return fail("Graph update upload session was not conditional");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_upload_session_resume() {
+    constexpr std::size_t chunk_size = 320U * 1024U;
+    constexpr std::size_t total_size = chunk_size + 7U;
+    const auto source = test_directory() / "upload-session-resume.bin";
+    {
+        std::ofstream output{source, std::ios::binary};
+        output << std::string(total_size, 'x');
+    }
+    const auto uploaded_json =
+        R"json({"id":"resumed-file","name":"large.bin","eTag":"resumed-etag","size":327687,"fileSystemInfo":{"lastModifiedDateTime":"2026-10-04T09:00:00Z"},"parentReference":{"id":"folder-id","path":"/drive/root:/Folder"},"file":{}})json";
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"json({"expirationDateTime":"2099-10-05T10:00:00Z","nextExpectedRanges":["327680-"]})json",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 201,
+                .body = uploaded_json,
+            },
+        }
+    );
+    auto* transport_pointer = transport.get();
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(std::make_unique<FakeTokenStore>(std::nullopt)),
+        auth_options(),
+        {
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+            .simple_upload_threshold_bytes = total_size + 1U,
+            .upload_chunk_size_bytes = chunk_size,
+        },
+    };
+    std::vector<onedrive::graph::UploadSession> checkpoints;
+    const auto uploaded = client.upload_file(
+        "Folder/large.bin",
+        std::nullopt,
+        "",
+        source,
+        onedrive::graph::UploadSession{
+            .upload_url =
+                "https://upload.example.test/session?token=secret",
+            .expiration = "2099-10-05T09:00:00Z",
+            .completed_bytes = chunk_size,
+        },
+        [&](const onedrive::graph::UploadSession& checkpoint) {
+            checkpoints.push_back(checkpoint);
+        }
+    );
+    if (uploaded.id != "resumed-file" ||
+        transport_pointer->requests.size() != 2 ||
+        transport_pointer->requests[0].method !=
+            onedrive::http::HttpMethod::get ||
+        transport_pointer->requests[1].method !=
+            onedrive::http::HttpMethod::put ||
+        has_header(
+            transport_pointer->requests[0],
+            "Authorization: ******"
+        ) ||
+        has_header(
+            transport_pointer->requests[1],
+            "Authorization: ******"
+        ) ||
+        transport_pointer->requests[1].body.size() != 7 ||
+        !has_header(
+            transport_pointer->requests[1],
+            "Content-Range: bytes 327680-327686/327687"
+        ) ||
+        checkpoints.size() != 1 ||
+        checkpoints[0].completed_bytes != chunk_size ||
+        checkpoints[0].expiration != "2099-10-05T10:00:00Z") {
+        return fail("Graph upload session did not resume from server offset");
+    }
+
+    auto backward_transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"json({"expirationDateTime":"2099-10-05T10:00:00Z","nextExpectedRanges":["0-"]})json",
+            },
+        }
+    );
+    auto* backward_pointer = backward_transport.get();
+    onedrive::graph::MicrosoftGraphClient backward_client{
+        wrap_transport(std::move(backward_transport)),
+        wrap_token_store(std::make_unique<FakeTokenStore>(std::nullopt)),
+        auth_options(),
+        {
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+            .simple_upload_threshold_bytes = 1,
+            .upload_chunk_size_bytes = chunk_size,
+        },
+    };
+    try {
+        static_cast<void>(backward_client.upload_file(
+            "Folder/large.bin",
+            std::nullopt,
+            "",
+            source,
+            onedrive::graph::UploadSession{
+                .upload_url = "https://upload.example.test/backward",
+                .expiration = "2099-10-05T09:00:00Z",
+                .completed_bytes = chunk_size,
+            }
+        ));
+        return fail("Graph upload session accepted a backward offset");
+    } catch (const std::runtime_error& error) {
+        if (!std::string_view{error.what()}.contains("moved backward")) {
+            return fail("Graph upload session reported the wrong offset error");
+        }
+    }
+    if (backward_pointer->requests.size() != 1) {
+        return fail("Graph upload continued after a backward offset");
+    }
+
+    auto checkpoint_transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"json({"expirationDateTime":"2099-10-05T10:00:00Z","nextExpectedRanges":["327680-"]})json",
+            },
+        }
+    );
+    auto* checkpoint_pointer = checkpoint_transport.get();
+    onedrive::graph::MicrosoftGraphClient checkpoint_client{
+        wrap_transport(std::move(checkpoint_transport)),
+        wrap_token_store(std::make_unique<FakeTokenStore>(std::nullopt)),
+        auth_options(),
+        {
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+            .simple_upload_threshold_bytes = 1,
+            .upload_chunk_size_bytes = chunk_size,
+        },
+    };
+    try {
+        static_cast<void>(checkpoint_client.upload_file(
+            "Folder/large.bin",
+            std::nullopt,
+            "",
+            source,
+            onedrive::graph::UploadSession{
+                .upload_url = "https://upload.example.test/checkpoint",
+                .expiration = "2099-10-05T09:00:00Z",
+                .completed_bytes = 0,
+            },
+            [](const onedrive::graph::UploadSession&) {
+                throw std::runtime_error{"simulated checkpoint failure"};
+            }
+        ));
+        return fail("Graph upload ignored a checkpoint failure");
+    } catch (const std::runtime_error& error) {
+        if (!std::string_view{error.what()}.contains(
+                "simulated checkpoint failure"
+            )) {
+            return fail("Graph upload replaced the checkpoint error");
+        }
+    }
+    if (checkpoint_pointer->requests.size() != 1) {
+        return fail("Graph upload sent data after a checkpoint failure");
+    }
+
+    auto fragment_checkpoint_transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"token_type":"Bearer","expires_in":3600,)"
+                    R"("access_token":"access-secret"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"json({"uploadUrl":"https://upload.example.test/fragment-checkpoint","expirationDateTime":"2099-10-05T09:00:00Z","nextExpectedRanges":["0-"]})json",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 202,
+                .body =
+                    R"json({"expirationDateTime":"2099-10-05T10:00:00Z","nextExpectedRanges":["327680-"]})json",
+            },
+        }
+    );
+    auto* fragment_checkpoint_pointer =
+        fragment_checkpoint_transport.get();
+    onedrive::graph::MicrosoftGraphClient fragment_checkpoint_client{
+        wrap_transport(std::move(fragment_checkpoint_transport)),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(
+                std::string{"existing-refresh"}
+            )
+        ),
+        auth_options(),
+        {
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+            .simple_upload_threshold_bytes = 1,
+            .upload_chunk_size_bytes = chunk_size,
+        },
+    };
+    int fragment_checkpoint_count = 0;
+    try {
+        static_cast<void>(fragment_checkpoint_client.upload_file(
+            "Folder/large.bin",
+            std::nullopt,
+            "",
+            source,
+            std::nullopt,
+            [&](const onedrive::graph::UploadSession&) {
+                ++fragment_checkpoint_count;
+                if (fragment_checkpoint_count == 2) {
+                    throw std::runtime_error{
+                        "simulated fragment checkpoint failure"
+                    };
+                }
+            }
+        ));
+        return fail("Graph upload ignored a fragment checkpoint failure");
+    } catch (const std::runtime_error& error) {
+        if (!std::string_view{error.what()}.contains(
+                "simulated fragment checkpoint failure"
+            )) {
+            return fail("Graph upload replaced a fragment checkpoint error");
+        }
+    }
+    if (fragment_checkpoint_count != 2 ||
+        fragment_checkpoint_pointer->requests.size() != 3) {
+        return fail("Graph upload continued after fragment checkpoint failure");
+    }
+
+    const auto recreate_source =
+        test_directory() / "upload-session-recreate.bin";
+    {
+        std::ofstream output{recreate_source, std::ios::binary};
+        output << "payload";
+    }
+    const auto verify_recreated = [&](long status_code,
+                                      std::string expiration,
+                                      std::size_t expected_requests) {
+        std::deque<onedrive::http::HttpResult> responses;
+        if (status_code != 0) {
+            responses.push_back(onedrive::http::HttpResponse{
+                .status_code = status_code,
+                .body = R"json({"error":{"message":"expired"}})json",
+            });
+        }
+        responses.push_back(onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body =
+                R"({"token_type":"Bearer","expires_in":3600,)"
+                R"("access_token":"access-secret"})",
+        });
+        responses.push_back(onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body =
+                R"json({"uploadUrl":"https://upload.example.test/new-session","expirationDateTime":"2099-10-05T11:00:00Z","nextExpectedRanges":["0-"]})json",
+        });
+        responses.push_back(onedrive::http::HttpResponse{
+            .status_code = 201,
+            .body = uploaded_json,
+        });
+        auto recreate_transport =
+            std::make_unique<FakeTransport>(std::move(responses));
+        auto* recreate_pointer = recreate_transport.get();
+        onedrive::graph::MicrosoftGraphClient recreate_client{
+            wrap_transport(std::move(recreate_transport)),
+            wrap_token_store(
+                std::make_unique<FakeTokenStore>(
+                    std::string{"existing-refresh"}
+                )
+            ),
+            auth_options(),
+            {
+                .drive_id = "me",
+                .endpoint = "https://graph.example.test/v1.0",
+                .simple_upload_threshold_bytes = 1,
+                .upload_chunk_size_bytes = chunk_size,
+            },
+        };
+        std::vector<onedrive::graph::UploadSession> recreated;
+        static_cast<void>(recreate_client.upload_file(
+            "Folder/large.bin",
+            std::nullopt,
+            "",
+            recreate_source,
+            onedrive::graph::UploadSession{
+                .upload_url = "https://upload.example.test/old-session",
+                .expiration = std::move(expiration),
+                .completed_bytes = 0,
+            },
+            [&](const onedrive::graph::UploadSession& checkpoint) {
+                recreated.push_back(checkpoint);
+            }
+        ));
+        return recreate_pointer->requests.size() == expected_requests &&
+            recreate_pointer->requests.back().body.size() == 7 &&
+            recreated.size() == 1 &&
+            recreated[0].completed_bytes == 0 &&
+            recreated[0].upload_url ==
+                "https://upload.example.test/new-session";
+    };
+    if (!verify_recreated(404, "2099-10-05T09:00:00Z", 4) ||
+        !verify_recreated(410, "2099-10-05T09:00:00Z", 4) ||
+        !verify_recreated(0, "2000-10-05T09:00:00Z", 3)) {
+        return fail("Graph upload did not recreate an unusable session");
     }
     return EXIT_SUCCESS;
 }
@@ -2617,6 +2940,10 @@ int main() {
         return result;
     }
     if (const int result = test_upload_sessions();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_upload_session_resume();
         result != EXIT_SUCCESS) {
         return result;
     }

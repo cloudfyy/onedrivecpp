@@ -33,8 +33,7 @@ The current release includes configuration loading, device-code
 authentication, authenticated Microsoft Graph delta queries, local state and
 delta-link storage, safe downloads, local uploads, remote-deletion handling,
 dry-run support, logging, monitoring scaffolding, and packaging integration.
-Local-deletion propagation and persistent large-upload resume are not
-implemented.
+Local-deletion propagation is not implemented.
 .SH COMMANDS
 .TP
 .B auth
@@ -602,8 +601,11 @@ saved eTag as an If-Match precondition. Uploads use stable private snapshots
 and a durable SQLite recovery journal. Files through 250 MB use simple upload;
 larger files use contiguous Graph upload-session fragments and validate
 nextExpectedRanges before advancing. Session URLs are preauthorized and never
-receive the Graph Authorization header. Upload sessions are not yet persisted
-across process restarts.
+receive the Graph Authorization header. The SQLite pending-upload journal
+persists the session URL, expiration, and confirmed offset. After a restart,
+the client queries and resumes a valid session without resending confirmed
+fragments. Expired sessions and HTTP 404/410 responses are replaced; a server
+offset behind the durable checkpoint aborts the upload.
 .SH SHELL COMPLETION
 Bash and Zsh completion definitions are installed with the package. They
 complete subcommands, command options, enumerated option values, and paths for

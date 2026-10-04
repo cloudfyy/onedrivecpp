@@ -297,6 +297,9 @@ void create_pending_upload_schema(sqlite3* database) {
         "local_modified_ticks INTEGER NOT NULL,"
         "remote_id TEXT NOT NULL DEFAULT '',"
         "expected_etag TEXT NOT NULL DEFAULT '',"
+        "upload_url TEXT NOT NULL DEFAULT '',"
+        "upload_expiration TEXT NOT NULL DEFAULT '',"
+        "completed_bytes INTEGER NOT NULL DEFAULT 0,"
         "PRIMARY KEY (drive_id, remote_path)"
         ");"
     );
@@ -380,7 +383,7 @@ void create_current_schema(sqlite3* database) {
     create_pending_upload_schema(database);
     create_pending_move_schema(database);
     create_upload_suppression_schema(database);
-    execute(database, "PRAGMA user_version = 16;");
+    execute(database, "PRAGMA user_version = 17;");
 }
 
 void add_sync_filter_fingerprint(sqlite3* database) {
@@ -406,6 +409,18 @@ void add_pending_move_staging(sqlite3* database) {
         database,
         "ALTER TABLE pending_move ADD COLUMN staging_path "
         "TEXT NOT NULL DEFAULT '';"
+    );
+}
+
+void add_pending_upload_session(sqlite3* database) {
+    execute(
+        database,
+        "ALTER TABLE pending_upload ADD COLUMN upload_url "
+        "TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE pending_upload ADD COLUMN upload_expiration "
+        "TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE pending_upload ADD COLUMN completed_bytes "
+        "INTEGER NOT NULL DEFAULT 0;"
     );
 }
 
@@ -471,7 +486,7 @@ void migrate_schema(sqlite3* database) {
         create_pending_upload_schema(database);
         create_pending_move_schema(database);
         create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 16;");
+        execute(database, "PRAGMA user_version = 17;");
         transaction.commit();
         return;
     }
@@ -507,7 +522,7 @@ void migrate_schema(sqlite3* database) {
         create_pending_upload_schema(database);
         create_pending_move_schema(database);
         create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 16;");
+        execute(database, "PRAGMA user_version = 17;");
         transaction.commit();
         return;
     }
@@ -540,7 +555,7 @@ void migrate_schema(sqlite3* database) {
         create_pending_upload_schema(database);
         create_pending_move_schema(database);
         create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 16;");
+        execute(database, "PRAGMA user_version = 17;");
         transaction.commit();
         return;
     }
@@ -554,7 +569,7 @@ void migrate_schema(sqlite3* database) {
         create_pending_upload_schema(database);
         create_pending_move_schema(database);
         create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 16;");
+        execute(database, "PRAGMA user_version = 17;");
         transaction.commit();
         return;
     }
@@ -569,7 +584,7 @@ void migrate_schema(sqlite3* database) {
         create_pending_upload_schema(database);
         create_pending_move_schema(database);
         create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 16;");
+        execute(database, "PRAGMA user_version = 17;");
         transaction.commit();
         return;
     }
@@ -584,7 +599,7 @@ void migrate_schema(sqlite3* database) {
         create_pending_upload_schema(database);
         create_pending_move_schema(database);
         create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 16;");
+        execute(database, "PRAGMA user_version = 17;");
         transaction.commit();
         return;
     }
@@ -598,7 +613,7 @@ void migrate_schema(sqlite3* database) {
         create_pending_upload_schema(database);
         create_pending_move_schema(database);
         create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 16;");
+        execute(database, "PRAGMA user_version = 17;");
         transaction.commit();
         return;
     }
@@ -611,7 +626,7 @@ void migrate_schema(sqlite3* database) {
         create_pending_upload_schema(database);
         create_pending_move_schema(database);
         create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 16;");
+        execute(database, "PRAGMA user_version = 17;");
         transaction.commit();
         return;
     }
@@ -623,7 +638,7 @@ void migrate_schema(sqlite3* database) {
         create_pending_upload_schema(database);
         create_pending_move_schema(database);
         create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 16;");
+        execute(database, "PRAGMA user_version = 17;");
         transaction.commit();
         return;
     }
@@ -634,7 +649,7 @@ void migrate_schema(sqlite3* database) {
         create_pending_upload_schema(database);
         create_pending_move_schema(database);
         create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 16;");
+        execute(database, "PRAGMA user_version = 17;");
         transaction.commit();
         return;
     }
@@ -643,7 +658,7 @@ void migrate_schema(sqlite3* database) {
         create_pending_upload_schema(database);
         create_pending_move_schema(database);
         create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 16;");
+        execute(database, "PRAGMA user_version = 17;");
         transaction.commit();
         return;
     }
@@ -653,34 +668,44 @@ void migrate_schema(sqlite3* database) {
         create_pending_upload_schema(database);
         create_pending_move_schema(database);
         create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 16;");
+        execute(database, "PRAGMA user_version = 17;");
         transaction.commit();
         return;
     }
     if (version == 13) {
         Transaction transaction{database};
+        add_pending_upload_session(database);
         create_pending_move_schema(database);
         create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 16;");
+        execute(database, "PRAGMA user_version = 17;");
         transaction.commit();
         return;
     }
     if (version == 14) {
         Transaction transaction{database};
+        add_pending_upload_session(database);
         add_pending_move_staging(database);
         create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 16;");
+        execute(database, "PRAGMA user_version = 17;");
         transaction.commit();
         return;
     }
     if (version == 15) {
         Transaction transaction{database};
+        add_pending_upload_session(database);
         create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 16;");
+        execute(database, "PRAGMA user_version = 17;");
         transaction.commit();
         return;
     }
-    if (version != 16) {
+    if (version == 16) {
+        Transaction transaction{database};
+        add_pending_upload_session(database);
+        execute(database, "PRAGMA user_version = 17;");
+        transaction.commit();
+        return;
+    }
+    if (version != 17) {
         throw std::runtime_error(
             "unsupported state database schema version " + std::to_string(version)
         );
@@ -1719,7 +1744,11 @@ void ItemDatabase::save_pending_upload_on_worker(
     if (upload.drive_id.empty() || upload.remote_path.empty() ||
         upload.local_path.empty() || upload.snapshot_path.empty() ||
         upload.content_fingerprint.empty() || upload.local_size < 0 ||
-        upload.remote_id.has_value() != !upload.expected_etag.empty()) {
+        upload.remote_id.has_value() != !upload.expected_etag.empty() ||
+        upload.completed_bytes >
+            static_cast<std::uint64_t>(upload.local_size) ||
+        (upload.upload_url.empty() != upload.upload_expiration.empty()) ||
+        (upload.upload_url.empty() && upload.completed_bytes != 0)) {
         throw std::invalid_argument("pending upload contains invalid metadata");
     }
     Statement statement{
@@ -1727,8 +1756,8 @@ void ItemDatabase::save_pending_upload_on_worker(
         "INSERT INTO pending_upload ("
         "drive_id, remote_path, local_path, snapshot_path, "
         "content_fingerprint, local_size, local_modified_ticks, remote_id, "
-        "expected_etag"
-        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) "
+        "expected_etag, upload_url, upload_expiration, completed_bytes"
+        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) "
         "ON CONFLICT(drive_id, remote_path) DO UPDATE SET "
         "local_path = excluded.local_path, "
         "snapshot_path = excluded.snapshot_path, "
@@ -1736,7 +1765,10 @@ void ItemDatabase::save_pending_upload_on_worker(
         "local_size = excluded.local_size, "
         "local_modified_ticks = excluded.local_modified_ticks, "
         "remote_id = excluded.remote_id, "
-        "expected_etag = excluded.expected_etag;"
+        "expected_etag = excluded.expected_etag, "
+        "upload_url = excluded.upload_url, "
+        "upload_expiration = excluded.upload_expiration, "
+        "completed_bytes = excluded.completed_bytes;"
     };
     bind_text(database, statement.get(), 1, upload.drive_id);
     bind_text(database, statement.get(), 2, upload.remote_path);
@@ -1752,6 +1784,14 @@ void ItemDatabase::save_pending_upload_on_worker(
         upload.remote_id.value_or("")
     );
     bind_text(database, statement.get(), 9, upload.expected_etag);
+    bind_text(database, statement.get(), 10, upload.upload_url);
+    bind_text(database, statement.get(), 11, upload.upload_expiration);
+    bind_integer(
+        database,
+        statement.get(),
+        12,
+        static_cast<std::int64_t>(upload.completed_bytes)
+    );
     if (sqlite3_step(statement.get()) != SQLITE_DONE) {
         throw std::runtime_error(
             "cannot persist pending upload: " +
@@ -1779,7 +1819,8 @@ std::vector<PendingUpload> ItemDatabase::pending_uploads_on_worker(
         database,
         "SELECT drive_id, remote_path, local_path, snapshot_path, "
         "content_fingerprint, local_size, local_modified_ticks, remote_id, "
-        "expected_etag FROM pending_upload WHERE drive_id = ?1 "
+        "expected_etag, upload_url, upload_expiration, completed_bytes "
+        "FROM pending_upload WHERE drive_id = ?1 "
         "ORDER BY remote_path;"
     };
     bind_text(database, statement.get(), 1, drive_id);
@@ -1808,6 +1849,11 @@ std::vector<PendingUpload> ItemDatabase::pending_uploads_on_worker(
                 std::nullopt :
                 std::optional{std::move(remote_id)},
             .expected_etag = column_text(statement.get(), 8),
+            .upload_url = column_text(statement.get(), 9),
+            .upload_expiration = column_text(statement.get(), 10),
+            .completed_bytes = static_cast<std::uint64_t>(
+                sqlite3_column_int64(statement.get(), 11)
+            ),
         });
     }
     return uploads;

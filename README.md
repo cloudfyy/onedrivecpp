@@ -14,8 +14,8 @@ copy the reference project's D implementation.
 > systemd user service, and Debian packaging. Synchronization currently
 > creates remote directories, downloads added or changed remote files, and
 > safely removes unchanged local snapshots after remote deletion, and uploads
-> new or modified local files. Local deletion propagation, persistent upload
-> resume, and full two-way conflict resolution are not implemented.
+> new or modified local files. Local deletion propagation and full two-way
+> conflict resolution are not implemented.
 
 ## Architecture
 
@@ -589,9 +589,14 @@ upload session with contiguous fragments and advance only to the exact
 `nextExpectedRanges` offset confirmed by Graph. The default fragment size is
 10 MiB; non-final fragments are a multiple of 320 KiB and remain below Graph's
 60 MiB request limit. Upload-session URLs are preauthorized and therefore never
-receive the Graph Authorization header or appear in logs. Sessions are not yet
-persisted across process restarts. Set `upload = false` to retain download-only
-behavior.
+receive the Graph Authorization header or appear in logs. The pending-upload
+journal persists the session URL, expiration, and each offset confirmed by
+Graph. After a restart, the client queries the session without an Authorization
+header, accepts Graph progress ahead of the last local checkpoint, and resumes
+without resending confirmed fragments. Expired sessions and HTTP 404/410
+responses create a new session; a server offset behind the durable checkpoint
+stops the upload instead of risking duplicate data. Set `upload = false` to
+retain download-only behavior.
 
 `graph.endpoint` selects the Microsoft Graph cloud endpoint and defaults to
 the global service. It is not tied to a specific SharePoint host. For a
@@ -1224,9 +1229,8 @@ or modify the synchronization directory.
 ## Suggested Next Steps
 
 1. Connect the monitor to inotify.
-2. Persist upload-session checkpoints and resume interrupted large uploads.
-3. Extend uploads with deletion propagation and local move detection.
-4. Add integration tests for the Graph and
+2. Extend uploads with deletion propagation and local move detection.
+3. Add integration tests for the Graph and
    file system boundaries.
 
 ## License

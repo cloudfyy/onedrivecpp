@@ -91,6 +91,9 @@ struct PendingUpload {
     std::int64_t local_modified_ticks{0};
     std::optional<std::string> remote_id;
     std::string expected_etag;
+    std::string upload_url;
+    std::string upload_expiration;
+    std::uint64_t completed_bytes{0};
 };
 
 struct PendingMove {

@@ -301,6 +301,34 @@ bool create_version_fifteen_database(const std::filesystem::path& path) {
     return succeeded;
 }
 
+bool create_version_sixteen_database(const std::filesystem::path& path) {
+    if (!create_version_fifteen_database(path)) {
+        return false;
+    }
+    sqlite3* database = nullptr;
+    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
+        sqlite3_close(database);
+        return false;
+    }
+    constexpr const char* migration =
+        "CREATE TABLE upload_suppression ("
+        "drive_id TEXT NOT NULL, remote_id TEXT NOT NULL, "
+        "local_path TEXT NOT NULL, source_device INTEGER NOT NULL, "
+        "source_inode INTEGER NOT NULL, "
+        "PRIMARY KEY (drive_id, local_path));"
+        "PRAGMA user_version = 16;";
+    const bool succeeded =
+        sqlite3_exec(
+            database,
+            migration,
+            nullptr,
+            nullptr,
+            nullptr
+        ) == SQLITE_OK;
+    sqlite3_close(database);
+    return succeeded;
+}
+
 bool identity_row_is_valid(const std::filesystem::path& path) {
     sqlite3* database = nullptr;
     if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
@@ -1309,6 +1337,46 @@ int main() {
             suppressions[0].source_inode != 222) {
             return fail(
                 "version fifteen database did not gain upload suppressions"
+            );
+        }
+    }
+
+    const auto version_sixteen_directory =
+        temporary_directory.path() / "version-sixteen";
+    std::filesystem::create_directories(version_sixteen_directory);
+    if (!create_version_sixteen_database(
+            version_sixteen_directory / "items.sqlite3"
+        )) {
+        return fail("version sixteen migration fixture could not be created");
+    }
+    {
+        onedrive::storage::ItemDatabase database{
+            version_sixteen_directory,
+            identity()
+        };
+        database.open();
+        const onedrive::storage::PendingUpload pending{
+            .drive_id = "me",
+            .remote_path = "large.bin",
+            .local_path = version_sixteen_directory / "large.bin",
+            .snapshot_path =
+                version_sixteen_directory / ".large.onedrive-upload-1",
+            .content_fingerprint =
+                "239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5",
+            .local_size = 655360,
+            .local_modified_ticks = 456,
+            .upload_url = "https://upload.example.test/session?secret=1",
+            .upload_expiration = "2099-10-05T09:00:00Z",
+            .completed_bytes = 327680,
+        };
+        database.save_pending_upload(pending);
+        const auto uploads = database.pending_uploads("me");
+        if (uploads.size() != 1 ||
+            uploads[0].upload_url != pending.upload_url ||
+            uploads[0].upload_expiration != pending.upload_expiration ||
+            uploads[0].completed_bytes != pending.completed_bytes) {
+            return fail(
+                "version sixteen database did not persist upload checkpoints"
             );
         }
     }

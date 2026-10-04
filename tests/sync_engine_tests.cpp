@@ -189,10 +189,23 @@ public:
         const std::string& remote_path,
         const std::optional<std::string>& remote_id,
         const std::string&,
-        const std::filesystem::path& source
+        const std::filesystem::path& source,
+        const std::optional<onedrive::graph::UploadSession>& session,
+        const onedrive::graph::UploadCheckpoint& checkpoint
     ) const {
         ++upload_count;
         uploaded_paths.push_back(remote_path);
+        upload_sessions.push_back(session);
+        if (upload_checkpoint) {
+            const auto state = *upload_checkpoint;
+            upload_checkpoint.reset();
+            checkpoint(state);
+            if (fail_after_upload_checkpoint) {
+                throw std::runtime_error{
+                    "simulated interrupted upload session"
+                };
+            }
+        }
         if (upload_conflict) {
             throw onedrive::graph::UploadConflictError{
                 "simulated completed upload"
@@ -225,8 +238,10 @@ public:
     std::string cancellable_id;
     std::function<void(const std::string&)> before_download_write;
     mutable std::function<void()> before_upload_return;
+    mutable std::optional<onedrive::graph::UploadSession> upload_checkpoint;
     bool reject_saved_cursor{false};
     bool upload_conflict{false};
+    bool fail_after_upload_checkpoint{false};
     std::chrono::milliseconds download_delay{0};
     int downloads_started_before_failure{0};
     int checkpoints_before_failure{0};
@@ -234,6 +249,9 @@ public:
     mutable std::atomic_int download_count{0};
     mutable int upload_count{0};
     mutable std::vector<std::string> uploaded_paths;
+    mutable std::vector<
+        std::optional<onedrive::graph::UploadSession>
+    > upload_sessions;
     mutable std::atomic_int checkpoint_count{0};
     mutable std::atomic_int active_downloads{0};
     mutable std::atomic_int maximum_concurrent_downloads{0};
@@ -345,6 +363,11 @@ public:
 
     void save_pending_upload(onedrive::storage::PendingUpload upload) {
         const std::scoped_lock lock{mutex};
+        if (fail_upload_checkpoint_save && !upload.upload_url.empty()) {
+            throw std::runtime_error{
+                "simulated upload checkpoint persistence failure"
+            };
+        }
         pending_uploads_by_path.insert_or_assign(
             upload.remote_path,
             std::move(upload)
@@ -499,6 +522,7 @@ public:
     int apply_count{0};
     bool fail_upsert{false};
     bool fail_commit_upload{false};
+    bool fail_upload_checkpoint_save{false};
     bool fail_apply_delta{false};
     mutable std::mutex mutex;
 };
@@ -3711,6 +3735,104 @@ int test_pending_upload_recovery() {
     return EXIT_SUCCESS;
 }
 
+int test_upload_checkpoint_recovery() {
+    onedrive::test::TemporaryDirectory temporary;
+    const auto root = temporary.path() / "upload-checkpoint";
+    std::filesystem::create_directories(root);
+    {
+        std::ofstream output{root / "large.bin", std::ios::binary};
+        output << "payload";
+    }
+    FakeItemStore items;
+    items.saved_delta_link = "saved";
+    FakeGraphClient graph;
+    graph.upload_checkpoint = onedrive::graph::UploadSession{
+        .upload_url = "https://upload.example.test/session?secret=1",
+        .expiration = "2099-10-05T09:00:00Z",
+        .completed_bytes = 4,
+    };
+    graph.fail_after_upload_checkpoint = true;
+    FakeMetrics metrics;
+    auto config = config_for(root, false);
+    config.upload = true;
+    try {
+        static_cast<void>(onedrive::sync::SyncEngine{
+            config,
+            graph,
+            items,
+            metrics
+        }.synchronize());
+        return fail("interrupted upload session was not reported");
+    } catch (const std::runtime_error&) {
+    }
+    if (items.pending_uploads_by_path.size() != 1 ||
+        items.pending_uploads_by_path.begin()->second.completed_bytes != 4 ||
+        items.pending_uploads_by_path.begin()->second.upload_url !=
+            "https://upload.example.test/session?secret=1") {
+        return fail("upload checkpoint was not persisted before interruption");
+    }
+
+    graph.fail_after_upload_checkpoint = false;
+    if (onedrive::sync::SyncEngine{
+            config,
+            graph,
+            items,
+            metrics
+        }.synchronize() != 0 ||
+        graph.upload_count != 2 ||
+        graph.upload_sessions.size() != 2 ||
+        !graph.upload_sessions[1] ||
+        graph.upload_sessions[1]->completed_bytes != 4 ||
+        graph.upload_sessions[1]->upload_url !=
+            "https://upload.example.test/session?secret=1" ||
+        !items.pending_uploads_by_path.empty() ||
+        !metrics.last_success) {
+        return fail("persisted upload checkpoint was not resumed");
+    }
+
+    const auto failing_root =
+        temporary.path() / "upload-checkpoint-failure";
+    std::filesystem::create_directories(failing_root);
+    {
+        std::ofstream output{failing_root / "large.bin", std::ios::binary};
+        output << "payload";
+    }
+    FakeItemStore failing_items;
+    failing_items.saved_delta_link = "saved";
+    failing_items.fail_upload_checkpoint_save = true;
+    FakeGraphClient failing_graph;
+    failing_graph.upload_checkpoint = onedrive::graph::UploadSession{
+        .upload_url = "https://upload.example.test/uncommitted",
+        .expiration = "2099-10-05T09:00:00Z",
+        .completed_bytes = 4,
+    };
+    FakeMetrics failing_metrics;
+    auto failing_config = config_for(failing_root, false);
+    failing_config.upload = true;
+    try {
+        static_cast<void>(onedrive::sync::SyncEngine{
+            failing_config,
+            failing_graph,
+            failing_items,
+            failing_metrics
+        }.synchronize());
+        return fail("upload checkpoint persistence failure was ignored");
+    } catch (const std::runtime_error& error) {
+        if (!std::string_view{error.what()}.contains(
+                "checkpoint persistence failure"
+            )) {
+            return fail("upload checkpoint persistence error was replaced");
+        }
+    }
+    if (failing_graph.upload_count != 1 ||
+        failing_items.pending_uploads_by_path.size() != 1 ||
+        !failing_items.pending_uploads_by_path.begin()->
+             second.upload_url.empty()) {
+        return fail("failed upload checkpoint was treated as committed");
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_pending_upload_recovery_conflict() {
     onedrive::test::TemporaryDirectory temporary;
     const auto root = temporary.path() / "pending-upload-conflict";
@@ -3839,6 +3961,10 @@ int main() {
         return result;
     }
     if (const int result = test_pending_upload_recovery();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_upload_checkpoint_recovery();
         result != EXIT_SUCCESS) {
         return result;
     }

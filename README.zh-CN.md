@@ -11,8 +11,8 @@
 > HTTP 传输层、经过认证的 Microsoft Graph Delta 查询、SQLite 远端状态和
 > deltaLink 持久化、安全下载与本地上传、dry-run、systemd 用户服务和 Debian
 > 打包。当前同步会创建远端目录、下载新增或修改的远端文件，并在远端删除后
-> 安全移除未修改的本地快照，并上传本地新增或修改的文件。本地删除传播、跨进程
-> 上传续传以及完整双向冲突解决尚未实现。
+> 安全移除未修改的本地快照，并上传本地新增或修改的文件。本地删除传播以及完整
+> 双向冲突解决尚未实现。
 
 ## 架构
 
@@ -521,8 +521,12 @@ pending-upload journal；恢复时会下载已经出现的远端文件并比较 
 session 连续分片，并且只推进到 Graph 通过 `nextExpectedRanges` 精确确认的偏移。
 默认分片大小为 10 MiB；非末尾分片必须是 320 KiB 的整数倍，并低于 Graph 的
 60 MiB 单请求上限。预授权 upload session URL 不会携带 Graph Authorization
-header，也不会写入日志。session 尚未跨进程持久化。设置 `upload = false` 可保持
-仅下载行为。
+header，也不会写入日志。pending-upload journal 会持久保存 session URL、过期时间
+以及 Graph 每次确认的偏移。进程重启后，程序会在不携带 Authorization header 的
+情况下查询 session；如果 Graph 进度领先于本地最后一个 checkpoint，则先持久化
+远端进度，再从该位置续传，不会重发已确认分片。session 过期或返回 HTTP 404/410
+时会安全创建新 session；服务端偏移落后于可靠 checkpoint 时会停止，避免重复发送
+数据。设置 `upload = false` 可保持仅下载行为。
 
 当 Delta 项目的远端 ID 保持不变但路径发生变化时，程序会在本地安全执行重命名或
 移动，并且绝不覆盖已经存在的目标。Graph 只报告被移动目录本身时，程序也会重映射
@@ -1057,8 +1061,8 @@ journalctl --user -u onedrive-cpp.service -f
 ## 后续实现建议
 
 1. 使用 inotify 接入 monitor。
-3. 为上传增加目录、删除传播和可恢复分片 session。
-4. 为 Graph 和文件系统边界增加更多集成测试。
+2. 为上传增加目录、删除传播和本地移动识别。
+3. 为 Graph 和文件系统边界增加更多集成测试。
 
 ## 许可证
 
