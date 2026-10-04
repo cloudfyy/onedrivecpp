@@ -1,3 +1,14 @@
+onedrive-cpp (0.7.8-1~ubuntu24.04) noble; urgency=medium
+
+  * Suppress local uploads of files retained when remote moves cross from
+    included paths into selectively excluded paths.
+  * Persist schema-v16 upload suppressions by filesystem identity and remove
+    stale records when the retained object disappears or is replaced.
+  * Cover file and directory boundary moves, remote re-entry, replacement,
+    dry-run behavior, reset-state retention, and clear-all cleanup.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 12:20:00 +0000
+
 onedrive-cpp (0.7.7-1~ubuntu24.04) noble; urgency=medium
 
   * Stage one breaker through a private hidden path to apply file and directory
