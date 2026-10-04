@@ -1,3 +1,15 @@
+onedrive-cpp (0.6.36-1~ubuntu24.04) noble; urgency=medium
+
+  * Add a cancellable aggregate download rate limit shared across concurrent
+    Microsoft Graph downloads while preserving the existing per-download cap.
+  * Apply fair FIFO token-bucket throttling before downloaded data is written,
+    with bounded burst behavior and explicit cancellation propagation.
+  * Extend configuration, documentation, dry-run output, and automated
+    coverage for aggregate rate limiting.
+  * Consolidate the common test failure helper.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 07:52:05 +0000
+
 onedrive-cpp (0.6.35-1~ubuntu24.04) noble; urgency=medium
 
   * Add configurable HTTP, HTTPS, SOCKS4, and SOCKS5 proxies for
