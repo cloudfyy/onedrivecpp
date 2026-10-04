@@ -1,3 +1,14 @@
+onedrive-cpp (0.7.9-1~ubuntu24.04) noble; urgency=medium
+
+  * Exercise remote file moves with simultaneous cross-directory rename
+    against the live Microsoft Graph API.
+  * Exercise remote directory moves with tracked descendants and verify local
+    inode reuse, snapshot updates, and structured move events.
+  * Create and reliably remove a uniquely named remote fixture, with offline
+    coverage for token rotation, throttling, and Graph request construction.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 12:50:00 +0000
+
 onedrive-cpp (0.7.8-1~ubuntu24.04) noble; urgency=medium
 
   * Suppress local uploads of files retained when remote moves cross from
