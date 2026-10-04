@@ -201,35 +201,46 @@ void FilesystemMetadata::write_remote_identity(
     if (!use_xattrs_) {
         return;
     }
-    if (::setxattr(
-            path.c_str(),
+    const int descriptor = open_no_symlinks(path, O_RDONLY);
+    if (::fsetxattr(
+            descriptor,
             "user.onedrive.remote_id",
             item.id.data(),
             item.id.size(),
             0
         ) == -1 ||
-        ::setxattr(
-            path.c_str(),
+        ::fsetxattr(
+            descriptor,
             "user.onedrive.etag",
             item.etag.data(),
             item.etag.size(),
             0
         ) == -1) {
+        const std::string message = std::strerror(errno);
+        ::close(descriptor);
         throw std::runtime_error(
             "cannot write synchronization metadata to '" + path.string() +
-            "': " + std::strerror(errno)
+            "': " + message
         );
     }
-    const std::string ticks = std::to_string(modified_ticks(path));
-    if (::setxattr(
-            path.c_str(),
+    const std::string ticks = std::to_string(modified_ticks(descriptor));
+    if (::fsetxattr(
+            descriptor,
             "user.onedrive.local_modified_ticks",
             ticks.data(),
             ticks.size(),
             0
         ) == -1) {
+        const std::string message = std::strerror(errno);
+        ::close(descriptor);
         throw std::runtime_error(
             "cannot write synchronization metadata to '" + path.string() +
+            "': " + message
+        );
+    }
+    if (::close(descriptor) == -1) {
+        throw std::runtime_error(
+            "cannot close synchronization metadata file '" + path.string() +
             "': " + std::strerror(errno)
         );
     }

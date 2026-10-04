@@ -3,6 +3,7 @@
 #include "download_space_coordinator.hpp"
 #include "filesystem_metadata.hpp"
 #include "local_filesystem.hpp"
+#include "safe_sync_root.hpp"
 #include "onedrive/graph/graph_client.hpp"
 #include "onedrive/storage/item_store.hpp"
 
@@ -34,6 +35,11 @@ struct PreparedDownload {
     DownloadSpaceCoordinator& space,
     std::stop_token stop_token,
     const graph::DownloadProgress& progress = {}
+);
+[[nodiscard]] storage::ItemState commit_download(
+    storage::ItemStore& items,
+    const SafeSyncRoot& sync_root,
+    PreparedDownload download
 );
 [[nodiscard]] storage::ItemState commit_download(
     storage::ItemStore& items,

@@ -1,16 +1,19 @@
 #include "filesystem_metadata.hpp"
 #include "local_filesystem.hpp"
+#include "safe_sync_root.hpp"
 #include "test_support.hpp"
 
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <fcntl.h>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <utility>
 #include <vector>
 
@@ -172,6 +175,42 @@ int main() {
         ::stat(nested.c_str(), &nested_status) == -1 ||
         (nested_status.st_mode & 0777) != 0700) {
         return fail("private directory tree was not created securely");
+    }
+    const auto attack_outside = temporary.path() / "attack-outside";
+    std::filesystem::create_directory(attack_outside);
+    const auto redirected = root / "redirected";
+    std::filesystem::create_directory_symlink(attack_outside, redirected);
+    detail::SafeSyncRoot safe_root{root};
+    try {
+        safe_root.ensure_directory_tree(redirected / "directory", true);
+        return fail("safe root followed a directory symlink");
+    } catch (const std::runtime_error&) {
+    }
+    try {
+        const int descriptor = safe_root.open(
+            redirected / "opened.txt",
+            O_WRONLY | O_CREAT | O_EXCL,
+            S_IRUSR | S_IWUSR
+        );
+        ::close(descriptor);
+        return fail("safe root opened a file through a directory symlink");
+    } catch (const std::runtime_error&) {
+    }
+    const auto rename_source = root / "rename-source.txt";
+    {
+        std::ofstream output{rename_source};
+        output << "data";
+    }
+    try {
+        safe_root.rename(rename_source, redirected / "renamed.txt");
+        return fail("safe root renamed a file through a directory symlink");
+    } catch (const std::runtime_error&) {
+    }
+    if (!std::filesystem::exists(rename_source) ||
+        std::filesystem::exists(attack_outside / "directory") ||
+        std::filesystem::exists(attack_outside / "opened.txt") ||
+        std::filesystem::exists(attack_outside / "renamed.txt")) {
+        return fail("safe root modified data outside the synchronization root");
     }
     const auto conflicting_file = root / "not-a-directory";
     {

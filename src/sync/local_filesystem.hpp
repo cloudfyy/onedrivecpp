@@ -39,6 +39,15 @@ struct LocalFileBaseline {
 [[nodiscard]] std::int64_t modified_ticks(
     const std::filesystem::path& path
 );
+[[nodiscard]] std::int64_t modified_ticks(int descriptor);
+[[nodiscard]] int open_no_symlinks(
+    const std::filesystem::path& path,
+    int flags
+);
+bool remove_no_symlinks(
+    const std::filesystem::path& path,
+    bool missing_ok = true
+);
 void apply_remote_modified_time(
     const std::filesystem::path& path,
     std::string_view remote_modified

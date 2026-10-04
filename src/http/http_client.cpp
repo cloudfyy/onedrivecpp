@@ -10,10 +10,12 @@
 #include <exception>
 #include <fcntl.h>
 #include <limits>
+#include <linux/openat2.h>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 namespace onedrive::http {
@@ -509,14 +511,24 @@ HttpResult CurlHttpClient::download(
     const int flags = request.download_offset == 0 ?
                           O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW :
                           O_WRONLY | O_CLOEXEC | O_NOFOLLOW;
-    const int descriptor = ::open(
-        destination.c_str(),
-        flags,
-        request.private_download_permissions ?
-            S_IRUSR | S_IWUSR :
-            S_IRUSR | S_IWUSR |
-                S_IRGRP | S_IWGRP |
-                S_IROTH | S_IWOTH
+    const mode_t mode = request.private_download_permissions ?
+                            S_IRUSR | S_IWUSR :
+                            S_IRUSR | S_IWUSR |
+                                S_IRGRP | S_IWGRP |
+                                S_IROTH | S_IWOTH;
+    open_how how{
+        .flags = static_cast<__u64>(flags),
+        .mode = static_cast<__u64>(request.download_offset == 0 ? mode : 0),
+        .resolve = RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS,
+    };
+    const int descriptor = static_cast<int>(
+        ::syscall(
+            SYS_openat2,
+            AT_FDCWD,
+            destination.c_str(),
+            &how,
+            sizeof(how)
+        )
     );
     if (descriptor == -1) {
         return std::unexpected(HttpError{

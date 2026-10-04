@@ -8,6 +8,7 @@
 #include "filesystem_metadata.hpp"
 #include "item_operation_coordinator.hpp"
 #include "local_filesystem.hpp"
+#include "safe_sync_root.hpp"
 #include "sync_plan.hpp"
 
 #include <spdlog/spdlog.h>
@@ -59,7 +60,8 @@ DownloadBatch download_files(
     detail::ItemOperationCoordinator& operations,
     detail::DownloadSpaceCoordinator& space,
     const detail::FilesystemMetadata& metadata,
-    const cli::Console& console
+    const cli::Console& console,
+    const detail::SafeSyncRoot& sync_root
 ) {
     DownloadBatch batch{
         .states = std::vector<std::optional<storage::ItemState>>(
@@ -143,6 +145,7 @@ DownloadBatch download_files(
                 );
                 batch.states[index].emplace(detail::commit_download(
                     items,
+                    sync_root,
                     detail::prepare_download(
                         graph,
                         items,
@@ -384,7 +387,7 @@ std::uintmax_t download_safety_reserve(std::uintmax_t transfer_bytes) {
 
 ExecutionSummary execute_plan(
     detail::SyncPlan& plan,
-    const std::filesystem::path& sync_root,
+    const detail::SafeSyncRoot& safe_root,
     const std::string& drive_id,
     graph::GraphClient& graph,
     storage::ItemStore& items,
@@ -393,6 +396,7 @@ ExecutionSummary execute_plan(
     std::size_t download_concurrency,
     bool private_permissions
 ) {
+    const auto& sync_root = safe_root.path();
     std::vector<std::string> blocked_directories;
     for (std::size_t index = 0; index < plan.blocked_count(); ++index) {
         const auto& blocked = plan.blocked(index);
@@ -418,13 +422,19 @@ ExecutionSummary execute_plan(
             continue;
         }
         try {
-            detail::ensure_directory_tree(
-                sync_root,
+            safe_root.ensure_directory_tree(
                 plan.state_for(item.id).local_path,
                 private_permissions
             );
             ++prepared_directory_count;
         } catch (const detail::LocalPathConflictError& error) {
+            plan.block(item, "local_path_conflict", error.what());
+            blocked_directories.push_back(item.remote_path);
+            report_blocked(
+                plan.blocked(plan.blocked_count() - 1),
+                console
+            );
+        } catch (const detail::SafePathConflictError& error) {
             plan.block(item, "local_path_conflict", error.what());
             blocked_directories.push_back(item.remote_path);
             report_blocked(
@@ -455,12 +465,18 @@ ExecutionSummary execute_plan(
         auto& state = plan.state_for(item.id);
         const auto destination = state.local_path;
         try {
-            detail::ensure_directory_tree(
-                sync_root,
+            safe_root.ensure_directory_tree(
                 destination.parent_path(),
                 private_permissions
             );
         } catch (const detail::LocalPathConflictError& error) {
+            plan.block(item, "local_path_conflict", error.what());
+            report_blocked(
+                plan.blocked(plan.blocked_count() - 1),
+                console
+            );
+            continue;
+        } catch (const detail::SafePathConflictError& error) {
             plan.block(item, "local_path_conflict", error.what());
             report_blocked(
                 plan.blocked(plan.blocked_count() - 1),
@@ -589,7 +605,8 @@ ExecutionSummary execute_plan(
         operations,
         space,
         metadata,
-        console
+        console,
+        safe_root
     );
     for (const auto& error : downloads.errors) {
         if (error) {
@@ -653,6 +670,7 @@ int SyncEngine::synchronize() const {
             console_ == nullptr ? fallback_console : *console_;
         std::filesystem::path sync_root =
             onedrive::detail::normalized_absolute(config_->sync_directory);
+        std::optional<detail::SafeSyncRoot> safe_root;
         std::optional<detail::FilesystemMetadata> metadata;
         if (config_->dry_run) {
             console.section(
@@ -716,13 +734,14 @@ int SyncEngine::synchronize() const {
                 config_->sync_permissions ==
                 config::SyncPermissionsMode::private_access;
             sync_root = prepare_sync_root(sync_root, private_permissions);
+            safe_root.emplace(sync_root);
             metadata.emplace(detail::FilesystemMetadata::detect(
                 config_->filesystem_metadata,
                 sync_root
             ));
             detail::recover_pending_downloads(
                 items_,
-                sync_root,
+                *safe_root,
                 config_->drive_id,
                 *metadata,
                 private_permissions
@@ -795,7 +814,7 @@ int SyncEngine::synchronize() const {
             );
             const auto summary = execute_plan(
                 plan,
-                sync_root,
+                *safe_root,
                 config_->drive_id,
                 graph_,
                 items_,

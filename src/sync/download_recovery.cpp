@@ -87,11 +87,12 @@ void validate_pending_download(
 
 void recover_pending_downloads(
     storage::ItemStore& items,
-    const std::filesystem::path& sync_root,
+    const SafeSyncRoot& safe_root,
     const std::string& drive_id,
     const FilesystemMetadata& metadata,
     bool private_permissions
 ) {
+    const auto& sync_root = safe_root.path();
     const auto pending = items.pending_downloads(drive_id);
     if (pending.empty()) {
         return;
@@ -109,8 +110,7 @@ void recover_pending_downloads(
             download.item.remote_path,
             destination.string()
         );
-        ensure_directory_tree(
-            sync_root,
+        safe_root.ensure_directory_tree(
             destination.parent_path(),
             private_permissions
         );
@@ -138,7 +138,7 @@ void recover_pending_downloads(
                         download.temporary_path.string()
                     );
                 }
-                std::filesystem::remove(download.temporary_path);
+                remove_no_symlinks(download.temporary_path, false);
                 spdlog::debug(
                     "Removed obsolete recovery temporary file '{}'",
                     download.temporary_path.string()
@@ -150,8 +150,8 @@ void recover_pending_downloads(
             );
         } else if (!destination_exists && temporary_exists &&
                    recovery_file_matches(download.temporary_path, download)) {
-            std::filesystem::rename(download.temporary_path, destination);
-            fsync_directory(destination.parent_path());
+            safe_root.rename(download.temporary_path, destination);
+            safe_root.fsync_directory(destination.parent_path());
             spdlog::debug(
                 "Promoted recovery temporary file to '{}'",
                 destination.string()
@@ -184,6 +184,23 @@ void recover_pending_downloads(
             download.item.remote_path
         );
     }
+}
+
+void recover_pending_downloads(
+    storage::ItemStore& items,
+    const std::filesystem::path& sync_root,
+    const std::string& drive_id,
+    const FilesystemMetadata& metadata,
+    bool private_permissions
+) {
+    const SafeSyncRoot safe_root{sync_root};
+    recover_pending_downloads(
+        items,
+        safe_root,
+        drive_id,
+        metadata,
+        private_permissions
+    );
 }
 
 }  // namespace onedrive::sync::detail

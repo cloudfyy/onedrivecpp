@@ -15,10 +15,12 @@
 #include <format>
 #include <fstream>
 #include <limits>
+#include <linux/openat2.h>
 #include <memory>
 #include <stdexcept>
 #include <string_view>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 namespace onedrive::sync::detail {
@@ -194,6 +196,68 @@ std::int64_t modified_ticks(const std::filesystem::path& path) {
     ).count();
 }
 
+std::int64_t modified_ticks(int descriptor) {
+    return modified_ticks(
+        std::filesystem::path{"/proc/self/fd"} /
+        std::to_string(descriptor)
+    );
+}
+
+int open_no_symlinks(
+    const std::filesystem::path& path,
+    int flags
+) {
+    open_how how{
+        .flags = static_cast<__u64>(flags | O_CLOEXEC),
+        .mode = 0,
+        .resolve = RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS,
+    };
+    const int descriptor = static_cast<int>(
+        ::syscall(
+            SYS_openat2,
+            AT_FDCWD,
+            path.c_str(),
+            &how,
+            sizeof(how)
+        )
+    );
+    if (descriptor == -1) {
+        throw std::runtime_error(
+            "cannot safely open local synchronization path '" +
+            path.string() + "': " + std::strerror(errno)
+        );
+    }
+    return descriptor;
+}
+
+bool remove_no_symlinks(
+    const std::filesystem::path& path,
+    bool missing_ok
+) {
+    const int parent = open_no_symlinks(
+        path.parent_path(),
+        O_RDONLY | O_DIRECTORY
+    );
+    if (::unlinkat(parent, path.filename().c_str(), 0) == -1) {
+        const int error = errno;
+        ::close(parent);
+        if (missing_ok && error == ENOENT) {
+            return false;
+        }
+        throw std::runtime_error(
+            "cannot safely remove local synchronization file '" +
+            path.string() + "': " + std::strerror(error)
+        );
+    }
+    if (::close(parent) == -1) {
+        throw std::runtime_error(
+            "cannot close local synchronization directory '" +
+            path.parent_path().string() + "': " + std::strerror(errno)
+        );
+    }
+    return true;
+}
+
 void apply_remote_modified_time(
     const std::filesystem::path& path,
     std::string_view remote_modified
@@ -219,14 +283,18 @@ void apply_remote_modified_time(
             .tv_nsec = static_cast<long>(remainder.count()),
         },
     };
-    if (::utimensat(
-            AT_FDCWD,
-            path.c_str(),
-            times,
-            AT_SYMLINK_NOFOLLOW
-        ) == -1) {
+    const int descriptor = open_no_symlinks(path, O_WRONLY);
+    if (::futimens(descriptor, times) == -1) {
+        const std::string message = std::strerror(errno);
+        ::close(descriptor);
         throw std::runtime_error(
             "cannot apply remote modification time to '" + path.string() +
+            "': " + message
+        );
+    }
+    if (::close(descriptor) == -1) {
+        throw std::runtime_error(
+            "cannot close local synchronization file '" + path.string() +
             "': " + std::strerror(errno)
         );
     }
@@ -423,16 +491,7 @@ bool is_temporary_path_for(
 }
 
 void fsync_file(const std::filesystem::path& path) {
-    const int descriptor = ::open(
-        path.c_str(),
-        O_RDONLY | O_CLOEXEC | O_NOFOLLOW
-    );
-    if (descriptor == -1) {
-        throw std::runtime_error(
-            "cannot open downloaded file '" + path.string() + "': " +
-            std::strerror(errno)
-        );
-    }
+    const int descriptor = open_no_symlinks(path, O_RDONLY);
     if (::fsync(descriptor) == -1) {
         const std::string message = std::strerror(errno);
         ::close(descriptor);

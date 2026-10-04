@@ -91,15 +91,7 @@ PreparedDownload prepare_download(
             }
         }
         if (completed_bytes == 0) {
-            std::error_code remove_error;
-            std::filesystem::remove(partial.temporary_path, remove_error);
-            if (remove_error) {
-                throw std::runtime_error(
-                    "cannot discard stale partial download '" +
-                    partial.temporary_path.string() + "': " +
-                    remove_error.message()
-                );
-            }
+            remove_no_symlinks(partial.temporary_path);
             items.remove_partial_download(state.drive_id, item.id);
         }
     }
@@ -294,6 +286,7 @@ PreparedDownload prepare_download(
 
 storage::ItemState commit_download(
     storage::ItemStore& items,
+    const SafeSyncRoot& sync_root,
     PreparedDownload download
 ) {
     bool journaled = false;
@@ -339,11 +332,11 @@ storage::ItemState commit_download(
                 download.destination.string()
             );
         }
-        std::filesystem::rename(
+        sync_root.rename(
             download.temporary_path,
             download.destination
         );
-        fsync_directory(download.destination.parent_path());
+        sync_root.fsync_directory(download.destination.parent_path());
         download.state.local_size =
             static_cast<std::int64_t>(download.downloaded_size);
         download.state.local_modified_ticks =
@@ -385,17 +378,25 @@ storage::ItemState commit_download(
     }
 }
 
+storage::ItemState commit_download(
+    storage::ItemStore& items,
+    PreparedDownload download
+) {
+    const SafeSyncRoot sync_root{download.destination.parent_path()};
+    return commit_download(items, sync_root, std::move(download));
+}
+
 void discard_prepared_download(const PreparedDownload& download) noexcept {
     if (download.temporary_path.empty()) {
         return;
     }
-    std::error_code cleanup_error;
-    std::filesystem::remove(download.temporary_path, cleanup_error);
-    if (cleanup_error) {
+    try {
+        remove_no_symlinks(download.temporary_path);
+    } catch (const std::exception& error) {
         spdlog::warn(
             "Could not remove incomplete download '{}': {}",
             download.temporary_path.string(),
-            cleanup_error.message()
+            error.what()
         );
     }
 }
