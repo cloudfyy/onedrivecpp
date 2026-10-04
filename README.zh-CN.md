@@ -399,7 +399,8 @@ endpoint = "https://microsoftgraph.chinacloudapi.cn/v1.0"
 ```
 
 `download_concurrency` 控制可同时下载的文件数量，默认值为 `4`，允许范围为
-`1` 到 `16`。
+`1` 到 `16`。指向同一规范化本地路径的下载始终会串行执行，包括常见的仅
+ASCII 大小写不同的路径；无关目标仍可并发下载。
 
 `download_chunk_threshold_bytes` 设置大文件阈值（字节）。超过该值的文件会通过
 HTTP 字节范围请求顺序分片下载，并以该值作为单个分片的最大大小。默认值为

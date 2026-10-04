@@ -3,6 +3,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -79,6 +80,65 @@ int main() {
         }
     }
 
+    std::atomic_bool same_destination_started{false};
+    std::atomic_bool same_destination_acquired{false};
+    std::jthread same_destination_worker;
+    {
+        auto first = coordinator.acquire_destination(
+            std::filesystem::current_path() / "Folder/../Target.txt"
+        );
+        same_destination_worker = std::jthread{[&] {
+            same_destination_started.store(true, std::memory_order_release);
+            auto second = coordinator.acquire_destination(
+                std::filesystem::current_path() / "target.txt"
+            );
+            same_destination_acquired.store(
+                true,
+                std::memory_order_release
+            );
+        }};
+        if (!wait_until(same_destination_started)) {
+            return fail("same-destination worker did not start");
+        }
+        std::this_thread::sleep_for(20ms);
+        if (same_destination_acquired.load(std::memory_order_acquire)) {
+            return fail(
+                "equivalent destination paths acquired concurrent leases"
+            );
+        }
+    }
+    same_destination_worker.join();
+    if (!same_destination_acquired.load(std::memory_order_acquire)) {
+        return fail(
+            "same-destination waiter did not acquire the released lease"
+        );
+    }
+
+    std::atomic_bool different_destination_acquired{false};
+    {
+        auto first = coordinator.acquire_destination("first.txt");
+        std::jthread different_destination_worker{[&] {
+            auto second = coordinator.acquire_destination("second.txt");
+            different_destination_acquired.store(
+                true,
+                std::memory_order_release
+            );
+        }};
+        if (!wait_until(different_destination_acquired)) {
+            return fail("different destinations were unnecessarily serialized");
+        }
+    }
+
+    try {
+        auto lease = coordinator.acquire_destination("exception.txt");
+        throw std::runtime_error{"simulated operation failure"};
+    } catch (const std::runtime_error&) {
+    }
+    {
+        auto after_exception =
+            coordinator.acquire_destination("EXCEPTION.txt");
+    }
+
     try {
         static_cast<void>(coordinator.acquire("", "item"));
         return fail("empty drive ID was accepted");
@@ -87,6 +147,13 @@ int main() {
     try {
         static_cast<void>(coordinator.acquire("drive", ""));
         return fail("empty remote ID was accepted");
+    } catch (const std::invalid_argument&) {
+    }
+    try {
+        static_cast<void>(
+            coordinator.acquire_destination(std::filesystem::path{})
+        );
+        return fail("empty destination path was accepted");
     } catch (const std::invalid_argument&) {
     }
 

@@ -2,6 +2,7 @@
 
 #include <condition_variable>
 #include <cstddef>
+#include <filesystem>
 #include <mutex>
 #include <string>
 #include <unordered_set>
@@ -10,6 +11,12 @@ namespace onedrive::sync::detail {
 
 class ItemOperationCoordinator final {
     struct ItemKey {
+        enum class Scope {
+            remote_item,
+            destination,
+        };
+
+        Scope scope{Scope::remote_item};
         std::string drive_id;
         std::string remote_id;
 
@@ -53,6 +60,9 @@ public:
     [[nodiscard]] Lease acquire(
         std::string drive_id,
         std::string remote_id
+    );
+    [[nodiscard]] Lease acquire_destination(
+        const std::filesystem::path& destination
     );
 
 private:

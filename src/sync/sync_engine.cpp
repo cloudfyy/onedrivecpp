@@ -150,6 +150,18 @@ DownloadBatch download_files(
                     task.state.drive_id,
                     task.item.id
                 );
+                auto destination_operation =
+                    operations.acquire_destination(task.destination);
+                if (!detail::local_file_matches_baseline(
+                        task.destination,
+                        task.destination_baseline
+                    )) {
+                    throw detail::LocalModificationConflictError(
+                        "local file changed before the destination download "
+                        "lock was acquired: " +
+                        task.destination.string()
+                    );
+                }
                 batch.states[index].emplace(detail::commit_download(
                     items,
                     sync_root,

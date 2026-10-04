@@ -1,19 +1,48 @@
 #include "item_operation_coordinator.hpp"
 
+#include <filesystem>
 #include <functional>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 namespace onedrive::sync::detail {
+namespace {
+
+std::string destination_key(const std::filesystem::path& destination) {
+    if (destination.empty()) {
+        throw std::invalid_argument(
+            "destination operation coordination requires a path"
+        );
+    }
+    auto key = std::filesystem::absolute(destination)
+                   .lexically_normal()
+                   .generic_string();
+    for (char& value : key) {
+        if (value >= 'A' && value <= 'Z') {
+            value = static_cast<char>(value - 'A' + 'a');
+        }
+    }
+    return key;
+}
+
+}  // namespace
 
 std::size_t ItemOperationCoordinator::ItemKeyHash::operator()(
     const ItemKey& key
 ) const noexcept {
+    const auto scope_hash = std::hash<int>{}(
+        static_cast<int>(key.scope)
+    );
     const auto drive_hash = std::hash<std::string>{}(key.drive_id);
     const auto remote_hash = std::hash<std::string>{}(key.remote_id);
-    return drive_hash ^ (
+    const auto item_hash = drive_hash ^ (
         remote_hash + std::size_t{0x9e3779b9U} +
         (drive_hash << 6U) + (drive_hash >> 2U)
+    );
+    return scope_hash ^ (
+        item_hash + std::size_t{0x9e3779b9U} +
+        (scope_hash << 6U) + (scope_hash >> 2U)
     );
 }
 
@@ -60,8 +89,28 @@ ItemOperationCoordinator::Lease ItemOperationCoordinator::acquire(
         );
     }
     ItemKey key{
+        .scope = ItemKey::Scope::remote_item,
         .drive_id = std::move(drive_id),
         .remote_id = std::move(remote_id),
+    };
+    {
+        std::unique_lock lock{mutex_};
+        condition_.wait(lock, [&] {
+            return !active_.contains(key);
+        });
+        active_.insert(key);
+    }
+    return Lease{*this, std::move(key)};
+}
+
+ItemOperationCoordinator::Lease
+ItemOperationCoordinator::acquire_destination(
+    const std::filesystem::path& destination
+) {
+    ItemKey key{
+        .scope = ItemKey::Scope::destination,
+        .drive_id = destination_key(destination),
+        .remote_id = {},
     };
     {
         std::unique_lock lock{mutex_};

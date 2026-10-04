@@ -1283,6 +1283,48 @@ int test_bounded_concurrent_downloads() {
     return EXIT_SUCCESS;
 }
 
+int test_duplicate_destination_downloads_are_serialized() {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path() / "files";
+    FakeGraphClient graph;
+    graph.changes = {
+        file("first", "duplicate.txt", 4),
+        file("second", "duplicate.txt", 4),
+    };
+    graph.contents["first"] = "aaaa";
+    graph.contents["second"] = "bbbb";
+    graph.download_delay = std::chrono::milliseconds{40};
+    FakeItemStore items;
+    FakeMetrics metrics;
+    auto config = config_for(root, false);
+    config.download_concurrency = 2;
+
+    const auto result = onedrive::sync::SyncEngine{
+        config,
+        graph,
+        items,
+        metrics
+    }.synchronize();
+    std::ifstream input{root / "duplicate.txt", std::ios::binary};
+    const std::string contents{
+        std::istreambuf_iterator<char>{input},
+        std::istreambuf_iterator<char>{}
+    };
+    if (result != 2 || graph.download_count != 1 ||
+        graph.maximum_concurrent_downloads != 1 ||
+        items.upsert_count != 1 || items.apply_count != 1 ||
+        items.applied_delta.blocked_upserts.size() != 1 ||
+        items.applied_delta.blocked_upserts[0].reason_code !=
+            "local_modification" ||
+        (contents != "aaaa" && contents != "bbbb") ||
+        !metrics.last_success) {
+        return fail(
+            "duplicate destination downloads were not safely serialized"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
 }  // namespace
 
 int main() {
@@ -1318,6 +1360,11 @@ int main() {
         return result;
     }
     if (const int result = test_bounded_concurrent_downloads();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result =
+            test_duplicate_destination_downloads_are_serialized();
         result != EXIT_SUCCESS) {
         return result;
     }

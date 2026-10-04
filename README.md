@@ -439,7 +439,10 @@ endpoint = "https://microsoftgraph.chinacloudapi.cn/v1.0"
 ```
 
 `download_concurrency` controls how many files can be downloaded at the same
-time. It defaults to `4` and accepts values from `1` through `16`.
+time. It defaults to `4` and accepts values from `1` through `16`. Downloads
+targeting the same normalized local path are always serialized, including
+common ASCII case-only path variants, while unrelated destinations remain
+concurrent.
 
 `download_chunk_threshold_bytes` sets the large-file threshold in bytes. Files
 larger than this value are downloaded sequentially with HTTP byte-range
