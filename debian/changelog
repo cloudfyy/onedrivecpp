@@ -1,3 +1,12 @@
+onedrive-cpp (0.6.26-1~ubuntu24.04) noble; urgency=medium
+
+  * Follow up to five additional redirects for preauthenticated downloads.
+  * Restrict download redirect targets to HTTPS and keep Graph credentials off
+    CDN requests.
+  * Isolate response headers and validation state across redirect responses.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 03:13:22 +0000
+
 onedrive-cpp (0.6.25-1~ubuntu24.04) noble; urgency=medium
 
   * Condition Graph file downloads on the expected remote eTag.

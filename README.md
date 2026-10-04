@@ -491,7 +491,9 @@ negotiated over TLS and may fall back according to libcurl capabilities.
 `transfer.ip_version` accepts `"auto"`, `"4"`, or
 `"6"` and defaults to `"auto"`; forcing an address family can work around
 broken IPv6 or IPv4 routing, but fails when the download host has no address in
-that family. Each download worker safely reuses its reset libcurl easy handle,
+that family. Preauthenticated download URLs can follow at most five additional
+redirects, all of which must use HTTPS; Graph authorization is never attached
+to those CDN requests. Each download worker safely reuses its reset libcurl easy handle,
 allowing DNS, TCP, TLS, and HTTP/2 connection state to be reused across chunks,
 retries, and subsequent files without carrying request headers, bodies, or
 callbacks between operations. Trace logging reports the negotiated HTTP

@@ -56,6 +56,8 @@ struct HttpRequest {
     std::uint64_t download_offset{0};
     std::uint64_t download_checkpoint_interval_bytes{0};
     bool private_download_permissions{true};
+    bool follow_redirects{false};
+    std::size_t maximum_redirects{0};
     std::stop_token stop_token;
 };
 
@@ -73,6 +75,7 @@ struct HttpResponse {
 
 enum class HttpErrorCode {
     transport,
+    redirect,
     cancelled,
 };
 

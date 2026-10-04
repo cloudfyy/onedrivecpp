@@ -141,6 +141,7 @@ struct WriteContext {
     std::uint64_t durable_offset{};
     DownloadState* download_state{};
     std::optional<bool> response_accepted;
+    bool follow_redirects{false};
     bool data_callback_failed{false};
     std::string data_callback_error;
 };
@@ -173,6 +174,7 @@ struct HeaderContext {
     std::vector<HttpHeader> headers;
     std::size_t total_size{};
     bool size_exceeded{false};
+    WriteContext* write_context{};
 };
 
 struct ProgressContext {
@@ -326,19 +328,22 @@ std::size_t write_response(char* data, std::size_t size, std::size_t count, void
     if (write_context.descriptor != -1) {
         if (!write_context.response_accepted.has_value()) {
             bool accepted = true;
-            if (write_context.response_gate != nullptr &&
+            long status_code = 0;
+            if (curl_easy_getinfo(
+                    write_context.handle,
+                    CURLINFO_RESPONSE_CODE,
+                    &status_code
+                ) != CURLE_OK) {
+                write_context.data_callback_failed = true;
+                write_context.data_callback_error =
+                    "cannot inspect download response status";
+                return 0;
+            }
+            if (write_context.follow_redirects &&
+                status_code >= 300 && status_code < 400) {
+                accepted = false;
+            } else if (write_context.response_gate != nullptr &&
                 *write_context.response_gate) {
-                long status_code = 0;
-                if (curl_easy_getinfo(
-                        write_context.handle,
-                        CURLINFO_RESPONSE_CODE,
-                        &status_code
-                    ) != CURLE_OK) {
-                    write_context.data_callback_failed = true;
-                    write_context.data_callback_error =
-                        "cannot inspect download response status";
-                    return 0;
-                }
                 try {
                     accepted = (*write_context.response_gate)(
                         status_code,
@@ -459,6 +464,19 @@ std::size_t write_header(char* data, std::size_t size, std::size_t count, void* 
     header_context.total_size += byte_count;
 
     const std::string_view line{data, byte_count};
+    if (line.starts_with("HTTP/")) {
+        header_context.headers.clear();
+        if (header_context.write_context != nullptr) {
+            auto& write_context = *header_context.write_context;
+            write_context.body.clear();
+            write_context.received_size = 0;
+            write_context.size_exceeded = false;
+            write_context.response_accepted.reset();
+            write_context.download_state->response_accepted = true;
+            write_context.download_state->response_validated = false;
+        }
+        return byte_count;
+    }
     const auto separator = line.find(':');
     if (separator == std::string_view::npos) {
         return byte_count;
@@ -537,7 +555,14 @@ HttpResult perform_request(
         request.maximum_receive_speed_bytes_per_second >
             static_cast<std::uint64_t>(
                 std::numeric_limits<curl_off_t>::max()
-            )) {
+            ) ||
+        (request.follow_redirects &&
+         (request.maximum_redirects == 0 ||
+          request.maximum_redirects >
+              static_cast<std::size_t>(
+                  std::numeric_limits<long>::max()
+              ))) ||
+        (!request.follow_redirects && request.maximum_redirects != 0)) {
         return std::unexpected(HttpError{
             .message = "HTTP request contains invalid transport options",
         });
@@ -582,8 +607,10 @@ HttpResult perform_request(
         .durable_offset = request.download_offset,
         .download_state = download_state,
         .response_accepted = std::nullopt,
+        .follow_redirects = request.follow_redirects,
         .data_callback_error = {},
     };
+    header_context.write_context = &write_context;
     ProgressContext progress_context{
         .callback = &progress,
         .stop_token = request.stop_token,
@@ -614,6 +641,21 @@ HttpResult perform_request(
     }
     if (result == CURLE_OK) {
         result = set_option(CURLOPT_NOSIGNAL, 1L);
+    }
+    if (result == CURLE_OK && request.follow_redirects) {
+        result = set_option(CURLOPT_FOLLOWLOCATION, 1L);
+    }
+    if (result == CURLE_OK && request.follow_redirects) {
+        result = set_option(
+            CURLOPT_MAXREDIRS,
+            static_cast<long>(request.maximum_redirects)
+        );
+    }
+    if (result == CURLE_OK && request.follow_redirects) {
+        result = set_option(CURLOPT_REDIR_PROTOCOLS_STR, "https");
+    }
+    if (result == CURLE_OK && request.follow_redirects) {
+        result = set_option(CURLOPT_UNRESTRICTED_AUTH, 0L);
     }
     if (result == CURLE_OK) {
         result = set_option(CURLOPT_WRITEFUNCTION, &write_response);
@@ -770,7 +812,16 @@ HttpResult perform_request(
         const std::string detail = error_buffer.front() == '\0' ?
                                        curl_easy_strerror(result) :
                                        error_buffer.data();
-        return std::unexpected(HttpError{.message = "HTTP request failed: " + detail});
+        const bool redirect_error =
+            request.follow_redirects &&
+            (result == CURLE_TOO_MANY_REDIRECTS ||
+             result == CURLE_UNSUPPORTED_PROTOCOL);
+        return std::unexpected(HttpError{
+            .code = redirect_error ?
+                        HttpErrorCode::redirect :
+                        HttpErrorCode::transport,
+            .message = "HTTP request failed: " + detail,
+        });
     }
 
     long status_code = 0;

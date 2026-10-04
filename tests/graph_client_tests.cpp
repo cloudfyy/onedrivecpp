@@ -1033,6 +1033,10 @@ int test_file_download_redirect() {
             "Authorization: Bearer access-secret"
         ) ||
         transport_pointer->download_requests.size() != 2 ||
+        !transport_pointer->download_requests[0].follow_redirects ||
+        transport_pointer->download_requests[0].maximum_redirects != 5 ||
+        !transport_pointer->download_requests[1].follow_redirects ||
+        transport_pointer->download_requests[1].maximum_redirects != 5 ||
         transport_pointer->download_requests[0].url !=
             "https://download.example.test/content" ||
         transport_pointer->download_requests[0].headers !=

@@ -256,6 +256,162 @@ int main() {
         return fail("forced IPv6 request used an IPv4 destination");
     }
 
+    const auto missing_redirect_limit = client.perform({
+        .url = "http://127.0.0.1:" + std::to_string(port) +
+               "/missing-redirect-limit",
+        .connect_timeout = std::chrono::seconds{1},
+        .operation_timeout = std::chrono::seconds{2},
+        .follow_redirects = true,
+    });
+    const auto unused_redirect_limit = client.perform({
+        .url = "http://127.0.0.1:" + std::to_string(port) +
+               "/unused-redirect-limit",
+        .connect_timeout = std::chrono::seconds{1},
+        .operation_timeout = std::chrono::seconds{2},
+        .maximum_redirects = 5,
+    });
+    if (missing_redirect_limit || unused_redirect_limit ||
+        !missing_redirect_limit.error().message.contains(
+            "invalid transport options"
+        ) ||
+        !unused_redirect_limit.error().message.contains(
+            "invalid transport options"
+        )) {
+        return fail("invalid HTTP redirect options were accepted");
+    }
+
+    server_error.clear();
+    std::jthread multiple_response_server{[&] {
+        pollfd descriptor{
+            .fd = listener.get(),
+            .events = POLLIN,
+            .revents = 0,
+        };
+        if (::poll(&descriptor, 1, 10'000) != 1) {
+            server_error = "timed out waiting for multiple-response request";
+            return;
+        }
+        Socket connection{
+            ::accept4(listener.get(), nullptr, nullptr, SOCK_CLOEXEC)
+        };
+        std::string request;
+        char buffer[4096];
+        while (!request.contains("\r\n\r\n")) {
+            const auto count =
+                ::recv(connection.get(), buffer, sizeof(buffer), 0);
+            if (count <= 0) {
+                server_error = "cannot read multiple-response request";
+                return;
+            }
+            request.append(buffer, static_cast<std::size_t>(count));
+        }
+        constexpr std::string_view response{
+            "HTTP/1.1 103 Early Hints\r\n"
+            "X-Intermediate: discard\r\n"
+            "\r\n"
+            "HTTP/1.1 200 OK\r\n"
+            "X-Final: retained\r\n"
+            "Content-Length: 2\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "OK"
+        };
+        if (::send(
+                connection.get(),
+                response.data(),
+                response.size(),
+                MSG_NOSIGNAL
+            ) != static_cast<ssize_t>(response.size())) {
+            server_error = "cannot send multiple HTTP responses";
+        }
+    }};
+    const auto multiple_response = client.perform({
+        .url = "http://127.0.0.1:" + std::to_string(port) +
+               "/multiple-responses",
+        .connect_timeout = std::chrono::seconds{2},
+        .operation_timeout = std::chrono::seconds{5},
+    });
+    multiple_response_server.join();
+    if (!server_error.empty()) {
+        return fail(server_error);
+    }
+    if (!multiple_response || multiple_response->body != "OK" ||
+        std::ranges::any_of(
+            multiple_response->headers,
+            [](const onedrive::http::HttpHeader& header) {
+                return header.name == "X-Intermediate";
+            }
+        ) ||
+        !std::ranges::any_of(
+            multiple_response->headers,
+            [](const onedrive::http::HttpHeader& header) {
+                return header.name == "X-Final" &&
+                       header.value == "retained";
+            }
+        )) {
+        return fail("HTTP response headers were mixed across responses");
+    }
+
+    server_error.clear();
+    std::jthread unsafe_redirect_server{[&] {
+        pollfd descriptor{
+            .fd = listener.get(),
+            .events = POLLIN,
+            .revents = 0,
+        };
+        if (::poll(&descriptor, 1, 10'000) != 1) {
+            server_error = "timed out waiting for redirect request";
+            return;
+        }
+        Socket connection{
+            ::accept4(listener.get(), nullptr, nullptr, SOCK_CLOEXEC)
+        };
+        std::string request;
+        char buffer[4096];
+        while (!request.contains("\r\n\r\n")) {
+            const auto count =
+                ::recv(connection.get(), buffer, sizeof(buffer), 0);
+            if (count <= 0) {
+                server_error = "cannot read redirect request";
+                return;
+            }
+            request.append(buffer, static_cast<std::size_t>(count));
+        }
+        const std::string response{
+            "HTTP/1.1 302 Found\r\n"
+            "Location: http://127.0.0.1:" + std::to_string(port) +
+            "/unsafe-target\r\n"
+            "Content-Length: 0\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+        };
+        if (::send(
+                connection.get(),
+                response.data(),
+                response.size(),
+                MSG_NOSIGNAL
+            ) != static_cast<ssize_t>(response.size())) {
+            server_error = "cannot send redirect response";
+        }
+    }};
+    const auto unsafe_redirect = client.perform({
+        .url = "http://127.0.0.1:" + std::to_string(port) +
+               "/redirect-source",
+        .connect_timeout = std::chrono::seconds{2},
+        .operation_timeout = std::chrono::seconds{5},
+        .follow_redirects = true,
+        .maximum_redirects = 5,
+    });
+    unsafe_redirect_server.join();
+    if (!server_error.empty()) {
+        return fail(server_error);
+    }
+    if (unsafe_redirect ||
+        unsafe_redirect.error().code !=
+            onedrive::http::HttpErrorCode::redirect) {
+        return fail("HTTP redirect followed a non-HTTPS target");
+    }
+
     std::string download_request;
     server_error.clear();
     std::jthread download_server{[&] {

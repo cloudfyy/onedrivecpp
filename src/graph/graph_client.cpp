@@ -28,6 +28,8 @@ namespace {
 
 using Json = nlohmann::json;
 
+constexpr std::size_t maximum_download_redirects = 5;
+
 std::string percent_encode(std::string_view value) {
     constexpr std::string_view hex{"0123456789ABCDEF"};
     std::string encoded;
@@ -370,7 +372,7 @@ http::HttpResult perform_with_retries(
         auto response = operation();
         const bool transport_error = !response;
         if (transport_error &&
-            (response.error().code == http::HttpErrorCode::cancelled ||
+            (response.error().code != http::HttpErrorCode::transport ||
              !retry_transport_errors)) {
             return response;
         }
@@ -1401,6 +1403,9 @@ void MicrosoftGraphClient::download_file(
                                 options_.download_checkpoint_interval_bytes,
                             .private_download_permissions =
                                 options_.private_download_permissions,
+                            .follow_redirects = true,
+                            .maximum_redirects =
+                                maximum_download_redirects,
                             .stop_token = stop_token,
                         },
                         destination,
