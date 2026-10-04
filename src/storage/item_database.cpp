@@ -295,7 +295,8 @@ void create_current_schema(sqlite3* database) {
         ");"
         "CREATE TABLE IF NOT EXISTS drive_state ("
         "drive_id TEXT PRIMARY KEY NOT NULL,"
-        "delta_link TEXT NOT NULL"
+        "delta_link TEXT NOT NULL,"
+        "sync_filter_fingerprint TEXT NOT NULL DEFAULT ''"
         ");"
         "CREATE TABLE IF NOT EXISTS pending_download ("
         "drive_id TEXT NOT NULL,"
@@ -316,7 +317,15 @@ void create_current_schema(sqlite3* database) {
     create_blocked_item_schema(database);
     create_identity_schema(database);
     create_partial_download_schema(database);
-    execute(database, "PRAGMA user_version = 9;");
+    execute(database, "PRAGMA user_version = 10;");
+}
+
+void add_sync_filter_fingerprint(sqlite3* database) {
+    execute(
+        database,
+        "ALTER TABLE drive_state ADD COLUMN sync_filter_fingerprint "
+        "TEXT NOT NULL DEFAULT '';"
+    );
 }
 
 void migrate_schema(sqlite3* database) {
@@ -376,7 +385,8 @@ void migrate_schema(sqlite3* database) {
         create_blocked_item_schema(database);
         create_identity_schema(database);
         create_partial_download_schema(database);
-        execute(database, "PRAGMA user_version = 9;");
+        add_sync_filter_fingerprint(database);
+        execute(database, "PRAGMA user_version = 10;");
         transaction.commit();
         return;
     }
@@ -407,7 +417,8 @@ void migrate_schema(sqlite3* database) {
         create_blocked_item_schema(database);
         create_identity_schema(database);
         create_partial_download_schema(database);
-        execute(database, "PRAGMA user_version = 9;");
+        add_sync_filter_fingerprint(database);
+        execute(database, "PRAGMA user_version = 10;");
         transaction.commit();
         return;
     }
@@ -435,7 +446,8 @@ void migrate_schema(sqlite3* database) {
         create_blocked_item_schema(database);
         create_identity_schema(database);
         create_partial_download_schema(database);
-        execute(database, "PRAGMA user_version = 9;");
+        add_sync_filter_fingerprint(database);
+        execute(database, "PRAGMA user_version = 10;");
         transaction.commit();
         return;
     }
@@ -444,7 +456,8 @@ void migrate_schema(sqlite3* database) {
         create_blocked_item_schema(database);
         create_identity_schema(database);
         create_partial_download_schema(database);
-        execute(database, "PRAGMA user_version = 9;");
+        add_sync_filter_fingerprint(database);
+        execute(database, "PRAGMA user_version = 10;");
         transaction.commit();
         return;
     }
@@ -453,7 +466,8 @@ void migrate_schema(sqlite3* database) {
         add_blocked_item_hash_columns(database);
         create_identity_schema(database);
         create_partial_download_schema(database);
-        execute(database, "PRAGMA user_version = 9;");
+        add_sync_filter_fingerprint(database);
+        execute(database, "PRAGMA user_version = 10;");
         transaction.commit();
         return;
     }
@@ -462,7 +476,8 @@ void migrate_schema(sqlite3* database) {
         add_blocked_item_hash_columns(database);
         create_identity_schema(database);
         create_partial_download_schema(database);
-        execute(database, "PRAGMA user_version = 9;");
+        add_sync_filter_fingerprint(database);
+        execute(database, "PRAGMA user_version = 10;");
         transaction.commit();
         return;
     }
@@ -470,18 +485,27 @@ void migrate_schema(sqlite3* database) {
         Transaction transaction{database};
         add_blocked_item_hash_columns(database);
         create_partial_download_schema(database);
-        execute(database, "PRAGMA user_version = 9;");
+        add_sync_filter_fingerprint(database);
+        execute(database, "PRAGMA user_version = 10;");
         transaction.commit();
         return;
     }
     if (version == 8) {
         Transaction transaction{database};
         add_blocked_item_hash_columns(database);
-        execute(database, "PRAGMA user_version = 9;");
+        add_sync_filter_fingerprint(database);
+        execute(database, "PRAGMA user_version = 10;");
         transaction.commit();
         return;
     }
-    if (version != 9) {
+    if (version == 9) {
+        Transaction transaction{database};
+        add_sync_filter_fingerprint(database);
+        execute(database, "PRAGMA user_version = 10;");
+        transaction.commit();
+        return;
+    }
+    if (version != 10) {
         throw std::runtime_error(
             "unsupported state database schema version " + std::to_string(version)
         );
@@ -998,11 +1022,21 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
 
     Statement state_statement{
         database,
-        "INSERT INTO drive_state (drive_id, delta_link) VALUES (?1, ?2) "
-        "ON CONFLICT(drive_id) DO UPDATE SET delta_link = excluded.delta_link;"
+        "INSERT INTO drive_state ("
+        "drive_id, delta_link, sync_filter_fingerprint"
+        ") VALUES (?1, ?2, ?3) "
+        "ON CONFLICT(drive_id) DO UPDATE SET "
+        "delta_link = excluded.delta_link, "
+        "sync_filter_fingerprint = excluded.sync_filter_fingerprint;"
     };
     bind_text(database, state_statement.get(), 1, delta.drive_id);
     bind_text(database, state_statement.get(), 2, delta.delta_link);
+    bind_text(
+        database,
+        state_statement.get(),
+        3,
+        delta.sync_filter_fingerprint
+    );
     if (sqlite3_step(state_statement.get()) != SQLITE_DONE) {
         throw std::runtime_error(
             "cannot update delta link: " + std::string{sqlite3_errmsg(database)}
@@ -1592,6 +1626,7 @@ std::optional<std::string> ItemDatabase::delta_link_on_worker(
     if (database == nullptr) {
         throw std::runtime_error("state database is not open");
     }
+
     Statement statement{
         database,
         "SELECT delta_link FROM drive_state WHERE drive_id = ?1;"
@@ -1604,6 +1639,41 @@ std::optional<std::string> ItemDatabase::delta_link_on_worker(
     if (result != SQLITE_ROW) {
         throw std::runtime_error(
             "cannot read drive delta link: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+    return column_text(statement.get(), 0);
+}
+
+std::optional<std::string> ItemDatabase::sync_filter_fingerprint(
+    const std::string& drive_id
+) const {
+    return impl_->invoke([this, drive_id] {
+        return sync_filter_fingerprint_on_worker(drive_id);
+    });
+}
+
+std::optional<std::string>
+ItemDatabase::sync_filter_fingerprint_on_worker(
+    const std::string& drive_id
+) const {
+    sqlite3* database = impl_->database.get();
+    if (database == nullptr) {
+        throw std::runtime_error("state database is not open");
+    }
+    Statement statement{
+        database,
+        "SELECT sync_filter_fingerprint FROM drive_state "
+        "WHERE drive_id = ?1;"
+    };
+    bind_text(database, statement.get(), 1, drive_id);
+    const int result = sqlite3_step(statement.get());
+    if (result == SQLITE_DONE) {
+        return std::nullopt;
+    }
+    if (result != SQLITE_ROW) {
+        throw std::runtime_error(
+            "cannot read sync filter fingerprint: " +
             std::string{sqlite3_errmsg(database)}
         );
     }

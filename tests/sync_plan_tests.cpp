@@ -52,7 +52,8 @@ int main() {
         },
         "me",
         "/sync",
-        true
+        true,
+        ""
     );
     if (plan.change_count() != 5 || plan.directory_count() != 2 ||
         plan.download_count() != 1 || plan.removal_count() != 1 ||
@@ -82,7 +83,8 @@ int main() {
         },
         "me",
         "/sync",
-        false
+        false,
+        ""
     );
     if (malware_plan.download_count() != 0 ||
         malware_plan.download_bytes() != 0 ||
@@ -101,7 +103,8 @@ int main() {
             },
             "me",
             "/sync",
-            false
+            false,
+            ""
         ));
         return fail("negative remote file size was accepted");
     } catch (const std::runtime_error&) {

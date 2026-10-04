@@ -10,6 +10,7 @@
 #include "item_operation_coordinator.hpp"
 #include "local_filesystem.hpp"
 #include "safe_sync_root.hpp"
+#include "selective_sync.hpp"
 #include "sync_plan.hpp"
 #include "transfer_order.hpp"
 
@@ -747,27 +748,60 @@ int SyncEngine::synchronize() const {
             );
         }
 
+        const auto sync_list = config_->sync_list.has_value() ?
+            std::optional{detail::SyncList::load(*config_->sync_list)} :
+            std::nullopt;
+        const std::string sync_filter_fingerprint =
+            sync_list ? sync_list->fingerprint() : "";
         const auto previous_delta_link = items_.delta_link(config_->drive_id);
+        const auto previous_sync_filter_fingerprint =
+            items_.sync_filter_fingerprint(config_->drive_id);
+        const bool sync_filter_changed =
+            previous_delta_link.has_value() &&
+            previous_sync_filter_fingerprint.value_or("") !=
+                sync_filter_fingerprint;
+        const auto query_delta_link = sync_filter_changed ?
+            std::optional<std::string>{} :
+            previous_delta_link;
+        if (sync_filter_changed) {
+            spdlog::info(
+                "Selective synchronization rules changed; fetching the full "
+                "remote state"
+            );
+            console.message(
+                cli::MessageKind::information,
+                "sync_filter_changed",
+                "Selective synchronization rules changed; fetching the full "
+                "remote state..."
+            );
+        }
+        if (sync_list) {
+            spdlog::info(
+                "Loaded {} selective synchronization rules from '{}'",
+                sync_list->rule_count(),
+                config_->sync_list->string()
+            );
+        }
         spdlog::debug(
             "Preparing Microsoft Graph delta query for drive '{}': {} tracked "
             "items, saved cursor {}",
             config_->drive_id,
             items_.size(),
-            previous_delta_link ? "present" : "absent"
+            query_delta_link ? "present" : "absent"
         );
         console.message(
             cli::MessageKind::information,
             "delta_query_started",
             "Fetching Microsoft Graph changes..."
         );
-        bool replace_drive_items = !previous_delta_link.has_value();
+        bool replace_drive_items = !query_delta_link.has_value();
         graph::DeltaResult delta;
         const auto delta_progress =
             [&console](std::size_t pages, std::size_t items, bool completed) {
                 console.delta_progress(pages, items, completed);
             };
         try {
-            delta = graph_.list_delta(previous_delta_link, delta_progress);
+            delta = graph_.list_delta(query_delta_link, delta_progress);
         } catch (const graph::DeltaCursorInvalidError& error) {
             spdlog::warn(
                 "{}; retrying with a full Microsoft Graph delta query",
@@ -791,11 +825,36 @@ int SyncEngine::synchronize() const {
                 previously_blocked.size()
             );
         }
+        if (sync_list) {
+            std::unordered_set<std::string> blocked_ids;
+            blocked_ids.reserve(previously_blocked.size());
+            for (const auto& item : previously_blocked) {
+                blocked_ids.insert(item.remote_id);
+            }
+            auto filtered = detail::filter_delta(
+                std::move(delta),
+                *sync_list,
+                [&](std::string_view remote_id) {
+                    return blocked_ids.contains(std::string{remote_id}) ||
+                           items_.find(
+                               config_->drive_id,
+                               std::string{remote_id}
+                           ).has_value();
+                },
+                replace_drive_items
+            );
+            spdlog::info(
+                "Selective synchronization excluded {} remote changes",
+                filtered.excluded
+            );
+            delta = std::move(filtered.delta);
+        }
         auto plan = detail::SyncPlan::build(
             std::move(delta),
             config_->drive_id,
             sync_root,
-            replace_drive_items
+            replace_drive_items,
+            sync_filter_fingerprint
         );
         report_plan(plan, config_->drive_id, console);
 

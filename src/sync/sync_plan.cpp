@@ -15,12 +15,15 @@ SyncPlan SyncPlan::build(
     graph::DeltaResult delta,
     const std::string& drive_id,
     const std::filesystem::path& sync_directory,
-    bool replace_drive_items
+    bool replace_drive_items,
+    std::string sync_filter_fingerprint
 ) {
     SyncPlan plan;
     plan.delta_ = std::move(delta);
     plan.state_delta_.drive_id = drive_id;
     plan.state_delta_.delta_link = plan.delta_.delta_link;
+    plan.state_delta_.sync_filter_fingerprint =
+        std::move(sync_filter_fingerprint);
     plan.state_delta_.replace_drive_items = replace_drive_items;
 
     for (std::size_t index = 0; index < plan.delta_.changes.size(); ++index) {

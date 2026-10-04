@@ -440,6 +440,8 @@ For example:
 # Default OneDrive of the signed-in user
 drive_id = "me"
 permissions = "private"
+# Optional; resolved relative to this TOML file
+# sync_list = "sync_list"
 
 # Another OneDrive or SharePoint document library
 # drive_id = "b!YOUR_DRIVE_ID"
@@ -461,6 +463,48 @@ checkpoint_interval_bytes = 1048576
 maximum_rate_bytes_per_second = 0
 validation = "strict"
 ```
+
+`sync.sync_list` enables client-side selective synchronization. It names a
+separate UTF-8 rule file; relative paths are resolved from the directory
+containing the TOML configuration file. If the setting is absent, all remote
+items are eligible for synchronization. If it is present, the file must be
+readable, and an empty rule file selects no remote items.
+
+The rule file excludes everything by default and supports:
+
+- blank lines and lines beginning with `#`;
+- inclusion rules such as `/Documents/` or `Pictures/*.jpg`;
+- exclusion rules beginning with `!` or `-`;
+- a leading `/` to anchor a rule at the Drive root;
+- a trailing `/` to restrict a rule to directories and their descendants;
+- `*` within one path segment and `**` as a complete recursive segment.
+
+For example:
+
+```text
+# Include Documents but omit private content and temporary files
+/Documents/
+!/Documents/Private/*
+!/Documents/**/*.tmp
+
+# Include matching pictures at any directory depth
+Pictures/*.jpg
+```
+
+Exclusions override inclusions. The client retains the directory ancestors
+needed to materialize selected files. Rules without a leading `/` may match at
+any depth and therefore have broader semantics. Backslashes, empty path
+components, `.` and `..`, and `**` embedded within another segment are
+rejected.
+
+Filtering is performed after Microsoft Graph returns Delta metadata; it
+reduces local materialization and file transfers but does not provide
+server-side Graph filtering. A fingerprint of the effective rules is committed
+atomically with the Delta cursor. Adding, changing, removing, or reordering
+rules automatically causes the next synchronization to fetch the full remote
+state. Excluded files already present locally are not deleted in this release,
+consistent with the existing remote-deletion policy. The explicit
+`download REMOTE_PATH` command is not restricted by `sync.sync_list`.
 
 `graph.endpoint` selects the Microsoft Graph cloud endpoint and defaults to
 the global service. It is not tied to a specific SharePoint host. For a

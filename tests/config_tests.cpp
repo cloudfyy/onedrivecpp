@@ -16,6 +16,7 @@ int main() {
                << "[sync]\n"
                << "directory = \"/tmp/OneDrive\"\n"
                << "drive_id = \"test-drive\"\n"
+               << "sync_list = \"rules/sync_list\"\n"
                << "dry_run = true\n"
                << "permissions = \"umask\"\n"
                << "[transfer]\n"
@@ -57,6 +58,10 @@ int main() {
     if (config.sync_directory != "/tmp/OneDrive" ||
         config.state_directory != "/tmp/onedrive-state" ||
         config.drive_id != "test-drive" ||
+        config.sync_list !=
+            std::optional<std::filesystem::path>{
+                path.parent_path() / "rules/sync_list"
+            } ||
         config.application_id != "test-application" ||
         config.azure_tenant_id != "test-tenant" ||
         config.auth_endpoint != "https://login.example.test" ||
@@ -150,6 +155,20 @@ int main() {
         static_cast<void>(onedrive::config::Config::load(path));
         std::filesystem::remove(path);
         std::cerr << "invalid download validation mode was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error&) {
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[sync]\n"
+               << "sync_list = \"\"\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "empty selective sync path was accepted\n";
         return EXIT_FAILURE;
     } catch (const std::runtime_error&) {
     }

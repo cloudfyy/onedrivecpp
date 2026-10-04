@@ -125,6 +125,7 @@ bool create_version_eight_database(const std::filesystem::path& path) {
     if (!create_version_seven_database(path)) {
         return false;
     }
+
     sqlite3* database = nullptr;
     if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
         sqlite3_close(database);
@@ -141,6 +142,27 @@ bool create_version_eight_database(const std::filesystem::path& path) {
         "updated_at INTEGER NOT NULL DEFAULT (unixepoch()), "
         "PRIMARY KEY (drive_id, remote_id));"
         "PRAGMA user_version = 8;";
+    const bool succeeded =
+        sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
+    sqlite3_close(database);
+    return succeeded;
+}
+
+bool create_version_nine_database(const std::filesystem::path& path) {
+    if (!create_version_eight_database(path)) {
+        return false;
+    }
+    sqlite3* database = nullptr;
+    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
+        sqlite3_close(database);
+        return false;
+    }
+    constexpr const char* schema =
+        "ALTER TABLE blocked_item ADD COLUMN content_hash_algorithm "
+        "TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE blocked_item ADD COLUMN content_hash_value "
+        "TEXT NOT NULL DEFAULT '';"
+        "PRAGMA user_version = 9;";
     const bool succeeded =
         sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
     sqlite3_close(database);
@@ -256,13 +278,16 @@ int main() {
                 },
             },
             .delta_link = "https://graph.example.test/delta-1",
+            .sync_filter_fingerprint = "filter-1",
         });
 
         if (database.size() != 3 ||
             database.delta_link("me") !=
                 std::optional<std::string>{
                     "https://graph.example.test/delta-1"
-                }) {
+                } ||
+            database.sync_filter_fingerprint("me") !=
+                std::optional<std::string>{"filter-1"}) {
             return fail("upsert did not preserve the expected item count");
         }
     }
@@ -294,7 +319,9 @@ int main() {
             database.delta_link("me") !=
                 std::optional<std::string>{
                     "https://graph.example.test/delta-1"
-                }) {
+                } ||
+            database.sync_filter_fingerprint("me") !=
+                std::optional<std::string>{"filter-1"}) {
             return fail("delta item state was not persisted");
         }
 
@@ -313,6 +340,7 @@ int main() {
                 },
                 .removals = {""},
                 .delta_link = "https://graph.example.test/delta-invalid",
+                .sync_filter_fingerprint = "filter-invalid",
             });
             return fail("invalid delta state was accepted");
         } catch (const std::invalid_argument&) {
@@ -321,7 +349,9 @@ int main() {
             database.delta_link("me") !=
                 std::optional<std::string>{
                     "https://graph.example.test/delta-1"
-                }) {
+                } ||
+            database.sync_filter_fingerprint("me") !=
+                std::optional<std::string>{"filter-1"}) {
             return fail("failed delta update was not rolled back");
         }
 
@@ -329,12 +359,15 @@ int main() {
             .drive_id = "me",
             .removals = {"remote-3"},
             .delta_link = "https://graph.example.test/delta-2",
+            .sync_filter_fingerprint = "filter-1",
         });
         if (database.size() != 2 || database.find("me", "remote-3") ||
             database.delta_link("me") !=
                 std::optional<std::string>{
                     "https://graph.example.test/delta-2"
-                }) {
+                } ||
+            database.sync_filter_fingerprint("me") !=
+                std::optional<std::string>{"filter-1"}) {
             return fail("delta removal was not persisted");
         }
     }
@@ -832,13 +865,43 @@ int main() {
                 },
             },
             .delta_link = "https://graph.example.test/delta-v9",
+            .sync_filter_fingerprint = "migrated-filter",
         });
         const auto blocked = database.blocked_items("me");
         if (blocked.size() != 1 || !blocked[0].content_hash ||
             blocked[0].content_hash->algorithm !=
-                onedrive::FileHashAlgorithm::sha256) {
+                onedrive::FileHashAlgorithm::sha256 ||
+            database.sync_filter_fingerprint("me") !=
+                std::optional<std::string>{"migrated-filter"}) {
             return fail(
                 "version eight database did not gain blocked hash metadata"
+            );
+        }
+    }
+
+    const auto version_nine_directory =
+        temporary_directory.path() / "version-nine";
+    std::filesystem::create_directories(version_nine_directory);
+    if (!create_version_nine_database(
+            version_nine_directory / "items.sqlite3"
+        )) {
+        return fail("version nine migration fixture could not be created");
+    }
+    {
+        onedrive::storage::ItemDatabase database{
+            version_nine_directory,
+            identity()
+        };
+        database.open();
+        database.apply_delta({
+            .drive_id = "me",
+            .delta_link = "https://graph.example.test/delta-v10",
+            .sync_filter_fingerprint = "version-nine-filter",
+        });
+        if (database.sync_filter_fingerprint("me") !=
+                std::optional<std::string>{"version-nine-filter"}) {
+            return fail(
+                "version nine database did not gain selective sync state"
             );
         }
     }

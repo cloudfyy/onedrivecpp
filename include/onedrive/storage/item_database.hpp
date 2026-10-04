@@ -50,6 +50,9 @@ public:
     [[nodiscard]] std::optional<std::string> delta_link(
         const std::string& drive_id
     ) const;
+    [[nodiscard]] std::optional<std::string> sync_filter_fingerprint(
+        const std::string& drive_id
+    ) const;
     [[nodiscard]] std::optional<ItemState> find(
         const std::string& drive_id,
         const std::string& remote_id
@@ -85,6 +88,10 @@ private:
     bool reset_on_worker(const std::string& drive_id);
     ClearedState clear_on_worker(const std::string& drive_id);
     [[nodiscard]] std::optional<std::string> delta_link_on_worker(
+        const std::string& drive_id
+    ) const;
+    [[nodiscard]] std::optional<std::string>
+    sync_filter_fingerprint_on_worker(
         const std::string& drive_id
     ) const;
     [[nodiscard]] std::optional<ItemState> find_on_worker(

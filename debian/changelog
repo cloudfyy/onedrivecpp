@@ -1,3 +1,14 @@
+onedrive-cpp (0.6.30-1~ubuntu24.04) noble; urgency=medium
+
+  * Add client-side selective synchronization through an explicit sync_list
+    rule file with rooted, anywhere, exclusion, wildcard, and recursive rules.
+  * Persist the effective rule fingerprint atomically with the Graph delta
+    cursor and automatically refresh full remote state when rules change.
+  * Preserve required directory ancestors and safely remove tracked snapshots
+    when incremental changes move items outside the selected paths.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 04:44:41 +0000
+
 onedrive-cpp (0.6.29-1~ubuntu24.04) noble; urgency=medium
 
   * Add a safe single-file download command using Drive-relative paths.

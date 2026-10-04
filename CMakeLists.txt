@@ -120,6 +120,7 @@ add_library(onedrive_core
     src/monitor/monitor.cpp
     src/path_security.cpp
     src/remote_time.cpp
+    src/sha256.cpp
     src/storage/item_database.cpp
     src/sync/download_integrity.cpp
     src/sync/download_progress.cpp
@@ -130,6 +131,7 @@ add_library(onedrive_core
     src/sync/item_operation_coordinator.cpp
     src/sync/local_filesystem.cpp
     src/sync/safe_sync_root.cpp
+    src/sync/selective_sync.cpp
     src/sync/single_file_download.cpp
     src/sync/sync_plan.cpp
     src/sync/sync_engine.cpp
@@ -280,6 +282,17 @@ if(BUILD_TESTING)
     target_include_directories(sync_plan_tests PRIVATE src/sync)
     target_link_libraries(sync_plan_tests PRIVATE onedrive_core)
     add_test(NAME sync_plan_tests COMMAND sync_plan_tests)
+
+    add_executable(
+        selective_sync_tests
+        tests/selective_sync_tests.cpp
+    )
+    target_include_directories(
+        selective_sync_tests
+        PRIVATE src/sync
+    )
+    target_link_libraries(selective_sync_tests PRIVATE onedrive_core)
+    add_test(NAME selective_sync_tests COMMAND selective_sync_tests)
 
     add_executable(
         item_operation_coordinator_tests

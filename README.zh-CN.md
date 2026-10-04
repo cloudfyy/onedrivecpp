@@ -400,6 +400,8 @@ sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 # 当前账号的默认 OneDrive
 drive_id = "me"
 permissions = "private"
+# 可选；相对路径以本 TOML 文件所在目录为基准
+# sync_list = "sync_list"
 
 # 指定其他 OneDrive 或 SharePoint 文档库
 # drive_id = "b!YOUR_DRIVE_ID"
@@ -421,6 +423,41 @@ checkpoint_interval_bytes = 1048576
 maximum_rate_bytes_per_second = 0
 validation = "strict"
 ```
+
+`sync.sync_list` 用于启用客户端选择性同步。它指向一个独立的 UTF-8 规则文件；
+相对路径以 TOML 配置文件所在目录为基准解析。未配置时，所有远端项目都可以参与
+同步；配置后规则文件必须可读，空规则文件表示不选择任何远端项目。
+
+规则文件默认排除所有内容，并支持：
+
+- 空行和以 `#` 开头的注释行；
+- `/Documents/`、`Pictures/*.jpg` 等包含规则；
+- 以 `!` 或 `-` 开头的排除规则；
+- 前导 `/` 将规则限定在 Drive 根目录；
+- 尾随 `/` 将规则限定为目录及其后代；
+- `*` 匹配单个路径段内的字符，完整路径段 `**` 递归匹配任意深度。
+
+例如：
+
+```text
+# 包含 Documents，但排除私密内容和临时文件
+/Documents/
+!/Documents/Private/*
+!/Documents/**/*.tmp
+
+# 在任意目录深度包含匹配的图片
+Pictures/*.jpg
+```
+
+排除规则优先于包含规则。程序会保留创建所选文件所需的父目录。没有前导 `/`
+的规则可以在任意深度匹配，因此作用范围更广。反斜杠、空路径组件、`.`、`..`
+以及嵌入其他字符中的 `**` 会被拒绝。
+
+过滤发生在 Microsoft Graph 返回 Delta 元数据之后；它可以减少本地文件和内容
+传输，但不是 Graph 服务端过滤。有效规则的摘要会与 Delta 游标在同一个 SQLite
+事务中提交。增加、修改、删除或重新排序规则后，下次同步会自动获取完整远端
+状态。与当前远端删除策略一致，已经存在于本地但后来被排除的文件不会在此版本
+中被删除。用户明确执行的 `download REMOTE_PATH` 不受 `sync.sync_list` 限制。
 
 `graph.endpoint` 用于选择 Microsoft Graph 云端点，默认使用全球服务，并不与
 某个具体 SharePoint 主机名绑定。访问由世纪互联运营的 Microsoft 365 中国区

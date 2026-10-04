@@ -8,6 +8,8 @@ permissions = "private"
 # Paths may be absolute or relative to the service working directory.
 directory = "/home/USER/OneDrive"
 drive_id = "me"
+# Optional selective-sync rules. Relative paths resolve from this TOML file.
+# sync_list = "sync_list"
 dry_run = true
 
 [transfer]

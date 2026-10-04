@@ -53,6 +53,7 @@ struct ItemDelta {
     std::vector<BlockedItem> blocked_upserts;
     std::vector<std::string> blocked_removals;
     std::string delta_link;
+    std::string sync_filter_fingerprint;
     bool replace_drive_items{false};
 };
 
@@ -89,6 +90,10 @@ PRO_DEF_MEM_DISPATCH(StoreBlockedDispatch, blocked_items);
 PRO_DEF_MEM_DISPATCH(StoreResetDispatch, reset);
 PRO_DEF_MEM_DISPATCH(StoreClearDispatch, clear);
 PRO_DEF_MEM_DISPATCH(StoreDeltaLinkDispatch, delta_link);
+PRO_DEF_MEM_DISPATCH(
+    StoreSyncFilterFingerprintDispatch,
+    sync_filter_fingerprint
+);
 PRO_DEF_MEM_DISPATCH(StoreFindDispatch, find);
 PRO_DEF_MEM_DISPATCH(StoreSizeDispatch, size);
 
@@ -125,6 +130,10 @@ struct ItemStoreFacade : pro::facade_builder
     ::add_convention<StoreClearDispatch, ClearedState(const std::string&)>
     ::add_convention<
         StoreDeltaLinkDispatch,
+        std::optional<std::string>(const std::string&) const
+    >
+    ::add_convention<
+        StoreSyncFilterFingerprintDispatch,
         std::optional<std::string>(const std::string&) const
     >
     ::add_convention<
@@ -208,6 +217,12 @@ public:
         const std::string& drive_id
     ) const {
         return implementation()->delta_link(drive_id);
+    }
+
+    [[nodiscard]] std::optional<std::string> sync_filter_fingerprint(
+        const std::string& drive_id
+    ) const {
+        return implementation()->sync_filter_fingerprint(drive_id);
     }
 
     [[nodiscard]] std::optional<ItemState> find(

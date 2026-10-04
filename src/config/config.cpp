@@ -256,6 +256,7 @@ Config Config::defaults() {
     return {
         .sync_directory = std::filesystem::path{home} / "OneDrive",
         .state_directory = std::filesystem::path{home} / ".local/state/onedrive-cpp",
+        .sync_list = std::nullopt,
         .drive_id = "me",
         .application_id = {},
         .azure_tenant_id = "common",
@@ -333,6 +334,7 @@ Config Config::load(const std::filesystem::path& path) {
                 "drive_id",
                 "dry_run",
                 "permissions",
+                "sync_list",
             },
             "sync"
         );
@@ -359,6 +361,23 @@ Config Config::load(const std::filesystem::path& path) {
                 "a boolean"
             )) {
             config.dry_run = *value;
+        }
+        if (const auto value = optional_value<std::string>(
+                *sync,
+                "sync_list",
+                "sync.sync_list",
+                "a string"
+            )) {
+            if (value->empty()) {
+                throw std::runtime_error(
+                    "sync.sync_list must not be empty"
+                );
+            }
+            auto sync_list = std::filesystem::path{*value};
+            if (sync_list.is_relative()) {
+                sync_list = path.parent_path() / sync_list;
+            }
+            config.sync_list = sync_list.lexically_normal();
         }
         if (const auto value = optional_value<std::string>(
                 *sync,

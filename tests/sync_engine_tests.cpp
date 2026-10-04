@@ -300,6 +300,12 @@ public:
         return saved_delta_link;
     }
 
+    [[nodiscard]] std::optional<std::string> sync_filter_fingerprint(
+        const std::string&
+    ) const {
+        return saved_sync_filter_fingerprint;
+    }
+
     [[nodiscard]] std::optional<onedrive::storage::ItemState> find(
         const std::string&,
         const std::string& remote_id
@@ -324,6 +330,7 @@ public:
     std::vector<onedrive::storage::BlockedItem> blocked;
     onedrive::storage::ItemDelta applied_delta;
     std::optional<std::string> saved_delta_link;
+    std::optional<std::string> saved_sync_filter_fingerprint;
     int upsert_count{0};
     int apply_count{0};
     bool fail_upsert{false};
@@ -453,6 +460,76 @@ int test_dry_run_and_success() {
         items.applied_delta.upserts[1].local_size != 4 ||
         items.applied_delta.upserts[1].local_modified_ticks == 0) {
         return fail("downloaded file or local snapshot was incorrect");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_selective_sync_refreshes_delta_state() {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path() / "files";
+    const auto sync_list = temporary.path() / "sync_list";
+    {
+        std::ofstream output{sync_list};
+        output << "/Documents/\n";
+    }
+
+    FakeGraphClient graph;
+    graph.changes = {
+        {
+            .id = "directory",
+            .name = "Documents",
+            .etag = "directory-etag",
+            .parent_id = "root",
+            .remote_path = "Documents",
+            .directory = true,
+        },
+        file("included", "Documents/included.txt", 4),
+        file("excluded", "Pictures/excluded.txt", 7),
+    };
+    graph.contents["included"] = "data";
+    graph.contents["excluded"] = "ignored";
+    FakeItemStore items;
+    items.saved_delta_link = "https://graph.example.test/old-delta";
+    items.saved_sync_filter_fingerprint = "old-filter";
+    FakeMetrics metrics;
+    auto config = config_for(root, false);
+    config.sync_list = sync_list;
+
+    if (onedrive::sync::SyncEngine{
+            config,
+            graph,
+            items,
+            metrics
+        }.synchronize() != 0 ||
+        graph.delta_requests !=
+            std::vector<std::optional<std::string>>{std::nullopt} ||
+        graph.download_count != 1 ||
+        items.applied_delta.upserts.size() != 2 ||
+        !items.applied_delta.replace_drive_items ||
+        items.applied_delta.sync_filter_fingerprint.empty() ||
+        std::filesystem::exists(root / "Pictures/excluded.txt")) {
+        return fail(
+            "changed selective sync rules did not force a filtered full delta"
+        );
+    }
+
+    items.saved_delta_link = items.applied_delta.delta_link;
+    items.saved_sync_filter_fingerprint =
+        items.applied_delta.sync_filter_fingerprint;
+    graph.delta_requests.clear();
+    if (onedrive::sync::SyncEngine{
+            config,
+            graph,
+            items,
+            metrics
+        }.synchronize() != 0 ||
+        graph.delta_requests !=
+            std::vector<std::optional<std::string>>{
+                "https://graph.example.test/delta"
+            }) {
+        return fail(
+            "unchanged selective sync rules did not reuse the delta cursor"
+        );
     }
     return EXIT_SUCCESS;
 }
@@ -1408,6 +1485,10 @@ int test_duplicate_destination_downloads_are_serialized() {
 
 int main() {
     if (const int result = test_dry_run_and_success(); result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_selective_sync_refreshes_delta_state();
+        result != EXIT_SUCCESS) {
         return result;
     }
     if (const int result =

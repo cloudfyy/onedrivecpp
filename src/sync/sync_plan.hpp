@@ -16,7 +16,8 @@ public:
         graph::DeltaResult delta,
         const std::string& drive_id,
         const std::filesystem::path& sync_directory,
-        bool replace_drive_items
+        bool replace_drive_items,
+        std::string sync_filter_fingerprint
     );
 
     [[nodiscard]] const graph::RemoteItem& directory(

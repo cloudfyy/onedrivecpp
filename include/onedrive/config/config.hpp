@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -38,6 +39,7 @@ enum class TransferOrder {
 struct Config {
     std::filesystem::path sync_directory;
     std::filesystem::path state_directory;
+    std::optional<std::filesystem::path> sync_list;
     std::string drive_id{"me"};
     std::string application_id;
     std::string azure_tenant_id{"common"};

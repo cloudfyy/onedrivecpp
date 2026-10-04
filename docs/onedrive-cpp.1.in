@@ -252,6 +252,32 @@ Directory containing the refresh token and SQLite synchronization state.
 Microsoft Graph drive identifier. The default is
 .BR me .
 .TP
+.B sync.sync_list
+Optional path to a UTF-8 selective-synchronization rule file. Relative paths
+are resolved from the directory containing the TOML configuration file. When
+configured, the file must be readable; an empty file selects no remote items.
+The file excludes everything by default. Blank lines and lines beginning with
+.B #
+are ignored. Inclusion rules name selected paths, while
+.B !
+or
+.B -
+prefixes exclusion rules. Exclusions override inclusions. A leading
+.B /
+anchors a rule at the Drive root, a trailing
+.B /
+selects directories and their descendants,
+.B *
+matches within one path segment, and a complete
+.B **
+segment matches recursively. Invalid or unsafe path components are rejected.
+Filtering occurs after Graph Delta metadata is fetched. A fingerprint of the
+effective rules is stored atomically with the Delta cursor; changing or
+removing the rules automatically triggers a full remote-state query. Existing
+local files that become excluded are not deleted. The explicit
+.B download
+command is not filtered by this setting.
+.TP
 .B auth.application_id
 Microsoft Entra Application (client) ID.
 .TP
@@ -434,6 +460,10 @@ Default per-user configuration file.
 .TP
 .I /etc/onedrive-cpp/onedrive-cpp.toml
 System-wide example and fallback configuration.
+.TP
+.I sync_list
+Optional selective-synchronization rule file at the path configured by
+.BR sync.sync_list .
 .TP
 .I ~/.local/state/onedrive-cpp/refresh_token
 Default locally stored OAuth refresh token. The file is created with

@@ -308,6 +308,12 @@ public:
         return std::nullopt;
     }
 
+    [[nodiscard]] std::optional<std::string> sync_filter_fingerprint(
+        const std::string&
+    ) const {
+        return std::nullopt;
+    }
+
     [[nodiscard]] std::optional<onedrive::storage::ItemState> find(
         const std::string&,
         const std::string&
