@@ -181,6 +181,7 @@ public:
 
     void download_file(
         const std::string&,
+        const std::string&,
         std::uint64_t,
         const std::filesystem::path& destination,
         std::uint64_t,

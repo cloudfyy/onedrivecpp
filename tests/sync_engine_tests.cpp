@@ -65,6 +65,7 @@ public:
 
     void download_file(
         const std::string& remote_id,
+        const std::string&,
         std::uint64_t,
         const std::filesystem::path& destination,
         std::uint64_t initial_offset,

@@ -48,6 +48,7 @@ public:
 
     void download_file(
         const std::string&,
+        const std::string& expected_etag,
         std::uint64_t expected_size,
         const std::filesystem::path& destination,
         std::uint64_t initial_offset,
@@ -56,6 +57,7 @@ public:
         const onedrive::graph::DownloadCheckpoint& checkpoint,
         const onedrive::graph::DownloadData& data
     ) const {
+        last_expected_etag = expected_etag;
         last_initial_offset = initial_offset;
         if (initial_offset == 0) {
             std::ofstream output{destination, std::ios::binary};
@@ -96,6 +98,7 @@ public:
     std::string contents{"data"};
     std::vector<std::uint64_t> progress_updates;
     bool send_checkpoint{true};
+    mutable std::string last_expected_etag;
     mutable std::uint64_t last_initial_offset{0};
 };
 
@@ -292,6 +295,7 @@ int main() {
     if (!std::filesystem::exists(destination) || !items.pending.empty() ||
         !items.partials.empty() || !items.find("me", "installed") ||
         installed.local_size != 4 || installed.local_modified_ticks == 0 ||
+        graph.last_expected_etag != installed_item.etag ||
         !has_remote_modified_time(destination)) {
         return fail("atomic download transaction did not commit");
     }

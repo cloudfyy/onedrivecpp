@@ -1248,6 +1248,7 @@ DeltaResult MicrosoftGraphClient::list_delta(
 
 void MicrosoftGraphClient::download_file(
     const std::string& remote_id,
+    const std::string& expected_etag,
     std::uint64_t expected_size,
     const std::filesystem::path& destination,
     std::uint64_t initial_offset,
@@ -1260,6 +1261,12 @@ void MicrosoftGraphClient::download_file(
     const auto& transfer = download_transport.transfer;
     if (remote_id.empty()) {
         throw std::invalid_argument("cannot download a drive item without an ID");
+    }
+    if (expected_etag.empty() ||
+        expected_etag.find_first_of("\r\n") != std::string::npos) {
+        throw std::invalid_argument(
+            "cannot download a drive item without a valid eTag"
+        );
     }
     if (initial_offset > expected_size) {
         throw std::invalid_argument(
@@ -1301,6 +1308,7 @@ void MicrosoftGraphClient::download_file(
                     .headers = {
                         "Accept: application/octet-stream",
                         "Authorization: Bearer " + access_token(),
+                        "If-Match: " + expected_etag,
                     },
                     .body = {},
                     .connect_timeout = transfer.connect_timeout,
@@ -1319,6 +1327,11 @@ void MicrosoftGraphClient::download_file(
             throw_download_error(
                 "Microsoft Graph download request",
                 redirect.error()
+            );
+        }
+        if (redirect->status_code == 412) {
+            throw RemoteItemChangedError(
+                "Microsoft Graph drive item changed before download"
             );
         }
         if (redirect->status_code < 300 || redirect->status_code >= 400) {

@@ -982,6 +982,7 @@ int test_file_download_redirect() {
     std::vector<std::uint64_t> observed_download_offsets;
     client.download_file(
         "item id",
+        "\"item-etag\"",
         8,
         destination,
         0,
@@ -1006,11 +1007,22 @@ int test_file_download_redirect() {
     };
     std::filesystem::remove(destination, ignored);
     transport_pointer->download_body.clear();
-    client.download_file("empty-item", 0, destination);
+    client.download_file("empty-item", "\"empty-etag\"", 0, destination);
     const bool empty_file_downloaded =
         std::filesystem::is_regular_file(destination) &&
         std::filesystem::file_size(destination) == 0;
     std::filesystem::remove(destination, ignored);
+    if (transport_pointer->requests.size() != 3 ||
+        !has_header(
+            transport_pointer->requests[1],
+            "If-Match: \"item-etag\""
+        ) ||
+        !has_header(
+            transport_pointer->requests[2],
+            "If-Match: \"empty-etag\""
+        )) {
+        return fail("Graph download eTag preconditions were not sent");
+    }
     if (contents != "download" || !empty_file_downloaded ||
         transport_pointer->requests.size() != 3 ||
         transport_pointer->requests[1].url !=
@@ -1049,6 +1061,86 @@ int test_file_download_redirect() {
         progress !=
             std::vector<std::pair<std::uint64_t, std::uint64_t>>{{8, 8}}) {
         return fail("Graph file download redirect was not handled safely");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_changed_file_download_is_not_retried() {
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"expires_in":3600,"access_token":"access-secret"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 412,
+                .headers = {{"Retry-After", "0"}},
+            },
+        }
+    );
+    auto* transport_pointer = transport.get();
+    std::vector<std::chrono::seconds> sleeps;
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(
+                std::string{"existing-refresh"}
+            )
+        ),
+        auth_options(),
+        {
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+            .maximum_throttle_retries = 4,
+        },
+        [&](std::chrono::seconds duration) {
+            sleeps.push_back(duration);
+        },
+    };
+    const auto destination =
+        std::filesystem::temp_directory_path() /
+        "onedrive-cpp-changed-download-test";
+    std::error_code ignored;
+    std::filesystem::remove(destination, ignored);
+    try {
+        client.download_file(
+            "item-id",
+            "W/\"expected-etag\"",
+            8,
+            destination
+        );
+        return fail("changed Graph drive item was downloaded");
+    } catch (const onedrive::graph::RemoteItemChangedError& error) {
+        if (!std::string_view{error.what()}.contains(
+                "changed before download"
+            )) {
+            return fail("changed Graph drive item error was not actionable");
+        }
+    }
+    if (transport_pointer->requests.size() != 2 ||
+        !has_header(
+            transport_pointer->requests[1],
+            "If-Match: W/\"expected-etag\""
+        ) ||
+        !transport_pointer->download_requests.empty() ||
+        !sleeps.empty() ||
+        std::filesystem::exists(destination)) {
+        return fail("changed Graph drive item request was retried or written");
+    }
+
+    try {
+        client.download_file(
+            "item-id",
+            "\"invalid\r\nX-Injected: true\"",
+            8,
+            destination
+        );
+        return fail("invalid Graph drive item eTag was accepted");
+    } catch (const std::invalid_argument&) {
+    }
+    if (transport_pointer->requests.size() != 2) {
+        return fail("invalid Graph drive item eTag made an HTTP request");
     }
     return EXIT_SUCCESS;
 }
@@ -1104,7 +1196,12 @@ int test_relaxed_file_download_ignores_remote_size() {
             .relaxed_download_validation = true,
         },
     };
-    client.download_file("protected-item", 100, destination);
+    client.download_file(
+        "protected-item",
+        "\"protected-etag\"",
+        100,
+        destination
+    );
 
     std::ifstream input{destination, std::ios::binary};
     const std::string contents{
@@ -1113,7 +1210,12 @@ int test_relaxed_file_download_ignores_remote_size() {
     };
     std::filesystem::remove(destination, ignored);
     transport_pointer->download_body.clear();
-    client.download_file("protected-empty", 0, destination);
+    client.download_file(
+        "protected-empty",
+        "\"protected-empty-etag\"",
+        0,
+        destination
+    );
     const bool empty_file_downloaded =
         std::filesystem::is_regular_file(destination) &&
         std::filesystem::file_size(destination) == 0;
@@ -1132,6 +1234,7 @@ int test_relaxed_file_download_ignores_remote_size() {
     try {
         client.download_file(
             "protected-item",
+            "\"protected-etag\"",
             100,
             destination,
             1,
@@ -1200,6 +1303,7 @@ int test_whole_file_download_rejects_error_body_before_retry() {
     std::vector<std::uint64_t> checkpoints;
     client.download_file(
         "item-id",
+        "\"item-etag\"",
         8,
         destination,
         0,
@@ -1305,10 +1409,10 @@ int test_expired_download_redirect_is_refreshed() {
             .endpoint = "https://graph.example.test/v1.0",
         },
     };
-    client.download_file("item-id", 8, destination);
+    client.download_file("item-id", "\"item-etag\"", 8, destination);
     std::filesystem::remove(destination, ignored);
     try {
-        client.download_file("item-id", 8, destination);
+        client.download_file("item-id", "\"item-etag\"", 8, destination);
         std::filesystem::remove(destination, ignored);
         return fail("persistently expired download redirect was accepted");
     } catch (const std::runtime_error& error) {
@@ -1385,6 +1489,7 @@ int test_resumed_file_download() {
     std::vector<std::uint64_t> observed_offsets;
     client.download_file(
         "item-id",
+        "\"item-etag\"",
         8,
         destination,
         4,
@@ -1400,6 +1505,7 @@ int test_resumed_file_download() {
     std::vector<std::pair<std::uint64_t, std::uint64_t>> completed_progress;
     client.download_file(
         "item-id",
+        "\"item-etag\"",
         8,
         destination,
         8,
@@ -1412,7 +1518,16 @@ int test_resumed_file_download() {
         }
     );
     try {
-        client.download_file("item-id", 8, destination, 9, {}, {}, {});
+        client.download_file(
+            "item-id",
+            "\"item-etag\"",
+            8,
+            destination,
+            9,
+            {},
+            {},
+            {}
+        );
         return fail("Graph download accepted a resume offset beyond file size");
     } catch (const std::invalid_argument&) {
     }
@@ -1492,6 +1607,7 @@ int test_cancelled_download_is_not_retried_or_checkpointed() {
     try {
         client.download_file(
             "item-id",
+            "\"item-etag\"",
             8,
             destination,
             0,
@@ -1590,6 +1706,7 @@ int test_large_file_chunked_download() {
     std::vector<std::uint64_t> checkpoints;
     client.download_file(
         "item-id",
+        "\"item-etag\"",
         8,
         destination,
         0,
@@ -1687,6 +1804,7 @@ int test_chunk_retry_resumes_from_durable_checkpoint() {
     std::vector<std::uint64_t> checkpoints;
     client.download_file(
         "item-id",
+        "\"item-etag\"",
         8,
         destination,
         0,
@@ -1898,7 +2016,12 @@ int test_invalid_chunk_responses_are_rejected() {
             },
         };
         try {
-            client.download_file("item-id", 8, destination);
+            client.download_file(
+                "item-id",
+                "\"item-etag\"",
+                8,
+                destination
+            );
             std::filesystem::remove(destination, ignored);
             return fail("invalid Graph chunk response was accepted");
         } catch (const std::runtime_error& error) {
@@ -1972,6 +2095,7 @@ int test_invalid_chunk_responses_are_rejected() {
     try {
         client.download_file(
             "item-id",
+            "\"item-etag\"",
             8,
             destination,
             0,
@@ -2136,6 +2260,10 @@ int main() {
         return result;
     }
     if (const int result = test_file_download_redirect();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_changed_file_download_is_not_retried();
         result != EXIT_SUCCESS) {
         return result;
     }

@@ -79,6 +79,11 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+class RemoteItemChangedError final : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
 struct GraphOptions {
     std::string drive_id{"me"};
     std::string endpoint{"https://graph.microsoft.com/v1.0"};
@@ -122,6 +127,7 @@ struct GraphClientFacade : pro::facade_builder
         GraphDownloadFileDispatch,
         void(
             const std::string&,
+            const std::string&,
             std::uint64_t,
             const std::filesystem::path&,
             std::uint64_t,
@@ -156,6 +162,7 @@ public:
 
     void download_file(
         const std::string& remote_id,
+        const std::string& expected_etag,
         std::uint64_t expected_size,
         const std::filesystem::path& destination,
         std::uint64_t initial_offset,
@@ -166,6 +173,7 @@ public:
     ) const {
         implementation()->download_file(
             remote_id,
+            expected_etag,
             expected_size,
             destination,
             initial_offset,
@@ -178,12 +186,14 @@ public:
 
     void download_file(
         const std::string& remote_id,
+        const std::string& expected_etag,
         std::uint64_t expected_size,
         const std::filesystem::path& destination,
         const DownloadProgress& progress = {}
     ) const {
         download_file(
             remote_id,
+            expected_etag,
             expected_size,
             destination,
             0,
@@ -220,6 +230,7 @@ public:
     ) const;
     void download_file(
         const std::string& remote_id,
+        const std::string& expected_etag,
         std::uint64_t expected_size,
         const std::filesystem::path& destination,
         std::uint64_t initial_offset,
@@ -230,12 +241,14 @@ public:
     ) const;
     void download_file(
         const std::string& remote_id,
+        const std::string& expected_etag,
         std::uint64_t expected_size,
         const std::filesystem::path& destination,
         const DownloadProgress& progress = {}
     ) const {
         download_file(
             remote_id,
+            expected_etag,
             expected_size,
             destination,
             0,

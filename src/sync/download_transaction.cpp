@@ -149,6 +149,7 @@ PreparedDownload prepare_download(
     try {
         graph.download_file(
             item.id,
+            item.etag,
             static_cast<std::uint64_t>(item.size),
             temporary,
             completed_bytes,

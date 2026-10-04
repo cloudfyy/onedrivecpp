@@ -459,7 +459,9 @@ requests, using the same value as the maximum chunk size. It defaults to
 threshold use a single request. Range response metadata is validated before
 response bytes are written. Single-request and relaxed downloads likewise
 reject non-success HTTP response bodies before they can reach the temporary
-file or a durable checkpoint. Large transfers periodically flush durable
+file or a durable checkpoint. The Graph content request uses the expected
+remote eTag as an `If-Match` precondition, so a changed remote version is
+rejected before a download URL is issued. Large transfers periodically flush durable
 checkpoints so an interrupted request retries from the last safely stored
 offset instead of the beginning of the chunk. Graceful cancellation also
 flushes and records bytes from an already validated Range response before

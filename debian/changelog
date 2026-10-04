@@ -1,3 +1,11 @@
+onedrive-cpp (0.6.25-1~ubuntu24.04) noble; urgency=medium
+
+  * Condition Graph file downloads on the expected remote eTag.
+  * Treat HTTP 412 as a non-retryable remote-version change before transfer.
+  * Reject invalid eTag header values before making an HTTP request.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 03:07:14 +0000
+
 onedrive-cpp (0.6.24-1~ubuntu24.04) noble; urgency=medium
 
   * Disable libcurl signal use for multithreaded HTTP transfers.
