@@ -1,5 +1,6 @@
 #include "onedrive/account/account_state.hpp"
 
+#include "detail/atomic_file.hpp"
 #include "onedrive/auth/token_store.hpp"
 #include "onedrive/sha256.hpp"
 
@@ -188,88 +189,16 @@ void ensure_private_directory(const std::filesystem::path& path) {
     }
 }
 
-void sync_directory(const std::filesystem::path& path) {
-    const int descriptor =
-        ::open(path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
-    if (descriptor == -1) {
-        throw std::runtime_error(
-            "cannot open account state directory '" + path.string() +
-            "': " + std::strerror(errno)
-        );
-    }
-    if (::fsync(descriptor) == -1) {
-        const std::string message = std::strerror(errno);
-        ::close(descriptor);
-        throw std::runtime_error(
-            "cannot flush account state directory '" + path.string() +
-            "': " + message
-        );
-    }
-    if (::close(descriptor) == -1) {
-        throw std::runtime_error(
-            "cannot close account state directory '" + path.string() +
-            "': " + std::strerror(errno)
-        );
-    }
-}
-
 void write_private_file(
     const std::filesystem::path& path,
     std::string_view contents
 ) {
-    auto temporary = path;
-    temporary += ".tmp." + std::to_string(::getpid());
-    const int descriptor = ::open(
-        temporary.c_str(),
-        O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW,
-        private_file_mode
+    onedrive::detail::write_file_atomically(
+        path,
+        contents,
+        private_file_mode,
+        "account state file"
     );
-    if (descriptor == -1) {
-        throw std::runtime_error(
-            "cannot create account state file '" + temporary.string() +
-            "': " + std::strerror(errno)
-        );
-    }
-    std::size_t written = 0;
-    while (written < contents.size()) {
-        const auto count = ::write(
-            descriptor,
-            contents.data() + written,
-            contents.size() - written
-        );
-        if (count == -1 && errno == EINTR) {
-            continue;
-        }
-        if (count <= 0) {
-            const std::string message = std::strerror(errno);
-            ::close(descriptor);
-            std::filesystem::remove(temporary);
-            throw std::runtime_error(
-                "cannot write account state file '" + temporary.string() +
-                "': " + message
-            );
-        }
-        written += static_cast<std::size_t>(count);
-    }
-    if (::fsync(descriptor) == -1) {
-        const std::string message = std::strerror(errno);
-        ::close(descriptor);
-        std::filesystem::remove(temporary);
-        throw std::runtime_error(
-            "cannot flush account state file '" + temporary.string() +
-            "': " + message
-        );
-    }
-    if (::close(descriptor) == -1) {
-        const std::string message = std::strerror(errno);
-        std::filesystem::remove(temporary);
-        throw std::runtime_error(
-            "cannot close account state file '" + temporary.string() +
-            "': " + message
-        );
-    }
-    std::filesystem::rename(temporary, path);
-    sync_directory(path.parent_path());
 }
 
 std::string avatar_filename(std::string_view content_type) {

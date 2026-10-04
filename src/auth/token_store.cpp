@@ -1,15 +1,15 @@
 #include "onedrive/auth/token_store.hpp"
 
+#include "detail/atomic_file.hpp"
+
 #include <spdlog/spdlog.h>
 
 #include <cerrno>
 #include <cstring>
-#include <fcntl.h>
 #include <fstream>
 #include <iterator>
 #include <stdexcept>
 #include <sys/stat.h>
-#include <system_error>
 #include <unistd.h>
 
 namespace onedrive::auth {
@@ -78,79 +78,12 @@ void FileTokenStore::save_refresh_token(const std::string& refresh_token) const 
     }
 
     std::filesystem::create_directories(path_.parent_path());
-    auto temporary_path = path_;
-    temporary_path += ".tmp." + std::to_string(::getpid());
-
-    const int descriptor = ::open(
-        temporary_path.c_str(),
-        O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW,
-        S_IRUSR | S_IWUSR
+    onedrive::detail::write_file_atomically(
+        path_,
+        refresh_token,
+        S_IRUSR | S_IWUSR,
+        "refresh token file"
     );
-    if (descriptor == -1) {
-        throw std::runtime_error(
-            "cannot create refresh token file '" + temporary_path.string() + "': " +
-            std::strerror(errno)
-        );
-    }
-    if (::fchmod(descriptor, S_IRUSR | S_IWUSR) == -1) {
-        const std::string message = std::strerror(errno);
-        ::close(descriptor);
-        std::filesystem::remove(temporary_path);
-        throw std::runtime_error(
-            "cannot secure refresh token file '" + temporary_path.string() + "': " +
-            message
-        );
-    }
-
-    std::size_t written = 0;
-    while (written < refresh_token.size()) {
-        const auto result = ::write(
-            descriptor,
-            refresh_token.data() + written,
-            refresh_token.size() - written
-        );
-        if (result == -1 && errno == EINTR) {
-            continue;
-        }
-        if (result <= 0) {
-            const std::string message = std::strerror(errno);
-            ::close(descriptor);
-            std::filesystem::remove(temporary_path);
-            throw std::runtime_error(
-                "cannot write refresh token file '" + temporary_path.string() + "': " +
-                message
-            );
-        }
-        written += static_cast<std::size_t>(result);
-    }
-
-    if (::fsync(descriptor) == -1) {
-        const std::string message = std::strerror(errno);
-        ::close(descriptor);
-        std::filesystem::remove(temporary_path);
-        throw std::runtime_error(
-            "cannot flush refresh token file '" + temporary_path.string() + "': " +
-            message
-        );
-    }
-    if (::close(descriptor) == -1) {
-        const std::string message = std::strerror(errno);
-        std::filesystem::remove(temporary_path);
-        throw std::runtime_error(
-            "cannot close refresh token file '" + temporary_path.string() + "': " +
-            message
-        );
-    }
-
-    std::error_code error;
-    std::filesystem::rename(temporary_path, path_, error);
-    if (error) {
-        std::filesystem::remove(temporary_path);
-        throw std::runtime_error(
-            "cannot replace refresh token file '" + path_.string() + "': " +
-            error.message()
-        );
-    }
     spdlog::debug("Persisted Microsoft refresh token securely");
 }
 

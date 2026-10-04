@@ -105,6 +105,7 @@ set(
 )
 
 add_library(onedrive_core
+    src/atomic_file.cpp
     src/account/account_state.cpp
     src/app/application.cpp
     src/app/runtime_preflight.cpp
@@ -229,6 +230,11 @@ if(BUILD_TESTING)
     add_onedrive_test(
         account_state_tests
         SOURCES tests/account_state_tests.cpp
+    )
+    add_onedrive_test(
+        atomic_file_tests
+        SOURCES tests/atomic_file_tests.cpp
+        INCLUDE_DIRS src
     )
     add_onedrive_test(config_tests SOURCES tests/config_tests.cpp)
     add_onedrive_test(console_tests SOURCES tests/console_tests.cpp)
