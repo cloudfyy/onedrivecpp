@@ -1,3 +1,92 @@
+onedrive-cpp (0.6.23-1~ubuntu24.04) noble; urgency=medium
+
+  * Require configuration schema version 2.
+  * Split reusable transport settings from download-specific settings.
+  * Reject version 1 and legacy sync.download_* configuration keys.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 02:49:59 +0000
+
+onedrive-cpp (0.6.22-1~ubuntu24.04) noble; urgency=medium
+
+  * Add configurable automatic, IPv4-only, and IPv6-only file downloads.
+  * Reset the selected address family when reusing HTTP handles.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 02:38:16 +0000
+
+onedrive-cpp (0.6.21-1~ubuntu24.04) noble; urgency=medium
+
+  * Trace negotiated HTTP versions and newly opened connections.
+  * Report DNS, TCP, TLS, server wait, body transfer, and total timings without
+    logging request URLs, headers, or bodies.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 02:31:52 +0000
+
+onedrive-cpp (0.6.20-1~ubuntu24.04) noble; urgency=medium
+
+  * Reuse one reset libcurl easy handle per download worker.
+  * Preserve connection caches without leaking request state between transfers.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 02:27:02 +0000
+
+onedrive-cpp (0.6.19-1~ubuntu24.04) noble; urgency=medium
+
+  * Validate every download response before writing its body.
+  * Prevent HTTP error bodies from reaching temporary files, hashes, progress,
+    or durable checkpoints.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 02:23:05 +0000
+
+onedrive-cpp (0.6.18-1~ubuntu24.04) noble; urgency=medium
+
+  * Configure file-content download retries independently from Graph throttling.
+  * Rebuild Range requests from the latest durable offset after retryable
+    failures.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 02:09:27 +0000
+
+onedrive-cpp (0.6.17-1~ubuntu24.04) noble; urgency=medium
+
+  * Serialize downloads targeting the same normalized local path.
+  * Preserve concurrency for downloads with unrelated destinations.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 01:59:13 +0000
+
+onedrive-cpp (0.6.16-1~ubuntu24.04) noble; urgency=medium
+
+  * Make the durable download checkpoint interval configurable.
+  * Validate nonzero checkpoint intervals and preserve the 1 MiB default.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 01:55:13 +0000
+
+onedrive-cpp (0.6.15-1~ubuntu24.04) noble; urgency=medium
+
+  * Report aggregate download speed, estimated time remaining, and elapsed time.
+  * Expose the same download progress metrics in JSON output.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 01:47:02 +0000
+
+onedrive-cpp (0.6.14-1~ubuntu24.04) noble; urgency=medium
+
+  * Reliably flush and checkpoint validated bytes during graceful cancellation.
+  * Resume cancelled Range downloads from the last durable offset.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 01:39:50 +0000
+
+onedrive-cpp (0.6.13-1~ubuntu24.04) noble; urgency=medium
+
+  * Flush downloaded bytes before recording resumable progress.
+  * Retry interrupted Range downloads from the last durable checkpoint.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 01:35:57 +0000
+
+onedrive-cpp (0.6.12-1~ubuntu24.04) noble; urgency=medium
+
+  * Improve openat2 compatibility checks on kernels with partial support.
+  * Preserve secure path validation when individual openat2 resolve flags are
+    unavailable.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 01:12:16 +0000
+
 onedrive-cpp (0.6.11-1~ubuntu24.04) noble; urgency=medium
 
   * Use private permissions for synchronized data by default.
