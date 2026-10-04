@@ -33,7 +33,7 @@ flowchart TB
     factory --> http["CurlHttpClient"]
     factory --> device_auth["DeviceAuthClient"]
     factory --> tokens["FileTokenStore"]
-    factory --> graph["MicrosoftGraphClient"]
+    factory --> graph_client["MicrosoftGraphClient"]
     factory --> database["ItemDatabase"]
     factory --> file_monitor["FileMonitor"]
     factory --> metrics["Metrics"]
@@ -46,7 +46,7 @@ flowchart TB
     engine --> graph_port["GraphClient port"]
     engine --> store_port["ItemStore port"]
     engine --> metrics
-    graph_port -. implemented by .-> graph
+    graph_port -. implemented by .-> graph_client
     store_port -. implemented by .-> database
 
     subgraph sync_pipeline["Synchronization pipeline"]
@@ -58,10 +58,10 @@ flowchart TB
     end
 
     engine --> plan
-    graph --> http
-    graph --> device_auth
-    graph --> tokens
-    graph --> cloud[("Microsoft Graph / OneDrive")]
+    graph_client --> http
+    graph_client --> device_auth
+    graph_client --> tokens
+    graph_client --> cloud[("Microsoft Graph / OneDrive")]
     device_auth --> http
     workers --> graph_port
     workers --> store_port
