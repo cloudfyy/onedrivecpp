@@ -1,9 +1,9 @@
 #include "onedrive/http/download_rate_limiter.hpp"
+#include "test_support.hpp"
 
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
-#include <iostream>
 #include <latch>
 #include <stdexcept>
 #include <string>
@@ -11,10 +11,7 @@
 
 namespace {
 
-int fail(const std::string& message) {
-    std::cerr << message << '\n';
-    return EXIT_FAILURE;
-}
+using onedrive::test::fail;
 
 int test_invalid_and_zero_acquisitions() {
     try {

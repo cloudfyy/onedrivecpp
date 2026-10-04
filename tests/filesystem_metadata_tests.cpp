@@ -9,7 +9,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
+
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -17,11 +17,7 @@
 namespace {
 
 using onedrive::test::TemporaryDirectory;
-
-int fail(const std::string& message) {
-    std::cerr << message << '\n';
-    return EXIT_FAILURE;
-}
+using onedrive::test::fail;
 
 std::string read_xattr(
     const std::filesystem::path& path,

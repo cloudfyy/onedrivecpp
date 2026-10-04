@@ -1,17 +1,14 @@
 #include "download_progress.hpp"
+#include "test_support.hpp"
 
 #include <chrono>
 #include <cstdlib>
-#include <iostream>
 #include <stdexcept>
 #include <string>
 
 namespace {
 
-int fail(const std::string& message) {
-    std::cerr << message << '\n';
-    return EXIT_FAILURE;
-}
+using onedrive::test::fail;
 
 }  // namespace
 

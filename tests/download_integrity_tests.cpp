@@ -4,7 +4,6 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -12,11 +11,7 @@
 namespace {
 
 using onedrive::test::TemporaryDirectory;
-
-int fail(const std::string& message) {
-    std::cerr << message << '\n';
-    return EXIT_FAILURE;
-}
+using onedrive::test::fail;
 
 void write_file(
     const std::filesystem::path& path,

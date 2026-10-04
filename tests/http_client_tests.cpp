@@ -1,4 +1,5 @@
 #include "onedrive/http/http_client.hpp"
+#include "test_support.hpp"
 
 #include <spdlog/sinks/ostream_sink.h>
 #include <spdlog/spdlog.h>
@@ -10,7 +11,6 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <utility>
 #include <vector>
 #include <poll.h>
@@ -60,10 +60,7 @@ private:
     mode_t previous_;
 };
 
-int fail(const std::string& message) {
-    std::cerr << message << '\n';
-    return EXIT_FAILURE;
-}
+using onedrive::test::fail;
 
 }  // namespace
 

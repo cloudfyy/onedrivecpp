@@ -12,7 +12,6 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
-#include <iostream>
 #include <mutex>
 #include <optional>
 #include <sstream>
@@ -349,10 +348,7 @@ public:
     bool last_success{false};
 };
 
-int fail(const std::string& message) {
-    std::cerr << message << '\n';
-    return EXIT_FAILURE;
-}
+using onedrive::test::fail;
 
 onedrive::config::Config config_for(
     const std::filesystem::path& root,

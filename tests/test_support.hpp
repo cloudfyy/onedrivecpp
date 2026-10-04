@@ -1,11 +1,19 @@
 #pragma once
 
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
+#include <iostream>
 #include <source_location>
 #include <string>
+#include <string_view>
 
 namespace onedrive::test {
+
+[[nodiscard]] inline int fail(std::string_view message) {
+    std::cerr << message << '\n';
+    return EXIT_FAILURE;
+}
 
 class TemporaryDirectory {
 public:

@@ -486,10 +486,7 @@ RunResult run_application(
     };
 }
 
-int fail(std::string_view message) {
-    std::cerr << message << '\n';
-    return EXIT_FAILURE;
-}
+using onedrive::test::fail;
 
 }  // namespace
 

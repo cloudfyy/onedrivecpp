@@ -9,7 +9,6 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <poll.h>
 #include <span>
 #include <string>
@@ -63,10 +62,7 @@ struct Listener {
     std::uint16_t port{};
 };
 
-int fail(const std::string& message) {
-    std::cerr << message << '\n';
-    return EXIT_FAILURE;
-}
+using onedrive::test::fail;
 
 Listener create_listener() {
     Socket socket{::socket(AF_INET, SOCK_STREAM | SOCK_CLOEXEC, 0)};

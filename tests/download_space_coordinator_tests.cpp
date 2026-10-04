@@ -1,10 +1,10 @@
 #include "download_space_coordinator.hpp"
+#include "test_support.hpp"
 
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
-#include <iostream>
 #include <latch>
 #include <limits>
 #include <stdexcept>
@@ -13,10 +13,7 @@
 
 namespace {
 
-int fail(const std::string& message) {
-    std::cerr << message << '\n';
-    return EXIT_FAILURE;
-}
+using onedrive::test::fail;
 
 int test_consumed_bytes_release_promises() {
     namespace detail = onedrive::sync::detail;

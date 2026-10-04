@@ -7,7 +7,6 @@
 #include <atomic>
 #include <cstdlib>
 #include <filesystem>
-#include <iostream>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -17,11 +16,7 @@
 namespace {
 
 using onedrive::test::TemporaryDirectory;
-
-int fail(const std::string& message) {
-    std::cerr << message << '\n';
-    return EXIT_FAILURE;
-}
+using onedrive::test::fail;
 
 onedrive::account::DriveIdentity identity() {
     return {

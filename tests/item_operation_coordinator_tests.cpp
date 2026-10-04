@@ -1,10 +1,10 @@
 #include "item_operation_coordinator.hpp"
+#include "test_support.hpp"
 
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
-#include <iostream>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -13,10 +13,7 @@ namespace {
 
 using namespace std::chrono_literals;
 
-int fail(const std::string& message) {
-    std::cerr << message << '\n';
-    return EXIT_FAILURE;
-}
+using onedrive::test::fail;
 
 bool wait_until(const std::atomic_bool& value) {
     const auto deadline = std::chrono::steady_clock::now() + 1s;

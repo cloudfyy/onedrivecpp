@@ -7,18 +7,14 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
+
 #include <stdexcept>
 #include <string>
 
 namespace {
 
 using onedrive::test::TemporaryDirectory;
-
-int fail(const std::string& message) {
-    std::cerr << message << '\n';
-    return EXIT_FAILURE;
-}
+using onedrive::test::fail;
 
 onedrive::config::Config config_for(const TemporaryDirectory& temporary) {
     auto config = onedrive::config::Config::defaults();

@@ -1,6 +1,7 @@
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
 #include "onedrive/graph/graph_client.hpp"
+#include "test_support.hpp"
 #include "onedrive/http/http_client.hpp"
 
 #include <algorithm>
@@ -10,7 +11,6 @@
 #include <filesystem>
 #include <fstream>
 #include <format>
-#include <iostream>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -207,10 +207,7 @@ std::unique_ptr<onedrive::auth::TokenStore> wrap_token_store(
     );
 }
 
-int fail(const std::string& message) {
-    std::cerr << message << '\n';
-    return EXIT_FAILURE;
-}
+using onedrive::test::fail;
 
 onedrive::auth::DeviceAuthOptions auth_options() {
     return {

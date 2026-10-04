@@ -1,19 +1,16 @@
 #include "onedrive/cli/console.hpp"
+#include "test_support.hpp"
 
 #include <nlohmann/json.hpp>
 
 #include <cstdlib>
-#include <iostream>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 
 namespace {
 
-int fail(const std::string& message) {
-    std::cerr << message << '\n';
-    return EXIT_FAILURE;
-}
+using onedrive::test::fail;
 
 }  // namespace
 

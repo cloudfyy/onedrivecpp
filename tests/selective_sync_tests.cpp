@@ -4,17 +4,13 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
 namespace {
 
-int fail(const std::string& message) {
-    std::cerr << message << '\n';
-    return EXIT_FAILURE;
-}
+using onedrive::test::fail;
 
 onedrive::graph::RemoteItem item(
     std::string id,

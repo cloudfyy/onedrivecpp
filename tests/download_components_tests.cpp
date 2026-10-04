@@ -10,7 +10,6 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
-#include <iostream>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -235,10 +234,7 @@ public:
     bool fail_upsert{false};
 };
 
-int fail(const std::string& message) {
-    std::cerr << message << '\n';
-    return EXIT_FAILURE;
-}
+using onedrive::test::fail;
 
 onedrive::graph::RemoteItem remote_item(std::string id, std::string path) {
     return {

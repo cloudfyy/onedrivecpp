@@ -7,7 +7,7 @@
 #include <cstdlib>
 #include <deque>
 #include <filesystem>
-#include <iostream>
+
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -55,10 +55,7 @@ private:
     mutable std::deque<onedrive::http::HttpResult> responses_;
 };
 
-int fail(const std::string& message) {
-    std::cerr << message << '\n';
-    return EXIT_FAILURE;
-}
+using onedrive::test::fail;
 
 onedrive::auth::DeviceAuthOptions test_options() {
     return {
