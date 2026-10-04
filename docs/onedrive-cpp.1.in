@@ -33,7 +33,8 @@ The current release includes configuration loading, device-code
 authentication, authenticated Microsoft Graph delta queries, local state and
 delta-link storage, safe downloads, local uploads, remote-deletion handling,
 dry-run support, logging, monitoring scaffolding, and packaging integration.
-Local-deletion propagation and resumable large uploads are not implemented.
+Local-deletion propagation and persistent large-upload resume are not
+implemented.
 .SH COMMANDS
 .TP
 .B auth
@@ -504,6 +505,21 @@ the total limit. The total limiter permits a burst of at most 64 KiB.
 Throttling time counts toward the operation timeout and may contribute to stall
 detection, so very low limits may require longer timeout settings.
 .TP
+.B upload.chunk_size_bytes
+Upload-session fragment size. The default is 10 MiB. The value must be a
+positive multiple of 320 KiB and less than 60 MiB.
+.TP
+.B upload.maximum_rate_bytes_per_second
+Maximum send rate for each upload request. The default is
+.BR 0 ,
+which disables the per-request limit.
+.TP
+.B upload.maximum_total_rate_bytes_per_second
+Combined upload send-rate ceiling. The default is
+.BR 0 .
+Uploads currently run sequentially, so the effective rate is the lower non-zero
+upload limit.
+.TP
 .B transfer.http_version
 HTTP version preference for file downloads:
 .BR auto ,
@@ -583,7 +599,11 @@ remote changes are applied. The default is
 .BR true .
 New files fail on remote name conflicts, and tracked modifications use the
 saved eTag as an If-Match precondition. Uploads use stable private snapshots
-and a durable SQLite recovery journal. Simple uploads are limited to 250 MB.
+and a durable SQLite recovery journal. Files through 250 MB use simple upload;
+larger files use contiguous Graph upload-session fragments and validate
+nextExpectedRanges before advancing. Session URLs are preauthorized and never
+receive the Graph Authorization header. Upload sessions are not yet persisted
+across process restarts.
 .SH SHELL COMPLETION
 Bash and Zsh completion definitions are installed with the package. They
 complete subcommands, command options, enumerated option values, and paths for

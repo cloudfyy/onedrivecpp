@@ -11,8 +11,8 @@
 > HTTP 传输层、经过认证的 Microsoft Graph Delta 查询、SQLite 远端状态和
 > deltaLink 持久化、安全下载与本地上传、dry-run、systemd 用户服务和 Debian
 > 打包。当前同步会创建远端目录、下载新增或修改的远端文件，并在远端删除后
-> 安全移除未修改的本地快照，并上传本地新增或修改的文件。本地删除传播、可恢复
-> 大文件上传以及完整双向冲突解决尚未实现。
+> 安全移除未修改的本地快照，并上传本地新增或修改的文件。本地删除传播、跨进程
+> 上传续传以及完整双向冲突解决尚未实现。
 
 ## 架构
 
@@ -449,6 +449,11 @@ checkpoint_interval_bytes = 1048576
 maximum_rate_bytes_per_second = 0
 maximum_total_rate_bytes_per_second = 0
 validation = "strict"
+
+[upload]
+chunk_size_bytes = 10485760
+maximum_rate_bytes_per_second = 0
+maximum_total_rate_bytes_per_second = 0
 ```
 
 `sync.sync_list` 用于启用客户端选择性同步。它指向一个独立的 UTF-8 规则文件；
@@ -512,8 +517,12 @@ inode，而是直接采用现有文件。创建备份需要额外占用约等于
 的 eTag 作为 `If-Match` 前置条件。符号链接、safeBackup 和传输临时名称、被阻止
 的远端路径以及类型冲突都不会上传。每次传输使用稳定的私有快照和持久 SQLite
 pending-upload journal；恢复时会下载已经出现的远端文件并比较 SHA-256，匹配后
-才提交状态。简单上传上限为 250 MB，更大的文件需要后续 upload session 支持。
-设置 `upload = false` 可保持仅下载行为。
+才提交状态。250 MB 以内使用简单上传，更大的文件使用 Microsoft Graph upload
+session 连续分片，并且只推进到 Graph 通过 `nextExpectedRanges` 精确确认的偏移。
+默认分片大小为 10 MiB；非末尾分片必须是 320 KiB 的整数倍，并低于 Graph 的
+60 MiB 单请求上限。预授权 upload session URL 不会携带 Graph Authorization
+header，也不会写入日志。session 尚未跨进程持久化。设置 `upload = false` 可保持
+仅下载行为。
 
 当 Delta 项目的远端 ID 保持不变但路径发生变化时，程序会在本地安全执行重命名或
 移动，并且绝不覆盖已经存在的目标。Graph 只报告被移动目录本身时，程序也会重映射
@@ -629,6 +638,12 @@ HTTP 字节范围请求顺序分片下载，并以该值作为单个分片的最
 令牌桶，突发量最多为 64 KiB。限速等待时间会计入
 `transfer.operation_timeout_seconds`，也可能影响 libcurl 的停滞检测，因此非常
 低的限速可能需要同时提高操作超时或停滞超时。
+
+`upload.maximum_rate_bytes_per_second` 限制单个上传请求的发送速率，默认值为
+`0`。`upload.maximum_total_rate_bytes_per_second` 提供总发送上限，默认值也为
+`0`；当前上传按顺序执行，因此实际限制为两个非零值中的较小者。
+`upload.chunk_size_bytes` 默认为 10 MiB，必须是 320 KiB 的正整数倍且小于
+60 MiB。
 
 `transfer.ip_version` 接受 `"auto"`、`"4"` 或 `"6"`，默认值为 `"auto"`。
 强制指定地址族可绕过异常的 IPv6 或 IPv4 路由，但下载主机在该地址族下没有

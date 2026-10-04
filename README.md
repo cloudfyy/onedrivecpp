@@ -14,8 +14,8 @@ copy the reference project's D implementation.
 > systemd user service, and Debian packaging. Synchronization currently
 > creates remote directories, downloads added or changed remote files, and
 > safely removes unchanged local snapshots after remote deletion, and uploads
-> new or modified local files. Local deletion propagation, large resumable
-> uploads, and full two-way conflict resolution are not implemented.
+> new or modified local files. Local deletion propagation, persistent upload
+> resume, and full two-way conflict resolution are not implemented.
 
 ## Architecture
 
@@ -496,6 +496,11 @@ checkpoint_interval_bytes = 1048576
 maximum_rate_bytes_per_second = 0
 maximum_total_rate_bytes_per_second = 0
 validation = "strict"
+
+[upload]
+chunk_size_bytes = 10485760
+maximum_rate_bytes_per_second = 0
+maximum_total_rate_bytes_per_second = 0
 ```
 
 `sync.sync_list` enables client-side selective synchronization. It names a
@@ -579,8 +584,14 @@ safeBackup and transfer-temporary names, blocked remote paths, and type
 conflicts are never uploaded. Each transfer uses a stable private snapshot and
 a durable SQLite pending-upload journal. Recovery verifies an already-created
 remote file by downloading it and comparing SHA-256 before committing state.
-Simple uploads are limited to 250 MB; larger files require future upload-session
-support. Set `upload = false` to retain download-only behavior.
+Files through 250 MB use a simple upload. Larger files use a Microsoft Graph
+upload session with contiguous fragments and advance only to the exact
+`nextExpectedRanges` offset confirmed by Graph. The default fragment size is
+10 MiB; non-final fragments are a multiple of 320 KiB and remain below Graph's
+60 MiB request limit. Upload-session URLs are preauthorized and therefore never
+receive the Graph Authorization header or appear in logs. Sessions are not yet
+persisted across process restarts. Set `upload = false` to retain download-only
+behavior.
 
 `graph.endpoint` selects the Microsoft Graph cloud endpoint and defaults to
 the global service. It is not tied to a specific SharePoint host. For a
@@ -694,7 +705,7 @@ retried after a transient HTTP or transport failure. It defaults to `4`;
 API request retries. Download retries use the Graph backoff delay settings.
 
 Shared `transfer` settings control each file-content request and are also
-intended for future uploads. Connection and operation timeouts default to `30`
+used by uploads. Connection and operation timeouts default to `30`
 and `3600` seconds. A transfer that remains below
 `transfer.stall_minimum_bytes_per_second` (default `1`) for
 `transfer.stall_timeout_seconds` (default `60`) is aborted; set the stall
@@ -709,6 +720,12 @@ cancellable token bucket with a burst of at most 64 KiB. Throttling time counts
 toward `transfer.operation_timeout_seconds` and may contribute to libcurl's
 stall detection, so very low rate limits may require a longer operation or
 stall timeout.
+`upload.maximum_rate_bytes_per_second` limits each upload request's send rate
+and defaults to `0`. `upload.maximum_total_rate_bytes_per_second` supplies a
+combined ceiling and also defaults to `0`; because uploads currently run
+sequentially, the effective limit is the lower non-zero value. The default
+`upload.chunk_size_bytes` is 10 MiB and must be a positive multiple of 320 KiB
+below 60 MiB.
 `transfer.http_version` accepts `"auto"`, `"1.1"`, or `"2"`; HTTP/2 is
 negotiated over TLS and may fall back according to libcurl capabilities.
 `transfer.ip_version` accepts `"auto"`, `"4"`, or
@@ -1207,8 +1224,8 @@ or modify the synchronization directory.
 ## Suggested Next Steps
 
 1. Connect the monitor to inotify.
-3. Extend uploads with directories, deletion propagation, and resumable
-   sessions.
+2. Persist upload-session checkpoints and resume interrupted large uploads.
+3. Extend uploads with deletion propagation and local move detection.
 4. Add integration tests for the Graph and
    file system boundaries.
 

@@ -59,4 +59,12 @@ struct DownloadTransportOptions {
     bool operator==(const DownloadTransportOptions&) const = default;
 };
 
+struct UploadTransportOptions {
+    TransferTransportOptions transfer;
+    std::uint64_t maximum_send_speed_bytes_per_second{0};
+    std::uint64_t maximum_total_send_speed_bytes_per_second{0};
+
+    bool operator==(const UploadTransportOptions&) const = default;
+};
+
 }  // namespace onedrive::http

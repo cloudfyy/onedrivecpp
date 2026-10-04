@@ -53,6 +53,7 @@ struct HttpRequest {
     std::chrono::seconds low_speed_timeout{0};
     std::uint64_t low_speed_limit_bytes_per_second{0};
     std::uint64_t maximum_receive_speed_bytes_per_second{0};
+    std::uint64_t maximum_send_speed_bytes_per_second{0};
     HttpVersion http_version{HttpVersion::automatic};
     IpVersion ip_version{IpVersion::automatic};
     std::size_t maximum_response_size{

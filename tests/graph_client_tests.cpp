@@ -509,6 +509,294 @@ int test_simple_file_uploads() {
     return EXIT_SUCCESS;
 }
 
+int test_upload_sessions() {
+    constexpr std::size_t chunk_size = 320U * 1024U;
+    constexpr std::size_t total_size = chunk_size + 7U;
+    const auto uploaded_json = std::format(
+        R"json({{"id":"session-file","name":"large.bin","eTag":"new-etag","size":{},"fileSystemInfo":{{"lastModifiedDateTime":"2026-10-04T09:00:00Z"}},"parentReference":{{"id":"folder-id","path":"/drive/root:/Folder"}},"file":{{}}}})json",
+        total_size
+    );
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"token_type":"Bearer","expires_in":3600,)"
+                    R"("access_token":"access-secret",)"
+                    R"("refresh_token":"existing-refresh"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"json({"uploadUrl":"https://upload.example.test/session?token=secret","expirationDateTime":"2026-10-05T09:00:00Z","nextExpectedRanges":["0-"]})json",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 429,
+                .headers = {{"Retry-After", "0"}},
+                .body = R"json({"error":{"message":"throttled"}})json",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 202,
+                .body =
+                    R"json({"expirationDateTime":"2026-10-05T09:00:00Z","nextExpectedRanges":["327680-"]})json",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 201,
+                .body = uploaded_json,
+            },
+        }
+    );
+    auto* transport_pointer = transport.get();
+    std::vector<std::chrono::seconds> sleeps;
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(
+                std::string{"existing-refresh"}
+            )
+        ),
+        auth_options(),
+        {
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+            .simple_upload_threshold_bytes = 1,
+            .upload_chunk_size_bytes = chunk_size,
+            .upload_transport = {
+                .maximum_send_speed_bytes_per_second = 900,
+                .maximum_total_send_speed_bytes_per_second = 700,
+            },
+        },
+        [&](std::chrono::seconds duration) {
+            sleeps.push_back(duration);
+        },
+    };
+    const auto source = test_directory() / "upload-session-source.bin";
+    {
+        std::ofstream output{source, std::ios::binary};
+        output << std::string(total_size, 'x');
+    }
+    const auto uploaded = client.upload_file(
+        "Folder/large.bin",
+        std::nullopt,
+        "",
+        source
+    );
+    const auto& requests = transport_pointer->requests;
+    if (uploaded.id != "session-file" || requests.size() != 5 ||
+        requests[1].method != onedrive::http::HttpMethod::post ||
+        requests[1].url !=
+            "https://graph.example.test/v1.0/me/drive/root:/Folder/"
+            "large.bin:/createUploadSession" ||
+        !has_header(requests[1], "Authorization: ******") ||
+        !requests[1].body.contains(
+            R"("@microsoft.graph.conflictBehavior":"fail")"
+        ) ||
+        requests[2].url !=
+            "https://upload.example.test/session?token=secret" ||
+        requests[2].body.size() != chunk_size ||
+        requests[3].body != requests[2].body ||
+        requests[4].body.size() != 7 ||
+        has_header(requests[2], "Authorization: ******") ||
+        has_header(requests[3], "Authorization: ******") ||
+        has_header(requests[4], "Authorization: ******") ||
+        !has_header(
+            requests[2],
+            "Content-Range: bytes 0-327679/327687"
+        ) ||
+        !has_header(
+            requests[4],
+            "Content-Range: bytes 327680-327686/327687"
+        ) ||
+        requests[2].maximum_send_speed_bytes_per_second != 700 ||
+        requests[4].maximum_send_speed_bytes_per_second != 700 ||
+        sleeps != std::vector{std::chrono::seconds{0}}) {
+        return fail("Graph upload session did not send contiguous fragments");
+    }
+
+    const auto update_source =
+        test_directory() / "upload-session-update-source.bin";
+    {
+        std::ofstream output{update_source, std::ios::binary};
+        output << "payload";
+    }
+    const auto update_json =
+        R"json({"id":"file/id","name":"large.bin","eTag":"updated-etag","size":7,"fileSystemInfo":{"lastModifiedDateTime":"2026-10-04T09:00:00Z"},"parentReference":{"id":"folder-id","path":"/drive/root:/Folder"},"file":{}})json";
+    auto update_transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"token_type":"Bearer","expires_in":3600,)"
+                    R"("access_token":"access-secret",)"
+                    R"("refresh_token":"existing-refresh"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"json({"uploadUrl":"https://upload.example.test/update","expirationDateTime":"2026-10-05T09:00:00Z","nextExpectedRanges":["0-"]})json",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body = update_json,
+            },
+        }
+    );
+    auto* update_transport_pointer = update_transport.get();
+    onedrive::graph::MicrosoftGraphClient update_client{
+        wrap_transport(std::move(update_transport)),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(
+                std::string{"existing-refresh"}
+            )
+        ),
+        auth_options(),
+        {
+            .drive_id = "drive/id",
+            .endpoint = "https://graph.example.test/v1.0",
+            .simple_upload_threshold_bytes = 1,
+            .upload_chunk_size_bytes = chunk_size,
+            .upload_transport = {
+                .maximum_send_speed_bytes_per_second = 900,
+            },
+        },
+    };
+    const auto updated = update_client.upload_file(
+        "Folder/large.bin",
+        std::string{"file/id"},
+        "old-etag",
+        update_source
+    );
+    if (updated.etag != "updated-etag" ||
+        update_transport_pointer->requests.size() != 3 ||
+        update_transport_pointer->requests[1].url !=
+            "https://graph.example.test/v1.0/drives/drive%2Fid/items/"
+            "file%2Fid/createUploadSession" ||
+        !has_header(
+            update_transport_pointer->requests[1],
+            "If-Match: old-etag"
+        ) ||
+        !update_transport_pointer->requests[1].body.contains(
+            R"("@microsoft.graph.conflictBehavior":"replace")"
+        ) ||
+        update_transport_pointer->requests[2].
+                maximum_send_speed_bytes_per_second != 900 ||
+        has_header(
+            update_transport_pointer->requests[2],
+            "Authorization: ******"
+        )) {
+        return fail("Graph update upload session was not conditional");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_invalid_upload_session_responses() {
+    constexpr std::size_t chunk_size = 320U * 1024U;
+    const auto source = test_directory() / "invalid-upload-session.bin";
+    {
+        std::ofstream output{source, std::ios::binary};
+        output << std::string(chunk_size + 1U, 'x');
+    }
+    const auto expect_failure = [&](std::string session_body,
+                                    std::optional<std::string> fragment_body,
+                                    std::string_view expected_message) {
+        std::deque<onedrive::http::HttpResult> responses{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"token_type":"Bearer","expires_in":3600,)"
+                    R"("access_token":"access-secret",)"
+                    R"("refresh_token":"existing-refresh"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body = std::move(session_body),
+            },
+        };
+        if (fragment_body) {
+            responses.push_back(onedrive::http::HttpResponse{
+                .status_code = 202,
+                .body = std::move(*fragment_body),
+            });
+        }
+        onedrive::graph::MicrosoftGraphClient client{
+            wrap_transport(
+                std::make_unique<FakeTransport>(std::move(responses))
+            ),
+            wrap_token_store(
+                std::make_unique<FakeTokenStore>(
+                    std::string{"existing-refresh"}
+                )
+            ),
+            auth_options(),
+            {
+                .drive_id = "me",
+                .endpoint = "https://graph.example.test/v1.0",
+                .simple_upload_threshold_bytes = 1,
+                .upload_chunk_size_bytes = chunk_size,
+            },
+        };
+        try {
+            static_cast<void>(client.upload_file(
+                "invalid.bin",
+                std::nullopt,
+                "",
+                source
+            ));
+        } catch (const std::runtime_error& error) {
+            return std::string_view{error.what()}.contains(expected_message);
+        }
+        return false;
+    };
+    if (!expect_failure(
+            R"json({"uploadUrl":"http://upload.example.test/session","expirationDateTime":"2026-10-05T09:00:00Z","nextExpectedRanges":["0-"]})json",
+            std::nullopt,
+            "unsafe upload session URL"
+        ) ||
+        !expect_failure(
+            R"json({"uploadUrl":"https://upload.example.test/session bad","expirationDateTime":"2026-10-05T09:00:00Z","nextExpectedRanges":["0-"]})json",
+            std::nullopt,
+            "unsafe upload session URL"
+        ) ||
+        !expect_failure(
+            R"json({"uploadUrl":"https://user@upload.example.test/session","expirationDateTime":"2026-10-05T09:00:00Z","nextExpectedRanges":["0-"]})json",
+            std::nullopt,
+            "unsafe upload session URL"
+        ) ||
+        !expect_failure(
+            R"json({"uploadUrl":"https://upload.example.test/session","expirationDateTime":"2026-10-05T09:00:00Z"})json",
+            std::nullopt,
+            "missing nextExpectedRanges"
+        ) ||
+        !expect_failure(
+            R"json({"uploadUrl":"https://upload.example.test/session","expirationDateTime":"2026-10-05T09:00:00Z","nextExpectedRanges":[0]})json",
+            std::nullopt,
+            "non-string range"
+        ) ||
+        !expect_failure(
+            R"json({"uploadUrl":"https://upload.example.test/session","expirationDateTime":"2026-10-05T09:00:00Z","nextExpectedRanges":["invalid-"]})json",
+            std::nullopt,
+            "invalid nextExpectedRanges entry"
+        ) ||
+        !expect_failure(
+            R"json({"uploadUrl":"https://upload.example.test/session","expirationDateTime":"2026-10-05T09:00:00Z","nextExpectedRanges":["0-999999"]})json",
+            std::nullopt,
+            "invalid upload range"
+        ) ||
+        !expect_failure(
+            R"json({"uploadUrl":"https://upload.example.test/session","expirationDateTime":"2026-10-05T09:00:00Z","nextExpectedRanges":["0-"]})json",
+            R"json({"nextExpectedRanges":["0-"]})json",
+            "non-contiguous range"
+        ) ||
+        !expect_failure(
+            R"json({"uploadUrl":"https://upload.example.test/session","expirationDateTime":"2026-10-05T09:00:00Z","nextExpectedRanges":["0-"]})json",
+            R"json({"nextExpectedRanges":["999999-"]})json",
+            "out-of-range upload offset"
+        )) {
+        return fail("invalid Graph upload session response was accepted");
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_missing_authentication() {
     auto transport = std::make_unique<FakeTransport>(
         std::deque<onedrive::http::HttpResult>{}
@@ -2325,6 +2613,14 @@ int main() {
         return result;
     }
     if (const int result = test_simple_file_uploads();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_upload_sessions();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_invalid_upload_session_responses();
         result != EXIT_SUCCESS) {
         return result;
     }

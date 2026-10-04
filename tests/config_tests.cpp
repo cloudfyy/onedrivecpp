@@ -47,6 +47,10 @@ int main() {
                << "maximum_rate_bytes_per_second = 1048576\n"
                << "maximum_total_rate_bytes_per_second = 2097152\n"
                << "validation = \"relaxed\"\n"
+               << "[upload]\n"
+               << "chunk_size_bytes = 10485760\n"
+               << "maximum_rate_bytes_per_second = 3145728\n"
+               << "maximum_total_rate_bytes_per_second = 4194304\n"
                << "[state]\n"
                << "directory = \"/tmp/onedrive-state\"\n"
                << "[auth]\n"
@@ -101,6 +105,10 @@ int main() {
             1'048'576 ||
         config.download_maximum_total_rate_bytes_per_second !=
             2'097'152 ||
+        config.upload_chunk_size_bytes != 10'485'760 ||
+        config.upload_maximum_rate_bytes_per_second != 3'145'728 ||
+        config.upload_maximum_total_rate_bytes_per_second !=
+            4'194'304 ||
         config.transfer_transport.http_version !=
             onedrive::http::HttpVersion::http_2 ||
         config.transfer_transport.ip_version !=
@@ -139,6 +147,16 @@ int main() {
         graph_options.download_transport.
                 maximum_total_receive_speed_bytes_per_second !=
             config.download_maximum_total_rate_bytes_per_second ||
+        graph_options.upload_chunk_size_bytes !=
+            config.upload_chunk_size_bytes ||
+        graph_options.upload_transport.transfer !=
+            config.transfer_transport ||
+        graph_options.upload_transport.
+                maximum_send_speed_bytes_per_second !=
+            config.upload_maximum_rate_bytes_per_second ||
+        graph_options.upload_transport.
+                maximum_total_send_speed_bytes_per_second !=
+            config.upload_maximum_total_rate_bytes_per_second ||
         graph_options.download_maximum_retries != 3 ||
         graph_options.download_checkpoint_interval_bytes != 1024 ||
         !graph_options.relaxed_download_validation ||
@@ -177,6 +195,9 @@ int main() {
         defaults.sync_root_files ||
         defaults.transfer_order !=
             onedrive::config::TransferOrder::default_order ||
+        defaults.upload_chunk_size_bytes != 10'485'760 ||
+        defaults.upload_maximum_rate_bytes_per_second != 0 ||
+        defaults.upload_maximum_total_rate_bytes_per_second != 0 ||
         defaults.proxy.url ||
         defaults.proxy.no_proxy ||
         defaults.proxy.username ||
@@ -607,6 +628,20 @@ int main() {
         static_cast<void>(onedrive::config::Config::load(path));
         std::filesystem::remove(path);
         std::cerr << "zero download chunk threshold was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error&) {
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[upload]\n"
+               << "chunk_size_bytes = 1048576\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "unaligned upload chunk size was accepted\n";
         return EXIT_FAILURE;
     } catch (const std::runtime_error&) {
     }

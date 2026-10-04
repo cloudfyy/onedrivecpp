@@ -705,6 +705,10 @@ HttpResult perform_request(
             static_cast<std::uint64_t>(
                 std::numeric_limits<curl_off_t>::max()
             ) ||
+        request.maximum_send_speed_bytes_per_second >
+            static_cast<std::uint64_t>(
+                std::numeric_limits<curl_off_t>::max()
+            ) ||
         (request.follow_redirects &&
          (request.maximum_redirects == 0 ||
           request.maximum_redirects >
@@ -880,6 +884,14 @@ HttpResult perform_request(
             CURLOPT_MAX_RECV_SPEED_LARGE,
             static_cast<curl_off_t>(
                 request.maximum_receive_speed_bytes_per_second
+            )
+        );
+    }
+    if (result == CURLE_OK) {
+        result = set_option(
+            CURLOPT_MAX_SEND_SPEED_LARGE,
+            static_cast<curl_off_t>(
+                request.maximum_send_speed_bytes_per_second
             )
         );
     }

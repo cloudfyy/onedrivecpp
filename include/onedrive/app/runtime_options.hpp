@@ -30,12 +30,20 @@ inline graph::GraphOptions graph_options(const config::Config& config) {
             config.download_chunk_threshold_bytes,
         .download_checkpoint_interval_bytes =
             config.download_checkpoint_interval_bytes,
+        .upload_chunk_size_bytes = config.upload_chunk_size_bytes,
         .download_transport = {
             .transfer = config.transfer_transport,
             .maximum_receive_speed_bytes_per_second =
                 config.download_maximum_rate_bytes_per_second,
             .maximum_total_receive_speed_bytes_per_second =
                 config.download_maximum_total_rate_bytes_per_second,
+        },
+        .upload_transport = {
+            .transfer = config.transfer_transport,
+            .maximum_send_speed_bytes_per_second =
+                config.upload_maximum_rate_bytes_per_second,
+            .maximum_total_send_speed_bytes_per_second =
+                config.upload_maximum_total_rate_bytes_per_second,
         },
         .relaxed_download_validation =
             config.download_validation ==

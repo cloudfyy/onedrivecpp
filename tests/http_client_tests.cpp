@@ -12,6 +12,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <utility>
 #include <vector>
 #include <poll.h>
@@ -115,8 +116,16 @@ int main() {
         .url = "http://127.0.0.1:" + std::to_string(port) + "/invalid",
         .connect_timeout = std::chrono::seconds::zero(),
     });
-    if (invalid_transport_options ||
+    const auto invalid_send_limit = client.perform({
+        .url = "http://127.0.0.1:" + std::to_string(port) + "/invalid",
+        .maximum_send_speed_bytes_per_second =
+            std::numeric_limits<std::uint64_t>::max(),
+    });
+    if (invalid_transport_options || invalid_send_limit ||
         !invalid_transport_options.error().message.contains(
+            "invalid transport options"
+        ) ||
+        !invalid_send_limit.error().message.contains(
             "invalid transport options"
         )) {
         return fail("invalid HTTP transport options were accepted");

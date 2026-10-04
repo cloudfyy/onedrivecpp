@@ -198,6 +198,11 @@ public:
                 "simulated completed upload"
             };
         }
+        if (before_upload_return) {
+            auto callback = std::move(before_upload_return);
+            before_upload_return = {};
+            callback();
+        }
         return {
             .id = remote_id.value_or(
                 "uploaded-" + std::to_string(upload_count)
@@ -219,6 +224,7 @@ public:
     std::string failing_id;
     std::string cancellable_id;
     std::function<void(const std::string&)> before_download_write;
+    mutable std::function<void()> before_upload_return;
     bool reject_saved_cursor{false};
     bool upload_conflict{false};
     std::chrono::milliseconds download_delay{0};
@@ -3596,6 +3602,52 @@ int test_local_file_uploads() {
     return EXIT_SUCCESS;
 }
 
+int test_local_change_during_upload() {
+    onedrive::test::TemporaryDirectory temporary;
+    const auto root = temporary.path() / "changing-upload";
+    std::filesystem::create_directories(root);
+    const auto local = root / "changing.txt";
+    {
+        std::ofstream output{local};
+        output << "old";
+    }
+    FakeItemStore items;
+    items.saved_delta_link = "saved";
+    FakeGraphClient graph;
+    graph.before_upload_return = [&] {
+        std::ofstream output{local, std::ios::trunc};
+        output << "new contents";
+    };
+    FakeMetrics metrics;
+    auto config = config_for(root, false);
+    config.upload = true;
+    if (onedrive::sync::SyncEngine{
+            config,
+            graph,
+            items,
+            metrics
+            }.synchronize() != 0 ||
+        graph.upload_count != 1) {
+        return fail("initial changing local file upload failed");
+    }
+    if (onedrive::sync::SyncEngine{
+            config,
+            graph,
+            items,
+            metrics
+            }.synchronize() != 0 ||
+        graph.upload_count != 2) {
+        return fail("local change during upload was marked as synchronized");
+    }
+    const auto uploaded = items.find("me", "uploaded-1");
+    if (!uploaded || uploaded->local_size != 12 ||
+        !items.pending_uploads_by_path.empty() ||
+        !metrics.last_success) {
+        return fail("follow-up upload did not commit the changed local file");
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_pending_upload_recovery() {
     onedrive::test::TemporaryDirectory temporary;
     const auto root = temporary.path() / "pending-upload";
@@ -3779,6 +3831,10 @@ int main() {
         return result;
     }
     if (const int result = test_local_file_uploads();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_local_change_during_upload();
         result != EXIT_SUCCESS) {
         return result;
     }

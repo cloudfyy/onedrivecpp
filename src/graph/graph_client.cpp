@@ -33,6 +33,10 @@ namespace {
 using Json = nlohmann::json;
 
 constexpr std::size_t maximum_download_redirects = 5;
+constexpr std::uint64_t upload_chunk_quantum =
+    std::uint64_t{320} * 1024U;
+constexpr std::uint64_t maximum_upload_chunk_size =
+    std::uint64_t{60} * 1024U * 1024U;
 
 std::string percent_encode(std::string_view value) {
     constexpr std::string_view hex{"0123456789ABCDEF"};
@@ -62,6 +66,7 @@ std::string percent_encode_remote_path(std::string_view path) {
             "remote file path must be a non-empty relative path"
         );
     }
+
     std::string encoded;
     std::size_t start = 0;
     while (start < path.size()) {
@@ -87,6 +92,133 @@ std::string percent_encode_remote_path(std::string_view path) {
         start = separator + 1;
     }
     return encoded;
+}
+
+std::uint64_t effective_upload_rate(
+    const http::UploadTransportOptions& options
+) {
+    const auto per_file = options.maximum_send_speed_bytes_per_second;
+    const auto total = options.maximum_total_send_speed_bytes_per_second;
+    if (per_file == 0) {
+        return total;
+    }
+    if (total == 0) {
+        return per_file;
+    }
+    return std::min(per_file, total);
+}
+
+void validate_upload_url(std::string_view url) {
+    constexpr std::string_view scheme{"https://"};
+    if (!url.starts_with(scheme) ||
+        url.find_first_of("\r\n\\#") != std::string_view::npos) {
+        throw std::runtime_error(
+            "Microsoft Graph returned an unsafe upload session URL"
+        );
+    }
+    if (std::ranges::any_of(url, [](char character) {
+            const auto byte = static_cast<unsigned char>(character);
+            return byte <= 0x20U || byte == 0x7FU;
+        })) {
+        throw std::runtime_error(
+            "Microsoft Graph returned an unsafe upload session URL"
+        );
+    }
+    const auto authority_end = url.find_first_of("/?", scheme.size());
+    const auto authority = url.substr(
+        scheme.size(),
+        authority_end == std::string_view::npos ?
+            std::string_view::npos :
+            authority_end - scheme.size()
+    );
+    if (authority.empty() || authority.contains('@')) {
+        throw std::runtime_error(
+            "Microsoft Graph returned an unsafe upload session URL"
+        );
+    }
+}
+
+std::uint64_t parse_upload_range_number(
+    std::string_view value,
+    std::string_view range
+) {
+    std::uint64_t number = 0;
+    const auto [position, error] = std::from_chars(
+        value.data(),
+        value.data() + value.size(),
+        number
+    );
+    if (value.empty() || error != std::errc{} ||
+        position != value.data() + value.size()) {
+        throw std::runtime_error(
+            "Microsoft Graph returned invalid nextExpectedRanges entry: " +
+            std::string{range}
+        );
+    }
+    return number;
+}
+
+std::uint64_t parse_upload_range_start(
+    std::string_view range,
+    std::uint64_t total_size
+) {
+    const auto separator = range.find('-');
+    if (separator == std::string_view::npos ||
+        range.find('-', separator + 1) != std::string_view::npos) {
+        throw std::runtime_error(
+            "Microsoft Graph returned invalid nextExpectedRanges entry: " +
+            std::string{range}
+        );
+    }
+    const auto start =
+        parse_upload_range_number(range.substr(0, separator), range);
+    if (start > total_size) {
+        throw std::runtime_error(
+            "Microsoft Graph returned an out-of-range upload offset"
+        );
+    }
+    const auto end_text = range.substr(separator + 1);
+    if (!end_text.empty()) {
+        const auto end = parse_upload_range_number(end_text, range);
+        if (end < start || end >= total_size) {
+            throw std::runtime_error(
+                "Microsoft Graph returned an invalid upload range"
+            );
+        }
+    }
+    return start;
+}
+
+void require_next_upload_offset(
+    const Json& json,
+    std::uint64_t expected,
+    std::uint64_t total_size
+) {
+    const auto ranges = json.find("nextExpectedRanges");
+    if (ranges == json.end() || !ranges->is_array() || ranges->empty()) {
+        throw std::runtime_error(
+            "Microsoft Graph upload session response is missing "
+            "nextExpectedRanges"
+        );
+    }
+    std::optional<std::uint64_t> first;
+    for (const auto& range : *ranges) {
+        if (!range.is_string()) {
+            throw std::runtime_error(
+                "Microsoft Graph upload session returned a non-string range"
+            );
+        }
+        const auto start = parse_upload_range_start(
+            range.get_ref<const std::string&>(),
+            total_size
+        );
+        first = first ? std::min(*first, start) : start;
+    }
+    if (!first || *first != expected) {
+        throw std::runtime_error(
+            "Microsoft Graph upload session returned a non-contiguous range"
+        );
+    }
 }
 
 std::string graph_error_message(const Json& response, long status_code) {
@@ -746,6 +878,22 @@ MicrosoftGraphClient::MicrosoftGraphClient(
             "Microsoft Graph client requires valid download transport options"
         );
     }
+    const auto& upload_transport = options_.upload_transport;
+    const auto& upload_transfer = upload_transport.transfer;
+    if (options_.simple_upload_threshold_bytes == 0 ||
+        options_.upload_chunk_size_bytes == 0 ||
+        options_.upload_chunk_size_bytes % upload_chunk_quantum != 0 ||
+        options_.upload_chunk_size_bytes >= maximum_upload_chunk_size ||
+        upload_transfer.connect_timeout <=
+            std::chrono::seconds::zero() ||
+        upload_transfer.operation_timeout <=
+            std::chrono::seconds::zero() ||
+        upload_transfer.low_speed_timeout < std::chrono::seconds::zero() ||
+        upload_transfer.low_speed_limit_bytes_per_second == 0) {
+        throw std::invalid_argument(
+            "Microsoft Graph client requires valid upload transport options"
+        );
+    }
     auth_client_ =
         std::make_unique<auth::DeviceAuthClient>(
             transport_.get(),
@@ -1153,8 +1301,6 @@ RemoteItem MicrosoftGraphClient::upload_file(
     const std::string& expected_etag,
     const std::filesystem::path& source
 ) const {
-    constexpr std::uintmax_t maximum_simple_upload_size =
-        std::uintmax_t{250} * 1000U * 1000U;
     if (remote_id.has_value() != !expected_etag.empty() ||
         expected_etag.find_first_of("\r\n") != std::string::npos) {
         throw std::invalid_argument(
@@ -1162,27 +1308,12 @@ RemoteItem MicrosoftGraphClient::upload_file(
         );
     }
     const auto size = std::filesystem::file_size(source);
-    if (size > maximum_simple_upload_size ||
-        size > static_cast<std::uintmax_t>(
-                   std::numeric_limits<std::size_t>::max()
+    if (size > static_cast<std::uintmax_t>(
+                   std::numeric_limits<std::uint64_t>::max()
                )) {
         throw std::runtime_error(
-            "local file exceeds the 250 MB simple-upload limit: " +
+            "local file is too large for a Microsoft Graph upload: " +
             source.string()
-        );
-    }
-    std::ifstream input{source, std::ios::binary};
-    if (!input) {
-        throw std::runtime_error(
-            "cannot open local upload snapshot: " + source.string()
-        );
-    }
-    std::string body(static_cast<std::size_t>(size), '\0');
-    input.read(body.data(), static_cast<std::streamsize>(body.size()));
-    if (input.gcount() != static_cast<std::streamsize>(body.size()) ||
-        input.peek() != std::ifstream::traits_type::eof()) {
-        throw std::runtime_error(
-            "cannot read stable local upload snapshot: " + source.string()
         );
     }
 
@@ -1191,29 +1322,158 @@ RemoteItem MicrosoftGraphClient::upload_file(
             options_.endpoint + "/me/drive" :
             options_.endpoint + "/drives/" +
                 percent_encode(options_.drive_id);
-    const std::string url = remote_id ?
-        drive_prefix + "/items/" + percent_encode(*remote_id) + "/content" :
-        drive_prefix + "/root:/" + percent_encode_remote_path(remote_path) +
-            ":/content?@microsoft.graph.conflictBehavior=fail";
-    std::vector<std::string> headers{
+    const auto& upload_transport = options_.upload_transport;
+    const auto& transfer = upload_transport.transfer;
+    const auto maximum_send_speed =
+        effective_upload_rate(upload_transport);
+    const auto parse_upload_json = [](const http::HttpResponse& response,
+                                      std::string_view description) {
+        try {
+            return Json::parse(response.body);
+        } catch (const Json::exception& error) {
+            throw std::runtime_error(
+                "Microsoft Graph returned invalid " +
+                std::string{description} + " JSON: " + error.what()
+            );
+        }
+    };
+    const auto require_upload_success = [&](const http::HttpResponse& response,
+                                            const Json& json) {
+        if (response.status_code < 200 || response.status_code >= 300) {
+            if (response.status_code == 409 ||
+                response.status_code == 412) {
+                throw UploadConflictError(
+                    graph_error_message(json, response.status_code)
+                );
+            }
+            throw std::runtime_error(
+                graph_error_message(json, response.status_code)
+            );
+        }
+    };
+
+    if (size <= options_.simple_upload_threshold_bytes) {
+        if (size > static_cast<std::uintmax_t>(
+                       std::numeric_limits<std::size_t>::max()
+                   )) {
+            throw std::runtime_error(
+                "local file is too large for a simple upload: " +
+                source.string()
+            );
+        }
+        std::ifstream input{source, std::ios::binary};
+        if (!input) {
+            throw std::runtime_error(
+                "cannot open local upload snapshot: " + source.string()
+            );
+        }
+        std::string body(static_cast<std::size_t>(size), '\0');
+        input.read(body.data(), static_cast<std::streamsize>(body.size()));
+        if (input.gcount() != static_cast<std::streamsize>(body.size()) ||
+            input.peek() != std::ifstream::traits_type::eof()) {
+            throw std::runtime_error(
+                "cannot read stable local upload snapshot: " +
+                source.string()
+            );
+        }
+
+        const std::string url = remote_id ?
+            drive_prefix + "/items/" + percent_encode(*remote_id) +
+                "/content" :
+            drive_prefix + "/root:/" +
+                percent_encode_remote_path(remote_path) +
+                ":/content?@microsoft.graph.conflictBehavior=fail";
+        std::vector<std::string> headers{
+            "Accept: application/json",
+            "Authorization: Bearer " + access_token(),
+            "Content-Type: application/octet-stream",
+        };
+        if (remote_id) {
+            headers.push_back("If-Match: " + expected_etag);
+        }
+        const auto response = perform_with_retries(
+            [&] {
+                return transport_->perform(http::HttpRequest{
+                    .method = http::HttpMethod::put,
+                    .url = url,
+                    .headers = headers,
+                    .body = body,
+                    .connect_timeout = transfer.connect_timeout,
+                    .operation_timeout = transfer.operation_timeout,
+                    .low_speed_timeout = transfer.low_speed_timeout,
+                    .low_speed_limit_bytes_per_second =
+                        transfer.low_speed_limit_bytes_per_second,
+                    .maximum_send_speed_bytes_per_second =
+                        maximum_send_speed,
+                    .http_version = transfer.http_version,
+                    .ip_version = transfer.ip_version,
+                    .maximum_response_size = std::size_t{1024} * 1024U,
+                    .stop_token = {},
+                });
+            },
+            options_,
+            options_.maximum_throttle_retries,
+            sleep_,
+            "Microsoft Graph file upload"
+        );
+        if (!response) {
+            throw std::runtime_error(
+                "Microsoft Graph upload failed: " +
+                response.error().message
+            );
+        }
+        const auto json = parse_upload_json(*response, "upload");
+        require_upload_success(*response, json);
+        return parse_drive_item(
+            json,
+            "upload response",
+            !options_.relaxed_download_validation
+        );
+    }
+
+    const auto encoded_path = percent_encode_remote_path(remote_path);
+    const auto separator = remote_path.rfind('/');
+    const auto name = separator == std::string::npos ?
+        remote_path :
+        remote_path.substr(separator + 1);
+    const std::string session_url = remote_id ?
+        drive_prefix + "/items/" + percent_encode(*remote_id) +
+            "/createUploadSession" :
+        drive_prefix + "/root:/" + encoded_path +
+            ":/createUploadSession";
+    std::vector<std::string> session_headers{
         "Accept: application/json",
         "Authorization: Bearer " + access_token(),
-        "Content-Type: application/octet-stream",
+        "Content-Type: application/json",
     };
     if (remote_id) {
-        headers.push_back("If-Match: " + expected_etag);
+        session_headers.push_back("If-Match: " + expected_etag);
     }
-    const auto response = perform_with_retries(
+    const std::string session_body = Json{
+        {"item", {
+            {
+                "@microsoft.graph.conflictBehavior",
+                remote_id ? "replace" : "fail",
+            },
+            {"name", name},
+        }},
+    }.dump();
+    const auto session_response = perform_with_retries(
         [&] {
             return transport_->perform(http::HttpRequest{
-                .method = http::HttpMethod::put,
-                .url = url,
-                .headers = headers,
-                .body = body,
-                .connect_timeout =
-                    options_.download_transport.transfer.connect_timeout,
-                .operation_timeout =
-                    options_.download_transport.transfer.operation_timeout,
+                .method = http::HttpMethod::post,
+                .url = session_url,
+                .headers = session_headers,
+                .body = session_body,
+                .connect_timeout = transfer.connect_timeout,
+                .operation_timeout = transfer.operation_timeout,
+                .low_speed_timeout = transfer.low_speed_timeout,
+                .low_speed_limit_bytes_per_second =
+                    transfer.low_speed_limit_bytes_per_second,
+                .maximum_send_speed_bytes_per_second =
+                    maximum_send_speed,
+                .http_version = transfer.http_version,
+                .ip_version = transfer.ip_version,
                 .maximum_response_size = std::size_t{1024} * 1024U,
                 .stop_token = {},
             });
@@ -1221,37 +1481,143 @@ RemoteItem MicrosoftGraphClient::upload_file(
         options_,
         options_.maximum_throttle_retries,
         sleep_,
-        "Microsoft Graph file upload"
+        "Microsoft Graph upload session creation"
     );
-    if (!response) {
+    if (!session_response) {
         throw std::runtime_error(
-            "Microsoft Graph upload failed: " + response.error().message
+            "Microsoft Graph upload session creation failed: " +
+            session_response.error().message
         );
     }
-    Json json;
+    const auto session_json =
+        parse_upload_json(*session_response, "upload session");
+    require_upload_success(*session_response, session_json);
+    std::string upload_url;
     try {
-        json = Json::parse(response->body);
+        upload_url = session_json.at("uploadUrl").get<std::string>();
+        const auto expiration =
+            session_json.at("expirationDateTime").get<std::string>();
+        static_cast<void>(parse_remote_modified_time(expiration));
     } catch (const Json::exception& error) {
         throw std::runtime_error(
-            "Microsoft Graph returned invalid upload JSON: " +
+            "Microsoft Graph upload session is missing required data: " +
             std::string{error.what()}
         );
     }
-    if (response->status_code < 200 || response->status_code >= 300) {
-        if (response->status_code == 409 ||
-            response->status_code == 412) {
-            throw UploadConflictError(
-                graph_error_message(json, response->status_code)
-            );
-        }
+    validate_upload_url(upload_url);
+    const auto total_size = static_cast<std::uint64_t>(size);
+    require_next_upload_offset(session_json, 0, total_size);
+
+    std::ifstream input{source, std::ios::binary};
+    if (!input) {
         throw std::runtime_error(
-            graph_error_message(json, response->status_code)
+            "cannot open local upload snapshot: " + source.string()
         );
     }
-    return parse_drive_item(
-        json,
-        "upload response",
-        !options_.relaxed_download_validation
+    const auto chunk_size = options_.upload_chunk_size_bytes;
+    for (std::uint64_t offset = 0; offset < total_size;) {
+        const auto bytes = std::min(chunk_size, total_size - offset);
+        if (bytes > static_cast<std::uint64_t>(
+                        std::numeric_limits<std::size_t>::max()
+                    ) ||
+            bytes > static_cast<std::uint64_t>(
+                        std::numeric_limits<std::streamsize>::max()
+                    )) {
+            throw std::runtime_error(
+                "configured upload chunk does not fit in memory"
+            );
+        }
+        std::string body(static_cast<std::size_t>(bytes), '\0');
+        input.read(body.data(), static_cast<std::streamsize>(bytes));
+        if (input.gcount() != static_cast<std::streamsize>(bytes)) {
+            throw std::runtime_error(
+                "cannot read stable local upload snapshot: " +
+                source.string()
+            );
+        }
+        const auto end = offset + bytes - 1;
+        const std::vector<std::string> chunk_headers{
+            "Accept: application/json",
+            "Content-Type: application/octet-stream",
+            "Content-Length: " + std::to_string(bytes),
+            std::format(
+                "Content-Range: bytes {}-{}/{}",
+                offset,
+                end,
+                total_size
+            ),
+        };
+        const auto chunk_response = perform_with_retries(
+            [&] {
+                return transport_->perform(http::HttpRequest{
+                    .method = http::HttpMethod::put,
+                    .url = upload_url,
+                    .headers = chunk_headers,
+                    .body = body,
+                    .connect_timeout = transfer.connect_timeout,
+                    .operation_timeout = transfer.operation_timeout,
+                    .low_speed_timeout = transfer.low_speed_timeout,
+                    .low_speed_limit_bytes_per_second =
+                        transfer.low_speed_limit_bytes_per_second,
+                    .maximum_send_speed_bytes_per_second =
+                        maximum_send_speed,
+                    .http_version = transfer.http_version,
+                    .ip_version = transfer.ip_version,
+                    .maximum_response_size = std::size_t{1024} * 1024U,
+                    .stop_token = {},
+                });
+            },
+            options_,
+            options_.maximum_throttle_retries,
+            sleep_,
+            "Microsoft Graph upload session fragment",
+            {},
+            true
+        );
+        if (!chunk_response) {
+            throw std::runtime_error(
+                "Microsoft Graph upload fragment failed: " +
+                chunk_response.error().message
+            );
+        }
+        const auto chunk_json =
+            parse_upload_json(*chunk_response, "upload fragment");
+        require_upload_success(*chunk_response, chunk_json);
+        const auto next_offset = end + 1;
+        if (chunk_response->status_code == 202) {
+            if (next_offset >= total_size) {
+                throw std::runtime_error(
+                    "Microsoft Graph did not finalize the last upload fragment"
+                );
+            }
+            require_next_upload_offset(
+                chunk_json,
+                next_offset,
+                total_size
+            );
+            offset = next_offset;
+            continue;
+        }
+        if (chunk_response->status_code != 200 &&
+            chunk_response->status_code != 201) {
+            throw std::runtime_error(
+                "Microsoft Graph upload fragment returned an unexpected "
+                "success status"
+            );
+        }
+        if (next_offset != total_size) {
+            throw std::runtime_error(
+                "Microsoft Graph finalized an incomplete upload session"
+            );
+        }
+        return parse_drive_item(
+            chunk_json,
+            "upload session response",
+            !options_.relaxed_download_validation
+        );
+    }
+    throw std::runtime_error(
+        "Microsoft Graph upload session ended without a final item"
     );
 }
 

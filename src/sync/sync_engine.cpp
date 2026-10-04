@@ -1907,6 +1907,29 @@ int SyncEngine::synchronize() const {
                         ),
                     },
                     {
+                        .label = "upload chunk size:",
+                        .key = "upload_chunk_size",
+                        .value = std::to_string(
+                            config_->upload_chunk_size_bytes
+                        ),
+                    },
+                    {
+                        .label = "per-upload rate:",
+                        .key = "upload_rate_limit",
+                        .value = std::to_string(
+                            config_->
+                                upload_maximum_rate_bytes_per_second
+                        ),
+                    },
+                    {
+                        .label = "total upload rate:",
+                        .key = "upload_total_rate_limit",
+                        .value = std::to_string(
+                            config_->
+                                upload_maximum_total_rate_bytes_per_second
+                        ),
+                    },
+                    {
                         .label = "tracked items:",
                         .key = "tracked_items",
                         .value = std::to_string(items_.size()),

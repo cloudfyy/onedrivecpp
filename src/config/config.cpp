@@ -377,6 +377,10 @@ Config Config::defaults() {
         .transfer_transport = {},
         .download_maximum_rate_bytes_per_second = 0,
         .download_maximum_total_rate_bytes_per_second = 0,
+        .upload_chunk_size_bytes =
+            std::uint64_t{10} * 1024U * 1024U,
+        .upload_maximum_rate_bytes_per_second = 0,
+        .upload_maximum_total_rate_bytes_per_second = 0,
         .download_validation = DownloadValidationMode::strict,
         .sync_permissions = SyncPermissionsMode::private_access,
         .local_conflict = LocalConflictPolicy::block,
@@ -412,6 +416,7 @@ Config Config::load(const std::filesystem::path& path) {
             "proxy",
             "transfer",
             "download",
+            "upload",
             "state",
             "auth",
             "graph",
@@ -797,6 +802,57 @@ Config Config::load(const std::filesystem::path& path) {
             )) {
             config.download_validation =
                 parse_download_validation(*value);
+        }
+    }
+
+    if (const auto* upload =
+            optional_table(root, "upload", "upload")) {
+        validate_keys(
+            *upload,
+            {
+                "chunk_size_bytes",
+                "maximum_rate_bytes_per_second",
+                "maximum_total_rate_bytes_per_second",
+            },
+            "upload"
+        );
+        if (upload->contains("chunk_size_bytes")) {
+            const auto chunk_size = unsigned_value(
+                *upload,
+                "chunk_size_bytes",
+                "upload.chunk_size_bytes"
+            );
+            constexpr std::uint64_t upload_quantum =
+                std::uint64_t{320} * 1024U;
+            constexpr std::uint64_t maximum_chunk_size =
+                std::uint64_t{60} * 1024U * 1024U;
+            if (chunk_size == 0 ||
+                chunk_size % upload_quantum != 0 ||
+                chunk_size >= maximum_chunk_size) {
+                throw std::runtime_error(
+                    "upload.chunk_size_bytes must be a positive multiple of "
+                    "320 KiB and less than 60 MiB"
+                );
+            }
+            config.upload_chunk_size_bytes = chunk_size;
+        }
+        if (upload->contains("maximum_rate_bytes_per_second")) {
+            config.upload_maximum_rate_bytes_per_second =
+                unsigned_value(
+                    *upload,
+                    "maximum_rate_bytes_per_second",
+                    "upload.maximum_rate_bytes_per_second"
+                );
+        }
+        if (upload->contains(
+                "maximum_total_rate_bytes_per_second"
+            )) {
+            config.upload_maximum_total_rate_bytes_per_second =
+                unsigned_value(
+                    *upload,
+                    "maximum_total_rate_bytes_per_second",
+                    "upload.maximum_total_rate_bytes_per_second"
+                );
         }
     }
 
