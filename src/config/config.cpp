@@ -565,4 +565,9 @@ bool has_auth_scope(
     return false;
 }
 
+bool has_broad_auth_scope(std::string_view scopes) {
+    return has_auth_scope(scopes, "Files.ReadWrite.All") ||
+           has_auth_scope(scopes, "Sites.ReadWrite.All");
+}
+
 }  // namespace onedrive::config

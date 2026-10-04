@@ -1,7 +1,13 @@
 #include "onedrive/path_security.hpp"
 
+#include <cerrno>
+#include <cstring>
+#include <fcntl.h>
+#include <linux/openat2.h>
 #include <stdexcept>
 #include <string>
+#include <sys/syscall.h>
+#include <unistd.h>
 
 namespace onedrive::detail {
 
@@ -36,6 +42,34 @@ void reject_symlink_components(
             );
         }
     }
+}
+
+int open_path_no_symlinks(
+    const std::filesystem::path& path,
+    int flags,
+    mode_t mode
+) {
+    open_how how{
+        .flags = static_cast<__u64>(flags | O_CLOEXEC),
+        .mode = static_cast<__u64>(mode),
+        .resolve = RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS,
+    };
+    const int descriptor = static_cast<int>(
+        ::syscall(
+            SYS_openat2,
+            AT_FDCWD,
+            path.c_str(),
+            &how,
+            sizeof(how)
+        )
+    );
+    if (descriptor == -1) {
+        throw std::runtime_error(
+            "cannot safely open path '" + path.string() + "': " +
+            std::strerror(errno)
+        );
+    }
+    return descriptor;
 }
 
 }  // namespace onedrive::detail

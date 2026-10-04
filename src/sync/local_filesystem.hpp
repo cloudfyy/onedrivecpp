@@ -40,10 +40,6 @@ struct LocalFileBaseline {
     const std::filesystem::path& path
 );
 [[nodiscard]] std::int64_t modified_ticks(int descriptor);
-[[nodiscard]] int open_no_symlinks(
-    const std::filesystem::path& path,
-    int flags
-);
 bool remove_no_symlinks(
     const std::filesystem::path& path,
     bool missing_ok = true

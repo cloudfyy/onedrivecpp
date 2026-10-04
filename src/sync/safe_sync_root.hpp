@@ -41,7 +41,6 @@ public:
         const std::filesystem::path& source,
         const std::filesystem::path& destination
     ) const;
-    void remove(const std::filesystem::path& path) const;
     void fsync_directory(const std::filesystem::path& directory) const;
 
 private:

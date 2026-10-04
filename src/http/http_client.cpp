@@ -1,4 +1,6 @@
 #include "onedrive/http/http_client.hpp"
+
+#include "onedrive/path_security.hpp"
 #include "onedrive/version.hpp"
 
 #include <curl/curl.h>
@@ -10,12 +12,10 @@
 #include <exception>
 #include <fcntl.h>
 #include <limits>
-#include <linux/openat2.h>
 #include <memory>
 #include <string>
 #include <string_view>
 #include <sys/stat.h>
-#include <sys/syscall.h>
 #include <unistd.h>
 
 namespace onedrive::http {
@@ -516,25 +516,15 @@ HttpResult CurlHttpClient::download(
                             S_IRUSR | S_IWUSR |
                                 S_IRGRP | S_IWGRP |
                                 S_IROTH | S_IWOTH;
-    open_how how{
-        .flags = static_cast<__u64>(flags),
-        .mode = static_cast<__u64>(request.download_offset == 0 ? mode : 0),
-        .resolve = RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS,
-    };
-    const int descriptor = static_cast<int>(
-        ::syscall(
-            SYS_openat2,
-            AT_FDCWD,
-            destination.c_str(),
-            &how,
-            sizeof(how)
-        )
-    );
-    if (descriptor == -1) {
-        return std::unexpected(HttpError{
-            .message = "cannot create download file '" + destination.string() +
-                       "': " + std::strerror(errno),
-        });
+    int descriptor = -1;
+    try {
+        descriptor = onedrive::detail::open_path_no_symlinks(
+            destination,
+            flags,
+            request.download_offset == 0 ? mode : 0
+        );
+    } catch (const std::runtime_error& error) {
+        return std::unexpected(HttpError{.message = error.what()});
     }
 
     auto response = perform_request(request, descriptor, progress, data);

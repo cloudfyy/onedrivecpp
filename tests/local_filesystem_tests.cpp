@@ -1,5 +1,6 @@
 #include "filesystem_metadata.hpp"
 #include "local_filesystem.hpp"
+#include "onedrive/path_security.hpp"
 #include "safe_sync_root.hpp"
 #include "test_support.hpp"
 
@@ -196,6 +197,38 @@ int main() {
         return fail("safe root opened a file through a directory symlink");
     } catch (const std::runtime_error&) {
     }
+    try {
+        const int descriptor = onedrive::detail::open_path_no_symlinks(
+            redirected / "shared-open.txt",
+            O_WRONLY | O_CREAT | O_EXCL,
+            S_IRUSR | S_IWUSR
+        );
+        ::close(descriptor);
+        return fail("shared safe open followed a directory symlink");
+    } catch (const std::runtime_error&) {
+    }
+    const auto umask_directory = root / "umask-directory";
+    const mode_t original_umask = ::umask(0022);
+    const auto umask_file = root / "umask-file.txt";
+    const int umask_file_descriptor =
+        onedrive::detail::open_path_no_symlinks(
+            umask_file,
+            O_WRONLY | O_CREAT | O_EXCL,
+            S_IRUSR | S_IWUSR |
+                S_IRGRP | S_IWGRP |
+                S_IROTH | S_IWOTH
+        );
+    ::close(umask_file_descriptor);
+    safe_root.ensure_directory_tree(umask_directory, false);
+    ::umask(original_umask);
+    struct stat umask_status {};
+    struct stat umask_file_status {};
+    if (::stat(umask_file.c_str(), &umask_file_status) == -1 ||
+        (umask_file_status.st_mode & 0777) != 0644 ||
+        ::stat(umask_directory.c_str(), &umask_status) == -1 ||
+        (umask_status.st_mode & 0777) != 0755) {
+        return fail("file or directory mode did not follow the process umask");
+    }
     const auto rename_source = root / "rename-source.txt";
     {
         std::ofstream output{rename_source};
@@ -209,6 +242,7 @@ int main() {
     if (!std::filesystem::exists(rename_source) ||
         std::filesystem::exists(attack_outside / "directory") ||
         std::filesystem::exists(attack_outside / "opened.txt") ||
+        std::filesystem::exists(attack_outside / "shared-open.txt") ||
         std::filesystem::exists(attack_outside / "renamed.txt")) {
         return fail("safe root modified data outside the synchronization root");
     }

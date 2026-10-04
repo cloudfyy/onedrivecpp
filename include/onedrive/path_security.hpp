@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <string_view>
+#include <sys/stat.h>
 
 namespace onedrive::detail {
 
@@ -11,6 +12,11 @@ namespace onedrive::detail {
 void reject_symlink_components(
     const std::filesystem::path& path,
     std::string_view description
+);
+[[nodiscard]] int open_path_no_symlinks(
+    const std::filesystem::path& path,
+    int flags,
+    mode_t mode = 0
 );
 
 }  // namespace onedrive::detail

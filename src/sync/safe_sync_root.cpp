@@ -239,23 +239,6 @@ void SafeSyncRoot::rename(
     }
 }
 
-void SafeSyncRoot::remove(const std::filesystem::path& path) const {
-    const auto relative = relative_path(path);
-    Descriptor parent{open_beneath(
-        descriptor_,
-        relative.parent_path(),
-        O_RDONLY | O_DIRECTORY | O_CLOEXEC,
-        0
-    )};
-    if (parent.get() == -1 ||
-        ::unlinkat(parent.get(), relative.filename().c_str(), 0) == -1) {
-        throw std::runtime_error(
-            "cannot safely remove synchronization file '" + path.string() +
-            "': " + std::strerror(errno)
-        );
-    }
-}
-
 void SafeSyncRoot::fsync_directory(
     const std::filesystem::path& directory
 ) const {

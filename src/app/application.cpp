@@ -255,14 +255,7 @@ int Application::run(int argc, char* argv[]) {
 
         if (*auth_command) {
             spdlog::info("Starting Microsoft authentication");
-            if (config::has_auth_scope(
-                    config.auth_scope,
-                    "Files.ReadWrite.All"
-                ) ||
-                config::has_auth_scope(
-                    config.auth_scope,
-                    "Sites.ReadWrite.All"
-                )) {
+            if (config::has_broad_auth_scope(config.auth_scope)) {
                 constexpr std::string_view warning{
                     "WARNING: Authentication requests broad organizational "
                     "file or SharePoint write access. Keep "

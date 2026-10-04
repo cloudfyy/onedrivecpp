@@ -99,6 +99,13 @@ int main() {
             defaults.auth_scope,
             "Files.ReadWrite.All"
         ) ||
+        onedrive::config::has_broad_auth_scope(defaults.auth_scope) ||
+        !onedrive::config::has_broad_auth_scope(
+            "User.Read Sites.ReadWrite.All offline_access"
+        ) ||
+        onedrive::config::has_broad_auth_scope(
+            "User.Read Sites.ReadWrite.AllExtra offline_access"
+        ) ||
         defaults.sync_permissions !=
             onedrive::config::SyncPermissionsMode::private_access ||
         onedrive::app::graph_options(defaults).

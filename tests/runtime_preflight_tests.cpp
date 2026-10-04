@@ -135,6 +135,31 @@ int test_sync_directory_and_token() {
         }
     }
 
+    config.sync_permissions =
+        onedrive::config::SyncPermissionsMode::umask;
+    config.sync_directory = temporary.path() / "shared-files";
+    std::filesystem::create_directory(config.sync_directory);
+    std::filesystem::permissions(
+        config.sync_directory,
+        std::filesystem::perms::owner_all |
+            std::filesystem::perms::group_read |
+            std::filesystem::perms::group_exec |
+            std::filesystem::perms::others_read |
+            std::filesystem::perms::others_exec
+    );
+    {
+        const RuntimePreflight preflight{config, Operation::synchronize};
+    }
+    if ((std::filesystem::status(config.sync_directory).permissions() &
+         std::filesystem::perms::all) !=
+        (std::filesystem::perms::owner_all |
+         std::filesystem::perms::group_read |
+         std::filesystem::perms::group_exec |
+         std::filesystem::perms::others_read |
+         std::filesystem::perms::others_exec)) {
+        return fail("umask mode unexpectedly changed sync directory permissions");
+    }
+
     std::filesystem::remove(token_path);
     if (!throws_with(
             [&] {

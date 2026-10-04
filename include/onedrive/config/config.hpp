@@ -65,5 +65,6 @@ struct Config {
     std::string_view scopes,
     std::string_view expected
 );
+[[nodiscard]] bool has_broad_auth_scope(std::string_view scopes);
 
 }  // namespace onedrive::config
