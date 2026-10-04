@@ -1,3 +1,11 @@
+onedrive-cpp (0.6.11-1~ubuntu24.04) noble; urgency=medium
+
+  * Use private permissions for synchronized data by default.
+  * Confine synchronization filesystem operations against symlink races.
+  * Reduce default OAuth scopes and warn before broad organizational access.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 00:59:37 +0000
+
 onedrive-cpp (0.6.10-1~ubuntu24.04) noble; urgency=medium
 
   * Isolate synchronized data by stable Microsoft user and Drive identities.
