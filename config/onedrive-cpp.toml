@@ -1,76 +1,5 @@
 config_version = 2
 
-[sync]
-# "private" creates files as 0600 and directories as 0700.
-# Use "umask" only when synchronized data must follow the process umask.
-permissions = "private"
-# "block" refuses local/remote download conflicts. "backup" first preserves
-# the local file as a same-directory *.safeBackup-* copy.
-local_conflict = "block"
-# Root for account- and Drive-specific synchronized data directories.
-# Paths may be absolute or relative to the service working directory.
-directory = "/home/USER/OneDrive"
-drive_id = "me"
-# Optional selective-sync rules. Relative paths resolve from this TOML file.
-# sync_list = "sync_list"
-# Include ordinary files located directly in the Drive root when sync_list is set.
-sync_root_files = false
-# Upload new and modified local files after applying remote changes.
-upload = true
-dry_run = true
-
-# Optional proxy for authentication, Graph API, and file downloads.
-# By default this table is absent, so libcurl may still use HTTP_PROXY,
-# HTTPS_PROXY, ALL_PROXY, and their lowercase variants from the environment.
-# To guarantee direct connections, omit this table and unset those variables.
-# Supported schemes: "http", "https", "socks4", "socks4a", "socks5", "socks5h".
-# Use "socks5h" when the proxy should resolve destination host names.
-# [proxy]
-# url = "socks5h://127.0.0.1:1080"
-# By default this is unset and libcurl uses NO_PROXY/no_proxy from the environment.
-# Set an empty array to override the environment and proxy every destination.
-# no_proxy = ["localhost", "127.0.0.1", ".internal.example.com"]
-# No proxy credentials are configured by default.
-# username = "proxy-user"
-# password_file = "/run/secrets/onedrive-proxy-password"
-# Defaults to "auto". Other values: "basic", "digest", "ntlm", and "negotiate".
-# auth = "auto"
-# Unset by default, so HTTPS proxies use the system CA trust store.
-# ca_file = "/etc/ssl/certs/company-proxy-ca.pem"
-
-[transfer]
-# Connection and per-request transfer limits for file content.
-# Supported values: "default", "size_asc", "size_dsc", "name_asc", and "name_dsc".
-order = "default"
-connect_timeout_seconds = 30
-operation_timeout_seconds = 3600
-# Abort transfers below this rate for this many seconds. Set timeout to 0 to disable.
-stall_timeout_seconds = 60
-stall_minimum_bytes_per_second = 1
-# Supported values: "auto", "1.1", and "2".
-http_version = "auto"
-# Supported values: "auto", "4", and "6".
-ip_version = "auto"
-
-[download]
-concurrency = 4
-# Maximum retries for transient file-content download failures.
-maximum_retries = 4
-# Files larger than this value are downloaded in HTTP Range chunks of this size.
-chunk_threshold_bytes = 8388608
-# Flush and record resumable download progress after this many new bytes.
-checkpoint_interval_bytes = 1048576
-# Zero disables the receive-rate limit.
-maximum_rate_bytes_per_second = 0
-# Shared limit across all concurrent downloads. Zero disables the total limit.
-maximum_total_rate_bytes_per_second = 0
-# "relaxed" accepts SharePoint/AIP/HEIC content whose downloaded size or hash
-# differs from Graph metadata. This weakens integrity guarantees.
-validation = "strict"
-
-[state]
-directory = "/home/USER/.local/state/onedrive-cpp"
-
 [auth]
 application_id = ""
 tenant_id = "common"
@@ -102,5 +31,76 @@ maximum_retries = 4
 initial_delay_seconds = 1
 maximum_delay_seconds = 300
 
+# Optional proxy for authentication, Graph API, and file downloads.
+# By default this table is absent, so libcurl may still use HTTP_PROXY,
+# HTTPS_PROXY, ALL_PROXY, and their lowercase variants from the environment.
+# To guarantee direct connections, omit this table and unset those variables.
+# Supported schemes: "http", "https", "socks4", "socks4a", "socks5", "socks5h".
+# Use "socks5h" when the proxy should resolve destination host names.
+# [proxy]
+# url = "socks5h://127.0.0.1:1080"
+# By default this is unset and libcurl uses NO_PROXY/no_proxy from the environment.
+# Set an empty array to override the environment and proxy every destination.
+# no_proxy = ["localhost", "127.0.0.1", ".internal.example.com"]
+# No proxy credentials are configured by default.
+# username = "proxy-user"
+# password_file = "/run/secrets/onedrive-proxy-password"
+# Defaults to "auto". Other values: "basic", "digest", "ntlm", and "negotiate".
+# auth = "auto"
+# Unset by default, so HTTPS proxies use the system CA trust store.
+# ca_file = "/etc/ssl/certs/company-proxy-ca.pem"
+
+[sync]
+# "private" creates files as 0600 and directories as 0700.
+# Use "umask" only when synchronized data must follow the process umask.
+permissions = "private"
+# "block" refuses local/remote download conflicts. "backup" first preserves
+# the local file as a same-directory *.safeBackup-* copy.
+local_conflict = "block"
+# Root for account- and Drive-specific synchronized data directories.
+# Paths may be absolute or relative to the service working directory.
+directory = "/home/USER/OneDrive"
+drive_id = "me"
+# Optional selective-sync rules. Relative paths resolve from this TOML file.
+# sync_list = "sync_list"
+# Include ordinary files located directly in the Drive root when sync_list is set.
+sync_root_files = false
+# Upload new and modified local files after applying remote changes.
+upload = true
+dry_run = true
+
+[transfer]
+# Connection and per-request transfer limits for file content.
+# Supported values: "default", "size_asc", "size_dsc", "name_asc", and "name_dsc".
+order = "default"
+connect_timeout_seconds = 30
+operation_timeout_seconds = 3600
+# Abort transfers below this rate for this many seconds. Set timeout to 0 to disable.
+stall_timeout_seconds = 60
+stall_minimum_bytes_per_second = 1
+# Supported values: "auto", "1.1", and "2".
+http_version = "auto"
+# Supported values: "auto", "4", and "6".
+ip_version = "auto"
+
+[download]
+concurrency = 4
+# Maximum retries for transient file-content download failures.
+maximum_retries = 4
+# Files larger than this value are downloaded in HTTP Range chunks of this size.
+chunk_threshold_bytes = 8388608
+# Flush and record resumable download progress after this many new bytes.
+checkpoint_interval_bytes = 1048576
+# Zero disables the receive-rate limit.
+maximum_rate_bytes_per_second = 0
+# Shared limit across all concurrent downloads. Zero disables the total limit.
+maximum_total_rate_bytes_per_second = 0
+# "relaxed" accepts SharePoint/AIP/HEIC content whose downloaded size or hash
+# differs from Graph metadata. This weakens integrity guarantees.
+validation = "strict"
+
 [filesystem]
 metadata = "auto"
+
+[state]
+directory = "/home/USER/.local/state/onedrive-cpp"
