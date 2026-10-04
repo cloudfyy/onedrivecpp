@@ -1,3 +1,9 @@
+onedrive-cpp (0.7.3-1~ubuntu24.04) noble; urgency=medium
+
+  * Document filesystem metadata policy choices in the configuration template.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 11:15:00 +0000
+
 onedrive-cpp (0.7.2-1~ubuntu24.04) noble; urgency=medium
 
   * Reorder the configuration template by authentication, Graph connectivity,

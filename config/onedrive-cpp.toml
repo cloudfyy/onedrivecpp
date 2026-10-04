@@ -100,6 +100,8 @@ maximum_total_rate_bytes_per_second = 0
 validation = "strict"
 
 [filesystem]
+# "auto" probes user extended attributes and falls back to the SQLite journal.
+# "xattr" requires extended-attribute support; "database" disables xattrs.
 metadata = "auto"
 
 [state]
