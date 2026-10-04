@@ -282,7 +282,14 @@ only that copy, and configures an isolated `sync_list`. It verifies that an
 explicit single-file download bypasses an empty list, that the following sync
 excludes its snapshot without deleting the local file, that adding an inclusion
 rule triggers a full remote-state query and re-downloads the fixture, and that
-the next incremental synchronization does not replace the unchanged file.
+the next incremental synchronization does not replace the unchanged file. It
+then writes conflicting local content, clears only the isolated state copy, and
+verifies that `sync.local_conflict = "backup"` emits its structured event,
+preserves the exact local bytes in one same-directory `safeBackup`, restores
+the authoritative Graph fixture, persists one snapshot, and leaves both files
+unchanged during the following incremental synchronization. The runner forces
+the isolated configuration to use the `backup` policy; it does not modify the
+external configuration.
 
 ```bash
 export ONEDRIVE_E2E_CONFIG=/absolute/path/to/dedicated-e2e.toml

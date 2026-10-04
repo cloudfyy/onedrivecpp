@@ -1,3 +1,12 @@
+onedrive-cpp (0.6.33-1~ubuntu24.04) noble; urgency=medium
+
+  * Extend the live Microsoft Graph E2E flow through a real safeBackup local
+    conflict and authoritative remote restoration.
+  * Verify the structured backup event, preserved local bytes, SQLite snapshot,
+    unique backup naming, and stable follow-up incremental synchronization.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 06:15:00 +0000
+
 onedrive-cpp (0.6.32-1~ubuntu24.04) noble; urgency=medium
 
   * Add opt-in safeBackup preservation for local files that conflict with

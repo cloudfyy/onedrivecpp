@@ -24,6 +24,7 @@ def rewrite_config(
     sync_directory: Path,
     state_directory: Path,
     sync_list: Path | None = None,
+    local_conflict: str | None = None,
 ) -> str:
     replacements = {
         ("sync", "directory"): json.dumps(str(sync_directory)),
@@ -32,6 +33,8 @@ def rewrite_config(
     }
     if sync_list is not None:
         replacements[("sync", "sync_list")] = json.dumps(str(sync_list))
+    if local_conflict is not None:
+        replacements[("sync", "local_conflict")] = json.dumps(local_conflict)
     seen: set[tuple[str, str]] = set()
     table = ""
     output: list[str] = []
@@ -57,15 +60,19 @@ def rewrite_config(
             )
         else:
             output.append(line)
-    sync_list_key = ("sync", "sync_list")
-    if sync_list is not None and sync_list_key not in seen:
-        if sync_insert_index is None:
-            raise E2EError("configuration is missing required table: sync")
+    optional_sync_keys = [
+        key
+        for key in (("sync", "sync_list"), ("sync", "local_conflict"))
+        if key in replacements and key not in seen
+    ]
+    if optional_sync_keys and sync_insert_index is None:
+        raise E2EError("configuration is missing required table: sync")
+    for key in reversed(optional_sync_keys):
         output.insert(
             sync_insert_index,
-            f"sync_list = {replacements[sync_list_key]}",
+            f"{key[1]} = {replacements[key]}",
         )
-        seen.add(sync_list_key)
+        seen.add(key)
     missing = set(replacements) - seen
     if missing:
         names = ", ".join(f"{table}.{key}" for table, key in sorted(missing))
@@ -139,6 +146,30 @@ def materialized_files(sync_directory: Path) -> list[Path]:
         for path in sync_directory.rglob("*")
         if path.is_file() and not path.is_symlink()
     )
+
+
+def safe_backup_files(destination: Path) -> list[Path]:
+    prefix = f"{destination.stem}.safeBackup-"
+    suffix = destination.suffix
+    return sorted(
+        path
+        for path in destination.parent.iterdir()
+        if path.is_file()
+        and not path.is_symlink()
+        and path.name.startswith(prefix)
+        and path.name.endswith(suffix)
+    )
+
+
+def has_json_event(result: subprocess.CompletedProcess[str], event: str) -> bool:
+    for line in result.stdout.splitlines():
+        try:
+            value = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict) and value.get("event") == event:
+            return True
+    return False
 
 
 def log_text_since(log_file: Path, offset: int) -> str:
@@ -308,6 +339,7 @@ def run_live(client: Path, work_root: Path) -> None:
                 sync_directory,
                 state_directory,
                 sync_list,
+                "backup",
             ),
             encoding="utf-8",
         )
@@ -411,6 +443,101 @@ def run_live(client: Path, work_root: Path) -> None:
                 or repeated_stat.st_mtime_ns != synchronized_stat.st_mtime_ns
             ):
                 raise E2EError("repeat synchronization rewrote the unchanged fixture")
+
+            conflict_contents = (
+                b"onedrive-cpp safeBackup live Graph E2E local conflict\n"
+            )
+            repeated.write_bytes(conflict_contents)
+            conflict_stat = repeated.stat()
+            reset_for_conflict = reset_copied_state(
+                client,
+                config,
+                home,
+            )
+            completed.append(reset_for_conflict)
+            if reset_for_conflict.returncode != 0:
+                raise E2EError(
+                    "safeBackup state reset failed with "
+                    f"{reset_for_conflict.returncode}"
+                )
+
+            backed_up_sync = run_sync(client, config, home, log_file)
+            completed.append(backed_up_sync)
+            if backed_up_sync.returncode != 0:
+                raise E2EError(
+                    "safeBackup live Graph synchronization failed with "
+                    f"{backed_up_sync.returncode}"
+                )
+            if not has_json_event(
+                backed_up_sync,
+                "local_conflict_backed_up",
+            ):
+                raise E2EError(
+                    "safeBackup synchronization did not emit its JSON event"
+                )
+            restored = fixture_path(sync_directory, expected_path)
+            restored_stat = restored.stat()
+            if sha256(restored) != expected_sha256:
+                raise E2EError(
+                    "safeBackup synchronization did not restore remote content"
+                )
+            if restored_stat.st_ino == conflict_stat.st_ino:
+                raise E2EError(
+                    "safeBackup synchronization did not install the remote inode"
+                )
+            backups = safe_backup_files(restored)
+            if len(backups) != 1:
+                raise E2EError(
+                    f"expected one safeBackup file, found {len(backups)}"
+                )
+            backup = backups[0]
+            backup_stat = backup.stat()
+            if backup.read_bytes() != conflict_contents:
+                raise E2EError(
+                    "safeBackup file did not preserve the local conflict"
+                )
+            if tracked_item_count(state_directory, expected_path) != 1:
+                raise E2EError(
+                    "safeBackup synchronization did not persist one snapshot"
+                )
+
+            stable_after_backup = run_sync(
+                client,
+                config,
+                home,
+                log_file,
+            )
+            completed.append(stable_after_backup)
+            if stable_after_backup.returncode != 0:
+                raise E2EError(
+                    "post-safeBackup incremental synchronization failed with "
+                    f"{stable_after_backup.returncode}"
+                )
+            stable = fixture_path(sync_directory, expected_path)
+            stable_stat = stable.stat()
+            stable_backups = safe_backup_files(stable)
+            if sha256(stable) != expected_sha256:
+                raise E2EError(
+                    "remote fixture changed after safeBackup synchronization"
+                )
+            if (
+                stable_stat.st_ino != restored_stat.st_ino
+                or stable_stat.st_mtime_ns != restored_stat.st_mtime_ns
+            ):
+                raise E2EError(
+                    "post-safeBackup synchronization rewrote the remote fixture"
+                )
+            if stable_backups != [backup]:
+                raise E2EError(
+                    "post-safeBackup synchronization created another backup"
+                )
+            if (
+                backup.stat().st_ino != backup_stat.st_ino
+                or backup.stat().st_mtime_ns != backup_stat.st_mtime_ns
+            ):
+                raise E2EError(
+                    "post-safeBackup synchronization modified the backup"
+                )
         except Exception:
             save_artifacts(completed, log_file)
             raise
@@ -430,12 +557,14 @@ directory = "/old/state"
         Path("/new/sync"),
         Path("/new/state"),
         Path("/new/sync_list"),
+        "backup",
     )
     parsed = tomllib.loads(rewritten)
     if (
         parsed["sync"]["directory"] != "/new/sync"
         or parsed["sync"]["dry_run"] is not False
         or parsed["sync"]["sync_list"] != "/new/sync_list"
+        or parsed["sync"]["local_conflict"] != "backup"
         or parsed["state"]["directory"] != "/new/state"
     ):
         raise E2EError("configuration rewrite self-test failed")
@@ -469,6 +598,20 @@ directory = "/old/state"
     )
     if replaced_sync_list["sync"]["sync_list"] != "/new/sync_list":
         raise E2EError("existing selective-sync path was not replaced")
+    existing_local_conflict = source.replace(
+        'directory = "/old/sync"',
+        'directory = "/old/sync"\nlocal_conflict = "block"',
+    )
+    replaced_local_conflict = tomllib.loads(
+        rewrite_config(
+            existing_local_conflict,
+            Path("/new/sync"),
+            Path("/new/state"),
+            local_conflict="backup",
+        )
+    )
+    if replaced_local_conflict["sync"]["local_conflict"] != "backup":
+        raise E2EError("existing local-conflict policy was not replaced")
     with tempfile.TemporaryDirectory() as raw:
         root = Path(raw)
         expected = root / "account" / "fixture" / "small.txt"
@@ -517,6 +660,29 @@ directory = "/old/state"
             raise E2EError("item database lookup self-test failed")
         if materialized_files(root) != sorted([expected, database]):
             raise E2EError("materialized file lookup self-test failed")
+        backup = expected.with_name(
+            "small.safeBackup-20261004T060000Z-0001.txt"
+        )
+        backup.write_text("local conflict", encoding="utf-8")
+        ignored = expected.with_name("small.safeBackup-invalid.bin")
+        ignored.write_text("wrong extension", encoding="utf-8")
+        backup_symlink = expected.with_name(
+            "small.safeBackup-20261004T060000Z-0002.txt"
+        )
+        backup_symlink.symlink_to(backup)
+        if safe_backup_files(expected) != [backup]:
+            raise E2EError("safeBackup lookup self-test failed")
+        event_result = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=(
+                "not JSON\n"
+                '{"event":"local_conflict_backed_up","level":"warning"}\n'
+            ),
+            stderr="",
+        )
+        if not has_json_event(event_result, "local_conflict_backed_up"):
+            raise E2EError("safeBackup JSON event self-test failed")
 
 
 def main() -> int:

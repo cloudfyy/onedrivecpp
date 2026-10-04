@@ -261,7 +261,11 @@ Debug 程序位于 `build/debug/onedrive-cpp`。
 会把状态目录复制到隔离的临时工作区，只清理该副本，并配置隔离的 `sync_list`。
 它会验证显式单文件下载可以绕过空规则文件，随后的同步排除其快照但不删除本地
 文件，加入包含规则会触发完整远端状态查询并重新下载 fixture，最后一次增量同步
-不会替换未变化的文件。
+不会替换未变化的文件。随后 runner 会写入冲突的本地内容，只清理隔离状态副本，
+并验证 `sync.local_conflict = "backup"` 发出结构化事件、把本地字节完整保存为同
+目录下唯一的 `safeBackup`、恢复 Graph 权威 fixture、持久化一条快照，而且后续
+增量同步不会改写远端文件或备份。runner 会强制隔离配置使用 `backup` 策略，不会
+修改外部配置。
 
 ```bash
 export ONEDRIVE_E2E_CONFIG=/absolute/path/to/dedicated-e2e.toml
