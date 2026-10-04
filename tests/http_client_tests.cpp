@@ -637,6 +637,118 @@ int main() {
         return fail("cancelled HTTP chunk did not roll back to its offset");
     }
 
+    {
+        std::ofstream resumable{destination, std::ios::binary};
+        resumable << "prefix";
+    }
+    server_error.clear();
+    std::jthread checkpointed_cancel_server{[&] {
+        pollfd descriptor{
+            .fd = listener.get(),
+            .events = POLLIN,
+            .revents = 0,
+        };
+        if (::poll(&descriptor, 1, 10'000) != 1) {
+            server_error =
+                "timed out waiting for checkpointed cancellation request";
+            return;
+        }
+        Socket connection{
+            ::accept4(listener.get(), nullptr, nullptr, SOCK_CLOEXEC)
+        };
+        std::string request;
+        char buffer[4096];
+        while (!request.contains("\r\n\r\n")) {
+            const auto count =
+                ::recv(connection.get(), buffer, sizeof(buffer), 0);
+            if (count <= 0) {
+                server_error =
+                    "cannot read checkpointed cancellation request";
+                return;
+            }
+            request.append(buffer, static_cast<std::size_t>(count));
+        }
+        constexpr std::string_view response_start{
+            "HTTP/1.1 206 Partial Content\r\n"
+            "Content-Range: bytes 6-15/16\r\n"
+            "Content-Length: 10\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "chunk"
+        };
+        if (::send(
+                connection.get(),
+                response_start.data(),
+                response_start.size(),
+                MSG_NOSIGNAL
+            ) != static_cast<ssize_t>(response_start.size())) {
+            server_error =
+                "cannot start checkpointed cancellation response";
+            return;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds{100});
+        constexpr std::string_view remainder{"-tail"};
+        static_cast<void>(::send(
+            connection.get(),
+            remainder.data(),
+            remainder.size(),
+            MSG_NOSIGNAL
+        ));
+    }};
+    std::stop_source checkpointed_cancellation;
+    std::vector<std::uint64_t> cancellation_checkpoints;
+    const auto checkpointed_cancel_response = client.download(
+        {
+            .url = "http://127.0.0.1:" + std::to_string(port) +
+                   "/checkpointed-cancel",
+            .headers = {"Range: bytes=6-15"},
+            .connect_timeout = std::chrono::seconds{2},
+            .operation_timeout = std::chrono::seconds{5},
+            .download_offset = 6,
+            .stop_token = checkpointed_cancellation.get_token(),
+        },
+        destination,
+        [&](std::uint64_t downloaded, std::uint64_t) {
+            if (downloaded >= 5) {
+                checkpointed_cancellation.request_stop();
+            }
+        },
+        {},
+        [&](std::uint64_t completed) {
+            cancellation_checkpoints.push_back(completed);
+        },
+        [](long status_code,
+           std::span<const onedrive::http::HttpHeader> headers) {
+            return status_code == 206 &&
+                   std::ranges::any_of(
+                       headers,
+                       [](const onedrive::http::HttpHeader& header) {
+                           return header.name == "Content-Range" &&
+                                  header.value == "bytes 6-15/16";
+                       }
+                   );
+        }
+    );
+    checkpointed_cancel_server.join();
+    std::ifstream checkpointed_partial{destination, std::ios::binary};
+    const std::string checkpointed_contents{
+        std::istreambuf_iterator<char>{checkpointed_partial},
+        std::istreambuf_iterator<char>{}
+    };
+    std::filesystem::remove(destination, ignored);
+    if (!server_error.empty()) {
+        return fail(server_error);
+    }
+    if (checkpointed_cancel_response ||
+        checkpointed_cancel_response.error().code !=
+            onedrive::http::HttpErrorCode::cancelled ||
+        cancellation_checkpoints != std::vector<std::uint64_t>{11} ||
+        checkpointed_contents != "prefixchunk") {
+        return fail(
+            "cancelled validated HTTP chunk was not checkpointed durably"
+        );
+    }
+
     server_error.clear();
     std::jthread stalled_download_server{[&] {
         pollfd descriptor{

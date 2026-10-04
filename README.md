@@ -447,7 +447,9 @@ requests, using the same value as the maximum chunk size. It defaults to
 threshold use a single request. Range response metadata is validated before
 response bytes are written, and large transfers periodically flush durable
 checkpoints so an interrupted request retries from the last safely stored
-offset instead of the beginning of the chunk.
+offset instead of the beginning of the chunk. Graceful cancellation also
+flushes and records bytes from an already validated Range response before
+stopping.
 
 Download transport settings control each file-content request. Connection and
 operation timeouts default to `30` and `3600` seconds. A transfer that remains

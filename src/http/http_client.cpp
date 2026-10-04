@@ -61,6 +61,7 @@ struct DownloadState {
     std::uint64_t durable_offset{};
     std::uint64_t file_offset{};
     bool response_accepted{true};
+    bool response_validated{false};
 };
 
 struct WriteContext {
@@ -84,6 +85,30 @@ struct WriteContext {
     bool data_callback_failed{false};
     std::string data_callback_error;
 };
+
+bool make_download_checkpoint(WriteContext& context) {
+    if (::fdatasync(context.descriptor) == -1) {
+        context.write_failed = true;
+        context.write_error = errno;
+        return false;
+    }
+    if (context.checkpoint != nullptr && *context.checkpoint) {
+        try {
+            (*context.checkpoint)(context.file_offset);
+        } catch (const std::exception& error) {
+            context.data_callback_failed = true;
+            context.data_callback_error = error.what();
+            return false;
+        } catch (...) {
+            context.data_callback_failed = true;
+            context.data_callback_error = "unknown error";
+            return false;
+        }
+    }
+    context.durable_offset = context.file_offset;
+    context.download_state->durable_offset = context.file_offset;
+    return true;
+}
 
 struct HeaderContext {
     std::vector<HttpHeader> headers;
@@ -168,6 +193,9 @@ std::size_t write_response(char* data, std::size_t size, std::size_t count, void
             }
             write_context.response_accepted = accepted;
             write_context.download_state->response_accepted = accepted;
+            write_context.download_state->response_validated =
+                write_context.response_gate != nullptr &&
+                *write_context.response_gate && accepted;
         }
         if (!*write_context.response_accepted) {
             return byte_count;
@@ -222,28 +250,9 @@ std::size_t write_response(char* data, std::size_t size, std::size_t count, void
         if (write_context.checkpoint_interval != 0 &&
             write_context.file_offset - write_context.durable_offset >=
                 write_context.checkpoint_interval) {
-            if (::fdatasync(write_context.descriptor) == -1) {
-                write_context.write_failed = true;
-                write_context.write_error = errno;
+            if (!make_download_checkpoint(write_context)) {
                 return 0;
             }
-            if (write_context.checkpoint != nullptr &&
-                *write_context.checkpoint) {
-                try {
-                    (*write_context.checkpoint)(write_context.file_offset);
-                } catch (const std::exception& error) {
-                    write_context.data_callback_failed = true;
-                    write_context.data_callback_error = error.what();
-                    return 0;
-                } catch (...) {
-                    write_context.data_callback_failed = true;
-                    write_context.data_callback_error = "unknown error";
-                    return 0;
-                }
-            }
-            write_context.durable_offset = write_context.file_offset;
-            write_context.download_state->durable_offset =
-                write_context.file_offset;
         }
         return byte_count;
     }
@@ -387,6 +396,7 @@ HttpResult perform_request(
         .durable_offset = request.download_offset,
         .file_offset = request.download_offset,
         .response_accepted = true,
+        .response_validated = false,
     };
     if (download_state == nullptr) {
         download_state = &local_download_state;
@@ -528,6 +538,29 @@ HttpResult perform_request(
     result = curl_easy_perform(handle.get());
     if (result != CURLE_OK) {
         if (progress_context.cancelled) {
+            const bool can_checkpoint_cancelled_data =
+                descriptor != -1 &&
+                download_state->response_validated &&
+                checkpoint &&
+                write_context.file_offset > write_context.durable_offset;
+            if (can_checkpoint_cancelled_data &&
+                !make_download_checkpoint(write_context)) {
+                if (write_context.write_failed) {
+                    return std::unexpected(HttpError{
+                        .message = "cannot flush cancelled download: " +
+                                   std::string{
+                                       std::strerror(
+                                           write_context.write_error
+                                       )
+                                   },
+                    });
+                }
+                return std::unexpected(HttpError{
+                    .message =
+                        "cancelled download checkpoint callback failed: " +
+                        write_context.data_callback_error,
+                });
+            }
             return std::unexpected(HttpError{
                 .code = HttpErrorCode::cancelled,
                 .message = "HTTP request was cancelled",
@@ -584,6 +617,8 @@ HttpResult perform_request(
                 header_context.headers
             );
             download_state->response_accepted =
+                *write_context.response_accepted;
+            download_state->response_validated =
                 *write_context.response_accepted;
         } catch (const std::exception& error) {
             return std::unexpected(HttpError{
