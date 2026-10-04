@@ -1,3 +1,14 @@
+onedrive-cpp (0.7.10-1~ubuntu24.04) noble; urgency=medium
+
+  * Upload files larger than 250 MB through contiguous Microsoft Graph upload
+    session fragments with strict nextExpectedRanges validation.
+  * Keep preauthorized upload URLs free of Graph authorization headers and add
+    configurable 320 KiB-aligned fragment sizing and send-rate limits.
+  * Cover multi-fragment, final short-fragment, throttling, conditional update,
+    unsafe URL, invalid range, dry-run, and mid-upload local-change behavior.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 22:55:00 +0000
+
 onedrive-cpp (0.7.9-1~ubuntu24.04) noble; urgency=medium
 
   * Exercise remote file moves with simultaneous cross-directory rename
