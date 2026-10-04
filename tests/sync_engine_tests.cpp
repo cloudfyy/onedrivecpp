@@ -1914,6 +1914,290 @@ int test_remote_moves() {
         return fail("remote directory move did not remap descendant state");
     }
 
+    const auto ordered_root = temporary.path() / "ordered-moves";
+    std::filesystem::create_directories(ordered_root);
+    {
+        std::ofstream first{ordered_root / "A.txt"};
+        first << "aaaa";
+        std::ofstream second{ordered_root / "B.txt"};
+        second << "bbbb";
+    }
+    FakeGraphClient ordered_graph;
+    ordered_graph.changes = {
+        file("first", "B.txt", 4),
+        file("second", "C.txt", 4),
+    };
+    FakeItemStore ordered_items;
+    ordered_items.saved_delta_link = "saved";
+    ordered_items.items.emplace(
+        "first",
+        tracked_item(ordered_root, "first", "A.txt")
+    );
+    ordered_items.items.emplace(
+        "second",
+        tracked_item(ordered_root, "second", "B.txt")
+    );
+    FakeMetrics ordered_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(ordered_root, false),
+            ordered_graph,
+            ordered_items,
+            ordered_metrics
+        }.synchronize() != 0 ||
+        std::filesystem::exists(ordered_root / "A.txt") ||
+        !std::filesystem::exists(ordered_root / "B.txt") ||
+        !std::filesystem::exists(ordered_root / "C.txt") ||
+        ordered_graph.download_count != 0 ||
+        !ordered_items.applied_delta.blocked_upserts.empty()) {
+        return fail("dependent remote move chain was not ordered safely");
+    }
+    {
+        std::ifstream first{ordered_root / "B.txt"};
+        std::ifstream second{ordered_root / "C.txt"};
+        const std::string first_content{
+            std::istreambuf_iterator<char>{first},
+            std::istreambuf_iterator<char>{}
+        };
+        const std::string second_content{
+            std::istreambuf_iterator<char>{second},
+            std::istreambuf_iterator<char>{}
+        };
+        if (first_content != "aaaa" || second_content != "bbbb") {
+            return fail("dependent remote move chain swapped local content");
+        }
+    }
+
+    const auto ordered_recovery_root =
+        temporary.path() / "ordered-move-recovery";
+    std::filesystem::create_directories(ordered_recovery_root);
+    {
+        std::ofstream first{ordered_recovery_root / "A.txt"};
+        first << "aaaa";
+        std::ofstream second{ordered_recovery_root / "B.txt"};
+        second << "bbbb";
+    }
+    FakeGraphClient failed_ordered_graph;
+    failed_ordered_graph.changes = {
+        file("recovery-first", "B.txt", 4),
+        file("recovery-second", "C.txt", 4),
+    };
+    FakeItemStore failed_ordered_items;
+    failed_ordered_items.saved_delta_link = "saved";
+    failed_ordered_items.items.emplace(
+        "recovery-first",
+        tracked_item(
+            ordered_recovery_root,
+            "recovery-first",
+            "A.txt"
+        )
+    );
+    failed_ordered_items.items.emplace(
+        "recovery-second",
+        tracked_item(
+            ordered_recovery_root,
+            "recovery-second",
+            "B.txt"
+        )
+    );
+    failed_ordered_items.fail_apply_delta = true;
+    FakeMetrics failed_ordered_metrics;
+    try {
+        static_cast<void>(onedrive::sync::SyncEngine{
+            config_for(ordered_recovery_root, false),
+            failed_ordered_graph,
+            failed_ordered_items,
+            failed_ordered_metrics
+        }.synchronize());
+        return fail("dependent move commit failure did not interrupt sync");
+    } catch (const std::runtime_error&) {
+    }
+    if (failed_ordered_items.pending_moves_by_id.size() != 2) {
+        return fail("dependent move failure did not preserve both journals");
+    }
+    FakeGraphClient recovered_ordered_graph;
+    recovered_ordered_graph.changes = failed_ordered_graph.changes;
+    FakeItemStore recovered_ordered_items;
+    recovered_ordered_items.saved_delta_link = "saved";
+    recovered_ordered_items.items = failed_ordered_items.items;
+    recovered_ordered_items.pending_moves_by_id =
+        failed_ordered_items.pending_moves_by_id;
+    FakeMetrics recovered_ordered_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(ordered_recovery_root, false),
+            recovered_ordered_graph,
+            recovered_ordered_items,
+            recovered_ordered_metrics
+        }.synchronize() != 0 ||
+        recovered_ordered_graph.download_count != 0 ||
+        !recovered_ordered_items.pending_moves_by_id.empty() ||
+        !recovered_ordered_metrics.last_success) {
+        return fail("dependent remote move journals were not recovered");
+    }
+
+    const auto nested_root = temporary.path() / "nested-moves";
+    std::filesystem::create_directories(nested_root / "Old");
+    {
+        std::ofstream output{nested_root / "Old" / "before.txt"};
+        output << "data";
+    }
+    FakeGraphClient nested_graph;
+    nested_graph.changes = {
+        {
+            .id = "nested-directory",
+            .name = "New",
+            .etag = "directory-etag-2",
+            .parent_id = "root",
+            .remote_path = "New",
+            .directory = true,
+        },
+        file("nested-child", "New/after.txt", 4),
+    };
+    FakeItemStore nested_items;
+    nested_items.saved_delta_link = "saved";
+    nested_items.items.emplace(
+        "nested-directory",
+        tracked_item(
+            nested_root,
+            "nested-directory",
+            "Old",
+            true
+        )
+    );
+    nested_items.items.emplace(
+        "nested-child",
+        tracked_item(
+            nested_root,
+            "nested-child",
+            "Old/before.txt"
+        )
+    );
+    FakeMetrics nested_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(nested_root, false),
+            nested_graph,
+            nested_items,
+            nested_metrics
+        }.synchronize() != 0 ||
+        std::filesystem::exists(nested_root / "Old") ||
+        std::filesystem::exists(nested_root / "New" / "before.txt") ||
+        !std::filesystem::exists(nested_root / "New" / "after.txt") ||
+        nested_graph.download_count != 0 ||
+        !nested_items.applied_delta.blocked_upserts.empty()) {
+        return fail(
+            "child rename was not remapped after its parent directory move"
+        );
+    }
+
+    const auto cycle_root = temporary.path() / "move-cycle";
+    std::filesystem::create_directories(cycle_root);
+    {
+        std::ofstream first{cycle_root / "A.txt"};
+        first << "aaaa";
+        std::ofstream second{cycle_root / "B.txt"};
+        second << "bbbb";
+    }
+    FakeGraphClient cycle_graph;
+    cycle_graph.changes = {
+        file("cycle-first", "B.txt", 4),
+        file("cycle-second", "A.txt", 4),
+    };
+    FakeItemStore cycle_items;
+    cycle_items.saved_delta_link = "saved";
+    cycle_items.items.emplace(
+        "cycle-first",
+        tracked_item(cycle_root, "cycle-first", "A.txt")
+    );
+    cycle_items.items.emplace(
+        "cycle-second",
+        tracked_item(cycle_root, "cycle-second", "B.txt")
+    );
+    FakeMetrics cycle_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(cycle_root, false),
+            cycle_graph,
+            cycle_items,
+            cycle_metrics
+        }.synchronize() != 2 ||
+        !std::filesystem::exists(cycle_root / "A.txt") ||
+        !std::filesystem::exists(cycle_root / "B.txt") ||
+        cycle_items.applied_delta.blocked_upserts.size() != 2 ||
+        !std::ranges::all_of(
+            cycle_items.applied_delta.blocked_upserts,
+            [](const onedrive::storage::BlockedItem& item) {
+                return item.reason_code == "move_dependency_cycle";
+            }
+        )) {
+        return fail("remote move dependency cycle was not blocked safely");
+    }
+
+    const auto blocked_dependency_root =
+        temporary.path() / "blocked-move-dependency";
+    std::filesystem::create_directories(
+        blocked_dependency_root / "Old"
+    );
+    std::filesystem::create_directories(
+        blocked_dependency_root / "New"
+    );
+    {
+        std::ofstream output{
+            blocked_dependency_root / "Old" / "before.txt"
+        };
+        output << "data";
+    }
+    FakeGraphClient blocked_dependency_graph;
+    blocked_dependency_graph.changes = {
+        {
+            .id = "blocked-directory",
+            .name = "New",
+            .etag = "directory-etag-2",
+            .parent_id = "root",
+            .remote_path = "New",
+            .directory = true,
+        },
+        file("blocked-child", "New/after.txt", 4),
+    };
+    FakeItemStore blocked_dependency_items;
+    blocked_dependency_items.saved_delta_link = "saved";
+    blocked_dependency_items.items.emplace(
+        "blocked-directory",
+        tracked_item(
+            blocked_dependency_root,
+            "blocked-directory",
+            "Old",
+            true
+        )
+    );
+    blocked_dependency_items.items.emplace(
+        "blocked-child",
+        tracked_item(
+            blocked_dependency_root,
+            "blocked-child",
+            "Old/before.txt"
+        )
+    );
+    FakeMetrics blocked_dependency_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(blocked_dependency_root, false),
+            blocked_dependency_graph,
+            blocked_dependency_items,
+            blocked_dependency_metrics
+        }.synchronize() != 2 ||
+        !std::filesystem::exists(
+            blocked_dependency_root / "Old" / "before.txt"
+        ) ||
+        std::filesystem::exists(
+            blocked_dependency_root / "New" / "after.txt"
+        ) ||
+        blocked_dependency_items.applied_delta.blocked_upserts.size() != 2 ||
+        std::ranges::find(
+            blocked_dependency_items.applied_delta.blocked_upserts,
+            "move_dependency_blocked",
+            &onedrive::storage::BlockedItem::reason_code
+        ) ==
+            blocked_dependency_items.applied_delta.blocked_upserts.end()) {
+        return fail("failed prerequisite did not block its dependent move");
+    }
+
     const auto modified_root = temporary.path() / "modified-move";
     std::filesystem::create_directories(modified_root);
     {

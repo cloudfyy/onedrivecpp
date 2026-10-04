@@ -14,8 +14,9 @@ copy the reference project's D implementation.
 > systemd user service, and Debian packaging. Synchronization currently
 > creates remote directories, downloads added or changed remote files, and
 > safely removes unchanged local snapshots after remote deletion, and uploads
-> new or modified local files. Remote moves, local deletion propagation, large
-> resumable uploads, and full two-way conflict resolution are not implemented.
+> new or modified local files. Cyclic remote move staging, local deletion
+> propagation, large resumable uploads, and full two-way conflict resolution
+> are not implemented.
 
 ## Architecture
 
@@ -1053,9 +1054,14 @@ transport failures remain fatal.
 When a Delta item retains its remote ID but changes path, the client safely
 renames the synchronized local item without replacing an existing destination.
 Directory moves remap all tracked descendants even when Graph reports only the
-changed directory. Unchanged files are reused using Graph content hashes when
-available, with size and authoritative content-modification time as the
-fallback; a simultaneously changed file is downloaded after the move.
+changed directory. Dependent moves are ordered so a destination occupied by
+another moving item is vacated first. Parent directory moves remap the
+effective source paths of explicit child renames. Name exchanges and other
+dependency cycles are retained as `move_dependency_cycle` blocked items until
+temporary staging is implemented. Unchanged files are reused using Graph
+content hashes when available, with size and authoritative
+content-modification time as the fallback; a simultaneously changed file is
+downloaded after the move.
 Locally modified sources, symbolic links, type conflicts, and occupied
 destinations are retained as retryable blocked items. Move operations and both
 parent directories are flushed before the Delta cursor advances, and a retry
@@ -1186,9 +1192,10 @@ or modify the synchronization directory.
 
 ## Suggested Next Steps
 
-1. Safely apply remote moves and renames to the local file tree.
+1. Stage name exchanges and cyclic remote moves through private temporary paths.
 2. Connect the monitor to inotify.
-3. Add uploads and two-way conflict policies.
+3. Extend uploads with directories, deletion propagation, and resumable
+   sessions.
 4. Add integration tests for the Graph and
    file system boundaries.
 

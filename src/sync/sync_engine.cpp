@@ -656,6 +656,7 @@ MoveSummary execute_moves(
     struct Move {
         graph::RemoteItem item;
         storage::ItemState previous;
+        std::filesystem::path destination;
     };
     std::vector<Move> moves;
     for (std::size_t index = 0; index < plan.move_count(); ++index) {
@@ -665,29 +666,160 @@ MoveSummary execute_moves(
             moves.push_back({
                 .item = item,
                 .previous = std::move(previous).value(),
+                .destination = plan.state_for(item.id).local_path,
             });
         }
     }
-    std::ranges::sort(
-        moves,
-        {},
-        [](const Move& move) {
-            return std::ranges::count(move.previous.remote_path, '/');
-        }
-    );
     std::unordered_map<std::string, storage::PendingMove> pending_moves;
     for (auto pending : items.pending_moves(drive_id)) {
         pending_moves.emplace(pending.remote_id, std::move(pending));
     }
 
     MoveSummary summary;
-    for (const auto& move : moves) {
+    const auto block_move = [&](const Move& move,
+                                std::string code,
+                                std::string message) {
+        plan.block(move.item, std::move(code), std::move(message));
+        summary.blocked.insert(move.item.id);
+        report_blocked(plan.blocked(plan.blocked_count() - 1), console);
+    };
+    const auto same_or_descendant = [](
+                                        const std::filesystem::path& path,
+                                        const std::filesystem::path& directory
+                                    ) {
+        const auto relative = path.lexically_relative(directory);
+        return relative.empty() ||
+               (!relative.native().starts_with("..") &&
+                !relative.is_absolute());
+    };
+
+    std::vector<std::vector<std::size_t>> dependencies(moves.size());
+    std::vector<std::vector<std::size_t>> dependents(moves.size());
+    const auto add_dependency = [&](std::size_t move,
+                                    std::size_t prerequisite) {
+        if (move == prerequisite ||
+            std::ranges::find(dependencies[move], prerequisite) !=
+                dependencies[move].end()) {
+            return;
+        }
+        dependencies[move].push_back(prerequisite);
+        dependents[prerequisite].push_back(move);
+    };
+    for (std::size_t index = 0; index < moves.size(); ++index) {
+        for (std::size_t other = 0; other < moves.size(); ++other) {
+            if (index == other) {
+                continue;
+            }
+            if (moves[index].previous.directory &&
+                same_or_descendant(
+                    moves[other].previous.local_path,
+                    moves[index].previous.local_path
+                )) {
+                add_dependency(other, index);
+            }
+            if (moves[other].previous.directory ?
+                    same_or_descendant(
+                        moves[index].destination,
+                        moves[other].previous.local_path
+                    ) :
+                    moves[index].destination ==
+                        moves[other].previous.local_path) {
+                add_dependency(index, other);
+            }
+        }
+    }
+
+    std::vector<std::size_t> remaining_dependencies(moves.size());
+    for (std::size_t index = 0; index < moves.size(); ++index) {
+        remaining_dependencies[index] = dependencies[index].size();
+    }
+    std::vector<std::size_t> ordered_moves;
+    ordered_moves.reserve(moves.size());
+    std::vector<bool> scheduled(moves.size(), false);
+    while (ordered_moves.size() < moves.size()) {
+        std::optional<std::size_t> ready;
+        for (std::size_t index = 0; index < moves.size(); ++index) {
+            if (scheduled[index] || remaining_dependencies[index] != 0) {
+                continue;
+            }
+            if (!ready ||
+                std::ranges::count(
+                    moves[index].previous.remote_path,
+                    '/'
+                ) <
+                    std::ranges::count(
+                        moves[*ready].previous.remote_path,
+                        '/'
+                    )) {
+                ready = index;
+            }
+        }
+        if (!ready) {
+            break;
+        }
+        scheduled[*ready] = true;
+        ordered_moves.push_back(*ready);
+        for (const auto dependent : dependents[*ready]) {
+            --remaining_dependencies[dependent];
+        }
+    }
+    for (std::size_t index = 0; index < moves.size(); ++index) {
+        if (!scheduled[index]) {
+            block_move(
+                moves[index],
+                "move_dependency_cycle",
+                "remote move participates in a dependency cycle that "
+                "requires temporary staging: " +
+                    moves[index].item.remote_path
+            );
+        }
+    }
+
+    struct DirectoryMove {
+        std::filesystem::path source;
+        std::filesystem::path destination;
+    };
+    std::vector<DirectoryMove> completed_directory_moves;
+    const auto remap_source = [&](std::filesystem::path source) {
+        for (const auto& directory : completed_directory_moves) {
+            const auto relative =
+                source.lexically_relative(directory.source);
+            if (relative.empty()) {
+                source = directory.destination;
+            } else if (!relative.native().starts_with("..") &&
+                       !relative.is_absolute()) {
+                source = directory.destination / relative;
+            }
+        }
+        return source;
+    };
+
+    for (const auto move_index : ordered_moves) {
+        const auto& move = moves[move_index];
         if (summary.blocked.contains(move.item.id)) {
             continue;
         }
+        const auto failed_prerequisite = std::ranges::find_if(
+            dependencies[move_index],
+            [&](std::size_t prerequisite) {
+                return summary.blocked.contains(
+                    moves[prerequisite].item.id
+                );
+            }
+        );
+        if (failed_prerequisite != dependencies[move_index].end()) {
+            block_move(
+                move,
+                "move_dependency_blocked",
+                "remote move depends on another move that could not be "
+                "applied: " +
+                    moves[*failed_prerequisite].item.remote_path
+            );
+            continue;
+        }
         auto& state = plan.state_for(move.item.id);
-        const auto& source = move.previous.local_path;
-        const auto& destination = state.local_path;
+        const auto source = remap_source(move.previous.local_path);
+        const auto& destination = move.destination;
         const auto pending_iterator =
             pending_moves.find(move.item.id);
         const storage::PendingMove* pending =
@@ -696,12 +828,7 @@ MoveSummary execute_moves(
                 &pending_iterator->second;
         bool journal_saved = pending != nullptr;
         const auto block = [&](std::string code, std::string message) {
-            plan.block(move.item, std::move(code), std::move(message));
-            summary.blocked.insert(move.item.id);
-            report_blocked(
-                plan.blocked(plan.blocked_count() - 1),
-                console
-            );
+            block_move(move, std::move(code), std::move(message));
         };
         try {
             if (pending != nullptr &&
@@ -719,8 +846,13 @@ MoveSummary execute_moves(
                 operations.acquire(drive_id, move.previous.remote_id);
             auto source_operation =
                 operations.acquire_destination(source);
-            auto destination_operation =
-                operations.acquire_destination(destination);
+            std::optional<detail::ItemOperationCoordinator::Lease>
+                destination_operation;
+            if (source != destination) {
+                destination_operation.emplace(
+                    operations.acquire_destination(destination)
+                );
+            }
             static_cast<void>(safe_root.relative_path(source));
             static_cast<void>(safe_root.relative_path(destination));
 
@@ -762,7 +894,43 @@ MoveSummary execute_moves(
                             std::filesystem::is_directory(status) :
                             std::filesystem::is_regular_file(status));
             };
-            if (!source_exists) {
+            bool pending_destination_matches = false;
+            if (pending != nullptr && destination_exists &&
+                expected_type(destination_status)) {
+                const auto identity = safe_root.identity(
+                    destination,
+                    move.previous.directory
+                );
+                pending_destination_matches =
+                    identity.device == pending->source_device &&
+                    identity.inode == pending->source_inode;
+            }
+            if (!pending_destination_matches && source == destination) {
+                if (!source_exists ||
+                    !expected_type(source_status) ||
+                    (!move.previous.directory &&
+                     !detail::local_snapshot_matches(
+                         move.previous,
+                         source
+                     ))) {
+                    block(
+                        "local_path_conflict",
+                        "remotely moved item is not present at its "
+                        "dependency-adjusted destination: " +
+                            destination.string()
+                    );
+                    continue;
+                }
+                if (pending != nullptr) {
+                    block(
+                    "pending_move_conflict",
+                    "remote move destination does not match the "
+                    "durable source identity: " +
+                        destination.string()
+                    );
+                    continue;
+                }
+            } else if (!pending_destination_matches && !source_exists) {
                 if (!destination_exists ||
                     !expected_type(destination_status) ||
                     (!move.previous.directory &&
@@ -793,7 +961,7 @@ MoveSummary execute_moves(
                         continue;
                     }
                 }
-            } else {
+            } else if (!pending_destination_matches) {
                 if (!expected_type(source_status)) {
                     block(
                         "local_path_conflict",
@@ -875,6 +1043,12 @@ MoveSummary execute_moves(
                 );
             }
 
+            if (move.previous.directory && source != destination) {
+                completed_directory_moves.push_back({
+                    .source = source,
+                    .destination = destination,
+                });
+            }
             if (!move.previous.directory) {
                 state.local_size = static_cast<std::int64_t>(
                     std::filesystem::file_size(destination)

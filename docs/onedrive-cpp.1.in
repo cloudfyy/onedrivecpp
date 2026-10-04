@@ -33,8 +33,8 @@ The current release includes configuration loading, device-code
 authentication, authenticated Microsoft Graph delta queries, local state and
 delta-link storage, safe downloads, local uploads, remote-deletion handling,
 dry-run support, logging, monitoring scaffolding, and packaging integration.
-Remote moves, local-deletion propagation, and resumable large uploads are not
-implemented.
+Cyclic remote move staging, local-deletion propagation, and resumable large
+uploads are not implemented.
 .SH COMMANDS
 .TP
 .B auth
@@ -119,6 +119,11 @@ by selective synchronization retain their local files. Use
 Delta items that retain their remote ID while changing path are renamed or
 moved locally without replacing an existing destination. Directory moves
 remap tracked descendants even when Graph reports only the directory.
+Dependent moves vacate occupied destinations first, and parent directory moves
+remap the effective source of explicit child renames. Name exchanges and other
+dependency cycles are retained as
+.B move_dependency_cycle
+blocked items until temporary staging is implemented.
 Content-identical files are reused; files whose remote content also changed
 are downloaded after the move. Locally modified sources, symbolic links,
 unexpected types, and occupied destinations are persisted as retryable blocked
