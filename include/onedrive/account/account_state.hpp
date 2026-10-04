@@ -50,6 +50,10 @@ public:
     [[nodiscard]] static std::filesystem::path active_token_path(
         const std::filesystem::path& state_directory
     );
+    [[nodiscard]] static std::filesystem::path drive_data_directory(
+        const std::filesystem::path& data_directory,
+        const DriveIdentity& identity
+    );
 };
 
 }  // namespace onedrive::account

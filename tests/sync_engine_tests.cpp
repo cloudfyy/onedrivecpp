@@ -651,6 +651,40 @@ int test_failure_and_conflict() {
         !symlink_metrics.last_success) {
         return fail("symbolic link conflict was not isolated safely");
     }
+
+    const auto layout_root = temporary.path() / "layout-root";
+    const auto layout_outside = temporary.path() / "layout-outside";
+    std::filesystem::create_directories(layout_root);
+    std::filesystem::create_directories(layout_outside);
+    std::filesystem::create_directory_symlink(
+        layout_outside,
+        layout_root / "accounts"
+    );
+    FakeGraphClient layout_graph;
+    FakeItemStore layout_items;
+    FakeMetrics layout_metrics;
+    const auto layout_config = config_for(
+        layout_root / "accounts/Test-User/drives/Test-Drive",
+        false
+    );
+    bool layout_symlink_rejected = false;
+    try {
+        static_cast<void>(onedrive::sync::SyncEngine{
+            layout_config,
+            layout_graph,
+            layout_items,
+            layout_metrics
+        }.synchronize());
+    } catch (const std::runtime_error& error) {
+        layout_symlink_rejected = std::string_view{error.what()}.contains(
+            "contains a symbolic link"
+        );
+    }
+    if (!layout_symlink_rejected ||
+        std::filesystem::exists(layout_outside / "Test-User") ||
+        layout_metrics.last_success) {
+        return fail("symbolic link in account data layout was accepted");
+    }
     return EXIT_SUCCESS;
 }
 

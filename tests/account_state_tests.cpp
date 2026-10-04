@@ -113,5 +113,41 @@ int main() {
         )) {
         return fail("UTF-8 account names were not preserved safely");
     }
+
+    const auto data_root = temporary.path() / "data";
+    const auto data_directory =
+        onedrive::account::AccountState::drive_data_directory(
+            data_root,
+            identity
+        );
+    std::filesystem::create_directories(data_directory);
+    const auto renamed_data_directory =
+        onedrive::account::AccountState::drive_data_directory(
+            data_root,
+            renamed
+        );
+    auto second_drive = identity;
+    second_drive.drive_id = "second-drive-id";
+    second_drive.drive_name = "Personal Drive";
+    const auto second_drive_directory =
+        onedrive::account::AccountState::drive_data_directory(
+            data_root,
+            second_drive
+        );
+    const auto second_user_directory =
+        onedrive::account::AccountState::drive_data_directory(
+            data_root,
+            international
+        );
+    if (data_directory != renamed_data_directory ||
+        data_directory.parent_path().filename() != "drives" ||
+        data_directory.parent_path().parent_path().parent_path() !=
+            data_root / "accounts" ||
+        second_drive_directory == data_directory ||
+        second_drive_directory.parent_path() != data_directory.parent_path() ||
+        second_user_directory.parent_path().parent_path() ==
+            data_directory.parent_path().parent_path()) {
+        return fail("account and Drive data directories were not isolated");
+    }
     return EXIT_SUCCESS;
 }

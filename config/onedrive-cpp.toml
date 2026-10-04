@@ -1,6 +1,7 @@
 config_version = 1
 
 [sync]
+# Root for account- and Drive-specific synchronized data directories.
 # Paths may be absolute or relative to the service working directory.
 directory = "/home/USER/OneDrive"
 drive_id = "me"

@@ -265,20 +265,40 @@ bool below_blocked_directory(
     );
 }
 
+void reject_sync_root_symlinks(const std::filesystem::path& absolute_root) {
+    auto component_path = absolute_root.root_path();
+    for (const auto& component : absolute_root.relative_path()) {
+        component_path /= component;
+        std::error_code error;
+        const auto status =
+            std::filesystem::symlink_status(component_path, error);
+        if (error == std::errc::no_such_file_or_directory) {
+            break;
+        }
+        if (error) {
+            throw std::runtime_error(
+                "cannot inspect synchronization directory component '" +
+                component_path.string() + "': " + error.message()
+            );
+        }
+        if (std::filesystem::is_symlink(status)) {
+            throw std::runtime_error(
+                "synchronization directory contains a symbolic link: " +
+                component_path.string()
+            );
+        }
+    }
+}
+
 std::filesystem::path prepare_sync_root(
     const std::filesystem::path& configured_root
 ) {
-    if (std::filesystem::is_symlink(
-            std::filesystem::symlink_status(configured_root)
-        )) {
-        throw std::runtime_error(
-            "configured synchronization directory is a symbolic link: " +
-            configured_root.string()
-        );
-    }
-    const bool created =
-        std::filesystem::create_directories(configured_root);
-    const auto root = std::filesystem::weakly_canonical(configured_root);
+    const auto absolute_root =
+        std::filesystem::absolute(configured_root).lexically_normal();
+    reject_sync_root_symlinks(absolute_root);
+    const bool created = std::filesystem::create_directories(absolute_root);
+    reject_sync_root_symlinks(absolute_root);
+    const auto root = std::filesystem::weakly_canonical(absolute_root);
     if (created) {
         spdlog::debug("Created synchronization root '{}'", root.string());
     }
@@ -632,7 +652,10 @@ int SyncEngine::synchronize() const {
         cli::Console fallback_console;
         const auto& console =
             console_ == nullptr ? fallback_console : *console_;
-        std::filesystem::path sync_root = config_->sync_directory;
+        std::filesystem::path sync_root =
+            std::filesystem::absolute(
+                config_->sync_directory
+            ).lexically_normal();
         std::optional<detail::FilesystemMetadata> metadata;
         if (config_->dry_run) {
             console.section(
@@ -692,7 +715,7 @@ int SyncEngine::synchronize() const {
                 );
             }
         } else {
-            sync_root = prepare_sync_root(config_->sync_directory);
+            sync_root = prepare_sync_root(sync_root);
             metadata.emplace(detail::FilesystemMetadata::detect(
                 config_->filesystem_metadata,
                 sync_root
@@ -752,7 +775,7 @@ int SyncEngine::synchronize() const {
         auto plan = detail::SyncPlan::build(
             std::move(delta),
             config_->drive_id,
-            config_->sync_directory,
+            sync_root,
             replace_drive_items
         );
         report_plan(plan, config_->drive_id, console);

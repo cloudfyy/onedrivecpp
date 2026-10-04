@@ -428,6 +428,11 @@ int Application::run(int argc, char* argv[]) {
         auto graph = runtime_factory_->create_graph_client(config);
         const auto identity = graph->drive_identity();
         config.drive_id = identity.drive_id;
+        config.sync_directory =
+            account::AccountState::drive_data_directory(
+                config.sync_directory,
+                identity
+            );
         auto items = runtime_factory_->create_item_store(config, identity);
         items->open();
         auto metrics = runtime_factory_->create_metrics();

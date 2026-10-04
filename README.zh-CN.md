@@ -412,6 +412,19 @@ HEIC 文件实际下载的字节可能与 Graph 元数据不同；`"relaxed"` �
 中止传输。由于 Graph 无法在下载前可靠识别 AIP 文件，宽松模式会作用于所有
 下载，并会降低完整性保证。
 
+`sync.directory` 是同步数据的公共根目录。实际 Drive 内容会使用与 state 相同的
+稳定 ID 和友好名称组件进行隔离：
+
+```text
+<sync.directory>/accounts/<显示名称>--<用户-ID-哈希>/
+  drives/<Drive-名称>--<Drive-ID-哈希>/
+    <同步的 OneDrive 内容>
+```
+
+因此，同一个配置根目录可以同时容纳多个 Microsoft 用户和多个 Drive，且不会
+发生路径冲突。旧的平面 `<sync.directory>` 布局中的文件不会自动移动，并会
+保持原样。
+
 状态按稳定的 Microsoft 用户 ID 和真实 Drive ID 隔离，同时保留友好的目录名：
 
 ```text

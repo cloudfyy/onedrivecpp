@@ -197,7 +197,10 @@ a safety reserve of 256 MiB or five percent of planned transfer bytes,
 whichever is larger.
 .TP
 .B sync.directory
-Local directory used for OneDrive synchronization.
+Root directory for synchronized data. Actual content is stored under
+.IR accounts/<display-name>--<user-id-hash>/drives/<drive-name>--<drive-id-hash>
+so multiple Microsoft users and Drives remain isolated. Files from the former
+flat layout are not moved automatically.
 .TP
 .B state.directory
 Directory containing the refresh token and SQLite synchronization state.

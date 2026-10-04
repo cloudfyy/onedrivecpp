@@ -374,10 +374,11 @@ public:
     }
 
     [[nodiscard]] std::unique_ptr<onedrive::storage::ItemStore> create_item_store(
-        const onedrive::config::Config&,
+        const onedrive::config::Config& config,
         const onedrive::account::DriveIdentity&
     ) const {
         ++item_store_count;
+        last_item_store_sync_directory = config.sync_directory;
         return std::make_unique<onedrive::storage::ItemStore>(
             std::in_place_type<FakeItemStore>,
             item_store_open_count,
@@ -420,6 +421,7 @@ public:
     mutable int monitor_count{0};
     mutable int monitor_run_count{0};
     mutable int metrics_count{0};
+    mutable std::filesystem::path last_item_store_sync_directory;
 };
 
 RunResult run_application(
@@ -756,6 +758,17 @@ int main() {
             log_path.string(),
         }
     );
+    const auto expected_sync_directory =
+        onedrive::account::AccountState::drive_data_directory(
+            sync_path,
+            {
+                .user_id = "user-id",
+                .user_display_name = "Test User",
+                .configured_drive_id = "me",
+                .drive_id = "drive-id",
+                .drive_name = "Test Drive",
+            }
+        );
     if (dry_run.exit_code != 0 ||
         !dry_run.standard_output.contains("Dry run configuration") ||
         !dry_run.standard_output.contains(
@@ -770,7 +783,10 @@ int main() {
         runtime_factory.item_store_open_count != 4 ||
         runtime_factory.item_store_apply_delta_count != 0 ||
         runtime_factory.graph_client_count != 5 ||
-        runtime_factory.metrics_count != 1) {
+        runtime_factory.metrics_count != 1 ||
+        runtime_factory.last_item_store_sync_directory !=
+            expected_sync_directory ||
+        !dry_run.standard_output.contains(expected_sync_directory.string())) {
         return fail("sync dry-run command was not parsed or executed");
     }
     {

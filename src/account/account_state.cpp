@@ -59,6 +59,16 @@ struct FriendlyComponentInput {
     std::string_view fallback;
 };
 
+void validate_identity(const DriveIdentity& identity) {
+    if (identity.user_id.empty() || identity.user_display_name.empty() ||
+        identity.configured_drive_id.empty() || identity.drive_id.empty() ||
+        identity.drive_name.empty()) {
+        throw std::invalid_argument(
+            "account identity requires user and drive IDs and names"
+        );
+    }
+}
+
 std::string friendly_component(FriendlyComponentInput input) {
     const auto [display_name, stable_id, fallback] = input;
     std::string result;
@@ -275,13 +285,7 @@ AccountPaths paths_for(
     const std::filesystem::path& state_directory,
     const DriveIdentity& identity
 ) {
-    if (identity.user_id.empty() || identity.user_display_name.empty() ||
-        identity.configured_drive_id.empty() || identity.drive_id.empty() ||
-        identity.drive_name.empty()) {
-        throw std::invalid_argument(
-            "account identity requires user and drive IDs and names"
-        );
-    }
+    validate_identity(identity);
     const auto account_directory = stable_directory(
         state_directory / "accounts",
         identity.user_display_name,
@@ -487,6 +491,25 @@ std::filesystem::path AccountState::active_token_path(
     const std::filesystem::path& state_directory
 ) {
     return active_token_directory(state_directory) / "refresh_token";
+}
+
+std::filesystem::path AccountState::drive_data_directory(
+    const std::filesystem::path& data_directory,
+    const DriveIdentity& identity
+) {
+    validate_identity(identity);
+    const auto account_directory = stable_directory(
+        data_directory / "accounts",
+        identity.user_display_name,
+        identity.user_id,
+        "account"
+    );
+    return stable_directory(
+        account_directory / "drives",
+        identity.drive_name,
+        identity.drive_id,
+        "drive"
+    );
 }
 
 }  // namespace onedrive::account

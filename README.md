@@ -466,6 +466,20 @@ the transfer is aborted if the reservation cannot grow safely. Because Graph
 cannot reliably identify AIP-protected files in advance, relaxed mode applies
 to all downloads and weakens integrity guarantees.
 
+`sync.directory` is the common root for synchronized data. Actual Drive
+contents are isolated with the same stable, friendly account and Drive
+components used by state:
+
+```text
+<sync.directory>/accounts/<display-name>--<user-id-hash>/
+  drives/<drive-name>--<drive-id-hash>/
+    <synchronized OneDrive contents>
+```
+
+This allows one configured root to hold multiple Microsoft users and multiple
+Drives without path collisions. Existing files in the former flat
+`<sync.directory>` layout are not moved automatically and remain untouched.
+
 State is separated by the stable Microsoft user ID and canonical Drive ID while
 retaining friendly directory names:
 
