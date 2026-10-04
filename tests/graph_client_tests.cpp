@@ -50,6 +50,9 @@ public:
         const onedrive::http::DownloadResponseGate& response_gate
     ) const {
         download_requests.push_back(request);
+        if (response_gate) {
+            ++download_response_gate_count;
+        }
         std::string body = download_body;
         long status_code = 200;
         std::optional<std::pair<std::uint64_t, std::uint64_t>> range;
@@ -147,6 +150,7 @@ public:
     mutable std::vector<onedrive::http::HttpRequest> requests;
     mutable std::vector<onedrive::http::HttpRequest> download_requests;
     mutable std::deque<onedrive::http::HttpResult> download_responses;
+    mutable std::size_t download_response_gate_count{0};
     mutable std::uint64_t partial_failure_bytes{0};
     std::string download_body{"download"};
 
@@ -1032,6 +1036,7 @@ int test_file_download_redirect() {
             onedrive::http::HttpVersion::http_2 ||
         transport_pointer->download_requests[1].url !=
             "https://download.example.test/empty" ||
+        transport_pointer->download_response_gate_count != 2 ||
         observed_download_offsets != std::vector<std::uint64_t>{0} ||
         observed_download_data != "download" ||
         progress !=
@@ -1109,6 +1114,7 @@ int test_relaxed_file_download_ignores_remote_size() {
     if (contents != "download" ||
         !empty_file_downloaded ||
         transport_pointer->download_requests.size() != 2 ||
+        transport_pointer->download_response_gate_count != 2 ||
         transport_pointer->download_requests[0].headers !=
             std::vector<std::string>{"Accept: application/octet-stream"} ||
         transport_pointer->download_requests[0].download_offset != 0) {
@@ -1128,6 +1134,92 @@ int test_relaxed_file_download_ignores_remote_size() {
         );
         return fail("relaxed Graph download accepted a resume offset");
     } catch (const std::invalid_argument&) {
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_whole_file_download_rejects_error_body_before_retry() {
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"expires_in":3600,"access_token":"access-secret"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 302,
+                .headers = {
+                    {
+                        .name = "Location",
+                        .value = "https://download.example.test/content",
+                    },
+                },
+            },
+        }
+    );
+    transport->download_responses = {
+        onedrive::http::HttpResponse{
+            .status_code = 503,
+            .headers = {{"Retry-After", "0"}},
+            .received_size = 8,
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 200,
+            .received_size = 8,
+        },
+    };
+    auto* transport_pointer = transport.get();
+    const auto destination =
+        std::filesystem::temp_directory_path() /
+        "onedrive-cpp-whole-download-gate-test";
+    std::error_code ignored;
+    std::filesystem::remove(destination, ignored);
+
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(
+                std::string{"existing-refresh"}
+            )
+        ),
+        auth_options(),
+        {
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+            .download_maximum_retries = 1,
+        },
+    };
+    std::vector<std::uint64_t> observed_offsets;
+    std::vector<std::uint64_t> checkpoints;
+    client.download_file(
+        "item-id",
+        8,
+        destination,
+        0,
+        {},
+        {},
+        [&](std::uint64_t completed) {
+            checkpoints.push_back(completed);
+        },
+        [&](std::uint64_t offset, std::span<const std::byte>) {
+            observed_offsets.push_back(offset);
+        }
+    );
+
+    std::ifstream input{destination, std::ios::binary};
+    const std::string contents{
+        std::istreambuf_iterator<char>{input},
+        std::istreambuf_iterator<char>{}
+    };
+    std::filesystem::remove(destination, ignored);
+    if (contents != "download" ||
+        transport_pointer->download_requests.size() != 2 ||
+        transport_pointer->download_response_gate_count != 2 ||
+        observed_offsets != std::vector<std::uint64_t>{0} ||
+        checkpoints != std::vector<std::uint64_t>{8}) {
+        return fail(
+            "whole-file download persisted a rejected response body"
+        );
     }
     return EXIT_SUCCESS;
 }
@@ -2041,6 +2133,11 @@ int main() {
         return result;
     }
     if (const int result = test_relaxed_file_download_ignores_remote_size();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result =
+            test_whole_file_download_rejects_error_body_before_retry();
         result != EXIT_SUCCESS) {
         return result;
     }

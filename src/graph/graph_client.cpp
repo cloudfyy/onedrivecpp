@@ -275,6 +275,17 @@ void roll_back_chunk(
     );
 }
 
+bool successful_download_status(long status_code) {
+    return status_code >= 200 && status_code < 300;
+}
+
+bool accept_successful_download_response(
+    long status_code,
+    std::span<const http::HttpHeader>
+) {
+    return successful_download_status(status_code);
+}
+
 void require_successful_download(
     const http::HttpResult& response,
     std::string_view description
@@ -282,7 +293,7 @@ void require_successful_download(
     if (!response) {
         throw_download_error(description, response.error());
     }
-    if (response->status_code < 200 || response->status_code >= 300) {
+    if (!successful_download_status(response->status_code)) {
         throw std::runtime_error(
             std::format(
                 "{} failed with HTTP {}",
@@ -1415,7 +1426,9 @@ void MicrosoftGraphClient::download_file(
                 };
             },
             progress,
-            "Microsoft Graph relaxed file download"
+            "Microsoft Graph relaxed file download",
+            {},
+            accept_successful_download_response
         );
         require_successful_download(
             response,
@@ -1439,7 +1452,8 @@ void MicrosoftGraphClient::download_file(
             },
             progress,
             "Microsoft Graph file download",
-            checkpoint
+            checkpoint,
+            accept_successful_download_response
         );
         require_successful_download(
             response,

@@ -326,7 +326,8 @@ requires the downloaded size and any Graph-provided content hash to match;
 accepts SharePoint, AIP, or HEIC content that differs from Graph metadata and
 disables resumable and chunked downloads. Relaxed downloads reserve disk space
 incrementally from actual transfer progress and abort if that reservation
-cannot grow safely. The default is
+cannot grow safely. Both modes reject non-success HTTP response bodies before
+writing them to the temporary file or a durable checkpoint. The default is
 .BR strict .
 Relaxed mode weakens integrity guarantees.
 .TP
