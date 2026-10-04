@@ -3,6 +3,7 @@
 #include "onedrive/cli/console.hpp"
 #include "onedrive/path_security.hpp"
 #include "download_recovery.hpp"
+#include "download_progress.hpp"
 #include "download_space_coordinator.hpp"
 #include "download_transaction.hpp"
 #include "filesystem_metadata.hpp"
@@ -86,6 +87,7 @@ DownloadBatch download_files(
     }
     std::size_t completed_files = 0;
     unsigned last_reported_percentage = 0;
+    detail::DownloadProgressEstimator progress_estimator;
     const auto report_progress =
         [&](std::size_t index, std::uint64_t downloaded, bool completed) {
             const std::scoped_lock lock{console_mutex};
@@ -120,12 +122,17 @@ DownloadBatch download_files(
                 return;
             }
             last_reported_percentage = percentage;
+            const auto metrics = progress_estimator.sample(
+                downloaded_bytes,
+                total_bytes
+            );
             console.download_progress(
                 completed_files,
                 tasks.size(),
                 downloaded_bytes,
                 total_bytes,
-                all_completed
+                all_completed,
+                metrics
             );
         };
     const auto worker = [&](const std::stop_token& thread_stop) {

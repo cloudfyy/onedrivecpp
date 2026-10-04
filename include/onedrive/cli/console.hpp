@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iosfwd>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -41,6 +42,12 @@ struct Field {
     std::string value;
 };
 
+struct DownloadProgressMetrics {
+    std::uint64_t bytes_per_second{0};
+    std::optional<std::uint64_t> estimated_seconds_remaining;
+    std::uint64_t elapsed_milliseconds{0};
+};
+
 class Console {
 public:
     explicit Console(
@@ -74,7 +81,8 @@ public:
         std::size_t file_count,
         std::uint64_t downloaded,
         std::uint64_t total,
-        bool completed
+        bool completed,
+        const DownloadProgressMetrics& metrics = {}
     ) const;
     void end_download_progress() const;
     [[nodiscard]] bool confirm(

@@ -460,6 +460,12 @@ defaults to `0`, meaning unlimited. `download_http_version` accepts `"auto"`,
 `"1.1"`, or `"2"`; HTTP/2 is negotiated over TLS and may fall back according
 to libcurl capabilities.
 
+Download progress reports aggregate all active files and include the current
+smoothed transfer rate and estimated time remaining. The final report includes
+the total elapsed download time. JSON progress events expose the same values as
+`bytes_per_second`, `estimated_seconds_remaining`, and
+`elapsed_milliseconds`.
+
 `download_validation` defaults to `"strict"`, which requires downloaded size
 and any Graph-provided content hash to match the remote metadata. Some
 SharePoint, Azure Information Protection (AIP), and HEIC files are served with

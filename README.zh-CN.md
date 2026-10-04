@@ -408,6 +408,10 @@ HTTP 字节范围请求顺序分片下载，并以该值作为单个分片的最
 重新下载整个分片。用户正常取消时，程序也会在停止前可靠写盘并记录已经通过
 Range 响应验证的字节。
 
+下载进度会聚合所有活动文件，并显示当前平滑传输速率和预计剩余时间；最终进度
+还会显示下载总耗时。JSON 进度事件通过 `bytes_per_second`、
+`estimated_seconds_remaining` 和 `elapsed_milliseconds` 提供相同指标。
+
 `download_validation` 默认为 `"strict"`，要求下载大小以及 Graph 提供的内容哈希
 与远端元数据一致。部分 SharePoint、Azure Information Protection（AIP）和
 HEIC 文件实际下载的字节可能与 Graph 元数据不同；`"relaxed"` 会接受这类文件，

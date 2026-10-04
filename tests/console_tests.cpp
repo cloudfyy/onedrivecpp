@@ -46,9 +46,30 @@ int main() {
         "local_modification",
         "local file was modified"
     );
-    plain.download_progress(1, 2, 5, 10, false);
+    plain.download_progress(
+        1,
+        2,
+        5,
+        10,
+        false,
+        {
+            .bytes_per_second = 2'048,
+            .estimated_seconds_remaining = 65,
+            .elapsed_milliseconds = 500,
+        }
+    );
     plain.download_progress(1, 2, 10, 10, false);
-    plain.download_progress(2, 2, 10, 10, true);
+    plain.download_progress(
+        2,
+        2,
+        10,
+        10,
+        true,
+        {
+            .bytes_per_second = 1'024,
+            .elapsed_milliseconds = 3'723'000,
+        }
+    );
     plain.download_progress(0, 1, 1'536, 3'072, false);
     plain.download_progress(
         0,
@@ -68,9 +89,10 @@ int main() {
         "Completed.\nSummary\n  Files: 12\n  Bytes: 42\n"
         "Microsoft Graph delta: 2 pages, 350 items scanned (continuing)\n"
         "Microsoft Graph delta: 3 pages, 412 items scanned (complete)\n"
-        "DL: 1/2 files, 50% (5 B/10 B)\n"
+        "DL: 1/2 files, 50% (5 B/10 B), 2.0 KiB/s, ETA 00:01:05\n"
         "DL: 1/2 files, 99% (10 B/10 B)\n"
-        "Done: 2/2 files, 100% (10 B/10 B)\n"
+        "Done: 2/2 files, 100% (10 B/10 B), 1.0 KiB/s, "
+        "elapsed 01:02:03\n"
         "DL: 0/1 files, 50% (1.5 KiB/3.0 KiB)\n"
         "DL: 0/1 files, 50% (1.0 MiB/2.0 MiB)\n"
         "DL: 0/1 files, 50% (1.0 GiB/2.0 GiB)\n" ||
@@ -121,7 +143,29 @@ int main() {
         "local_modification",
         "local file was modified"
     );
-    json.download_progress(0, 1, 4, 8, false);
+    json.download_progress(
+        0,
+        1,
+        4,
+        8,
+        false,
+        {
+            .bytes_per_second = 4,
+            .estimated_seconds_remaining = 1,
+            .elapsed_milliseconds = 250,
+        }
+    );
+    json.download_progress(
+        1,
+        1,
+        8,
+        8,
+        true,
+        {
+            .bytes_per_second = 8,
+            .elapsed_milliseconds = 1'500,
+        }
+    );
     std::istringstream json_lines{json_output.str()};
     std::string line;
     std::getline(json_lines, line);
@@ -132,6 +176,9 @@ int main() {
     const auto delta_progress = nlohmann::json::parse(line);
     std::getline(json_lines, line);
     const auto download_progress = nlohmann::json::parse(line);
+    std::getline(json_lines, line);
+    const auto completed_download_progress =
+        nlohmann::json::parse(line);
     const auto blocked = nlohmann::json::parse(json_error.str());
     if (message.at("event") != "phase" ||
         message.at("message") != "Working" ||
@@ -146,7 +193,19 @@ int main() {
         download_progress.at("downloaded_bytes") != 4 ||
         download_progress.at("total_bytes") != 8 ||
         download_progress.at("percentage") != 50 ||
+        download_progress.at("bytes_per_second") != 4 ||
+        download_progress.at("estimated_seconds_remaining") != 1 ||
+        download_progress.at("elapsed_milliseconds") != 250 ||
         download_progress.at("completed") != false ||
+        completed_download_progress.at("event") !=
+            "download_progress" ||
+        completed_download_progress.at("completed") != true ||
+        completed_download_progress.at("bytes_per_second") != 8 ||
+        !completed_download_progress.at(
+            "estimated_seconds_remaining"
+        ).is_null() ||
+        completed_download_progress.at("elapsed_milliseconds") !=
+            1'500 ||
         blocked.at("event") != "item_blocked" ||
         blocked.at("path") != "conflict.txt" ||
         blocked.at("reason_code") != "local_modification" ||

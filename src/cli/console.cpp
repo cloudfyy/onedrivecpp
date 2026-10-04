@@ -81,6 +81,18 @@ std::string format_bytes(std::uint64_t bytes) {
     return fmt::format("{:.1f} {}", value, units.at(unit));
 }
 
+std::string format_duration(std::uint64_t seconds) {
+    const auto hours = seconds / 3600;
+    const auto minutes = (seconds % 3600) / 60;
+    const auto remaining_seconds = seconds % 60;
+    return fmt::format(
+        "{:02}:{:02}:{:02}",
+        hours,
+        minutes,
+        remaining_seconds
+    );
+}
+
 }  // namespace
 
 Console::Console(
@@ -223,7 +235,8 @@ void Console::download_progress(
     std::size_t file_count,
     std::uint64_t downloaded,
     std::uint64_t total,
-    bool completed
+    bool completed,
+    const DownloadProgressMetrics& metrics
 ) const {
     if (options_.quiet) {
         return;
@@ -263,11 +276,24 @@ void Console::download_progress(
             {"total_bytes", total},
             {"percentage", percentage},
             {"completed", completed},
+            {"bytes_per_second", metrics.bytes_per_second},
+            {
+                "estimated_seconds_remaining",
+                metrics.estimated_seconds_remaining.has_value() ?
+                    nlohmann::json(
+                        *metrics.estimated_seconds_remaining
+                    ) :
+                    nlohmann::json(nullptr)
+            },
+            {
+                "elapsed_milliseconds",
+                metrics.elapsed_milliseconds
+            },
         }.dump() << '\n';
         return;
     }
 
-    const auto line = fmt::format(
+    auto line = fmt::format(
         "{}: {}/{} files, {}% ({}/{})",
         completed ? "Done" : "DL",
         completed_files,
@@ -276,6 +302,25 @@ void Console::download_progress(
         format_bytes(downloaded),
         format_bytes(total)
     );
+    if (metrics.bytes_per_second != 0) {
+        line += fmt::format(
+            ", {}/s",
+            format_bytes(metrics.bytes_per_second)
+        );
+    }
+    if (completed) {
+        line += fmt::format(
+            ", elapsed {}",
+            metrics.elapsed_milliseconds < 1000 ?
+                "<1s" :
+                format_duration(metrics.elapsed_milliseconds / 1000)
+        );
+    } else if (metrics.estimated_seconds_remaining.has_value()) {
+        line += fmt::format(
+            ", ETA {}",
+            format_duration(*metrics.estimated_seconds_remaining)
+        );
+    }
     if (interactive_) {
         *output_ << '\r' << "\033[2K" << line;
         if (completed) {
