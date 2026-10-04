@@ -278,9 +278,11 @@ The `e2e` preset is disabled from normal builds and requires a dedicated test
 account or Drive whose remote root contains a stable fixture. The external
 configuration must already be authenticated and must not be committed. The
 runner copies its state directory into an isolated temporary workspace, clears
-only that copy, downloads the fixture with the single-file command, verifies
-its SHA-256, and confirms that two following synchronizations do not replace
-the unchanged local file.
+only that copy, and configures an isolated `sync_list`. It verifies that an
+explicit single-file download bypasses an empty list, that the following sync
+excludes its snapshot without deleting the local file, that adding an inclusion
+rule triggers a full remote-state query and re-downloads the fixture, and that
+the next incremental synchronization does not replace the unchanged file.
 
 ```bash
 export ONEDRIVE_E2E_CONFIG=/absolute/path/to/dedicated-e2e.toml
@@ -292,8 +294,8 @@ cmake --build --preset e2e
 ctest --preset e2e -R graph_download_e2e
 ```
 
-The dedicated Drive should contain only disposable test data because the
-client currently synchronizes the complete configured Drive. Set
+The dedicated Drive should contain only disposable test data even though the
+runner's generated `sync_list` materializes only the expected fixture. Set
 `ONEDRIVE_E2E_ARTIFACT_DIR` to retain command output and the client log after a
 failure. These diagnostics may contain remote file metadata and must be handled
 as sensitive data. Configuration, copied tokens, SQLite state, and downloaded
