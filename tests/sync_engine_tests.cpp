@@ -1866,6 +1866,71 @@ int test_remote_moves() {
             "local_path_conflict") {
         return fail("remote move followed or replaced a symbolic link");
     }
+
+    const auto shared_memory_root = std::filesystem::path{"/dev/shm"};
+    std::error_code device_error;
+    if (std::filesystem::is_directory(shared_memory_root, device_error) &&
+        !device_error) {
+        const auto cross_source_root =
+            temporary.path() / "cross-device-source";
+        std::filesystem::create_directories(cross_source_root);
+        const auto cross_source = cross_source_root / "old.txt";
+        {
+            std::ofstream output{cross_source};
+            output << "data";
+        }
+        const auto cross_destination_root =
+            shared_memory_root /
+            ("onedrive-cpp-" + temporary.path().filename().string());
+        struct DestinationCleanup {
+            std::filesystem::path path;
+            ~DestinationCleanup() {
+                std::error_code error;
+                std::filesystem::remove_all(path, error);
+            }
+        } cleanup{cross_destination_root};
+        std::filesystem::create_directory(cross_destination_root);
+        const auto cross_destination =
+            cross_destination_root / "new.txt";
+        auto cross_change = file(
+            "cross-device",
+            cross_destination.lexically_relative("/").generic_string(),
+            4
+        );
+        FakeGraphClient cross_graph;
+        cross_graph.changes = {cross_change};
+        FakeItemStore cross_items;
+        cross_items.saved_delta_link = "saved";
+        auto cross_state = tracked_item(
+            cross_source_root,
+            "cross-device",
+            "old.txt"
+        );
+        cross_state.remote_path =
+            cross_source.lexically_relative("/").generic_string();
+        cross_items.items.emplace(
+            "cross-device",
+            std::move(cross_state)
+        );
+        FakeMetrics cross_metrics;
+        auto cross_config = config_for("/", false);
+        cross_config.sync_permissions =
+            onedrive::config::SyncPermissionsMode::umask;
+        if (onedrive::sync::SyncEngine{
+                cross_config,
+                cross_graph,
+                cross_items,
+                cross_metrics
+            }.synchronize() != 2 ||
+            !std::filesystem::exists(cross_source) ||
+            std::filesystem::exists(cross_destination) ||
+            cross_items.applied_delta.blocked_upserts.size() != 1 ||
+            cross_items.applied_delta.blocked_upserts[0].reason_code !=
+                "cross_device_move" ||
+            !cross_metrics.last_success) {
+            return fail("cross-device remote move was not blocked safely");
+        }
+    }
     return EXIT_SUCCESS;
 }
 

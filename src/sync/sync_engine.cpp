@@ -779,6 +779,8 @@ MoveSummary execute_moves(
                     summary.reusable_files.insert(move.item.id);
                 }
             }
+        } catch (const detail::CrossDeviceMoveError& error) {
+            block("cross_device_move", error.what());
         } catch (const detail::SafePathConflictError& error) {
             block("local_path_conflict", error.what());
         } catch (const detail::LocalPathConflictError& error) {

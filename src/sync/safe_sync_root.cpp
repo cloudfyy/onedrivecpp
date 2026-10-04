@@ -257,6 +257,12 @@ bool SafeSyncRoot::rename_no_replace(
     if (errno == EEXIST) {
         return false;
     }
+    if (errno == EXDEV) {
+        throw CrossDeviceMoveError(
+            "remote move crosses filesystem boundaries: '" +
+            source.string() + "' to '" + destination.string() + "'"
+        );
+    }
     throw std::runtime_error(
         "cannot rename synchronization item to '" + destination.string() +
         "': " +

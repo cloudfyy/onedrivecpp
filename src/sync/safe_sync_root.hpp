@@ -11,6 +11,11 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+class CrossDeviceMoveError final : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
 class SafeSyncRoot {
 public:
     explicit SafeSyncRoot(const std::filesystem::path& root);

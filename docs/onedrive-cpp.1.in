@@ -122,6 +122,9 @@ are downloaded after the move. Locally modified sources, symbolic links,
 unexpected types, and occupied destinations are persisted as retryable blocked
 items. Durable parent-directory flushes and destination adoption make an
 interrupted move safe to retry.
+Moves across filesystem boundaries are persisted as
+.B cross_device_move
+blocked items; data is not copied and deleted across mount points.
 .PP
 Use
 .B \-\-dry\-run

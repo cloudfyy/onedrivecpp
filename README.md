@@ -1059,6 +1059,8 @@ Locally modified sources, symbolic links, type conflicts, and occupied
 destinations are retained as retryable blocked items. Move operations and both
 parent directories are flushed before the Delta cursor advances, and a retry
 can adopt an already-moved destination after an interruption.
+Moves across filesystem boundaries are retained as `cross_device_move` blocked
+items; the client does not copy and delete data across mount points.
 
 Remote deletion records remove a regular local file only while its size and
 modification time still match the trusted synchronized snapshot. Missing local

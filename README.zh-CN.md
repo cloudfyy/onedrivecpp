@@ -514,6 +514,8 @@ SQLite 中所有已跟踪后代的路径。远端内容指纹匹配的文件会�
 本地已修改的源文件、符号链接、类型冲突和已占用目标会作为可重试 blocked item
 保留。文件系统移动及源、目标父目录会在推进 Delta 游标前刷盘；中断后的重试可以
 安全认领已经移动完成的目标。
+跨文件系统边界的移动会保留为 `cross_device_move` blocked item；程序不会跨挂载
+点复制后删除数据。
 
 `graph.endpoint` 用于选择 Microsoft Graph 云端点，默认使用全球服务，并不与
 某个具体 SharePoint 主机名绑定。访问由世纪互联运营的 Microsoft 365 中国区
