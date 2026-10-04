@@ -1,3 +1,15 @@
+onedrive-cpp (0.6.38-1~ubuntu24.04) noble; urgency=medium
+
+  * Safely execute remote file and empty-directory deletions only while local
+    content remains consistent with trusted synchronized snapshots.
+  * Persist modified, symbolic-link, type, and nonempty-directory conflicts as
+    retryable deletion operations after the Delta cursor advances.
+  * Reconcile full Graph inventories after cursor reset or expiry without
+    deleting files that are merely excluded by selective synchronization.
+  * Extend local integration and live Graph E2E coverage through deletion.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 09:00:00 +0000
+
 onedrive-cpp (0.6.37-1~ubuntu24.04) noble; urgency=medium
 
   * Consolidate CMake test registration, temporary files, binary file helpers,

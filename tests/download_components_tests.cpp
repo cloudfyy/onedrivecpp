@@ -228,6 +228,18 @@ public:
         return states.size();
     }
 
+    [[nodiscard]] std::vector<onedrive::storage::ItemState> drive_items(
+        const std::string&
+    ) const {
+        std::vector<onedrive::storage::ItemState> result;
+        result.reserve(states.size());
+        for (const auto& [remote_id, item] : states) {
+            static_cast<void>(remote_id);
+            result.push_back(item);
+        }
+        return result;
+    }
+
     std::unordered_map<std::string, onedrive::storage::ItemState> states;
     std::unordered_map<std::string, onedrive::storage::PendingDownload> pending;
     std::unordered_map<std::string, onedrive::storage::PartialDownload> partials;
@@ -473,6 +485,42 @@ int main() {
         root
     );
     const detail::SafeSyncRoot safe_root{root};
+    if (safe_root.remove(root / "missing.txt", false)) {
+        return fail("safe removal reported a missing file as removed");
+    }
+    const auto removable_file = root / "remove.txt";
+    {
+        std::ofstream output{removable_file, std::ios::binary};
+        output << "remove";
+    }
+    if (!safe_root.remove(removable_file, false) ||
+        std::filesystem::exists(removable_file)) {
+        return fail("safe removal did not remove a regular file");
+    }
+    const auto removable_directory = root / "remove-directory";
+    std::filesystem::create_directory(removable_directory);
+    if (!safe_root.remove(removable_directory, true) ||
+        std::filesystem::exists(removable_directory)) {
+        return fail("safe removal did not remove an empty directory");
+    }
+    const auto nonempty_directory = root / "nonempty-directory";
+    std::filesystem::create_directory(nonempty_directory);
+    {
+        std::ofstream output{nonempty_directory / "local.txt"};
+        output << "local";
+    }
+    try {
+        static_cast<void>(safe_root.remove(nonempty_directory, true));
+        return fail("safe removal accepted a non-empty directory");
+    } catch (const detail::SafePathConflictError&) {
+    }
+    const auto removal_symlink = root / "remove-link";
+    std::filesystem::create_symlink("missing-target", removal_symlink);
+    try {
+        static_cast<void>(safe_root.remove(removal_symlink, false));
+        return fail("safe removal accepted a symbolic link");
+    } catch (const detail::SafePathConflictError&) {
+    }
     const auto local_source = root / "local.txt";
     {
         std::ofstream output{local_source, std::ios::binary};

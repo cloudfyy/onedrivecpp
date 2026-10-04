@@ -173,9 +173,9 @@ int main() {
         },
         false
     );
-    if (filtered.delta.changes.size() != 1 ||
-        filtered.delta.changes.front().id != "tracked" ||
-        !filtered.delta.changes.front().deleted ||
+    if (!filtered.delta.changes.empty() ||
+        filtered.snapshot_removals !=
+            std::vector<std::string>{"tracked"} ||
         filtered.excluded != 2) {
         return fail("incremental filtering did not remove excluded snapshots");
     }

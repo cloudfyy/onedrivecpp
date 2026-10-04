@@ -40,6 +40,7 @@ struct BlockedItem {
     std::string last_modified;
     std::int64_t size{0};
     bool directory{false};
+    bool deleted{false};
     std::string reason_code;
     std::string reason_message;
     std::uint64_t attempt_count{0};
@@ -97,6 +98,7 @@ PRO_DEF_MEM_DISPATCH(
     sync_filter_fingerprint
 );
 PRO_DEF_MEM_DISPATCH(StoreFindDispatch, find);
+PRO_DEF_MEM_DISPATCH(StoreDriveItemsDispatch, drive_items);
 PRO_DEF_MEM_DISPATCH(StoreSizeDispatch, size);
 
 struct ItemStoreFacade : pro::facade_builder
@@ -144,6 +146,10 @@ struct ItemStoreFacade : pro::facade_builder
             const std::string&,
             const std::string&
         ) const
+    >
+    ::add_convention<
+        StoreDriveItemsDispatch,
+        std::vector<ItemState>(const std::string&) const
     >
     ::add_convention<StoreSizeDispatch, std::size_t() const>
     ::build {};
@@ -232,6 +238,12 @@ public:
         const std::string& remote_id
     ) const {
         return implementation()->find(drive_id, remote_id);
+    }
+
+    [[nodiscard]] std::vector<ItemState> drive_items(
+        const std::string& drive_id
+    ) const {
+        return implementation()->drive_items(drive_id);
     }
 
     [[nodiscard]] std::size_t size() const {

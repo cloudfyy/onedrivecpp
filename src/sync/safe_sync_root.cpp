@@ -263,6 +263,70 @@ bool SafeSyncRoot::rename_no_replace(
     );
 }
 
+bool SafeSyncRoot::remove(
+    const std::filesystem::path& path,
+    bool directory
+) const {
+    const auto relative = relative_path(path);
+    Descriptor parent{open_beneath(
+        descriptor_,
+        relative.parent_path(),
+        O_RDONLY | O_DIRECTORY | O_CLOEXEC,
+        0
+    )};
+    if (parent.get() == -1) {
+        throw SafePathConflictError(
+            "cannot safely open local deletion parent '" +
+            path.parent_path().string() + "': " + std::strerror(errno)
+        );
+    }
+
+    struct stat status {};
+    if (::fstatat(
+            parent.get(),
+            relative.filename().c_str(),
+            &status,
+            AT_SYMLINK_NOFOLLOW
+        ) == -1) {
+        if (errno == ENOENT) {
+            return false;
+        }
+        throw std::runtime_error(
+            "cannot inspect local deletion target '" + path.string() +
+            "': " + std::strerror(errno)
+        );
+    }
+    if (S_ISLNK(status.st_mode) ||
+        (directory ? !S_ISDIR(status.st_mode) : !S_ISREG(status.st_mode))) {
+        throw SafePathConflictError(
+            "local deletion target has an unexpected type: " + path.string()
+        );
+    }
+    if (::unlinkat(
+            parent.get(),
+            relative.filename().c_str(),
+            directory ? AT_REMOVEDIR : 0
+        ) == -1) {
+        if (directory && (errno == ENOTEMPTY || errno == EEXIST)) {
+            throw SafePathConflictError(
+                "local directory contains content not removed by this "
+                "synchronization: " + path.string()
+            );
+        }
+        throw std::runtime_error(
+            "cannot remove local synchronization item '" + path.string() +
+            "': " + std::strerror(errno)
+        );
+    }
+    if (::fsync(parent.get()) == -1) {
+        throw std::runtime_error(
+            "cannot flush local deletion parent '" +
+            path.parent_path().string() + "': " + std::strerror(errno)
+        );
+    }
+    return true;
+}
+
 void SafeSyncRoot::fsync_directory(
     const std::filesystem::path& directory
 ) const {

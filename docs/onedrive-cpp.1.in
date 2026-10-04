@@ -105,7 +105,13 @@ Microsoft Graph HTTP 408, 429, 502, 503, and 504 responses are retried using
 .B Retry-After
 or bounded exponential backoff, with a finite retry limit. A pre-authenticated
 download URL that returns HTTP 401 or 403 is refreshed through Graph once.
-Remote deletion records do not remove local files. Use
+Remote deletion records remove regular local files only while their size and
+modification time still match the trusted synchronized snapshot. Directories
+are processed child-first and removed only when empty. Modified files,
+symbolic links, unexpected path types, and nonempty directories are retained
+as retryable blocked items. Missing targets are accepted. Full Delta refreshes
+reconcile the Graph inventory with prior snapshots, while items excluded only
+by selective synchronization retain their local files. Use
 .B \-\-dry\-run
 to display the download plan without creating files or updating synchronization
 state.
@@ -258,7 +264,8 @@ permission bits, is not uploaded, and requires additional disk space equal to
 the local file. Backup failure leaves the destination unchanged. This setting
 applies to normal synchronization and the
 .B download
-command, but not to remote deletion or upload conflict handling.
+command. Remote deletion conflicts are always blocked rather than backed up;
+the setting does not control upload conflict handling.
 .TP
 .B state.directory
 Directory containing the refresh token and SQLite synchronization state.

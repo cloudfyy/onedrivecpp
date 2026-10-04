@@ -57,6 +57,9 @@ public:
         const std::string& drive_id,
         const std::string& remote_id
     ) const;
+    [[nodiscard]] std::vector<ItemState> drive_items(
+        const std::string& drive_id
+    ) const;
     [[nodiscard]] std::size_t size() const;
 
 private:
@@ -97,6 +100,9 @@ private:
     [[nodiscard]] std::optional<ItemState> find_on_worker(
         const std::string& drive_id,
         const std::string& remote_id
+    ) const;
+    [[nodiscard]] std::vector<ItemState> drive_items_on_worker(
+        const std::string& drive_id
     ) const;
     [[nodiscard]] std::size_t size_on_worker() const;
 

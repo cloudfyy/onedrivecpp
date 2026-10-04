@@ -211,6 +211,7 @@ void create_blocked_item_schema(sqlite3* database) {
         "last_modified TEXT NOT NULL,"
         "size INTEGER NOT NULL,"
         "directory INTEGER NOT NULL,"
+        "deleted INTEGER NOT NULL DEFAULT 0,"
         "reason_code TEXT NOT NULL,"
         "reason_message TEXT NOT NULL,"
         "content_hash_algorithm TEXT NOT NULL DEFAULT '',"
@@ -230,6 +231,14 @@ void add_blocked_item_hash_columns(sqlite3* database) {
         "TEXT NOT NULL DEFAULT '';"
         "ALTER TABLE blocked_item ADD COLUMN content_hash_value "
         "TEXT NOT NULL DEFAULT '';"
+    );
+}
+
+void add_blocked_item_deleted_column(sqlite3* database) {
+    execute(
+        database,
+        "ALTER TABLE blocked_item ADD COLUMN deleted "
+        "INTEGER NOT NULL DEFAULT 0;"
     );
 }
 
@@ -319,7 +328,7 @@ void create_current_schema(sqlite3* database) {
     create_blocked_item_schema(database);
     create_identity_schema(database);
     create_partial_download_schema(database);
-    execute(database, "PRAGMA user_version = 11;");
+    execute(database, "PRAGMA user_version = 12;");
 }
 
 void add_sync_filter_fingerprint(sqlite3* database) {
@@ -399,7 +408,7 @@ void migrate_schema(sqlite3* database) {
         create_partial_download_schema(database);
         add_sync_filter_fingerprint(database);
         add_pending_download_backup(database);
-        execute(database, "PRAGMA user_version = 11;");
+        execute(database, "PRAGMA user_version = 12;");
         transaction.commit();
         return;
     }
@@ -432,7 +441,7 @@ void migrate_schema(sqlite3* database) {
         create_partial_download_schema(database);
         add_sync_filter_fingerprint(database);
         add_pending_download_backup(database);
-        execute(database, "PRAGMA user_version = 11;");
+        execute(database, "PRAGMA user_version = 12;");
         transaction.commit();
         return;
     }
@@ -462,7 +471,7 @@ void migrate_schema(sqlite3* database) {
         create_partial_download_schema(database);
         add_sync_filter_fingerprint(database);
         add_pending_download_backup(database);
-        execute(database, "PRAGMA user_version = 11;");
+        execute(database, "PRAGMA user_version = 12;");
         transaction.commit();
         return;
     }
@@ -473,48 +482,52 @@ void migrate_schema(sqlite3* database) {
         create_partial_download_schema(database);
         add_sync_filter_fingerprint(database);
         add_pending_download_backup(database);
-        execute(database, "PRAGMA user_version = 11;");
+        execute(database, "PRAGMA user_version = 12;");
         transaction.commit();
         return;
     }
     if (version == 5) {
         Transaction transaction{database};
         add_blocked_item_hash_columns(database);
+        add_blocked_item_deleted_column(database);
         create_identity_schema(database);
         create_partial_download_schema(database);
         add_sync_filter_fingerprint(database);
         add_pending_download_backup(database);
-        execute(database, "PRAGMA user_version = 11;");
+        execute(database, "PRAGMA user_version = 12;");
         transaction.commit();
         return;
     }
     if (version == 6) {
         Transaction transaction{database};
         add_blocked_item_hash_columns(database);
+        add_blocked_item_deleted_column(database);
         create_identity_schema(database);
         create_partial_download_schema(database);
         add_sync_filter_fingerprint(database);
         add_pending_download_backup(database);
-        execute(database, "PRAGMA user_version = 11;");
+        execute(database, "PRAGMA user_version = 12;");
         transaction.commit();
         return;
     }
     if (version == 7) {
         Transaction transaction{database};
         add_blocked_item_hash_columns(database);
+        add_blocked_item_deleted_column(database);
         create_partial_download_schema(database);
         add_sync_filter_fingerprint(database);
         add_pending_download_backup(database);
-        execute(database, "PRAGMA user_version = 11;");
+        execute(database, "PRAGMA user_version = 12;");
         transaction.commit();
         return;
     }
     if (version == 8) {
         Transaction transaction{database};
         add_blocked_item_hash_columns(database);
+        add_blocked_item_deleted_column(database);
         add_sync_filter_fingerprint(database);
         add_pending_download_backup(database);
-        execute(database, "PRAGMA user_version = 11;");
+        execute(database, "PRAGMA user_version = 12;");
         transaction.commit();
         return;
     }
@@ -522,18 +535,27 @@ void migrate_schema(sqlite3* database) {
         Transaction transaction{database};
         add_sync_filter_fingerprint(database);
         add_pending_download_backup(database);
-        execute(database, "PRAGMA user_version = 11;");
+        add_blocked_item_deleted_column(database);
+        execute(database, "PRAGMA user_version = 12;");
         transaction.commit();
         return;
     }
     if (version == 10) {
         Transaction transaction{database};
         add_pending_download_backup(database);
-        execute(database, "PRAGMA user_version = 11;");
+        add_blocked_item_deleted_column(database);
+        execute(database, "PRAGMA user_version = 12;");
         transaction.commit();
         return;
     }
-    if (version != 11) {
+    if (version == 11) {
+        Transaction transaction{database};
+        add_blocked_item_deleted_column(database);
+        execute(database, "PRAGMA user_version = 12;");
+        transaction.commit();
+        return;
+    }
+    if (version != 12) {
         throw std::runtime_error(
             "unsupported state database schema version " + std::to_string(version)
         );
@@ -964,14 +986,17 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         database,
         "INSERT INTO blocked_item ("
         "drive_id, remote_id, parent_id, name, etag, remote_path, "
-        "last_modified, size, directory, reason_code, reason_message, "
+        "last_modified, size, directory, deleted, reason_code, reason_message, "
         "content_hash_algorithm, content_hash_value"
-        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) "
+        ") VALUES ("
+        "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14"
+        ") "
         "ON CONFLICT(drive_id, remote_id) DO UPDATE SET "
         "parent_id = excluded.parent_id, name = excluded.name, "
         "etag = excluded.etag, remote_path = excluded.remote_path, "
         "last_modified = excluded.last_modified, size = excluded.size, "
-        "directory = excluded.directory, reason_code = excluded.reason_code, "
+        "directory = excluded.directory, deleted = excluded.deleted, "
+        "reason_code = excluded.reason_code, "
         "reason_message = excluded.reason_message, "
         "content_hash_algorithm = excluded.content_hash_algorithm, "
         "content_hash_value = excluded.content_hash_value, "
@@ -1005,16 +1030,22 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
             9,
             item.directory ? 1 : 0
         );
-        bind_text(
+        bind_integer(
             database,
             upsert_blocked_statement.get(),
             10,
-            item.reason_code
+            item.deleted ? 1 : 0
         );
         bind_text(
             database,
             upsert_blocked_statement.get(),
             11,
+            item.reason_code
+        );
+        bind_text(
+            database,
+            upsert_blocked_statement.get(),
+            12,
             item.reason_message
         );
         std::string hash_algorithm;
@@ -1034,10 +1065,10 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         bind_text(
             database,
             upsert_blocked_statement.get(),
-            12,
+            13,
             hash_algorithm
         );
-        bind_text(database, upsert_blocked_statement.get(), 13, hash_value);
+        bind_text(database, upsert_blocked_statement.get(), 14, hash_value);
         if (sqlite3_step(upsert_blocked_statement.get()) != SQLITE_DONE) {
             throw std::runtime_error(
                 "cannot persist blocked item: " +
@@ -1450,7 +1481,7 @@ std::vector<BlockedItem> ItemDatabase::blocked_items_on_worker(
     Statement statement{
         database,
         "SELECT drive_id, remote_id, parent_id, name, etag, remote_path, "
-        "last_modified, size, directory, reason_code, reason_message, "
+        "last_modified, size, directory, deleted, reason_code, reason_message, "
         "attempt_count, content_hash_algorithm, content_hash_value "
         "FROM blocked_item WHERE drive_id = ?1 "
         "ORDER BY remote_path;"
@@ -1468,8 +1499,8 @@ std::vector<BlockedItem> ItemDatabase::blocked_items_on_worker(
                 std::string{sqlite3_errmsg(database)}
             );
         }
-        const std::string hash_algorithm = column_text(statement.get(), 12);
-        const std::string hash_value = column_text(statement.get(), 13);
+        const std::string hash_algorithm = column_text(statement.get(), 13);
+        const std::string hash_value = column_text(statement.get(), 14);
         std::optional<FileHash> content_hash;
         if (!hash_algorithm.empty() || !hash_value.empty()) {
             if (hash_value.empty() ||
@@ -1496,10 +1527,11 @@ std::vector<BlockedItem> ItemDatabase::blocked_items_on_worker(
             .last_modified = column_text(statement.get(), 6),
             .size = sqlite3_column_int64(statement.get(), 7),
             .directory = sqlite3_column_int(statement.get(), 8) != 0,
-            .reason_code = column_text(statement.get(), 9),
-            .reason_message = column_text(statement.get(), 10),
+            .deleted = sqlite3_column_int(statement.get(), 9) != 0,
+            .reason_code = column_text(statement.get(), 10),
+            .reason_message = column_text(statement.get(), 11),
             .attempt_count = static_cast<std::uint64_t>(
-                sqlite3_column_int64(statement.get(), 11)
+                sqlite3_column_int64(statement.get(), 12)
             ),
             .content_hash = std::move(content_hash),
         });
@@ -1774,6 +1806,59 @@ std::optional<ItemState> ItemDatabase::find_on_worker(
         .local_modified_ticks = sqlite3_column_int64(statement.get(), 10),
         .directory = sqlite3_column_int(statement.get(), 11) != 0,
     };
+}
+
+std::vector<ItemState> ItemDatabase::drive_items(
+    const std::string& drive_id
+) const {
+    return impl_->invoke([this, drive_id] {
+        return drive_items_on_worker(drive_id);
+    });
+}
+
+std::vector<ItemState> ItemDatabase::drive_items_on_worker(
+    const std::string& drive_id
+) const {
+    sqlite3* database = impl_->database.get();
+    if (database == nullptr) {
+        throw std::runtime_error("state database is not open");
+    }
+    Statement statement{
+        database,
+        "SELECT drive_id, remote_id, parent_id, name, etag, remote_path, "
+        "local_path, last_modified, size, local_size, local_modified_ticks, "
+        "directory FROM item WHERE drive_id = ?1 ORDER BY remote_path;"
+    };
+    bind_text(database, statement.get(), 1, drive_id);
+    std::vector<ItemState> result;
+    while (true) {
+        const int step_result = sqlite3_step(statement.get());
+        if (step_result == SQLITE_DONE) {
+            break;
+        }
+        if (step_result != SQLITE_ROW) {
+            throw std::runtime_error(
+                "cannot read synchronization drive items: " +
+                std::string{sqlite3_errmsg(database)}
+            );
+        }
+        result.push_back({
+            .drive_id = column_text(statement.get(), 0),
+            .remote_id = column_text(statement.get(), 1),
+            .parent_id = column_text(statement.get(), 2),
+            .name = column_text(statement.get(), 3),
+            .etag = column_text(statement.get(), 4),
+            .remote_path = column_text(statement.get(), 5),
+            .local_path = column_text(statement.get(), 6),
+            .last_modified = column_text(statement.get(), 7),
+            .size = sqlite3_column_int64(statement.get(), 8),
+            .local_size = sqlite3_column_int64(statement.get(), 9),
+            .local_modified_ticks =
+                sqlite3_column_int64(statement.get(), 10),
+            .directory = sqlite3_column_int(statement.get(), 11) != 0,
+        });
+    }
+    return result;
 }
 
 std::size_t ItemDatabase::size() const {

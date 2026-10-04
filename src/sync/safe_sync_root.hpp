@@ -45,6 +45,10 @@ public:
         const std::filesystem::path& source,
         const std::filesystem::path& destination
     ) const;
+    [[nodiscard]] bool remove(
+        const std::filesystem::path& path,
+        bool directory
+    ) const;
     void fsync_directory(const std::filesystem::path& directory) const;
 
 private:

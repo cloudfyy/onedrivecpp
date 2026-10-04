@@ -147,6 +147,82 @@ def tracked_item_count(state_directory: Path, remote_path: Path) -> int:
     return count
 
 
+def inject_disappeared_item(
+    state_directory: Path,
+    source: Path,
+    source_remote_path: Path,
+) -> tuple[Path, Path]:
+    fake_remote_path = (
+        source_remote_path.parent /
+        "__onedrive_cpp_remote_delete_e2e__.txt"
+    )
+    fake_local_path = (
+        source.parent /
+        "__onedrive_cpp_remote_delete_e2e__.txt"
+    )
+    matches: list[tuple[Path, tuple[object, ...]]] = []
+    for database in state_directory.rglob("items.sqlite3"):
+        try:
+            with sqlite3.connect(database) as connection:
+                rows = connection.execute(
+                    "SELECT drive_id, parent_id, etag, last_modified, size, "
+                    "local_size, local_modified_ticks "
+                    "FROM item WHERE remote_path = ?",
+                    (source_remote_path.as_posix(),),
+                ).fetchall()
+        except sqlite3.Error as error:
+            raise E2EError(
+                f"cannot prepare remote deletion fixture: {database}"
+            ) from error
+        matches.extend((database, row) for row in rows)
+    if len(matches) != 1:
+        raise E2EError(
+            "remote deletion fixture requires exactly one source snapshot"
+        )
+
+    database, row = matches[0]
+    shutil.copy2(source, fake_local_path)
+    try:
+        with sqlite3.connect(database) as connection:
+            existing = connection.execute(
+                "SELECT count(*) FROM item "
+                "WHERE remote_id = ? OR remote_path = ?",
+                (
+                    "__onedrive_cpp_remote_delete_e2e__",
+                    fake_remote_path.as_posix(),
+                ),
+            ).fetchone()
+            if existing is None or int(existing[0]) != 0:
+                raise E2EError(
+                    "remote deletion fixture unexpectedly already exists"
+                )
+            connection.execute(
+                "INSERT INTO item ("
+                "drive_id, remote_id, parent_id, name, etag, remote_path, "
+                "local_path, last_modified, size, local_size, "
+                "local_modified_ticks, directory"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)",
+                (
+                    row[0],
+                    "__onedrive_cpp_remote_delete_e2e__",
+                    row[1],
+                    fake_local_path.name,
+                    row[2],
+                    fake_remote_path.as_posix(),
+                    str(fake_local_path),
+                    row[3],
+                    row[4],
+                    row[5],
+                    row[6],
+                ),
+            )
+    except sqlite3.Error as error:
+        raise E2EError(
+            f"cannot inject remote deletion fixture: {database}"
+        ) from error
+    return fake_local_path, fake_remote_path
+
+
 def materialized_files(sync_directory: Path) -> list[Path]:
     return sorted(
         path
@@ -294,6 +370,27 @@ def reset_copied_state(
             str(config),
             "--clear-all",
             "--yes",
+            "--color",
+            "never",
+            "--output",
+            "json",
+        ],
+        home,
+        timeout=60,
+    )
+
+
+def reset_delta_cursor(
+    client: Path,
+    config: Path,
+    home: Path,
+) -> subprocess.CompletedProcess[str]:
+    return run_client(
+        client,
+        [
+            "reset-state",
+            "--config",
+            str(config),
             "--color",
             "never",
             "--output",
@@ -599,6 +696,45 @@ def run_live(client: Path, work_root: Path) -> None:
                 raise E2EError(
                     "post-safeBackup synchronization modified the backup"
                 )
+
+            disappeared_local, disappeared_remote = inject_disappeared_item(
+                state_directory,
+                stable,
+                expected_path,
+            )
+            cursor_reset = reset_delta_cursor(client, config, home)
+            completed.append(cursor_reset)
+            if cursor_reset.returncode != 0:
+                raise E2EError(
+                    "remote deletion E2E cursor reset failed with "
+                    f"{cursor_reset.returncode}"
+                )
+            reconciled = run_sync(client, config, home, log_file)
+            completed.append(reconciled)
+            if reconciled.returncode != 0:
+                raise E2EError(
+                    "remote deletion full Graph reconciliation failed with "
+                    f"{reconciled.returncode}"
+                )
+            if disappeared_local.exists():
+                raise E2EError(
+                    "full Graph reconciliation retained a remotely absent file"
+                )
+            if tracked_item_count(
+                state_directory,
+                disappeared_remote,
+            ) != 0:
+                raise E2EError(
+                    "full Graph reconciliation retained a disappeared snapshot"
+                )
+            if not has_json_event(reconciled, "local_item_removed"):
+                raise E2EError(
+                    "remote deletion reconciliation did not emit its JSON event"
+                )
+            if sha256(stable) != expected_sha256:
+                raise E2EError(
+                    "remote deletion reconciliation changed the live fixture"
+                )
         except Exception:
             save_artifacts(completed, log_file)
             raise
@@ -727,11 +863,31 @@ directory = "/old/state"
         state.mkdir()
         with sqlite3.connect(database) as connection:
             connection.execute(
-                "CREATE TABLE item (remote_path TEXT NOT NULL)"
+                "CREATE TABLE item ("
+                "drive_id TEXT NOT NULL, remote_id TEXT NOT NULL, "
+                "parent_id TEXT NOT NULL, name TEXT NOT NULL, "
+                "etag TEXT NOT NULL, remote_path TEXT NOT NULL, "
+                "local_path TEXT NOT NULL, last_modified TEXT NOT NULL, "
+                "size INTEGER NOT NULL, local_size INTEGER NOT NULL, "
+                "local_modified_ticks INTEGER NOT NULL, "
+                "directory INTEGER NOT NULL)"
             )
             connection.execute(
-                "INSERT INTO item (remote_path) VALUES (?)",
-                ("fixture/small.txt",),
+                "INSERT INTO item VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    "drive",
+                    "fixture",
+                    "parent",
+                    "small.txt",
+                    "etag",
+                    "fixture/small.txt",
+                    str(expected),
+                    "2026-10-04T00:00:00Z",
+                    7,
+                    7,
+                    123,
+                    0,
+                ),
             )
         if tracked_item_count(state, Path("fixture/small.txt")) != 1:
             raise E2EError("item database lookup self-test failed")
@@ -760,6 +916,16 @@ directory = "/old/state"
         )
         if not has_json_event(event_result, "local_conflict_backed_up"):
             raise E2EError("safeBackup JSON event self-test failed")
+        disappeared_local, disappeared_remote = inject_disappeared_item(
+            state,
+            expected,
+            Path("fixture/small.txt"),
+        )
+        if (
+            not disappeared_local.is_file()
+            or tracked_item_count(state, disappeared_remote) != 1
+        ):
+            raise E2EError("remote deletion fixture injection self-test failed")
 
 
 def main() -> int:

@@ -325,6 +325,12 @@ public:
         return 0;
     }
 
+    [[nodiscard]] std::vector<onedrive::storage::ItemState> drive_items(
+        const std::string&
+    ) const {
+        return {};
+    }
+
 private:
     int& open_count_;
     int& apply_delta_count_;

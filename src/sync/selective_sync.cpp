@@ -343,6 +343,7 @@ FilteredDelta filter_delta(
             .changes = {},
             .delta_link = std::move(delta.delta_link),
         },
+        .snapshot_removals = {},
     };
     result.delta.changes.reserve(delta.changes.size());
     for (std::size_t index = 0; index < delta.changes.size(); ++index) {
@@ -353,8 +354,7 @@ FilteredDelta filter_delta(
         }
         ++result.excluded;
         if (!replace_drive_items && is_tracked(item.id)) {
-            item.deleted = true;
-            result.delta.changes.push_back(std::move(item));
+            result.snapshot_removals.push_back(item.id);
         }
     }
     return result;

@@ -183,6 +183,27 @@ bool create_version_ten_database(const std::filesystem::path& path) {
     return succeeded;
 }
 
+bool create_version_eleven_database(const std::filesystem::path& path) {
+    if (!create_version_ten_database(path)) {
+        return false;
+    }
+    sqlite3* database = nullptr;
+    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
+        sqlite3_close(database);
+        return false;
+    }
+    constexpr const char* schema =
+        "ALTER TABLE pending_download ADD COLUMN backup_path "
+        "TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE pending_download ADD COLUMN backup_fingerprint "
+        "TEXT NOT NULL DEFAULT '';"
+        "PRAGMA user_version = 11;";
+    const bool succeeded =
+        sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
+    sqlite3_close(database);
+    return succeeded;
+}
+
 bool identity_row_is_valid(const std::filesystem::path& path) {
     sqlite3* database = nullptr;
     if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
@@ -316,6 +337,7 @@ int main() {
         const auto first = database.find("", "remote-1");
         const auto second = database.find("", "remote-2");
         const auto third = database.find("me", "remote-3");
+        const auto drive_items = database.drive_items("me");
         if (database.size() != 3 || !first || !second || !third) {
             return fail("persisted items were not loaded");
         }
@@ -335,7 +357,9 @@ int main() {
                     "https://graph.example.test/delta-1"
                 } ||
             database.sync_filter_fingerprint("me") !=
-                std::optional<std::string>{"filter-1"}) {
+                std::optional<std::string>{"filter-1"} ||
+            drive_items.size() != 1 ||
+            drive_items[0].remote_id != "remote-3") {
             return fail("delta item state was not persisted");
         }
 
@@ -417,6 +441,7 @@ int main() {
                     .name = "blocked-me.txt",
                     .etag = "blocked-etag",
                     .remote_path = "blocked-me.txt",
+                    .deleted = true,
                     .reason_code = "local_modification",
                     .reason_message = "local file was modified",
                     .content_hash = onedrive::FileHash{
@@ -521,6 +546,7 @@ int main() {
             database.blocked_items("me").size() != 1 ||
             database.blocked_items("other-drive").size() != 1 ||
             database.blocked_items("me")[0].attempt_count != 1 ||
+            !database.blocked_items("me")[0].deleted ||
             !database.blocked_items("me")[0].content_hash ||
             database.blocked_items("me")[0].content_hash->value !=
                 "SgAAAAAAAAAAAAAAAQAAAAAAAAA=") {
@@ -989,6 +1015,42 @@ int main() {
                 "ca3704aa0b06f5954c79ee837faa152d84c3fb2ceca2ba352a4a014fab6e5e2c") {
             return fail(
                 "version ten database did not gain safeBackup journal state"
+            );
+        }
+    }
+
+    const auto version_eleven_directory =
+        temporary_directory.path() / "version-eleven";
+    std::filesystem::create_directories(version_eleven_directory);
+    if (!create_version_eleven_database(
+            version_eleven_directory / "items.sqlite3"
+        )) {
+        return fail("version eleven migration fixture could not be created");
+    }
+    {
+        onedrive::storage::ItemDatabase database{
+            version_eleven_directory,
+            identity()
+        };
+        database.open();
+        database.apply_delta({
+            .drive_id = "me",
+            .blocked_upserts = {
+                {
+                    .remote_id = "deleted-after-migration",
+                    .name = "deleted.txt",
+                    .remote_path = "deleted.txt",
+                    .deleted = true,
+                    .reason_code = "local_modification",
+                    .reason_message = "local file changed",
+                },
+            },
+            .delta_link = "https://graph.example.test/delta-v12",
+        });
+        const auto blocked = database.blocked_items("me");
+        if (blocked.size() != 1 || !blocked[0].deleted) {
+            return fail(
+                "version eleven database did not gain deletion retry state"
             );
         }
     }

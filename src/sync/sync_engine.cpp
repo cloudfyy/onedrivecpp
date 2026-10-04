@@ -40,6 +40,7 @@ struct ExecutionSummary {
     std::size_t downloaded{0};
     std::size_t reused{0};
     std::size_t directories{0};
+    std::size_t removed{0};
 };
 
 struct DownloadTask {
@@ -265,7 +266,7 @@ graph::RemoteItem remote_item(const storage::BlockedItem& item) {
         .last_modified = item.last_modified,
         .size = item.size,
         .directory = item.directory,
-        .deleted = false,
+        .deleted = item.deleted,
         .root = false,
         .malware = item.reason_code == "malware_detected",
         .content_hash = item.content_hash,
@@ -285,6 +286,69 @@ void add_blocked_retries(
         if (!changed_ids.contains(item.remote_id)) {
             delta.changes.push_back(remote_item(item));
         }
+    }
+}
+
+void add_full_refresh_deletions(
+    graph::DeltaResult& delta,
+    const std::vector<storage::ItemState>& tracked
+) {
+    std::unordered_set<std::string> remote_ids;
+    remote_ids.reserve(delta.changes.size());
+    for (const auto& item : delta.changes) {
+        remote_ids.insert(item.id);
+    }
+    for (const auto& item : tracked) {
+        if (!remote_ids.contains(item.remote_id)) {
+            graph::RemoteItem deletion;
+            deletion.id = item.remote_id;
+            deletion.deleted = true;
+            delta.changes.push_back(std::move(deletion));
+        }
+    }
+}
+
+void add_deleted_descendants(
+    graph::DeltaResult& delta,
+    const std::vector<storage::ItemState>& tracked
+) {
+    std::unordered_set<std::string> changed_ids;
+    changed_ids.reserve(delta.changes.size());
+    for (const auto& item : delta.changes) {
+        changed_ids.insert(item.id);
+    }
+    std::vector<std::string> deleted_directories;
+    for (const auto& change : delta.changes) {
+        if (!change.deleted) {
+            continue;
+        }
+        const auto previous = std::ranges::find(
+            tracked,
+            change.id,
+            &storage::ItemState::remote_id
+        );
+        if (previous != tracked.end() && previous->directory) {
+            deleted_directories.push_back(previous->remote_path);
+        }
+    }
+    for (const auto& item : tracked) {
+        const bool below_deleted_directory = std::ranges::any_of(
+            deleted_directories,
+            [&](const std::string& directory) {
+                return item.remote_path.size() > directory.size() &&
+                       item.remote_path.starts_with(directory) &&
+                       item.remote_path[directory.size()] == '/';
+            }
+        );
+        if (changed_ids.contains(item.remote_id) ||
+            !below_deleted_directory) {
+            continue;
+        }
+        graph::RemoteItem deletion;
+        deletion.id = item.remote_id;
+        deletion.deleted = true;
+        delta.changes.push_back(std::move(deletion));
+        changed_ids.insert(item.remote_id);
     }
 }
 
@@ -317,6 +381,136 @@ bool below_blocked_directory(
                    path[directory.size()] == '/';
         }
     );
+}
+
+std::size_t execute_removals(
+    detail::SyncPlan& plan,
+    const detail::SafeSyncRoot& safe_root,
+    const std::string& drive_id,
+    storage::ItemStore& items,
+    detail::ItemOperationCoordinator& operations,
+    const cli::Console& console
+) {
+    struct Removal {
+        graph::RemoteItem item;
+        std::optional<storage::ItemState> previous;
+    };
+    std::vector<Removal> removals;
+    removals.reserve(plan.removal_count());
+    for (std::size_t index = 0; index < plan.removal_count(); ++index) {
+        const auto& item = plan.removal(index);
+        removals.push_back({
+            .item = item,
+            .previous = items.find(drive_id, item.id),
+        });
+    }
+    std::ranges::sort(
+        removals,
+        [](const Removal& left, const Removal& right) {
+            if (!left.previous || !right.previous) {
+                return left.previous.has_value();
+            }
+            const auto left_depth = std::ranges::count(
+                left.previous->remote_path,
+                '/'
+            );
+            const auto right_depth = std::ranges::count(
+                right.previous->remote_path,
+                '/'
+            );
+            if (left_depth != right_depth) {
+                return left_depth > right_depth;
+            }
+            return !left.previous->directory &&
+                   right.previous->directory;
+        }
+    );
+
+    std::size_t removed = 0;
+    for (const auto& removal : removals) {
+        if (!removal.previous) {
+            plan.complete_removal(removal.item.id);
+            continue;
+        }
+        const auto& previous = *removal.previous;
+        auto block = [&](std::string code, std::string message) {
+            plan.block_removal(
+                previous,
+                std::move(code),
+                std::move(message)
+            );
+            report_blocked(
+                plan.blocked(plan.blocked_count() - 1),
+                console
+            );
+        };
+        try {
+            auto operation = operations.acquire(drive_id, previous.remote_id);
+            auto destination_operation =
+                operations.acquire_destination(previous.local_path);
+            static_cast<void>(
+                safe_root.relative_path(previous.local_path)
+            );
+            std::error_code error;
+            const auto status =
+                std::filesystem::symlink_status(previous.local_path, error);
+            if (error == std::errc::no_such_file_or_directory ||
+                !std::filesystem::exists(status)) {
+                plan.complete_removal(previous.remote_id);
+                continue;
+            }
+            if (error) {
+                throw std::runtime_error(
+                    "cannot inspect local deletion target '" +
+                    previous.local_path.string() + "': " + error.message()
+                );
+            }
+            if (std::filesystem::is_symlink(status) ||
+                (previous.directory &&
+                 !std::filesystem::is_directory(status)) ||
+                (!previous.directory &&
+                 !std::filesystem::is_regular_file(status))) {
+                block(
+                    "local_path_conflict",
+                    "remote deletion target has an unexpected local type: " +
+                        previous.local_path.string()
+                );
+                continue;
+            }
+            if (!previous.directory &&
+                !detail::local_snapshot_matches(
+                    previous,
+                    previous.local_path
+                )) {
+                block(
+                    "local_modification",
+                    "local file changed after the last synchronized snapshot: " +
+                        previous.local_path.string()
+                );
+                continue;
+            }
+            try {
+                if (safe_root.remove(
+                        previous.local_path,
+                        previous.directory
+                    )) {
+                    ++removed;
+                    console.message(
+                        cli::MessageKind::information,
+                        "local_item_removed",
+                        "Removed remotely deleted local item '" +
+                            previous.local_path.string() + "'."
+                    );
+                }
+                plan.complete_removal(previous.remote_id);
+            } catch (const detail::SafePathConflictError& exception) {
+                block("local_path_conflict", exception.what());
+            }
+        } catch (const detail::SafePathConflictError& exception) {
+            block("local_path_conflict", exception.what());
+        }
+    }
+    return removed;
 }
 
 void report_plan(
@@ -356,8 +550,8 @@ void report_plan(
         plan.removal_count()
     );
     if (plan.removal_count() != 0) {
-        spdlog::warn(
-            "{} remote deletions will not remove local files in this release",
+        spdlog::info(
+            "{} remote deletions are eligible for safe local execution",
             plan.removal_count()
         );
     }
@@ -388,7 +582,7 @@ void report_plan(
             {
                 .label = "local removals:",
                 .key = "local_removals",
-                .value = "0",
+                .value = std::to_string(plan.removal_count()),
             },
         }
     );
@@ -411,6 +605,15 @@ ExecutionSummary execute_plan(
     bool private_permissions
 ) {
     const auto& sync_root = safe_root.path();
+    detail::ItemOperationCoordinator operations;
+    const auto removed_count = execute_removals(
+        plan,
+        safe_root,
+        drive_id,
+        items,
+        operations,
+        console
+    );
     std::vector<std::string> blocked_directories;
     for (std::size_t index = 0; index < plan.blocked_count(); ++index) {
         const auto& blocked = plan.blocked(index);
@@ -633,7 +836,6 @@ ExecutionSummary execute_plan(
         sync_root,
         detail::download_safety_reserve(transfer_bytes)
     };
-    detail::ItemOperationCoordinator operations;
     auto downloads = download_files(
         download_tasks,
         download_concurrency,
@@ -688,6 +890,7 @@ ExecutionSummary execute_plan(
         .downloaded = downloaded_count,
         .reused = reused_count,
         .directories = prepared_directory_count,
+        .removed = removed_count,
     };
 }
 
@@ -835,6 +1038,7 @@ int SyncEngine::synchronize() const {
                 "remote state..."
             );
         }
+        std::vector<std::string> snapshot_removals;
         if (sync_list) {
             spdlog::info(
                 "Loaded {} selective synchronization rules from '{}' "
@@ -878,6 +1082,15 @@ int SyncEngine::synchronize() const {
             delta = graph_.list_delta(std::nullopt, delta_progress);
             replace_drive_items = true;
         }
+        const auto tracked_items =
+            items_.drive_items(config_->drive_id);
+        if (replace_drive_items) {
+            add_full_refresh_deletions(
+                delta,
+                tracked_items
+            );
+        }
+        add_deleted_descendants(delta, tracked_items);
         const auto previously_blocked =
             items_.blocked_items(config_->drive_id);
         if (!replace_drive_items && !previously_blocked.empty()) {
@@ -909,6 +1122,7 @@ int SyncEngine::synchronize() const {
                 "Selective synchronization excluded {} remote changes",
                 filtered.excluded
             );
+            snapshot_removals = std::move(filtered.snapshot_removals);
             delta = std::move(filtered.delta);
         }
         auto plan = detail::SyncPlan::build(
@@ -916,7 +1130,8 @@ int SyncEngine::synchronize() const {
             config_->drive_id,
             sync_root,
             replace_drive_items,
-            sync_filter_fingerprint
+            sync_filter_fingerprint,
+            std::move(snapshot_removals)
         );
         report_plan(plan, config_->drive_id, console);
 
@@ -964,6 +1179,11 @@ int SyncEngine::synchronize() const {
                         .label = "directories prepared:",
                         .key = "directories_prepared",
                         .value = std::to_string(summary.directories),
+                    },
+                    {
+                        .label = "local removals:",
+                        .key = "local_removals",
+                        .value = std::to_string(summary.removed),
                     },
                     {
                         .label = "blocked:",

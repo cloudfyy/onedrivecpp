@@ -61,15 +61,51 @@ int main() {
         plan.download(0).id != "file") {
         return fail("delta result was not converted into the expected plan");
     }
+    if (plan.removal(0).id != "removed") {
+        return fail("remote deletion was not retained for local execution");
+    }
     auto& state = plan.state_for("file");
     if (state.drive_id != "me" || state.local_path != "/sync/a/file.txt") {
         return fail("planned item state was incorrect");
     }
+    plan.complete_removal("removed");
     const auto delta = plan.release_state_delta();
     if (!delta.replace_drive_items || delta.upserts.size() != 3 ||
         delta.removals != std::vector<std::string>{"removed"} ||
         delta.delta_link != "https://graph.example.test/delta") {
         return fail("planned persistent delta was incorrect");
+    }
+
+    auto blocked_removal_plan = detail::SyncPlan::build(
+        {
+            .changes = {removed},
+            .delta_link = "https://graph.example.test/blocked-removal",
+        },
+        "me",
+        "/sync",
+        false,
+        ""
+    );
+    blocked_removal_plan.block_removal(
+        {
+            .drive_id = "me",
+            .remote_id = "removed",
+            .name = "removed.txt",
+            .remote_path = "removed.txt",
+            .local_path = "/sync/removed.txt",
+            .size = 4,
+        },
+        "local_modification",
+        "local file changed"
+    );
+    const auto blocked_removal_delta =
+        blocked_removal_plan.release_state_delta();
+    if (!blocked_removal_delta.removals.empty() ||
+        blocked_removal_delta.blocked_upserts.size() != 1 ||
+        !blocked_removal_delta.blocked_upserts[0].deleted ||
+        blocked_removal_delta.blocked_upserts[0].reason_code !=
+            "local_modification") {
+        return fail("blocked remote deletion lost its retry metadata");
     }
 
     auto malware = item("malware", "blocked.exe");

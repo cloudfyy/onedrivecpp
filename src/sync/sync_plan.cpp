@@ -16,7 +16,8 @@ SyncPlan SyncPlan::build(
     const std::string& drive_id,
     const std::filesystem::path& sync_directory,
     bool replace_drive_items,
-    std::string sync_filter_fingerprint
+    std::string sync_filter_fingerprint,
+    std::vector<std::string> snapshot_removals
 ) {
     SyncPlan plan;
     plan.delta_ = std::move(delta);
@@ -25,12 +26,12 @@ SyncPlan SyncPlan::build(
     plan.state_delta_.sync_filter_fingerprint =
         std::move(sync_filter_fingerprint);
     plan.state_delta_.replace_drive_items = replace_drive_items;
+    plan.state_delta_.removals = std::move(snapshot_removals);
 
     for (std::size_t index = 0; index < plan.delta_.changes.size(); ++index) {
         const auto& item = plan.delta_.changes[index];
         if (item.deleted) {
-            plan.state_delta_.removals.push_back(item.id);
-            plan.state_delta_.blocked_removals.push_back(item.id);
+            plan.removals_.push_back(index);
             spdlog::trace("Remote item deleted: id='{}'", item.id);
             continue;
         }
@@ -111,6 +112,10 @@ const graph::RemoteItem& SyncPlan::download(std::size_t index) const {
     return delta_.changes.at(downloads_.at(index));
 }
 
+const graph::RemoteItem& SyncPlan::removal(std::size_t index) const {
+    return delta_.changes.at(removals_.at(index));
+}
+
 storage::ItemState& SyncPlan::state_for(const std::string& remote_id) {
     const auto iterator = std::ranges::find(
         state_delta_.upserts,
@@ -163,6 +168,34 @@ void SyncPlan::block(
     }
 }
 
+void SyncPlan::complete_removal(const std::string& remote_id) {
+    state_delta_.removals.push_back(remote_id);
+    state_delta_.blocked_removals.push_back(remote_id);
+}
+
+void SyncPlan::block_removal(
+    const storage::ItemState& item,
+    std::string reason_code,
+    std::string reason_message
+) {
+    std::erase(state_delta_.blocked_removals, item.remote_id);
+    state_delta_.blocked_upserts.push_back({
+        .drive_id = state_delta_.drive_id,
+        .remote_id = item.remote_id,
+        .parent_id = item.parent_id,
+        .name = item.name,
+        .etag = item.etag,
+        .remote_path = item.remote_path,
+        .last_modified = item.last_modified,
+        .size = item.size,
+        .directory = item.directory,
+        .deleted = true,
+        .reason_code = std::move(reason_code),
+        .reason_message = std::move(reason_message),
+        .content_hash = std::nullopt,
+    });
+}
+
 const storage::BlockedItem& SyncPlan::blocked(std::size_t index) const {
     return state_delta_.blocked_upserts.at(index);
 }
@@ -184,7 +217,7 @@ std::size_t SyncPlan::download_count() const noexcept {
 }
 
 std::size_t SyncPlan::removal_count() const noexcept {
-    return state_delta_.removals.size();
+    return removals_.size();
 }
 
 std::size_t SyncPlan::blocked_count() const noexcept {

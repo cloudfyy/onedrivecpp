@@ -12,9 +12,9 @@ copy the reference project's D implementation.
 > transport layer, authenticated Microsoft Graph delta queries, SQLite remote
 > state and delta-link persistence, safe one-way downloads, dry-run support, a
 > systemd user service, and Debian packaging. Synchronization currently
-> creates remote directories and downloads added or changed remote files;
-> uploads, local execution of remote deletions, and two-way conflict resolution
-> are not implemented.
+> creates remote directories, downloads added or changed remote files, and
+> safely removes unchanged local snapshots after remote deletion; uploads,
+> remote moves, and two-way conflict resolution are not implemented.
 
 ## Architecture
 
@@ -289,7 +289,10 @@ preserves the exact local bytes in one same-directory `safeBackup`, restores
 the authoritative Graph fixture, persists one snapshot, and leaves both files
 unchanged during the following incremental synchronization. The runner forces
 the isolated configuration to use the `backup` policy; it does not modify the
-external configuration. It also enables `sync_root_files`, verifies that the
+external configuration. Finally, it injects an isolated trusted snapshot whose
+ID is absent from a real full Graph Delta response and verifies safe local
+deletion, SQLite cleanup, structured output, and preservation of the live
+fixture. It also enables `sync_root_files`, verifies that the
 selection fingerprint forces a full Graph query, and confirms the existing
 rule-selected fixture is not rewritten.
 
@@ -525,8 +528,8 @@ reduces local materialization and file transfers but does not provide
 server-side Graph filtering. A fingerprint of the effective rules is committed
 atomically with the Delta cursor. Adding, changing, removing, or reordering
 rules automatically causes the next synchronization to fetch the full remote
-state. Excluded files already present locally are not deleted in this release,
-consistent with the existing remote-deletion policy. The explicit
+state. Excluded files already present locally are deliberately retained because
+selection changes are not remote deletion records. The explicit
 `download REMOTE_PATH` command is not restricted by `sync.sync_list`.
 
 When `sync.sync_list` is configured, `sync.sync_root_files = true`
@@ -1032,7 +1035,19 @@ cursor. Blocked items are retried on every later incremental sync; a successful
 retry or remote deletion clears the record.
 Authentication, Graph, database, root-permission, disk-capacity, and download
 transport failures remain fatal. The client does not yet upload local changes
-or remove local files for remote deletion records.
+or apply remote moves.
+
+Remote deletion records remove a regular local file only while its size and
+modification time still match the trusted synchronized snapshot. Missing local
+targets are accepted and their snapshots are cleared. Directories are removed
+child-first and only when empty, so untracked local content is never removed
+recursively. Modified files, symbolic links, unexpected path types, and
+nonempty directories are retained as retryable blocked items; this remains
+true when `sync.local_conflict = "backup"`. A later sync retries the deletion,
+including after the Delta cursor has advanced. Full Delta refreshes reconcile
+the complete Graph inventory with prior snapshots so deleted remote items are
+not lost after cursor reset or expiry. Items merely excluded by `sync_list`
+lose their database snapshot but keep their local files.
 
 When Microsoft Graph supplies a file content hash, the completed temporary
 file is verified before it can enter the install journal. SHA-256 is preferred
@@ -1140,9 +1155,10 @@ or modify the synchronization directory.
 
 ## Suggested Next Steps
 
-1. Safely apply remote deletions and moves to the local file tree.
-2. Add uploads and two-way conflict policies.
-3. Connect the monitor to inotify and add integration tests for the Graph and
+1. Safely apply remote moves and renames to the local file tree.
+2. Connect the monitor to inotify.
+3. Add uploads and two-way conflict policies.
+4. Add integration tests for the Graph and
    file system boundaries.
 
 ## License

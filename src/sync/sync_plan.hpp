@@ -17,7 +17,8 @@ public:
         const std::string& drive_id,
         const std::filesystem::path& sync_directory,
         bool replace_drive_items,
-        std::string sync_filter_fingerprint
+        std::string sync_filter_fingerprint,
+        std::vector<std::string> snapshot_removals = {}
     );
 
     [[nodiscard]] const graph::RemoteItem& directory(
@@ -26,11 +27,20 @@ public:
     [[nodiscard]] const graph::RemoteItem& download(
         std::size_t index
     ) const;
+    [[nodiscard]] const graph::RemoteItem& removal(
+        std::size_t index
+    ) const;
     [[nodiscard]] storage::ItemState& state_for(
         const std::string& remote_id
     );
     void block(
         const graph::RemoteItem& item,
+        std::string reason_code,
+        std::string reason_message
+    );
+    void complete_removal(const std::string& remote_id);
+    void block_removal(
+        const storage::ItemState& item,
         std::string reason_code,
         std::string reason_message
     );
@@ -51,6 +61,7 @@ private:
     storage::ItemDelta state_delta_;
     std::vector<std::size_t> directories_;
     std::vector<std::size_t> downloads_;
+    std::vector<std::size_t> removals_;
     std::uintmax_t download_bytes_{0};
 };
 
