@@ -85,6 +85,7 @@ struct GraphOptions {
     std::size_t maximum_throttle_retries{4};
     std::chrono::seconds initial_throttle_delay{1};
     std::chrono::seconds maximum_throttle_delay{300};
+    std::size_t download_maximum_retries{4};
     std::uint64_t download_chunk_threshold_bytes{
         std::uint64_t{8} * 1024U * 1024U
     };

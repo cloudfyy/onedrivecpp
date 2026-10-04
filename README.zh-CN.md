@@ -378,6 +378,7 @@ sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 drive_id = "me"
 permissions = "private"
 download_concurrency = 4
+download_maximum_retries = 4
 download_chunk_threshold_bytes = 8388608
 download_checkpoint_interval_bytes = 1048576
 download_validation = "strict"
@@ -413,6 +414,11 @@ Range 响应验证的字节。
 `download_checkpoint_interval_bytes` 控制每新增多少下载字节就可靠写盘并记录
 可续传进度。默认值为 `1048576`（1 MiB），且必须大于零。更小的值可以减少
 中断后的重复下载量，但会增加同步写盘和数据库更新开销。
+
+`download_maximum_retries` 控制文件内容请求遇到临时 HTTP 或传输错误后的最大
+重试次数。默认值为 `4`；设为 `0` 可禁用文件内容重试。它独立于
+`graph.throttle.maximum_retries`，后者仍控制 Microsoft Graph API 请求重试。
+下载重试继续使用 Graph 的退避延迟配置。
 
 下载进度会聚合所有活动文件，并显示当前平滑传输速率和预计剩余时间；最终进度
 还会显示下载总耗时。JSON 进度事件通过 `bytes_per_second`、

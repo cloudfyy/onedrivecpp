@@ -42,6 +42,7 @@ struct Config {
     std::chrono::seconds graph_initial_throttle_delay{1};
     std::chrono::seconds graph_maximum_throttle_delay{300};
     std::size_t download_concurrency{4};
+    std::size_t download_maximum_retries{4};
     std::uint64_t download_chunk_threshold_bytes{
         std::uint64_t{8} * 1024U * 1024U
     };

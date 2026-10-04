@@ -345,6 +345,7 @@ template <typename Operation>
 http::HttpResult perform_with_retries(
     Operation operation,
     const GraphOptions& options,
+    std::size_t maximum_retries,
     const MicrosoftGraphClient::SleepFunction& sleep,
     std::string_view description,
     const std::stop_token& stop_token = {},
@@ -366,7 +367,7 @@ http::HttpResult perform_with_retries(
             !retryable_status(response->status_code)) {
             return response;
         }
-        if (retries >= options.maximum_throttle_retries) {
+        if (retries >= maximum_retries) {
             if (transport_error) {
                 throw std::runtime_error(
                     std::format(
@@ -406,7 +407,7 @@ http::HttpResult perform_with_retries(
                 response.error().message,
                 delay.count(),
                 retries + 1,
-                options.maximum_throttle_retries
+                maximum_retries
             );
         } else {
             spdlog::warn(
@@ -415,7 +416,7 @@ http::HttpResult perform_with_retries(
                 response->status_code,
                 delay.count(),
                 retries + 1,
-                options.maximum_throttle_retries
+                maximum_retries
             );
         }
         if (wait_for_retry(delay, sleep, stop_token)) {
@@ -893,6 +894,7 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
             });
             },
             options_,
+            options_.maximum_throttle_retries,
             sleep_,
             std::format("Microsoft Graph root page {}", page_number)
         );
@@ -1060,6 +1062,7 @@ DeltaResult MicrosoftGraphClient::list_delta(
             });
             },
             options_,
+            options_.maximum_throttle_retries,
             sleep_,
             std::format("Microsoft Graph delta page {}", page_number)
         );
@@ -1294,6 +1297,7 @@ void MicrosoftGraphClient::download_file(
                 });
             },
             options_,
+            options_.maximum_throttle_retries,
             sleep_,
             "Microsoft Graph download redirect",
             stop_token
@@ -1379,6 +1383,7 @@ void MicrosoftGraphClient::download_file(
                     );
                 },
                 options_,
+                options_.download_maximum_retries,
                 sleep_,
                 description,
                 stop_token,

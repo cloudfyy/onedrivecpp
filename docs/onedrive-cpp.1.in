@@ -246,8 +246,8 @@ scopes must be configured explicitly and produce a warning during
 authentication.
 .TP
 .B graph.throttle.maximum_retries
-Maximum number of retries for a retryable Microsoft Graph or file-download
-response. The default is
+Maximum number of retries for a retryable Microsoft Graph API response. The
+default is
 .BR 4 .
 .TP
 .B graph.throttle.initial_delay_seconds
@@ -261,6 +261,13 @@ Maximum accepted or calculated Graph throttling delay. The default is
 .B 300
 seconds. This value must be greater than or equal to
 .BR graph.throttle.initial_delay_seconds .
+.TP
+.B sync.download_maximum_retries
+Maximum number of retries for a file-content request after a transient HTTP or
+transport failure. The default is
+.BR 4 ;
+zero disables file-content retries. Download retries use the Graph backoff
+delay settings.
 .TP
 .B sync.download_chunk_threshold_bytes
 Files larger than this value use sequential HTTP Range requests with this

@@ -1478,6 +1478,8 @@ int test_large_file_chunked_download() {
         {
             .drive_id = "me",
             .endpoint = "https://graph.example.test/v1.0",
+            .maximum_throttle_retries = 0,
+            .download_maximum_retries = 1,
             .download_chunk_threshold_bytes = 3,
             .download_checkpoint_interval_bytes = 2,
         },

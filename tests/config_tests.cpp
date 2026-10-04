@@ -18,6 +18,7 @@ int main() {
                << "drive_id = \"test-drive\"\n"
                << "dry_run = true\n"
                << "download_concurrency = 6\n"
+               << "download_maximum_retries = 3\n"
                << "download_chunk_threshold_bytes = 4096\n"
                << "download_checkpoint_interval_bytes = 1024\n"
                << "download_connect_timeout_seconds = 12\n"
@@ -61,6 +62,7 @@ int main() {
         config.graph_initial_throttle_delay != std::chrono::seconds{2} ||
         config.graph_maximum_throttle_delay != std::chrono::seconds{90} ||
         config.download_concurrency != 6 ||
+        config.download_maximum_retries != 3 ||
         config.download_chunk_threshold_bytes != 4096 ||
         config.download_checkpoint_interval_bytes != 1024 ||
         config.download_transport.connect_timeout !=
@@ -80,6 +82,7 @@ int main() {
         config.sync_permissions !=
             onedrive::config::SyncPermissionsMode::umask ||
         graph_options.download_transport != config.download_transport ||
+        graph_options.download_maximum_retries != 3 ||
         graph_options.download_checkpoint_interval_bytes != 1024 ||
         !graph_options.relaxed_download_validation ||
         graph_options.private_download_permissions ||
@@ -111,6 +114,7 @@ int main() {
         ) ||
         defaults.sync_permissions !=
             onedrive::config::SyncPermissionsMode::private_access ||
+        defaults.download_maximum_retries != 4 ||
         defaults.download_checkpoint_interval_bytes !=
             std::uint64_t{1024} * 1024U ||
         onedrive::app::graph_options(defaults).
@@ -133,6 +137,25 @@ int main() {
         std::cerr << "invalid download validation mode was accepted\n";
         return EXIT_FAILURE;
     } catch (const std::runtime_error&) {
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 1\n"
+               << "[sync]\n"
+               << "download_maximum_retries = -1\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "negative download retry count was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains("non-negative integer")) {
+            std::filesystem::remove(path);
+            std::cerr << "negative download retry count reported wrong error\n";
+            return EXIT_FAILURE;
+        }
     }
 
     {

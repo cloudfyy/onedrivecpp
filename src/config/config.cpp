@@ -90,6 +90,21 @@ std::uint64_t unsigned_value(
     return static_cast<std::uint64_t>(*value);
 }
 
+std::size_t size_value(
+    const toml::table& table,
+    std::string_view key,
+    std::string_view full_name
+) {
+    const auto value = unsigned_value(table, key, full_name);
+    if (value > std::numeric_limits<std::size_t>::max()) {
+        throw std::runtime_error(
+            "TOML configuration value '" + std::string{full_name} +
+            "' is too large"
+        );
+    }
+    return static_cast<std::size_t>(value);
+}
+
 std::chrono::seconds seconds_value(
     const toml::table& table,
     std::string_view key,
@@ -215,6 +230,7 @@ Config Config::defaults() {
         .graph_initial_throttle_delay = std::chrono::seconds{1},
         .graph_maximum_throttle_delay = std::chrono::seconds{300},
         .download_concurrency = 4,
+        .download_maximum_retries = 4,
         .download_chunk_threshold_bytes =
             std::uint64_t{8} * 1024U * 1024U,
         .download_checkpoint_interval_bytes =
@@ -271,6 +287,7 @@ Config Config::load(const std::filesystem::path& path) {
                 "drive_id",
                 "dry_run",
                 "download_concurrency",
+                "download_maximum_retries",
                 "download_chunk_threshold_bytes",
                 "download_checkpoint_interval_bytes",
                 "download_connect_timeout_seconds",
@@ -321,6 +338,13 @@ Config Config::load(const std::filesystem::path& path) {
             }
             config.download_concurrency =
                 static_cast<std::size_t>(concurrency);
+        }
+        if (sync->contains("download_maximum_retries")) {
+            config.download_maximum_retries = size_value(
+                *sync,
+                "download_maximum_retries",
+                "sync.download_maximum_retries"
+            );
         }
         if (sync->contains("download_chunk_threshold_bytes")) {
             const auto threshold = unsigned_value(
@@ -508,19 +532,11 @@ Config Config::load(const std::filesystem::path& path) {
                 "graph.throttle"
             );
             if (throttle->contains("maximum_retries")) {
-                const auto retries = unsigned_value(
+                config.graph_maximum_throttle_retries = size_value(
                     *throttle,
                     "maximum_retries",
                     "graph.throttle.maximum_retries"
                 );
-                if (retries > std::numeric_limits<std::size_t>::max()) {
-                    throw std::runtime_error(
-                        "TOML configuration value "
-                        "'graph.throttle.maximum_retries' is too large"
-                    );
-                }
-                config.graph_maximum_throttle_retries =
-                    static_cast<std::size_t>(retries);
             }
             if (throttle->contains("initial_delay_seconds")) {
                 config.graph_initial_throttle_delay = seconds_value(

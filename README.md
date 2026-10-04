@@ -411,6 +411,7 @@ For example:
 drive_id = "me"
 permissions = "private"
 download_concurrency = 4
+download_maximum_retries = 4
 download_chunk_threshold_bytes = 8388608
 download_checkpoint_interval_bytes = 1048576
 download_connect_timeout_seconds = 30
@@ -460,6 +461,12 @@ are written durably before resumable progress is recorded. It defaults to
 `1048576` (1 MiB) and must be greater than zero. Smaller values reduce
 re-download work after interruptions but increase synchronization and database
 overhead.
+
+`download_maximum_retries` controls how many times a file-content request is
+retried after a transient HTTP or transport failure. It defaults to `4`;
+`0` disables file-content retries. This is independent of
+`graph.throttle.maximum_retries`, which continues to control Microsoft Graph
+API request retries. Download retries use the Graph backoff delay settings.
 
 Download transport settings control each file-content request. Connection and
 operation timeouts default to `30` and `3600` seconds. A transfer that remains
