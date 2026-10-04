@@ -47,6 +47,14 @@ public:
         const std::string& drive_id
     ) const;
     void commit_upload(const PendingUpload& upload, ItemState item);
+    void save_pending_move(PendingMove move);
+    void remove_pending_move(
+        const std::string& drive_id,
+        const std::string& remote_id
+    );
+    [[nodiscard]] std::vector<PendingMove> pending_moves(
+        const std::string& drive_id
+    ) const;
     [[nodiscard]] std::vector<BlockedItem> blocked_items(
         const std::string& drive_id
     ) const;
@@ -98,6 +106,14 @@ private:
         const PendingUpload& upload,
         const ItemState& item
     );
+    void save_pending_move_on_worker(const PendingMove& move);
+    void remove_pending_move_on_worker(
+        const std::string& drive_id,
+        const std::string& remote_id
+    );
+    [[nodiscard]] std::vector<PendingMove> pending_moves_on_worker(
+        const std::string& drive_id
+    ) const;
     [[nodiscard]] std::vector<BlockedItem> blocked_items_on_worker(
         const std::string& drive_id
     ) const;

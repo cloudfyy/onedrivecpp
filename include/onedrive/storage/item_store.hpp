@@ -84,11 +84,22 @@ struct PendingUpload {
     std::string expected_etag;
 };
 
+struct PendingMove {
+    std::string drive_id;
+    std::string remote_id;
+    std::filesystem::path source_path;
+    std::filesystem::path destination_path;
+    std::uint64_t source_device{0};
+    std::uint64_t source_inode{0};
+    bool directory{false};
+};
+
 struct ClearedState {
     std::size_t items{0};
     std::size_t pending_downloads{0};
     std::size_t partial_downloads{0};
     std::size_t pending_uploads{0};
+    std::size_t pending_moves{0};
     std::size_t blocked_items{0};
     bool delta_link{false};
 };
@@ -105,6 +116,9 @@ PRO_DEF_MEM_DISPATCH(StorePartialDispatch, partial_download);
 PRO_DEF_MEM_DISPATCH(StoreSavePendingUploadDispatch, save_pending_upload);
 PRO_DEF_MEM_DISPATCH(StorePendingUploadsDispatch, pending_uploads);
 PRO_DEF_MEM_DISPATCH(StoreCommitUploadDispatch, commit_upload);
+PRO_DEF_MEM_DISPATCH(StoreSavePendingMoveDispatch, save_pending_move);
+PRO_DEF_MEM_DISPATCH(StoreRemovePendingMoveDispatch, remove_pending_move);
+PRO_DEF_MEM_DISPATCH(StorePendingMovesDispatch, pending_moves);
 PRO_DEF_MEM_DISPATCH(StoreBlockedDispatch, blocked_items);
 PRO_DEF_MEM_DISPATCH(StoreResetDispatch, reset);
 PRO_DEF_MEM_DISPATCH(StoreClearDispatch, clear);
@@ -150,6 +164,15 @@ struct ItemStoreFacade : pro::facade_builder
     ::add_convention<
         StoreCommitUploadDispatch,
         void(const PendingUpload&, ItemState)
+    >
+    ::add_convention<StoreSavePendingMoveDispatch, void(PendingMove)>
+    ::add_convention<
+        StoreRemovePendingMoveDispatch,
+        void(const std::string&, const std::string&)
+    >
+    ::add_convention<
+        StorePendingMovesDispatch,
+        std::vector<PendingMove>(const std::string&) const
     >
     ::add_convention<
         StoreBlockedDispatch,
@@ -247,6 +270,23 @@ public:
         ItemState item
     ) {
         implementation()->commit_upload(upload, std::move(item));
+    }
+
+    void save_pending_move(PendingMove move) {
+        implementation()->save_pending_move(std::move(move));
+    }
+
+    void remove_pending_move(
+        const std::string& drive_id,
+        const std::string& remote_id
+    ) {
+        implementation()->remove_pending_move(drive_id, remote_id);
+    }
+
+    [[nodiscard]] std::vector<PendingMove> pending_moves(
+        const std::string& drive_id
+    ) const {
+        return implementation()->pending_moves(drive_id);
     }
 
     [[nodiscard]] std::vector<BlockedItem> blocked_items(

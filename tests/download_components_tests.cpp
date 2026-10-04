@@ -210,6 +210,15 @@ public:
         upsert(std::move(item));
     }
 
+    void save_pending_move(onedrive::storage::PendingMove) {}
+
+    void remove_pending_move(const std::string&, const std::string&) {}
+
+    [[nodiscard]] std::vector<onedrive::storage::PendingMove>
+    pending_moves(const std::string&) const {
+        return {};
+    }
+
     [[nodiscard]] std::vector<onedrive::storage::BlockedItem> blocked_items(
         const std::string&
     ) const {

@@ -249,7 +249,16 @@ public:
 
     void apply_delta(onedrive::storage::ItemDelta delta) {
         const std::scoped_lock lock{mutex};
+        if (fail_apply_delta) {
+            throw std::runtime_error{"simulated delta persistence failure"};
+        }
         ++apply_count;
+        for (const auto& item : delta.upserts) {
+            pending_moves_by_id.erase(item.remote_id);
+        }
+        for (const auto& remote_id : delta.removals) {
+            pending_moves_by_id.erase(remote_id);
+        }
         applied_delta = std::move(delta);
     }
 
@@ -346,6 +355,33 @@ public:
         pending_uploads_by_path.erase(upload.remote_path);
     }
 
+    void save_pending_move(onedrive::storage::PendingMove move) {
+        const std::scoped_lock lock{mutex};
+        pending_moves_by_id.insert_or_assign(
+            move.remote_id,
+            std::move(move)
+        );
+    }
+
+    void remove_pending_move(
+        const std::string&,
+        const std::string& remote_id
+    ) {
+        const std::scoped_lock lock{mutex};
+        pending_moves_by_id.erase(remote_id);
+    }
+
+    [[nodiscard]] std::vector<onedrive::storage::PendingMove>
+    pending_moves(const std::string&) const {
+        const std::scoped_lock lock{mutex};
+        std::vector<onedrive::storage::PendingMove> result;
+        for (const auto& [remote_id, move] : pending_moves_by_id) {
+            static_cast<void>(remote_id);
+            result.push_back(move);
+        }
+        return result;
+    }
+
     [[nodiscard]] std::vector<onedrive::storage::BlockedItem> blocked_items(
         const std::string&
     ) const {
@@ -409,6 +445,8 @@ public:
     std::unordered_map<std::string, onedrive::storage::PartialDownload> partials;
     std::unordered_map<std::string, onedrive::storage::PendingUpload>
         pending_uploads_by_path;
+    std::unordered_map<std::string, onedrive::storage::PendingMove>
+        pending_moves_by_id;
     std::vector<onedrive::storage::BlockedItem> blocked;
     onedrive::storage::ItemDelta applied_delta;
     std::optional<std::string> saved_delta_link;
@@ -417,6 +455,7 @@ public:
     int apply_count{0};
     bool fail_upsert{false};
     bool fail_commit_upload{false};
+    bool fail_apply_delta{false};
     mutable std::mutex mutex;
 };
 
@@ -1613,8 +1652,91 @@ int test_remote_moves() {
         renamed_items.applied_delta.upserts[0].local_path !=
             renamed_root / "new.txt" ||
         renamed_items.applied_delta.upserts[0].local_size != 4 ||
+        !renamed_items.pending_moves_by_id.empty() ||
         !renamed_metrics.last_success) {
         return fail("remote file rename was not applied locally");
+    }
+
+    const auto recovery_root = temporary.path() / "move-recovery";
+    std::filesystem::create_directories(recovery_root);
+    {
+        std::ofstream output{recovery_root / "old.txt"};
+        output << "data";
+    }
+    FakeGraphClient failed_move_graph;
+    failed_move_graph.changes = {
+        file("move-recovery", "new.txt", 4),
+    };
+    FakeItemStore failed_move_items;
+    failed_move_items.saved_delta_link = "saved";
+    failed_move_items.items.emplace(
+        "move-recovery",
+        tracked_item(
+            recovery_root,
+            "move-recovery",
+            "old.txt"
+        )
+    );
+    failed_move_items.fail_apply_delta = true;
+    FakeMetrics failed_move_metrics;
+    try {
+        static_cast<void>(onedrive::sync::SyncEngine{
+            config_for(recovery_root, false),
+            failed_move_graph,
+            failed_move_items,
+            failed_move_metrics
+        }.synchronize());
+        return fail("delta commit failure did not interrupt remote move");
+    } catch (const std::runtime_error&) {
+    }
+    if (std::filesystem::exists(recovery_root / "old.txt") ||
+        !std::filesystem::exists(recovery_root / "new.txt") ||
+        failed_move_items.pending_moves_by_id.size() != 1 ||
+        failed_move_metrics.last_success) {
+        return fail("interrupted remote move did not retain its journal");
+    }
+    FakeGraphClient recovered_move_graph;
+    recovered_move_graph.changes = {
+        file("move-recovery", "new.txt", 4),
+    };
+    FakeItemStore recovered_move_items;
+    recovered_move_items.saved_delta_link = "saved";
+    recovered_move_items.items = failed_move_items.items;
+    recovered_move_items.pending_moves_by_id =
+        failed_move_items.pending_moves_by_id;
+    FakeMetrics recovered_move_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(recovery_root, false),
+            recovered_move_graph,
+            recovered_move_items,
+            recovered_move_metrics
+        }.synchronize() != 0 ||
+        recovered_move_graph.download_count != 0 ||
+        !recovered_move_items.pending_moves_by_id.empty() ||
+        !recovered_move_metrics.last_success) {
+        return fail("pending remote move was not recovered by inode identity");
+    }
+    FakeGraphClient deleted_move_graph;
+    deleted_move_graph.changes = {
+        deleted_item("move-recovery"),
+    };
+    FakeItemStore deleted_move_items;
+    deleted_move_items.saved_delta_link = "saved";
+    deleted_move_items.items = failed_move_items.items;
+    deleted_move_items.pending_moves_by_id =
+        failed_move_items.pending_moves_by_id;
+    FakeMetrics deleted_move_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(recovery_root, false),
+            deleted_move_graph,
+            deleted_move_items,
+            deleted_move_metrics
+        }.synchronize() != 0 ||
+        std::filesystem::exists(recovery_root / "new.txt") ||
+        !deleted_move_items.pending_moves_by_id.empty() ||
+        deleted_move_items.applied_delta.removals !=
+            std::vector<std::string>{"move-recovery"}) {
+        return fail("remotely deleted pending move target was not removed");
     }
 
     const auto adopted_root = temporary.path() / "adopted";
@@ -1645,6 +1767,52 @@ int test_remote_moves() {
         adopted_items.applied_delta.upserts[0].local_path !=
             adopted_root / "new.txt") {
         return fail("interrupted remote move destination was not adopted");
+    }
+
+    const auto mismatched_root = temporary.path() / "mismatched-move";
+    std::filesystem::create_directories(mismatched_root);
+    {
+        std::ofstream output{mismatched_root / "new.txt"};
+        output << "data";
+    }
+    FakeGraphClient mismatched_graph;
+    mismatched_graph.changes = {
+        file("mismatched-move", "new.txt", 4),
+    };
+    FakeItemStore mismatched_items;
+    mismatched_items.saved_delta_link = "saved";
+    auto mismatched_state =
+        tracked_item(mismatched_root, "mismatched-move", "new.txt");
+    mismatched_state.name = "old.txt";
+    mismatched_state.remote_path = "old.txt";
+    mismatched_state.local_path = mismatched_root / "old.txt";
+    mismatched_items.items.emplace(
+        "mismatched-move",
+        std::move(mismatched_state)
+    );
+    mismatched_items.pending_moves_by_id.emplace(
+        "mismatched-move",
+        onedrive::storage::PendingMove{
+            .drive_id = "me",
+            .remote_id = "mismatched-move",
+            .source_path = mismatched_root / "old.txt",
+            .destination_path = mismatched_root / "new.txt",
+            .source_device = 0,
+            .source_inode = 0,
+        }
+    );
+    FakeMetrics mismatched_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(mismatched_root, false),
+            mismatched_graph,
+            mismatched_items,
+            mismatched_metrics
+        }.synchronize() != 2 ||
+        mismatched_items.applied_delta.blocked_upserts.size() != 1 ||
+        mismatched_items.applied_delta.blocked_upserts[0].reason_code !=
+            "pending_move_conflict" ||
+        mismatched_items.pending_moves_by_id.size() != 1) {
+        return fail("mismatched pending move destination was adopted");
     }
 
     const auto changed_root = temporary.path() / "changed";
@@ -1927,6 +2095,7 @@ int test_remote_moves() {
             cross_items.applied_delta.blocked_upserts.size() != 1 ||
             cross_items.applied_delta.blocked_upserts[0].reason_code !=
                 "cross_device_move" ||
+            !cross_items.pending_moves_by_id.empty() ||
             !cross_metrics.last_success) {
             return fail("cross-device remote move was not blocked safely");
         }

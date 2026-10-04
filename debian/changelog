@@ -1,3 +1,14 @@
+onedrive-cpp (0.7.5-1~ubuntu24.04) noble; urgency=medium
+
+  * Journal pending remote moves with durable source device/inode identity
+    before filesystem rename.
+  * Atomically clear move journals with moved item metadata and the Delta
+    cursor, and recover interrupted moves only after identity verification.
+  * Add schema v14 migration, clear/reset reporting, rollback, and simulated
+    post-rename SQLite failure coverage.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 11:40:00 +0000
+
 onedrive-cpp (0.7.4-1~ubuntu24.04) noble; urgency=medium
 
   * Retain cross-filesystem remote moves as retryable blocked items instead of

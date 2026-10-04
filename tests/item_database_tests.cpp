@@ -223,6 +223,31 @@ bool create_version_twelve_database(const std::filesystem::path& path) {
     return succeeded;
 }
 
+bool create_version_thirteen_database(const std::filesystem::path& path) {
+    if (!create_version_twelve_database(path)) {
+        return false;
+    }
+    sqlite3* database = nullptr;
+    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
+        sqlite3_close(database);
+        return false;
+    }
+    constexpr const char* schema =
+        "CREATE TABLE pending_upload ("
+        "drive_id TEXT NOT NULL, remote_path TEXT NOT NULL, "
+        "local_path TEXT NOT NULL, snapshot_path TEXT NOT NULL, "
+        "content_fingerprint TEXT NOT NULL, local_size INTEGER NOT NULL, "
+        "local_modified_ticks INTEGER NOT NULL, "
+        "remote_id TEXT NOT NULL DEFAULT '', "
+        "expected_etag TEXT NOT NULL DEFAULT '', "
+        "PRIMARY KEY (drive_id, remote_path));"
+        "PRAGMA user_version = 13;";
+    const bool succeeded =
+        sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
+    sqlite3_close(database);
+    return succeeded;
+}
+
 bool identity_row_is_valid(const std::filesystem::path& path) {
     sqlite3* database = nullptr;
     if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
@@ -553,6 +578,22 @@ int main() {
                 temporary_directory.path() / ".partial-other.tmp",
             .completed_bytes = 3,
         });
+        database.save_pending_move({
+            .drive_id = "me",
+            .remote_id = "move-me",
+            .source_path = temporary_directory.path() / "old-me.txt",
+            .destination_path = temporary_directory.path() / "new-me.txt",
+            .source_device = 10,
+            .source_inode = 20,
+        });
+        database.save_pending_move({
+            .drive_id = "other-drive",
+            .remote_id = "move-other",
+            .source_path = temporary_directory.path() / "old-other.txt",
+            .destination_path = temporary_directory.path() / "new-other.txt",
+            .source_device = 30,
+            .source_inode = 40,
+        });
         const auto pending_me = database.pending_downloads("me");
         if (pending_me.size() != 1 ||
             database.pending_downloads("other-drive").size() != 1 ||
@@ -562,6 +603,8 @@ int main() {
             pending_me[0].backup_fingerprint != "backup-fingerprint-me" ||
             !database.partial_download("me", "partial-me") ||
             !database.partial_download("other-drive", "partial-other") ||
+            database.pending_moves("me").size() != 1 ||
+            database.pending_moves("other-drive").size() != 1 ||
             database.blocked_items("me").size() != 1 ||
             database.blocked_items("other-drive").size() != 1 ||
             database.blocked_items("me")[0].attempt_count != 1 ||
@@ -597,6 +640,8 @@ int main() {
             database.pending_downloads("other-drive").size() != 1 ||
             !database.partial_download("me", "partial-me") ||
             !database.partial_download("other-drive", "partial-other") ||
+            database.pending_moves("me").size() != 1 ||
+            database.pending_moves("other-drive").size() != 1 ||
             database.blocked_items("me").size() != 1 ||
             database.blocked_items("other-drive").size() != 1 ||
             database.delta_link("other-drive") !=
@@ -624,6 +669,8 @@ int main() {
             database.pending_downloads("other-drive").size() != 1 ||
             !database.partial_download("me", "partial-me") ||
             !database.partial_download("other-drive", "partial-other") ||
+            database.pending_moves("me").size() != 1 ||
+            database.pending_moves("other-drive").size() != 1 ||
             database.blocked_items("me").size() != 1 ||
             database.blocked_items("other-drive").size() != 1 ||
             database.delta_link("other-drive") !=
@@ -667,6 +714,8 @@ int main() {
             database.pending_downloads("other-drive").size() != 1 ||
             !database.partial_download("me", "partial-me") ||
             !database.partial_download("other-drive", "partial-other") ||
+            database.pending_moves("me").size() != 1 ||
+            database.pending_moves("other-drive").size() != 1 ||
             database.blocked_items("me").size() != 1 ||
             database.blocked_items("me")[0].remote_id != "fresh-blocked-me" ||
             database.blocked_items("other-drive").size() != 1) {
@@ -676,6 +725,7 @@ int main() {
         const auto cleared = database.clear("me");
         if (cleared.items != 1 || cleared.pending_downloads != 1 ||
             cleared.partial_downloads != 1 ||
+            cleared.pending_moves != 1 ||
             cleared.blocked_items != 1 || !cleared.delta_link ||
             database.size() != 3 ||
             database.find("me", "fresh-me") ||
@@ -684,6 +734,8 @@ int main() {
             !database.find("", "remote-2") ||
             !database.pending_downloads("me").empty() ||
             database.pending_downloads("other-drive").size() != 1 ||
+            !database.pending_moves("me").empty() ||
+            database.pending_moves("other-drive").size() != 1 ||
             database.partial_download("me", "partial-me") ||
             !database.partial_download("other-drive", "partial-other") ||
             !database.blocked_items("me").empty() ||
@@ -1123,6 +1175,82 @@ int main() {
         if (!database.pending_uploads("me").empty() ||
             !database.find("me", "uploaded-id")) {
             return fail("pending upload commit was not atomic");
+        }
+    }
+
+    const auto version_thirteen_directory =
+        temporary_directory.path() / "version-thirteen";
+    std::filesystem::create_directories(version_thirteen_directory);
+    if (!create_version_thirteen_database(
+            version_thirteen_directory / "items.sqlite3"
+        )) {
+        return fail("version thirteen migration fixture could not be created");
+    }
+    {
+        onedrive::storage::ItemDatabase database{
+            version_thirteen_directory,
+            identity()
+        };
+        database.open();
+        const onedrive::storage::PendingMove pending{
+            .drive_id = "me",
+            .remote_id = "moved-id",
+            .source_path = version_thirteen_directory / "old.txt",
+            .destination_path = version_thirteen_directory / "new.txt",
+            .source_device = 123,
+            .source_inode = 456,
+        };
+        database.save_pending_move(pending);
+        const auto moves = database.pending_moves("me");
+        if (moves.size() != 1 ||
+            moves[0].source_path != pending.source_path ||
+            moves[0].destination_path != pending.destination_path ||
+            moves[0].source_device != 123 ||
+            moves[0].source_inode != 456) {
+            return fail(
+                "version thirteen database did not gain pending move state"
+            );
+        }
+        try {
+            database.apply_delta({
+                .drive_id = "me",
+                .upserts = {
+                    {
+                        .remote_id = "moved-id",
+                        .name = "new.txt",
+                        .remote_path = "new.txt",
+                        .local_path = pending.destination_path,
+                    },
+                },
+                .blocked_upserts = {
+                    {
+                        .remote_id = "invalid-blocked",
+                    },
+                },
+                .delta_link = "https://graph.example.test/rollback",
+            });
+            return fail("invalid delta did not roll back pending move commit");
+        } catch (const std::invalid_argument&) {
+        }
+        if (database.pending_moves("me").size() != 1 ||
+            database.find("me", "moved-id")) {
+            return fail("pending move was not restored by delta rollback");
+        }
+        database.apply_delta({
+            .drive_id = "me",
+            .upserts = {
+                {
+                    .remote_id = "moved-id",
+                    .name = "new.txt",
+                    .remote_path = "new.txt",
+                    .local_path = pending.destination_path,
+                },
+            },
+            .delta_link = "https://graph.example.test/moved",
+        });
+        if (!database.pending_moves("me").empty() ||
+            !database.find("me", "moved-id")) {
+            return fail("pending move commit was not atomic");
         }
     }
 

@@ -302,6 +302,22 @@ void create_pending_upload_schema(sqlite3* database) {
     );
 }
 
+void create_pending_move_schema(sqlite3* database) {
+    execute(
+        database,
+        "CREATE TABLE IF NOT EXISTS pending_move ("
+        "drive_id TEXT NOT NULL,"
+        "remote_id TEXT NOT NULL,"
+        "source_path TEXT NOT NULL,"
+        "destination_path TEXT NOT NULL,"
+        "source_device INTEGER NOT NULL,"
+        "source_inode INTEGER NOT NULL,"
+        "directory INTEGER NOT NULL,"
+        "PRIMARY KEY (drive_id, remote_id)"
+        ");"
+    );
+}
+
 void create_current_schema(sqlite3* database) {
     execute(
         database,
@@ -347,7 +363,8 @@ void create_current_schema(sqlite3* database) {
     create_identity_schema(database);
     create_partial_download_schema(database);
     create_pending_upload_schema(database);
-    execute(database, "PRAGMA user_version = 13;");
+    create_pending_move_schema(database);
+    execute(database, "PRAGMA user_version = 14;");
 }
 
 void add_sync_filter_fingerprint(sqlite3* database) {
@@ -428,7 +445,8 @@ void migrate_schema(sqlite3* database) {
         add_sync_filter_fingerprint(database);
         add_pending_download_backup(database);
         create_pending_upload_schema(database);
-        execute(database, "PRAGMA user_version = 13;");
+        create_pending_move_schema(database);
+        execute(database, "PRAGMA user_version = 14;");
         transaction.commit();
         return;
     }
@@ -462,7 +480,8 @@ void migrate_schema(sqlite3* database) {
         add_sync_filter_fingerprint(database);
         add_pending_download_backup(database);
         create_pending_upload_schema(database);
-        execute(database, "PRAGMA user_version = 13;");
+        create_pending_move_schema(database);
+        execute(database, "PRAGMA user_version = 14;");
         transaction.commit();
         return;
     }
@@ -493,7 +512,8 @@ void migrate_schema(sqlite3* database) {
         add_sync_filter_fingerprint(database);
         add_pending_download_backup(database);
         create_pending_upload_schema(database);
-        execute(database, "PRAGMA user_version = 13;");
+        create_pending_move_schema(database);
+        execute(database, "PRAGMA user_version = 14;");
         transaction.commit();
         return;
     }
@@ -505,7 +525,8 @@ void migrate_schema(sqlite3* database) {
         add_sync_filter_fingerprint(database);
         add_pending_download_backup(database);
         create_pending_upload_schema(database);
-        execute(database, "PRAGMA user_version = 13;");
+        create_pending_move_schema(database);
+        execute(database, "PRAGMA user_version = 14;");
         transaction.commit();
         return;
     }
@@ -518,7 +539,8 @@ void migrate_schema(sqlite3* database) {
         add_sync_filter_fingerprint(database);
         add_pending_download_backup(database);
         create_pending_upload_schema(database);
-        execute(database, "PRAGMA user_version = 13;");
+        create_pending_move_schema(database);
+        execute(database, "PRAGMA user_version = 14;");
         transaction.commit();
         return;
     }
@@ -531,7 +553,8 @@ void migrate_schema(sqlite3* database) {
         add_sync_filter_fingerprint(database);
         add_pending_download_backup(database);
         create_pending_upload_schema(database);
-        execute(database, "PRAGMA user_version = 13;");
+        create_pending_move_schema(database);
+        execute(database, "PRAGMA user_version = 14;");
         transaction.commit();
         return;
     }
@@ -543,7 +566,8 @@ void migrate_schema(sqlite3* database) {
         add_sync_filter_fingerprint(database);
         add_pending_download_backup(database);
         create_pending_upload_schema(database);
-        execute(database, "PRAGMA user_version = 13;");
+        create_pending_move_schema(database);
+        execute(database, "PRAGMA user_version = 14;");
         transaction.commit();
         return;
     }
@@ -554,7 +578,8 @@ void migrate_schema(sqlite3* database) {
         add_sync_filter_fingerprint(database);
         add_pending_download_backup(database);
         create_pending_upload_schema(database);
-        execute(database, "PRAGMA user_version = 13;");
+        create_pending_move_schema(database);
+        execute(database, "PRAGMA user_version = 14;");
         transaction.commit();
         return;
     }
@@ -564,7 +589,8 @@ void migrate_schema(sqlite3* database) {
         add_pending_download_backup(database);
         add_blocked_item_deleted_column(database);
         create_pending_upload_schema(database);
-        execute(database, "PRAGMA user_version = 13;");
+        create_pending_move_schema(database);
+        execute(database, "PRAGMA user_version = 14;");
         transaction.commit();
         return;
     }
@@ -573,14 +599,16 @@ void migrate_schema(sqlite3* database) {
         add_pending_download_backup(database);
         add_blocked_item_deleted_column(database);
         create_pending_upload_schema(database);
-        execute(database, "PRAGMA user_version = 13;");
+        create_pending_move_schema(database);
+        execute(database, "PRAGMA user_version = 14;");
         transaction.commit();
         return;
     }
     if (version == 12) {
         Transaction transaction{database};
         create_pending_upload_schema(database);
-        execute(database, "PRAGMA user_version = 13;");
+        create_pending_move_schema(database);
+        execute(database, "PRAGMA user_version = 14;");
         transaction.commit();
         return;
     }
@@ -588,11 +616,19 @@ void migrate_schema(sqlite3* database) {
         Transaction transaction{database};
         add_blocked_item_deleted_column(database);
         create_pending_upload_schema(database);
-        execute(database, "PRAGMA user_version = 13;");
+        create_pending_move_schema(database);
+        execute(database, "PRAGMA user_version = 14;");
         transaction.commit();
         return;
     }
-    if (version != 13) {
+    if (version == 13) {
+        Transaction transaction{database};
+        create_pending_move_schema(database);
+        execute(database, "PRAGMA user_version = 14;");
+        transaction.commit();
+        return;
+    }
+    if (version != 14) {
         throw std::runtime_error(
             "unsupported state database schema version " + std::to_string(version)
         );
@@ -975,6 +1011,55 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         }
         sqlite3_reset(upsert_statement.get());
         sqlite3_clear_bindings(upsert_statement.get());
+    }
+
+    Statement complete_move_statement{
+        database,
+        "DELETE FROM pending_move WHERE drive_id = ?1 AND remote_id = ?2;"
+    };
+    for (const auto& item : delta.upserts) {
+        bind_text(
+            database,
+            complete_move_statement.get(),
+            1,
+            delta.drive_id
+        );
+        bind_text(
+            database,
+            complete_move_statement.get(),
+            2,
+            item.remote_id
+        );
+        if (sqlite3_step(complete_move_statement.get()) != SQLITE_DONE) {
+            throw std::runtime_error(
+                "cannot complete pending move journal: " +
+                std::string{sqlite3_errmsg(database)}
+            );
+        }
+        sqlite3_reset(complete_move_statement.get());
+        sqlite3_clear_bindings(complete_move_statement.get());
+    }
+    for (const auto& remote_id : delta.removals) {
+        bind_text(
+            database,
+            complete_move_statement.get(),
+            1,
+            delta.drive_id
+        );
+        bind_text(
+            database,
+            complete_move_statement.get(),
+            2,
+            remote_id
+        );
+        if (sqlite3_step(complete_move_statement.get()) != SQLITE_DONE) {
+            throw std::runtime_error(
+                "cannot discard removed pending move journal: " +
+                std::string{sqlite3_errmsg(database)}
+            );
+        }
+        sqlite3_reset(complete_move_statement.get());
+        sqlite3_clear_bindings(complete_move_statement.get());
     }
 
     Statement delete_statement{
@@ -1651,6 +1736,160 @@ void ItemDatabase::commit_upload_on_worker(
     transaction.commit();
 }
 
+void ItemDatabase::save_pending_move(PendingMove move) {
+    impl_->invoke([this, move = std::move(move)] {
+        save_pending_move_on_worker(move);
+    });
+}
+
+void ItemDatabase::save_pending_move_on_worker(
+    const PendingMove& move
+) {
+    sqlite3* database = impl_->database.get();
+    if (database == nullptr) {
+        throw std::runtime_error("state database is not open");
+    }
+    if (move.drive_id.empty() || move.remote_id.empty() ||
+        move.source_path.empty() || move.destination_path.empty() ||
+        move.source_path == move.destination_path ||
+        move.source_device >
+            static_cast<std::uint64_t>(
+                std::numeric_limits<std::int64_t>::max()
+            ) ||
+        move.source_inode >
+            static_cast<std::uint64_t>(
+                std::numeric_limits<std::int64_t>::max()
+            )) {
+        throw std::invalid_argument("pending move contains invalid metadata");
+    }
+    Statement statement{
+        database,
+        "INSERT INTO pending_move ("
+        "drive_id, remote_id, source_path, destination_path, source_device, "
+        "source_inode, directory"
+        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) "
+        "ON CONFLICT(drive_id, remote_id) DO UPDATE SET "
+        "source_path = excluded.source_path, "
+        "destination_path = excluded.destination_path, "
+        "source_device = excluded.source_device, "
+        "source_inode = excluded.source_inode, "
+        "directory = excluded.directory;"
+    };
+    bind_text(database, statement.get(), 1, move.drive_id);
+    bind_text(database, statement.get(), 2, move.remote_id);
+    bind_text(database, statement.get(), 3, move.source_path.string());
+    bind_text(
+        database,
+        statement.get(),
+        4,
+        move.destination_path.string()
+    );
+    bind_integer(
+        database,
+        statement.get(),
+        5,
+        static_cast<std::int64_t>(move.source_device)
+    );
+    bind_integer(
+        database,
+        statement.get(),
+        6,
+        static_cast<std::int64_t>(move.source_inode)
+    );
+    bind_integer(database, statement.get(), 7, move.directory ? 1 : 0);
+    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
+        throw std::runtime_error(
+            "cannot persist pending move: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+}
+
+void ItemDatabase::remove_pending_move(
+    const std::string& drive_id,
+    const std::string& remote_id
+) {
+    impl_->invoke([this, drive_id, remote_id] {
+        remove_pending_move_on_worker(drive_id, remote_id);
+    });
+}
+
+void ItemDatabase::remove_pending_move_on_worker(
+    const std::string& drive_id,
+    const std::string& remote_id
+) {
+    sqlite3* database = impl_->database.get();
+    if (database == nullptr) {
+        throw std::runtime_error("state database is not open");
+    }
+    Statement statement{
+        database,
+        "DELETE FROM pending_move WHERE drive_id = ?1 AND remote_id = ?2;"
+    };
+    bind_text(database, statement.get(), 1, drive_id);
+    bind_text(database, statement.get(), 2, remote_id);
+    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
+        throw std::runtime_error(
+            "cannot remove pending move: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+}
+
+std::vector<PendingMove> ItemDatabase::pending_moves(
+    const std::string& drive_id
+) const {
+    return impl_->invoke([this, drive_id] {
+        return pending_moves_on_worker(drive_id);
+    });
+}
+
+std::vector<PendingMove> ItemDatabase::pending_moves_on_worker(
+    const std::string& drive_id
+) const {
+    sqlite3* database = impl_->database.get();
+    if (database == nullptr) {
+        throw std::runtime_error("state database is not open");
+    }
+    Statement statement{
+        database,
+        "SELECT drive_id, remote_id, source_path, destination_path, "
+        "source_device, source_inode, directory FROM pending_move "
+        "WHERE drive_id = ?1 ORDER BY remote_id;"
+    };
+    bind_text(database, statement.get(), 1, drive_id);
+    std::vector<PendingMove> moves;
+    while (true) {
+        const int result = sqlite3_step(statement.get());
+        if (result == SQLITE_DONE) {
+            break;
+        }
+        if (result != SQLITE_ROW) {
+            throw std::runtime_error(
+                "cannot read pending moves: " +
+                std::string{sqlite3_errmsg(database)}
+            );
+        }
+        const auto device = sqlite3_column_int64(statement.get(), 4);
+        const auto inode = sqlite3_column_int64(statement.get(), 5);
+        if (device < 0 || inode < 0) {
+            throw std::runtime_error(
+                "pending move contains invalid filesystem identity"
+            );
+        }
+        moves.push_back({
+            .drive_id = column_text(statement.get(), 0),
+            .remote_id = column_text(statement.get(), 1),
+            .source_path = column_text(statement.get(), 2),
+            .destination_path = column_text(statement.get(), 3),
+            .source_device = static_cast<std::uint64_t>(device),
+            .source_inode = static_cast<std::uint64_t>(inode),
+            .directory = sqlite3_column_int(statement.get(), 6) != 0,
+        });
+    }
+    return moves;
+}
+
 std::vector<BlockedItem> ItemDatabase::blocked_items(
     const std::string& drive_id
 ) const {
@@ -1861,6 +2100,20 @@ ClearedState ItemDatabase::clear_on_worker(const std::string& drive_id) {
     cleared.pending_uploads =
         static_cast<std::size_t>(sqlite3_changes(database));
 
+    Statement move_statement{
+        database,
+        "DELETE FROM pending_move WHERE drive_id = ?1;"
+    };
+    bind_text(database, move_statement.get(), 1, drive_id);
+    if (sqlite3_step(move_statement.get()) != SQLITE_DONE) {
+        throw std::runtime_error(
+            "cannot clear pending moves: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+    cleared.pending_moves =
+        static_cast<std::size_t>(sqlite3_changes(database));
+
     Statement blocked_statement{
         database,
         "DELETE FROM blocked_item WHERE drive_id = ?1;"
@@ -1879,12 +2132,13 @@ ClearedState ItemDatabase::clear_on_worker(const std::string& drive_id) {
     spdlog::warn(
         "Cleared all synchronization state for drive '{}': {} item snapshots, "
         "{} pending downloads, {} partial downloads, {} pending uploads, {} "
-        "blocked items, saved delta cursor {}",
+        "pending moves, {} blocked items, saved delta cursor {}",
         drive_id,
         cleared.items,
         cleared.pending_downloads,
         cleared.partial_downloads,
         cleared.pending_uploads,
+        cleared.pending_moves,
         cleared.blocked_items,
         cleared.delta_link ? "removed" : "not present"
     );

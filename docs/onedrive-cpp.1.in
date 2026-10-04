@@ -48,8 +48,9 @@ settings when required.
 .TP
 .B reset-state
 Reset the saved delta link for the configured drive. This preserves
-authentication, configuration, local files, item snapshots, pending-download
-recovery records, blocked-item records, and state for other drives. The next
+authentication, configuration, local files, item snapshots, pending-download,
+pending-upload, and pending-move recovery records, blocked-item records, and
+state for other drives. The next
 .B sync
 recovers pending downloads and performs a full initial delta query for the
 configured drive. The complete remote inventory replaces old item metadata;
@@ -57,8 +58,9 @@ items that still conflict are recorded as blocked.
 .PP
 With
 .BR \-\-clear\-all ,
-remove item snapshots, the delta link, pending-download recovery records, and
-blocked items for the configured drive. The command requires the configured
+remove item snapshots, the delta link, pending-download, pending-upload, and
+pending-move recovery records, and blocked items for the configured drive. The
+command requires the configured
 drive ID as interactive confirmation. Local files and other drives remain
 untouched, but the next sync may report local modification conflicts. For automation,
 .B \-\-yes
@@ -125,6 +127,10 @@ interrupted move safe to retry.
 Moves across filesystem boundaries are persisted as
 .B cross_device_move
 blocked items; data is not copied and deleted across mount points.
+Before rename, a schema-v14 SQLite pending-move journal records both paths and
+the source device/inode identity. The moved item, Delta cursor, and journal
+removal commit atomically. Recovery adopts only a destination with the recorded
+identity.
 .PP
 Use
 .B \-\-dry\-run

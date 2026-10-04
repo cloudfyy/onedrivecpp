@@ -516,6 +516,10 @@ SQLite 中所有已跟踪后代的路径。远端内容指纹匹配的文件会�
 安全认领已经移动完成的目标。
 跨文件系统边界的移动会保留为 `cross_device_move` blocked item；程序不会跨挂载
 点复制后删除数据。
+执行原子移动前，schema v14 SQLite 状态会记录源、目标路径及源对象的
+device/inode 身份。移动后的 item 与 Delta 游标提交会在同一事务中删除 journal。
+中断恢复时只有 filesystem identity 完全匹配的目标才会被认领；`reset-state`
+保留这些记录，`--clear-all` 会删除它们。
 
 `graph.endpoint` 用于选择 Microsoft Graph 云端点，默认使用全球服务，并不与
 某个具体 SharePoint 主机名绑定。访问由世纪互联运营的 Microsoft 365 中国区
@@ -842,10 +846,10 @@ onedrive-cpp reset-state
 ```
 
 该命令保留认证 token、配置、同步目录中的本地文件、item 快照、pending
-download 恢复记录、blocked item 以及其他 Drive 的状态。下一次 `sync` 会先
-恢复 pending download，再执行完整的初始 Delta 查询。同步过程中继续使用旧
-快照安全判断本地文件是否被修改，并用完整远端清单替换当前 Drive 的旧 item
-元数据。
+download、pending upload 和 pending move 恢复记录、blocked item 以及其他
+Drive 的状态。下一次 `sync` 会先恢复 pending 操作，再执行完整的初始 Delta
+查询。同步过程中继续使用旧快照安全判断本地文件是否被修改，并用完整远端清单
+替换当前 Drive 的旧 item 元数据。
 
 如果需要丢弃当前配置 Drive 的全部同步状态，必须显式使用危险模式：
 
@@ -854,9 +858,10 @@ onedrive-cpp reset-state --clear-all
 ```
 
 命令要求准确输入当前配置的 Drive 引用（例如 `me`），确认后才会删除 item
-快照、Delta 游标、pending download 恢复记录以及 blocked item。没有可用的配置
-引用时，改为要求输入原始 Drive ID。本地文件和其他 Drive 的状态不会被修改。
-由于本地快照已被清除，下一次同步可能报告本地修改冲突。自动化场景必须使用
+快照、Delta 游标、pending download、pending upload、pending move 恢复记录以及
+blocked item。没有可用的配置引用时，改为要求输入原始 Drive ID。本地文件和
+其他 Drive 的状态不会被修改。由于本地快照已被清除，下一次同步可能报告本地
+修改冲突。自动化场景必须使用
 `reset-state --clear-all --yes` 显式承担该风险；未指定 `--clear-all` 时
 `--yes` 会被拒绝。
 

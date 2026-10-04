@@ -946,11 +946,12 @@ onedrive-cpp reset-state
 ```
 
 This preserves authentication tokens, configuration, local files, item
-snapshots, pending-download recovery records, and state for other drives. The
-next `sync` recovers pending downloads first, then performs a full initial
-Delta query. Existing snapshots are used to detect local modifications safely;
-blocked-item records are preserved for diagnosis, and the complete remote
-inventory replaces the configured Drive's old item metadata.
+snapshots, pending-download, pending-upload, and pending-move recovery records,
+and state for other drives. The next `sync` recovers pending operations first,
+then performs a full initial Delta query. Existing snapshots are used to detect
+local modifications safely; blocked-item records are preserved for diagnosis,
+and the complete remote inventory replaces the configured Drive's old item
+metadata.
 
 During a Delta query, text output and logs report each completed page and the
 cumulative number of scanned items. JSON output emits a `delta_progress` event
@@ -976,11 +977,11 @@ onedrive-cpp reset-state --clear-all
 
 The command requires the configured Drive reference (for example, `me`) to be
 typed exactly before it removes item snapshots, the Delta cursor,
-pending-download recovery records, and blocked items. If no configured
-reference is available, it requires the raw Drive ID instead. Local files and
-other Drives remain untouched. Because local snapshots are no longer
-available, the next sync may report local modification conflicts. Automation
-must acknowledge this risk explicitly with
+pending-download, pending-upload, and pending-move recovery records, and
+blocked items. If no configured reference is available, it requires the raw
+Drive ID instead. Local files and other Drives remain untouched. Because local
+snapshots are no longer available, the next sync may report local modification
+conflicts. Automation must acknowledge this risk explicitly with
 `reset-state --clear-all --yes`; `--yes` is rejected without `--clear-all`.
 
 Download one file without running a full Drive Delta synchronization:
@@ -1061,6 +1062,11 @@ parent directories are flushed before the Delta cursor advances, and a retry
 can adopt an already-moved destination after an interruption.
 Moves across filesystem boundaries are retained as `cross_device_move` blocked
 items; the client does not copy and delete data across mount points.
+Before an atomic move, schema-v14 SQLite state records the source and
+destination paths plus the source device/inode identity. The journal is removed
+in the same transaction that commits the moved item and Delta cursor. After an
+interruption, only a destination with the recorded filesystem identity is
+adopted; `reset-state` preserves these records and `--clear-all` removes them.
 
 Remote deletion records remove a regular local file only while its size and
 modification time still match the trusted synchronized snapshot. Missing local

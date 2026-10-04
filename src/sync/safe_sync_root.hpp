@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <stdexcept>
 #include <sys/stat.h>
@@ -14,6 +15,11 @@ public:
 class CrossDeviceMoveError final : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
+};
+
+struct FilesystemIdentity {
+    std::uint64_t device{0};
+    std::uint64_t inode{0};
 };
 
 class SafeSyncRoot {
@@ -49,6 +55,10 @@ public:
     [[nodiscard]] bool rename_no_replace(
         const std::filesystem::path& source,
         const std::filesystem::path& destination
+    ) const;
+    [[nodiscard]] FilesystemIdentity identity(
+        const std::filesystem::path& path,
+        bool directory
     ) const;
     [[nodiscard]] bool remove(
         const std::filesystem::path& path,

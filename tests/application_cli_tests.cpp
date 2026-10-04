@@ -297,6 +297,15 @@ public:
         onedrive::storage::ItemState
     ) {}
 
+    void save_pending_move(onedrive::storage::PendingMove) {}
+
+    void remove_pending_move(const std::string&, const std::string&) {}
+
+    [[nodiscard]] std::vector<onedrive::storage::PendingMove>
+    pending_moves(const std::string&) const {
+        return {};
+    }
+
     [[nodiscard]] std::vector<onedrive::storage::BlockedItem> blocked_items(
         const std::string&
     ) const {
@@ -319,6 +328,7 @@ public:
             .pending_downloads = 2,
             .partial_downloads = 4,
             .pending_uploads = 1,
+            .pending_moves = 5,
             .blocked_items = 3,
             .delta_link = true,
         };
@@ -724,8 +734,8 @@ int main() {
         if (!contents.contains(
                 "Synchronization cursor reset completed for drive 'drive-id': saved "
                 "cursor removed; item snapshots, pending downloads, partial "
-                "downloads, pending uploads, and blocked items preserved; next "
-                "sync will use an initial delta query"
+                "downloads, pending uploads, pending moves, and blocked items "
+                "preserved; next sync will use an initial delta query"
             )) {
             return fail("reset-state completion was not written to the log");
         }
@@ -770,7 +780,7 @@ int main() {
         ) ||
         !confirmed_clear.standard_output.contains(
             "7 item snapshots, 2 pending downloads, 4 partial downloads, 1 "
-            "pending uploads, and 3 blocked items removed"
+            "pending uploads, 5 pending moves, and 3 blocked items removed"
         ) ||
         !confirmed_clear.standard_output.contains(
             "Cleared all synchronization state for drive 'me' (drive-id)"

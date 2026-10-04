@@ -270,6 +270,48 @@ bool SafeSyncRoot::rename_no_replace(
     );
 }
 
+FilesystemIdentity SafeSyncRoot::identity(
+    const std::filesystem::path& path,
+    bool directory
+) const {
+    const auto relative = relative_path(path);
+    Descriptor parent{open_beneath(
+        descriptor_,
+        relative.parent_path(),
+        O_RDONLY | O_DIRECTORY | O_CLOEXEC,
+        0
+    )};
+    if (parent.get() == -1) {
+        throw SafePathConflictError(
+            "cannot safely open synchronization item parent '" +
+            path.parent_path().string() + "': " + std::strerror(errno)
+        );
+    }
+    struct stat status {};
+    if (::fstatat(
+            parent.get(),
+            relative.filename().c_str(),
+            &status,
+            AT_SYMLINK_NOFOLLOW
+        ) == -1) {
+        throw std::runtime_error(
+            "cannot inspect synchronization item identity '" +
+            path.string() + "': " + std::strerror(errno)
+        );
+    }
+    if (S_ISLNK(status.st_mode) ||
+        (directory ? !S_ISDIR(status.st_mode) : !S_ISREG(status.st_mode))) {
+        throw SafePathConflictError(
+            "synchronization item identity has an unexpected type: " +
+            path.string()
+        );
+    }
+    return {
+        .device = static_cast<std::uint64_t>(status.st_dev),
+        .inode = static_cast<std::uint64_t>(status.st_ino),
+    };
+}
+
 bool SafeSyncRoot::remove(
     const std::filesystem::path& path,
     bool directory
