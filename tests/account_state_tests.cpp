@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#include <stdexcept>
 #include <string>
 
 namespace {
@@ -128,13 +129,20 @@ int main() {
         );
     auto second_drive = identity;
     second_drive.drive_id = "second-drive-id";
-    second_drive.drive_name = "Personal Drive";
-    const auto second_drive_directory =
-        onedrive::account::AccountState::drive_data_directory(
-            data_root,
-            second_drive
-        );
-    const auto second_user_directory =
+        const auto second_drive_directory =
+            onedrive::account::AccountState::drive_data_directory(
+                data_root,
+                second_drive
+            );
+        auto same_name_user = identity;
+        same_name_user.user_id = "second-user-id";
+        same_name_user.drive_id = "second-user-drive-id";
+        const auto same_name_user_directory =
+            onedrive::account::AccountState::drive_data_directory(
+                data_root,
+                same_name_user
+            );
+        const auto second_user_directory =
         onedrive::account::AccountState::drive_data_directory(
             data_root,
             international
@@ -145,9 +153,21 @@ int main() {
             data_root / "accounts" ||
         second_drive_directory == data_directory ||
         second_drive_directory.parent_path() != data_directory.parent_path() ||
+        same_name_user_directory.parent_path().parent_path() ==
+            data_directory.parent_path().parent_path() ||
         second_user_directory.parent_path().parent_path() ==
             data_directory.parent_path().parent_path()) {
         return fail("account and Drive data directories were not isolated");
+    }
+    try {
+        static_cast<void>(
+            onedrive::account::AccountState::drive_data_directory(
+                data_root,
+                {}
+            )
+        );
+        return fail("incomplete account identity produced a data directory");
+    } catch (const std::invalid_argument&) {
     }
     return EXIT_SUCCESS;
 }

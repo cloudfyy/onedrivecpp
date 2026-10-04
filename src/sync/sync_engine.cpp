@@ -1,6 +1,7 @@
 #include "onedrive/sync/sync_engine.hpp"
 
 #include "onedrive/cli/console.hpp"
+#include "onedrive/path_security.hpp"
 #include "download_recovery.hpp"
 #include "download_space_coordinator.hpp"
 #include "download_transaction.hpp"
@@ -265,39 +266,20 @@ bool below_blocked_directory(
     );
 }
 
-void reject_sync_root_symlinks(const std::filesystem::path& absolute_root) {
-    auto component_path = absolute_root.root_path();
-    for (const auto& component : absolute_root.relative_path()) {
-        component_path /= component;
-        std::error_code error;
-        const auto status =
-            std::filesystem::symlink_status(component_path, error);
-        if (error == std::errc::no_such_file_or_directory) {
-            break;
-        }
-        if (error) {
-            throw std::runtime_error(
-                "cannot inspect synchronization directory component '" +
-                component_path.string() + "': " + error.message()
-            );
-        }
-        if (std::filesystem::is_symlink(status)) {
-            throw std::runtime_error(
-                "synchronization directory contains a symbolic link: " +
-                component_path.string()
-            );
-        }
-    }
-}
-
 std::filesystem::path prepare_sync_root(
     const std::filesystem::path& configured_root
 ) {
     const auto absolute_root =
-        std::filesystem::absolute(configured_root).lexically_normal();
-    reject_sync_root_symlinks(absolute_root);
+        onedrive::detail::normalized_absolute(configured_root);
+    onedrive::detail::reject_symlink_components(
+        absolute_root,
+        "synchronization directory"
+    );
     const bool created = std::filesystem::create_directories(absolute_root);
-    reject_sync_root_symlinks(absolute_root);
+    onedrive::detail::reject_symlink_components(
+        absolute_root,
+        "synchronization directory"
+    );
     const auto root = std::filesystem::weakly_canonical(absolute_root);
     if (created) {
         spdlog::debug("Created synchronization root '{}'", root.string());
@@ -653,9 +635,7 @@ int SyncEngine::synchronize() const {
         const auto& console =
             console_ == nullptr ? fallback_console : *console_;
         std::filesystem::path sync_root =
-            std::filesystem::absolute(
-                config_->sync_directory
-            ).lexically_normal();
+            onedrive::detail::normalized_absolute(config_->sync_directory);
         std::optional<detail::FilesystemMetadata> metadata;
         if (config_->dry_run) {
             console.section(

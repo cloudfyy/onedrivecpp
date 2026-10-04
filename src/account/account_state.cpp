@@ -156,6 +156,33 @@ std::filesystem::path stable_directory(
            });
 }
 
+struct IdentityDirectories {
+    std::filesystem::path account;
+    std::filesystem::path drive;
+};
+
+IdentityDirectories identity_directories(
+    const std::filesystem::path& root,
+    const DriveIdentity& identity
+) {
+    validate_identity(identity);
+    const auto account = stable_directory(
+        root / "accounts",
+        identity.user_display_name,
+        identity.user_id,
+        "account"
+    );
+    return {
+        .account = account,
+        .drive = stable_directory(
+            account / "drives",
+            identity.drive_name,
+            identity.drive_id,
+            "drive"
+        ),
+    };
+}
+
 void ensure_private_directory(const std::filesystem::path& path) {
     std::error_code error;
     auto status = std::filesystem::symlink_status(path, error);
@@ -285,19 +312,9 @@ AccountPaths paths_for(
     const std::filesystem::path& state_directory,
     const DriveIdentity& identity
 ) {
-    validate_identity(identity);
-    const auto account_directory = stable_directory(
-        state_directory / "accounts",
-        identity.user_display_name,
-        identity.user_id,
-        "account"
-    );
-    const auto drive_directory = stable_directory(
-        account_directory / "drives",
-        identity.drive_name,
-        identity.drive_id,
-        "drive"
-    );
+    const auto directories = identity_directories(state_directory, identity);
+    const auto& account_directory = directories.account;
+    const auto& drive_directory = directories.drive;
     std::optional<std::filesystem::path> avatar_path;
     if (identity.photo && !identity.photo->bytes.empty()) {
         avatar_path =
@@ -497,19 +514,7 @@ std::filesystem::path AccountState::drive_data_directory(
     const std::filesystem::path& data_directory,
     const DriveIdentity& identity
 ) {
-    validate_identity(identity);
-    const auto account_directory = stable_directory(
-        data_directory / "accounts",
-        identity.user_display_name,
-        identity.user_id,
-        "account"
-    );
-    return stable_directory(
-        account_directory / "drives",
-        identity.drive_name,
-        identity.drive_id,
-        "drive"
-    );
+    return identity_directories(data_directory, identity).drive;
 }
 
 }  // namespace onedrive::account

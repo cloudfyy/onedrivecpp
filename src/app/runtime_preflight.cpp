@@ -1,6 +1,7 @@
 #include "runtime_preflight.hpp"
 
 #include "onedrive/account/account_state.hpp"
+#include "onedrive/path_security.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -39,46 +40,19 @@ bool has_scope(std::string_view scopes, std::string_view expected) {
     return false;
 }
 
-std::filesystem::path normalized_absolute(
-    const std::filesystem::path& path
-) {
-    return std::filesystem::absolute(path).lexically_normal();
-}
-
-void reject_symlink_components(
-    const std::filesystem::path& path,
-    std::string_view description
-) {
-    std::filesystem::path current;
-    for (const auto& component : normalized_absolute(path)) {
-        current /= component;
-        std::error_code error;
-        const auto status = std::filesystem::symlink_status(current, error);
-        if (error == std::errc::no_such_file_or_directory) {
-            return;
-        }
-        if (error) {
-            throw std::runtime_error(
-                "cannot inspect " + std::string{description} + " path '" +
-                current.string() + "': " + error.message()
-            );
-        }
-        if (std::filesystem::is_symlink(status)) {
-            throw std::runtime_error(
-                std::string{description} +
-                " path contains a symbolic link: " + current.string()
-            );
-        }
-    }
-}
-
 void secure_state_directory(const std::filesystem::path& directory) {
     if (directory.empty()) {
         throw std::runtime_error("state.directory must not be empty");
     }
-    reject_symlink_components(directory, "state directory");
+    onedrive::detail::reject_symlink_components(
+        directory,
+        "state directory"
+    );
     const bool created = std::filesystem::create_directories(directory);
-    reject_symlink_components(directory, "state directory");
+    onedrive::detail::reject_symlink_components(
+        directory,
+        "state directory"
+    );
 
     const int descriptor = ::open(
         directory.c_str(),
@@ -226,10 +200,10 @@ void validate_distinct_directories(
     const std::filesystem::path& state_directory
 ) {
     const auto sync = std::filesystem::weakly_canonical(
-        normalized_absolute(sync_directory)
+        onedrive::detail::normalized_absolute(sync_directory)
     );
     const auto state = std::filesystem::weakly_canonical(
-        normalized_absolute(state_directory)
+        onedrive::detail::normalized_absolute(state_directory)
     );
     if (sync == sync.root_path()) {
         throw std::runtime_error(
@@ -327,7 +301,10 @@ void prepare_sync_directory(
         config.sync_directory,
         config.state_directory
     );
-    reject_symlink_components(config.sync_directory, "sync directory");
+    onedrive::detail::reject_symlink_components(
+        config.sync_directory,
+        "sync directory"
+    );
 
     std::error_code error;
     const bool exists = std::filesystem::exists(
@@ -358,7 +335,10 @@ void prepare_sync_directory(
     }
 
     std::filesystem::create_directories(config.sync_directory);
-    reject_symlink_components(config.sync_directory, "sync directory");
+    onedrive::detail::reject_symlink_components(
+        config.sync_directory,
+        "sync directory"
+    );
     probe_writable_directory(config.sync_directory);
 }
 

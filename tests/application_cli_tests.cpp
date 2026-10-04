@@ -814,6 +814,12 @@ int main() {
         }
     }
 
+    const auto legacy_file = sync_path / "legacy.txt";
+    std::filesystem::create_directories(sync_path);
+    {
+        std::ofstream output{legacy_file};
+        output << "legacy";
+    }
     const auto trace_sync = run_application(
         runtime_factory,
         {
@@ -833,6 +839,17 @@ int main() {
         ) ||
         runtime_factory.item_store_apply_delta_count != 1) {
         return fail("sync trace command did not apply the remote delta");
+    }
+    if (!std::filesystem::is_regular_file(
+            expected_sync_directory / "notes.txt"
+        )) {
+        return fail("synchronized file was not isolated by account and Drive");
+    }
+    if (std::filesystem::exists(sync_path / "notes.txt")) {
+        return fail("synchronized file was written to the flat data root");
+    }
+    if (!std::filesystem::is_regular_file(legacy_file)) {
+        return fail("legacy flat-layout file was modified by synchronization");
     }
     {
         std::ifstream log{log_path};
