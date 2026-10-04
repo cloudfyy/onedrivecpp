@@ -336,6 +336,70 @@ Maximum accepted or calculated Graph throttling delay. The default is
 seconds. This value must be greater than or equal to
 .BR graph.throttle.initial_delay_seconds .
 .TP
+.B proxy.url
+Optional proxy URL used for authentication, Microsoft Graph, and file-download
+requests. Supported schemes are
+.BR http ,
+.BR https ,
+.BR socks4 ,
+.BR socks4a ,
+.BR socks5 ,
+and
+.BR socks5h .
+The default is unset, so the application does not explicitly select a proxy.
+libcurl may still use
+.BR HTTP_PROXY ,
+.BR HTTPS_PROXY ,
+.BR ALL_PROXY ,
+and their lowercase variants from the environment. To guarantee direct
+connections, omit the proxy table and unset those environment variables.
+Use
+.B socks5h
+to resolve destination host names through the proxy. The
+.B NO_PROXY
+or
+.B no_proxy
+environment variable can bypass the proxy for matching destinations. Available
+TLS and authentication mechanisms depend on the installed libcurl build.
+.TP
+.B proxy.no_proxy
+Array of hosts, domain suffixes, IP addresses, or other libcurl no-proxy
+patterns. When omitted, the
+.B NO_PROXY
+or
+.B no_proxy
+environment variable remains effective. An empty array overrides the
+environment and sends every destination through the proxy.
+.TP
+.B proxy.username
+Optional proxy authentication username. The default is unset, so no explicit
+proxy credentials are configured.
+.TP
+.B proxy.password_file
+File containing the proxy password. Relative paths resolve from the
+configuration file directory. The file must be a regular file reached without
+symbolic links, grant no group or other permissions, and be no larger than
+64 KiB. One trailing LF or CRLF is removed. This setting requires
+.BR proxy.username .
+.TP
+.B proxy.auth
+HTTP or HTTPS proxy authentication mechanism:
+.BR auto ,
+.BR basic ,
+.BR digest ,
+.BR ntlm ,
+or
+.BR negotiate .
+The default is
+.BR auto .
+SOCKS5 uses its own username/password authentication.
+.TP
+.B proxy.ca_file
+Certificate-authority file for an HTTPS proxy. Relative paths resolve from the
+configuration file directory. This setting is rejected for non-HTTPS proxy
+URLs. The default is unset, so HTTPS proxies use the system CA trust store.
+Proxy certificate and host verification remain enabled.
+.TP
 .B download.maximum_retries
 Maximum number of retries for a file-content request after a transient HTTP or
 transport failure. The default is

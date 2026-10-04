@@ -358,7 +358,7 @@ public:
 class FakeRuntimeFactory final {
 public:
     [[nodiscard]] std::unique_ptr<onedrive::http::HttpTransport>
-    create_http_transport() const {
+    create_http_transport(const onedrive::config::Config&) const {
         return std::make_unique<onedrive::http::HttpTransport>(
             std::in_place_type<FakeAuthenticationTransport>
         );

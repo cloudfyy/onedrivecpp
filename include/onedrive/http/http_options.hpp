@@ -2,6 +2,10 @@
 
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
+#include <optional>
+#include <string>
+#include <vector>
 
 namespace onedrive::http {
 
@@ -15,6 +19,25 @@ enum class IpVersion {
     automatic,
     ipv4,
     ipv6,
+};
+
+enum class ProxyAuth {
+    automatic,
+    basic,
+    digest,
+    ntlm,
+    negotiate,
+};
+
+struct ProxyOptions {
+    std::optional<std::string> url;
+    std::optional<std::vector<std::string>> no_proxy;
+    std::optional<std::string> username;
+    std::optional<std::filesystem::path> password_file;
+    ProxyAuth auth{ProxyAuth::automatic};
+    std::optional<std::filesystem::path> ca_file;
+
+    bool operator==(const ProxyOptions&) const = default;
 };
 
 struct TransferTransportOptions {

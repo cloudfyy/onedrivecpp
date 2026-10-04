@@ -43,7 +43,7 @@ int authenticate(
     const RuntimeFactory& runtime_factory,
     const cli::Console& console
 ) {
-    auto transport = runtime_factory.create_http_transport();
+    auto transport = runtime_factory.create_http_transport(config);
     auto client = runtime_factory.create_device_auth_client(config, *transport);
 
     auto device_code = client->request_device_code();

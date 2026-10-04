@@ -234,6 +234,10 @@ if(BUILD_TESTING)
     )
     add_test(NAME http_client_tests COMMAND http_client_tests)
 
+    add_executable(proxy_client_tests tests/proxy_client_tests.cpp)
+    target_link_libraries(proxy_client_tests PRIVATE onedrive_core)
+    add_test(NAME proxy_client_tests COMMAND proxy_client_tests)
+
     add_executable(graph_client_tests tests/graph_client_tests.cpp)
     target_link_libraries(graph_client_tests PRIVATE onedrive_core)
     add_test(NAME graph_client_tests COMMAND graph_client_tests)

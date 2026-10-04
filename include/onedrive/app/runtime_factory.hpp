@@ -61,7 +61,7 @@ PRO_DEF_MEM_DISPATCH(FactoryMetricsDispatch, create_metrics);
 struct RuntimeFactoryFacade : pro::facade_builder
     ::add_convention<
         FactoryHttpDispatch,
-        std::unique_ptr<http::HttpTransport>() const
+        std::unique_ptr<http::HttpTransport>(const config::Config&) const
     >
     ::add_convention<
         FactoryAuthDispatch,
@@ -102,8 +102,8 @@ public:
     using Base::Base;
 
     [[nodiscard]] std::unique_ptr<http::HttpTransport>
-    create_http_transport() const {
-        return implementation()->create_http_transport();
+    create_http_transport(const config::Config& config) const {
+        return implementation()->create_http_transport(config);
     }
 
     [[nodiscard]] std::unique_ptr<auth::DeviceAuthClient>
@@ -147,7 +147,7 @@ public:
 class ProductionRuntimeFactory final {
 public:
     [[nodiscard]] std::unique_ptr<http::HttpTransport>
-    create_http_transport() const;
+    create_http_transport(const config::Config& config) const;
     [[nodiscard]] std::unique_ptr<auth::DeviceAuthClient>
     create_device_auth_client(
         const config::Config& config,

@@ -415,6 +415,15 @@ sync_root_files = false
 # 指定其他 OneDrive 或 SharePoint 文档库
 # drive_id = "b!YOUR_DRIVE_ID"
 
+# 可选；同时作用于认证、Graph API 和文件下载
+# [proxy]
+# url = "socks5h://127.0.0.1:1080"
+# no_proxy = ["localhost", "127.0.0.1", ".internal.example.com"]
+# username = "proxy-user"
+# password_file = "/run/secrets/onedrive-proxy-password"
+# auth = "auto"
+# ca_file = "/etc/ssl/certs/company-proxy-ca.pem"
+
 [transfer]
 order = "default"
 connect_timeout_seconds = 30
@@ -496,6 +505,56 @@ endpoint = "https://login.chinacloudapi.cn"
 [graph]
 endpoint = "https://microsoftgraph.chinacloudapi.cn/v1.0"
 ```
+
+可选的 `proxy.url` 会让认证、Microsoft Graph 和文件下载请求统一通过同一个代理。
+支持的 URL scheme 为 `http`、`https`、`socks4`、`socks4a`、`socks5` 和
+`socks5h`。如果需要由代理服务器解析目标域名，应使用 `socks5h` 而不是
+`socks5`：
+
+```toml
+[proxy]
+url = "https://proxy.example.com:8443"
+no_proxy = ["localhost", "127.0.0.1", ".internal.example.com"]
+username = "proxy-user"
+password_file = "/run/secrets/onedrive-proxy-password"
+auth = "auto"
+ca_file = "/etc/ssl/certs/company-proxy-ca.pem"
+
+# 或通过 SOCKS5 进行远端 DNS 解析：
+# url = "socks5h://127.0.0.1:1080"
+```
+
+完整的代理配置默认行为如下：
+
+- `proxy.url`、`proxy.no_proxy`、`proxy.username`、`proxy.password_file` 和
+  `proxy.ca_file` 默认均未设置；
+- `proxy.auth` 默认为 `auto`；
+- `proxy.url` 未设置时，程序不会主动指定代理，但 libcurl 仍可能读取环境中的
+  `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY` 及其小写形式；
+- `proxy.no_proxy` 未设置时，libcurl 使用环境中的 `NO_PROXY`/`no_proxy`；
+- `proxy.ca_file` 未设置时，HTTPS 代理使用系统 CA 信任库。
+
+若要保证完全直连，应省略 `[proxy]` 配置段，并清除所有代理环境变量。若要让
+配置的代理忽略环境中的 `NO_PROXY` 并代理所有目标，应设置 `no_proxy = []`。
+
+`proxy.no_proxy` 是主机、域名后缀、IP 地址或其他 libcurl 免代理模式的数组。
+未配置时继续使用 libcurl 的 `NO_PROXY`/`no_proxy` 环境变量；显式配置空数组会
+覆盖环境变量，让所有目标都通过代理。
+
+`proxy.username` 用于启用代理凭据。对应密码应存放在 `proxy.password_file`
+指向的文件中，不应写入 TOML 或代理 URL。相对密码文件路径以 TOML 文件所在
+目录为基准解析。密码文件必须是不经过符号链接访问的普通文件，不能授予 group
+或 other 任何权限，且不能超过 64 KiB。程序会移除末尾的一个 LF 或 CRLF；
+空密码、内含 NUL 字节或缺少用户名的密码文件会被拒绝。
+
+`proxy.auth` 控制 HTTP/HTTPS 代理认证，支持 `auto`、`basic`、`digest`、
+`ntlm` 和 `negotiate`，默认值为 `auto`。SOCKS5 使用自身的用户名/密码认证。
+实际可用的认证机制取决于系统安装的 libcurl 构建。
+
+`proxy.ca_file` 为 HTTPS 代理增加 CA 文件，其他代理 scheme 配置该字段会被
+拒绝。相对路径同样以 TOML 文件所在目录为基准。代理证书及主机名校验始终开启，
+配置中不能将其禁用。不要把代理凭据写入 `proxy.url`，因为配置内容或错误诊断
+可能暴露 URL。
 
 `download.concurrency` 控制可同时下载的文件数量，默认值为 `4`，允许范围为
 `1` 到 `16`。指向同一规范化本地路径的下载始终会串行执行，包括常见的仅

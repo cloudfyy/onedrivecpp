@@ -459,6 +459,15 @@ sync_root_files = false
 # Another OneDrive or SharePoint document library
 # drive_id = "b!YOUR_DRIVE_ID"
 
+# Optional; applies to authentication, Graph API, and file downloads
+# [proxy]
+# url = "socks5h://127.0.0.1:1080"
+# no_proxy = ["localhost", "127.0.0.1", ".internal.example.com"]
+# username = "proxy-user"
+# password_file = "/run/secrets/onedrive-proxy-password"
+# auth = "auto"
+# ca_file = "/etc/ssl/certs/company-proxy-ca.pem"
+
 [transfer]
 order = "default"
 connect_timeout_seconds = 30
@@ -555,6 +564,64 @@ endpoint = "https://login.chinacloudapi.cn"
 [graph]
 endpoint = "https://microsoftgraph.chinacloudapi.cn/v1.0"
 ```
+
+The optional `proxy.url` setting routes authentication, Microsoft Graph, and
+file-download requests through one proxy. Supported URL schemes are `http`,
+`https`, `socks4`, `socks4a`, `socks5`, and `socks5h`. Use `socks5h` rather
+than `socks5` when destination host names must be resolved by the proxy:
+
+```toml
+[proxy]
+url = "https://proxy.example.com:8443"
+no_proxy = ["localhost", "127.0.0.1", ".internal.example.com"]
+username = "proxy-user"
+password_file = "/run/secrets/onedrive-proxy-password"
+auth = "auto"
+ca_file = "/etc/ssl/certs/company-proxy-ca.pem"
+
+# Or use remote DNS through SOCKS5:
+# url = "socks5h://127.0.0.1:1080"
+```
+
+The complete proxy configuration defaults are:
+
+- `proxy.url`, `proxy.no_proxy`, `proxy.username`, `proxy.password_file`, and
+  `proxy.ca_file` are unset;
+- `proxy.auth` defaults to `auto`;
+- because `proxy.url` is unset, the application does not explicitly select a
+  proxy, but libcurl can still use `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`,
+  and their lowercase variants from the environment;
+- because `proxy.no_proxy` is unset, libcurl uses `NO_PROXY`/`no_proxy` from
+  the environment;
+- without `proxy.ca_file`, HTTPS proxies use the system CA trust store.
+
+To guarantee direct connections, omit the `[proxy]` table and unset all proxy
+environment variables. To use a configured proxy for every destination
+regardless of `NO_PROXY`, set `no_proxy = []`.
+
+`proxy.no_proxy` is an array of hosts, domain suffixes, IP addresses, or other
+libcurl no-proxy patterns. When omitted, libcurl's `NO_PROXY`/`no_proxy`
+environment variable remains effective. An explicitly empty array overrides
+the environment and sends every destination through the proxy.
+
+`proxy.username` enables proxy credentials. Store the corresponding password
+in `proxy.password_file` instead of the TOML file or proxy URL. Relative
+password paths resolve from the TOML file's directory. The password file must
+be a regular file reached without symbolic links, must grant no group or other
+permissions, and must not exceed 64 KiB. One trailing LF or CRLF is removed.
+An empty password, embedded NUL byte, or password file without a username is
+rejected.
+
+`proxy.auth` controls HTTP/HTTPS proxy authentication and accepts `auto`,
+`basic`, `digest`, `ntlm`, or `negotiate`; it defaults to `auto`. SOCKS5 uses
+its own username/password authentication. Authentication mechanisms actually
+available depend on the installed libcurl build.
+
+`proxy.ca_file` adds a certificate-authority file for an HTTPS proxy and is
+rejected for other proxy schemes. Relative paths resolve from the TOML file's
+directory. Proxy certificate and host verification remain enabled and cannot
+be disabled by configuration. Keep credentials out of `proxy.url` because
+configuration or error diagnostics may expose URLs.
 
 `download.concurrency` controls how many files can be downloaded at the same
 time. It defaults to `4` and accepts values from `1` through `16`. Downloads

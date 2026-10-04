@@ -4,6 +4,8 @@
 #include <toml++/toml.hpp>
 
 #include <algorithm>
+#include <array>
+#include <cctype>
 #include <cstdint>
 #include <cstdlib>
 #include <initializer_list>
@@ -12,6 +14,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace onedrive::config {
 namespace {
@@ -124,7 +127,7 @@ std::chrono::seconds seconds_value(
     return std::chrono::seconds{static_cast<SecondsRepresentation>(value)};
 }
 
-std::string string_array_value(
+std::vector<std::string> string_array_values(
     const toml::table& table,
     std::string_view key,
     std::string_view full_name
@@ -138,7 +141,8 @@ std::string string_array_value(
         );
     }
 
-    std::string result;
+    std::vector<std::string> result;
+    result.reserve(values->size());
     for (const auto& value : *values) {
         const auto string_value = value.value<std::string>();
         if (!string_value || string_value->empty()) {
@@ -147,10 +151,23 @@ std::string string_array_value(
                 "' must contain only non-empty strings"
             );
         }
+        result.push_back(*string_value);
+    }
+    return result;
+}
+
+std::string string_array_value(
+    const toml::table& table,
+    std::string_view key,
+    std::string_view full_name
+) {
+    const auto values = string_array_values(table, key, full_name);
+    std::string result;
+    for (const auto& value : values) {
         if (!result.empty()) {
             result.push_back(' ');
         }
-        result += *string_value;
+        result += value;
     }
     return result;
 }
@@ -198,6 +215,76 @@ http::IpVersion parse_ip_version(std::string_view value) {
     throw std::runtime_error(
         "invalid TOML configuration value for 'transfer.ip_version'"
     );
+}
+
+void validate_proxy_url(std::string_view value) {
+    constexpr std::array schemes{
+        "http://",
+        "https://",
+        "socks4://",
+        "socks4a://",
+        "socks5://",
+        "socks5h://",
+    };
+    const auto scheme = std::ranges::find_if(
+        schemes,
+        [value](std::string_view candidate) {
+            return value.starts_with(candidate);
+        }
+    );
+    if (scheme == schemes.end() ||
+        value.size() == std::string_view{*scheme}.size() ||
+        value.contains('\0') ||
+        std::ranges::any_of(value, [](unsigned char character) {
+            return std::isspace(character) != 0;
+        })) {
+        throw std::runtime_error(
+            "invalid TOML configuration value for 'proxy.url'"
+        );
+    }
+}
+
+http::ProxyAuth parse_proxy_auth(std::string_view value) {
+    if (value == "auto") {
+        return http::ProxyAuth::automatic;
+    }
+    if (value == "basic") {
+        return http::ProxyAuth::basic;
+    }
+    if (value == "digest") {
+        return http::ProxyAuth::digest;
+    }
+    if (value == "ntlm") {
+        return http::ProxyAuth::ntlm;
+    }
+    if (value == "negotiate") {
+        return http::ProxyAuth::negotiate;
+    }
+    throw std::runtime_error(
+        "invalid TOML configuration value for 'proxy.auth'"
+    );
+}
+
+std::vector<std::string> proxy_bypass_list(
+    const toml::table& table
+) {
+    auto result =
+        string_array_values(table, "no_proxy", "proxy.no_proxy");
+    for (const auto& entry : result) {
+        if (entry.contains('\0') || entry.contains(',') ||
+            std::ranges::any_of(
+                entry,
+                [](unsigned char character) {
+                    return std::isspace(character) != 0;
+                }
+            )) {
+            throw std::runtime_error(
+                "TOML configuration value 'proxy.no_proxy' must contain "
+                "only non-empty entries without commas or whitespace"
+            );
+        }
+    }
+    return result;
 }
 
 DownloadValidationMode parse_download_validation(std::string_view value) {
@@ -286,6 +373,7 @@ Config Config::defaults() {
         .download_checkpoint_interval_bytes =
             std::uint64_t{1024} * 1024U,
         .transfer_order = TransferOrder::default_order,
+        .proxy = {},
         .transfer_transport = {},
         .download_maximum_rate_bytes_per_second = 0,
         .download_validation = DownloadValidationMode::strict,
@@ -319,6 +407,7 @@ Config Config::load(const std::filesystem::path& path) {
         {
             "config_version",
             "sync",
+            "proxy",
             "transfer",
             "download",
             "state",
@@ -418,6 +507,108 @@ Config Config::load(const std::filesystem::path& path) {
                 "a string"
             )) {
             config.sync_permissions = parse_sync_permissions(*value);
+        }
+    }
+
+    if (const auto* proxy = optional_table(root, "proxy", "proxy")) {
+        validate_keys(
+            *proxy,
+            {
+                "url",
+                "no_proxy",
+                "username",
+                "password_file",
+                "auth",
+                "ca_file",
+            },
+            "proxy"
+        );
+        const auto url = optional_value<std::string>(
+            *proxy,
+            "url",
+            "proxy.url",
+            "a string"
+        );
+        if (!url) {
+            throw std::runtime_error(
+                "TOML configuration value 'proxy.url' is required"
+            );
+        }
+        validate_proxy_url(*url);
+        config.proxy.url = *url;
+        if (proxy->contains("no_proxy")) {
+            config.proxy.no_proxy = proxy_bypass_list(*proxy);
+        }
+        if (const auto username = optional_value<std::string>(
+                *proxy,
+                "username",
+                "proxy.username",
+                "a string"
+            )) {
+            if (username->empty() || username->contains('\0')) {
+                throw std::runtime_error(
+                    "TOML configuration value 'proxy.username' must not "
+                    "be empty or contain NUL bytes"
+                );
+            }
+            config.proxy.username = *username;
+        }
+        if (const auto password_file = optional_value<std::string>(
+                *proxy,
+                "password_file",
+                "proxy.password_file",
+                "a string"
+            )) {
+            if (password_file->empty() ||
+                password_file->contains('\0')) {
+                throw std::runtime_error(
+                    "TOML configuration value 'proxy.password_file' must "
+                    "not be empty or contain NUL bytes"
+                );
+            }
+            auto resolved = std::filesystem::path{*password_file};
+            if (resolved.is_relative()) {
+                resolved = path.parent_path() / resolved;
+            }
+            config.proxy.password_file = resolved.lexically_normal();
+        }
+        if (const auto auth = optional_value<std::string>(
+                *proxy,
+                "auth",
+                "proxy.auth",
+                "a string"
+            )) {
+            config.proxy.auth = parse_proxy_auth(*auth);
+        }
+        if (const auto ca_file = optional_value<std::string>(
+                *proxy,
+                "ca_file",
+                "proxy.ca_file",
+                "a string"
+            )) {
+            if (ca_file->empty() || ca_file->contains('\0')) {
+                throw std::runtime_error(
+                    "TOML configuration value 'proxy.ca_file' must not "
+                    "be empty or contain NUL bytes"
+                );
+            }
+            if (!url->starts_with("https://")) {
+                throw std::runtime_error(
+                    "TOML configuration value 'proxy.ca_file' requires "
+                    "an HTTPS proxy URL"
+                );
+            }
+            auto resolved = std::filesystem::path{*ca_file};
+            if (resolved.is_relative()) {
+                resolved = path.parent_path() / resolved;
+            }
+            config.proxy.ca_file = resolved.lexically_normal();
+        }
+        if (config.proxy.password_file && !config.proxy.username) {
+            throw std::runtime_error(
+                "TOML configuration value 'proxy.password_file' requires "
+                "'proxy.username'"
+            );
         }
     }
 

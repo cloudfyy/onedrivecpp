@@ -66,6 +66,7 @@ struct Config {
         std::uint64_t{1024} * 1024U
     };
     TransferOrder transfer_order{TransferOrder::default_order};
+    http::ProxyOptions proxy;
     http::TransferTransportOptions transfer_transport;
     std::uint64_t download_maximum_rate_bytes_per_second{0};
     DownloadValidationMode download_validation{

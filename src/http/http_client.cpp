@@ -19,6 +19,7 @@
 #include <string_view>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <utility>
 
 namespace onedrive::http {
 namespace {
@@ -53,6 +54,29 @@ struct CurlHandleDeleter {
 };
 
 using CurlHandle = std::unique_ptr<CURL, CurlHandleDeleter>;
+
+class FileDescriptor {
+public:
+    explicit FileDescriptor(int descriptor) : descriptor_{descriptor} {}
+
+    ~FileDescriptor() {
+        if (descriptor_ != -1) {
+            ::close(descriptor_);
+        }
+    }
+
+    FileDescriptor(const FileDescriptor&) = delete;
+    FileDescriptor& operator=(const FileDescriptor&) = delete;
+    FileDescriptor(FileDescriptor&&) = delete;
+    FileDescriptor& operator=(FileDescriptor&&) = delete;
+
+    [[nodiscard]] int get() const noexcept {
+        return descriptor_;
+    }
+
+private:
+    int descriptor_;
+};
 
 class ThreadCurlHandlePool {
 public:
@@ -214,6 +238,22 @@ long curl_ip_version(IpVersion version) {
         return CURL_IPRESOLVE_V6;
     }
     return CURL_IPRESOLVE_WHATEVER;
+}
+
+long curl_proxy_auth(ProxyAuth auth) {
+    switch (auth) {
+    case ProxyAuth::automatic:
+        return static_cast<long>(CURLAUTH_ANY);
+    case ProxyAuth::basic:
+        return static_cast<long>(CURLAUTH_BASIC);
+    case ProxyAuth::digest:
+        return static_cast<long>(CURLAUTH_DIGEST);
+    case ProxyAuth::ntlm:
+        return static_cast<long>(CURLAUTH_NTLM);
+    case ProxyAuth::negotiate:
+        return static_cast<long>(CURLAUTH_NEGOTIATE);
+    }
+    return static_cast<long>(CURLAUTH_ANY);
 }
 
 bool fits_curl_long(std::uint64_t value) {
@@ -531,8 +571,104 @@ int report_progress(
     }
 }
 
+std::string read_proxy_password(const std::filesystem::path& path) {
+    constexpr std::size_t maximum_password_size =
+        std::size_t{64} * 1024U;
+    const FileDescriptor descriptor{
+        onedrive::detail::open_path_no_symlinks(path, O_RDONLY)
+    };
+    struct stat status {};
+    if (::fstat(descriptor.get(), &status) == -1) {
+        throw std::runtime_error(
+            "cannot inspect proxy password file '" + path.string() +
+            "': " + std::strerror(errno)
+        );
+    }
+    if (!S_ISREG(status.st_mode)) {
+        throw std::runtime_error(
+            "proxy password path is not a regular file: " + path.string()
+        );
+    }
+    if ((status.st_mode & (S_IRWXG | S_IRWXO)) != 0) {
+        throw std::runtime_error(
+            "proxy password file must not grant group or other permissions: " +
+            path.string()
+        );
+    }
+    if (status.st_size < 0 ||
+        static_cast<std::uint64_t>(status.st_size) >
+            maximum_password_size) {
+        throw std::runtime_error(
+            "proxy password file exceeds the 64 KiB size limit: " +
+            path.string()
+        );
+    }
+
+    std::string password;
+    password.reserve(static_cast<std::size_t>(status.st_size));
+    std::array<char, 4096> buffer{};
+    while (true) {
+        const auto count =
+            ::read(descriptor.get(), buffer.data(), buffer.size());
+        if (count == -1 && errno == EINTR) {
+            continue;
+        }
+        if (count == -1) {
+            throw std::runtime_error(
+                "cannot read proxy password file '" + path.string() +
+                "': " + std::strerror(errno)
+            );
+        }
+        if (count == 0) {
+            break;
+        }
+        if (password.size() + static_cast<std::size_t>(count) >
+            maximum_password_size) {
+            throw std::runtime_error(
+                "proxy password file exceeds the 64 KiB size limit: " +
+                path.string()
+            );
+        }
+        password.append(buffer.data(), static_cast<std::size_t>(count));
+    }
+    if (password.ends_with('\n')) {
+        password.pop_back();
+        if (password.ends_with('\r')) {
+            password.pop_back();
+        }
+    }
+    if (password.empty()) {
+        throw std::runtime_error(
+            "proxy password file must not be empty: " + path.string()
+        );
+    }
+    if (password.contains('\0')) {
+        throw std::runtime_error(
+            "proxy password file must not contain NUL bytes: " +
+            path.string()
+        );
+    }
+    return password;
+}
+
+std::string join_proxy_bypass_list(
+    const std::vector<std::string>& entries
+) {
+    std::string result;
+    for (const auto& entry : entries) {
+        if (!result.empty()) {
+            result.push_back(',');
+        }
+        result += entry;
+    }
+    return result;
+}
+
 HttpResult perform_request(
     const HttpRequest& request,
+    const ProxyOptions& proxy,
+    const std::optional<std::string>& proxy_password,
+    const std::optional<std::string>& no_proxy,
     int descriptor,
     const DownloadProgress& progress = {},
     const DownloadData& data = {},
@@ -636,6 +772,36 @@ HttpResult perform_request(
     };
 
     CURLcode result = set_option(CURLOPT_URL, request.url.c_str());
+    if (result == CURLE_OK && proxy.url) {
+        result = set_option(CURLOPT_PROXY, proxy.url->c_str());
+    }
+    if (result == CURLE_OK && no_proxy) {
+        result = set_option(CURLOPT_NOPROXY, no_proxy->c_str());
+    }
+    if (result == CURLE_OK && proxy.username) {
+        result = set_option(
+            CURLOPT_PROXYUSERNAME,
+            proxy.username->c_str()
+        );
+    }
+    if (result == CURLE_OK && proxy_password) {
+        result = set_option(
+            CURLOPT_PROXYPASSWORD,
+            proxy_password->c_str()
+        );
+    }
+    if (result == CURLE_OK && proxy.url) {
+        result = set_option(
+            CURLOPT_PROXYAUTH,
+            curl_proxy_auth(proxy.auth)
+        );
+    }
+    if (result == CURLE_OK && proxy.ca_file) {
+        result = set_option(
+            CURLOPT_PROXY_CAINFO,
+            proxy.ca_file->c_str()
+        );
+    }
     if (result == CURLE_OK) {
         result = set_option(CURLOPT_ERRORBUFFER, error_buffer.data());
     }
@@ -882,8 +1048,29 @@ HttpResult perform_request(
 
 }  // namespace
 
+CurlHttpClient::CurlHttpClient(ProxyOptions proxy)
+    : proxy_{std::move(proxy)} {
+    if (proxy_.password_file && !proxy_.username) {
+        throw std::invalid_argument(
+            "proxy password file requires a proxy username"
+        );
+    }
+    if (proxy_.password_file) {
+        proxy_password_ = read_proxy_password(*proxy_.password_file);
+    }
+    if (proxy_.no_proxy) {
+        no_proxy_ = join_proxy_bypass_list(*proxy_.no_proxy);
+    }
+}
+
 HttpResult CurlHttpClient::perform(const HttpRequest& request) const {
-    return perform_request(request, -1);
+    return perform_request(
+        request,
+        proxy_,
+        proxy_password_,
+        no_proxy_,
+        -1
+    );
 }
 
 HttpResult CurlHttpClient::download(
@@ -922,6 +1109,9 @@ HttpResult CurlHttpClient::download(
     DownloadState download_state;
     auto response = perform_request(
         request,
+        proxy_,
+        proxy_password_,
+        no_proxy_,
         descriptor,
         progress,
         data,

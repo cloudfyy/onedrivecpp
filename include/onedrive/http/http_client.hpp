@@ -140,6 +140,8 @@ public:
 
 class CurlHttpClient final {
 public:
+    explicit CurlHttpClient(ProxyOptions proxy = {});
+
     [[nodiscard]] HttpResult perform(const HttpRequest& request) const;
     [[nodiscard]] HttpResult download(
         const HttpRequest& request,
@@ -149,6 +151,11 @@ public:
         const DownloadCheckpoint& checkpoint = {},
         const DownloadResponseGate& response_gate = {}
     ) const;
+
+private:
+    ProxyOptions proxy_;
+    std::optional<std::string> proxy_password_;
+    std::optional<std::string> no_proxy_;
 };
 
 }  // namespace onedrive::http

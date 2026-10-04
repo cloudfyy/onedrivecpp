@@ -16,9 +16,12 @@
 namespace onedrive::app {
 
 std::unique_ptr<http::HttpTransport>
-ProductionRuntimeFactory::create_http_transport() const {
+ProductionRuntimeFactory::create_http_transport(
+    const config::Config& config
+) const {
     return std::make_unique<http::HttpTransport>(
-        std::in_place_type<http::CurlHttpClient>
+        std::in_place_type<http::CurlHttpClient>,
+        config.proxy
     );
 }
 
@@ -47,7 +50,7 @@ std::unique_ptr<graph::GraphClient> ProductionRuntimeFactory::create_graph_clien
 ) const {
     return std::make_unique<graph::GraphClient>(
         std::in_place_type<graph::MicrosoftGraphClient>,
-        create_http_transport(),
+        create_http_transport(config),
         create_token_store(config),
         device_auth_options(config),
         graph_options(config)

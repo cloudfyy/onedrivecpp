@@ -1,6 +1,7 @@
 #include "onedrive/app/runtime_options.hpp"
 #include "onedrive/config/config.hpp"
 
+#include <array>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -21,6 +22,13 @@ int main() {
                << "local_conflict = \"backup\"\n"
                << "dry_run = true\n"
                << "permissions = \"umask\"\n"
+               << "[proxy]\n"
+               << "url = \"https://proxy.example.test:8443\"\n"
+               << "no_proxy = [\"localhost\", \".internal.test\"]\n"
+               << "username = \"proxy-user\"\n"
+               << "password_file = \"secrets/proxy-password\"\n"
+               << "auth = \"digest\"\n"
+               << "ca_file = \"certificates/proxy-ca.pem\"\n"
                << "[transfer]\n"
                << "connect_timeout_seconds = 12\n"
                << "operation_timeout_seconds = 600\n"
@@ -98,6 +106,25 @@ int main() {
             onedrive::config::SyncPermissionsMode::umask ||
         config.local_conflict !=
             onedrive::config::LocalConflictPolicy::backup ||
+        config.proxy.url !=
+            std::optional<std::string>{
+                "https://proxy.example.test:8443"
+            } ||
+        config.proxy.no_proxy !=
+            std::optional<std::vector<std::string>>{
+                {"localhost", ".internal.test"}
+            } ||
+        config.proxy.username !=
+            std::optional<std::string>{"proxy-user"} ||
+        config.proxy.password_file !=
+            std::optional<std::filesystem::path>{
+                path.parent_path() / "secrets/proxy-password"
+            } ||
+        config.proxy.auth != onedrive::http::ProxyAuth::digest ||
+        config.proxy.ca_file !=
+            std::optional<std::filesystem::path>{
+                path.parent_path() / "certificates/proxy-ca.pem"
+            } ||
         graph_options.download_transport.transfer !=
             config.transfer_transport ||
         graph_options.download_transport.
@@ -140,6 +167,13 @@ int main() {
         defaults.sync_root_files ||
         defaults.transfer_order !=
             onedrive::config::TransferOrder::default_order ||
+        defaults.proxy.url ||
+        defaults.proxy.no_proxy ||
+        defaults.proxy.username ||
+        defaults.proxy.password_file ||
+        defaults.proxy.auth !=
+            onedrive::http::ProxyAuth::automatic ||
+        defaults.proxy.ca_file ||
         defaults.download_maximum_retries != 4 ||
         defaults.transfer_transport.ip_version !=
             onedrive::http::IpVersion::automatic ||
@@ -151,6 +185,204 @@ int main() {
             private_download_permissions) {
         std::cerr << "secure synchronization defaults were not applied\n";
         return EXIT_FAILURE;
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[proxy]\n"
+               << "url = \"socks5h://127.0.0.1:1080\"\n";
+    }
+    try {
+        const auto socks_proxy = onedrive::config::Config::load(path);
+        if (socks_proxy.proxy.url !=
+            std::optional<std::string>{
+                "socks5h://127.0.0.1:1080"
+            }) {
+            std::filesystem::remove(path);
+            std::cerr << "SOCKS5H proxy URL was not parsed correctly\n";
+            return EXIT_FAILURE;
+        }
+    } catch (const std::runtime_error& error) {
+        std::filesystem::remove(path);
+        std::cerr << "SOCKS5H proxy URL was rejected: " << error.what() << '\n';
+        return EXIT_FAILURE;
+    }
+
+    constexpr std::array proxy_auth_modes{
+        std::pair{"auto", onedrive::http::ProxyAuth::automatic},
+        std::pair{"basic", onedrive::http::ProxyAuth::basic},
+        std::pair{"digest", onedrive::http::ProxyAuth::digest},
+        std::pair{"ntlm", onedrive::http::ProxyAuth::ntlm},
+        std::pair{"negotiate", onedrive::http::ProxyAuth::negotiate},
+    };
+    for (const auto& [name, expected] : proxy_auth_modes) {
+        {
+            std::ofstream output{path};
+            output << "config_version = 2\n"
+                   << "[proxy]\n"
+                   << "url = \"https://proxy.example.test\"\n"
+                   << "auth = \"" << name << "\"\n";
+        }
+        try {
+            const auto proxy_auth =
+                onedrive::config::Config::load(path);
+            if (proxy_auth.proxy.auth != expected) {
+                std::filesystem::remove(path);
+                std::cerr << "proxy authentication mode was parsed "
+                             "incorrectly\n";
+                return EXIT_FAILURE;
+            }
+        } catch (const std::runtime_error& error) {
+            std::filesystem::remove(path);
+            std::cerr << "valid proxy authentication mode was rejected: "
+                      << error.what() << '\n';
+            return EXIT_FAILURE;
+        }
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[proxy]\n"
+               << "url = \"https://proxy.example.test\"\n"
+               << "no_proxy = []\n";
+    }
+    try {
+        const auto empty_no_proxy =
+            onedrive::config::Config::load(path);
+        if (!empty_no_proxy.proxy.no_proxy ||
+            !empty_no_proxy.proxy.no_proxy->empty()) {
+            std::filesystem::remove(path);
+            std::cerr << "empty proxy bypass list was not preserved\n";
+            return EXIT_FAILURE;
+        }
+    } catch (const std::runtime_error& error) {
+        std::filesystem::remove(path);
+        std::cerr << "empty proxy bypass list was rejected: "
+                  << error.what() << '\n';
+        return EXIT_FAILURE;
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[proxy]\n"
+               << "url = \"https://proxy.example.test\"\n"
+               << "no_proxy = [\"localhost,example.test\"]\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "ambiguous proxy bypass entry was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains("proxy.no_proxy")) {
+            std::filesystem::remove(path);
+            std::cerr << "invalid proxy bypass entry reported wrong error\n";
+            return EXIT_FAILURE;
+        }
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[proxy]\n"
+               << "url = \"https://proxy.example.test\"\n"
+               << "auth = \"oauth\"\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "unsupported proxy authentication mode was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains("proxy.auth")) {
+            std::filesystem::remove(path);
+            std::cerr << "invalid proxy auth mode reported wrong error\n";
+            return EXIT_FAILURE;
+        }
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[proxy]\n"
+               << "url = \"socks5h://127.0.0.1:1080\"\n"
+               << "password_file = \"proxy-password\"\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "proxy password without username was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains("proxy.username")) {
+            std::filesystem::remove(path);
+            std::cerr << "missing proxy username reported wrong error\n";
+            return EXIT_FAILURE;
+        }
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[proxy]\n"
+               << "url = \"socks5h://127.0.0.1:1080\"\n"
+               << "ca_file = \"proxy-ca.pem\"\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "proxy CA file with non-HTTPS URL was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains("proxy.ca_file")) {
+            std::filesystem::remove(path);
+            std::cerr << "invalid proxy CA file reported wrong error\n";
+            return EXIT_FAILURE;
+        }
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[proxy]\n"
+               << "url = \"https://proxy.example.test:8443\"\n";
+    }
+    try {
+        const auto https_proxy = onedrive::config::Config::load(path);
+        if (https_proxy.proxy.url !=
+            std::optional<std::string>{
+                "https://proxy.example.test:8443"
+            }) {
+            std::filesystem::remove(path);
+            std::cerr << "HTTPS proxy URL was not parsed correctly\n";
+            return EXIT_FAILURE;
+        }
+    } catch (const std::runtime_error& error) {
+        std::filesystem::remove(path);
+        std::cerr << "HTTPS proxy URL was rejected: " << error.what() << '\n';
+        return EXIT_FAILURE;
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[proxy]\n"
+               << "url = \"ftp://proxy.example.test:21\"\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "unsupported proxy URL was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains("proxy.url")) {
+            std::filesystem::remove(path);
+            std::cerr << "unsupported proxy URL reported wrong error\n";
+            return EXIT_FAILURE;
+        }
     }
 
     {

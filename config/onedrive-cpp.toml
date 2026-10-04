@@ -17,6 +17,25 @@ drive_id = "me"
 sync_root_files = false
 dry_run = true
 
+# Optional proxy for authentication, Graph API, and file downloads.
+# By default this table is absent, so libcurl may still use HTTP_PROXY,
+# HTTPS_PROXY, ALL_PROXY, and their lowercase variants from the environment.
+# To guarantee direct connections, omit this table and unset those variables.
+# Supported schemes: "http", "https", "socks4", "socks4a", "socks5", "socks5h".
+# Use "socks5h" when the proxy should resolve destination host names.
+# [proxy]
+# url = "socks5h://127.0.0.1:1080"
+# By default this is unset and libcurl uses NO_PROXY/no_proxy from the environment.
+# Set an empty array to override the environment and proxy every destination.
+# no_proxy = ["localhost", "127.0.0.1", ".internal.example.com"]
+# No proxy credentials are configured by default.
+# username = "proxy-user"
+# password_file = "/run/secrets/onedrive-proxy-password"
+# Defaults to "auto". Other values: "basic", "digest", "ntlm", and "negotiate".
+# auth = "auto"
+# Unset by default, so HTTPS proxies use the system CA trust store.
+# ca_file = "/etc/ssl/certs/company-proxy-ca.pem"
+
 [transfer]
 # Connection and per-request transfer limits for file content.
 # Supported values: "default", "size_asc", "size_dsc", "name_asc", and "name_dsc".
