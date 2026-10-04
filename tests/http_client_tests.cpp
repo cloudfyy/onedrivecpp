@@ -96,7 +96,7 @@ int main() {
             reinterpret_cast<const sockaddr*>(&address),
             sizeof(address)
         ) == -1 ||
-        ::listen(listener.get(), 1) == -1) {
+        ::listen(listener.get(), 4) == -1) {
         return fail("cannot listen on HTTP test socket");
     }
 
@@ -859,6 +859,81 @@ int main() {
     if (stalled_download || std::filesystem::exists(destination)) {
         std::filesystem::remove(destination, ignored);
         return fail("stalled HTTP download was not aborted and cleaned up");
+    }
+
+    server_error.clear();
+    std::jthread reset_server{[&] {
+        for (std::size_t index = 0; index < 2; ++index) {
+            pollfd descriptor{
+                .fd = listener.get(),
+                .events = POLLIN,
+                .revents = 0,
+            };
+            if (::poll(&descriptor, 1, 10'000) != 1) {
+                server_error =
+                    "timed out waiting for reset HTTP connection";
+                return;
+            }
+            Socket connection{
+                ::accept4(listener.get(), nullptr, nullptr, SOCK_CLOEXEC)
+            };
+            if (connection.get() == -1) {
+                server_error = "cannot accept reset HTTP connection";
+                return;
+            }
+            const linger reset{
+                .l_onoff = 1,
+                .l_linger = 0,
+            };
+            if (::setsockopt(
+                    connection.get(),
+                    SOL_SOCKET,
+                    SO_LINGER,
+                    &reset,
+                    sizeof(reset)
+                ) == -1) {
+                server_error = "cannot configure reset HTTP connection";
+                return;
+            }
+        }
+    }};
+    std::array<bool, 2> reset_requests_failed{};
+    std::array<std::jthread, 2> reset_clients{
+        std::jthread{[&, port] {
+            onedrive::http::CurlHttpClient reset_client;
+            reset_requests_failed[0] = !reset_client.perform({
+                .method = onedrive::http::HttpMethod::post,
+                .url = "http://127.0.0.1:" + std::to_string(port) +
+                       "/reset-one",
+                .body = std::string(256U * 1024U, 'x'),
+                .connect_timeout = std::chrono::seconds{2},
+                .operation_timeout = std::chrono::seconds{5},
+            });
+        }},
+        std::jthread{[&, port] {
+            onedrive::http::CurlHttpClient reset_client;
+            reset_requests_failed[1] = !reset_client.perform({
+                .method = onedrive::http::HttpMethod::post,
+                .url = "http://127.0.0.1:" + std::to_string(port) +
+                       "/reset-two",
+                .body = std::string(256U * 1024U, 'x'),
+                .connect_timeout = std::chrono::seconds{2},
+                .operation_timeout = std::chrono::seconds{5},
+            });
+        }},
+    };
+    for (auto& reset_client : reset_clients) {
+        reset_client.join();
+    }
+    reset_server.join();
+    if (!server_error.empty()) {
+        return fail(server_error);
+    }
+    if (!std::ranges::all_of(
+            reset_requests_failed,
+            [](bool failed) { return failed; }
+        )) {
+        return fail("reset concurrent HTTP requests did not fail cleanly");
     }
 
     std::array<std::string, 2> reused_connection_requests;

@@ -613,6 +613,9 @@ HttpResult perform_request(
         result = set_option(CURLOPT_ERRORBUFFER, error_buffer.data());
     }
     if (result == CURLE_OK) {
+        result = set_option(CURLOPT_NOSIGNAL, 1L);
+    }
+    if (result == CURLE_OK) {
         result = set_option(CURLOPT_WRITEFUNCTION, &write_response);
     }
     if (result == CURLE_OK) {
