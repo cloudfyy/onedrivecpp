@@ -1,3 +1,14 @@
+onedrive-cpp (0.7.6-1~ubuntu24.04) noble; urgency=medium
+
+  * Order dependent remote moves so occupied source paths are vacated before
+    their destinations are installed.
+  * Remap explicit child move sources after parent directory moves and recover
+    interrupted move chains by durable filesystem identity.
+  * Retain name exchanges and other dependency cycles as retryable blocked
+    items until private staging is implemented.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 11:50:00 +0000
+
 onedrive-cpp (0.7.5-1~ubuntu24.04) noble; urgency=medium
 
   * Journal pending remote moves with durable source device/inode identity
