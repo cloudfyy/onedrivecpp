@@ -483,6 +483,7 @@ maximum_retries = 4
 chunk_threshold_bytes = 8388608
 checkpoint_interval_bytes = 1048576
 maximum_rate_bytes_per_second = 0
+maximum_total_rate_bytes_per_second = 0
 validation = "strict"
 ```
 
@@ -669,7 +670,16 @@ and `3600` seconds. A transfer that remains below
 `transfer.stall_minimum_bytes_per_second` (default `1`) for
 `transfer.stall_timeout_seconds` (default `60`) is aborted; set the stall
 timeout to `0` to disable this check.
-`download.maximum_rate_bytes_per_second` defaults to `0`, meaning unlimited.
+`download.maximum_rate_bytes_per_second` limits each individual file-content
+request and defaults to `0`, meaning unlimited.
+`download.maximum_total_rate_bytes_per_second` limits the combined receive
+rate shared by all concurrent file downloads and also defaults to `0`.
+When both are non-zero, each request is subject to the individual limit while
+all active requests share the total limit. The total limiter uses a fair,
+cancellable token bucket with a burst of at most 64 KiB. Throttling time counts
+toward `transfer.operation_timeout_seconds` and may contribute to libcurl's
+stall detection, so very low rate limits may require a longer operation or
+stall timeout.
 `transfer.http_version` accepts `"auto"`, `"1.1"`, or `"2"`; HTTP/2 is
 negotiated over TLS and may fall back according to libcurl capabilities.
 `transfer.ip_version` accepts `"auto"`, `"4"`, or

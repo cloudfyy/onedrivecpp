@@ -34,6 +34,8 @@ inline graph::GraphOptions graph_options(const config::Config& config) {
             .transfer = config.transfer_transport,
             .maximum_receive_speed_bytes_per_second =
                 config.download_maximum_rate_bytes_per_second,
+            .maximum_total_receive_speed_bytes_per_second =
+                config.download_maximum_total_rate_bytes_per_second,
         },
         .relaxed_download_validation =
             config.download_validation ==

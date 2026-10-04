@@ -114,6 +114,7 @@ add_library(onedrive_core
     src/cli/console.cpp
     src/config/config.cpp
     src/graph/graph_client.cpp
+    src/http/download_rate_limiter.cpp
     src/http/http_client.cpp
     src/logging/logging.cpp
     src/metrics/metrics.cpp
@@ -233,6 +234,16 @@ if(BUILD_TESTING)
             spdlog::spdlog
     )
     add_test(NAME http_client_tests COMMAND http_client_tests)
+
+    add_executable(
+        download_rate_limiter_tests
+        tests/download_rate_limiter_tests.cpp
+    )
+    target_link_libraries(download_rate_limiter_tests PRIVATE onedrive_core)
+    add_test(
+        NAME download_rate_limiter_tests
+        COMMAND download_rate_limiter_tests
+    )
 
     add_executable(proxy_client_tests tests/proxy_client_tests.cpp)
     target_link_libraries(proxy_client_tests PRIVATE onedrive_core)

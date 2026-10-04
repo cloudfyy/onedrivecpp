@@ -460,6 +460,15 @@ Maximum receive rate for each download. The default is
 .BR 0 ,
 which disables rate limiting.
 .TP
+.B download.maximum_total_rate_bytes_per_second
+Combined receive rate shared by all concurrent file downloads. The default is
+.BR 0 ,
+which disables the total limit. When both download rate settings are non-zero,
+each request is subject to the individual limit while all active requests share
+the total limit. The total limiter permits a burst of at most 64 KiB.
+Throttling time counts toward the operation timeout and may contribute to stall
+detection, so very low limits may require longer timeout settings.
+.TP
 .B transfer.http_version
 HTTP version preference for file downloads:
 .BR auto ,

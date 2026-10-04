@@ -54,6 +54,7 @@ struct TransferTransportOptions {
 struct DownloadTransportOptions {
     TransferTransportOptions transfer;
     std::uint64_t maximum_receive_speed_bytes_per_second{0};
+    std::uint64_t maximum_total_receive_speed_bytes_per_second{0};
 
     bool operator==(const DownloadTransportOptions&) const = default;
 };

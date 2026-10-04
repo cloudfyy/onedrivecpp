@@ -32,6 +32,10 @@ using DownloadResponseGate = std::function<bool(
     long status_code,
     std::span<const HttpHeader> headers
 )>;
+using DownloadThrottle = std::function<bool(
+    std::size_t bytes,
+    const std::stop_token& stop_token
+)>;
 
 enum class HttpMethod {
     get,
@@ -58,6 +62,7 @@ struct HttpRequest {
     bool private_download_permissions{true};
     bool follow_redirects{false};
     std::size_t maximum_redirects{0};
+    DownloadThrottle download_throttle{};
     std::stop_token stop_token;
 };
 

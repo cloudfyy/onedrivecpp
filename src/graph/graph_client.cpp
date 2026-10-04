@@ -2,6 +2,7 @@
 
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
+#include "onedrive/http/download_rate_limiter.hpp"
 #include "onedrive/http/http_client.hpp"
 #include "onedrive/remote_time.hpp"
 
@@ -703,6 +704,14 @@ MicrosoftGraphClient::MicrosoftGraphClient(
             transport_.get(),
             std::move(auth_options)
         );
+    if (download_transport.
+            maximum_total_receive_speed_bytes_per_second != 0) {
+        download_rate_limiter_ =
+            std::make_unique<http::DownloadRateLimiter>(
+                download_transport.
+                    maximum_total_receive_speed_bytes_per_second
+            );
+    }
 }
 
 MicrosoftGraphClient::~MicrosoftGraphClient() = default;
@@ -1501,6 +1510,17 @@ void MicrosoftGraphClient::download_file(
         transfer.low_speed_limit_bytes_per_second;
     const auto maximum_receive_speed =
         download_transport.maximum_receive_speed_bytes_per_second;
+    const http::DownloadThrottle download_throttle =
+        download_rate_limiter_ ?
+            http::DownloadThrottle{
+                [limiter = download_rate_limiter_.get()](
+                    std::size_t bytes,
+                    const std::stop_token& stop_token
+                ) {
+                    return limiter->acquire(bytes, stop_token);
+                }
+            } :
+            http::DownloadThrottle{};
     using DownloadRequest = std::pair<
         std::vector<std::string>,
         std::uint64_t
@@ -1544,6 +1564,8 @@ void MicrosoftGraphClient::download_file(
                             .follow_redirects = true,
                             .maximum_redirects =
                                 maximum_download_redirects,
+                            .download_throttle =
+                                download_throttle,
                             .stop_token = stop_token,
                         },
                         destination,

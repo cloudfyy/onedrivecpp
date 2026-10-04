@@ -43,6 +43,7 @@ int main() {
                << "chunk_threshold_bytes = 4096\n"
                << "checkpoint_interval_bytes = 1024\n"
                << "maximum_rate_bytes_per_second = 1048576\n"
+               << "maximum_total_rate_bytes_per_second = 2097152\n"
                << "validation = \"relaxed\"\n"
                << "[state]\n"
                << "directory = \"/tmp/onedrive-state\"\n"
@@ -96,6 +97,8 @@ int main() {
         config.transfer_transport.low_speed_limit_bytes_per_second != 128 ||
         config.download_maximum_rate_bytes_per_second !=
             1'048'576 ||
+        config.download_maximum_total_rate_bytes_per_second !=
+            2'097'152 ||
         config.transfer_transport.http_version !=
             onedrive::http::HttpVersion::http_2 ||
         config.transfer_transport.ip_version !=
@@ -130,6 +133,9 @@ int main() {
         graph_options.download_transport.
                 maximum_receive_speed_bytes_per_second !=
             config.download_maximum_rate_bytes_per_second ||
+        graph_options.download_transport.
+                maximum_total_receive_speed_bytes_per_second !=
+            config.download_maximum_total_rate_bytes_per_second ||
         graph_options.download_maximum_retries != 3 ||
         graph_options.download_checkpoint_interval_bytes != 1024 ||
         !graph_options.relaxed_download_validation ||
@@ -175,6 +181,7 @@ int main() {
             onedrive::http::ProxyAuth::automatic ||
         defaults.proxy.ca_file ||
         defaults.download_maximum_retries != 4 ||
+        defaults.download_maximum_total_rate_bytes_per_second != 0 ||
         defaults.transfer_transport.ip_version !=
             onedrive::http::IpVersion::automatic ||
         defaults.download_checkpoint_interval_bytes !=

@@ -376,6 +376,7 @@ Config Config::defaults() {
         .proxy = {},
         .transfer_transport = {},
         .download_maximum_rate_bytes_per_second = 0,
+        .download_maximum_total_rate_bytes_per_second = 0,
         .download_validation = DownloadValidationMode::strict,
         .sync_permissions = SyncPermissionsMode::private_access,
         .local_conflict = LocalConflictPolicy::block,
@@ -708,6 +709,7 @@ Config Config::load(const std::filesystem::path& path) {
                 "chunk_threshold_bytes",
                 "checkpoint_interval_bytes",
                 "maximum_rate_bytes_per_second",
+                "maximum_total_rate_bytes_per_second",
                 "validation",
             },
             "download"
@@ -765,6 +767,16 @@ Config Config::load(const std::filesystem::path& path) {
                     *download,
                     "maximum_rate_bytes_per_second",
                     "download.maximum_rate_bytes_per_second"
+                );
+        }
+        if (download->contains(
+                "maximum_total_rate_bytes_per_second"
+            )) {
+            config.download_maximum_total_rate_bytes_per_second =
+                unsigned_value(
+                    *download,
+                    "maximum_total_rate_bytes_per_second",
+                    "download.maximum_total_rate_bytes_per_second"
                 );
         }
         if (const auto value = optional_value<std::string>(

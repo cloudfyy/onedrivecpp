@@ -815,6 +815,8 @@ int main() {
             "throttle delay:       3-120 seconds"
         ) ||
         !dry_run.standard_output.contains("download concurrency: 4") ||
+        !dry_run.standard_output.contains("per-download rate:    0") ||
+        !dry_run.standard_output.contains("total download rate:  0") ||
         runtime_factory.item_store_count != 4 ||
         runtime_factory.item_store_open_count != 4 ||
         runtime_factory.item_store_apply_delta_count != 0 ||

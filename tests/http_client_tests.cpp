@@ -460,12 +460,18 @@ int main() {
     std::vector<std::pair<std::uint64_t, std::uint64_t>> download_progress;
     std::string streamed_download_data;
     std::vector<std::uint64_t> streamed_download_offsets;
+    std::size_t throttled_download_bytes = 0;
     const auto download_response = client.download(
         {
             .url = "http://127.0.0.1:" + std::to_string(port) + "/download",
             .connect_timeout = std::chrono::seconds{2},
             .operation_timeout = std::chrono::seconds{5},
             .http_version = onedrive::http::HttpVersion::http_2,
+            .download_throttle =
+                [&](std::size_t bytes, const std::stop_token&) {
+                    throttled_download_bytes += bytes;
+                    return true;
+                },
         },
         destination,
         [&](std::uint64_t downloaded, std::uint64_t total) {
@@ -502,9 +508,99 @@ int main() {
         download_progress.back().second != 8 ||
         streamed_download_offsets != std::vector<std::uint64_t>{0} ||
         streamed_download_data != "download" ||
+        throttled_download_bytes != 8 ||
         !inspected_download ||
         (downloaded_status.st_mode & 0777) != 0600) {
         return fail("HTTP response was not streamed to the download file");
+    }
+
+    server_error.clear();
+    std::jthread cancelled_throttle_server{[&] {
+        for (std::size_t index = 0; index < 2; ++index) {
+            pollfd descriptor{
+                .fd = listener.get(),
+                .events = POLLIN,
+                .revents = 0,
+            };
+            if (::poll(&descriptor, 1, 10'000) != 1) {
+                server_error =
+                    "timed out waiting for throttled request";
+                return;
+            }
+            Socket connection{
+                ::accept4(listener.get(), nullptr, nullptr, SOCK_CLOEXEC)
+            };
+            std::string request;
+            char buffer[4096];
+            while (!request.contains("\r\n\r\n")) {
+                const auto count =
+                    ::recv(connection.get(), buffer, sizeof(buffer), 0);
+                if (count <= 0) {
+                    server_error = "cannot read throttled request";
+                    return;
+                }
+                request.append(buffer, static_cast<std::size_t>(count));
+            }
+            constexpr std::string_view response{
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Length: 8\r\n"
+                "Connection: close\r\n"
+                "\r\n"
+                "download"
+            };
+            if (::send(
+                    connection.get(),
+                    response.data(),
+                    response.size(),
+                    MSG_NOSIGNAL
+                ) != static_cast<ssize_t>(response.size())) {
+                server_error = "cannot send throttled response";
+                return;
+            }
+        }
+    }};
+    const auto cancelled_throttle_response = client.download(
+        {
+            .url = "http://127.0.0.1:" + std::to_string(port) +
+                   "/throttle-cancel",
+            .connect_timeout = std::chrono::seconds{2},
+            .operation_timeout = std::chrono::seconds{5},
+            .download_throttle =
+                [](std::size_t, const std::stop_token&) {
+                    return false;
+                },
+        },
+        destination
+    );
+    const auto failed_throttle_response = client.download(
+        {
+            .url = "http://127.0.0.1:" + std::to_string(port) +
+                   "/throttle-failure",
+            .connect_timeout = std::chrono::seconds{2},
+            .operation_timeout = std::chrono::seconds{5},
+            .download_throttle =
+                [](std::size_t, const std::stop_token&) -> bool {
+                    throw std::runtime_error{"simulated throttle failure"};
+                },
+        },
+        destination
+    );
+    cancelled_throttle_server.join();
+    if (!server_error.empty()) {
+        return fail(server_error);
+    }
+    if (cancelled_throttle_response ||
+        cancelled_throttle_response.error().code !=
+            onedrive::http::HttpErrorCode::cancelled ||
+        std::filesystem::exists(destination)) {
+        return fail("download throttle cancellation was not propagated");
+    }
+    if (failed_throttle_response ||
+        !failed_throttle_response.error().message.contains(
+            "simulated throttle failure"
+        ) ||
+        std::filesystem::exists(destination)) {
+        return fail("download throttle failure was not propagated");
     }
 
     server_error.clear();

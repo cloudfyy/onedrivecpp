@@ -1037,6 +1037,8 @@ int test_file_download_redirect() {
                     .ip_version = onedrive::http::IpVersion::ipv4,
                 },
                 .maximum_receive_speed_bytes_per_second = 1'048'576,
+                .maximum_total_receive_speed_bytes_per_second =
+                    2'097'152,
             },
         },
     };
@@ -1116,6 +1118,10 @@ int test_file_download_redirect() {
         transport_pointer->download_requests[0].
                 maximum_receive_speed_bytes_per_second !=
             1'048'576 ||
+        !transport_pointer->download_requests[0].
+            download_throttle ||
+        !transport_pointer->download_requests[0].
+            download_throttle(1, {}) ||
         transport_pointer->download_requests[0].http_version !=
             onedrive::http::HttpVersion::http_2 ||
         transport_pointer->download_requests[0].ip_version !=

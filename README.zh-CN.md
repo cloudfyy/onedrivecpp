@@ -439,6 +439,7 @@ maximum_retries = 4
 chunk_threshold_bytes = 8388608
 checkpoint_interval_bytes = 1048576
 maximum_rate_bytes_per_second = 0
+maximum_total_rate_bytes_per_second = 0
 validation = "strict"
 ```
 
@@ -584,6 +585,14 @@ HTTP 字节范围请求顺序分片下载，并以该值作为单个分片的最
 重试次数。默认值为 `4`；设为 `0` 可禁用文件内容重试。它独立于
 `graph.throttle.maximum_retries`，后者仍控制 Microsoft Graph API 请求重试。
 下载重试继续使用 Graph 的退避延迟配置。
+
+`download.maximum_rate_bytes_per_second` 限制单个文件内容请求的接收速率，默认
+值为 `0`，表示不限制。`download.maximum_total_rate_bytes_per_second` 限制所有
+并发文件下载共享的总接收速率，默认值同样为 `0`。两者都非零时，每个请求受
+单请求上限约束，同时所有活动请求共同受总上限约束。总限速使用公平且可取消的
+令牌桶，突发量最多为 64 KiB。限速等待时间会计入
+`transfer.operation_timeout_seconds`，也可能影响 libcurl 的停滞检测，因此非常
+低的限速可能需要同时提高操作超时或停滞超时。
 
 `transfer.ip_version` 接受 `"auto"`、`"4"` 或 `"6"`，默认值为 `"auto"`。
 强制指定地址族可绕过异常的 IPv6 或 IPv4 路由，但下载主机在该地址族下没有

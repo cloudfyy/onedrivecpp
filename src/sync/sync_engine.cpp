@@ -754,6 +754,22 @@ int SyncEngine::synchronize() const {
                         ),
                     },
                     {
+                        .label = "per-download rate:",
+                        .key = "download_rate_limit",
+                        .value = std::to_string(
+                            config_->
+                                download_maximum_rate_bytes_per_second
+                        ),
+                    },
+                    {
+                        .label = "total download rate:",
+                        .key = "download_total_rate_limit",
+                        .value = std::to_string(
+                            config_->
+                                download_maximum_total_rate_bytes_per_second
+                        ),
+                    },
+                    {
                         .label = "tracked items:",
                         .key = "tracked_items",
                         .value = std::to_string(items_.size()),

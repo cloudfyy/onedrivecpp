@@ -159,6 +159,7 @@ struct WriteContext {
     const DownloadData* download_data{};
     const DownloadCheckpoint* checkpoint{};
     const DownloadResponseGate* response_gate{};
+    const DownloadThrottle* download_throttle{};
     const std::vector<HttpHeader>* response_headers{};
     CURL* handle{};
     std::uint64_t checkpoint_interval{};
@@ -166,6 +167,10 @@ struct WriteContext {
     DownloadState* download_state{};
     std::optional<bool> response_accepted;
     bool follow_redirects{false};
+    std::stop_token stop_token;
+    bool throttle_cancelled{false};
+    bool throttle_failed{false};
+    std::string throttle_error;
     bool data_callback_failed{false};
     std::string data_callback_error;
 };
@@ -407,6 +412,26 @@ std::size_t write_response(char* data, std::size_t size, std::size_t count, void
         }
         if (!*write_context.response_accepted) {
             return byte_count;
+        }
+        if (write_context.download_throttle != nullptr &&
+            *write_context.download_throttle) {
+            try {
+                if (!(*write_context.download_throttle)(
+                        byte_count,
+                        write_context.stop_token
+                    )) {
+                    write_context.throttle_cancelled = true;
+                    return 0;
+                }
+            } catch (const std::exception& error) {
+                write_context.throttle_failed = true;
+                write_context.throttle_error = error.what();
+                return 0;
+            } catch (...) {
+                write_context.throttle_failed = true;
+                write_context.throttle_error = "unknown error";
+                return 0;
+            }
         }
         const auto block_offset = write_context.file_offset;
         std::size_t written = 0;
@@ -736,6 +761,7 @@ HttpResult perform_request(
         .download_data = &data,
         .checkpoint = &checkpoint,
         .response_gate = &response_gate,
+        .download_throttle = &request.download_throttle,
         .response_headers = &header_context.headers,
         .handle = handle.get(),
         .checkpoint_interval =
@@ -744,6 +770,8 @@ HttpResult perform_request(
         .download_state = download_state,
         .response_accepted = std::nullopt,
         .follow_redirects = request.follow_redirects,
+        .stop_token = request.stop_token,
+        .throttle_error = {},
         .data_callback_error = {},
     };
     header_context.write_context = &write_context;
@@ -918,7 +946,8 @@ HttpResult perform_request(
     result = curl_easy_perform(handle.get());
     log_transfer_diagnostics(handle.get(), request.method, result);
     if (result != CURLE_OK) {
-        if (progress_context.cancelled) {
+        if (progress_context.cancelled ||
+            write_context.throttle_cancelled) {
             const bool can_checkpoint_cancelled_data =
                 descriptor != -1 &&
                 download_state->response_validated &&
@@ -967,6 +996,12 @@ HttpResult perform_request(
             return std::unexpected(HttpError{
                 .message = "cannot write HTTP response: " +
                            std::string{std::strerror(write_context.write_error)},
+            });
+        }
+        if (write_context.throttle_failed) {
+            return std::unexpected(HttpError{
+                .message = "download throttle failed: " +
+                           write_context.throttle_error,
             });
         }
         if (write_context.data_callback_failed) {

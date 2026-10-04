@@ -69,6 +69,7 @@ struct Config {
     http::ProxyOptions proxy;
     http::TransferTransportOptions transfer_transport;
     std::uint64_t download_maximum_rate_bytes_per_second{0};
+    std::uint64_t download_maximum_total_rate_bytes_per_second{0};
     DownloadValidationMode download_validation{
         DownloadValidationMode::strict
     };

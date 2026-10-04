@@ -60,6 +60,8 @@ chunk_threshold_bytes = 8388608
 checkpoint_interval_bytes = 1048576
 # Zero disables the receive-rate limit.
 maximum_rate_bytes_per_second = 0
+# Shared limit across all concurrent downloads. Zero disables the total limit.
+maximum_total_rate_bytes_per_second = 0
 # "relaxed" accepts SharePoint/AIP/HEIC content whose downloaded size or hash
 # differs from Graph metadata. This weakens integrity guarantees.
 validation = "strict"

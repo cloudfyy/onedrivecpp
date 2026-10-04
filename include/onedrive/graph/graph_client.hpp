@@ -29,6 +29,7 @@ struct DeviceAuthOptions;
 }
 
 namespace onedrive::http {
+class DownloadRateLimiter;
 class HttpTransport;
 }
 
@@ -278,6 +279,7 @@ private:
     std::unique_ptr<auth::TokenStore> token_store_;
     GraphOptions options_;
     std::unique_ptr<auth::DeviceAuthClient> auth_client_;
+    std::unique_ptr<http::DownloadRateLimiter> download_rate_limiter_;
     SleepFunction sleep_;
     mutable std::mutex access_token_mutex_;
     mutable std::string cached_access_token_;
