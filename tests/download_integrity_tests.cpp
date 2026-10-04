@@ -76,11 +76,9 @@ int test_quick_xor_hash_vectors(const std::filesystem::path& root) {
     return EXIT_SUCCESS;
 }
 
-int test_integrity_verification(const std::filesystem::path& root) {
+int test_integrity_verification() {
     namespace detail = onedrive::sync::detail;
 
-    const auto path = root / "content.bin";
-    write_file(path, "data");
     const std::string sha256{
         "3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7"
     };
@@ -177,9 +175,16 @@ int test_streaming_hashes() {
     }
 
     detail::StreamingDownloadHasher discontinuous;
-    discontinuous.update(1, bytes);
+    discontinuous.update(0, bytes.first(2));
+    discontinuous.update(3, bytes.subspan(2));
     if (discontinuous.finish(contents.size()).has_value()) {
         return fail("discontinuous streamed hashes were accepted");
+    }
+
+    detail::StreamingDownloadHasher wrong_size;
+    wrong_size.update(0, bytes);
+    if (wrong_size.finish(contents.size() + 1).has_value()) {
+        return fail("incomplete streamed hashes were accepted");
     }
 
     detail::StreamingDownloadHasher empty;
@@ -190,6 +195,16 @@ int test_streaming_hashes() {
         empty_hashes->quick_xor !=
             "AAAAAAAAAAAAAAAAAAAAAAAAAAA=") {
         return fail("empty streamed hashes did not match reference values");
+    }
+    try {
+        split.update(0, bytes);
+        return fail("finalized streamed hashes accepted more data");
+    } catch (const std::logic_error&) {
+    }
+    try {
+        static_cast<void>(split.finish(contents.size()));
+        return fail("streamed hashes were finalized more than once");
+    } catch (const std::logic_error&) {
     }
     return EXIT_SUCCESS;
 }
@@ -206,5 +221,5 @@ int main() {
         result != EXIT_SUCCESS) {
         return result;
     }
-    return test_integrity_verification(temporary.path());
+    return test_integrity_verification();
 }
