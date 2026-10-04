@@ -254,6 +254,28 @@ ctest --preset debug
 
 Debug 程序位于 `build/debug/onedrive-cpp`。
 
+### Microsoft Graph 真实 E2E 测试
+
+普通构建不会启用 `e2e` preset。该测试需要专用测试账号或 Drive，并在远端根目录
+预置内容稳定的 fixture。仓库外配置必须已完成认证，且绝不能提交到仓库。runner
+会把状态目录复制到隔离的临时工作区，只清理该副本，然后下载 fixture 两次，
+校验 SHA-256，并确认第二次同步不会替换未变化的本地文件。
+
+```bash
+export ONEDRIVE_E2E_CONFIG=/absolute/path/to/dedicated-e2e.toml
+export ONEDRIVE_E2E_EXPECTED_PATH=fixture/small.bin
+export ONEDRIVE_E2E_EXPECTED_SHA256=<64位小写十六进制值>
+
+cmake --preset e2e
+cmake --build --preset e2e
+ctest --preset e2e -R graph_download_e2e
+```
+
+当前客户端会同步配置 Drive 的全部内容，因此专用 Drive 应只包含可丢弃的测试
+数据。设置 `ONEDRIVE_E2E_ARTIFACT_DIR` 后，失败时会保留命令输出和客户端日志；
+这些诊断信息可能包含远端文件元数据，应按敏感数据保管。临时配置、复制的 token、
+SQLite 状态及下载内容始终会删除。不要让 E2E runner 使用日常状态目录或日常 Drive。
+
 ### C++ Core Guidelines 检查
 
 `lint` preset 会在编译时按照项目的 `.clang-tidy` 策略运行 Clang-Tidy。

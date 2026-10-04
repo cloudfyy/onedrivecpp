@@ -1,3 +1,12 @@
+onedrive-cpp (0.6.27-1~ubuntu24.04) noble; urgency=medium
+
+  * Add an opt-in live Microsoft Graph download E2E preset.
+  * Isolate copied authentication state and verify a pre-provisioned fixture
+    without modifying the configured remote Drive.
+  * Verify repeat synchronization preserves an unchanged downloaded file.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 03:20:07 +0000
+
 onedrive-cpp (0.6.26-1~ubuntu24.04) noble; urgency=medium
 
   * Follow up to five additional redirects for preauthenticated downloads.

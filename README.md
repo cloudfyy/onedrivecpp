@@ -272,6 +272,33 @@ ctest --preset debug
 
 The Debug executable is generated at `build/debug/onedrive-cpp`.
 
+### Live Microsoft Graph E2E test
+
+The `e2e` preset is disabled from normal builds and requires a dedicated test
+account or Drive whose remote root contains a stable fixture. The external
+configuration must already be authenticated and must not be committed. The
+runner copies its state directory into an isolated temporary workspace, clears
+only that copy, downloads the fixture twice, verifies its SHA-256, and confirms
+that the unchanged second synchronization does not replace the local file.
+
+```bash
+export ONEDRIVE_E2E_CONFIG=/absolute/path/to/dedicated-e2e.toml
+export ONEDRIVE_E2E_EXPECTED_PATH=fixture/small.bin
+export ONEDRIVE_E2E_EXPECTED_SHA256=<64-lowercase-hex-digits>
+
+cmake --preset e2e
+cmake --build --preset e2e
+ctest --preset e2e -R graph_download_e2e
+```
+
+The dedicated Drive should contain only disposable test data because the
+client currently synchronizes the complete configured Drive. Set
+`ONEDRIVE_E2E_ARTIFACT_DIR` to retain command output and the client log after a
+failure. These diagnostics may contain remote file metadata and must be handled
+as sensitive data. Configuration, copied tokens, SQLite state, and downloaded
+content are always removed. Never point the E2E runner at a daily-use state or
+Drive.
+
 ### C++ Core Guidelines checks
 
 The lint preset runs Clang-Tidy during compilation with the project
