@@ -379,6 +379,7 @@ drive_id = "me"
 permissions = "private"
 download_concurrency = 4
 download_chunk_threshold_bytes = 8388608
+download_checkpoint_interval_bytes = 1048576
 download_validation = "strict"
 
 # 指定其他 OneDrive 或 SharePoint 文档库
@@ -407,6 +408,10 @@ HTTP 字节范围请求顺序分片下载，并以该值作为单个分片的最
 写盘和记录 checkpoint；请求中断后会从最后一个安全落盘的偏移量继续，而不是
 重新下载整个分片。用户正常取消时，程序也会在停止前可靠写盘并记录已经通过
 Range 响应验证的字节。
+
+`download_checkpoint_interval_bytes` 控制每新增多少下载字节就可靠写盘并记录
+可续传进度。默认值为 `1048576`（1 MiB），且必须大于零。更小的值可以减少
+中断后的重复下载量，但会增加同步写盘和数据库更新开销。
 
 下载进度会聚合所有活动文件，并显示当前平滑传输速率和预计剩余时间；最终进度
 还会显示下载总耗时。JSON 进度事件通过 `bytes_per_second`、

@@ -412,6 +412,7 @@ drive_id = "me"
 permissions = "private"
 download_concurrency = 4
 download_chunk_threshold_bytes = 8388608
+download_checkpoint_interval_bytes = 1048576
 download_connect_timeout_seconds = 30
 download_operation_timeout_seconds = 3600
 download_stall_timeout_seconds = 60
@@ -450,6 +451,12 @@ checkpoints so an interrupted request retries from the last safely stored
 offset instead of the beginning of the chunk. Graceful cancellation also
 flushes and records bytes from an already validated Range response before
 stopping.
+
+`download_checkpoint_interval_bytes` controls how many newly downloaded bytes
+are written durably before resumable progress is recorded. It defaults to
+`1048576` (1 MiB) and must be greater than zero. Smaller values reduce
+re-download work after interruptions but increase synchronization and database
+overhead.
 
 Download transport settings control each file-content request. Connection and
 operation timeouts default to `30` and `3600` seconds. A transfer that remains

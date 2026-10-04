@@ -88,6 +88,9 @@ struct GraphOptions {
     std::uint64_t download_chunk_threshold_bytes{
         std::uint64_t{8} * 1024U * 1024U
     };
+    std::uint64_t download_checkpoint_interval_bytes{
+        std::uint64_t{1024} * 1024U
+    };
     http::DownloadTransportOptions download_transport;
     bool relaxed_download_validation{false};
     bool private_download_permissions{true};

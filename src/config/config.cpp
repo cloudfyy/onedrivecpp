@@ -217,6 +217,8 @@ Config Config::defaults() {
         .download_concurrency = 4,
         .download_chunk_threshold_bytes =
             std::uint64_t{8} * 1024U * 1024U,
+        .download_checkpoint_interval_bytes =
+            std::uint64_t{1024} * 1024U,
         .download_transport = {},
         .download_validation = DownloadValidationMode::strict,
         .sync_permissions = SyncPermissionsMode::private_access,
@@ -270,6 +272,7 @@ Config Config::load(const std::filesystem::path& path) {
                 "dry_run",
                 "download_concurrency",
                 "download_chunk_threshold_bytes",
+                "download_checkpoint_interval_bytes",
                 "download_connect_timeout_seconds",
                 "download_operation_timeout_seconds",
                 "download_stall_timeout_seconds",
@@ -331,6 +334,20 @@ Config Config::load(const std::filesystem::path& path) {
                 );
             }
             config.download_chunk_threshold_bytes = threshold;
+        }
+        if (sync->contains("download_checkpoint_interval_bytes")) {
+            const auto interval = unsigned_value(
+                *sync,
+                "download_checkpoint_interval_bytes",
+                "sync.download_checkpoint_interval_bytes"
+            );
+            if (interval == 0) {
+                throw std::runtime_error(
+                    "sync.download_checkpoint_interval_bytes must be greater "
+                    "than 0"
+                );
+            }
+            config.download_checkpoint_interval_bytes = interval;
         }
         if (sync->contains("download_connect_timeout_seconds")) {
             download_transport.connect_timeout = seconds_value(

@@ -639,6 +639,7 @@ MicrosoftGraphClient::MicrosoftGraphClient(
     }
     const auto& download_transport = options_.download_transport;
     if (options_.download_chunk_threshold_bytes == 0 ||
+        options_.download_checkpoint_interval_bytes == 0 ||
         download_transport.connect_timeout <=
             std::chrono::seconds::zero() ||
         download_transport.operation_timeout <=
@@ -1365,7 +1366,7 @@ void MicrosoftGraphClient::download_file(
                             .maximum_response_size = 0,
                             .download_offset = offset,
                             .download_checkpoint_interval_bytes =
-                                std::uint64_t{1024} * 1024U,
+                                options_.download_checkpoint_interval_bytes,
                             .private_download_permissions =
                                 options_.private_download_permissions,
                             .stop_token = stop_token,

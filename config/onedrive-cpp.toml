@@ -12,6 +12,8 @@ dry_run = true
 download_concurrency = 4
 # Files larger than this value are downloaded in HTTP Range chunks of this size.
 download_chunk_threshold_bytes = 8388608
+# Flush and record resumable download progress after this many new bytes.
+download_checkpoint_interval_bytes = 1048576
 # Connection and per-request transfer limits for file downloads.
 download_connect_timeout_seconds = 30
 download_operation_timeout_seconds = 3600

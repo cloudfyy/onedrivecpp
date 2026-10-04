@@ -255,6 +255,27 @@ int test_invalid_download_transport_options() {
         return fail("invalid Graph download transport options were accepted");
     } catch (const std::invalid_argument&) {
     }
+    try {
+        onedrive::graph::MicrosoftGraphClient client{
+            wrap_transport(
+                std::make_unique<FakeTransport>(
+                    std::deque<onedrive::http::HttpResult>{}
+                )
+            ),
+            wrap_token_store(
+                std::make_unique<FakeTokenStore>(
+                    std::string{"existing-refresh"}
+                )
+            ),
+            auth_options(),
+            {
+                .download_checkpoint_interval_bytes = 0,
+            },
+        };
+        static_cast<void>(client);
+        return fail("zero Graph download checkpoint interval was accepted");
+    } catch (const std::invalid_argument&) {
+    }
     return EXIT_SUCCESS;
 }
 
@@ -1458,6 +1479,7 @@ int test_large_file_chunked_download() {
             .drive_id = "me",
             .endpoint = "https://graph.example.test/v1.0",
             .download_chunk_threshold_bytes = 3,
+            .download_checkpoint_interval_bytes = 2,
         },
         [&sleeps](std::chrono::seconds duration) {
             sleeps.push_back(duration);
@@ -1496,6 +1518,8 @@ int test_large_file_chunked_download() {
         transport_pointer->download_requests[3].headers.back() !=
             "Range: bytes=6-7" ||
         transport_pointer->download_requests[1].download_offset != 3 ||
+        transport_pointer->download_requests[0].
+                download_checkpoint_interval_bytes != 2 ||
         sleeps != std::vector{std::chrono::seconds{0}} ||
         progress !=
             std::vector<std::pair<std::uint64_t, std::uint64_t>>{
