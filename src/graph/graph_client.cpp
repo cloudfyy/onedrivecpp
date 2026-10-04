@@ -650,14 +650,15 @@ MicrosoftGraphClient::MicrosoftGraphClient(
         );
     }
     const auto& download_transport = options_.download_transport;
+    const auto& transfer = download_transport.transfer;
     if (options_.download_chunk_threshold_bytes == 0 ||
         options_.download_checkpoint_interval_bytes == 0 ||
-        download_transport.connect_timeout <=
+        transfer.connect_timeout <=
             std::chrono::seconds::zero() ||
-        download_transport.operation_timeout <=
+        transfer.operation_timeout <=
             std::chrono::seconds::zero() ||
-        download_transport.low_speed_timeout < std::chrono::seconds::zero() ||
-        download_transport.low_speed_limit_bytes_per_second == 0) {
+        transfer.low_speed_timeout < std::chrono::seconds::zero() ||
+        transfer.low_speed_limit_bytes_per_second == 0) {
         throw std::invalid_argument(
             "Microsoft Graph client requires valid download transport options"
         );
@@ -1256,6 +1257,7 @@ void MicrosoftGraphClient::download_file(
     const DownloadData& data
 ) const {
     const auto& download_transport = options_.download_transport;
+    const auto& transfer = download_transport.transfer;
     if (remote_id.empty()) {
         throw std::invalid_argument("cannot download a drive item without an ID");
     }
@@ -1301,7 +1303,7 @@ void MicrosoftGraphClient::download_file(
                         "Authorization: Bearer " + access_token(),
                     },
                     .body = {},
-                    .connect_timeout = download_transport.connect_timeout,
+                    .connect_timeout = transfer.connect_timeout,
                     .operation_timeout = std::chrono::seconds{60},
                     .maximum_response_size = std::size_t{64} * 1024U,
                     .stop_token = stop_token,
@@ -1343,7 +1345,7 @@ void MicrosoftGraphClient::download_file(
     };
     auto location = request_download_url();
     const auto low_speed_limit =
-        download_transport.low_speed_limit_bytes_per_second;
+        transfer.low_speed_limit_bytes_per_second;
     const auto maximum_receive_speed =
         download_transport.maximum_receive_speed_bytes_per_second;
     using DownloadRequest = std::pair<
@@ -1367,19 +1369,19 @@ void MicrosoftGraphClient::download_file(
                             .headers = headers,
                             .body = {},
                             .connect_timeout =
-                                download_transport.connect_timeout,
+                                transfer.connect_timeout,
                             .operation_timeout =
-                                download_transport.operation_timeout,
+                                transfer.operation_timeout,
                             .low_speed_timeout =
-                                download_transport.low_speed_timeout,
+                                transfer.low_speed_timeout,
                             .low_speed_limit_bytes_per_second =
                                 low_speed_limit,
                             .maximum_receive_speed_bytes_per_second =
                                 maximum_receive_speed,
                             .http_version =
-                                download_transport.http_version,
+                                transfer.http_version,
                             .ip_version =
-                                download_transport.ip_version,
+                                transfer.ip_version,
                             .maximum_response_size = 0,
                             .download_offset = offset,
                             .download_checkpoint_interval_bytes =

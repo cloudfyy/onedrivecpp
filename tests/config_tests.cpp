@@ -12,24 +12,26 @@ int main() {
         std::filesystem::temp_directory_path() / "onedrive-cpp-config-test.toml";
     {
         std::ofstream output{path};
-        output << "config_version = 1\n"
+        output << "config_version = 2\n"
                << "[sync]\n"
                << "directory = \"/tmp/OneDrive\"\n"
                << "drive_id = \"test-drive\"\n"
                << "dry_run = true\n"
-               << "download_concurrency = 6\n"
-               << "download_maximum_retries = 3\n"
-               << "download_chunk_threshold_bytes = 4096\n"
-               << "download_checkpoint_interval_bytes = 1024\n"
-               << "download_connect_timeout_seconds = 12\n"
-               << "download_operation_timeout_seconds = 600\n"
-               << "download_stall_timeout_seconds = 15\n"
-               << "download_stall_minimum_bytes_per_second = 128\n"
-               << "download_maximum_rate_bytes_per_second = 1048576\n"
-               << "download_http_version = \"2\"\n"
-               << "download_ip_version = \"6\"\n"
-               << "download_validation = \"relaxed\"\n"
                << "permissions = \"umask\"\n"
+               << "[transfer]\n"
+               << "connect_timeout_seconds = 12\n"
+               << "operation_timeout_seconds = 600\n"
+               << "stall_timeout_seconds = 15\n"
+               << "stall_minimum_bytes_per_second = 128\n"
+               << "http_version = \"2\"\n"
+               << "ip_version = \"6\"\n"
+               << "[download]\n"
+               << "concurrency = 6\n"
+               << "maximum_retries = 3\n"
+               << "chunk_threshold_bytes = 4096\n"
+               << "checkpoint_interval_bytes = 1024\n"
+               << "maximum_rate_bytes_per_second = 1048576\n"
+               << "validation = \"relaxed\"\n"
                << "[state]\n"
                << "directory = \"/tmp/onedrive-state\"\n"
                << "[auth]\n"
@@ -66,25 +68,28 @@ int main() {
         config.download_maximum_retries != 3 ||
         config.download_chunk_threshold_bytes != 4096 ||
         config.download_checkpoint_interval_bytes != 1024 ||
-        config.download_transport.connect_timeout !=
+        config.transfer_transport.connect_timeout !=
             std::chrono::seconds{12} ||
-        config.download_transport.operation_timeout !=
+        config.transfer_transport.operation_timeout !=
             std::chrono::seconds{600} ||
-        config.download_transport.low_speed_timeout !=
+        config.transfer_transport.low_speed_timeout !=
             std::chrono::seconds{15} ||
-        config.download_transport.low_speed_limit_bytes_per_second != 128 ||
-        config.download_transport.
-                maximum_receive_speed_bytes_per_second !=
+        config.transfer_transport.low_speed_limit_bytes_per_second != 128 ||
+        config.download_maximum_rate_bytes_per_second !=
             1'048'576 ||
-        config.download_transport.http_version !=
+        config.transfer_transport.http_version !=
             onedrive::http::HttpVersion::http_2 ||
-        config.download_transport.ip_version !=
+        config.transfer_transport.ip_version !=
             onedrive::http::IpVersion::ipv6 ||
         config.download_validation !=
             onedrive::config::DownloadValidationMode::relaxed ||
         config.sync_permissions !=
             onedrive::config::SyncPermissionsMode::umask ||
-        graph_options.download_transport != config.download_transport ||
+        graph_options.download_transport.transfer !=
+            config.transfer_transport ||
+        graph_options.download_transport.
+                maximum_receive_speed_bytes_per_second !=
+            config.download_maximum_rate_bytes_per_second ||
         graph_options.download_maximum_retries != 3 ||
         graph_options.download_checkpoint_interval_bytes != 1024 ||
         !graph_options.relaxed_download_validation ||
@@ -118,7 +123,7 @@ int main() {
         defaults.sync_permissions !=
             onedrive::config::SyncPermissionsMode::private_access ||
         defaults.download_maximum_retries != 4 ||
-        defaults.download_transport.ip_version !=
+        defaults.transfer_transport.ip_version !=
             onedrive::http::IpVersion::automatic ||
         defaults.download_checkpoint_interval_bytes !=
             std::uint64_t{1024} * 1024U ||
@@ -132,9 +137,9 @@ int main() {
 
     {
         std::ofstream output{path};
-        output << "config_version = 1\n"
-               << "[sync]\n"
-               << "download_validation = \"unsafe\"\n";
+        output << "config_version = 2\n"
+               << "[download]\n"
+               << "validation = \"unsafe\"\n";
     }
     try {
         static_cast<void>(onedrive::config::Config::load(path));
@@ -146,9 +151,9 @@ int main() {
 
     {
         std::ofstream output{path};
-        output << "config_version = 1\n"
-               << "[sync]\n"
-               << "download_ip_version = \"5\"\n";
+        output << "config_version = 2\n"
+               << "[transfer]\n"
+               << "ip_version = \"5\"\n";
     }
     try {
         static_cast<void>(onedrive::config::Config::load(path));
@@ -157,7 +162,7 @@ int main() {
         return EXIT_FAILURE;
     } catch (const std::runtime_error& error) {
         if (!std::string{error.what()}.contains(
-                "sync.download_ip_version"
+                "transfer.ip_version"
             )) {
             std::filesystem::remove(path);
             std::cerr << "invalid download IP version reported wrong error\n";
@@ -167,9 +172,9 @@ int main() {
 
     {
         std::ofstream output{path};
-        output << "config_version = 1\n"
-               << "[sync]\n"
-               << "download_maximum_retries = -1\n";
+        output << "config_version = 2\n"
+               << "[download]\n"
+               << "maximum_retries = -1\n";
     }
     try {
         static_cast<void>(onedrive::config::Config::load(path));
@@ -186,9 +191,9 @@ int main() {
 
     {
         std::ofstream output{path};
-        output << "config_version = 1\n"
-               << "[sync]\n"
-               << "download_checkpoint_interval_bytes = 0\n";
+        output << "config_version = 2\n"
+               << "[download]\n"
+               << "checkpoint_interval_bytes = 0\n";
     }
     try {
         static_cast<void>(onedrive::config::Config::load(path));
@@ -200,7 +205,7 @@ int main() {
 
     {
         std::ofstream output{path};
-        output << "config_version = 1\n"
+        output << "config_version = 2\n"
                << "[sync]\n"
                << "permissions = \"shared\"\n";
     }
@@ -214,7 +219,7 @@ int main() {
 
     {
         std::ofstream output{path};
-        output << "config_version = 1\n"
+        output << "config_version = 2\n"
                << "[graph.throttle]\n"
                << "maximum_retries = \"invalid\"\n";
     }
@@ -228,9 +233,9 @@ int main() {
 
     {
         std::ofstream output{path};
-        output << "config_version = 1\n"
-               << "[sync]\n"
-               << "download_http_version = \"3\"\n";
+        output << "config_version = 2\n"
+               << "[transfer]\n"
+               << "http_version = \"3\"\n";
     }
     try {
         static_cast<void>(onedrive::config::Config::load(path));
@@ -242,9 +247,9 @@ int main() {
 
     {
         std::ofstream output{path};
-        output << "config_version = 1\n"
-               << "[sync]\n"
-               << "download_operation_timeout_seconds = 0\n";
+        output << "config_version = 2\n"
+               << "[transfer]\n"
+               << "operation_timeout_seconds = 0\n";
     }
     try {
         static_cast<void>(onedrive::config::Config::load(path));
@@ -256,9 +261,9 @@ int main() {
 
     {
         std::ofstream output{path};
-        output << "config_version = 1\n"
-               << "[sync]\n"
-               << "download_stall_minimum_bytes_per_second = 0\n";
+        output << "config_version = 2\n"
+               << "[transfer]\n"
+               << "stall_minimum_bytes_per_second = 0\n";
     }
     try {
         static_cast<void>(onedrive::config::Config::load(path));
@@ -270,9 +275,9 @@ int main() {
 
     {
         std::ofstream output{path};
-        output << "config_version = 1\n"
-               << "[sync]\n"
-               << "download_chunk_threshold_bytes = 0\n";
+        output << "config_version = 2\n"
+               << "[download]\n"
+               << "chunk_threshold_bytes = 0\n";
     }
     try {
         static_cast<void>(onedrive::config::Config::load(path));
@@ -284,9 +289,9 @@ int main() {
 
     {
         std::ofstream output{path};
-        output << "config_version = 1\n"
-               << "[sync]\n"
-               << "download_concurrency = 17\n";
+        output << "config_version = 2\n"
+               << "[download]\n"
+               << "concurrency = 17\n";
     }
     try {
         static_cast<void>(onedrive::config::Config::load(path));
@@ -298,9 +303,9 @@ int main() {
 
     {
         std::ofstream output{path};
-        output << "config_version = 1\n"
-               << "[sync]\n"
-               << "download_concurrency = 0\n";
+        output << "config_version = 2\n"
+               << "[download]\n"
+               << "concurrency = 0\n";
     }
     try {
         static_cast<void>(onedrive::config::Config::load(path));
@@ -312,7 +317,7 @@ int main() {
 
     {
         std::ofstream output{path};
-        output << "config_version = 1\n"
+        output << "config_version = 2\n"
                << "[filesystem]\n"
                << "metadata = \"unsupported\"\n";
     }
@@ -326,7 +331,7 @@ int main() {
 
     {
         std::ofstream output{path};
-        output << "config_version = 1\n"
+        output << "config_version = 2\n"
                << "[graph.throttle]\n"
                << "initial_delay_seconds = 10\n"
                << "maximum_delay_seconds = 5\n";
@@ -341,7 +346,7 @@ int main() {
 
     {
         std::ofstream output{path};
-        output << "config_version = 1\n"
+        output << "config_version = 2\n"
                << "[sync]\n"
                << "unknown = true\n";
     }
@@ -349,6 +354,55 @@ int main() {
         static_cast<void>(onedrive::config::Config::load(path));
         std::filesystem::remove(path);
         std::cerr << "unknown TOML configuration key was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error&) {
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[sync]\n"
+               << "download_concurrency = 4\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "legacy version 1 download key was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains(
+                "unknown TOML configuration key 'sync.download_concurrency'"
+            )) {
+            std::filesystem::remove(path);
+            std::cerr << "legacy download key reported wrong error\n";
+            return EXIT_FAILURE;
+        }
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[transfer]\n"
+               << "unknown = true\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "unknown transfer key was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error&) {
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[download]\n"
+               << "unknown = true\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "unknown download key was accepted\n";
         return EXIT_FAILURE;
     } catch (const std::runtime_error&) {
     }
@@ -368,7 +422,26 @@ int main() {
 
     {
         std::ofstream output{path};
-        output << "config_version = 1\n"
+        output << "config_version = 1\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "version 1 TOML configuration was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains(
+                "requires config_version = 2"
+            )) {
+            std::filesystem::remove(path);
+            std::cerr << "version 1 configuration reported wrong error\n";
+            return EXIT_FAILURE;
+        }
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
                << "[auth]\n"
                << "scopes = [\"Files.Read\", 42]\n";
     }
@@ -382,7 +455,7 @@ int main() {
 
     {
         std::ofstream output{path};
-        output << "config_version = 1\n"
+        output << "config_version = 2\n"
                << "[sync\n";
     }
     try {

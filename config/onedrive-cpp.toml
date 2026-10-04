@@ -1,4 +1,4 @@
-config_version = 1
+config_version = 2
 
 [sync]
 # "private" creates files as 0600 and directories as 0700.
@@ -9,28 +9,32 @@ permissions = "private"
 directory = "/home/USER/OneDrive"
 drive_id = "me"
 dry_run = true
-download_concurrency = 4
-# Maximum retries for transient file-content download failures.
-download_maximum_retries = 4
-# Files larger than this value are downloaded in HTTP Range chunks of this size.
-download_chunk_threshold_bytes = 8388608
-# Flush and record resumable download progress after this many new bytes.
-download_checkpoint_interval_bytes = 1048576
-# Connection and per-request transfer limits for file downloads.
-download_connect_timeout_seconds = 30
-download_operation_timeout_seconds = 3600
+
+[transfer]
+# Connection and per-request transfer limits for file content.
+connect_timeout_seconds = 30
+operation_timeout_seconds = 3600
 # Abort transfers below this rate for this many seconds. Set timeout to 0 to disable.
-download_stall_timeout_seconds = 60
-download_stall_minimum_bytes_per_second = 1
-# Zero disables the receive-rate limit.
-download_maximum_rate_bytes_per_second = 0
+stall_timeout_seconds = 60
+stall_minimum_bytes_per_second = 1
 # Supported values: "auto", "1.1", and "2".
-download_http_version = "auto"
+http_version = "auto"
 # Supported values: "auto", "4", and "6".
-download_ip_version = "auto"
+ip_version = "auto"
+
+[download]
+concurrency = 4
+# Maximum retries for transient file-content download failures.
+maximum_retries = 4
+# Files larger than this value are downloaded in HTTP Range chunks of this size.
+chunk_threshold_bytes = 8388608
+# Flush and record resumable download progress after this many new bytes.
+checkpoint_interval_bytes = 1048576
+# Zero disables the receive-rate limit.
+maximum_rate_bytes_per_second = 0
 # "relaxed" accepts SharePoint/AIP/HEIC content whose downloaded size or hash
 # differs from Graph metadata. This weakens integrity guarantees.
-download_validation = "strict"
+validation = "strict"
 
 [state]
 directory = "/home/USER/.local/state/onedrive-cpp"

@@ -538,7 +538,7 @@ int main() {
     const auto log_path = temporary_directory.path() / "onedrive-cpp.log";
     {
         std::ofstream config{config_path};
-        config << "config_version = 1\n"
+        config << "config_version = 2\n"
                << "[sync]\n"
                << "directory = \""
                << sync_path.string()

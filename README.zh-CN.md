@@ -350,8 +350,9 @@ cp /etc/onedrive-cpp/onedrive-cpp.toml ~/.config/onedrive-cpp/config.toml
 sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 ```
 
-配置文件使用 TOML，并且必须声明 `config_version = 1`。未知配置项和错误的
-值类型会直接报错，不会被静默忽略。
+配置文件使用 TOML，并且必须声明 `config_version = 2`。版本 1 配置必须把原来的
+`sync.download_*` 键迁移到下方的 `transfer` 和 `download` 表。未知配置项和错误
+的值类型会直接报错，不会被静默忽略。
 
 执行子命令前，客户端会把 `state.directory` 收紧为仅所有者可访问的 `0700`，
 校验当前账号 token 路径，并在该目录持有独占的 `onedrive-cpp.lock`。第二个
@@ -377,14 +378,25 @@ sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 # 当前账号的默认 OneDrive
 drive_id = "me"
 permissions = "private"
-download_concurrency = 4
-download_maximum_retries = 4
-download_chunk_threshold_bytes = 8388608
-download_checkpoint_interval_bytes = 1048576
-download_validation = "strict"
 
 # 指定其他 OneDrive 或 SharePoint 文档库
 # drive_id = "b!YOUR_DRIVE_ID"
+
+[transfer]
+connect_timeout_seconds = 30
+operation_timeout_seconds = 3600
+stall_timeout_seconds = 60
+stall_minimum_bytes_per_second = 1
+http_version = "auto"
+ip_version = "auto"
+
+[download]
+concurrency = 4
+maximum_retries = 4
+chunk_threshold_bytes = 8388608
+checkpoint_interval_bytes = 1048576
+maximum_rate_bytes_per_second = 0
+validation = "strict"
 ```
 
 `graph.endpoint` 用于选择 Microsoft Graph 云端点，默认使用全球服务，并不与
@@ -399,11 +411,11 @@ endpoint = "https://login.chinacloudapi.cn"
 endpoint = "https://microsoftgraph.chinacloudapi.cn/v1.0"
 ```
 
-`download_concurrency` 控制可同时下载的文件数量，默认值为 `4`，允许范围为
+`download.concurrency` 控制可同时下载的文件数量，默认值为 `4`，允许范围为
 `1` 到 `16`。指向同一规范化本地路径的下载始终会串行执行，包括常见的仅
 ASCII 大小写不同的路径；无关目标仍可并发下载。
 
-`download_chunk_threshold_bytes` 设置大文件阈值（字节）。超过该值的文件会通过
+`download.chunk_threshold_bytes` 设置大文件阈值（字节）。超过该值的文件会通过
 HTTP 字节范围请求顺序分片下载，并以该值作为单个分片的最大大小。默认值为
 `8388608`（8 MiB），且必须大于零。等于或小于阈值的文件仍使用单次请求。
 程序会在写入响应正文前验证 Range 响应元数据；单请求和宽松下载也会先拒绝
@@ -412,16 +424,16 @@ HTTP 字节范围请求顺序分片下载，并以该值作为单个分片的最
 偏移量继续，而不是重新下载整个分片。用户正常取消时，程序也会在停止前可靠
 写盘并记录已经通过 Range 响应验证的字节。
 
-`download_checkpoint_interval_bytes` 控制每新增多少下载字节就可靠写盘并记录
+`download.checkpoint_interval_bytes` 控制每新增多少下载字节就可靠写盘并记录
 可续传进度。默认值为 `1048576`（1 MiB），且必须大于零。更小的值可以减少
 中断后的重复下载量，但会增加同步写盘和数据库更新开销。
 
-`download_maximum_retries` 控制文件内容请求遇到临时 HTTP 或传输错误后的最大
+`download.maximum_retries` 控制文件内容请求遇到临时 HTTP 或传输错误后的最大
 重试次数。默认值为 `4`；设为 `0` 可禁用文件内容重试。它独立于
 `graph.throttle.maximum_retries`，后者仍控制 Microsoft Graph API 请求重试。
 下载重试继续使用 Graph 的退避延迟配置。
 
-`download_ip_version` 接受 `"auto"`、`"4"` 或 `"6"`，默认值为 `"auto"`。
+`transfer.ip_version` 接受 `"auto"`、`"4"` 或 `"6"`，默认值为 `"auto"`。
 强制指定地址族可绕过异常的 IPv6 或 IPv4 路由，但下载主机在该地址族下没有
 可用地址时，请求会明确失败。
 
@@ -435,7 +447,7 @@ HTTP 字节范围请求顺序分片下载，并以该值作为单个分片的最
 还会显示下载总耗时。JSON 进度事件通过 `bytes_per_second`、
 `estimated_seconds_remaining` 和 `elapsed_milliseconds` 提供相同指标。
 
-`download_validation` 默认为 `"strict"`，要求下载大小以及 Graph 提供的内容哈希
+`download.validation` 默认为 `"strict"`，要求下载大小以及 Graph 提供的内容哈希
 与远端元数据一致。部分 SharePoint、Azure Information Protection（AIP）和
 HEIC 文件实际下载的字节可能与 Graph 元数据不同；`"relaxed"` 会接受这类文件，
 但会禁用断点续传、分块下载和远端大小/哈希校验。HTTP 成功状态、可靠写盘、

@@ -181,7 +181,7 @@ http::HttpVersion parse_http_version(std::string_view value) {
         return http::HttpVersion::http_2;
     }
     throw std::runtime_error(
-        "invalid TOML configuration value for 'sync.download_http_version'"
+        "invalid TOML configuration value for 'transfer.http_version'"
     );
 }
 
@@ -196,7 +196,7 @@ http::IpVersion parse_ip_version(std::string_view value) {
         return http::IpVersion::ipv6;
     }
     throw std::runtime_error(
-        "invalid TOML configuration value for 'sync.download_ip_version'"
+        "invalid TOML configuration value for 'transfer.ip_version'"
     );
 }
 
@@ -208,7 +208,7 @@ DownloadValidationMode parse_download_validation(std::string_view value) {
         return DownloadValidationMode::relaxed;
     }
     throw std::runtime_error(
-        "invalid TOML configuration value for 'sync.download_validation'"
+        "invalid TOML configuration value for 'download.validation'"
     );
 }
 
@@ -250,7 +250,8 @@ Config Config::defaults() {
             std::uint64_t{8} * 1024U * 1024U,
         .download_checkpoint_interval_bytes =
             std::uint64_t{1024} * 1024U,
-        .download_transport = {},
+        .transfer_transport = {},
+        .download_maximum_rate_bytes_per_second = 0,
         .download_validation = DownloadValidationMode::strict,
         .sync_permissions = SyncPermissionsMode::private_access,
         .filesystem_metadata = FilesystemMetadataMode::automatic,
@@ -278,7 +279,16 @@ Config Config::load(const std::filesystem::path& path) {
 
     validate_keys(
         root,
-        {"config_version", "sync", "state", "auth", "graph", "filesystem"},
+        {
+            "config_version",
+            "sync",
+            "transfer",
+            "download",
+            "state",
+            "auth",
+            "graph",
+            "filesystem",
+        },
         ""
     );
     const auto config_version = optional_value<std::int64_t>(
@@ -287,32 +297,19 @@ Config Config::load(const std::filesystem::path& path) {
         "config_version",
         "an integer"
     );
-    if (!config_version || *config_version != 1) {
+    if (!config_version || *config_version != 2) {
         throw std::runtime_error(
-            "TOML configuration requires config_version = 1"
+            "TOML configuration requires config_version = 2"
         );
     }
 
     if (const auto* sync = optional_table(root, "sync", "sync")) {
-        auto& download_transport = config.download_transport;
         validate_keys(
             *sync,
             {
                 "directory",
                 "drive_id",
                 "dry_run",
-                "download_concurrency",
-                "download_maximum_retries",
-                "download_chunk_threshold_bytes",
-                "download_checkpoint_interval_bytes",
-                "download_connect_timeout_seconds",
-                "download_operation_timeout_seconds",
-                "download_stall_timeout_seconds",
-                "download_stall_minimum_bytes_per_second",
-                "download_maximum_rate_bytes_per_second",
-                "download_http_version",
-                "download_ip_version",
-                "download_validation",
                 "permissions",
             },
             "sync"
@@ -341,142 +338,6 @@ Config Config::load(const std::filesystem::path& path) {
             )) {
             config.dry_run = *value;
         }
-        if (sync->contains("download_concurrency")) {
-            const auto concurrency = unsigned_value(
-                *sync,
-                "download_concurrency",
-                "sync.download_concurrency"
-            );
-            if (concurrency < 1 || concurrency > 16) {
-                throw std::runtime_error(
-                    "sync.download_concurrency must be between 1 and 16"
-                );
-            }
-            config.download_concurrency =
-                static_cast<std::size_t>(concurrency);
-        }
-        if (sync->contains("download_maximum_retries")) {
-            config.download_maximum_retries = size_value(
-                *sync,
-                "download_maximum_retries",
-                "sync.download_maximum_retries"
-            );
-        }
-        if (sync->contains("download_chunk_threshold_bytes")) {
-            const auto threshold = unsigned_value(
-                *sync,
-                "download_chunk_threshold_bytes",
-                "sync.download_chunk_threshold_bytes"
-            );
-            if (threshold == 0) {
-                throw std::runtime_error(
-                    "sync.download_chunk_threshold_bytes must be greater than 0"
-                );
-            }
-            config.download_chunk_threshold_bytes = threshold;
-        }
-        if (sync->contains("download_checkpoint_interval_bytes")) {
-            const auto interval = unsigned_value(
-                *sync,
-                "download_checkpoint_interval_bytes",
-                "sync.download_checkpoint_interval_bytes"
-            );
-            if (interval == 0) {
-                throw std::runtime_error(
-                    "sync.download_checkpoint_interval_bytes must be greater "
-                    "than 0"
-                );
-            }
-            config.download_checkpoint_interval_bytes = interval;
-        }
-        if (sync->contains("download_connect_timeout_seconds")) {
-            download_transport.connect_timeout = seconds_value(
-                *sync,
-                "download_connect_timeout_seconds",
-                "sync.download_connect_timeout_seconds"
-            );
-            if (download_transport.connect_timeout ==
-                std::chrono::seconds::zero()) {
-                throw std::runtime_error(
-                    "sync.download_connect_timeout_seconds must be greater "
-                    "than 0"
-                );
-            }
-        }
-        if (sync->contains("download_operation_timeout_seconds")) {
-            download_transport.operation_timeout = seconds_value(
-                *sync,
-                "download_operation_timeout_seconds",
-                "sync.download_operation_timeout_seconds"
-            );
-            if (download_transport.operation_timeout ==
-                std::chrono::seconds::zero()) {
-                throw std::runtime_error(
-                    "sync.download_operation_timeout_seconds must be greater "
-                    "than 0"
-                );
-            }
-        }
-        if (sync->contains("download_stall_timeout_seconds")) {
-            download_transport.low_speed_timeout = seconds_value(
-                *sync,
-                "download_stall_timeout_seconds",
-                "sync.download_stall_timeout_seconds"
-            );
-        }
-        if (sync->contains(
-                "download_stall_minimum_bytes_per_second"
-            )) {
-            download_transport.low_speed_limit_bytes_per_second =
-                unsigned_value(
-                    *sync,
-                    "download_stall_minimum_bytes_per_second",
-                    "sync.download_stall_minimum_bytes_per_second"
-                );
-            if (download_transport.low_speed_limit_bytes_per_second == 0) {
-                throw std::runtime_error(
-                    "sync.download_stall_minimum_bytes_per_second must be "
-                    "greater than 0"
-                );
-            }
-        }
-        if (sync->contains(
-                "download_maximum_rate_bytes_per_second"
-            )) {
-            download_transport.maximum_receive_speed_bytes_per_second =
-                unsigned_value(
-                    *sync,
-                    "download_maximum_rate_bytes_per_second",
-                    "sync.download_maximum_rate_bytes_per_second"
-                );
-        }
-        if (const auto value = optional_value<std::string>(
-                *sync,
-                "download_http_version",
-                "sync.download_http_version",
-                "a string"
-            )) {
-            download_transport.http_version =
-                parse_http_version(*value);
-        }
-        if (const auto value = optional_value<std::string>(
-                *sync,
-                "download_ip_version",
-                "sync.download_ip_version",
-                "a string"
-            )) {
-            download_transport.ip_version =
-                parse_ip_version(*value);
-        }
-        if (const auto value = optional_value<std::string>(
-                *sync,
-                "download_validation",
-                "sync.download_validation",
-                "a string"
-            )) {
-            config.download_validation =
-                parse_download_validation(*value);
-        }
         if (const auto value = optional_value<std::string>(
                 *sync,
                 "permissions",
@@ -484,6 +345,163 @@ Config Config::load(const std::filesystem::path& path) {
                 "a string"
             )) {
             config.sync_permissions = parse_sync_permissions(*value);
+        }
+    }
+
+    if (const auto* transfer =
+            optional_table(root, "transfer", "transfer")) {
+        auto& options = config.transfer_transport;
+        validate_keys(
+            *transfer,
+            {
+                "connect_timeout_seconds",
+                "operation_timeout_seconds",
+                "stall_timeout_seconds",
+                "stall_minimum_bytes_per_second",
+                "http_version",
+                "ip_version",
+            },
+            "transfer"
+        );
+        if (transfer->contains("connect_timeout_seconds")) {
+            options.connect_timeout = seconds_value(
+                *transfer,
+                "connect_timeout_seconds",
+                "transfer.connect_timeout_seconds"
+            );
+            if (options.connect_timeout == std::chrono::seconds::zero()) {
+                throw std::runtime_error(
+                    "transfer.connect_timeout_seconds must be greater than 0"
+                );
+            }
+        }
+        if (transfer->contains("operation_timeout_seconds")) {
+            options.operation_timeout = seconds_value(
+                *transfer,
+                "operation_timeout_seconds",
+                "transfer.operation_timeout_seconds"
+            );
+            if (options.operation_timeout == std::chrono::seconds::zero()) {
+                throw std::runtime_error(
+                    "transfer.operation_timeout_seconds must be greater than 0"
+                );
+            }
+        }
+        if (transfer->contains("stall_timeout_seconds")) {
+            options.low_speed_timeout = seconds_value(
+                *transfer,
+                "stall_timeout_seconds",
+                "transfer.stall_timeout_seconds"
+            );
+        }
+        if (transfer->contains("stall_minimum_bytes_per_second")) {
+            options.low_speed_limit_bytes_per_second = unsigned_value(
+                *transfer,
+                "stall_minimum_bytes_per_second",
+                "transfer.stall_minimum_bytes_per_second"
+            );
+            if (options.low_speed_limit_bytes_per_second == 0) {
+                throw std::runtime_error(
+                    "transfer.stall_minimum_bytes_per_second must be greater "
+                    "than 0"
+                );
+            }
+        }
+        if (const auto value = optional_value<std::string>(
+                *transfer,
+                "http_version",
+                "transfer.http_version",
+                "a string"
+            )) {
+            options.http_version = parse_http_version(*value);
+        }
+        if (const auto value = optional_value<std::string>(
+                *transfer,
+                "ip_version",
+                "transfer.ip_version",
+                "a string"
+            )) {
+            options.ip_version = parse_ip_version(*value);
+        }
+    }
+
+    if (const auto* download =
+            optional_table(root, "download", "download")) {
+        validate_keys(
+            *download,
+            {
+                "concurrency",
+                "maximum_retries",
+                "chunk_threshold_bytes",
+                "checkpoint_interval_bytes",
+                "maximum_rate_bytes_per_second",
+                "validation",
+            },
+            "download"
+        );
+        if (download->contains("concurrency")) {
+            const auto concurrency = unsigned_value(
+                *download,
+                "concurrency",
+                "download.concurrency"
+            );
+            if (concurrency < 1 || concurrency > 16) {
+                throw std::runtime_error(
+                    "download.concurrency must be between 1 and 16"
+                );
+            }
+            config.download_concurrency =
+                static_cast<std::size_t>(concurrency);
+        }
+        if (download->contains("maximum_retries")) {
+            config.download_maximum_retries = size_value(
+                *download,
+                "maximum_retries",
+                "download.maximum_retries"
+            );
+        }
+        if (download->contains("chunk_threshold_bytes")) {
+            const auto threshold = unsigned_value(
+                *download,
+                "chunk_threshold_bytes",
+                "download.chunk_threshold_bytes"
+            );
+            if (threshold == 0) {
+                throw std::runtime_error(
+                    "download.chunk_threshold_bytes must be greater than 0"
+                );
+            }
+            config.download_chunk_threshold_bytes = threshold;
+        }
+        if (download->contains("checkpoint_interval_bytes")) {
+            const auto interval = unsigned_value(
+                *download,
+                "checkpoint_interval_bytes",
+                "download.checkpoint_interval_bytes"
+            );
+            if (interval == 0) {
+                throw std::runtime_error(
+                    "download.checkpoint_interval_bytes must be greater than 0"
+                );
+            }
+            config.download_checkpoint_interval_bytes = interval;
+        }
+        if (download->contains("maximum_rate_bytes_per_second")) {
+            config.download_maximum_rate_bytes_per_second =
+                unsigned_value(
+                    *download,
+                    "maximum_rate_bytes_per_second",
+                    "download.maximum_rate_bytes_per_second"
+                );
+        }
+        if (const auto value = optional_value<std::string>(
+                *download,
+                "validation",
+                "download.validation",
+                "a string"
+            )) {
+            config.download_validation =
+                parse_download_validation(*value);
         }
     }
 

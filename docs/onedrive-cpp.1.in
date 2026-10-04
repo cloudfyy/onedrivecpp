@@ -184,9 +184,16 @@ command, display the effective synchronization inputs without modifying
 remote files.
 .SH CONFIGURATION
 The configuration file uses TOML and must declare
-.BR "config_version = 1" .
+.BR "config_version = 2" .
 Unknown keys, invalid types, and unsupported configuration versions are
 rejected.
+Version 1 configuration files must move the former
+.B sync.download_*
+keys into the
+.B transfer
+and
+.B download
+tables.
 .PP
 Before a command runs, the state directory is restricted to mode 0700 and an
 exclusive
@@ -268,20 +275,20 @@ Maximum accepted or calculated Graph throttling delay. The default is
 seconds. This value must be greater than or equal to
 .BR graph.throttle.initial_delay_seconds .
 .TP
-.B sync.download_maximum_retries
+.B download.maximum_retries
 Maximum number of retries for a file-content request after a transient HTTP or
 transport failure. The default is
 .BR 4 ;
 zero disables file-content retries. Download retries use the Graph backoff
 delay settings.
 .TP
-.B sync.download_chunk_threshold_bytes
+.B download.chunk_threshold_bytes
 Files larger than this value use sequential HTTP Range requests with this
 maximum chunk size. The default is
 .B 8388608
 bytes and the value must be greater than zero.
 .TP
-.B sync.download_checkpoint_interval_bytes
+.B download.checkpoint_interval_bytes
 Flush and record resumable download progress after this many newly downloaded
 bytes. The default is
 .B 1048576
@@ -289,33 +296,33 @@ bytes and the value must be greater than zero. Smaller values reduce repeated
 downloads after interruption but increase synchronization and database
 overhead.
 .TP
-.B sync.download_connect_timeout_seconds
+.B transfer.connect_timeout_seconds
 Connection timeout for each file download request. The default is
 .B 30
 seconds and the value must be greater than zero.
 .TP
-.B sync.download_operation_timeout_seconds
+.B transfer.operation_timeout_seconds
 Maximum duration of each file download request. The default is
 .B 3600
 seconds and the value must be greater than zero.
 .TP
-.B sync.download_stall_timeout_seconds
+.B transfer.stall_timeout_seconds
 Abort a download that remains below the configured minimum rate for this many
 seconds. The default is
 .BR 60 ;
 zero disables stall detection.
 .TP
-.B sync.download_stall_minimum_bytes_per_second
+.B transfer.stall_minimum_bytes_per_second
 Minimum transfer rate used by stall detection. The default is
 .B 1
 byte per second and the value must be greater than zero.
 .TP
-.B sync.download_maximum_rate_bytes_per_second
+.B download.maximum_rate_bytes_per_second
 Maximum receive rate for each download. The default is
 .BR 0 ,
 which disables rate limiting.
 .TP
-.B sync.download_http_version
+.B transfer.http_version
 HTTP version preference for file downloads:
 .BR auto ,
 .BR 1.1 ,
@@ -324,7 +331,7 @@ or
 The default is
 .BR auto .
 .TP
-.B sync.download_ip_version
+.B transfer.ip_version
 IP address family for file-content requests:
 .BR auto ,
 .BR 4 ,
@@ -335,7 +342,7 @@ The default is
 Forcing an address family can work around broken IPv6 or IPv4 routing, but the
 request fails when the download host has no address in that family.
 .TP
-.B sync.download_validation
+.B download.validation
 Remote metadata validation policy:
 .B strict
 requires the downloaded size and any Graph-provided content hash to match;

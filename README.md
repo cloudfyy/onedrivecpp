@@ -377,8 +377,10 @@ cp /etc/onedrive-cpp/onedrive-cpp.toml ~/.config/onedrive-cpp/config.toml
 sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 ```
 
-Configuration files use TOML and must declare `config_version = 1`. Unknown
-keys and invalid value types are rejected instead of being silently ignored.
+Configuration files use TOML and must declare `config_version = 2`. Version 1
+files must move their former `sync.download_*` keys into the `transfer` and
+`download` tables shown below. Unknown keys and invalid value types are
+rejected instead of being silently ignored.
 
 Before running a command, the client secures `state.directory` to owner-only
 `0700`, validates the active account token path, and acquires an exclusive
@@ -410,21 +412,25 @@ For example:
 # Default OneDrive of the signed-in user
 drive_id = "me"
 permissions = "private"
-download_concurrency = 4
-download_maximum_retries = 4
-download_chunk_threshold_bytes = 8388608
-download_checkpoint_interval_bytes = 1048576
-download_connect_timeout_seconds = 30
-download_operation_timeout_seconds = 3600
-download_stall_timeout_seconds = 60
-download_stall_minimum_bytes_per_second = 1
-download_maximum_rate_bytes_per_second = 0
-download_http_version = "auto"
-download_ip_version = "auto"
-download_validation = "strict"
 
 # Another OneDrive or SharePoint document library
 # drive_id = "b!YOUR_DRIVE_ID"
+
+[transfer]
+connect_timeout_seconds = 30
+operation_timeout_seconds = 3600
+stall_timeout_seconds = 60
+stall_minimum_bytes_per_second = 1
+http_version = "auto"
+ip_version = "auto"
+
+[download]
+concurrency = 4
+maximum_retries = 4
+chunk_threshold_bytes = 8388608
+checkpoint_interval_bytes = 1048576
+maximum_rate_bytes_per_second = 0
+validation = "strict"
 ```
 
 `graph.endpoint` selects the Microsoft Graph cloud endpoint and defaults to
@@ -440,13 +446,13 @@ endpoint = "https://login.chinacloudapi.cn"
 endpoint = "https://microsoftgraph.chinacloudapi.cn/v1.0"
 ```
 
-`download_concurrency` controls how many files can be downloaded at the same
+`download.concurrency` controls how many files can be downloaded at the same
 time. It defaults to `4` and accepts values from `1` through `16`. Downloads
 targeting the same normalized local path are always serialized, including
 common ASCII case-only path variants, while unrelated destinations remain
 concurrent.
 
-`download_chunk_threshold_bytes` sets the large-file threshold in bytes. Files
+`download.chunk_threshold_bytes` sets the large-file threshold in bytes. Files
 larger than this value are downloaded sequentially with HTTP byte-range
 requests, using the same value as the maximum chunk size. It defaults to
 `8388608` (8 MiB) and must be greater than zero. Files at or below the
@@ -459,26 +465,28 @@ offset instead of the beginning of the chunk. Graceful cancellation also
 flushes and records bytes from an already validated Range response before
 stopping.
 
-`download_checkpoint_interval_bytes` controls how many newly downloaded bytes
+`download.checkpoint_interval_bytes` controls how many newly downloaded bytes
 are written durably before resumable progress is recorded. It defaults to
 `1048576` (1 MiB) and must be greater than zero. Smaller values reduce
 re-download work after interruptions but increase synchronization and database
 overhead.
 
-`download_maximum_retries` controls how many times a file-content request is
+`download.maximum_retries` controls how many times a file-content request is
 retried after a transient HTTP or transport failure. It defaults to `4`;
 `0` disables file-content retries. This is independent of
 `graph.throttle.maximum_retries`, which continues to control Microsoft Graph
 API request retries. Download retries use the Graph backoff delay settings.
 
-Download transport settings control each file-content request. Connection and
-operation timeouts default to `30` and `3600` seconds. A transfer that remains
-below `download_stall_minimum_bytes_per_second` (default `1`) for
-`download_stall_timeout_seconds` (default `60`) is aborted; set the stall
-timeout to `0` to disable this check. `download_maximum_rate_bytes_per_second`
-defaults to `0`, meaning unlimited. `download_http_version` accepts `"auto"`,
-`"1.1"`, or `"2"`; HTTP/2 is negotiated over TLS and may fall back according
-to libcurl capabilities. `download_ip_version` accepts `"auto"`, `"4"`, or
+Shared `transfer` settings control each file-content request and are also
+intended for future uploads. Connection and operation timeouts default to `30`
+and `3600` seconds. A transfer that remains below
+`transfer.stall_minimum_bytes_per_second` (default `1`) for
+`transfer.stall_timeout_seconds` (default `60`) is aborted; set the stall
+timeout to `0` to disable this check.
+`download.maximum_rate_bytes_per_second` defaults to `0`, meaning unlimited.
+`transfer.http_version` accepts `"auto"`, `"1.1"`, or `"2"`; HTTP/2 is
+negotiated over TLS and may fall back according to libcurl capabilities.
+`transfer.ip_version` accepts `"auto"`, `"4"`, or
 `"6"` and defaults to `"auto"`; forcing an address family can work around
 broken IPv6 or IPv4 routing, but fails when the download host has no address in
 that family. Each download worker safely reuses its reset libcurl easy handle,
@@ -495,7 +503,7 @@ the total elapsed download time. JSON progress events expose the same values as
 `bytes_per_second`, `estimated_seconds_remaining`, and
 `elapsed_milliseconds`.
 
-`download_validation` defaults to `"strict"`, which requires downloaded size
+`download.validation` defaults to `"strict"`, which requires downloaded size
 and any Graph-provided content hash to match the remote metadata. Some
 SharePoint, Azure Information Protection (AIP), and HEIC files are served with
 bytes that differ from their Graph metadata. `"relaxed"` accepts those files,

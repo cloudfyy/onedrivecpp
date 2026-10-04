@@ -251,7 +251,9 @@ int test_invalid_download_transport_options() {
             auth_options(),
             {
                 .download_transport = {
-                    .connect_timeout = std::chrono::seconds::zero(),
+                    .transfer = {
+                        .connect_timeout = std::chrono::seconds::zero(),
+                    },
                 },
             },
         };
@@ -963,13 +965,15 @@ int test_file_download_redirect() {
             .drive_id = "drive id",
             .endpoint = "https://graph.example.test/v1.0",
             .download_transport = {
-                .connect_timeout = std::chrono::seconds{12},
-                .operation_timeout = std::chrono::seconds{600},
-                .low_speed_timeout = std::chrono::seconds{15},
-                .low_speed_limit_bytes_per_second = 128,
+                .transfer = {
+                    .connect_timeout = std::chrono::seconds{12},
+                    .operation_timeout = std::chrono::seconds{600},
+                    .low_speed_timeout = std::chrono::seconds{15},
+                    .low_speed_limit_bytes_per_second = 128,
+                    .http_version = onedrive::http::HttpVersion::http_2,
+                    .ip_version = onedrive::http::IpVersion::ipv4,
+                },
                 .maximum_receive_speed_bytes_per_second = 1'048'576,
-                .http_version = onedrive::http::HttpVersion::http_2,
-                .ip_version = onedrive::http::IpVersion::ipv4,
             },
         },
     };
