@@ -198,17 +198,39 @@ endif()
 if(BUILD_TESTING)
     find_program(BASH_EXECUTABLE bash REQUIRED)
 
-    add_executable(account_state_tests tests/account_state_tests.cpp)
-    target_link_libraries(account_state_tests PRIVATE onedrive_core)
-    add_test(NAME account_state_tests COMMAND account_state_tests)
+    function(add_onedrive_test target)
+        cmake_parse_arguments(
+            TEST
+            ""
+            ""
+            "SOURCES;INCLUDE_DIRS;LIBRARIES"
+            ${ARGN}
+        )
+        if(NOT TEST_SOURCES)
+            message(FATAL_ERROR "${target} requires at least one source")
+        endif()
+        add_executable(${target} ${TEST_SOURCES})
+        target_link_libraries(
+            ${target}
+            PRIVATE
+                onedrive_core
+                ${TEST_LIBRARIES}
+        )
+        if(TEST_INCLUDE_DIRS)
+            target_include_directories(
+                ${target}
+                PRIVATE ${TEST_INCLUDE_DIRS}
+            )
+        endif()
+        add_test(NAME ${target} COMMAND ${target})
+    endfunction()
 
-    add_executable(config_tests tests/config_tests.cpp)
-    target_link_libraries(config_tests PRIVATE onedrive_core)
-    add_test(NAME config_tests COMMAND config_tests)
-
-    add_executable(console_tests tests/console_tests.cpp)
-    target_link_libraries(console_tests PRIVATE onedrive_core)
-    add_test(NAME console_tests COMMAND console_tests)
+    add_onedrive_test(
+        account_state_tests
+        SOURCES tests/account_state_tests.cpp
+    )
+    add_onedrive_test(config_tests SOURCES tests/config_tests.cpp)
+    add_onedrive_test(console_tests SOURCES tests/console_tests.cpp)
 
     add_test(
         NAME bash_completion_tests
@@ -218,164 +240,89 @@ if(BUILD_TESTING)
             ${CMAKE_CURRENT_SOURCE_DIR}/packaging/completions/onedrive-cpp.bash
     )
 
-    add_executable(item_database_tests tests/item_database_tests.cpp)
-    target_link_libraries(item_database_tests PRIVATE onedrive_core)
-    add_test(NAME item_database_tests COMMAND item_database_tests)
-
-    add_executable(device_auth_tests tests/device_auth_tests.cpp)
-    target_link_libraries(device_auth_tests PRIVATE onedrive_core)
-    add_test(NAME device_auth_tests COMMAND device_auth_tests)
-
-    add_executable(http_client_tests tests/http_client_tests.cpp)
-    target_link_libraries(
+    add_onedrive_test(
+        item_database_tests
+        SOURCES tests/item_database_tests.cpp
+    )
+    add_onedrive_test(
+        device_auth_tests
+        SOURCES tests/device_auth_tests.cpp
+    )
+    add_onedrive_test(
         http_client_tests
-        PRIVATE
-            onedrive_core
-            spdlog::spdlog
+        SOURCES tests/http_client_tests.cpp
+        LIBRARIES spdlog::spdlog
     )
-    add_test(NAME http_client_tests COMMAND http_client_tests)
-
-    add_executable(
+    add_onedrive_test(
         download_rate_limiter_tests
-        tests/download_rate_limiter_tests.cpp
+        SOURCES tests/download_rate_limiter_tests.cpp
     )
-    target_link_libraries(download_rate_limiter_tests PRIVATE onedrive_core)
-    add_test(
-        NAME download_rate_limiter_tests
-        COMMAND download_rate_limiter_tests
+    add_onedrive_test(
+        proxy_client_tests
+        SOURCES tests/proxy_client_tests.cpp
     )
-
-    add_executable(proxy_client_tests tests/proxy_client_tests.cpp)
-    target_link_libraries(proxy_client_tests PRIVATE onedrive_core)
-    add_test(NAME proxy_client_tests COMMAND proxy_client_tests)
-
-    add_executable(graph_client_tests tests/graph_client_tests.cpp)
-    target_link_libraries(graph_client_tests PRIVATE onedrive_core)
-    add_test(NAME graph_client_tests COMMAND graph_client_tests)
-
-    add_executable(application_cli_tests tests/application_cli_tests.cpp)
-    target_link_libraries(application_cli_tests PRIVATE onedrive_core)
-    add_test(NAME application_cli_tests COMMAND application_cli_tests)
-
-    add_executable(
+    add_onedrive_test(
+        graph_client_tests
+        SOURCES tests/graph_client_tests.cpp
+    )
+    add_onedrive_test(
+        application_cli_tests
+        SOURCES tests/application_cli_tests.cpp
+    )
+    add_onedrive_test(
         runtime_preflight_tests
-        tests/runtime_preflight_tests.cpp
+        SOURCES tests/runtime_preflight_tests.cpp
+        INCLUDE_DIRS src/app
     )
-    target_include_directories(
-        runtime_preflight_tests
-        PRIVATE src/app
+    add_onedrive_test(
+        sync_engine_tests
+        SOURCES tests/sync_engine_tests.cpp
     )
-    target_link_libraries(runtime_preflight_tests PRIVATE onedrive_core)
-    add_test(NAME runtime_preflight_tests COMMAND runtime_preflight_tests)
-
-    add_executable(sync_engine_tests tests/sync_engine_tests.cpp)
-    target_link_libraries(sync_engine_tests PRIVATE onedrive_core)
-    add_test(NAME sync_engine_tests COMMAND sync_engine_tests)
-
-    add_executable(
+    add_onedrive_test(
         local_filesystem_tests
-        tests/local_filesystem_tests.cpp
+        SOURCES tests/local_filesystem_tests.cpp
+        INCLUDE_DIRS src/sync
     )
-    target_include_directories(
-        local_filesystem_tests
-        PRIVATE src/sync
-    )
-    target_link_libraries(local_filesystem_tests PRIVATE onedrive_core)
-    add_test(NAME local_filesystem_tests COMMAND local_filesystem_tests)
-
-    add_executable(
+    add_onedrive_test(
         filesystem_metadata_tests
-        tests/filesystem_metadata_tests.cpp
+        SOURCES tests/filesystem_metadata_tests.cpp
+        INCLUDE_DIRS src/sync
     )
-    target_include_directories(
-        filesystem_metadata_tests
-        PRIVATE src/sync
+    add_onedrive_test(
+        sync_plan_tests
+        SOURCES tests/sync_plan_tests.cpp
+        INCLUDE_DIRS src/sync
     )
-    target_link_libraries(filesystem_metadata_tests PRIVATE onedrive_core)
-    add_test(NAME filesystem_metadata_tests COMMAND filesystem_metadata_tests)
-
-    add_executable(sync_plan_tests tests/sync_plan_tests.cpp)
-    target_include_directories(sync_plan_tests PRIVATE src/sync)
-    target_link_libraries(sync_plan_tests PRIVATE onedrive_core)
-    add_test(NAME sync_plan_tests COMMAND sync_plan_tests)
-
-    add_executable(
+    add_onedrive_test(
         selective_sync_tests
-        tests/selective_sync_tests.cpp
+        SOURCES tests/selective_sync_tests.cpp
+        INCLUDE_DIRS src/sync
     )
-    target_include_directories(
-        selective_sync_tests
-        PRIVATE src/sync
-    )
-    target_link_libraries(selective_sync_tests PRIVATE onedrive_core)
-    add_test(NAME selective_sync_tests COMMAND selective_sync_tests)
-
-    add_executable(
+    add_onedrive_test(
         item_operation_coordinator_tests
-        tests/item_operation_coordinator_tests.cpp
+        SOURCES tests/item_operation_coordinator_tests.cpp
+        INCLUDE_DIRS src/sync
     )
-    target_include_directories(
-        item_operation_coordinator_tests
-        PRIVATE src/sync
-    )
-    target_link_libraries(
-        item_operation_coordinator_tests
-        PRIVATE onedrive_core
-    )
-    add_test(
-        NAME item_operation_coordinator_tests
-        COMMAND item_operation_coordinator_tests
-    )
-
-    add_executable(
+    add_onedrive_test(
         download_space_coordinator_tests
-        tests/download_space_coordinator_tests.cpp
+        SOURCES tests/download_space_coordinator_tests.cpp
+        INCLUDE_DIRS src/sync
     )
-    target_include_directories(
-        download_space_coordinator_tests
-        PRIVATE src/sync
-    )
-    target_link_libraries(
-        download_space_coordinator_tests
-        PRIVATE onedrive_core
-    )
-    add_test(
-        NAME download_space_coordinator_tests
-        COMMAND download_space_coordinator_tests
-    )
-
-    add_executable(
+    add_onedrive_test(
         download_progress_tests
-        tests/download_progress_tests.cpp
+        SOURCES tests/download_progress_tests.cpp
+        INCLUDE_DIRS src/sync
     )
-    target_include_directories(
-        download_progress_tests
-        PRIVATE src/sync
-    )
-    target_link_libraries(download_progress_tests PRIVATE onedrive_core)
-    add_test(NAME download_progress_tests COMMAND download_progress_tests)
-
-    add_executable(
+    add_onedrive_test(
         download_components_tests
-        tests/download_components_tests.cpp
+        SOURCES tests/download_components_tests.cpp
+        INCLUDE_DIRS src/sync
     )
-    target_include_directories(
-        download_components_tests
-        PRIVATE src/sync
-    )
-    target_link_libraries(download_components_tests PRIVATE onedrive_core)
-    add_test(NAME download_components_tests COMMAND download_components_tests)
-
-    add_executable(
+    add_onedrive_test(
         download_integrity_tests
-        tests/download_integrity_tests.cpp
+        SOURCES tests/download_integrity_tests.cpp
+        INCLUDE_DIRS src/sync
     )
-    target_include_directories(
-        download_integrity_tests
-        PRIVATE src/sync
-    )
-    target_link_libraries(download_integrity_tests PRIVATE onedrive_core)
-    add_test(NAME download_integrity_tests COMMAND download_integrity_tests)
 
     if(ONEDRIVE_ENABLE_GRAPH_E2E)
         find_package(Python3 COMPONENTS Interpreter REQUIRED)
