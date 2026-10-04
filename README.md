@@ -304,7 +304,7 @@ export ONEDRIVE_E2E_EXPECTED_SHA256=<64-lowercase-hex-digits>
 
 cmake --preset e2e
 cmake --build --preset e2e
-ctest --preset e2e -R graph_download_e2e
+ctest --preset e2e -R graph_sync_e2e
 ```
 
 The dedicated Drive should contain only disposable test data even though the

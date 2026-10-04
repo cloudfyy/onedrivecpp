@@ -278,7 +278,7 @@ export ONEDRIVE_E2E_EXPECTED_SHA256=<64位小写十六进制值>
 
 cmake --preset e2e
 cmake --build --preset e2e
-ctest --preset e2e -R graph_download_e2e
+ctest --preset e2e -R graph_sync_e2e
 ```
 
 尽管 runner 生成的 `sync_list` 只会落地预期 fixture，专用 Drive 仍应只包含

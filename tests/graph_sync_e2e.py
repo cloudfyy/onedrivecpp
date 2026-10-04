@@ -426,7 +426,7 @@ def run_live(client: Path, work_root: Path) -> None:
 
     work_root.mkdir(parents=True, exist_ok=True)
     completed: list[subprocess.CompletedProcess[str]] = []
-    with tempfile.TemporaryDirectory(prefix="graph-download-", dir=work_root) as raw:
+    with tempfile.TemporaryDirectory(prefix="graph-sync-", dir=work_root) as raw:
         workspace = Path(raw)
         sync_directory = workspace / "sync"
         state_directory = workspace / "state"
@@ -697,6 +697,54 @@ def run_live(client: Path, work_root: Path) -> None:
                     "post-safeBackup synchronization modified the backup"
                 )
 
+            original_contents = stable.read_bytes()
+            upload_contents = (
+                b"onedrive-cpp live Graph local upload E2E\n"
+            )
+            stable.write_bytes(upload_contents)
+            uploaded = run_sync(client, config, home, log_file)
+            completed.append(uploaded)
+            if uploaded.returncode != 0:
+                raise E2EError(
+                    f"live Graph upload failed with {uploaded.returncode}"
+                )
+            if not has_json_event(uploaded, "local_item_uploaded"):
+                raise E2EError(
+                    "local upload did not emit its JSON event"
+                )
+            stable.unlink()
+            downloaded_upload = run_sync(client, config, home, log_file)
+            completed.append(downloaded_upload)
+            if downloaded_upload.returncode != 0:
+                raise E2EError(
+                    "uploaded-content verification sync failed with "
+                    f"{downloaded_upload.returncode}"
+                )
+            if stable.read_bytes() != upload_contents:
+                raise E2EError(
+                    "Graph did not retain the uploaded local content"
+                )
+            stable.write_bytes(original_contents)
+            restored_upload = run_sync(client, config, home, log_file)
+            completed.append(restored_upload)
+            if restored_upload.returncode != 0:
+                raise E2EError(
+                    "remote fixture restoration upload failed with "
+                    f"{restored_upload.returncode}"
+                )
+            stable.unlink()
+            verified_restore = run_sync(client, config, home, log_file)
+            completed.append(verified_restore)
+            if verified_restore.returncode != 0:
+                raise E2EError(
+                    "remote fixture restoration verification failed with "
+                    f"{verified_restore.returncode}"
+                )
+            if sha256(stable) != expected_sha256:
+                raise E2EError(
+                    "live Graph upload E2E did not restore the fixture"
+                )
+
             disappeared_local, disappeared_remote = inject_disappeared_item(
                 state_directory,
                 stable,
@@ -942,7 +990,7 @@ def main() -> int:
                 raise E2EError("--client and --work-root are required")
             run_live(arguments.client.resolve(), arguments.work_root.resolve())
     except (E2EError, OSError, subprocess.SubprocessError) as error:
-        print(f"Graph download E2E failed: {error}", file=os.sys.stderr)
+        print(f"Graph synchronization E2E failed: {error}", file=os.sys.stderr)
         return 1
     return 0
 

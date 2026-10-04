@@ -340,27 +340,27 @@ if(BUILD_TESTING)
     if(ONEDRIVE_ENABLE_GRAPH_E2E)
         find_package(Python3 COMPONENTS Interpreter REQUIRED)
         add_test(
-            NAME graph_download_e2e_self_test
+            NAME graph_sync_e2e_self_test
             COMMAND
                 ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/graph_download_e2e.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/graph_sync_e2e.py
                 --self-test
         )
         add_test(
-            NAME graph_download_e2e
+            NAME graph_sync_e2e
             COMMAND
                 ${Python3_EXECUTABLE}
-                ${CMAKE_CURRENT_SOURCE_DIR}/tests/graph_download_e2e.py
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/graph_sync_e2e.py
                 --client $<TARGET_FILE:onedrive-cpp>
                 --work-root ${CMAKE_CURRENT_BINARY_DIR}/graph-e2e
         )
         set_tests_properties(
-            graph_download_e2e_self_test
-            graph_download_e2e
+            graph_sync_e2e_self_test
+            graph_sync_e2e
             PROPERTIES LABELS "e2e;graph"
         )
         set_tests_properties(
-            graph_download_e2e
+            graph_sync_e2e
             PROPERTIES
                 RUN_SERIAL TRUE
                 TIMEOUT 700
