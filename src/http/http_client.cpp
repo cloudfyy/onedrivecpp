@@ -1,5 +1,6 @@
 #include "onedrive/http/http_client.hpp"
 
+#include "detail/unique_file_descriptor.hpp"
 #include "onedrive/path_security.hpp"
 #include "onedrive/version.hpp"
 
@@ -55,28 +56,7 @@ struct CurlHandleDeleter {
 
 using CurlHandle = std::unique_ptr<CURL, CurlHandleDeleter>;
 
-class FileDescriptor {
-public:
-    explicit FileDescriptor(int descriptor) : descriptor_{descriptor} {}
-
-    ~FileDescriptor() {
-        if (descriptor_ != -1) {
-            ::close(descriptor_);
-        }
-    }
-
-    FileDescriptor(const FileDescriptor&) = delete;
-    FileDescriptor& operator=(const FileDescriptor&) = delete;
-    FileDescriptor(FileDescriptor&&) = delete;
-    FileDescriptor& operator=(FileDescriptor&&) = delete;
-
-    [[nodiscard]] int get() const noexcept {
-        return descriptor_;
-    }
-
-private:
-    int descriptor_;
-};
+using FileDescriptor = onedrive::detail::UniqueFileDescriptor;
 
 class ThreadCurlHandlePool {
 public:

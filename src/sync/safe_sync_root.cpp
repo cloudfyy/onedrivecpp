@@ -1,5 +1,7 @@
 #include "safe_sync_root.hpp"
 
+#include "detail/unique_file_descriptor.hpp"
+
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
@@ -13,36 +15,7 @@
 namespace onedrive::sync::detail {
 namespace {
 
-class Descriptor {
-public:
-    explicit Descriptor(int value = -1) noexcept : value_{value} {}
-    ~Descriptor() {
-        if (value_ != -1) {
-            ::close(value_);
-        }
-    }
-
-    Descriptor(const Descriptor&) = delete;
-    Descriptor& operator=(const Descriptor&) = delete;
-    Descriptor(Descriptor&& other) noexcept
-        : value_{std::exchange(other.value_, -1)} {}
-    Descriptor& operator=(Descriptor&& other) noexcept {
-        if (this != &other) {
-            if (value_ != -1) {
-                ::close(value_);
-            }
-            value_ = std::exchange(other.value_, -1);
-        }
-        return *this;
-    }
-
-    [[nodiscard]] int get() const noexcept {
-        return value_;
-    }
-
-private:
-    int value_;
-};
+using Descriptor = onedrive::detail::UniqueFileDescriptor;
 
 int open_beneath(
     int directory,

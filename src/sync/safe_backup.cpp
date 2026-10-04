@@ -1,5 +1,6 @@
 #include "safe_backup.hpp"
 
+#include "detail/unique_file_descriptor.hpp"
 #include "onedrive/sha256.hpp"
 
 #include <array>
@@ -16,28 +17,7 @@
 namespace onedrive::sync::detail {
 namespace {
 
-class Descriptor {
-public:
-    explicit Descriptor(int descriptor) noexcept
-        : descriptor_{descriptor} {}
-    ~Descriptor() {
-        if (descriptor_ != -1) {
-            ::close(descriptor_);
-        }
-    }
-
-    Descriptor(const Descriptor&) = delete;
-    Descriptor& operator=(const Descriptor&) = delete;
-    Descriptor(Descriptor&&) = delete;
-    Descriptor& operator=(Descriptor&&) = delete;
-
-    [[nodiscard]] int get() const noexcept {
-        return descriptor_;
-    }
-
-private:
-    int descriptor_;
-};
+using Descriptor = onedrive::detail::UniqueFileDescriptor;
 
 std::string timestamp() {
     const auto now = std::chrono::system_clock::now();

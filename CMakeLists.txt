@@ -145,6 +145,7 @@ target_include_directories(onedrive_core
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     PRIVATE
         ${CMAKE_CURRENT_BINARY_DIR}/generated
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
 target_link_libraries(onedrive_core
