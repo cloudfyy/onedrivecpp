@@ -1,5 +1,7 @@
 #include "download_integrity.hpp"
 
+#include "onedrive/sha256.hpp"
+
 #include <openssl/evp.h>
 
 #include <array>
@@ -75,39 +77,6 @@ private:
     std::size_t bit_offset_{0};
 };
 
-struct DigestContextDeleter {
-    void operator()(EVP_MD_CTX* context) const noexcept {
-        EVP_MD_CTX_free(context);
-    }
-};
-
-using DigestContext = std::unique_ptr<EVP_MD_CTX, DigestContextDeleter>;
-
-DigestContext make_sha256_context() {
-    DigestContext context{EVP_MD_CTX_new()};
-    if (!context ||
-        EVP_DigestInit_ex(context.get(), EVP_sha256(), nullptr) != 1) {
-        throw std::runtime_error("cannot initialize streamed SHA-256 hash");
-    }
-    return context;
-}
-
-std::string finish_sha256(EVP_MD_CTX* context) {
-    std::array<unsigned char, EVP_MAX_MD_SIZE> digest{};
-    unsigned int digest_size = 0;
-    if (EVP_DigestFinal_ex(context, digest.data(), &digest_size) != 1) {
-        throw std::runtime_error("cannot finalize streamed SHA-256 hash");
-    }
-    std::string result;
-    result.reserve(static_cast<std::size_t>(digest_size) * 2);
-    constexpr std::string_view hex{"0123456789abcdef"};
-    for (unsigned int index = 0; index < digest_size; ++index) {
-        result.push_back(hex[digest[index] >> 4U]);
-        result.push_back(hex[digest[index] & 0x0FU]);
-    }
-    return result;
-}
-
 bool equal_case_insensitive(std::string_view left, std::string_view right) {
     if (left.size() != right.size()) {
         return false;
@@ -149,14 +118,7 @@ public:
             valid_ = false;
             return;
         }
-        if (!data.empty() &&
-            EVP_DigestUpdate(
-                sha256_.get(),
-                data.data(),
-                data.size()
-            ) != 1) {
-            throw std::runtime_error("cannot update streamed SHA-256 hash");
-        }
+        sha256_.update(data);
         quick_xor_.update(data);
         length_ += static_cast<std::uint64_t>(data.size());
     }
@@ -174,20 +136,20 @@ public:
             return std::nullopt;
         }
         return DownloadHashes{
-            .sha256 = finish_sha256(sha256_.get()),
+            .sha256 = sha256_.finish_hex(),
             .quick_xor = quick_xor_.finish(),
         };
     }
 
 private:
     void reset() {
-        sha256_ = make_sha256_context();
+        sha256_ = Sha256Hasher{};
         quick_xor_ = {};
         length_ = 0;
         valid_ = true;
     }
 
-    DigestContext sha256_{make_sha256_context()};
+    Sha256Hasher sha256_;
     QuickXorAccumulator quick_xor_;
     std::uint64_t length_{0};
     bool valid_{true};

@@ -1,4 +1,5 @@
 #include "download_integrity.hpp"
+#include "onedrive/sha256.hpp"
 #include "test_support.hpp"
 
 #include <cstdlib>
@@ -194,6 +195,28 @@ int test_streaming_hashes() {
     return EXIT_SUCCESS;
 }
 
+int test_shared_sha256_hasher() {
+    constexpr std::string_view contents{"data"};
+    const auto bytes = std::as_bytes(std::span{contents});
+    onedrive::Sha256Hasher hasher;
+    hasher.update(bytes.first(2));
+    hasher.update(bytes.subspan(2));
+    if (hasher.finish_hex() != onedrive::sha256_hex(contents)) {
+        return fail("shared SHA-256 hasher did not preserve split updates");
+    }
+    try {
+        hasher.update(bytes);
+        return fail("finalized shared SHA-256 hasher accepted more data");
+    } catch (const std::logic_error&) {
+    }
+    try {
+        static_cast<void>(hasher.finish_hex());
+        return fail("shared SHA-256 hasher was finalized more than once");
+    } catch (const std::logic_error&) {
+    }
+    return EXIT_SUCCESS;
+}
+
 }  // namespace
 
 int main() {
@@ -203,6 +226,10 @@ int main() {
         return result;
     }
     if (const int result = test_streaming_hashes();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_shared_sha256_hasher();
         result != EXIT_SUCCESS) {
         return result;
     }

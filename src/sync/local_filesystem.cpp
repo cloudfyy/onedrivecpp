@@ -2,8 +2,8 @@
 
 #include "onedrive/path_security.hpp"
 #include "onedrive/remote_time.hpp"
+#include "onedrive/sha256.hpp"
 
-#include <openssl/evp.h>
 #include <spdlog/spdlog.h>
 
 #include <array>
@@ -16,7 +16,6 @@
 #include <format>
 #include <fstream>
 #include <limits>
-#include <memory>
 #include <stdexcept>
 #include <string_view>
 #include <sys/stat.h>
@@ -415,28 +414,16 @@ std::string content_fingerprint(const std::filesystem::path& path) {
             "cannot open file for recovery fingerprint: " + path.string()
         );
     }
-    struct DigestContextDeleter {
-        void operator()(EVP_MD_CTX* context) const noexcept {
-            EVP_MD_CTX_free(context);
-        }
-    };
-    const std::unique_ptr<EVP_MD_CTX, DigestContextDeleter> context{
-        EVP_MD_CTX_new()
-    };
-    if (!context || EVP_DigestInit_ex(context.get(), EVP_sha256(), nullptr) != 1) {
-        throw std::runtime_error("cannot initialize SHA-256 recovery fingerprint");
-    }
+    Sha256Hasher hasher;
     std::array<char, std::size_t{64} * 1024U> buffer{};
     while (input) {
         input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
         const auto count = input.gcount();
-        if (count != 0 &&
-            EVP_DigestUpdate(
-                context.get(),
+        if (count != 0) {
+            hasher.update(std::as_bytes(std::span{
                 buffer.data(),
                 static_cast<std::size_t>(count)
-            ) != 1) {
-            throw std::runtime_error("cannot update SHA-256 recovery fingerprint");
+            }));
         }
     }
     if (!input.eof()) {
@@ -444,19 +431,7 @@ std::string content_fingerprint(const std::filesystem::path& path) {
             "cannot read file for recovery fingerprint: " + path.string()
         );
     }
-    std::array<unsigned char, EVP_MAX_MD_SIZE> digest{};
-    unsigned int digest_size = 0;
-    if (EVP_DigestFinal_ex(context.get(), digest.data(), &digest_size) != 1) {
-        throw std::runtime_error("cannot finalize SHA-256 recovery fingerprint");
-    }
-    std::string result;
-    result.reserve(static_cast<std::size_t>(digest_size) * 2);
-    constexpr std::string_view hex{"0123456789abcdef"};
-    for (unsigned int index = 0; index < digest_size; ++index) {
-        result.push_back(hex[digest[index] >> 4U]);
-        result.push_back(hex[digest[index] & 0x0FU]);
-    }
-    return result;
+    return hasher.finish_hex();
 }
 
 std::filesystem::path temporary_path_for(
