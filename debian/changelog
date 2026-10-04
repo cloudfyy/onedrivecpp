@@ -1,3 +1,14 @@
+onedrive-cpp (0.7.7-1~ubuntu24.04) noble; urgency=medium
+
+  * Stage one breaker through a private hidden path to apply file and directory
+    name exchanges and arbitrary remote move cycles without overwriting data.
+  * Extend schema-v15 pending-move journals with staging paths and recover
+    interruptions at the original, staged, or final filesystem location.
+  * Remove remotely deleted staged objects by durable identity and exclude
+    private move staging files from local uploads.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 12:05:00 +0000
+
 onedrive-cpp (0.7.6-1~ubuntu24.04) noble; urgency=medium
 
   * Order dependent remote moves so occupied source paths are vacated before
