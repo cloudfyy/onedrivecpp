@@ -1,3 +1,14 @@
+onedrive-cpp (0.6.35-1~ubuntu24.04) noble; urgency=medium
+
+  * Add configurable HTTP, HTTPS, SOCKS4, and SOCKS5 proxies for
+    authentication, Microsoft Graph, and file downloads.
+  * Support proxy bypass rules, secure credential files, authentication
+    methods, remote SOCKS DNS resolution, and private HTTPS proxy CAs.
+  * Extend protocol-level coverage and document proxy defaults, environment
+    behavior, and security requirements.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 07:10:56 +0000
+
 onedrive-cpp (0.6.34-1~ubuntu24.04) noble; urgency=medium
 
   * Add optional implicit selection of ordinary files located directly in the
