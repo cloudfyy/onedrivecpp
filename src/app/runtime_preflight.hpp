@@ -8,6 +8,7 @@ enum class Operation {
     authenticate,
     logout,
     reset_state,
+    download,
     monitor,
     synchronize,
 };

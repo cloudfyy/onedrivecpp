@@ -359,6 +359,69 @@ int test_list_root_with_refresh_and_pagination() {
     return EXIT_SUCCESS;
 }
 
+int test_item_lookup_by_encoded_path() {
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"token_type":"Bearer","expires_in":3600,)"
+                    R"("access_token":"access-secret",)"
+                    R"("refresh_token":"existing-refresh"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"json({"id":"file-id","name":"report #1.txt","eTag":"file-etag","size":4,"fileSystemInfo":{"lastModifiedDateTime":"2026-10-04T00:00:00Z"},"parentReference":{"id":"folder-id","path":"/drive/root:/Folder A"},"file":{"hashes":{"sha256Hash":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}})json",
+            },
+        }
+    );
+    auto* transport_pointer = transport.get();
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(
+                std::string{"existing-refresh"}
+            )
+        ),
+        auth_options(),
+        {
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+        },
+    };
+
+    const auto item = client.item_by_path("Folder A/report #1.txt");
+    if (item.id != "file-id" || item.name != "report #1.txt" ||
+        item.remote_path != "Folder A/report #1.txt" ||
+        item.parent_id != "folder-id" || item.size != 4 ||
+        item.directory || item.last_modified != "2026-10-04T00:00:00Z" ||
+        !item.content_hash ||
+        item.content_hash->algorithm !=
+            onedrive::FileHashAlgorithm::sha256 ||
+        transport_pointer->requests.size() != 2 ||
+        transport_pointer->requests[1].url !=
+            "https://graph.example.test/v1.0/me/drive/root:/Folder%20A/"
+            "report%20%231.txt?$select=id,name,eTag,size,fileSystemInfo,"
+            "parentReference,file,folder,deleted,malware,remoteItem" ||
+        !has_header(
+            transport_pointer->requests[1],
+            "Authorization: ******"
+        )) {
+        return fail("Graph path lookup was not encoded or parsed correctly");
+    }
+
+    try {
+        static_cast<void>(client.item_by_path("../unsafe.txt"));
+        return fail("unsafe Graph path lookup was accepted");
+    } catch (const std::invalid_argument&) {
+    }
+    if (transport_pointer->requests.size() != 2) {
+        return fail("unsafe Graph path lookup made an HTTP request");
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_missing_authentication() {
     auto transport = std::make_unique<FakeTransport>(
         std::deque<onedrive::http::HttpResult>{}
@@ -2215,6 +2278,10 @@ int test_drive_identity_and_profile_photo() {
 
 int main() {
     if (const int result = test_invalid_download_transport_options();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_item_lookup_by_encoded_path();
         result != EXIT_SUCCESS) {
         return result;
     }

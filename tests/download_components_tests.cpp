@@ -2,6 +2,7 @@
 #include "download_integrity.hpp"
 #include "download_transaction.hpp"
 #include "filesystem_metadata.hpp"
+#include "onedrive/sync/single_file_download.hpp"
 #include "test_support.hpp"
 
 #include <chrono>
@@ -10,6 +11,7 @@
 #include <fstream>
 #include <iostream>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <sys/stat.h>
@@ -39,6 +41,16 @@ public:
         return {};
     }
 
+    [[nodiscard]] onedrive::graph::RemoteItem item_by_path(
+        const std::string& path
+    ) const {
+        ++path_lookup_count;
+        if (path != lookup_item.remote_path) {
+            throw std::runtime_error{"unexpected single path lookup"};
+        }
+        return lookup_item;
+    }
+
     [[nodiscard]] onedrive::graph::DeltaResult list_delta(
         const std::optional<std::string>&,
         const onedrive::graph::DeltaProgress&
@@ -57,6 +69,7 @@ public:
         const onedrive::graph::DownloadCheckpoint& checkpoint,
         const onedrive::graph::DownloadData& data
     ) const {
+        ++download_count;
         last_expected_etag = expected_etag;
         last_initial_offset = initial_offset;
         if (initial_offset == 0) {
@@ -98,6 +111,9 @@ public:
     std::string contents{"data"};
     std::vector<std::uint64_t> progress_updates;
     bool send_checkpoint{true};
+    onedrive::graph::RemoteItem lookup_item;
+    mutable int path_lookup_count{0};
+    mutable int download_count{0};
     mutable std::string last_expected_etag;
     mutable std::uint64_t last_initial_offset{0};
 };
@@ -261,10 +277,121 @@ bool has_remote_modified_time(const std::filesystem::path& path) {
            ).count();
 }
 
+int test_single_file_download_coordination() {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path() / "single";
+    auto config = onedrive::config::Config::defaults();
+    config.sync_directory = root;
+    config.drive_id = "drive-id";
+    config.filesystem_metadata =
+        onedrive::config::FilesystemMetadataMode::database;
+    FakeGraphClient graph_implementation;
+    graph_implementation.lookup_item =
+        remote_item("single", "Documents/single.txt");
+    FakeItemStore item_implementation;
+    onedrive::graph::GraphClient graph{
+        onedrive::detail::borrowed_proxy,
+        graph_implementation
+    };
+    onedrive::storage::ItemStore items{
+        onedrive::detail::borrowed_proxy,
+        item_implementation
+    };
+    std::ostringstream output;
+    std::ostringstream error;
+    const onedrive::cli::Console console{{}, output, error};
+
+    auto dry_config = config;
+    dry_config.dry_run = true;
+    if (onedrive::sync::plan_single_file_download(
+            dry_config,
+            "Documents/single.txt",
+            graph,
+            console
+        ) != 0 ||
+        graph_implementation.download_count != 0 ||
+        std::filesystem::exists(root / "Documents/single.txt")) {
+        return fail("single-file dry run changed local state");
+    }
+
+    if (onedrive::sync::download_single_file(
+            config,
+            "Documents/single.txt",
+            graph,
+            items,
+            console
+        ) != 0 ||
+        graph_implementation.download_count != 1 ||
+        !std::filesystem::is_regular_file(
+            root / "Documents/single.txt"
+        ) ||
+        !item_implementation.states.contains("single")) {
+        return fail("single-file download did not reuse the safe transaction");
+    }
+
+    graph_implementation.lookup_item =
+        remote_item("directory", "Documents");
+    graph_implementation.lookup_item.directory = true;
+    try {
+        static_cast<void>(onedrive::sync::download_single_file(
+            config,
+            "Documents",
+            graph,
+            items,
+            console
+        ));
+        return fail("single-file download accepted a directory");
+    } catch (const std::runtime_error&) {
+    }
+
+    graph_implementation.lookup_item =
+        remote_item("malware", "malware.exe");
+    graph_implementation.lookup_item.malware = true;
+    try {
+        static_cast<void>(onedrive::sync::download_single_file(
+            config,
+            "malware.exe",
+            graph,
+            items,
+            console
+        ));
+        return fail("single-file download accepted Graph malware");
+    } catch (const std::runtime_error&) {
+    }
+
+    graph_implementation.lookup_item =
+        remote_item("conflict", "conflict.txt");
+    std::filesystem::create_directories(root);
+    {
+        std::ofstream local{root / "conflict.txt"};
+        local << "user data";
+    }
+    try {
+        static_cast<void>(onedrive::sync::download_single_file(
+            config,
+            "conflict.txt",
+            graph,
+            items,
+            console
+        ));
+        return fail("single-file download overwrote an untracked local file");
+    } catch (const onedrive::sync::detail::LocalModificationConflictError&) {
+    }
+    if (graph_implementation.download_count != 1) {
+        return fail("rejected single-file target started a download");
+    }
+    return EXIT_SUCCESS;
+}
+
 }  // namespace
 
 int main() {
     namespace detail = onedrive::sync::detail;
+
+    if (const int result = test_single_file_download_coordination();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
 
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "files";

@@ -97,6 +97,35 @@ std::size_t filesystem_limit(
 
 }  // namespace
 
+std::filesystem::path prepare_sync_root(
+    const std::filesystem::path& configured_root,
+    bool private_permissions
+) {
+    const auto absolute_root =
+        onedrive::detail::normalized_absolute(configured_root);
+    onedrive::detail::reject_symlink_components(
+        absolute_root,
+        "synchronization directory"
+    );
+    const bool created = std::filesystem::create_directories(absolute_root);
+    onedrive::detail::reject_symlink_components(
+        absolute_root,
+        "synchronization directory"
+    );
+    if (private_permissions &&
+        ::chmod(absolute_root.c_str(), S_IRWXU) == -1) {
+        throw std::runtime_error(
+            "cannot secure synchronization root '" +
+            absolute_root.string() + "': " + std::strerror(errno)
+        );
+    }
+    const auto root = std::filesystem::weakly_canonical(absolute_root);
+    if (created) {
+        spdlog::debug("Created synchronization root '{}'", root.string());
+    }
+    return root;
+}
+
 std::filesystem::path local_path_for(
     const std::filesystem::path& sync_directory,
     const std::string& remote_path

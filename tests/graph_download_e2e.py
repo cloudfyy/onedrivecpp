@@ -150,6 +150,34 @@ def run_sync(
     )
 
 
+def run_single_download(
+    client: Path,
+    config: Path,
+    remote_path: Path,
+    home: Path,
+    log_file: Path,
+) -> subprocess.CompletedProcess[str]:
+    return run_client(
+        client,
+        [
+            "download",
+            remote_path.as_posix(),
+            "--config",
+            str(config),
+            "--color",
+            "never",
+            "--output",
+            "json",
+            "--log-level",
+            "trace",
+            "--log-file",
+            str(log_file),
+        ],
+        home,
+        timeout=600,
+    )
+
+
 def reset_copied_state(
     client: Path,
     config: Path,
@@ -217,19 +245,43 @@ def run_live(client: Path, work_root: Path) -> None:
                 raise E2EError(
                     f"isolated state reset failed with {reset.returncode}"
                 )
+            single = run_single_download(
+                client,
+                config,
+                expected_path,
+                home,
+                log_file,
+            )
+            completed.append(single)
+            if single.returncode != 0:
+                raise E2EError(
+                    f"single-file Graph download failed with {single.returncode}"
+                )
+            downloaded = fixture_path(sync_directory, expected_path)
+            actual_sha256 = sha256(downloaded)
+            if actual_sha256 != expected_sha256:
+                raise E2EError(
+                    f"single-file fixture SHA-256 mismatch: {actual_sha256}"
+                )
+            initial_stat = downloaded.stat()
+
             first = run_sync(client, config, home, log_file)
             completed.append(first)
             if first.returncode != 0:
                 raise E2EError(
                     f"initial live Graph synchronization failed with {first.returncode}"
                 )
-            downloaded = fixture_path(sync_directory, expected_path)
-            actual_sha256 = sha256(downloaded)
-            if actual_sha256 != expected_sha256:
+            synchronized = fixture_path(sync_directory, expected_path)
+            synchronized_stat = synchronized.stat()
+            if sha256(synchronized) != expected_sha256:
+                raise E2EError("fixture changed during initial synchronization")
+            if (
+                synchronized_stat.st_ino != initial_stat.st_ino
+                or synchronized_stat.st_mtime_ns != initial_stat.st_mtime_ns
+            ):
                 raise E2EError(
-                    f"downloaded fixture SHA-256 mismatch: {actual_sha256}"
+                    "initial synchronization rewrote the single-file download"
                 )
-            initial_stat = downloaded.stat()
 
             second = run_sync(client, config, home, log_file)
             completed.append(second)
@@ -242,8 +294,8 @@ def run_live(client: Path, work_root: Path) -> None:
             if sha256(repeated) != expected_sha256:
                 raise E2EError("fixture changed after repeat synchronization")
             if (
-                repeated_stat.st_ino != initial_stat.st_ino
-                or repeated_stat.st_mtime_ns != initial_stat.st_mtime_ns
+                repeated_stat.st_ino != synchronized_stat.st_ino
+                or repeated_stat.st_mtime_ns != synchronized_stat.st_mtime_ns
             ):
                 raise E2EError("repeat synchronization rewrote the unchanged fixture")
         except Exception:

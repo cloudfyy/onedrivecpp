@@ -29,7 +29,7 @@ _onedrive_cpp_completion()
 
     for word in "${COMP_WORDS[@]:1:COMP_CWORD-1}"; do
         case "$word" in
-            auth|logout|reset-state|sync|monitor)
+            auth|logout|reset-state|download|sync|monitor)
                 command="$word"
                 break
                 ;;
@@ -38,7 +38,7 @@ _onedrive_cpp_completion()
 
     if [[ -z "$command" ]]; then
         mapfile -t COMPREPLY < <(compgen -W \
-            "auth logout reset-state sync monitor --help --version" \
+            "auth logout reset-state download sync monitor --help --version" \
             -- "$current")
         return
     fi
@@ -53,7 +53,7 @@ _onedrive_cpp_completion()
         --help
     "
     case "$command" in
-        sync)
+        download|sync)
             mapfile -t COMPREPLY < <(compgen -W \
                 "$common_options --dry-run" -- "$current")
             ;;

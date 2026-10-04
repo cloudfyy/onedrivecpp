@@ -2,12 +2,19 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <exception>
 #include <format>
 #include <limits>
 #include <utility>
 
 namespace onedrive::sync::detail {
+
+std::uintmax_t download_safety_reserve(std::uintmax_t transfer_bytes) {
+    constexpr std::uintmax_t minimum_reserve =
+        std::uintmax_t{256} * 1024U * 1024U;
+    return std::max(minimum_reserve, transfer_bytes / 20U);
+}
 
 DownloadSpaceCoordinator::Lease::Lease(
     DownloadSpaceCoordinator* owner,

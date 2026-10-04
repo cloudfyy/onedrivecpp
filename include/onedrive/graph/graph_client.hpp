@@ -104,6 +104,7 @@ struct GraphOptions {
 
 PRO_DEF_MEM_DISPATCH(GraphDriveIdentityDispatch, drive_identity);
 PRO_DEF_MEM_DISPATCH(GraphListRootDispatch, list_root);
+PRO_DEF_MEM_DISPATCH(GraphItemByPathDispatch, item_by_path);
 PRO_DEF_MEM_DISPATCH(GraphListDeltaDispatch, list_delta);
 PRO_DEF_MEM_DISPATCH(GraphDownloadFileDispatch, download_file);
 
@@ -115,6 +116,10 @@ struct GraphClientFacade : pro::facade_builder
     ::add_convention<
         GraphListRootDispatch,
         std::vector<RemoteItem>() const
+    >
+    ::add_convention<
+        GraphItemByPathDispatch,
+        RemoteItem(const std::string&) const
     >
     ::add_convention<
         GraphListDeltaDispatch,
@@ -151,6 +156,12 @@ public:
 
     [[nodiscard]] std::vector<RemoteItem> list_root() const {
         return implementation()->list_root();
+    }
+
+    [[nodiscard]] RemoteItem item_by_path(
+        const std::string& remote_path
+    ) const {
+        return implementation()->item_by_path(remote_path);
     }
 
     [[nodiscard]] DeltaResult list_delta(
@@ -224,6 +235,9 @@ public:
 
     [[nodiscard]] account::DriveIdentity drive_identity() const;
     [[nodiscard]] std::vector<RemoteItem> list_root() const;
+    [[nodiscard]] RemoteItem item_by_path(
+        const std::string& remote_path
+    ) const;
     [[nodiscard]] DeltaResult list_delta(
         const std::optional<std::string>& delta_link,
         const DeltaProgress& progress = {}

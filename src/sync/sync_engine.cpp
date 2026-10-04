@@ -292,35 +292,6 @@ bool below_blocked_directory(
     );
 }
 
-std::filesystem::path prepare_sync_root(
-    const std::filesystem::path& configured_root,
-    bool private_permissions
-) {
-    const auto absolute_root =
-        onedrive::detail::normalized_absolute(configured_root);
-    onedrive::detail::reject_symlink_components(
-        absolute_root,
-        "synchronization directory"
-    );
-    const bool created = std::filesystem::create_directories(absolute_root);
-    onedrive::detail::reject_symlink_components(
-        absolute_root,
-        "synchronization directory"
-    );
-    if (private_permissions &&
-        ::chmod(absolute_root.c_str(), S_IRWXU) == -1) {
-        throw std::runtime_error(
-            "cannot secure synchronization root '" +
-            absolute_root.string() + "': " + std::strerror(errno)
-        );
-    }
-    const auto root = std::filesystem::weakly_canonical(absolute_root);
-    if (created) {
-        spdlog::debug("Created synchronization root '{}'", root.string());
-    }
-    return root;
-}
-
 void report_plan(
     const detail::SyncPlan& plan,
     const std::string& drive_id,
@@ -397,12 +368,6 @@ void report_plan(
     for (std::size_t index = 0; index < plan.blocked_count(); ++index) {
         report_blocked(plan.blocked(index), console);
     }
-}
-
-std::uintmax_t download_safety_reserve(std::uintmax_t transfer_bytes) {
-    constexpr std::uintmax_t minimum_reserve =
-        std::uintmax_t{256} * 1024U * 1024U;
-    return std::max(minimum_reserve, transfer_bytes / 20U);
 }
 
 ExecutionSummary execute_plan(
@@ -625,7 +590,7 @@ ExecutionSummary execute_plan(
     }
     detail::DownloadSpaceCoordinator space{
         sync_root,
-        download_safety_reserve(transfer_bytes)
+        detail::download_safety_reserve(transfer_bytes)
     };
     detail::ItemOperationCoordinator operations;
     auto downloads = download_files(
@@ -764,7 +729,10 @@ int SyncEngine::synchronize() const {
             const bool private_permissions =
                 config_->sync_permissions ==
                 config::SyncPermissionsMode::private_access;
-            sync_root = prepare_sync_root(sync_root, private_permissions);
+            sync_root = detail::prepare_sync_root(
+                sync_root,
+                private_permissions
+            );
             safe_root.emplace(sync_root);
             metadata.emplace(detail::FilesystemMetadata::detect(
                 config_->filesystem_metadata,

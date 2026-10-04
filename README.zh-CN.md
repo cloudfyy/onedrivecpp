@@ -258,8 +258,8 @@ Debug 程序位于 `build/debug/onedrive-cpp`。
 
 普通构建不会启用 `e2e` preset。该测试需要专用测试账号或 Drive，并在远端根目录
 预置内容稳定的 fixture。仓库外配置必须已完成认证，且绝不能提交到仓库。runner
-会把状态目录复制到隔离的临时工作区，只清理该副本，然后下载 fixture 两次，
-校验 SHA-256，并确认第二次同步不会替换未变化的本地文件。
+会把状态目录复制到隔离的临时工作区，只清理该副本，然后通过单文件命令下载
+fixture、校验 SHA-256，并确认随后的两次同步都不会替换未变化的本地文件。
 
 ```bash
 export ONEDRIVE_E2E_CONFIG=/absolute/path/to/dedicated-e2e.toml
@@ -706,6 +706,25 @@ onedrive-cpp reset-state --clear-all
 由于本地快照已被清除，下一次同步可能报告本地修改冲突。自动化场景必须使用
 `reset-state --clear-all --yes` 显式承担该风险；未指定 `--clear-all` 时
 `--yes` 会被拒绝。
+
+无需执行整个 Drive Delta 同步即可下载单个文件：
+
+```bash
+onedrive-cpp download "Documents/report.pdf"
+```
+
+参数是 Drive 相对文件路径。程序会在发出 Graph 请求前拒绝绝对路径、空组件、
+`.`、`..`、控制字节和反斜杠。命令按路径解析唯一 DriveItem，并复用常规下载的
+eTag 前置条件、HTTPS 重定向策略、Range 分片、durable checkpoint 恢复、完整性
+校验、磁盘空间预留、本地修改保护和原子安装。目录及带有 Graph `malware` facet
+的文件会被拒绝。程序会更新该文件的 item 快照，但不会推进 Drive `deltaLink`。
+
+使用 `download --dry-run` 可以显示解析后的远端路径、本地目标和预期大小，不会
+创建 item 数据库或修改下载文件：
+
+```bash
+onedrive-cpp download "Documents/report.pdf" --dry-run
+```
 
 `sync` 命令会刷新 OAuth access token，在 Microsoft 返回轮换后的 refresh
 token 时安全持久化，并通过分页的 Microsoft Graph Delta 请求获取配置 Drive

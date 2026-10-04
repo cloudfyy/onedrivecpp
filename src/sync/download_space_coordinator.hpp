@@ -9,6 +9,10 @@
 
 namespace onedrive::sync::detail {
 
+[[nodiscard]] std::uintmax_t download_safety_reserve(
+    std::uintmax_t transfer_bytes
+);
+
 class DownloadSpaceCancelledError final : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;

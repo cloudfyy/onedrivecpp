@@ -15,6 +15,10 @@ onedrive-cpp \- modern C++ OneDrive synchronization client
 .B onedrive-cpp reset-state
 .RI [ options ]
 .PP
+.B onedrive-cpp download
+.RI [ options ]
+.I REMOTE_PATH
+.PP
 .B onedrive-cpp sync
 .RI [ options ]
 .PP
@@ -60,6 +64,19 @@ untouched, but the next sync may report local modification conflicts. For automa
 explicitly confirms
 .BR \-\-clear\-all ;
 it is rejected without that option.
+.TP
+.B download
+Download one file identified by a Drive-relative
+.IR REMOTE_PATH .
+Unsafe path components are rejected before a Graph request. The command reuses
+the normal eTag precondition, HTTPS redirects, Range transfers, durable
+checkpoints, integrity validation, disk-space reservation, local-modification
+protection, and atomic installation. Directories and files marked with the
+Microsoft Graph malware facet are rejected. The item snapshot is updated
+without advancing the Drive delta link. With
+.BR \-\-dry\-run ,
+display the resolved remote path, local destination, and expected size without
+creating the item database or changing downloaded files.
 .TP
 .B sync
 Refresh the OAuth access token and retrieve recursive drive changes using the
@@ -179,10 +196,12 @@ and errors. Diagnostic logging remains controlled separately by
 .BR \-\-log\-level .
 .TP
 .B \-\-dry\-run
-For the
+For
+.BR download ,
+resolve and display the single-file plan without creating the item database or
+changing downloaded files. For
 .B sync
-command, display the effective synchronization inputs without modifying
-remote files.
+, display the effective synchronization inputs without modifying remote files.
 .SH CONFIGURATION
 The configuration file uses TOML and must declare
 .BR "config_version = 2" .
@@ -462,6 +481,12 @@ Inspect synchronization inputs:
 .PP
 .RS
 .B onedrive-cpp sync \-\-dry\-run \-\-log\-level debug
+.RE
+.PP
+Download one remote file:
+.PP
+.RS
+.B onedrive-cpp download Documents/report.pdf
 .RE
 .PP
 Run the monitor with a rotating log file:

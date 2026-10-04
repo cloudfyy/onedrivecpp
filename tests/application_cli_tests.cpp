@@ -155,6 +155,21 @@ public:
         return {};
     }
 
+    [[nodiscard]] onedrive::graph::RemoteItem item_by_path(
+        const std::string& remote_path
+    ) const {
+        return {
+            .id = "single-file-id",
+            .name = std::filesystem::path{remote_path}.filename().string(),
+            .etag = "single-file-etag",
+            .parent_id = "root-id",
+            .remote_path = remote_path,
+            .last_modified = "2026-10-02T00:00:00Z",
+            .size = 42,
+            .directory = false,
+        };
+    }
+
     [[nodiscard]] onedrive::graph::DeltaResult list_delta(
         const std::optional<std::string>&,
         const onedrive::graph::DeltaProgress& progress
@@ -479,6 +494,7 @@ int main() {
         run_application(runtime_factory, {"build/release/onedrive-cpp"});
     if (help.exit_code != 0 || !help.standard_output.contains("auth") ||
         !help.standard_output.contains("reset-state") ||
+        !help.standard_output.contains("download") ||
         !help.standard_output.contains("sync") ||
         !help.standard_output.contains("onedrive-cpp [OPTIONS] SUBCOMMAND") ||
         help.standard_output.contains("build/release/onedrive-cpp")) {
@@ -530,6 +546,12 @@ int main() {
             {"onedrive-cpp", "reset-state", "--yes"}
         ).exit_code != 2) {
         return fail("--yes was accepted without --clear-all");
+    }
+    if (run_application(
+            runtime_factory,
+            {"onedrive-cpp", "download"}
+        ).exit_code != 2) {
+        return fail("download command accepted a missing remote path");
     }
 
     TemporaryDirectory temporary_directory;
@@ -820,6 +842,55 @@ int main() {
             !contents.contains("Synchronization dry run completed")) {
             return fail("sync dry-run diagnostics were not written to the log");
         }
+    }
+
+    const std::string single_remote_path{"Documents/single file.txt"};
+    const auto single_destination =
+        expected_sync_directory / single_remote_path;
+    const int stores_before_single_download =
+        runtime_factory.item_store_count;
+    const auto single_dry_run = run_application(
+        runtime_factory,
+        {
+            "onedrive-cpp",
+            "download",
+            single_remote_path,
+            "--config",
+            config_path.string(),
+            "--dry-run",
+        }
+    );
+    if (single_dry_run.exit_code != 0 ||
+        !single_dry_run.standard_output.contains(
+            "Single-file download plan"
+        ) ||
+        std::filesystem::exists(single_destination) ||
+        runtime_factory.item_store_count !=
+            stores_before_single_download ||
+        runtime_factory.item_store_apply_delta_count != 0) {
+        return fail("single-file download dry run changed local state");
+    }
+
+    const auto single_download = run_application(
+        runtime_factory,
+        {
+            "onedrive-cpp",
+            "download",
+            single_remote_path,
+            "--config",
+            config_path.string(),
+        }
+    );
+    if (single_download.exit_code != 0 ||
+        !single_download.standard_output.contains(
+            "Downloaded 'Documents/single file.txt'"
+        ) ||
+        !std::filesystem::is_regular_file(single_destination) ||
+        std::filesystem::file_size(single_destination) != 42 ||
+        runtime_factory.item_store_count !=
+            stores_before_single_download + 1 ||
+        runtime_factory.item_store_apply_delta_count != 0) {
+        return fail("single-file download was not safely dispatched");
     }
 
     const auto legacy_file = sync_path / "legacy.txt";

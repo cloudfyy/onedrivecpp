@@ -52,6 +52,39 @@ std::string percent_encode(std::string_view value) {
     return encoded;
 }
 
+std::string percent_encode_remote_path(std::string_view path) {
+    if (path.empty() || path.starts_with('/') || path.ends_with('/')) {
+        throw std::invalid_argument(
+            "remote file path must be a non-empty relative path"
+        );
+    }
+    std::string encoded;
+    std::size_t start = 0;
+    while (start < path.size()) {
+        const auto separator = path.find('/', start);
+        const auto length =
+            separator == std::string_view::npos ?
+                path.size() - start :
+                separator - start;
+        const auto segment = path.substr(start, length);
+        if (segment.empty() || segment == "." || segment == ".." ||
+            segment.find('\\') != std::string_view::npos) {
+            throw std::invalid_argument(
+                "remote file path contains an unsafe segment"
+            );
+        }
+        if (!encoded.empty()) {
+            encoded.push_back('/');
+        }
+        encoded += percent_encode(segment);
+        if (separator == std::string_view::npos) {
+            break;
+        }
+        start = separator + 1;
+    }
+    return encoded;
+}
+
 std::string graph_error_message(const Json& response, long status_code) {
     if (const auto error = response.find("error");
         error != response.end() && error->is_object()) {
@@ -998,6 +1031,111 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
         items.size()
     );
     return items;
+}
+
+RemoteItem MicrosoftGraphClient::item_by_path(
+    const std::string& remote_path
+) const {
+    const auto encoded_path = percent_encode_remote_path(remote_path);
+    const std::string url =
+        (options_.drive_id == "me" ?
+            options_.endpoint + "/me/drive/root:/" :
+            options_.endpoint + "/drives/" + percent_encode(options_.drive_id) +
+                "/root:/") +
+        encoded_path +
+        "?$select=id,name,eTag,size,fileSystemInfo,parentReference,file,folder,"
+        "deleted,malware,remoteItem";
+    const auto response = perform_with_retries(
+        [&] {
+            return transport_->perform(http::HttpRequest{
+                .method = http::HttpMethod::get,
+                .url = url,
+                .headers = {
+                    "Accept: application/json",
+                    "Authorization: Bearer " + access_token(),
+                },
+                .body = {},
+                .stop_token = {},
+            });
+        },
+        options_,
+        options_.maximum_throttle_retries,
+        sleep_,
+        "Microsoft Graph path lookup"
+    );
+    if (!response) {
+        throw std::runtime_error(
+            "Microsoft Graph path lookup failed: " + response.error().message
+        );
+    }
+
+    Json json;
+    try {
+        json = Json::parse(response->body);
+    } catch (const Json::exception& error) {
+        throw std::runtime_error(
+            "Microsoft Graph returned invalid path lookup JSON: " +
+            std::string{error.what()}
+        );
+    }
+    if (response->status_code < 200 || response->status_code >= 300) {
+        throw std::runtime_error(
+            graph_error_message(json, response->status_code)
+        );
+    }
+
+    try {
+        RemoteItem item{
+            .id = json.at("id").get<std::string>(),
+            .name = json.at("name").get<std::string>(),
+            .etag = json.at("eTag").get<std::string>(),
+            .parent_id = {},
+            .remote_path = {},
+            .last_modified = {},
+            .size = 0,
+            .directory = json.contains("folder"),
+            .deleted = json.contains("deleted"),
+            .root = json.contains("root"),
+            .malware = item_is_malware(json),
+            .content_hash = item_content_hash(json),
+            .validate_content = !options_.relaxed_download_validation,
+        };
+        item.remote_path = item_remote_path(json, item.name);
+        if (const auto parent = json.find("parentReference");
+            parent != json.end() && parent->is_object()) {
+            if (const auto parent_id = parent->find("id");
+                parent_id != parent->end() && parent_id->is_string()) {
+                item.parent_id = parent_id->get<std::string>();
+            }
+        }
+        if (const auto size = json.find("size");
+            size != json.end() && size->is_number_integer()) {
+            item.size = size->get<std::int64_t>();
+        }
+        if (auto modified = authoritative_last_modified(json);
+            modified.has_value()) {
+            item.last_modified = std::move(modified.value());
+        }
+        if (item.id.empty() || item.name.empty() || item.etag.empty() ||
+            item.remote_path.empty() ||
+            item.deleted || item.root || item.size < 0) {
+            throw std::runtime_error(
+                "Microsoft Graph returned invalid path lookup metadata"
+            );
+        }
+        if (!item.directory && item.last_modified.empty()) {
+            throw std::runtime_error(
+                "Microsoft Graph path lookup file is missing "
+                "fileSystemInfo.lastModifiedDateTime"
+            );
+        }
+        return item;
+    } catch (const Json::exception& error) {
+        throw std::runtime_error(
+            "Microsoft Graph path lookup is missing required drive item data: " +
+            std::string{error.what()}
+        );
+    }
 }
 
 DeltaResult MicrosoftGraphClient::list_delta(

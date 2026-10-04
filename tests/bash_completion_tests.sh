@@ -23,6 +23,7 @@ COMP_WORDS=(onedrive-cpp "")
 COMP_CWORD=1
 _onedrive_cpp_completion
 assert_contains sync "${COMPREPLY[@]}"
+assert_contains download "${COMPREPLY[@]}"
 assert_contains reset-state "${COMPREPLY[@]}"
 assert_contains --version "${COMPREPLY[@]}"
 
@@ -32,6 +33,12 @@ _onedrive_cpp_completion
 assert_contains --dry-run "${COMPREPLY[@]}"
 assert_contains --output "${COMPREPLY[@]}"
 assert_contains --quiet "${COMPREPLY[@]}"
+
+COMP_WORDS=(onedrive-cpp download --)
+COMP_CWORD=2
+_onedrive_cpp_completion
+assert_contains --dry-run "${COMPREPLY[@]}"
+assert_contains --config "${COMPREPLY[@]}"
 
 COMP_WORDS=(onedrive-cpp reset-state --)
 COMP_CWORD=2

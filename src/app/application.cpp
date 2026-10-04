@@ -14,6 +14,7 @@
 #include "onedrive/metrics/metrics.hpp"
 #include "onedrive/monitor/monitor.hpp"
 #include "onedrive/storage/item_store.hpp"
+#include "onedrive/sync/single_file_download.hpp"
 #include "onedrive/sync/sync_engine.hpp"
 #include "onedrive/version.hpp"
 
@@ -120,6 +121,7 @@ int Application::run(int argc, char* argv[]) {
     std::string color_mode{"auto"};
     std::string output_mode{"text"};
     bool quiet = false;
+    std::string remote_download_path;
 
     CLI::App cli{
         "A modern C++ OneDrive synchronization client",
@@ -144,6 +146,10 @@ int Application::run(int argc, char* argv[]) {
         "Reset the Microsoft Graph delta cursor for the configured drive"
     );
     auto* sync_command = cli.add_subcommand("sync", "Synchronize OneDrive files");
+    auto* download_command = cli.add_subcommand(
+        "download",
+        "Download one remote file by its Drive-relative path"
+    );
     auto* monitor_command =
         cli.add_subcommand("monitor", "Monitor for synchronization changes");
 
@@ -195,6 +201,7 @@ int Application::run(int argc, char* argv[]) {
     add_common_options(*logout_command);
     add_common_options(*reset_state_command);
     add_common_options(*sync_command);
+    add_common_options(*download_command);
     add_common_options(*monitor_command);
     auto* clear_all_option = reset_state_command->add_flag(
         "--clear-all",
@@ -212,6 +219,18 @@ int Application::run(int argc, char* argv[]) {
         "--dry-run",
         force_dry_run,
         "Show synchronization inputs without changing remote files"
+    );
+    download_command
+        ->add_option(
+            "REMOTE_PATH",
+            remote_download_path,
+            "Drive-relative path of the remote file"
+        )
+        ->required();
+    download_command->add_flag(
+        "--dry-run",
+        force_dry_run,
+        "Show the single-file download plan without changing local state"
     );
 
     if (argc < 2) {
@@ -249,6 +268,7 @@ int Application::run(int argc, char* argv[]) {
             *auth_command ? detail::Operation::authenticate :
             *logout_command ? detail::Operation::logout :
             *reset_state_command ? detail::Operation::reset_state :
+            *download_command ? detail::Operation::download :
             *monitor_command ? detail::Operation::monitor :
                                detail::Operation::synchronize;
         const detail::RuntimePreflight runtime_preflight{config, operation};
@@ -447,8 +467,29 @@ int Application::run(int argc, char* argv[]) {
                 config.sync_directory,
                 identity
             );
+        if (*download_command && config.dry_run) {
+            return sync::plan_single_file_download(
+                config,
+                remote_download_path,
+                *graph,
+                console
+            );
+        }
         auto items = runtime_factory_->create_item_store(config, identity);
         items->open();
+        if (*download_command) {
+            spdlog::info(
+                "Starting single-file download for '{}'",
+                remote_download_path
+            );
+            return sync::download_single_file(
+                config,
+                remote_download_path,
+                *graph,
+                *items,
+                console
+            );
+        }
         auto metrics = runtime_factory_->create_metrics();
         return sync::SyncEngine{
             config,

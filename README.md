@@ -278,8 +278,9 @@ The `e2e` preset is disabled from normal builds and requires a dedicated test
 account or Drive whose remote root contains a stable fixture. The external
 configuration must already be authenticated and must not be committed. The
 runner copies its state directory into an isolated temporary workspace, clears
-only that copy, downloads the fixture twice, verifies its SHA-256, and confirms
-that the unchanged second synchronization does not replace the local file.
+only that copy, downloads the fixture with the single-file command, verifies
+its SHA-256, and confirms that two following synchronizations do not replace
+the unchanged local file.
 
 ```bash
 export ONEDRIVE_E2E_CONFIG=/absolute/path/to/dedicated-e2e.toml
@@ -807,6 +808,29 @@ other Drives remain untouched. Because local snapshots are no longer
 available, the next sync may report local modification conflicts. Automation
 must acknowledge this risk explicitly with
 `reset-state --clear-all --yes`; `--yes` is rejected without `--clear-all`.
+
+Download one file without running a full Drive Delta synchronization:
+
+```bash
+onedrive-cpp download "Documents/report.pdf"
+```
+
+The argument is a Drive-relative file path. Absolute paths, empty components,
+`.` and `..` components, control bytes, and backslashes are rejected before a
+Graph request is made. The command resolves exactly one DriveItem by path and
+reuses the normal eTag precondition, HTTPS redirect policy, Range downloads,
+durable checkpoint recovery, integrity validation, disk-space reservation,
+local-modification protection, and atomic installation. Directories and files
+marked with the Graph `malware` facet are rejected. The downloaded item
+snapshot is updated, but the Drive `deltaLink` is not advanced.
+
+Use `download --dry-run` to display the resolved remote path, local destination,
+and expected size without creating the item database or changing downloaded
+files:
+
+```bash
+onedrive-cpp download "Documents/report.pdf" --dry-run
+```
 
 The `sync` command refreshes the OAuth access token, securely persists a
 rotated refresh token when Microsoft returns one, and obtains the configured

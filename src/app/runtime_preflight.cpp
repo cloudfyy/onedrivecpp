@@ -455,10 +455,12 @@ RuntimePreflight::RuntimePreflight(
     Operation operation
 ) {
     if (operation == Operation::authenticate ||
+        operation == Operation::download ||
         operation == Operation::synchronize) {
         validate_authentication_config(config);
     }
     if ((operation == Operation::reset_state ||
+         operation == Operation::download ||
          operation == Operation::synchronize) &&
         config.drive_id.empty()) {
         throw std::runtime_error("sync.drive_id must not be empty");
@@ -475,6 +477,7 @@ RuntimePreflight::RuntimePreflight(
         );
         const bool authentication_required =
             operation == Operation::reset_state ||
+            operation == Operation::download ||
             operation == Operation::synchronize;
         const auto token_directory =
             account::AccountState::find_active_token_directory(
@@ -493,7 +496,8 @@ RuntimePreflight::RuntimePreflight(
                 authentication_required
             );
         }
-        if (operation == Operation::synchronize ||
+        if (operation == Operation::download ||
+            operation == Operation::synchronize ||
             operation == Operation::monitor) {
             prepare_sync_directory(config, operation);
         }

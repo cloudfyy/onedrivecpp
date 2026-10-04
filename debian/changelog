@@ -1,3 +1,14 @@
+onedrive-cpp (0.6.29-1~ubuntu24.04) noble; urgency=medium
+
+  * Add a safe single-file download command using Drive-relative paths.
+  * Reuse conditional Graph downloads, durable checkpoints, integrity checks,
+    local-modification protection, and atomic installation.
+  * Resolve and encode remote paths without advancing the Drive delta cursor.
+  * Extend the live Graph E2E test through single-file download and subsequent
+    full synchronization.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 04:14:40 +0000
+
 onedrive-cpp (0.6.28-1~ubuntu24.04) noble; urgency=medium
 
   * Add reusable transfer ordering by file size or name.

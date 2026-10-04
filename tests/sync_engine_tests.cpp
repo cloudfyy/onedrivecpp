@@ -44,6 +44,12 @@ public:
         return {};
     }
 
+    [[nodiscard]] onedrive::graph::RemoteItem item_by_path(
+        const std::string&
+    ) const {
+        throw std::logic_error{"single path lookup was not expected"};
+    }
+
     [[nodiscard]] onedrive::graph::DeltaResult list_delta(
         const std::optional<std::string>& delta_link,
         const onedrive::graph::DeltaProgress& progress

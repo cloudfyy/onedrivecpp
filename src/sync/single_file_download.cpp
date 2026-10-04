@@ -1,0 +1,220 @@
+#include "onedrive/sync/single_file_download.hpp"
+
+#include "onedrive/path_security.hpp"
+#include "download_recovery.hpp"
+#include "download_space_coordinator.hpp"
+#include "download_transaction.hpp"
+#include "filesystem_metadata.hpp"
+#include "local_filesystem.hpp"
+#include "safe_sync_root.hpp"
+
+#include <spdlog/spdlog.h>
+
+#include <filesystem>
+#include <format>
+#include <limits>
+#include <stdexcept>
+#include <utility>
+
+namespace onedrive::sync {
+namespace {
+
+struct SingleFileTarget {
+    graph::RemoteItem item;
+    std::filesystem::path configured_root;
+    std::filesystem::path destination;
+};
+
+SingleFileTarget resolve_target(
+    const config::Config& config,
+    const std::string& remote_path,
+    graph::GraphClient& graph
+) {
+    const auto configured_root =
+        onedrive::detail::normalized_absolute(config.sync_directory);
+    static_cast<void>(detail::local_path_for(configured_root, remote_path));
+
+    auto item = graph.item_by_path(remote_path);
+    if (item.directory) {
+        throw std::runtime_error(
+            "remote path identifies a directory, not a file: " + remote_path
+        );
+    }
+    if (item.malware) {
+        throw std::runtime_error(
+            "Microsoft Graph marked the remote file as malware: " +
+            remote_path
+        );
+    }
+    if (item.size < 0 ||
+        static_cast<std::uint64_t>(item.size) >
+            std::numeric_limits<std::uintmax_t>::max()) {
+        throw std::runtime_error(
+            "remote file size exceeds the supported range: " + remote_path
+        );
+    }
+    auto destination =
+        detail::local_path_for(configured_root, item.remote_path);
+    return {
+        .item = std::move(item),
+        .configured_root = configured_root,
+        .destination = std::move(destination),
+    };
+}
+
+storage::ItemState state_for(
+    const std::string& drive_id,
+    const graph::RemoteItem& item,
+    const std::filesystem::path& destination
+) {
+    return {
+        .drive_id = drive_id,
+        .remote_id = item.id,
+        .parent_id = item.parent_id,
+        .name = item.name,
+        .etag = item.etag,
+        .remote_path = item.remote_path,
+        .local_path = destination,
+        .last_modified = item.last_modified,
+        .size = item.size,
+        .local_size = 0,
+        .local_modified_ticks = 0,
+        .directory = false,
+    };
+}
+
+}  // namespace
+
+int plan_single_file_download(
+    const config::Config& config,
+    const std::string& remote_path,
+    graph::GraphClient& graph,
+    const cli::Console& console
+) {
+    const auto target = resolve_target(config, remote_path, graph);
+    console.section(
+        "single_download_plan",
+        "Single-file download plan:",
+        {
+            {
+                .label = "remote path:",
+                .key = "remote_path",
+                .value = target.item.remote_path,
+            },
+            {
+                .label = "local path:",
+                .key = "local_path",
+                .value = target.destination.string(),
+            },
+            {
+                .label = "size:",
+                .key = "size",
+                .value = std::to_string(target.item.size),
+            },
+        }
+    );
+    return 0;
+}
+
+int download_single_file(
+    const config::Config& config,
+    const std::string& remote_path,
+    graph::GraphClient& graph,
+    storage::ItemStore& items,
+    const cli::Console& console
+) {
+    auto target = resolve_target(config, remote_path, graph);
+    auto& item = target.item;
+    const auto& configured_root = target.configured_root;
+    const auto& destination = target.destination;
+
+    const bool private_permissions =
+        config.sync_permissions ==
+        config::SyncPermissionsMode::private_access;
+    const auto sync_root =
+        detail::prepare_sync_root(configured_root, private_permissions);
+    detail::SafeSyncRoot safe_root{sync_root};
+    safe_root.ensure_directory_tree(
+        destination.parent_path(),
+        private_permissions
+    );
+    const auto metadata = detail::FilesystemMetadata::detect(
+        config.filesystem_metadata,
+        sync_root
+    );
+    detail::recover_pending_downloads(
+        items,
+        safe_root,
+        config.drive_id,
+        metadata,
+        private_permissions
+    );
+    const auto previous = items.find(config.drive_id, item.id);
+    const bool exists = std::filesystem::exists(destination);
+    const bool snapshot_matches =
+        exists && previous.has_value() &&
+        detail::local_snapshot_matches(*previous, destination);
+    if (exists && !snapshot_matches) {
+        throw detail::LocalModificationConflictError(
+            "local modification conflict: " + destination.string()
+        );
+    }
+    if (snapshot_matches && previous->etag == item.etag) {
+        console.message(
+            cli::MessageKind::success,
+            "single_download_reused",
+            "Local file is already current: " + destination.string()
+        );
+        return 0;
+    }
+    const auto baseline = detail::capture_local_file_baseline(destination);
+    detail::DownloadSpaceCoordinator space{
+        sync_root,
+        detail::download_safety_reserve(
+            static_cast<std::uintmax_t>(item.size)
+        )
+    };
+    auto state = state_for(config.drive_id, item, destination);
+    const auto installed = detail::commit_download(
+        items,
+        safe_root,
+        detail::prepare_download(
+            graph,
+            items,
+            item,
+            std::move(state),
+            destination,
+            baseline,
+            metadata,
+            space,
+            {},
+            [&](std::uint64_t downloaded, std::uint64_t total) {
+                console.download_progress(
+                    downloaded >= total ? 1U : 0U,
+                    1,
+                    downloaded,
+                    total,
+                    downloaded >= total,
+                    {}
+                );
+            }
+        )
+    );
+    spdlog::info(
+        "Downloaded single remote file '{}' to '{}'",
+        item.remote_path,
+        installed.local_path.string()
+    );
+    console.message(
+        cli::MessageKind::success,
+        "single_download_completed",
+        std::format(
+            "Downloaded '{}' to '{}'.",
+            item.remote_path,
+            installed.local_path.string()
+        )
+    );
+    return 0;
+}
+
+}  // namespace onedrive::sync

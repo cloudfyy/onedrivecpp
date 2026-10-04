@@ -32,6 +32,10 @@ struct LocalFileBaseline {
     std::string fingerprint;
 };
 
+[[nodiscard]] std::filesystem::path prepare_sync_root(
+    const std::filesystem::path& configured_root,
+    bool private_permissions
+);
 [[nodiscard]] std::filesystem::path local_path_for(
     const std::filesystem::path& sync_directory,
     const std::string& remote_path
