@@ -14,6 +14,8 @@ namespace onedrive::detail {
 std::filesystem::path normalized_absolute(
     const std::filesystem::path& path
 ) {
+    // Normalize only the path syntax; canonicalization would resolve symlinks
+    // before callers have a chance to reject them.
     return std::filesystem::absolute(path).lexically_normal();
 }
 
@@ -27,6 +29,8 @@ void reject_symlink_components(
         std::error_code error;
         const auto status = std::filesystem::symlink_status(current, error);
         if (error == std::errc::no_such_file_or_directory) {
+            // Once a component is missing, none of its descendants can exist
+            // yet, so there are no remaining symlinks to inspect.
             return;
         }
         if (error) {
@@ -52,6 +56,8 @@ int open_path_no_symlinks(
     open_how how{
         .flags = static_cast<__u64>(flags | O_CLOEXEC),
         .mode = static_cast<__u64>(mode),
+        // Enforce the check during path resolution to avoid a race between a
+        // separate symlink check and opening the file.
         .resolve = RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS,
     };
     const int descriptor = static_cast<int>(
@@ -63,6 +69,13 @@ int open_path_no_symlinks(
             sizeof(how)
         )
     );
+    if (descriptor == -1 && errno == ENOSYS) {
+        throw std::runtime_error(
+            "cannot safely open path '" + path.string() +
+            "': openat2 is unavailable; Linux 5.6 or newer "
+            "(or a kernel with openat2 backported) is required"
+        );
+    }
     if (descriptor == -1) {
         throw std::runtime_error(
             "cannot safely open path '" + path.string() + "': " +

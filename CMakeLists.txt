@@ -13,6 +13,7 @@ project(
 include(GNUInstallDirs)
 include(CTest)
 include(FetchContent)
+include(CheckCXXSourceCompiles)
 
 find_package(CLI11 CONFIG REQUIRED)
 set(CURL_USE_STATIC_LIBS OFF)
@@ -43,6 +44,28 @@ set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
+check_cxx_source_compiles(
+    "
+    #include <linux/openat2.h>
+    #include <sys/syscall.h>
+
+    int main() {
+        open_how how{};
+        how.resolve = RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS;
+        return static_cast<int>(SYS_openat2 == 0);
+    }
+    "
+    ONEDRIVE_HAS_OPENAT2_API
+)
+if(NOT ONEDRIVE_HAS_OPENAT2_API)
+    message(
+        FATAL_ERROR
+        "onedrive-cpp requires Linux headers exposing the openat2 API "
+        "(Linux 5.6 or newer)"
+    )
+endif()
+
 option(
     ONEDRIVE_ENABLE_CLANG_TIDY
     "Run Clang-Tidy checks while compiling"

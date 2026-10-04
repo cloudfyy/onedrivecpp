@@ -57,9 +57,17 @@ int open_beneath(
         .resolve = RESOLVE_BENEATH | RESOLVE_NO_MAGICLINKS |
                    RESOLVE_NO_SYMLINKS,
     };
-    return static_cast<int>(
+    const int descriptor = static_cast<int>(
         ::syscall(SYS_openat2, directory, value.c_str(), &how, sizeof(how))
     );
+    if (descriptor == -1 && errno == ENOSYS) {
+        throw std::runtime_error(
+            "cannot safely resolve synchronization path: openat2 is "
+            "unavailable; Linux 5.6 or newer (or a kernel with openat2 "
+            "backported) is required"
+        );
+    }
+    return descriptor;
 }
 
 }  // namespace
