@@ -142,7 +142,8 @@ At
 level, HTTP transport diagnostics include the negotiated protocol, new
 connection count, and DNS, TCP, TLS, server wait, body transfer, and total
 timings. Request URLs, headers, and bodies are not included in these
-diagnostics.
+diagnostics. HTTP requests disable libcurl signal use so concurrent transfers
+report connection failures through normal errors instead of process signals.
 .TP
 .BI \-\-log\-file " PATH"
 Also write logs to
@@ -354,6 +355,18 @@ cannot grow safely. Both modes reject non-success HTTP response bodies before
 writing them to the temporary file or a durable checkpoint. The default is
 .BR strict .
 Relaxed mode weakens integrity guarantees.
+.PP
+Before requesting file content, the client sends the expected remote eTag as
+an
+.B If-Match
+precondition. HTTP 412 indicates that the remote version changed and is not
+retried as a transient transfer failure. The next synchronization can then
+plan the current remote version.
+.PP
+Preauthenticated download URLs may follow at most five additional redirects.
+Every redirect target must use HTTPS, and Microsoft Graph authorization is
+never attached to these CDN requests. Intermediate response headers and bodies
+are isolated from the final response validation.
 .TP
 .B filesystem.metadata
 File-system metadata policy:
