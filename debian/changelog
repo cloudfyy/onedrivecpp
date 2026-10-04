@@ -1,3 +1,11 @@
+onedrive-cpp (0.6.10-1~ubuntu24.04) noble; urgency=medium
+
+  * Isolate synchronized data by stable Microsoft user and Drive identities.
+  * Preserve friendly account and Drive names without path collisions.
+  * Share path safeguards across state and synchronized data directories.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 00:22:19 +0000
+
 onedrive-cpp (0.6.9-1~ubuntu24.04) noble; urgency=medium
 
   * Calculate SHA-256 and QuickXorHash incrementally during downloads.
