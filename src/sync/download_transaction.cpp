@@ -2,6 +2,7 @@
 
 #include "download_integrity.hpp"
 #include "local_filesystem.hpp"
+#include "safe_backup.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -288,71 +289,138 @@ PreparedDownload prepare_download(
 storage::ItemState commit_download(
     storage::ItemStore& items,
     const SafeSyncRoot& sync_root,
-    PreparedDownload download
+    const FilesystemMetadata& metadata,
+    PreparedDownload download,
+    DownloadCommitOptions options
 ) {
     bool journaled = false;
     try {
-        const auto ensure_destination_unchanged = [&] {
+        auto baseline = download.destination_baseline;
+        for (unsigned attempt = 0; attempt < 3; ++attempt) {
+            if (!local_file_matches_baseline(download.destination, baseline)) {
+                if (options.local_conflict ==
+                    config::LocalConflictPolicy::block) {
+                    throw LocalModificationConflictError(
+                        "local file changed while downloading: " +
+                        download.destination.string()
+                    );
+                }
+                baseline = capture_local_file_baseline(download.destination);
+                options.preserve_local = baseline.existed;
+            }
+
+            download.state.local_path = download.destination;
+            const bool identical =
+                baseline.existed &&
+                baseline.fingerprint == download.content_fingerprint;
+            std::optional<SafeBackup> backup;
+            if (options.preserve_local && baseline.existed && !identical) {
+                backup = preserve_safe_backup(
+                    sync_root,
+                    download.destination,
+                    baseline
+                );
+                if (options.backup_created) {
+                    options.backup_created(backup->path);
+                }
+            }
+
             if (!local_file_matches_baseline(
                     download.destination,
-                    download.destination_baseline
+                    baseline
                 )) {
+                if (options.local_conflict ==
+                    config::LocalConflictPolicy::backup) {
+                    options.preserve_local = true;
+                    baseline =
+                        capture_local_file_baseline(download.destination);
+                    continue;
+                }
                 throw LocalModificationConflictError(
                     "local file changed while downloading: " +
                     download.destination.string()
                 );
             }
-        };
-        ensure_destination_unchanged();
-        download.state.local_path = download.destination;
-        items.save_pending_download({
-            .item = download.state,
-            .temporary_path = download.temporary_path,
-            .content_fingerprint = download.content_fingerprint,
-        });
-        journaled = true;
-        items.remove_partial_download(
-            download.state.drive_id,
-            download.state.remote_id
-        );
-        if (!local_file_matches_baseline(
-                download.destination,
-                download.destination_baseline
-            )) {
-            items.remove_pending_download(
-                download.state.drive_id,
-                download.state.remote_id
-            );
+
+            items.save_pending_download({
+                .item = download.state,
+                .temporary_path = download.temporary_path,
+                .content_fingerprint = download.content_fingerprint,
+                .backup_path = backup ? backup->path :
+                                       std::filesystem::path{},
+                .backup_fingerprint = backup ? backup->fingerprint : "",
+            });
+            journaled = true;
             items.remove_partial_download(
                 download.state.drive_id,
                 download.state.remote_id
             );
-            journaled = false;
-            throw LocalModificationConflictError(
-                "local file changed while committing the download: " +
-                download.destination.string()
+            if (!local_file_matches_baseline(
+                    download.destination,
+                    baseline
+                )) {
+                items.remove_pending_download(
+                    download.state.drive_id,
+                    download.state.remote_id
+                );
+                journaled = false;
+                if (options.local_conflict ==
+                    config::LocalConflictPolicy::backup) {
+                    options.preserve_local = true;
+                    baseline =
+                        capture_local_file_baseline(download.destination);
+                    continue;
+                }
+                throw LocalModificationConflictError(
+                    "local file changed while committing the download: " +
+                    download.destination.string()
+                );
+            }
+
+            if (identical) {
+                apply_remote_modified_time(
+                    download.destination,
+                    download.item.last_modified
+                );
+                metadata.write_remote_identity(
+                    download.item,
+                    download.destination
+                );
+                fsync_file(download.destination);
+                discard_prepared_download(download);
+                spdlog::debug(
+                    "Reused content-identical local file '{}'",
+                    download.item.remote_path
+                );
+            } else {
+                sync_root.rename(
+                    download.temporary_path,
+                    download.destination
+                );
+                sync_root.fsync_directory(
+                    download.destination.parent_path()
+                );
+                spdlog::debug(
+                    "Atomically installed '{}' ({} bytes)",
+                    download.item.remote_path,
+                    download.downloaded_size
+                );
+            }
+            download.state.local_size =
+                static_cast<std::int64_t>(download.downloaded_size);
+            download.state.local_modified_ticks =
+                modified_ticks(download.destination);
+            items.upsert(download.state);
+            items.remove_pending_download(
+                download.state.drive_id,
+                download.state.remote_id
             );
+            return download.state;
         }
-        sync_root.rename(
-            download.temporary_path,
-            download.destination
+        throw LocalModificationConflictError(
+            "local file changed repeatedly while creating safeBackup: " +
+            download.destination.string()
         );
-        sync_root.fsync_directory(download.destination.parent_path());
-        download.state.local_size =
-            static_cast<std::int64_t>(download.downloaded_size);
-        download.state.local_modified_ticks =
-            modified_ticks(download.destination);
-        items.upsert(download.state);
-        items.remove_pending_download(
-            download.state.drive_id,
-            download.state.remote_id
-        );
-        spdlog::debug(
-            "Atomically installed '{}' ({} bytes)",
-            download.item.remote_path,
-            download.downloaded_size
-        );
-        return download.state;
     } catch (const std::exception& error) {
         if (!journaled) {
             discard_prepared_download(download);
@@ -381,10 +449,18 @@ storage::ItemState commit_download(
 
 storage::ItemState commit_download(
     storage::ItemStore& items,
-    PreparedDownload download
+    const FilesystemMetadata& metadata,
+    PreparedDownload download,
+    DownloadCommitOptions options
 ) {
     const SafeSyncRoot sync_root{download.destination.parent_path()};
-    return commit_download(items, sync_root, std::move(download));
+    return commit_download(
+        items,
+        sync_root,
+        metadata,
+        std::move(download),
+        std::move(options)
+    );
 }
 
 void discard_prepared_download(const PreparedDownload& download) noexcept {
@@ -414,6 +490,7 @@ storage::ItemState download_atomically(
 ) {
     return commit_download(
         items,
+        metadata,
         prepare_download(
             graph,
             items,

@@ -706,6 +706,105 @@ int test_failure_and_conflict() {
         return fail("local conflict was not isolated and persisted");
     }
 
+    const auto backup_root = temporary.path() / "backup-conflict";
+    std::filesystem::create_directories(backup_root);
+    {
+        std::ofstream output{backup_root / "existing.txt"};
+        output << "user data";
+    }
+    FakeGraphClient backup_graph;
+    backup_graph.changes = {file("existing", "existing.txt", 4)};
+    backup_graph.contents["existing"] = "data";
+    FakeItemStore backup_items;
+    FakeMetrics backup_metrics;
+    auto backup_config = config_for(backup_root, false);
+    backup_config.local_conflict =
+        onedrive::config::LocalConflictPolicy::backup;
+    if (onedrive::sync::SyncEngine{
+            backup_config,
+            backup_graph,
+            backup_items,
+            backup_metrics
+        }.synchronize() != 0 ||
+        backup_graph.download_count != 1 ||
+        backup_items.upsert_count != 1 ||
+        !backup_items.applied_delta.blocked_upserts.empty() ||
+        !backup_metrics.last_success) {
+        return fail("safeBackup mode did not resolve a local conflict");
+    }
+    std::filesystem::path preserved;
+    for (const auto& entry :
+         std::filesystem::directory_iterator{backup_root}) {
+        if (entry.path().filename().string().starts_with(
+                "existing.safeBackup-"
+            )) {
+            preserved = entry.path();
+        }
+    }
+    std::ifstream installed_input{backup_root / "existing.txt"};
+    std::ifstream preserved_input{preserved};
+    const std::string installed{
+        std::istreambuf_iterator<char>{installed_input},
+        std::istreambuf_iterator<char>{}
+    };
+    const std::string preserved_contents{
+        std::istreambuf_iterator<char>{preserved_input},
+        std::istreambuf_iterator<char>{}
+    };
+    if (preserved.empty() || installed != "data" ||
+        preserved_contents != "user data") {
+        return fail("safeBackup mode did not preserve conflicting content");
+    }
+
+    const auto late_backup_root =
+        temporary.path() / "backup-created-during-download";
+    FakeGraphClient late_backup_graph;
+    late_backup_graph.changes = {
+        file("late-backup", "late-backup.txt", 4),
+    };
+    late_backup_graph.contents["late-backup"] = "data";
+    late_backup_graph.before_download_write =
+        [destination =
+             late_backup_root / "late-backup.txt"](const std::string&) {
+            std::ofstream output{destination};
+            output << "user data";
+        };
+    FakeItemStore late_backup_items;
+    FakeMetrics late_backup_metrics;
+    auto late_backup_config = config_for(late_backup_root, false);
+    late_backup_config.local_conflict =
+        onedrive::config::LocalConflictPolicy::backup;
+    if (onedrive::sync::SyncEngine{
+            late_backup_config,
+            late_backup_graph,
+            late_backup_items,
+            late_backup_metrics
+        }.synchronize() != 0 ||
+        late_backup_items.upsert_count != 1 ||
+        !late_backup_items.applied_delta.blocked_upserts.empty() ||
+        !late_backup_metrics.last_success) {
+        return fail(
+            "safeBackup mode did not preserve a download-time conflict"
+        );
+    }
+    bool preserved_late_change = false;
+    for (const auto& entry :
+         std::filesystem::directory_iterator{late_backup_root}) {
+        if (entry.path().filename().string().starts_with(
+                "late-backup.safeBackup-"
+            )) {
+            std::ifstream input{entry.path()};
+            const std::string contents{
+                std::istreambuf_iterator<char>{input},
+                std::istreambuf_iterator<char>{}
+            };
+            preserved_late_change = contents == "user data";
+        }
+    }
+    if (!preserved_late_change) {
+        return fail("download-time local content was not backed up");
+    }
+
     const auto symlink_root = temporary.path() / "symlink-root";
     const auto outside = temporary.path() / "outside";
     std::filesystem::create_directories(symlink_root);

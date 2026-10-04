@@ -311,19 +311,31 @@ void create_current_schema(sqlite3* database) {
         "directory INTEGER NOT NULL,"
         "temporary_path TEXT NOT NULL,"
         "content_fingerprint TEXT NOT NULL,"
+        "backup_path TEXT NOT NULL DEFAULT '',"
+        "backup_fingerprint TEXT NOT NULL DEFAULT '',"
         "PRIMARY KEY (drive_id, remote_id)"
         ");"
     );
     create_blocked_item_schema(database);
     create_identity_schema(database);
     create_partial_download_schema(database);
-    execute(database, "PRAGMA user_version = 10;");
+    execute(database, "PRAGMA user_version = 11;");
 }
 
 void add_sync_filter_fingerprint(sqlite3* database) {
     execute(
         database,
         "ALTER TABLE drive_state ADD COLUMN sync_filter_fingerprint "
+        "TEXT NOT NULL DEFAULT '';"
+    );
+}
+
+void add_pending_download_backup(sqlite3* database) {
+    execute(
+        database,
+        "ALTER TABLE pending_download ADD COLUMN backup_path "
+        "TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE pending_download ADD COLUMN backup_fingerprint "
         "TEXT NOT NULL DEFAULT '';"
     );
 }
@@ -386,7 +398,8 @@ void migrate_schema(sqlite3* database) {
         create_identity_schema(database);
         create_partial_download_schema(database);
         add_sync_filter_fingerprint(database);
-        execute(database, "PRAGMA user_version = 10;");
+        add_pending_download_backup(database);
+        execute(database, "PRAGMA user_version = 11;");
         transaction.commit();
         return;
     }
@@ -418,7 +431,8 @@ void migrate_schema(sqlite3* database) {
         create_identity_schema(database);
         create_partial_download_schema(database);
         add_sync_filter_fingerprint(database);
-        execute(database, "PRAGMA user_version = 10;");
+        add_pending_download_backup(database);
+        execute(database, "PRAGMA user_version = 11;");
         transaction.commit();
         return;
     }
@@ -447,7 +461,8 @@ void migrate_schema(sqlite3* database) {
         create_identity_schema(database);
         create_partial_download_schema(database);
         add_sync_filter_fingerprint(database);
-        execute(database, "PRAGMA user_version = 10;");
+        add_pending_download_backup(database);
+        execute(database, "PRAGMA user_version = 11;");
         transaction.commit();
         return;
     }
@@ -457,7 +472,8 @@ void migrate_schema(sqlite3* database) {
         create_identity_schema(database);
         create_partial_download_schema(database);
         add_sync_filter_fingerprint(database);
-        execute(database, "PRAGMA user_version = 10;");
+        add_pending_download_backup(database);
+        execute(database, "PRAGMA user_version = 11;");
         transaction.commit();
         return;
     }
@@ -467,7 +483,8 @@ void migrate_schema(sqlite3* database) {
         create_identity_schema(database);
         create_partial_download_schema(database);
         add_sync_filter_fingerprint(database);
-        execute(database, "PRAGMA user_version = 10;");
+        add_pending_download_backup(database);
+        execute(database, "PRAGMA user_version = 11;");
         transaction.commit();
         return;
     }
@@ -477,7 +494,8 @@ void migrate_schema(sqlite3* database) {
         create_identity_schema(database);
         create_partial_download_schema(database);
         add_sync_filter_fingerprint(database);
-        execute(database, "PRAGMA user_version = 10;");
+        add_pending_download_backup(database);
+        execute(database, "PRAGMA user_version = 11;");
         transaction.commit();
         return;
     }
@@ -486,7 +504,8 @@ void migrate_schema(sqlite3* database) {
         add_blocked_item_hash_columns(database);
         create_partial_download_schema(database);
         add_sync_filter_fingerprint(database);
-        execute(database, "PRAGMA user_version = 10;");
+        add_pending_download_backup(database);
+        execute(database, "PRAGMA user_version = 11;");
         transaction.commit();
         return;
     }
@@ -494,18 +513,27 @@ void migrate_schema(sqlite3* database) {
         Transaction transaction{database};
         add_blocked_item_hash_columns(database);
         add_sync_filter_fingerprint(database);
-        execute(database, "PRAGMA user_version = 10;");
+        add_pending_download_backup(database);
+        execute(database, "PRAGMA user_version = 11;");
         transaction.commit();
         return;
     }
     if (version == 9) {
         Transaction transaction{database};
         add_sync_filter_fingerprint(database);
-        execute(database, "PRAGMA user_version = 10;");
+        add_pending_download_backup(database);
+        execute(database, "PRAGMA user_version = 11;");
         transaction.commit();
         return;
     }
-    if (version != 10) {
+    if (version == 10) {
+        Transaction transaction{database};
+        add_pending_download_backup(database);
+        execute(database, "PRAGMA user_version = 11;");
+        transaction.commit();
+        return;
+    }
+    if (version != 11) {
         throw std::runtime_error(
             "unsupported state database schema version " + std::to_string(version)
         );
@@ -1075,20 +1103,32 @@ void ItemDatabase::save_pending_download_on_worker(
             "pending download requires drive, item, temporary path, and fingerprint"
         );
     }
+    if (download.backup_path.empty() !=
+        download.backup_fingerprint.empty()) {
+        throw std::invalid_argument(
+            "pending download safeBackup path and fingerprint must be "
+            "provided together"
+        );
+    }
 
     Statement statement{
         database,
         "INSERT INTO pending_download ("
         "drive_id, remote_id, parent_id, name, etag, remote_path, local_path, "
         "last_modified, size, directory, temporary_path, content_fingerprint"
-        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) "
+        ", backup_path, backup_fingerprint"
+        ") VALUES ("
+        "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14"
+        ") "
         "ON CONFLICT(drive_id, remote_id) DO UPDATE SET "
         "parent_id = excluded.parent_id, name = excluded.name, "
         "etag = excluded.etag, remote_path = excluded.remote_path, "
         "local_path = excluded.local_path, "
         "last_modified = excluded.last_modified, size = excluded.size, "
         "directory = excluded.directory, temporary_path = excluded.temporary_path, "
-        "content_fingerprint = excluded.content_fingerprint;"
+        "content_fingerprint = excluded.content_fingerprint, "
+        "backup_path = excluded.backup_path, "
+        "backup_fingerprint = excluded.backup_fingerprint;"
     };
     bind_text(database, statement.get(), 1, download.item.drive_id);
     bind_text(database, statement.get(), 2, download.item.remote_id);
@@ -1112,6 +1152,8 @@ void ItemDatabase::save_pending_download_on_worker(
     );
     bind_text(database, statement.get(), 11, download.temporary_path.string());
     bind_text(database, statement.get(), 12, download.content_fingerprint);
+    bind_text(database, statement.get(), 13, download.backup_path.string());
+    bind_text(database, statement.get(), 14, download.backup_fingerprint);
     if (sqlite3_step(statement.get()) != SQLITE_DONE) {
         throw std::runtime_error(
             "cannot save pending download: " +
@@ -1179,7 +1221,8 @@ std::vector<PendingDownload> ItemDatabase::pending_downloads_on_worker(
         database,
         "SELECT drive_id, remote_id, parent_id, name, etag, remote_path, "
         "local_path, last_modified, size, directory, temporary_path, "
-        "content_fingerprint FROM pending_download WHERE drive_id = ?1 "
+        "content_fingerprint, backup_path, backup_fingerprint "
+        "FROM pending_download WHERE drive_id = ?1 "
         "ORDER BY remote_path;"
     };
     bind_text(database, statement.get(), 1, drive_id);
@@ -1212,6 +1255,8 @@ std::vector<PendingDownload> ItemDatabase::pending_downloads_on_worker(
             },
             .temporary_path = column_text(statement.get(), 10),
             .content_fingerprint = column_text(statement.get(), 11),
+            .backup_path = column_text(statement.get(), 12),
+            .backup_fingerprint = column_text(statement.get(), 13),
         });
     }
     return downloads;

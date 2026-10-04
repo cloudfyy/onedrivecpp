@@ -61,6 +61,8 @@ struct PendingDownload {
     ItemState item;
     std::filesystem::path temporary_path;
     std::string content_fingerprint;
+    std::filesystem::path backup_path;
+    std::string backup_fingerprint;
 };
 
 struct PartialDownload {

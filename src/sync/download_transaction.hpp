@@ -4,10 +4,12 @@
 #include "filesystem_metadata.hpp"
 #include "local_filesystem.hpp"
 #include "safe_sync_root.hpp"
+#include "onedrive/config/config.hpp"
 #include "onedrive/graph/graph_client.hpp"
 #include "onedrive/storage/item_store.hpp"
 
 #include <filesystem>
+#include <functional>
 #include <stop_token>
 #include <utility>
 
@@ -22,6 +24,14 @@ struct PreparedDownload {
     std::uintmax_t downloaded_size{0};
     LocalFileBaseline destination_baseline;
     DownloadSpaceCoordinator::Lease space_reservation;
+};
+
+struct DownloadCommitOptions {
+    config::LocalConflictPolicy local_conflict{
+        config::LocalConflictPolicy::block
+    };
+    bool preserve_local{false};
+    std::function<void(const std::filesystem::path&)> backup_created;
 };
 
 [[nodiscard]] PreparedDownload prepare_download(
@@ -39,11 +49,15 @@ struct PreparedDownload {
 [[nodiscard]] storage::ItemState commit_download(
     storage::ItemStore& items,
     const SafeSyncRoot& sync_root,
-    PreparedDownload download
+    const FilesystemMetadata& metadata,
+    PreparedDownload download,
+    DownloadCommitOptions options = {}
 );
 [[nodiscard]] storage::ItemState commit_download(
     storage::ItemStore& items,
-    PreparedDownload download
+    const FilesystemMetadata& metadata,
+    PreparedDownload download,
+    DownloadCommitOptions options = {}
 );
 void discard_prepared_download(const PreparedDownload& download) noexcept;
 

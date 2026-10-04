@@ -131,6 +131,7 @@ add_library(onedrive_core
     src/sync/item_operation_coordinator.cpp
     src/sync/local_filesystem.cpp
     src/sync/safe_sync_root.cpp
+    src/sync/safe_backup.cpp
     src/sync/selective_sync.cpp
     src/sync/single_file_download.cpp
     src/sync/sync_plan.cpp

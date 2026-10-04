@@ -2,6 +2,7 @@
 #include "download_integrity.hpp"
 #include "download_transaction.hpp"
 #include "filesystem_metadata.hpp"
+#include "safe_backup.hpp"
 #include "onedrive/sync/single_file_download.hpp"
 #include "test_support.hpp"
 
@@ -386,6 +387,75 @@ int test_single_file_download_coordination() {
     if (graph_implementation.download_count != 1) {
         return fail("rejected single-file target started a download");
     }
+
+    auto backup_config = config;
+    backup_config.local_conflict =
+        onedrive::config::LocalConflictPolicy::backup;
+    if (onedrive::sync::download_single_file(
+            backup_config,
+            "conflict.txt",
+            graph,
+            items,
+            console
+        ) != 0 ||
+        graph_implementation.download_count != 2) {
+        return fail("single-file safeBackup download did not succeed");
+    }
+    std::filesystem::path conflict_backup;
+    for (const auto& entry : std::filesystem::directory_iterator{root}) {
+        if (entry.path().filename().string().starts_with(
+                "conflict.safeBackup-"
+            )) {
+            conflict_backup = entry.path();
+        }
+    }
+    std::ifstream installed_input{root / "conflict.txt"};
+    std::ifstream backup_input{conflict_backup};
+    const std::string installed_contents{
+        std::istreambuf_iterator<char>{installed_input},
+        std::istreambuf_iterator<char>{}
+    };
+    const std::string backup_contents{
+        std::istreambuf_iterator<char>{backup_input},
+        std::istreambuf_iterator<char>{}
+    };
+    if (conflict_backup.empty() || installed_contents != "data" ||
+        backup_contents != "user data" ||
+        !output.str().contains("Preserved local conflict")) {
+        return fail("single-file safeBackup did not preserve local content");
+    }
+
+    graph_implementation.lookup_item =
+        remote_item("identical", "identical.txt");
+    {
+        std::ofstream local{root / "identical.txt", std::ios::binary};
+        local << "data";
+    }
+    struct stat before {};
+    if (::stat((root / "identical.txt").c_str(), &before) == -1) {
+        return fail("content-identical fixture could not be inspected");
+    }
+    if (onedrive::sync::download_single_file(
+            backup_config,
+            "identical.txt",
+            graph,
+            items,
+            console
+        ) != 0) {
+        return fail("content-identical local file was not adopted");
+    }
+    struct stat after {};
+    if (::stat((root / "identical.txt").c_str(), &after) == -1 ||
+        before.st_ino != after.st_ino) {
+        return fail("content-identical local file inode was replaced");
+    }
+    for (const auto& entry : std::filesystem::directory_iterator{root}) {
+        if (entry.path().filename().string().starts_with(
+                "identical.safeBackup-"
+            )) {
+            return fail("content-identical local file created a safeBackup");
+        }
+    }
     return EXIT_SUCCESS;
 }
 
@@ -406,6 +476,76 @@ int main() {
         onedrive::config::FilesystemMetadataMode::database,
         root
     );
+    const detail::SafeSyncRoot safe_root{root};
+    const auto local_source = root / "local.txt";
+    {
+        std::ofstream output{local_source, std::ios::binary};
+        output << "local";
+    }
+    if (::chmod(local_source.c_str(), S_IRUSR | S_IWUSR | S_IRGRP) == -1) {
+        return fail("safeBackup permission fixture could not be prepared");
+    }
+    const auto local_backup = detail::preserve_safe_backup(
+        safe_root,
+        local_source,
+        detail::capture_local_file_baseline(local_source)
+    );
+    struct stat backup_status {};
+    if (!local_backup.path.filename().string().starts_with(
+            "local.safeBackup-"
+        ) ||
+        detail::content_fingerprint(local_backup.path) !=
+            detail::content_fingerprint(local_source) ||
+        ::stat(local_backup.path.c_str(), &backup_status) == -1 ||
+        (backup_status.st_mode & (S_IRWXU | S_IRWXG | S_IRWXO)) !=
+            (S_IRUSR | S_IWUSR | S_IRGRP)) {
+        return fail("safeBackup copy did not preserve content and permissions");
+    }
+    const auto stale_source = root / "stale.txt";
+    {
+        std::ofstream output{stale_source, std::ios::binary};
+        output << "old";
+    }
+    const auto stale_baseline =
+        detail::capture_local_file_baseline(stale_source);
+    {
+        std::ofstream output{stale_source, std::ios::binary};
+        output << "changed";
+    }
+    try {
+        static_cast<void>(detail::preserve_safe_backup(
+            safe_root,
+            stale_source,
+            stale_baseline
+        ));
+        return fail("safeBackup accepted a stale local baseline");
+    } catch (const detail::LocalModificationConflictError&) {
+    }
+    try {
+        static_cast<void>(detail::preserve_safe_backup(
+            safe_root,
+            stale_source,
+            {}
+        ));
+        return fail("safeBackup accepted an absent local baseline");
+    } catch (const std::invalid_argument&) {
+    }
+    const auto long_source =
+        root / (std::string(230, 'x') + ".txt");
+    {
+        std::ofstream output{long_source, std::ios::binary};
+        output << "long";
+    }
+    const auto long_backup = detail::preserve_safe_backup(
+        safe_root,
+        long_source,
+        detail::capture_local_file_baseline(long_source)
+    );
+    if (!long_backup.path.filename().string().starts_with(
+            "onedrive-"
+        )) {
+        return fail("long safeBackup name did not use a bounded digest");
+    }
     detail::DownloadSpaceCoordinator space{root, 0};
     FakeGraphClient graph;
     FakeItemStore items;
@@ -889,6 +1029,173 @@ int main() {
         items.pending.contains("duplicate")) {
         return fail("duplicate recovery temporary file was not cleaned");
     }
+
+    const auto replacing_destination = root / "replace-old.txt";
+    const auto replacing_temporary = root / ".replace-old.partial";
+    {
+        std::ofstream destination_output{
+            replacing_destination,
+            std::ios::binary
+        };
+        destination_output << "old!";
+        std::ofstream temporary_output{
+            replacing_temporary,
+            std::ios::binary
+        };
+        temporary_output << "data";
+    }
+    const auto old_baseline =
+        detail::capture_local_file_baseline(replacing_destination);
+    items.states.emplace(
+        "replace-old",
+        onedrive::storage::ItemState{
+            .drive_id = "me",
+            .remote_id = "replace-old",
+            .name = "replace-old.txt",
+            .etag = "old-etag",
+            .remote_path = "replace-old.txt",
+            .local_path = replacing_destination,
+            .last_modified = "2026-10-01T00:00:00Z",
+            .size = 4,
+            .local_size = old_baseline.size,
+            .local_modified_ticks = old_baseline.modified_ticks,
+        }
+    );
+    items.pending.emplace(
+        "replace-old",
+        onedrive::storage::PendingDownload{
+            .item = {
+                .drive_id = "me",
+                .remote_id = "replace-old",
+                .name = "replace-old.txt",
+                .etag = "new-etag",
+                .remote_path = "replace-old.txt",
+                .local_path = replacing_destination,
+                .last_modified = "2026-10-02T00:00:00Z",
+                .size = 4,
+            },
+            .temporary_path = replacing_temporary,
+            .content_fingerprint =
+                detail::content_fingerprint(replacing_temporary),
+        }
+    );
+    detail::recover_pending_downloads(items, root, "me", metadata);
+    std::ifstream replaced_input{replacing_destination, std::ios::binary};
+    const std::string replaced_contents{
+        std::istreambuf_iterator<char>{replaced_input},
+        std::istreambuf_iterator<char>{}
+    };
+    if (replaced_contents != "data" ||
+        items.pending.contains("replace-old")) {
+        return fail(
+            "journal recovery did not replace a trusted previous snapshot"
+        );
+    }
+
+    const auto backed_up_destination = root / "backed-up.txt";
+    const auto backed_up_temporary = root / ".backed-up.partial";
+    const auto backup_path =
+        root / "backed-up.safeBackup-20261004T051000Z-0001.txt";
+    {
+        std::ofstream destination_output{
+            backed_up_destination,
+            std::ios::binary
+        };
+        destination_output << "user";
+        std::ofstream backup_output{backup_path, std::ios::binary};
+        backup_output << "user";
+        std::ofstream temporary_output{
+            backed_up_temporary,
+            std::ios::binary
+        };
+        temporary_output << "data";
+    }
+    items.pending.emplace(
+        "backed-up",
+        onedrive::storage::PendingDownload{
+            .item = {
+                .drive_id = "me",
+                .remote_id = "backed-up",
+                .name = "backed-up.txt",
+                .etag = "etag",
+                .remote_path = "backed-up.txt",
+                .local_path = backed_up_destination,
+                .last_modified = "2026-10-02T00:00:00Z",
+                .size = 4,
+            },
+            .temporary_path = backed_up_temporary,
+            .content_fingerprint =
+                detail::content_fingerprint(backed_up_temporary),
+            .backup_path = backup_path,
+            .backup_fingerprint =
+                detail::content_fingerprint(backup_path),
+        }
+    );
+    detail::recover_pending_downloads(items, root, "me", metadata);
+    std::ifstream recovered_input{
+        backed_up_destination,
+        std::ios::binary
+    };
+    const std::string recovered_contents{
+        std::istreambuf_iterator<char>{recovered_input},
+        std::istreambuf_iterator<char>{}
+    };
+    if (recovered_contents != "data" ||
+        detail::content_fingerprint(backup_path) ==
+            detail::content_fingerprint(backed_up_destination) ||
+        items.pending.contains("backed-up")) {
+        return fail("safeBackup recovery did not promote remote content");
+    }
+
+    const auto damaged_destination = root / "damaged-backup.txt";
+    const auto damaged_temporary = root / ".damaged-backup.partial";
+    const auto damaged_backup =
+        root / "damaged-backup.safeBackup-20261004T051000Z-0001.txt";
+    for (const auto& [path, contents] :
+         std::vector<std::pair<std::filesystem::path, std::string>>{
+             {damaged_destination, "user"},
+             {damaged_backup, "user"},
+             {damaged_temporary, "data"},
+         }) {
+        std::ofstream output{path, std::ios::binary};
+        output << contents;
+    }
+    const auto expected_backup_fingerprint =
+        detail::content_fingerprint(damaged_backup);
+    {
+        std::ofstream output{damaged_backup, std::ios::binary};
+        output << "tampered";
+    }
+    items.pending.emplace(
+        "damaged-backup",
+        onedrive::storage::PendingDownload{
+            .item = {
+                .drive_id = "me",
+                .remote_id = "damaged-backup",
+                .name = "damaged-backup.txt",
+                .etag = "etag",
+                .remote_path = "damaged-backup.txt",
+                .local_path = damaged_destination,
+                .last_modified = "2026-10-02T00:00:00Z",
+                .size = 4,
+            },
+            .temporary_path = damaged_temporary,
+            .content_fingerprint =
+                detail::content_fingerprint(damaged_temporary),
+            .backup_path = damaged_backup,
+            .backup_fingerprint = expected_backup_fingerprint,
+        }
+    );
+    try {
+        detail::recover_pending_downloads(items, root, "me", metadata);
+        return fail("damaged safeBackup recovery was accepted");
+    } catch (const std::runtime_error&) {
+    }
+    if (detail::content_fingerprint(damaged_destination) !=
+        expected_backup_fingerprint) {
+        return fail("damaged safeBackup recovery overwrote local content");
+    }
+    items.pending.erase("damaged-backup");
 
     items.pending.emplace(
         "invalid",

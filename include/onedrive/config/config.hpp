@@ -28,6 +28,11 @@ enum class SyncPermissionsMode {
     umask,
 };
 
+enum class LocalConflictPolicy {
+    block,
+    backup,
+};
+
 enum class TransferOrder {
     default_order,
     size_ascending,
@@ -68,6 +73,7 @@ struct Config {
     SyncPermissionsMode sync_permissions{
         SyncPermissionsMode::private_access
     };
+    LocalConflictPolicy local_conflict{LocalConflictPolicy::block};
     FilesystemMetadataMode filesystem_metadata{
         FilesystemMetadataMode::automatic
     };

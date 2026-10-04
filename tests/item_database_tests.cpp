@@ -169,6 +169,25 @@ bool create_version_nine_database(const std::filesystem::path& path) {
     return succeeded;
 }
 
+bool create_version_ten_database(const std::filesystem::path& path) {
+    if (!create_version_nine_database(path)) {
+        return false;
+    }
+    sqlite3* database = nullptr;
+    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
+        sqlite3_close(database);
+        return false;
+    }
+    constexpr const char* schema =
+        "ALTER TABLE drive_state ADD COLUMN sync_filter_fingerprint "
+        "TEXT NOT NULL DEFAULT '';"
+        "PRAGMA user_version = 10;";
+    const bool succeeded =
+        sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
+    sqlite3_close(database);
+    return succeeded;
+}
+
 bool identity_row_is_valid(const std::filesystem::path& path) {
     sqlite3* database = nullptr;
     if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
@@ -448,6 +467,10 @@ int main() {
             },
             .temporary_path = temporary_directory.path() / "pending-me.tmp",
             .content_fingerprint = "fingerprint-me",
+            .backup_path =
+                temporary_directory.path() /
+                "pending-me.safeBackup-20261004T051000Z-0001.txt",
+            .backup_fingerprint = "backup-fingerprint-me",
         });
         database.save_pending_download({
             .item = {
@@ -491,8 +514,13 @@ int main() {
                 temporary_directory.path() / ".partial-other.tmp",
             .completed_bytes = 3,
         });
-        if (database.pending_downloads("me").size() != 1 ||
+        const auto pending_me = database.pending_downloads("me");
+        if (pending_me.size() != 1 ||
             database.pending_downloads("other-drive").size() != 1 ||
+            pending_me[0].backup_path !=
+                temporary_directory.path() /
+                    "pending-me.safeBackup-20261004T051000Z-0001.txt" ||
+            pending_me[0].backup_fingerprint != "backup-fingerprint-me" ||
             !database.partial_download("me", "partial-me") ||
             !database.partial_download("other-drive", "partial-other") ||
             database.blocked_items("me").size() != 1 ||
@@ -502,6 +530,23 @@ int main() {
             database.blocked_items("me")[0].content_hash->value !=
                 "SgAAAAAAAAAAAAAAAQAAAAAAAAA=") {
             return fail("pending downloads or blocked items were not saved by drive");
+        }
+        try {
+            database.save_pending_download({
+                .item = {
+                    .drive_id = "me",
+                    .remote_id = "invalid-backup-journal",
+                },
+                .temporary_path =
+                    temporary_directory.path() / "invalid.tmp",
+                .content_fingerprint = "fingerprint",
+                .backup_path =
+                    temporary_directory.path() / "invalid.safeBackup",
+            });
+            return fail(
+                "incomplete safeBackup journal metadata was accepted"
+            );
+        } catch (const std::invalid_argument&) {
         }
 
         if (!database.reset("me") || database.size() != 4 ||
@@ -902,6 +947,53 @@ int main() {
                 std::optional<std::string>{"version-nine-filter"}) {
             return fail(
                 "version nine database did not gain selective sync state"
+            );
+        }
+    }
+
+    const auto version_ten_directory =
+        temporary_directory.path() / "version-ten";
+    std::filesystem::create_directories(version_ten_directory);
+    if (!create_version_ten_database(
+            version_ten_directory / "items.sqlite3"
+        )) {
+        return fail("version ten migration fixture could not be created");
+    }
+    {
+        onedrive::storage::ItemDatabase database{
+            version_ten_directory,
+            identity()
+        };
+        database.open();
+        database.save_pending_download({
+            .item = {
+                .drive_id = "me",
+                .remote_id = "safe-backup-after-migration",
+                .name = "report.txt",
+                .etag = "etag",
+                .remote_path = "report.txt",
+                .local_path = version_ten_directory / "report.txt",
+                .last_modified = "2026-10-04T05:10:00Z",
+                .size = 4,
+            },
+            .temporary_path = version_ten_directory / ".report.partial",
+            .content_fingerprint =
+                "3a6eb0790f39ac87c94f3856b2dd2c5d110e6811602261a9a923d3bb23adc8b7",
+            .backup_path =
+                version_ten_directory /
+                "report.safeBackup-20261004T051000Z-0001.txt",
+            .backup_fingerprint =
+                "ca3704aa0b06f5954c79ee837faa152d84c3fb2ceca2ba352a4a014fab6e5e2c",
+        });
+        const auto pending =
+            database.pending_downloads("me");
+        if (pending.size() != 1 ||
+            pending[0].backup_path.filename() !=
+                "report.safeBackup-20261004T051000Z-0001.txt" ||
+            pending[0].backup_fingerprint !=
+                "ca3704aa0b06f5954c79ee837faa152d84c3fb2ceca2ba352a4a014fab6e5e2c") {
+            return fail(
+                "version ten database did not gain safeBackup journal state"
             );
         }
     }

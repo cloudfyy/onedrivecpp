@@ -12,13 +12,13 @@
 namespace onedrive::sync::detail {
 namespace {
 
-std::string trim(std::string value) {
+std::string trim(std::string_view value) {
     const auto first = value.find_first_not_of(" \t\r\n");
     if (first == std::string::npos) {
         return {};
     }
     const auto last = value.find_last_not_of(" \t\r\n");
-    return value.substr(first, last - first + 1);
+    return std::string{value.substr(first, last - first + 1)};
 }
 
 std::vector<std::string_view> split_path(std::string_view path) {

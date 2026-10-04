@@ -72,8 +72,8 @@ int open_beneath(
 
 }  // namespace
 
-SafeSyncRoot::SafeSyncRoot(std::filesystem::path root)
-    : root_{std::filesystem::absolute(std::move(root)).lexically_normal()},
+SafeSyncRoot::SafeSyncRoot(const std::filesystem::path& root)
+    : root_{std::filesystem::absolute(root).lexically_normal()},
       descriptor_{::open(
           root_.c_str(),
           O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
@@ -234,6 +234,7 @@ void SafeSyncRoot::rename(
             std::string{std::strerror(errno)}
         );
     }
+
     if (::renameat(
             source_parent.get(),
             source_relative.filename().c_str(),
@@ -245,6 +246,48 @@ void SafeSyncRoot::rename(
             "': " + std::strerror(errno)
         );
     }
+}
+
+bool SafeSyncRoot::rename_no_replace(
+    const std::filesystem::path& source,
+    const std::filesystem::path& destination
+) const {
+    const auto source_relative = relative_path(source);
+    const auto destination_relative = relative_path(destination);
+    Descriptor source_parent{open_beneath(
+        descriptor_,
+        source_relative.parent_path(),
+        O_RDONLY | O_DIRECTORY | O_CLOEXEC,
+        0
+    )};
+    Descriptor destination_parent{open_beneath(
+        descriptor_,
+        destination_relative.parent_path(),
+        O_RDONLY | O_DIRECTORY | O_CLOEXEC,
+        0
+    )};
+    if (source_parent.get() == -1 || destination_parent.get() == -1) {
+        throw std::runtime_error(
+            "cannot safely open synchronization directory for safeBackup: " +
+            std::string{std::strerror(errno)}
+        );
+    }
+    if (::renameat2(
+            source_parent.get(),
+            source_relative.filename().c_str(),
+            destination_parent.get(),
+            destination_relative.filename().c_str(),
+            RENAME_NOREPLACE
+        ) == 0) {
+        return true;
+    }
+    if (errno == EEXIST) {
+        return false;
+    }
+    throw std::runtime_error(
+        "cannot install safeBackup '" + destination.string() + "': " +
+        std::strerror(errno)
+    );
 }
 
 void SafeSyncRoot::fsync_directory(

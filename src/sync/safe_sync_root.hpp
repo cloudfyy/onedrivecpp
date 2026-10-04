@@ -13,7 +13,7 @@ public:
 
 class SafeSyncRoot {
 public:
-    explicit SafeSyncRoot(std::filesystem::path root);
+    explicit SafeSyncRoot(const std::filesystem::path& root);
     ~SafeSyncRoot();
 
     SafeSyncRoot(const SafeSyncRoot&) = delete;
@@ -38,6 +38,10 @@ public:
         bool private_permissions
     ) const;
     void rename(
+        const std::filesystem::path& source,
+        const std::filesystem::path& destination
+    ) const;
+    [[nodiscard]] bool rename_no_replace(
         const std::filesystem::path& source,
         const std::filesystem::path& destination
     ) const;

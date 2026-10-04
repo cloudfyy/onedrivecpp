@@ -245,6 +245,21 @@ uses the process umask and is intended only for explicitly shared directories.
 The default is
 .BR private .
 .TP
+.B sync.local_conflict
+Policy for a remote download that conflicts with a local regular file.
+.B block
+is the default and refuses the replacement.
+.B backup
+first makes a durable, independent same-directory copy named like
+.I report.safeBackup-20261004T051000Z-0001.pdf
+and then atomically installs the authoritative remote version. Content-identical
+files are adopted without a backup or inode replacement. A backup retains local
+permission bits, is not uploaded, and requires additional disk space equal to
+the local file. Backup failure leaves the destination unchanged. This setting
+applies to normal synchronization and the
+.B download
+command, but not to remote deletion or upload conflict handling.
+.TP
 .B state.directory
 Directory containing the refresh token and SQLite synchronization state.
 .TP
@@ -464,6 +479,12 @@ System-wide example and fallback configuration.
 .I sync_list
 Optional selective-synchronization rule file at the path configured by
 .BR sync.sync_list .
+.TP
+.I *.safeBackup-YYYYMMDDTHHMMSSZ-NNNN*
+Durable same-directory local-conflict copies created when
+.B sync.local_conflict
+is
+.BR backup .
 .TP
 .I ~/.local/state/onedrive-cpp/refresh_token
 Default locally stored OAuth refresh token. The file is created with

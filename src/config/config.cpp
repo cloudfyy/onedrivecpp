@@ -245,6 +245,18 @@ SyncPermissionsMode parse_sync_permissions(std::string_view value) {
     );
 }
 
+LocalConflictPolicy parse_local_conflict(std::string_view value) {
+    if (value == "block") {
+        return LocalConflictPolicy::block;
+    }
+    if (value == "backup") {
+        return LocalConflictPolicy::backup;
+    }
+    throw std::runtime_error(
+        "invalid TOML configuration value for 'sync.local_conflict'"
+    );
+}
+
 }  // namespace
 
 Config Config::defaults() {
@@ -277,6 +289,7 @@ Config Config::defaults() {
         .download_maximum_rate_bytes_per_second = 0,
         .download_validation = DownloadValidationMode::strict,
         .sync_permissions = SyncPermissionsMode::private_access,
+        .local_conflict = LocalConflictPolicy::block,
         .filesystem_metadata = FilesystemMetadataMode::automatic,
         .dry_run = false,
     };
@@ -335,9 +348,18 @@ Config Config::load(const std::filesystem::path& path) {
                 "dry_run",
                 "permissions",
                 "sync_list",
+                "local_conflict",
             },
             "sync"
         );
+        if (const auto value = optional_value<std::string>(
+                *sync,
+                "local_conflict",
+                "sync.local_conflict",
+                "a string"
+            )) {
+            config.local_conflict = parse_local_conflict(*value);
+        }
         if (const auto value = optional_value<std::string>(
                 *sync,
                 "directory",

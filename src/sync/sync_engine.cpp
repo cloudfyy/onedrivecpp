@@ -47,6 +47,7 @@ struct DownloadTask {
     storage::ItemState state;
     std::filesystem::path destination;
     detail::LocalFileBaseline destination_baseline;
+    bool preserve_local{false};
 };
 
 struct DownloadBatch {
@@ -64,7 +65,8 @@ DownloadBatch download_files(
     detail::DownloadSpaceCoordinator& space,
     const detail::FilesystemMetadata& metadata,
     const cli::Console& console,
-    const detail::SafeSyncRoot& sync_root
+    const detail::SafeSyncRoot& sync_root,
+    config::LocalConflictPolicy local_conflict
 ) {
     DownloadBatch batch{
         .states = std::vector<std::optional<storage::ItemState>>(
@@ -145,6 +147,8 @@ DownloadBatch download_files(
                 return;
             }
             const auto& task = tasks[index];
+            auto baseline = task.destination_baseline;
+            bool preserve_local = task.preserve_local;
             const auto expected_size =
                 static_cast<std::uint64_t>(task.item.size);
             try {
@@ -156,24 +160,32 @@ DownloadBatch download_files(
                     operations.acquire_destination(task.destination);
                 if (!detail::local_file_matches_baseline(
                         task.destination,
-                        task.destination_baseline
+                        baseline
                     )) {
-                    throw detail::LocalModificationConflictError(
-                        "local file changed before the destination download "
-                        "lock was acquired: " +
-                        task.destination.string()
+                    if (local_conflict ==
+                        config::LocalConflictPolicy::block) {
+                        throw detail::LocalModificationConflictError(
+                            "local file changed before the destination "
+                            "download lock was acquired: " +
+                            task.destination.string()
+                        );
+                    }
+                    baseline = detail::capture_local_file_baseline(
+                        task.destination
                     );
+                    preserve_local = baseline.existed;
                 }
                 batch.states[index].emplace(detail::commit_download(
                     items,
                     sync_root,
+                    metadata,
                     detail::prepare_download(
                         graph,
                         items,
                         task.item,
                         task.state,
                         task.destination,
-                        task.destination_baseline,
+                        baseline,
                         metadata,
                         space,
                         stop.get_token(),
@@ -188,7 +200,21 @@ DownloadBatch download_files(
                             }
                             report_progress(index, downloaded, false);
                         }
-                    )
+                    ),
+                    {
+                        .local_conflict = local_conflict,
+                        .preserve_local = preserve_local,
+                        .backup_created =
+                            [&](const std::filesystem::path& backup) {
+                                const std::scoped_lock lock{console_mutex};
+                                console.message(
+                                    cli::MessageKind::warning,
+                                    "local_conflict_backed_up",
+                                    "Preserved local conflict as '" +
+                                        backup.string() + "'."
+                                );
+                            },
+                    }
                 ));
                 report_progress(index, expected_size, true);
             } catch (const detail::DownloadSpaceCancelledError&) {
@@ -381,6 +407,7 @@ ExecutionSummary execute_plan(
     const cli::Console& console,
     std::size_t download_concurrency,
     config::TransferOrder transfer_order,
+    config::LocalConflictPolicy local_conflict,
     bool private_permissions
 ) {
     const auto& sync_root = safe_root.path();
@@ -493,7 +520,10 @@ ExecutionSummary execute_plan(
             detail::local_snapshot_matches(*previous, destination);
         const bool current_remote_file =
             snapshot_matches && previous->etag == item.etag;
-        if (exists && !current_remote_file && !snapshot_matches) {
+        bool preserve_local =
+            exists && !current_remote_file && !snapshot_matches;
+        if (preserve_local &&
+            local_conflict == config::LocalConflictPolicy::block) {
             spdlog::warn(
                 "Refusing to overwrite locally modified file '{}'",
                 destination.string()
@@ -546,15 +576,24 @@ ExecutionSummary execute_plan(
                  baseline.size != previous->local_size ||
                  baseline.modified_ticks !=
                      previous->local_modified_ticks)) {
-                const std::string reason =
-                    "local file changed before downloading: " +
-                    destination.string();
-                plan.block(item, "local_modification", reason);
-                report_blocked(
-                    plan.blocked(plan.blocked_count() - 1),
-                    console
-                );
-                continue;
+                if (local_conflict ==
+                    config::LocalConflictPolicy::backup) {
+                    preserve_local = true;
+                    spdlog::info(
+                        "Preparing safeBackup for local conflict '{}'",
+                        destination.string()
+                    );
+                } else {
+                    const std::string reason =
+                        "local file changed before downloading: " +
+                        destination.string();
+                    plan.block(item, "local_modification", reason);
+                    report_blocked(
+                        plan.blocked(plan.blocked_count() - 1),
+                        console
+                    );
+                    continue;
+                }
             }
             spdlog::info(
                 "Downloading '{}' ({} bytes)",
@@ -566,6 +605,7 @@ ExecutionSummary execute_plan(
                 .state = state,
                 .destination = destination,
                 .destination_baseline = std::move(baseline),
+                .preserve_local = preserve_local,
             });
         }
     }
@@ -603,7 +643,8 @@ ExecutionSummary execute_plan(
         space,
         metadata,
         console,
-        safe_root
+        safe_root,
+        local_conflict
     );
     for (const auto& error : downloads.errors) {
         if (error) {
@@ -880,6 +921,7 @@ int SyncEngine::synchronize() const {
                 console,
                 config_->download_concurrency,
                 config_->transfer_order,
+                config_->local_conflict,
                 config_->sync_permissions ==
                     config::SyncPermissionsMode::private_access
             );

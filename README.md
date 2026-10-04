@@ -442,6 +442,7 @@ For example:
 # Default OneDrive of the signed-in user
 drive_id = "me"
 permissions = "private"
+local_conflict = "block"
 # Optional; resolved relative to this TOML file
 # sync_list = "sync_list"
 
@@ -507,6 +508,21 @@ rules automatically causes the next synchronization to fetch the full remote
 state. Excluded files already present locally are not deleted in this release,
 consistent with the existing remote-deletion policy. The explicit
 `download REMOTE_PATH` command is not restricted by `sync.sync_list`.
+
+`sync.local_conflict` controls download conflicts with local regular files.
+The default, `"block"`, preserves the existing behavior: synchronization
+records the item as `local_modification`, and explicit single-file download
+stops without downloading. Set it to `"backup"` to copy the stable local
+contents to a durable same-directory name such as
+`report.safeBackup-20261004T051000Z-0001.pdf` before atomically installing the
+authoritative remote version. The copy is independent rather than a hard link,
+retains the local permission bits, and is never uploaded by the current
+one-way client. If local and downloaded contents have the same SHA-256
+fingerprint, the existing file is adopted without creating a backup or
+replacing its inode. Backup creation requires additional disk space equal to
+the local file and fails safely without replacing the destination. This policy
+applies to normal synchronization and `download REMOTE_PATH`; it does not
+change remote deletion or future upload-conflict behavior.
 
 `graph.endpoint` selects the Microsoft Graph cloud endpoint and defaults to
 the global service. It is not tied to a specific SharePoint host. For a
@@ -945,6 +961,13 @@ remote metadata, size, and SHA-256 content fingerprint to a SQLite
 `pending_download` journal before the atomic replacement. Startup recovery
 processes this journal first, making SQLite authoritative rather than relying
 on target-file-system extended attributes.
+
+When `sync.local_conflict = "backup"` preserves local content, the durable
+backup path and SHA-256 fingerprint are included in the pending-install
+journal. Recovery replaces an existing destination only after verifying both
+the backup and the still-current destination against that fingerprint. A
+missing, changed, or symbolic-link backup stops recovery rather than risking
+local data.
 
 Large downloads also persist a separate SQLite `partial_download` checkpoint
 after each successful, flushed Range chunk. The checkpoint records the remote

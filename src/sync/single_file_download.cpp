@@ -111,6 +111,15 @@ int plan_single_file_download(
                 .key = "size",
                 .value = std::to_string(target.item.size),
             },
+            {
+                .label = "local conflict:",
+                .key = "local_conflict",
+                .value =
+                    config.local_conflict ==
+                            config::LocalConflictPolicy::backup ?
+                        "preserve as safeBackup" :
+                        "block",
+            },
         }
     );
     return 0;
@@ -154,7 +163,9 @@ int download_single_file(
     const bool snapshot_matches =
         exists && previous.has_value() &&
         detail::local_snapshot_matches(*previous, destination);
-    if (exists && !snapshot_matches) {
+    const bool preserve_local = exists && !snapshot_matches;
+    if (preserve_local &&
+        config.local_conflict == config::LocalConflictPolicy::block) {
         throw detail::LocalModificationConflictError(
             "local modification conflict: " + destination.string()
         );
@@ -178,6 +189,7 @@ int download_single_file(
     const auto installed = detail::commit_download(
         items,
         safe_root,
+        metadata,
         detail::prepare_download(
             graph,
             items,
@@ -198,7 +210,20 @@ int download_single_file(
                     {}
                 );
             }
-        )
+        ),
+        {
+            .local_conflict = config.local_conflict,
+            .preserve_local = preserve_local,
+            .backup_created =
+                [&](const std::filesystem::path& backup) {
+                    console.message(
+                        cli::MessageKind::warning,
+                        "local_conflict_backed_up",
+                        "Preserved local conflict as '" +
+                            backup.string() + "'."
+                    );
+                },
+        }
     );
     spdlog::info(
         "Downloaded single remote file '{}' to '{}'",

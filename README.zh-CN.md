@@ -402,6 +402,7 @@ sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 # 当前账号的默认 OneDrive
 drive_id = "me"
 permissions = "private"
+local_conflict = "block"
 # 可选；相对路径以本 TOML 文件所在目录为基准
 # sync_list = "sync_list"
 
@@ -460,6 +461,17 @@ Pictures/*.jpg
 事务中提交。增加、修改、删除或重新排序规则后，下次同步会自动获取完整远端
 状态。与当前远端删除策略一致，已经存在于本地但后来被排除的文件不会在此版本
 中被删除。用户明确执行的 `download REMOTE_PATH` 不受 `sync.sync_list` 限制。
+
+`sync.local_conflict` 控制下载与本地普通文件发生冲突时的处理方式。默认值
+`"block"` 保持原有行为：普通同步把项目记录为 `local_modification`，显式单文件
+下载则在开始传输前停止。设置为 `"backup"` 后，程序会先把稳定的本地内容复制到
+同目录的持久备份，例如
+`report.safeBackup-20261004T051000Z-0001.pdf`，然后再原子安装远端权威版本。
+备份是独立副本而不是硬链接，会保留本地权限位；当前单向客户端不会上传该文件。
+如果本地内容与已下载内容的 SHA-256 指纹相同，程序不会创建备份，也不会替换原
+inode，而是直接采用现有文件。创建备份需要额外占用约等于本地文件大小的磁盘
+空间；失败时程序会安全停止，不会替换目标。该策略同时作用于普通同步和
+`download REMOTE_PATH`，不会改变远端删除或未来上传冲突的行为。
 
 `graph.endpoint` 用于选择 Microsoft Graph 云端点，默认使用全球服务，并不与
 某个具体 SharePoint 主机名绑定。访问由世纪互联运营的 Microsoft 365 中国区
@@ -811,6 +823,11 @@ Microsoft Graph 提供文件内容哈希时，程序会在临时文件进入待�
 指纹写入 SQLite `pending_download` journal，再执行原子替换。程序重启时会先
 恢复 journal，因此 SQLite 是崩溃恢复的权威来源，不依赖目标文件系统的
 扩展属性。
+
+当 `sync.local_conflict = "backup"` 已保留本地内容时，待安装 journal 还会记录
+持久备份路径及其 SHA-256 指纹。恢复流程只有在备份和当前目标都与该指纹匹配时，
+才会替换仍然存在的目标；备份缺失、被修改或变成符号链接时会停止恢复，而不会
+冒险覆盖本地数据。
 
 大文件每个 Range 分片成功并完成 `fsync` 后，还会单独持久化 SQLite
 `partial_download` 检查点，其中记录远端 ETag、预期大小、目标、临时路径和已

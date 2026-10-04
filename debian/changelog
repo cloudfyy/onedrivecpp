@@ -1,3 +1,14 @@
+onedrive-cpp (0.6.32-1~ubuntu24.04) noble; urgency=medium
+
+  * Add opt-in safeBackup preservation for local files that conflict with
+    normal synchronization or explicit single-file downloads.
+  * Avoid unnecessary backups and inode replacement for content-identical
+    files.
+  * Persist and verify backup metadata during crash recovery before replacing
+    an existing destination.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 05:30:00 +0000
+
 onedrive-cpp (0.6.31-1~ubuntu24.04) noble; urgency=medium
 
   * Extend the live Microsoft Graph E2E test through selective synchronization.

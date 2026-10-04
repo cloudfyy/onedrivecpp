@@ -37,6 +37,17 @@ bool recovery_file_matches(
            content_fingerprint(path) == download.content_fingerprint;
 }
 
+bool valid_fingerprint(std::string_view fingerprint) {
+    return fingerprint.size() == 64 &&
+           std::ranges::all_of(
+               fingerprint,
+               [](char value) {
+                   return (value >= '0' && value <= '9') ||
+                          (value >= 'a' && value <= 'f');
+               }
+           );
+}
+
 void validate_pending_download(
     const storage::PendingDownload& download,
     const std::filesystem::path& sync_root
@@ -62,17 +73,22 @@ void validate_pending_download(
             "directory: " + temporary.string()
         );
     }
-    const bool valid_fingerprint =
-        download.content_fingerprint.size() == 64 &&
-        std::ranges::all_of(
-            download.content_fingerprint,
-            [](char value) {
-                return (value >= '0' && value <= '9') ||
-                       (value >= 'a' && value <= 'f');
-            }
+    const bool has_backup = !download.backup_path.empty() ||
+                            !download.backup_fingerprint.empty();
+    if (has_backup &&
+        (download.backup_path.empty() ||
+         !valid_fingerprint(download.backup_fingerprint) ||
+         !paths_share_parent(download.backup_path, destination) ||
+         download.backup_path == destination ||
+         download.backup_path == temporary)) {
+        throw std::runtime_error(
+            "pending download journal contains invalid safeBackup metadata "
+            "for '" + download.item.remote_path + "'"
         );
+    }
     if (download.item.directory || download.item.size < 0 ||
-        download.item.last_modified.empty() || !valid_fingerprint) {
+        download.item.last_modified.empty() ||
+        !valid_fingerprint(download.content_fingerprint)) {
         throw std::runtime_error(
             "pending download journal contains invalid metadata for '" +
             download.item.remote_path + "'"
@@ -154,6 +170,36 @@ void recover_pending_downloads(
             safe_root.fsync_directory(destination.parent_path());
             spdlog::debug(
                 "Promoted recovery temporary file to '{}'",
+                destination.string()
+            );
+        } else if (destination_exists && temporary_exists &&
+                   recovery_file_matches(download.temporary_path, download)) {
+            bool replacement_is_safe = false;
+            if (!download.backup_path.empty()) {
+                const auto backup_status =
+                    std::filesystem::symlink_status(download.backup_path);
+                replacement_is_safe =
+                    std::filesystem::is_regular_file(backup_status) &&
+                    content_fingerprint(download.backup_path) ==
+                        download.backup_fingerprint &&
+                    content_fingerprint(destination) ==
+                        download.backup_fingerprint;
+            } else if (const auto previous =
+                           items.find(drive_id, download.item.remote_id);
+                       previous.has_value()) {
+                replacement_is_safe =
+                    local_snapshot_matches(*previous, destination);
+            }
+            if (!replacement_is_safe) {
+                throw std::runtime_error(
+                    "cannot safely replace the existing recovery destination "
+                    "for '" + download.item.remote_path + "'"
+                );
+            }
+            safe_root.rename(download.temporary_path, destination);
+            safe_root.fsync_directory(destination.parent_path());
+            spdlog::debug(
+                "Promoted recovery temporary file over safely preserved '{}'",
                 destination.string()
             );
         } else {

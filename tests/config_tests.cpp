@@ -17,6 +17,7 @@ int main() {
                << "directory = \"/tmp/OneDrive\"\n"
                << "drive_id = \"test-drive\"\n"
                << "sync_list = \"rules/sync_list\"\n"
+               << "local_conflict = \"backup\"\n"
                << "dry_run = true\n"
                << "permissions = \"umask\"\n"
                << "[transfer]\n"
@@ -93,6 +94,8 @@ int main() {
             onedrive::config::DownloadValidationMode::relaxed ||
         config.sync_permissions !=
             onedrive::config::SyncPermissionsMode::umask ||
+        config.local_conflict !=
+            onedrive::config::LocalConflictPolicy::backup ||
         graph_options.download_transport.transfer !=
             config.transfer_transport ||
         graph_options.download_transport.
@@ -130,6 +133,8 @@ int main() {
         ) ||
         defaults.sync_permissions !=
             onedrive::config::SyncPermissionsMode::private_access ||
+        defaults.local_conflict !=
+            onedrive::config::LocalConflictPolicy::block ||
         defaults.transfer_order !=
             onedrive::config::TransferOrder::default_order ||
         defaults.download_maximum_retries != 4 ||
@@ -143,6 +148,20 @@ int main() {
             private_download_permissions) {
         std::cerr << "secure synchronization defaults were not applied\n";
         return EXIT_FAILURE;
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[sync]\n"
+               << "local_conflict = \"overwrite\"\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "unsafe local conflict mode was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error&) {
     }
 
     {
