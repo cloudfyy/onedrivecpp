@@ -1,3 +1,15 @@
+onedrive-cpp (0.6.37-1~ubuntu24.04) noble; urgency=medium
+
+  * Consolidate CMake test registration, temporary files, binary file helpers,
+    and loopback network test infrastructure.
+  * Reuse file descriptor ownership, streaming SHA-256 hashing, and explicit
+    locale-independent ASCII string operations.
+  * Centralize crash-safe private file replacement with unique temporary
+    files, symlink-safe resolution, durability synchronization, and cleanup.
+  * Add focused coverage for atomic file writes and ASCII string helpers.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 08:30:22 +0000
+
 onedrive-cpp (0.6.36-1~ubuntu24.04) noble; urgency=medium
 
   * Add a cancellable aggregate download rate limit shared across concurrent
