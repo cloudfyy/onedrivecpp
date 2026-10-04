@@ -266,10 +266,13 @@ Debug 程序位于 `build/debug/onedrive-cpp`。
 并验证 `sync.local_conflict = "backup"` 发出结构化事件、把本地字节完整保存为同
 目录下唯一的 `safeBackup`、恢复 Graph 权威 fixture、持久化一条快照，而且后续
 增量同步不会改写远端文件或备份。runner 会强制隔离配置使用 `backup` 策略，不会
-修改外部配置。最后，它会向隔离状态注入一条可信快照；该 ID 不存在于真实完整
-Graph Delta 响应中，并验证安全本地删除、SQLite 清理、结构化输出以及真实 fixture
-仍保持不变。它还会启用 `sync_root_files`，验证选择摘要变化会触发完整 Graph
-查询，并确认已有规则选中的 fixture 不会被重写。
+修改外部配置。随后它使用复制账户中的 token 创建名称唯一、可丢弃的 Graph
+子树，把一个文件和一个目录跨远端父目录移动并重命名，验证同步复用相同的本地
+inode、更新快照并发出结构化移动事件；远端临时子树即使测试失败也会被删除。
+最后，它会向隔离状态注入一条可信快照；该 ID 不存在于真实完整 Graph Delta
+响应中，并验证安全本地删除、SQLite 清理、结构化输出以及真实 fixture 仍保持
+不变。它还会启用 `sync_root_files`，验证选择摘要变化会触发完整 Graph 查询，
+并确认已有规则选中的 fixture 不会被重写。
 
 ```bash
 export ONEDRIVE_E2E_CONFIG=/absolute/path/to/dedicated-e2e.toml
@@ -281,8 +284,9 @@ cmake --build --preset e2e
 ctest --preset e2e -R graph_sync_e2e
 ```
 
-尽管 runner 生成的 `sync_list` 只会落地预期 fixture，专用 Drive 仍应只包含
-可丢弃的测试数据。设置 `ONEDRIVE_E2E_ARTIFACT_DIR` 后，失败时会保留命令输出和客户端日志；
+专用 Drive 必须授予文件写权限，并且只应包含可丢弃的测试数据；runner 生成的
+`sync_list` 只会落地预期 fixture 和临时 fixture。设置
+`ONEDRIVE_E2E_ARTIFACT_DIR` 后，失败时会保留命令输出和客户端日志；
 这些诊断信息可能包含远端文件元数据，应按敏感数据保管。临时配置、复制的 token、
 SQLite 状态及下载内容始终会删除。不要让 E2E runner 使用日常状态目录或日常 Drive。
 
@@ -1037,8 +1041,7 @@ journalctl --user -u onedrive-cpp.service -f
 
 ## 后续实现建议
 
-1. 使用真实 Microsoft Graph API 测试远端文件和目录移动。
-2. 使用 inotify 接入 monitor。
+1. 使用 inotify 接入 monitor。
 3. 为上传增加目录、删除传播和可恢复分片 session。
 4. 为 Graph 和文件系统边界增加更多集成测试。
 

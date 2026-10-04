@@ -290,12 +290,17 @@ preserves the exact local bytes in one same-directory `safeBackup`, restores
 the authoritative Graph fixture, persists one snapshot, and leaves both files
 unchanged during the following incremental synchronization. The runner forces
 the isolated configuration to use the `backup` policy; it does not modify the
-external configuration. Finally, it injects an isolated trusted snapshot whose
-ID is absent from a real full Graph Delta response and verifies safe local
-deletion, SQLite cleanup, structured output, and preservation of the live
-fixture. It also enables `sync_root_files`, verifies that the
-selection fingerprint forces a full Graph query, and confirms the existing
-rule-selected fixture is not rewritten.
+external configuration. It then uses the copied account token to create a
+uniquely named disposable Graph subtree, moves and renames a file and a
+directory across remote parents, and verifies that synchronization reuses the
+same local inodes, updates snapshots, emits structured move events, and removes
+the fixture after remote cleanup. The temporary remote subtree is deleted even
+when the test fails. Finally, the runner injects an isolated trusted snapshot
+whose ID is absent from a real full Graph Delta response and verifies safe
+local deletion, SQLite cleanup, structured output, and preservation of the
+live fixture. It also enables `sync_root_files`, verifies that the selection
+fingerprint forces a full Graph query, and confirms the existing rule-selected
+fixture is not rewritten.
 
 ```bash
 export ONEDRIVE_E2E_CONFIG=/absolute/path/to/dedicated-e2e.toml
@@ -307,8 +312,9 @@ cmake --build --preset e2e
 ctest --preset e2e -R graph_sync_e2e
 ```
 
-The dedicated Drive should contain only disposable test data even though the
-runner's generated `sync_list` materializes only the expected fixture. Set
+The dedicated Drive must grant file write access and should contain only
+disposable test data even though the runner's generated `sync_list` materializes
+only the expected and temporary fixtures. Set
 `ONEDRIVE_E2E_ARTIFACT_DIR` to retain command output and the client log after a
 failure. These diagnostics may contain remote file metadata and must be handled
 as sensitive data. Configuration, copied tokens, SQLite state, and downloaded
@@ -1200,8 +1206,7 @@ or modify the synchronization directory.
 
 ## Suggested Next Steps
 
-1. Test remote file and directory moves against the live Microsoft Graph API.
-2. Connect the monitor to inotify.
+1. Connect the monitor to inotify.
 3. Extend uploads with directories, deletion propagation, and resumable
    sessions.
 4. Add integration tests for the Graph and
