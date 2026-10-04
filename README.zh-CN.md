@@ -265,7 +265,8 @@ Debug 程序位于 `build/debug/onedrive-cpp`。
 并验证 `sync.local_conflict = "backup"` 发出结构化事件、把本地字节完整保存为同
 目录下唯一的 `safeBackup`、恢复 Graph 权威 fixture、持久化一条快照，而且后续
 增量同步不会改写远端文件或备份。runner 会强制隔离配置使用 `backup` 策略，不会
-修改外部配置。
+修改外部配置。它还会启用 `sync_root_files`，验证选择摘要变化会触发完整 Graph
+查询，并确认已有规则选中的 fixture 不会被重写。
 
 ```bash
 export ONEDRIVE_E2E_CONFIG=/absolute/path/to/dedicated-e2e.toml
@@ -409,6 +410,7 @@ permissions = "private"
 local_conflict = "block"
 # 可选；相对路径以本 TOML 文件所在目录为基准
 # sync_list = "sync_list"
+sync_root_files = false
 
 # 指定其他 OneDrive 或 SharePoint 文档库
 # drive_id = "b!YOUR_DRIVE_ID"
@@ -465,6 +467,12 @@ Pictures/*.jpg
 事务中提交。增加、修改、删除或重新排序规则后，下次同步会自动获取完整远端
 状态。与当前远端删除策略一致，已经存在于本地但后来被排除的文件不会在此版本
 中被删除。用户明确执行的 `download REMOTE_PATH` 不受 `sync.sync_list` 限制。
+
+配置 `sync.sync_list` 后，设置 `sync.sync_root_files = true` 会自动包含直接位于
+Drive 根目录中的普通文件。根目录下的目录及其后代仍然必须由包含规则选中，
+`!/root-secret.txt` 之类的排除规则优先于自动包含。默认值为 `false`；未配置
+`sync.sync_list` 时，普通同步本来就会包含所有文件，因此该设置没有效果。修改
+该值会改变选择性同步摘要，下次同步会先执行完整远端状态查询，再提交新的选择。
 
 `sync.local_conflict` 控制下载与本地普通文件发生冲突时的处理方式。默认值
 `"block"` 保持原有行为：普通同步把项目记录为 `local_modification`，显式单文件

@@ -45,6 +45,7 @@ struct Config {
     std::filesystem::path sync_directory;
     std::filesystem::path state_directory;
     std::optional<std::filesystem::path> sync_list;
+    bool sync_root_files{false};
     std::string drive_id{"me"};
     std::string application_id;
     std::string azure_tenant_id{"common"};

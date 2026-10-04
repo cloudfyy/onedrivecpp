@@ -13,7 +13,10 @@ namespace onedrive::sync::detail {
 
 class SyncList {
 public:
-    [[nodiscard]] static SyncList load(const std::filesystem::path& path);
+    [[nodiscard]] static SyncList load(
+        const std::filesystem::path& path,
+        bool include_root_files = false
+    );
 
     [[nodiscard]] bool includes(
         std::string_view remote_path,
@@ -46,6 +49,7 @@ private:
 
     std::vector<Rule> rules_;
     std::string fingerprint_;
+    bool include_root_files_{false};
 };
 
 struct FilteredDelta {

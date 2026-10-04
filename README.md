@@ -289,7 +289,9 @@ preserves the exact local bytes in one same-directory `safeBackup`, restores
 the authoritative Graph fixture, persists one snapshot, and leaves both files
 unchanged during the following incremental synchronization. The runner forces
 the isolated configuration to use the `backup` policy; it does not modify the
-external configuration.
+external configuration. It also enables `sync_root_files`, verifies that the
+selection fingerprint forces a full Graph query, and confirms the existing
+rule-selected fixture is not rewritten.
 
 ```bash
 export ONEDRIVE_E2E_CONFIG=/absolute/path/to/dedicated-e2e.toml
@@ -452,6 +454,7 @@ permissions = "private"
 local_conflict = "block"
 # Optional; resolved relative to this TOML file
 # sync_list = "sync_list"
+sync_root_files = false
 
 # Another OneDrive or SharePoint document library
 # drive_id = "b!YOUR_DRIVE_ID"
@@ -515,6 +518,15 @@ rules automatically causes the next synchronization to fetch the full remote
 state. Excluded files already present locally are not deleted in this release,
 consistent with the existing remote-deletion policy. The explicit
 `download REMOTE_PATH` command is not restricted by `sync.sync_list`.
+
+When `sync.sync_list` is configured, `sync.sync_root_files = true`
+automatically includes ordinary files located directly in the Drive root.
+Root directories and their descendants still require an inclusion rule, and
+an exclusion rule such as `!/root-secret.txt` overrides the automatic
+inclusion. The default is `false`; without `sync.sync_list`, the setting has no
+effect because normal synchronization already includes all files. Changing
+this value changes the selective-sync fingerprint and therefore triggers a
+full remote-state query before the new selection is committed.
 
 `sync.local_conflict` controls download conflicts with local regular files.
 The default, `"block"`, preserves the existing behavior: synchronization

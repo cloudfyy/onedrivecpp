@@ -790,7 +790,10 @@ int SyncEngine::synchronize() const {
         }
 
         const auto sync_list = config_->sync_list.has_value() ?
-            std::optional{detail::SyncList::load(*config_->sync_list)} :
+            std::optional{detail::SyncList::load(
+                *config_->sync_list,
+                config_->sync_root_files
+            )} :
             std::nullopt;
         const std::string sync_filter_fingerprint =
             sync_list ? sync_list->fingerprint() : "";
@@ -818,9 +821,11 @@ int SyncEngine::synchronize() const {
         }
         if (sync_list) {
             spdlog::info(
-                "Loaded {} selective synchronization rules from '{}'",
+                "Loaded {} selective synchronization rules from '{}' "
+                "(root files: {})",
                 sync_list->rule_count(),
-                config_->sync_list->string()
+                config_->sync_list->string(),
+                config_->sync_root_files ? "included" : "rule-selected"
             );
         }
         spdlog::debug(

@@ -452,6 +452,17 @@ requires extended-attribute support; and
 never reads or writes extended attributes. The default is
 .BR auto .
 .TP
+.B sync.sync_root_files
+Boolean value controlling implicit selection of ordinary files located
+directly in the Drive root when
+.B sync.sync_list
+is configured. The default is
+.BR false .
+Root directories and descendants still require inclusion rules, and explicit
+exclusions override implicit root-file selection. The setting has no effect
+without a sync list. Changing it updates the selective-sync fingerprint and
+forces a full remote-state query.
+.TP
 .B sync.dry_run
 Boolean value
 .B true

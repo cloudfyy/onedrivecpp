@@ -483,10 +483,12 @@ int test_selective_sync_refreshes_delta_state() {
             .remote_path = "Documents",
             .directory = true,
         },
+        file("root-file", "root-file.txt", 4),
         file("included", "Documents/included.txt", 4),
         file("excluded", "Pictures/excluded.txt", 7),
     };
     graph.contents["included"] = "data";
+    graph.contents["root-file"] = "root";
     graph.contents["excluded"] = "ignored";
     FakeItemStore items;
     items.saved_delta_link = "https://graph.example.test/old-delta";
@@ -529,6 +531,27 @@ int test_selective_sync_refreshes_delta_state() {
             }) {
         return fail(
             "unchanged selective sync rules did not reuse the delta cursor"
+        );
+    }
+
+    items.saved_delta_link = items.applied_delta.delta_link;
+    items.saved_sync_filter_fingerprint =
+        items.applied_delta.sync_filter_fingerprint;
+    graph.delta_requests.clear();
+    config.sync_root_files = true;
+    if (onedrive::sync::SyncEngine{
+            config,
+            graph,
+            items,
+            metrics
+        }.synchronize() != 0 ||
+        graph.delta_requests !=
+            std::vector<std::optional<std::string>>{std::nullopt} ||
+        graph.download_count != 2 ||
+        !std::filesystem::is_regular_file(root / "root-file.txt") ||
+        !items.applied_delta.replace_drive_items) {
+        return fail(
+            "enabling root files did not force and apply a filtered full delta"
         );
     }
     return EXIT_SUCCESS;

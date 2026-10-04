@@ -269,6 +269,7 @@ Config Config::defaults() {
         .sync_directory = std::filesystem::path{home} / "OneDrive",
         .state_directory = std::filesystem::path{home} / ".local/state/onedrive-cpp",
         .sync_list = std::nullopt,
+        .sync_root_files = false,
         .drive_id = "me",
         .application_id = {},
         .azure_tenant_id = "common",
@@ -348,6 +349,7 @@ Config Config::load(const std::filesystem::path& path) {
                 "dry_run",
                 "permissions",
                 "sync_list",
+                "sync_root_files",
                 "local_conflict",
             },
             "sync"
@@ -400,6 +402,14 @@ Config Config::load(const std::filesystem::path& path) {
                 sync_list = path.parent_path() / sync_list;
             }
             config.sync_list = sync_list.lexically_normal();
+        }
+        if (const auto value = optional_value<bool>(
+                *sync,
+                "sync_root_files",
+                "sync.sync_root_files",
+                "a boolean"
+            )) {
+            config.sync_root_files = *value;
         }
         if (const auto value = optional_value<std::string>(
                 *sync,

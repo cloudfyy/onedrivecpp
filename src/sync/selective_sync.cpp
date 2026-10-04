@@ -161,7 +161,10 @@ bool is_ancestor(std::string_view ancestor, std::string_view path) {
 
 }  // namespace
 
-SyncList SyncList::load(const std::filesystem::path& path) {
+SyncList SyncList::load(
+    const std::filesystem::path& path,
+    bool include_root_files
+) {
     std::ifstream input{path};
     if (!input) {
         throw std::runtime_error(
@@ -171,6 +174,10 @@ SyncList SyncList::load(const std::filesystem::path& path) {
 
     SyncList result;
     std::string canonical{"onedrive-cpp-sync-list-v1\n"};
+    result.include_root_files_ = include_root_files;
+    if (include_root_files) {
+        canonical += "@sync-root-files\n";
+    }
     std::string line;
     std::size_t line_number = 0;
     while (std::getline(input, line)) {
@@ -276,12 +283,15 @@ bool SyncList::includes(
         return false;
     }
 
-    return std::ranges::any_of(
-        rules_,
-        [&](const Rule& rule) {
-            return !rule.exclude && matches(rule, path_segments, directory);
-        }
-    );
+    return (include_root_files_ && !directory &&
+            path_segments.size() == 1) ||
+           std::ranges::any_of(
+               rules_,
+               [&](const Rule& rule) {
+                   return !rule.exclude &&
+                          matches(rule, path_segments, directory);
+               }
+           );
 }
 
 bool SyncList::excludes(

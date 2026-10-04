@@ -91,6 +91,40 @@ int main() {
     if (empty_rules.includes("anything.txt", false)) {
         return fail("an empty sync list did not exclude everything");
     }
+    const auto root_file_rules = detail::SyncList::load(rules_path, true);
+    if (!root_file_rules.includes("root.txt", false) ||
+        root_file_rules.includes("Folder/nested.txt", false) ||
+        root_file_rules.includes("RootFolder", true) ||
+        root_file_rules.fingerprint() == empty_rules.fingerprint()) {
+        return fail("implicit root-file selection semantics were incorrect");
+    }
+    write_rules(rules_path, "!/blocked.txt\n");
+    const auto excluded_root_file_rules =
+        detail::SyncList::load(rules_path, true);
+    if (excluded_root_file_rules.includes("blocked.txt", false) ||
+        !excluded_root_file_rules.includes("included.txt", false)) {
+        return fail("root-file exclusion did not override implicit inclusion");
+    }
+    auto root_files_filtered = detail::filter_delta(
+        {
+            .changes = {
+                item("root-file", "root.txt"),
+                item("nested-file", "Folder/nested.txt"),
+                item("root-directory", "Folder", true),
+            },
+            .delta_link = "root-files-delta",
+        },
+        excluded_root_file_rules,
+        [](std::string_view) {
+            return false;
+        },
+        true
+    );
+    if (root_files_filtered.delta.changes.size() != 1 ||
+        root_files_filtered.delta.changes[0].id != "root-file" ||
+        root_files_filtered.excluded != 2) {
+        return fail("root-file delta filtering retained unexpected items");
+    }
 
     write_rules(rules_path, "/Parent/Child/file.txt\n");
     const auto ancestor_rules = detail::SyncList::load(rules_path);

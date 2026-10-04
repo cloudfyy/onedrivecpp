@@ -1,3 +1,13 @@
+onedrive-cpp (0.6.34-1~ubuntu24.04) noble; urgency=medium
+
+  * Add optional implicit selection of ordinary files located directly in the
+    Drive root while selective synchronization is enabled.
+  * Preserve exclusion precedence and trigger a full Graph query when the
+    root-file policy changes.
+  * Extend unit, integration, and live Graph E2E coverage for the new policy.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 04 Oct 2026 06:25:00 +0000
+
 onedrive-cpp (0.6.33-1~ubuntu24.04) noble; urgency=medium
 
   * Extend the live Microsoft Graph E2E flow through a real safeBackup local

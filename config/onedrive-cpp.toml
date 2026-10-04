@@ -13,6 +13,8 @@ directory = "/home/USER/OneDrive"
 drive_id = "me"
 # Optional selective-sync rules. Relative paths resolve from this TOML file.
 # sync_list = "sync_list"
+# Include ordinary files located directly in the Drive root when sync_list is set.
+sync_root_files = false
 dry_run = true
 
 [transfer]

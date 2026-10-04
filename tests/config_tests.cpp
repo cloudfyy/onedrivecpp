@@ -17,6 +17,7 @@ int main() {
                << "directory = \"/tmp/OneDrive\"\n"
                << "drive_id = \"test-drive\"\n"
                << "sync_list = \"rules/sync_list\"\n"
+               << "sync_root_files = true\n"
                << "local_conflict = \"backup\"\n"
                << "dry_run = true\n"
                << "permissions = \"umask\"\n"
@@ -63,6 +64,7 @@ int main() {
             std::optional<std::filesystem::path>{
                 path.parent_path() / "rules/sync_list"
             } ||
+        !config.sync_root_files ||
         config.application_id != "test-application" ||
         config.azure_tenant_id != "test-tenant" ||
         config.auth_endpoint != "https://login.example.test" ||
@@ -135,6 +137,7 @@ int main() {
             onedrive::config::SyncPermissionsMode::private_access ||
         defaults.local_conflict !=
             onedrive::config::LocalConflictPolicy::block ||
+        defaults.sync_root_files ||
         defaults.transfer_order !=
             onedrive::config::TransferOrder::default_order ||
         defaults.download_maximum_retries != 4 ||
@@ -160,6 +163,20 @@ int main() {
         static_cast<void>(onedrive::config::Config::load(path));
         std::filesystem::remove(path);
         std::cerr << "unsafe local conflict mode was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error&) {
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[sync]\n"
+               << "sync_root_files = \"yes\"\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "non-boolean root-file policy was accepted\n";
         return EXIT_FAILURE;
     } catch (const std::runtime_error&) {
     }

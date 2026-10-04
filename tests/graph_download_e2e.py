@@ -25,6 +25,7 @@ def rewrite_config(
     state_directory: Path,
     sync_list: Path | None = None,
     local_conflict: str | None = None,
+    sync_root_files: bool | None = None,
 ) -> str:
     replacements = {
         ("sync", "directory"): json.dumps(str(sync_directory)),
@@ -35,6 +36,8 @@ def rewrite_config(
         replacements[("sync", "sync_list")] = json.dumps(str(sync_list))
     if local_conflict is not None:
         replacements[("sync", "local_conflict")] = json.dumps(local_conflict)
+    if sync_root_files is not None:
+        replacements[("sync", "sync_root_files")] = json.dumps(sync_root_files)
     seen: set[tuple[str, str]] = set()
     table = ""
     output: list[str] = []
@@ -62,7 +65,11 @@ def rewrite_config(
             output.append(line)
     optional_sync_keys = [
         key
-        for key in (("sync", "sync_list"), ("sync", "local_conflict"))
+        for key in (
+            ("sync", "sync_list"),
+            ("sync", "local_conflict"),
+            ("sync", "sync_root_files"),
+        )
         if key in replacements and key not in seen
     ]
     if optional_sync_keys and sync_insert_index is None:
@@ -340,6 +347,7 @@ def run_live(client: Path, work_root: Path) -> None:
                 state_directory,
                 sync_list,
                 "backup",
+                False,
             ),
             encoding="utf-8",
         )
@@ -444,11 +452,64 @@ def run_live(client: Path, work_root: Path) -> None:
             ):
                 raise E2EError("repeat synchronization rewrote the unchanged fixture")
 
+            config.write_text(
+                rewrite_config(
+                    source_text,
+                    sync_directory,
+                    state_directory,
+                    sync_list,
+                    "backup",
+                    True,
+                ),
+                encoding="utf-8",
+            )
+            log_offset = log_file.stat().st_size
+            root_files_sync = run_sync(
+                client,
+                config,
+                home,
+                log_file,
+            )
+            completed.append(root_files_sync)
+            if root_files_sync.returncode != 0:
+                raise E2EError(
+                    "root-file live Graph synchronization failed with "
+                    f"{root_files_sync.returncode}"
+                )
+            if (
+                "Selective synchronization rules changed; fetching the full "
+                "remote state"
+                not in log_text_since(log_file, log_offset)
+            ):
+                raise E2EError(
+                    "enabling root files did not report a full remote-state query"
+                )
+            root_files_fixture = fixture_path(
+                sync_directory,
+                expected_path,
+            )
+            root_files_stat = root_files_fixture.stat()
+            if sha256(root_files_fixture) != expected_sha256:
+                raise E2EError(
+                    "fixture changed after enabling root-file synchronization"
+                )
+            if (
+                root_files_stat.st_ino != repeated_stat.st_ino
+                or root_files_stat.st_mtime_ns != repeated_stat.st_mtime_ns
+            ):
+                raise E2EError(
+                    "enabling root files rewrote the rule-selected fixture"
+                )
+            if tracked_item_count(state_directory, expected_path) != 1:
+                raise E2EError(
+                    "root-file synchronization changed the fixture snapshot"
+                )
+
             conflict_contents = (
                 b"onedrive-cpp safeBackup live Graph E2E local conflict\n"
             )
-            repeated.write_bytes(conflict_contents)
-            conflict_stat = repeated.stat()
+            root_files_fixture.write_bytes(conflict_contents)
+            conflict_stat = root_files_fixture.stat()
             reset_for_conflict = reset_copied_state(
                 client,
                 config,
@@ -558,6 +619,7 @@ directory = "/old/state"
         Path("/new/state"),
         Path("/new/sync_list"),
         "backup",
+        True,
     )
     parsed = tomllib.loads(rewritten)
     if (
@@ -565,6 +627,7 @@ directory = "/old/state"
         or parsed["sync"]["dry_run"] is not False
         or parsed["sync"]["sync_list"] != "/new/sync_list"
         or parsed["sync"]["local_conflict"] != "backup"
+        or parsed["sync"]["sync_root_files"] is not True
         or parsed["state"]["directory"] != "/new/state"
     ):
         raise E2EError("configuration rewrite self-test failed")
@@ -612,6 +675,20 @@ directory = "/old/state"
     )
     if replaced_local_conflict["sync"]["local_conflict"] != "backup":
         raise E2EError("existing local-conflict policy was not replaced")
+    existing_root_files = source.replace(
+        'directory = "/old/sync"',
+        'directory = "/old/sync"\nsync_root_files = false',
+    )
+    replaced_root_files = tomllib.loads(
+        rewrite_config(
+            existing_root_files,
+            Path("/new/sync"),
+            Path("/new/state"),
+            sync_root_files=True,
+        )
+    )
+    if replaced_root_files["sync"]["sync_root_files"] is not True:
+        raise E2EError("existing root-file policy was not replaced")
     with tempfile.TemporaryDirectory() as raw:
         root = Path(raw)
         expected = root / "account" / "fixture" / "small.txt"
