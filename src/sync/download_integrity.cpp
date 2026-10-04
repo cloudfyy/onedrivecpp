@@ -1,11 +1,11 @@
 #include "download_integrity.hpp"
 
+#include "detail/ascii.hpp"
 #include "onedrive/sha256.hpp"
 
 #include <openssl/evp.h>
 
 #include <array>
-#include <cctype>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
@@ -76,22 +76,6 @@ private:
     std::uint64_t length_{0};
     std::size_t bit_offset_{0};
 };
-
-bool equal_case_insensitive(std::string_view left, std::string_view right) {
-    if (left.size() != right.size()) {
-        return false;
-    }
-    for (std::size_t index = 0; index < left.size(); ++index) {
-        const auto left_character =
-            static_cast<unsigned char>(left[index]);
-        const auto right_character =
-            static_cast<unsigned char>(right[index]);
-        if (std::tolower(left_character) != std::tolower(right_character)) {
-            return false;
-        }
-    }
-    return true;
-}
 
 }  // namespace
 
@@ -225,7 +209,7 @@ void verify_download_integrity(
             hashes.quick_xor;
     const bool matches =
         expected.algorithm == FileHashAlgorithm::sha256 ?
-            equal_case_insensitive(actual, expected.value) :
+            onedrive::detail::ascii_iequals(actual, expected.value) :
             actual == expected.value;
     if (!matches) {
         const std::string_view algorithm =

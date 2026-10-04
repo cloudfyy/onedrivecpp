@@ -236,6 +236,11 @@ if(BUILD_TESTING)
         SOURCES tests/atomic_file_tests.cpp
         INCLUDE_DIRS src
     )
+    add_onedrive_test(
+        ascii_tests
+        SOURCES tests/ascii_tests.cpp
+        INCLUDE_DIRS src
+    )
     add_onedrive_test(config_tests SOURCES tests/config_tests.cpp)
     add_onedrive_test(console_tests SOURCES tests/console_tests.cpp)
 

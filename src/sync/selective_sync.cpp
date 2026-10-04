@@ -1,5 +1,6 @@
 #include "selective_sync.hpp"
 
+#include "detail/ascii.hpp"
 #include "onedrive/sha256.hpp"
 
 #include <algorithm>
@@ -11,15 +12,6 @@
 
 namespace onedrive::sync::detail {
 namespace {
-
-std::string trim(std::string_view value) {
-    const auto first = value.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos) {
-        return {};
-    }
-    const auto last = value.find_last_not_of(" \t\r\n");
-    return std::string{value.substr(first, last - first + 1)};
-}
 
 std::vector<std::string_view> split_path(std::string_view path) {
     std::vector<std::string_view> segments;
@@ -182,7 +174,9 @@ SyncList SyncList::load(
     std::size_t line_number = 0;
     while (std::getline(input, line)) {
         ++line_number;
-        line = trim(std::move(line));
+        line = std::string{
+            onedrive::detail::trim_ascii_whitespace(line)
+        };
         if (line.empty() || line.starts_with('#')) {
             continue;
         }

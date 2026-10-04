@@ -1,5 +1,6 @@
 #include "onedrive/auth/token_store.hpp"
 
+#include "detail/ascii.hpp"
 #include "detail/atomic_file.hpp"
 
 #include <spdlog/spdlog.h>
@@ -13,18 +14,6 @@
 #include <unistd.h>
 
 namespace onedrive::auth {
-namespace {
-
-std::string trim(const std::string& value) {
-    const auto first = value.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos) {
-        return {};
-    }
-    const auto last = value.find_last_not_of(" \t\r\n");
-    return value.substr(first, last - first + 1);
-}
-
-}  // namespace
 
 FileTokenStore::FileTokenStore(const std::filesystem::path& state_directory)
     : path_{state_directory / "refresh_token"} {}
@@ -64,7 +53,9 @@ std::optional<std::string> FileTokenStore::load_refresh_token() const {
         std::istreambuf_iterator<char>{input},
         std::istreambuf_iterator<char>{}
     };
-    token = trim(token);
+    token = std::string{
+        onedrive::detail::trim_ascii_whitespace(token)
+    };
     spdlog::debug(
         "Loaded persisted Microsoft refresh token: {}",
         token.empty() ? "empty" : "present"

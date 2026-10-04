@@ -2,6 +2,7 @@
 
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
+#include "detail/ascii.hpp"
 #include "onedrive/http/download_rate_limiter.hpp"
 #include "onedrive/http/http_client.hpp"
 #include "onedrive/remote_time.hpp"
@@ -13,7 +14,7 @@
 #include <charconv>
 #include <chrono>
 #include <condition_variable>
-#include <cctype>
+
 #include <format>
 #include <optional>
 #include <mutex>
@@ -104,27 +105,14 @@ std::string normalized_endpoint(std::string endpoint) {
     return endpoint;
 }
 
-bool equal_case_insensitive(std::string_view left, std::string_view right) {
-    if (left.size() != right.size()) {
-        return false;
-    }
-    for (std::size_t index = 0; index < left.size(); ++index) {
-        const auto left_character =
-            static_cast<unsigned char>(left[index]);
-        const auto right_character =
-            static_cast<unsigned char>(right[index]);
-        if (std::tolower(left_character) != std::tolower(right_character)) {
-            return false;
-        }
-    }
-    return true;
-}
-
 std::optional<std::chrono::seconds> retry_after(
     const http::HttpResponse& response
 ) {
     for (const auto& header : response.headers) {
-        if (!equal_case_insensitive(header.name, "Retry-After")) {
+        if (!onedrive::detail::ascii_iequals(
+                header.name,
+                "Retry-After"
+            )) {
             continue;
         }
 
@@ -144,7 +132,7 @@ std::optional<std::string> header_value(
     std::string_view name
 ) {
     for (const auto& header : response.headers) {
-        if (equal_case_insensitive(header.name, name)) {
+        if (onedrive::detail::ascii_iequals(header.name, name)) {
             return header.value;
         }
     }
@@ -222,7 +210,10 @@ void validate_chunk_response_metadata(
     }
     std::optional<std::string_view> header;
     for (const auto& candidate : response.headers) {
-        if (!equal_case_insensitive(candidate.name, "Content-Range")) {
+        if (!onedrive::detail::ascii_iequals(
+                candidate.name,
+                "Content-Range"
+            )) {
             continue;
         }
         if (header.has_value()) {
