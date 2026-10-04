@@ -477,7 +477,10 @@ below `download_stall_minimum_bytes_per_second` (default `1`) for
 timeout to `0` to disable this check. `download_maximum_rate_bytes_per_second`
 defaults to `0`, meaning unlimited. `download_http_version` accepts `"auto"`,
 `"1.1"`, or `"2"`; HTTP/2 is negotiated over TLS and may fall back according
-to libcurl capabilities.
+to libcurl capabilities. Each download worker safely reuses its reset libcurl
+easy handle, allowing DNS, TCP, TLS, and HTTP/2 connection state to be reused
+across chunks, retries, and subsequent files without carrying request headers,
+bodies, or callbacks between operations.
 
 Download progress reports aggregate all active files and include the current
 smoothed transfer rate and estimated time remaining. The final report includes

@@ -51,6 +51,64 @@ struct CurlHandleDeleter {
     }
 };
 
+using CurlHandle = std::unique_ptr<CURL, CurlHandleDeleter>;
+
+class ThreadCurlHandlePool {
+public:
+    [[nodiscard]] CurlHandle acquire() {
+        auto handle = std::move(available_);
+        if (!handle) {
+            handle.reset(curl_easy_init());
+        }
+        if (handle) {
+            curl_easy_reset(handle.get());
+        }
+        return handle;
+    }
+
+    void release(CurlHandle handle) noexcept {
+        if (!available_) {
+            available_ = std::move(handle);
+        }
+    }
+
+private:
+    CurlHandle available_;
+};
+
+ThreadCurlHandlePool& thread_curl_handle_pool() {
+    thread_local ThreadCurlHandlePool pool;
+    return pool;
+}
+
+class CurlHandleLease {
+public:
+    CurlHandleLease()
+        : pool_{thread_curl_handle_pool()},
+          handle_{pool_.acquire()} {}
+
+    ~CurlHandleLease() {
+        pool_.release(std::move(handle_));
+    }
+
+    CurlHandleLease(const CurlHandleLease&) = delete;
+    CurlHandleLease& operator=(const CurlHandleLease&) = delete;
+    CurlHandleLease(CurlHandleLease&&) = delete;
+    CurlHandleLease& operator=(CurlHandleLease&&) = delete;
+
+    [[nodiscard]] CURL* get() const noexcept {
+        return handle_.get();
+    }
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return static_cast<bool>(handle_);
+    }
+
+private:
+    ThreadCurlHandlePool& pool_;
+    CurlHandle handle_;
+};
+
 struct HeaderListDeleter {
     void operator()(curl_slist* headers) const noexcept {
         curl_slist_free_all(headers);
@@ -387,7 +445,7 @@ HttpResult perform_request(
         });
     }
 
-    const std::unique_ptr<CURL, CurlHandleDeleter> handle{curl_easy_init()};
+    const CurlHandleLease handle;
     if (!handle) {
         return std::unexpected(HttpError{.message = "cannot create libcurl handle"});
     }
