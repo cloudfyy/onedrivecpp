@@ -1,5 +1,8 @@
 #include "onedrive/http/http_client.hpp"
 
+#include <spdlog/sinks/ostream_sink.h>
+#include <spdlog/spdlog.h>
+
 #include <algorithm>
 #include <arpa/inet.h>
 #include <chrono>
@@ -11,6 +14,7 @@
 #include <utility>
 #include <vector>
 #include <poll.h>
+#include <sstream>
 #include <stop_token>
 #include <string>
 #include <sys/socket.h>
@@ -813,6 +817,18 @@ int main() {
 
     std::array<std::string, 2> reused_connection_requests;
     bool reused_connection = false;
+    std::ostringstream diagnostic_output;
+    auto diagnostic_sink =
+        std::make_shared<spdlog::sinks::ostream_sink_mt>(
+            diagnostic_output
+        );
+    auto diagnostic_logger = std::make_shared<spdlog::logger>(
+        "http-client-tests",
+        diagnostic_sink
+    );
+    diagnostic_logger->set_level(spdlog::level::trace);
+    diagnostic_logger->set_pattern("%v");
+    spdlog::set_default_logger(diagnostic_logger);
     server_error.clear();
     std::jthread connection_reuse_server{[&] {
         pollfd listener_descriptor{
@@ -923,6 +939,8 @@ int main() {
         .http_version = onedrive::http::HttpVersion::http_1_1,
     });
     connection_reuse_server.join();
+    diagnostic_logger->flush();
+    const auto diagnostic_log = diagnostic_output.str();
     if (!server_error.empty()) {
         return fail(server_error);
     }
@@ -938,7 +956,19 @@ int main() {
             "GET /reuse-second HTTP/1.1"
         ) ||
         reused_connection_requests[1].contains("X-Reuse-Test: first") ||
-        reused_connection_requests[1].contains("state=first")) {
+        reused_connection_requests[1].contains("state=first") ||
+        !diagnostic_log.contains("http_version=1.1") ||
+        !diagnostic_log.contains("new_connections=1") ||
+        !diagnostic_log.contains("new_connections=0") ||
+        !diagnostic_log.contains("dns_us=") ||
+        !diagnostic_log.contains("tcp_connect_us=") ||
+        !diagnostic_log.contains("tls_handshake_us=") ||
+        !diagnostic_log.contains("server_wait_us=") ||
+        !diagnostic_log.contains("transfer_us=") ||
+        !diagnostic_log.contains("total_us=") ||
+        diagnostic_log.contains("/reuse-first") ||
+        diagnostic_log.contains("X-Reuse-Test") ||
+        diagnostic_log.contains("state=first")) {
         return fail("HTTP handle reuse leaked request state");
     }
 

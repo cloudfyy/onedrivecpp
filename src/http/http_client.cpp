@@ -6,6 +6,7 @@
 #include <curl/curl.h>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <cstring>
@@ -204,6 +205,98 @@ long curl_http_version(HttpVersion version) {
 bool fits_curl_long(std::uint64_t value) {
     return value <=
            static_cast<std::uint64_t>(std::numeric_limits<long>::max());
+}
+
+std::string_view negotiated_http_version(long version) {
+    switch (version) {
+    case CURL_HTTP_VERSION_1_0:
+        return "1.0";
+    case CURL_HTTP_VERSION_1_1:
+        return "1.1";
+    case CURL_HTTP_VERSION_2_0:
+        return "2";
+    case CURL_HTTP_VERSION_3:
+        return "3";
+    default:
+        return "unknown";
+    }
+}
+
+curl_off_t elapsed_between(curl_off_t later, curl_off_t earlier) {
+    return later >= earlier ? later - earlier : 0;
+}
+
+void log_transfer_diagnostics(
+    CURL* handle,
+    HttpMethod method,
+    CURLcode transfer_result
+) {
+    if (!spdlog::should_log(spdlog::level::trace)) {
+        return;
+    }
+
+    curl_off_t name_lookup_time = 0;
+    curl_off_t connect_time = 0;
+    curl_off_t app_connect_time = 0;
+    curl_off_t start_transfer_time = 0;
+    curl_off_t total_time = 0;
+    long http_version = CURL_HTTP_VERSION_NONE;
+    long new_connections = 0;
+    const std::array results{
+        curl_easy_getinfo(
+            handle,
+            CURLINFO_NAMELOOKUP_TIME_T,
+            &name_lookup_time
+        ),
+        curl_easy_getinfo(handle, CURLINFO_CONNECT_TIME_T, &connect_time),
+        curl_easy_getinfo(
+            handle,
+            CURLINFO_APPCONNECT_TIME_T,
+            &app_connect_time
+        ),
+        curl_easy_getinfo(
+            handle,
+            CURLINFO_STARTTRANSFER_TIME_T,
+            &start_transfer_time
+        ),
+        curl_easy_getinfo(handle, CURLINFO_TOTAL_TIME_T, &total_time),
+        curl_easy_getinfo(handle, CURLINFO_HTTP_VERSION, &http_version),
+        curl_easy_getinfo(handle, CURLINFO_NUM_CONNECTS, &new_connections),
+    };
+    const auto failed = std::ranges::find_if(
+        results,
+        [](CURLcode result) {
+            return result != CURLE_OK;
+        }
+    );
+    if (failed != results.end()) {
+        spdlog::debug(
+            "Cannot collect HTTP {} transfer diagnostics: {}",
+            method_name(method),
+            curl_easy_strerror(*failed)
+        );
+        return;
+    }
+
+    const auto connection_ready_time =
+        std::max(connect_time, app_connect_time);
+    spdlog::trace(
+        "HTTP {} transport diagnostics: result='{}', http_version={}, "
+        "new_connections={}, dns_us={}, tcp_connect_us={}, "
+        "tls_handshake_us={}, server_wait_us={}, transfer_us={}, total_us={}",
+        method_name(method),
+        curl_easy_strerror(transfer_result),
+        negotiated_http_version(http_version),
+        new_connections,
+        name_lookup_time,
+        elapsed_between(connect_time, name_lookup_time),
+        app_connect_time == 0 ?
+            0 :
+            elapsed_between(app_connect_time, connect_time),
+        elapsed_between(start_transfer_time, connection_ready_time),
+        elapsed_between(total_time, start_transfer_time),
+        total_time
+    );
 }
 
 std::size_t write_response(char* data, std::size_t size, std::size_t count, void* context) {
@@ -594,6 +687,7 @@ HttpResult perform_request(
     }
 
     result = curl_easy_perform(handle.get());
+    log_transfer_diagnostics(handle.get(), request.method, result);
     if (result != CURLE_OK) {
         if (progress_context.cancelled) {
             const bool can_checkpoint_cancelled_data =

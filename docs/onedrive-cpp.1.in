@@ -137,6 +137,12 @@ and
 .BR off .
 The default is
 .BR info .
+At
+.B trace
+level, HTTP transport diagnostics include the negotiated protocol, new
+connection count, and DNS, TCP, TLS, server wait, body transfer, and total
+timings. Request URLs, headers, and bodies are not included in these
+diagnostics.
 .TP
 .BI \-\-log\-file " PATH"
 Also write logs to

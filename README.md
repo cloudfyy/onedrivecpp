@@ -480,7 +480,10 @@ defaults to `0`, meaning unlimited. `download_http_version` accepts `"auto"`,
 to libcurl capabilities. Each download worker safely reuses its reset libcurl
 easy handle, allowing DNS, TCP, TLS, and HTTP/2 connection state to be reused
 across chunks, retries, and subsequent files without carrying request headers,
-bodies, or callbacks between operations.
+bodies, or callbacks between operations. Trace logging reports the negotiated
+HTTP version, number of newly opened connections, and DNS, TCP, TLS, server
+wait, body-transfer, and total timings in microseconds. These diagnostics do
+not include request URLs, headers, or bodies.
 
 Download progress reports aggregate all active files and include the current
 smoothed transfer rate and estimated time remaining. The final report includes

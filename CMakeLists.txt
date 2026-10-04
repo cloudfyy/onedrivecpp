@@ -217,7 +217,12 @@ if(BUILD_TESTING)
     add_test(NAME device_auth_tests COMMAND device_auth_tests)
 
     add_executable(http_client_tests tests/http_client_tests.cpp)
-    target_link_libraries(http_client_tests PRIVATE onedrive_core)
+    target_link_libraries(
+        http_client_tests
+        PRIVATE
+            onedrive_core
+            spdlog::spdlog
+    )
     add_test(NAME http_client_tests COMMAND http_client_tests)
 
     add_executable(graph_client_tests tests/graph_client_tests.cpp)
