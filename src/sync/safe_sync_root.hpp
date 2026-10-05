@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../detail/unique_file_descriptor.hpp"
+
 #include <cstdint>
 #include <filesystem>
 #include <stdexcept>
@@ -68,7 +70,7 @@ public:
 
 private:
     std::filesystem::path root_;
-    int descriptor_{-1};
+    onedrive::detail::UniqueFileDescriptor descriptor_;
 };
 
 }  // namespace onedrive::sync::detail

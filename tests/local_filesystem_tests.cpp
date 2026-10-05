@@ -177,13 +177,16 @@ int main() {
     const auto redirected = root / "redirected";
     std::filesystem::create_directory_symlink(attack_outside, redirected);
     detail::SafeSyncRoot safe_root{root};
+    detail::SafeSyncRoot moved_root{std::move(safe_root)};
+    detail::SafeSyncRoot assigned_root{root};
+    assigned_root = std::move(moved_root);
     try {
-        safe_root.ensure_directory_tree(redirected / "directory", true);
+        assigned_root.ensure_directory_tree(redirected / "directory", true);
         return fail("safe root followed a directory symlink");
     } catch (const std::runtime_error&) {
     }
     try {
-        const int descriptor = safe_root.open(
+        const int descriptor = assigned_root.open(
             redirected / "opened.txt",
             O_WRONLY | O_CREAT | O_EXCL,
             S_IRUSR | S_IWUSR
@@ -214,7 +217,7 @@ int main() {
                 S_IROTH | S_IWOTH
         );
     ::close(umask_file_descriptor);
-    safe_root.ensure_directory_tree(umask_directory, false);
+    assigned_root.ensure_directory_tree(umask_directory, false);
     ::umask(original_umask);
     struct stat umask_status {};
     struct stat umask_file_status {};
@@ -230,7 +233,7 @@ int main() {
         output << "data";
     }
     try {
-        safe_root.rename(rename_source, redirected / "renamed.txt");
+        assigned_root.rename(rename_source, redirected / "renamed.txt");
         return fail("safe root renamed a file through a directory symlink");
     } catch (const std::runtime_error&) {
     }

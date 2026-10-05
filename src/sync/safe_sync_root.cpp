@@ -51,7 +51,7 @@ SafeSyncRoot::SafeSyncRoot(const std::filesystem::path& root)
           root_.c_str(),
           O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
       )} {
-    if (descriptor_ == -1) {
+    if (!descriptor_) {
         throw std::runtime_error(
             "cannot open synchronization root '" + root_.string() + "': " +
             std::strerror(errno)
@@ -59,26 +59,11 @@ SafeSyncRoot::SafeSyncRoot(const std::filesystem::path& root)
     }
 }
 
-SafeSyncRoot::~SafeSyncRoot() {
-    if (descriptor_ != -1) {
-        ::close(descriptor_);
-    }
-}
+SafeSyncRoot::~SafeSyncRoot() = default;
 
-SafeSyncRoot::SafeSyncRoot(SafeSyncRoot&& other) noexcept
-    : root_{std::move(other.root_)},
-      descriptor_{std::exchange(other.descriptor_, -1)} {}
+SafeSyncRoot::SafeSyncRoot(SafeSyncRoot&& other) noexcept = default;
 
-SafeSyncRoot& SafeSyncRoot::operator=(SafeSyncRoot&& other) noexcept {
-    if (this != &other) {
-        if (descriptor_ != -1) {
-            ::close(descriptor_);
-        }
-        root_ = std::move(other.root_);
-        descriptor_ = std::exchange(other.descriptor_, -1);
-    }
-    return *this;
-}
+SafeSyncRoot& SafeSyncRoot::operator=(SafeSyncRoot&& other) noexcept = default;
 
 const std::filesystem::path& SafeSyncRoot::path() const noexcept {
     return root_;
@@ -117,7 +102,7 @@ int SafeSyncRoot::open(
 ) const {
     const auto relative = relative_path(path);
     const int descriptor = open_beneath(
-        descriptor_,
+        descriptor_.get(),
         relative,
         flags | O_CLOEXEC,
         mode
@@ -142,7 +127,7 @@ void SafeSyncRoot::ensure_directory_tree(
     bool private_permissions
 ) const {
     const auto relative = relative_path(directory);
-    Descriptor current{::fcntl(descriptor_, F_DUPFD_CLOEXEC, 0)};
+    Descriptor current{::fcntl(descriptor_.get(), F_DUPFD_CLOEXEC, 0)};
     if (current.get() == -1) {
         throw std::runtime_error(
             "cannot duplicate synchronization root descriptor: " +
@@ -190,13 +175,13 @@ void SafeSyncRoot::rename(
     const auto source_relative = relative_path(source);
     const auto destination_relative = relative_path(destination);
     Descriptor source_parent{open_beneath(
-        descriptor_,
+        descriptor_.get(),
         source_relative.parent_path(),
         O_RDONLY | O_DIRECTORY | O_CLOEXEC,
         0
     )};
     Descriptor destination_parent{open_beneath(
-        descriptor_,
+        descriptor_.get(),
         destination_relative.parent_path(),
         O_RDONLY | O_DIRECTORY | O_CLOEXEC,
         0
@@ -228,13 +213,13 @@ bool SafeSyncRoot::rename_no_replace(
     const auto source_relative = relative_path(source);
     const auto destination_relative = relative_path(destination);
     Descriptor source_parent{open_beneath(
-        descriptor_,
+        descriptor_.get(),
         source_relative.parent_path(),
         O_RDONLY | O_DIRECTORY | O_CLOEXEC,
         0
     )};
     Descriptor destination_parent{open_beneath(
-        descriptor_,
+        descriptor_.get(),
         destination_relative.parent_path(),
         O_RDONLY | O_DIRECTORY | O_CLOEXEC,
         0
@@ -276,7 +261,7 @@ FilesystemIdentity SafeSyncRoot::identity(
 ) const {
     const auto relative = relative_path(path);
     Descriptor parent{open_beneath(
-        descriptor_,
+        descriptor_.get(),
         relative.parent_path(),
         O_RDONLY | O_DIRECTORY | O_CLOEXEC,
         0
@@ -318,7 +303,7 @@ bool SafeSyncRoot::remove(
 ) const {
     const auto relative = relative_path(path);
     Descriptor parent{open_beneath(
-        descriptor_,
+        descriptor_.get(),
         relative.parent_path(),
         O_RDONLY | O_DIRECTORY | O_CLOEXEC,
         0

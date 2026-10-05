@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../src/detail/unique_file_descriptor.hpp"
+
 #include <arpa/inet.h>
 #include <array>
 #include <chrono>
@@ -9,53 +11,11 @@
 #include <span>
 #include <string>
 #include <sys/socket.h>
-#include <unistd.h>
 #include <utility>
 
 namespace onedrive::test {
 
-class Socket final {
-public:
-    Socket() = default;
-
-    explicit Socket(int descriptor) noexcept
-        : descriptor_{descriptor} {}
-
-    ~Socket() {
-        reset();
-    }
-
-    Socket(const Socket&) = delete;
-    Socket& operator=(const Socket&) = delete;
-
-    Socket(Socket&& other) noexcept
-        : descriptor_{other.release()} {}
-
-    Socket& operator=(Socket&& other) noexcept {
-        if (this != &other) {
-            reset(other.release());
-        }
-        return *this;
-    }
-
-    [[nodiscard]] int get() const noexcept {
-        return descriptor_;
-    }
-
-    [[nodiscard]] int release() noexcept {
-        return std::exchange(descriptor_, -1);
-    }
-
-    void reset(int descriptor = -1) noexcept {
-        if (descriptor_ != -1) {
-            ::close(descriptor_);
-        }
-        descriptor_ = descriptor;
-    }
-
-private:
-    int descriptor_{-1};
-};
+using Socket = onedrive::detail::UniqueFileDescriptor;
 
 struct TcpListener {
     Socket socket;
