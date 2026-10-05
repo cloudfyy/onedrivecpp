@@ -1,4 +1,4 @@
-#include "sync_plan.hpp"
+#include "sync/core/plan.hpp"
 #include "test_support.hpp"
 
 #include <cstdlib>

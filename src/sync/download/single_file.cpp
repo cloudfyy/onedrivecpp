@@ -1,13 +1,13 @@
-#include "onedrive/sync/single_file_download.hpp"
+#include "onedrive/sync/download/single_file.hpp"
 
 #include "onedrive/util/path_security.hpp"
-#include "download_recovery.hpp"
-#include "download_space_coordinator.hpp"
-#include "download_target.hpp"
-#include "download_transaction.hpp"
-#include "filesystem_metadata.hpp"
-#include "local_filesystem.hpp"
-#include "safe_sync_root.hpp"
+#include "sync/download/recovery.hpp"
+#include "sync/download/space_coordinator.hpp"
+#include "sync/download/target.hpp"
+#include "sync/download/transaction.hpp"
+#include "sync/filesystem/local.hpp"
+#include "sync/filesystem/metadata.hpp"
+#include "sync/filesystem/safe_sync_root.hpp"
 
 #include <spdlog/spdlog.h>
 

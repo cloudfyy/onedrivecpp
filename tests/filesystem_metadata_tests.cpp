@@ -1,5 +1,5 @@
-#include "filesystem_metadata.hpp"
-#include "local_filesystem.hpp"
+#include "sync/filesystem/local.hpp"
+#include "sync/filesystem/metadata.hpp"
 #include "test_support.hpp"
 
 #include <sys/xattr.h>

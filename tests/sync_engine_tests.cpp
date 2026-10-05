@@ -3,8 +3,8 @@
 #include "onedrive/graph/graph_client.hpp"
 #include "onedrive/metrics/metrics.hpp"
 #include "onedrive/storage/item_store.hpp"
-#include "onedrive/sync/sync_engine.hpp"
-#include "../src/sync/selective_sync.hpp"
+#include "onedrive/sync/core/engine.hpp"
+#include "sync/filter/selective.hpp"
 #include "sync_test_support.hpp"
 #include "test_support.hpp"
 

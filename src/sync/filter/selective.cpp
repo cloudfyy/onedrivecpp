@@ -1,8 +1,8 @@
-#include "selective_sync.hpp"
+#include "sync/filter/selective.hpp"
 
 #include "util/ascii.hpp"
 #include "onedrive/util/sha256.hpp"
-#include "remote_path.hpp"
+#include "sync/filter/remote_path.hpp"
 
 #include <algorithm>
 #include <fstream>

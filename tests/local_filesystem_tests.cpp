@@ -1,7 +1,7 @@
-#include "filesystem_metadata.hpp"
-#include "local_filesystem.hpp"
+#include "sync/filesystem/local.hpp"
+#include "sync/filesystem/metadata.hpp"
 #include "onedrive/util/path_security.hpp"
-#include "safe_sync_root.hpp"
+#include "sync/filesystem/safe_sync_root.hpp"
 #include "test_support.hpp"
 
 #include <chrono>

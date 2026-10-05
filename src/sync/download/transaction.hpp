@@ -1,9 +1,9 @@
 #pragma once
 
-#include "download_space_coordinator.hpp"
-#include "filesystem_metadata.hpp"
-#include "local_filesystem.hpp"
-#include "safe_sync_root.hpp"
+#include "sync/download/space_coordinator.hpp"
+#include "sync/filesystem/local.hpp"
+#include "sync/filesystem/metadata.hpp"
+#include "sync/filesystem/safe_sync_root.hpp"
 #include "onedrive/config/config.hpp"
 #include "onedrive/graph/graph_client.hpp"
 #include "onedrive/storage/item_store.hpp"

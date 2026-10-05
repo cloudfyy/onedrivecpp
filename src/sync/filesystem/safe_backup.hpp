@@ -1,7 +1,7 @@
 #pragma once
 
-#include "local_filesystem.hpp"
-#include "safe_sync_root.hpp"
+#include "sync/filesystem/local.hpp"
+#include "sync/filesystem/safe_sync_root.hpp"
 
 #include <filesystem>
 #include <string>

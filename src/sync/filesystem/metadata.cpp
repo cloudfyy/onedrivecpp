@@ -1,7 +1,7 @@
-#include "filesystem_metadata.hpp"
+#include "sync/filesystem/metadata.hpp"
 
 #include "onedrive/util/path_security.hpp"
-#include "local_filesystem.hpp"
+#include "sync/filesystem/local.hpp"
 
 #include <spdlog/spdlog.h>
 

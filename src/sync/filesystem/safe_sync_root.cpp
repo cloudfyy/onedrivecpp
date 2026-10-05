@@ -1,4 +1,4 @@
-#include "safe_sync_root.hpp"
+#include "sync/filesystem/safe_sync_root.hpp"
 
 #include "util/unique_file_descriptor.hpp"
 

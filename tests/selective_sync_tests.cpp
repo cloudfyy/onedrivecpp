@@ -1,5 +1,5 @@
-#include "selective_sync.hpp"
-#include "remote_path.hpp"
+#include "sync/filter/remote_path.hpp"
+#include "sync/filter/selective.hpp"
 #include "test_support.hpp"
 
 #include <cstdlib>

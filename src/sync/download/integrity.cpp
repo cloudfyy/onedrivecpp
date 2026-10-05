@@ -1,4 +1,4 @@
-#include "download_integrity.hpp"
+#include "sync/download/integrity.hpp"
 
 #include "util/ascii.hpp"
 #include "onedrive/util/sha256.hpp"

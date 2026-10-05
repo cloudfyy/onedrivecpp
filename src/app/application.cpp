@@ -14,8 +14,8 @@
 #include "onedrive/metrics/metrics.hpp"
 #include "onedrive/monitor/monitor.hpp"
 #include "onedrive/storage/item_store.hpp"
-#include "onedrive/sync/single_file_download.hpp"
-#include "onedrive/sync/sync_engine.hpp"
+#include "onedrive/sync/download/single_file.hpp"
+#include "onedrive/sync/core/engine.hpp"
 #include "onedrive/version.hpp"
 
 #include <CLI/CLI.hpp>

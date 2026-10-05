@@ -1,4 +1,4 @@
-#include "download_progress.hpp"
+#include "sync/download/progress.hpp"
 #include "test_support.hpp"
 
 #include <chrono>

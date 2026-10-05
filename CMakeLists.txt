@@ -124,22 +124,22 @@ add_library(onedrive_core
     src/util/remote_time.cpp
     src/util/sha256.cpp
     src/storage/item_database.cpp
-    src/sync/download_integrity.cpp
-    src/sync/download_progress.cpp
-    src/sync/download_recovery.cpp
-    src/sync/download_space_coordinator.cpp
-    src/sync/download_target.cpp
-    src/sync/download_transaction.cpp
-    src/sync/filesystem_metadata.cpp
-    src/sync/item_operation_coordinator.cpp
-    src/sync/local_filesystem.cpp
-    src/sync/local_upload.cpp
-    src/sync/safe_sync_root.cpp
-    src/sync/safe_backup.cpp
-    src/sync/selective_sync.cpp
-    src/sync/single_file_download.cpp
-    src/sync/sync_plan.cpp
-    src/sync/sync_engine.cpp
+    src/sync/download/integrity.cpp
+    src/sync/download/progress.cpp
+    src/sync/download/recovery.cpp
+    src/sync/download/space_coordinator.cpp
+    src/sync/download/target.cpp
+    src/sync/download/transaction.cpp
+    src/sync/filesystem/metadata.cpp
+    src/sync/core/item_operation_coordinator.cpp
+    src/sync/filesystem/local.cpp
+    src/sync/upload/local.cpp
+    src/sync/filesystem/safe_sync_root.cpp
+    src/sync/filesystem/safe_backup.cpp
+    src/sync/filter/selective.cpp
+    src/sync/download/single_file.cpp
+    src/sync/core/plan.cpp
+    src/sync/core/engine.cpp
 )
 
 target_include_directories(onedrive_core
@@ -295,51 +295,52 @@ if(BUILD_TESTING)
     add_onedrive_test(
         sync_engine_tests
         SOURCES tests/sync_engine_tests.cpp
+        INCLUDE_DIRS src
     )
     add_onedrive_test(
         local_filesystem_tests
         SOURCES tests/local_filesystem_tests.cpp
-        INCLUDE_DIRS src/sync
+        INCLUDE_DIRS src
     )
     add_onedrive_test(
         filesystem_metadata_tests
         SOURCES tests/filesystem_metadata_tests.cpp
-        INCLUDE_DIRS src/sync
+        INCLUDE_DIRS src
     )
     add_onedrive_test(
         sync_plan_tests
         SOURCES tests/sync_plan_tests.cpp
-        INCLUDE_DIRS src/sync
+        INCLUDE_DIRS src
     )
     add_onedrive_test(
         selective_sync_tests
         SOURCES tests/selective_sync_tests.cpp
-        INCLUDE_DIRS src/sync
+        INCLUDE_DIRS src
     )
     add_onedrive_test(
         item_operation_coordinator_tests
         SOURCES tests/item_operation_coordinator_tests.cpp
-        INCLUDE_DIRS src/sync
+        INCLUDE_DIRS src
     )
     add_onedrive_test(
         download_space_coordinator_tests
         SOURCES tests/download_space_coordinator_tests.cpp
-        INCLUDE_DIRS src/sync
+        INCLUDE_DIRS src
     )
     add_onedrive_test(
         download_progress_tests
         SOURCES tests/download_progress_tests.cpp
-        INCLUDE_DIRS src/sync
+        INCLUDE_DIRS src
     )
     add_onedrive_test(
         download_components_tests
         SOURCES tests/download_components_tests.cpp
-        INCLUDE_DIRS src/sync
+        INCLUDE_DIRS src
     )
     add_onedrive_test(
         download_integrity_tests
         SOURCES tests/download_integrity_tests.cpp
-        INCLUDE_DIRS src/sync
+        INCLUDE_DIRS src
     )
 
     if(ONEDRIVE_ENABLE_GRAPH_E2E)

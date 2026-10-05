@@ -1,4 +1,4 @@
-#include "item_operation_coordinator.hpp"
+#include "sync/core/item_operation_coordinator.hpp"
 
 #include <filesystem>
 #include <functional>

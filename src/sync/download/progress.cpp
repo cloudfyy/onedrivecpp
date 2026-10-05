@@ -1,4 +1,4 @@
-#include "download_progress.hpp"
+#include "sync/download/progress.hpp"
 
 #include <algorithm>
 #include <cmath>

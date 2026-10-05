@@ -1,7 +1,7 @@
 #pragma once
 
-#include "filesystem_metadata.hpp"
-#include "safe_sync_root.hpp"
+#include "sync/filesystem/metadata.hpp"
+#include "sync/filesystem/safe_sync_root.hpp"
 #include "onedrive/storage/item_store.hpp"
 
 #include <filesystem>

@@ -1,7 +1,7 @@
-#include "sync_plan.hpp"
+#include "sync/core/plan.hpp"
 
-#include "download_target.hpp"
-#include "local_filesystem.hpp"
+#include "sync/download/target.hpp"
+#include "sync/filesystem/local.hpp"
 
 #include <spdlog/spdlog.h>
 
