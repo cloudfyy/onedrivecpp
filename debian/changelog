@@ -1,3 +1,10 @@
+onedrive-cpp (0.7.35-1~ubuntu24.04) noble; urgency=medium
+
+  * Require durable remote-move journals before Graph mutations and model
+    Graph and local commits with reusable template typestates.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Mon, 05 Oct 2026 13:06:38 +0000
+
 onedrive-cpp (0.7.34-1~ubuntu24.04) noble; urgency=medium
 
   * Model local move journaling, staging, installation, and restart recovery
