@@ -1,3 +1,15 @@
+onedrive-cpp (0.7.21-1~ubuntu24.04) noble; urgency=medium
+
+  * Reconcile definite upload-recovery conflicts through the remote delta
+    instead of permanently blocking before conflict policy execution.
+  * Apply the existing sync.local_conflict block and backup policies to
+    simultaneous local and remote file changes discovered during upload
+    recovery.
+  * Remove only stale upload journals and snapshots while preserving both
+    local and remote versions according to the configured policy.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Mon, 05 Oct 2026 02:58:09 +0000
+
 onedrive-cpp (0.7.20-1~ubuntu24.04) noble; urgency=medium
 
   * Persist Microsoft Graph cTag values for tracked files and download
