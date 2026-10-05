@@ -2,6 +2,7 @@
 
 #include "detail/ascii.hpp"
 #include "onedrive/sha256.hpp"
+#include "remote_path.hpp"
 
 #include <algorithm>
 #include <fstream>
@@ -143,12 +144,6 @@ bool match_segments(
                pattern_index + 1,
                path_index + 1
            );
-}
-
-bool is_ancestor(std::string_view ancestor, std::string_view path) {
-    return path.size() > ancestor.size() &&
-           path.starts_with(ancestor) &&
-           path[ancestor.size()] == '/';
 }
 
 }  // namespace
@@ -333,7 +328,10 @@ FilteredDelta filter_delta(
         selected[index] = std::ranges::any_of(
             selected_paths,
             [&](std::string_view path) {
-                return is_ancestor(item.remote_path, path);
+                return remote_path_is_descendant(
+                    path,
+                    item.remote_path
+                );
             }
         ) && !sync_list.excludes(item.remote_path, true);
     }

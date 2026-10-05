@@ -5,6 +5,7 @@
 #include "onedrive/path_security.hpp"
 #include "filesystem_metadata.hpp"
 #include "local_filesystem.hpp"
+#include "remote_path.hpp"
 #include "safe_sync_root.hpp"
 #include "selective_sync.hpp"
 
@@ -145,13 +146,10 @@ std::vector<storage::PendingDelete> discover_deletions(
             deletions,
             [&](const auto& parent) {
                 return parent.directory &&
-                       candidate.remote_path.size() >
-                           parent.remote_path.size() &&
-                       candidate.remote_path.starts_with(
+                       remote_path_is_descendant(
+                           candidate.remote_path,
                            parent.remote_path
-                       ) &&
-                       candidate.remote_path[parent.remote_path.size()] ==
-                           '/';
+                       );
             }
         );
         if (!covered) {

@@ -11,6 +11,7 @@
 #include "item_operation_coordinator.hpp"
 #include "local_filesystem.hpp"
 #include "local_upload.hpp"
+#include "remote_path.hpp"
 #include "safe_sync_root.hpp"
 #include "selective_sync.hpp"
 #include "sync_plan.hpp"
@@ -339,9 +340,10 @@ void add_deleted_descendants(
         const bool below_deleted_directory = std::ranges::any_of(
             deleted_directories,
             [&](const std::string& directory) {
-                return item.remote_path.size() > directory.size() &&
-                       item.remote_path.starts_with(directory) &&
-                       item.remote_path[directory.size()] == '/';
+                return detail::remote_path_is_descendant(
+                    item.remote_path,
+                    directory
+                );
             }
         );
         if (changed_ids.contains(item.remote_id) ||
@@ -382,9 +384,10 @@ void add_moved_descendants(
         }
         for (const auto& item : tracked) {
             if (changed_ids.contains(item.remote_id) ||
-                item.remote_path.size() <= previous->remote_path.size() ||
-                !item.remote_path.starts_with(previous->remote_path) ||
-                item.remote_path[previous->remote_path.size()] != '/') {
+                !detail::remote_path_is_descendant(
+                    item.remote_path,
+                    previous->remote_path
+                )) {
                 continue;
             }
             auto remote_path =
@@ -436,9 +439,7 @@ bool below_blocked_directory(
     return std::ranges::any_of(
         blocked_directories,
         [path](const std::string& directory) {
-            return path.size() > directory.size() &&
-                   path.starts_with(directory) &&
-                   path[directory.size()] == '/';
+            return detail::remote_path_is_descendant(path, directory);
         }
     );
 }

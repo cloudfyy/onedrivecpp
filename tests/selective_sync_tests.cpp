@@ -1,4 +1,5 @@
 #include "selective_sync.hpp"
+#include "remote_path.hpp"
 #include "test_support.hpp"
 
 #include <cstdlib>
@@ -45,6 +46,19 @@ void write_rules(
 
 int main() {
     namespace detail = onedrive::sync::detail;
+    if (!detail::remote_path_is_descendant("Folder/File", "Folder") ||
+        !detail::remote_path_is_descendant(
+            "Folder/Nested/File",
+            "Folder"
+        ) ||
+        detail::remote_path_is_descendant("Folder", "Folder") ||
+        detail::remote_path_is_descendant("Folder2/File", "Folder") ||
+        detail::remote_path_is_descendant("", "") ||
+        detail::remote_path_is_descendant("Folder", "")) {
+        return onedrive::test::fail(
+            "remote path descendant boundaries were incorrect"
+        );
+    }
     onedrive::test::TemporaryDirectory temporary_directory;
     const auto rules_path = temporary_directory.path() / "sync_list";
     write_rules(
