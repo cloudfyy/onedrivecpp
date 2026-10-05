@@ -620,6 +620,11 @@ persists the session URL, expiration, and confirmed offset. After a restart,
 the client queries and resumes a valid session without resending confirmed
 fragments. Expired sessions and HTTP 404/410 responses are replaced; a server
 offset behind the durable checkpoint aborts the upload.
+OneDrive quota responses and local upload read, permission, snapshot-space,
+or I/O failures persist an actionable reason and attempt count in the same
+journal. A failed item does not stop unrelated uploads. Recorded failures are
+retried once per synchronization, cleared on success, and otherwise reported
+as blocked.
 Missing tracked local items are deleted remotely with the saved eTag as an
 If-Match precondition. Parent-directory deletions cover tracked descendants.
 A dedicated SQLite pending-delete journal makes completed Graph deletions

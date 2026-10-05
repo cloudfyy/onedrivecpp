@@ -413,6 +413,9 @@ void create_pending_upload_schema(sqlite3* database) {
         "upload_url TEXT NOT NULL DEFAULT '',"
         "upload_expiration TEXT NOT NULL DEFAULT '',"
         "completed_bytes INTEGER NOT NULL DEFAULT 0,"
+        "failure_code TEXT NOT NULL DEFAULT '',"
+        "failure_message TEXT NOT NULL DEFAULT '',"
+        "failure_attempt_count INTEGER NOT NULL DEFAULT 0,"
         "directory INTEGER NOT NULL DEFAULT 0,"
         "PRIMARY KEY (drive_id, remote_path)"
         ");"
@@ -518,7 +521,7 @@ void create_upload_suppression_schema(sqlite3* database) {
     );
 }
 
-constexpr int current_schema_version = 22;
+constexpr int current_schema_version = 23;
 
 void set_schema_version(sqlite3* database, int version) {
     const auto sql =
@@ -606,6 +609,18 @@ void add_content_tags(sqlite3* database) {
         "TEXT NOT NULL DEFAULT '';"
         "ALTER TABLE partial_download ADD COLUMN ctag "
         "TEXT NOT NULL DEFAULT '';"
+    );
+}
+
+void add_pending_upload_failure(sqlite3* database) {
+    execute(
+        database,
+        "ALTER TABLE pending_upload ADD COLUMN failure_code "
+        "TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE pending_upload ADD COLUMN failure_message "
+        "TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE pending_upload ADD COLUMN failure_attempt_count "
+        "INTEGER NOT NULL DEFAULT 0;"
     );
 }
 
@@ -730,6 +745,7 @@ constexpr std::array schema_migrations{
     SchemaMigration{19, 20, add_item_local_identity},
     SchemaMigration{20, 21, create_pending_remote_move_schema},
     SchemaMigration{21, 22, add_content_tags},
+    SchemaMigration{22, 23, add_pending_upload_failure},
 };
 
 consteval bool schema_migration_chain_is_complete() {
@@ -1868,6 +1884,10 @@ void ItemDatabase::save_pending_upload_on_worker(
     if (database == nullptr) {
         throw std::runtime_error("state database is not open");
     }
+    const bool has_failure = !upload.failure_code.empty();
+    const bool invalid_failure =
+        has_failure != !upload.failure_message.empty() ||
+        has_failure != (upload.failure_attempt_count != 0);
     const bool invalid_directory =
         upload.directory &&
         (!upload.snapshot_path.empty() ||
@@ -1880,8 +1900,9 @@ void ItemDatabase::save_pending_upload_on_worker(
          upload.completed_bytes != 0);
     const bool invalid_file =
         !upload.directory &&
-        (upload.snapshot_path.empty() ||
-         upload.content_fingerprint.empty() ||
+        ((!has_failure && upload.snapshot_path.empty()) ||
+         (upload.snapshot_path.empty() !=
+              upload.content_fingerprint.empty()) ||
          upload.local_size < 0 ||
          upload.remote_id.has_value() != !upload.expected_etag.empty() ||
          upload.completed_bytes >
@@ -1889,7 +1910,8 @@ void ItemDatabase::save_pending_upload_on_worker(
          (upload.upload_url.empty() != upload.upload_expiration.empty()) ||
          (upload.upload_url.empty() && upload.completed_bytes != 0));
     if (upload.drive_id.empty() || upload.remote_path.empty() ||
-        upload.local_path.empty() || invalid_directory || invalid_file) {
+        upload.local_path.empty() || invalid_failure ||
+        invalid_directory || invalid_file) {
         throw std::invalid_argument("pending upload contains invalid metadata");
     }
     Statement statement{
@@ -1898,8 +1920,9 @@ void ItemDatabase::save_pending_upload_on_worker(
         "drive_id, remote_path, local_path, snapshot_path, "
         "content_fingerprint, local_size, local_modified_ticks, remote_id, "
         "expected_etag, upload_url, upload_expiration, completed_bytes, "
-        "directory"
-        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) "
+        "failure_code, failure_message, failure_attempt_count, directory"
+        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, "
+        "?13, ?14, ?15, ?16) "
         "ON CONFLICT(drive_id, remote_path) DO UPDATE SET "
         "local_path = excluded.local_path, "
         "snapshot_path = excluded.snapshot_path, "
@@ -1911,6 +1934,9 @@ void ItemDatabase::save_pending_upload_on_worker(
         "upload_url = excluded.upload_url, "
         "upload_expiration = excluded.upload_expiration, "
         "completed_bytes = excluded.completed_bytes, "
+        "failure_code = excluded.failure_code, "
+        "failure_message = excluded.failure_message, "
+        "failure_attempt_count = excluded.failure_attempt_count, "
         "directory = excluded.directory;"
     };
     bind_text(database, statement.get(), 1, upload.drive_id);
@@ -1935,10 +1961,18 @@ void ItemDatabase::save_pending_upload_on_worker(
         12,
         static_cast<std::int64_t>(upload.completed_bytes)
     );
+    bind_text(database, statement.get(), 13, upload.failure_code);
+    bind_text(database, statement.get(), 14, upload.failure_message);
     bind_integer(
         database,
         statement.get(),
-        13,
+        15,
+        static_cast<std::int64_t>(upload.failure_attempt_count)
+    );
+    bind_integer(
+        database,
+        statement.get(),
+        16,
         upload.directory ? 1 : 0
     );
     if (sqlite3_step(statement.get()) != SQLITE_DONE) {
@@ -2005,7 +2039,7 @@ std::vector<PendingUpload> ItemDatabase::pending_uploads_on_worker(
         "SELECT drive_id, remote_path, local_path, snapshot_path, "
         "content_fingerprint, local_size, local_modified_ticks, remote_id, "
         "expected_etag, upload_url, upload_expiration, completed_bytes, "
-        "directory "
+        "failure_code, failure_message, failure_attempt_count, directory "
         "FROM pending_upload WHERE drive_id = ?1 "
         "ORDER BY remote_path;"
     };
@@ -2040,7 +2074,12 @@ std::vector<PendingUpload> ItemDatabase::pending_uploads_on_worker(
             .completed_bytes = static_cast<std::uint64_t>(
                 sqlite3_column_int64(statement.get(), 11)
             ),
-            .directory = sqlite3_column_int(statement.get(), 12) != 0,
+            .failure_code = column_text(statement.get(), 12),
+            .failure_message = column_text(statement.get(), 13),
+            .failure_attempt_count = static_cast<std::uint64_t>(
+                sqlite3_column_int64(statement.get(), 14)
+            ),
+            .directory = sqlite3_column_int(statement.get(), 15) != 0,
         });
     }
     return uploads;

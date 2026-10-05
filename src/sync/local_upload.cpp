@@ -18,6 +18,8 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -38,6 +40,35 @@ class RemoteUploadConflictError final : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
 };
+
+class LocalUploadResourceError final : public std::runtime_error {
+public:
+    LocalUploadResourceError(std::string reason_code, std::string message)
+        : std::runtime_error{std::move(message)},
+          reason_code_{std::move(reason_code)} {}
+
+    [[nodiscard]] const std::string& reason_code() const noexcept {
+        return reason_code_;
+    }
+
+private:
+    std::string reason_code_;
+};
+
+std::string local_resource_code(
+    const std::error_code& error,
+    std::string_view fallback
+) {
+    if (error == std::errc::permission_denied ||
+        error == std::errc::read_only_file_system) {
+        return "local_permission";
+    }
+    if (error == std::errc::no_space_on_device ||
+        error == std::errc::file_too_large) {
+        return "local_storage";
+    }
+    return std::string{fallback};
+}
 
 struct LocalMoveDiscovery {
     std::vector<storage::PendingRemoteMove> moves;
@@ -540,9 +571,18 @@ UploadSnapshot create_upload_snapshot(
     const std::filesystem::path& source,
     const LocalFileBaseline& baseline
 ) {
-    onedrive::detail::UniqueFileDescriptor input{
-        onedrive::detail::open_path_no_symlinks(source, O_RDONLY)
-    };
+    onedrive::detail::UniqueFileDescriptor input;
+    try {
+        input.reset(
+            onedrive::detail::open_path_no_symlinks(source, O_RDONLY)
+        );
+    } catch (const std::system_error& error) {
+        throw LocalUploadResourceError(
+            local_resource_code(error.code(), "local_read"),
+            "cannot open local upload source '" + source.string() +
+                "': " + error.code().message()
+        );
+    }
     std::filesystem::path snapshot_path;
     onedrive::detail::UniqueFileDescriptor output;
     for (std::size_t attempt = 1; attempt <= 100; ++attempt) {
@@ -554,14 +594,20 @@ UploadSnapshot create_upload_snapshot(
                 S_IRUSR | S_IWUSR
             ));
             break;
-        } catch (const std::runtime_error&) {
+        } catch (const std::system_error& error) {
             if (!std::filesystem::exists(snapshot_path)) {
-                throw;
+                throw LocalUploadResourceError(
+                    local_resource_code(error.code(), "local_storage"),
+                    "cannot create local upload snapshot '" +
+                        snapshot_path.string() + "': " +
+                        error.code().message()
+                );
             }
         }
     }
     if (!output) {
-        throw std::runtime_error(
+        throw LocalUploadResourceError(
+            "local_storage",
             "cannot allocate a local upload snapshot for: " + source.string()
         );
     }
@@ -570,7 +616,11 @@ UploadSnapshot create_upload_snapshot(
     while (true) {
         const auto count = ::read(input.get(), buffer.data(), buffer.size());
         if (count == -1) {
-            throw std::runtime_error(
+            throw LocalUploadResourceError(
+                local_resource_code(
+                    std::error_code{errno, std::generic_category()},
+                    "local_read"
+                ),
                 "cannot read local upload source '" + source.string() +
                 "': " + std::strerror(errno)
             );
@@ -586,7 +636,11 @@ UploadSnapshot create_upload_snapshot(
                 static_cast<std::size_t>(count) - written
             );
             if (result == -1) {
-                throw std::runtime_error(
+                throw LocalUploadResourceError(
+                    local_resource_code(
+                        std::error_code{errno, std::generic_category()},
+                        "local_storage"
+                    ),
                     "cannot write local upload snapshot '" +
                     snapshot_path.string() + "': " + std::strerror(errno)
                 );
@@ -595,7 +649,11 @@ UploadSnapshot create_upload_snapshot(
         }
     }
     if (::fsync(output.get()) == -1) {
-        throw std::runtime_error(
+        throw LocalUploadResourceError(
+            local_resource_code(
+                std::error_code{errno, std::generic_category()},
+                "local_storage"
+            ),
             "cannot flush local upload snapshot '" + snapshot_path.string() +
             "': " + std::strerror(errno)
         );
@@ -668,6 +726,17 @@ std::vector<UploadCandidate> discover_uploads(
     for (const auto& item : items.blocked_items(drive_id)) {
         blocked_ids.insert(item.remote_id);
         blocked_paths.insert(item.remote_path);
+    }
+    std::unordered_map<std::string, storage::PendingUpload>
+        resource_blocked_uploads;
+    for (auto pending : items.pending_uploads(drive_id)) {
+        if (!pending.failure_code.empty() &&
+            (!pending.snapshot_path.empty() || pending.directory)) {
+            resource_blocked_uploads.emplace(
+                pending.local_path.lexically_normal().string(),
+                std::move(pending)
+            );
+        }
     }
     std::unordered_set<std::string> suppressed_paths;
     std::unordered_set<std::string> suppressed_directories;
@@ -813,6 +882,32 @@ std::vector<UploadCandidate> discover_uploads(
             continue;
         }
         const auto previous = tracked.find(path.lexically_normal().string());
+        if (const auto failed = resource_blocked_uploads.find(
+                path.lexically_normal().string()
+            );
+            failed != resource_blocked_uploads.end()) {
+            ++blocked;
+            console.message(
+                cli::MessageKind::warning,
+                "local_upload_resource_blocked",
+                "Upload remains deferred for '" + remote_path + "' (" +
+                    failed->second.failure_code + ", attempt " +
+                    std::to_string(
+                        failed->second.failure_attempt_count
+                    ) + "): " + failed->second.failure_message
+            );
+            if (directory) {
+                iterator.disable_recursion_pending();
+            }
+            iterator.increment(error);
+            if (error) {
+                throw std::runtime_error(
+                    "cannot continue local upload scan: " +
+                    error.message()
+                );
+            }
+            continue;
+        }
         if ((!directory && suppressed_paths.contains(
                  path.lexically_normal().string()
              )) ||
@@ -988,7 +1083,7 @@ void require_local_directory(
     }
 }
 
-void upload_directory(
+bool upload_directory(
     const UploadCandidate& upload,
     const SafeSyncRoot& sync_root,
     const std::string& drive_id,
@@ -1011,6 +1106,9 @@ void upload_directory(
         .upload_url = {},
         .upload_expiration = {},
         .completed_bytes = 0,
+        .failure_code = {},
+        .failure_message = {},
+        .failure_attempt_count = 0,
         .directory = true,
     };
     items.save_pending_upload(pending);
@@ -1023,6 +1121,19 @@ void upload_directory(
             "remote item conflicts with local directory '" +
             upload.remote_path + "'"
         );
+    } catch (const graph::UploadResourceError& error) {
+        pending.failure_code = error.reason_code();
+        pending.failure_message = error.what();
+        pending.failure_attempt_count = 1;
+        items.save_pending_upload(pending);
+        ++summary.blocked;
+        console.message(
+            cli::MessageKind::warning,
+            "local_upload_resource_blocked",
+            "Deferred upload '" + upload.remote_path + "': " +
+                error.what()
+        );
+        return false;
     }
     require_local_directory(pending);
     if (remote.remote_path != upload.remote_path || !remote.directory) {
@@ -1047,6 +1158,7 @@ void upload_directory(
         "local_directory_created",
         "Created remote directory '" + upload.remote_path + "'."
     );
+    return true;
 }
 
 graph::RemoteItem recover_uploaded_item(
@@ -1141,6 +1253,23 @@ void recover_pending_uploads(
     const cli::Console& console
 ) {
     for (auto upload : items.pending_uploads(drive_id)) {
+        if (!upload.failure_code.empty() && upload.snapshot_path.empty() &&
+            !upload.directory) {
+            std::error_code status_error;
+            const auto status = std::filesystem::symlink_status(
+                upload.local_path,
+                status_error
+            );
+            if ((!status_error &&
+                 !std::filesystem::is_regular_file(status)) ||
+                status_error == std::errc::no_such_file_or_directory) {
+                items.remove_pending_upload(
+                    upload.drive_id,
+                    upload.remote_path
+                );
+            }
+            continue;
+        }
         try {
             if (upload.directory) {
                 const auto remote =
@@ -1209,6 +1338,17 @@ void recover_pending_uploads(
                 cli::MessageKind::information,
                 "pending_upload_recovered",
                 "Recovered pending upload '" + upload.remote_path + "'."
+            );
+        } catch (const graph::UploadResourceError& error) {
+            upload.failure_code = error.reason_code();
+            upload.failure_message = error.what();
+            ++upload.failure_attempt_count;
+            items.save_pending_upload(upload);
+            console.message(
+                cli::MessageKind::warning,
+                "pending_upload_resource_blocked",
+                "Deferred pending upload '" + upload.remote_path + "': " +
+                    error.what()
             );
         } catch (const RemoteUploadConflictError& error) {
             items.remove_pending_upload(
@@ -1333,7 +1473,7 @@ UploadSummary upload_local_changes(
     );
     summary.planned_directories = move_parents.size();
     for (const auto& parent : move_parents) {
-        upload_directory(
+        if (!upload_directory(
             parent,
             sync_root,
             drive_id,
@@ -1342,7 +1482,9 @@ UploadSummary upload_local_changes(
             metadata,
             console,
             summary
-        );
+        )) {
+            return summary;
+        }
     }
     for (const auto& move : moves.moves) {
         const auto previous = items.find(drive_id, move.remote_id);
@@ -1391,6 +1533,16 @@ UploadSummary upload_local_changes(
     ));
     summary.planned_directories +=
         uploads.size() - summary.planned;
+    std::unordered_map<std::string, std::uint64_t>
+        previous_failure_attempts;
+    for (const auto& pending : items.pending_uploads(drive_id)) {
+        if (!pending.failure_code.empty()) {
+            previous_failure_attempts.emplace(
+                pending.remote_path,
+                pending.failure_attempt_count
+            );
+        }
+    }
     for (const auto& deletion : deletions) {
         items.save_pending_delete(deletion);
         execute_pending_delete(deletion, graph, items);
@@ -1403,7 +1555,7 @@ UploadSummary upload_local_changes(
     }
     for (const auto& upload : uploads) {
         if (upload.directory) {
-            upload_directory(
+            static_cast<void>(upload_directory(
                 upload,
                 sync_root,
                 drive_id,
@@ -1412,22 +1564,17 @@ UploadSummary upload_local_changes(
                 metadata,
                 console,
                 summary
-            );
+            ));
             continue;
         }
-        const auto baseline = capture_local_file_baseline(upload.path);
-        if (!baseline.existed) {
-            continue;
-        }
-        auto snapshot = create_upload_snapshot(upload.path, baseline);
         storage::PendingUpload pending{
             .drive_id = drive_id,
             .remote_path = upload.remote_path,
             .local_path = upload.path,
-            .snapshot_path = snapshot.path(),
-            .content_fingerprint = baseline.fingerprint,
-            .local_size = baseline.size,
-            .local_modified_ticks = baseline.modified_ticks,
+            .snapshot_path = {},
+            .content_fingerprint = {},
+            .local_size = 0,
+            .local_modified_ticks = 0,
             .remote_id = upload.previous ?
                 std::optional{upload.previous->remote_id} :
                 std::nullopt,
@@ -1435,50 +1582,106 @@ UploadSummary upload_local_changes(
             .upload_url = {},
             .upload_expiration = {},
             .completed_bytes = 0,
+            .failure_code = {},
+            .failure_message = {},
+            .failure_attempt_count = 0,
             .directory = false,
         };
-        items.save_pending_upload(pending);
-        pending.snapshot_path = snapshot.release();
-        const graph::UploadCheckpoint checkpoint =
-            [&](const graph::UploadSession& state) {
-                pending.upload_url = state.upload_url;
-                pending.upload_expiration = state.expiration;
-                pending.completed_bytes = state.completed_bytes;
-                items.save_pending_upload(pending);
-            };
-        const auto remote = graph.upload_file(
-            upload.remote_path,
-            pending.remote_id,
-            pending.expected_etag,
-            pending.snapshot_path,
-            std::nullopt,
-            checkpoint
-        );
-        if (remote.remote_path != upload.remote_path ||
-            remote.size != baseline.size) {
-            throw std::runtime_error(
-                "Microsoft Graph upload response does not match local file '" +
-                upload.path.string() + "'"
+        try {
+            const auto baseline =
+                capture_local_file_baseline(upload.path);
+            if (!baseline.existed) {
+                continue;
+            }
+            auto snapshot = create_upload_snapshot(upload.path, baseline);
+            pending.snapshot_path = snapshot.path();
+            pending.content_fingerprint = baseline.fingerprint;
+            pending.local_size = baseline.size;
+            pending.local_modified_ticks = baseline.modified_ticks;
+            items.save_pending_upload(pending);
+            pending.snapshot_path = snapshot.release();
+            const graph::UploadCheckpoint checkpoint =
+                [&](const graph::UploadSession& state) {
+                    pending.upload_url = state.upload_url;
+                    pending.upload_expiration = state.expiration;
+                    pending.completed_bytes = state.completed_bytes;
+                    items.save_pending_upload(pending);
+                };
+            const auto remote = graph.upload_file(
+                upload.remote_path,
+                pending.remote_id,
+                pending.expected_etag,
+                pending.snapshot_path,
+                std::nullopt,
+                checkpoint
+            );
+            if (remote.remote_path != upload.remote_path ||
+                remote.size != baseline.size) {
+                throw std::runtime_error(
+                    "Microsoft Graph upload response does not match local "
+                    "file '" + upload.path.string() + "'"
+                );
+            }
+            auto state = uploaded_state(
+                remote,
+                upload.path,
+                baseline,
+                drive_id
+            );
+            const auto identity = sync_root.identity(upload.path, false);
+            state.local_device = identity.device;
+            state.local_inode = identity.inode;
+            items.commit_upload(pending, std::move(state));
+            metadata.write_remote_identity(remote, upload.path);
+            static_cast<void>(
+                remove_no_symlinks(pending.snapshot_path)
+            );
+            ++summary.uploaded;
+            console.message(
+                cli::MessageKind::information,
+                "local_item_uploaded",
+                "Uploaded local file '" + upload.remote_path + "'."
+            );
+        } catch (const LocalUploadResourceError& error) {
+            pending.failure_code = error.reason_code();
+            pending.failure_message = error.what();
+            pending.failure_attempt_count =
+                previous_failure_attempts[upload.remote_path] + 1;
+            items.save_pending_upload(pending);
+            ++summary.blocked;
+            console.message(
+                cli::MessageKind::warning,
+                "local_upload_resource_blocked",
+                "Deferred upload '" + upload.remote_path + "': " +
+                    error.what()
+            );
+        } catch (const graph::UploadResourceError& error) {
+            pending.failure_code = error.reason_code();
+            pending.failure_message = error.what();
+            ++pending.failure_attempt_count;
+            items.save_pending_upload(pending);
+            ++summary.blocked;
+            console.message(
+                cli::MessageKind::warning,
+                "local_upload_resource_blocked",
+                "Deferred upload '" + upload.remote_path + "': " +
+                    error.what()
+            );
+        } catch (const std::system_error& error) {
+            pending.failure_code =
+                local_resource_code(error.code(), "local_read");
+            pending.failure_message = error.what();
+            pending.failure_attempt_count =
+                previous_failure_attempts[upload.remote_path] + 1;
+            items.save_pending_upload(pending);
+            ++summary.blocked;
+            console.message(
+                cli::MessageKind::warning,
+                "local_upload_resource_blocked",
+                "Deferred upload '" + upload.remote_path + "': " +
+                    error.what()
             );
         }
-        auto state = uploaded_state(
-            remote,
-            upload.path,
-            baseline,
-            drive_id
-        );
-        const auto identity = sync_root.identity(upload.path, false);
-        state.local_device = identity.device;
-        state.local_inode = identity.inode;
-        items.commit_upload(pending, std::move(state));
-        metadata.write_remote_identity(remote, upload.path);
-        static_cast<void>(remove_no_symlinks(pending.snapshot_path));
-        ++summary.uploaded;
-        console.message(
-            cli::MessageKind::information,
-            "local_item_uploaded",
-            "Uploaded local file '" + upload.remote_path + "'."
-        );
     }
     return summary;
 }

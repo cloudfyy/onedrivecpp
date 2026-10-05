@@ -18,6 +18,7 @@
 #include <limits>
 #include <stdexcept>
 #include <string_view>
+#include <system_error>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -419,10 +420,15 @@ bool local_file_matches_baseline(
 }
 
 std::string content_fingerprint(const std::filesystem::path& path) {
+    errno = 0;
     std::ifstream input{path, std::ios::binary};
     if (!input) {
-        throw std::runtime_error(
-            "cannot open file for recovery fingerprint: " + path.string()
+        const int error = errno == 0 ? EIO : errno;
+        throw std::system_error(
+            error,
+            std::generic_category(),
+            "cannot open file for recovery fingerprint '" + path.string() +
+                "'"
         );
     }
     Sha256Hasher hasher;
@@ -438,8 +444,12 @@ std::string content_fingerprint(const std::filesystem::path& path) {
         }
     }
     if (!input.eof()) {
-        throw std::runtime_error(
-            "cannot read file for recovery fingerprint: " + path.string()
+        const int error = errno == 0 ? EIO : errno;
+        throw std::system_error(
+            error,
+            std::generic_category(),
+            "cannot read file for recovery fingerprint '" + path.string() +
+                "'"
         );
     }
     return hasher.finish_hex();

@@ -245,6 +245,41 @@ std::string graph_error_message(const Json& response, long status_code) {
     return std::format("Microsoft Graph request failed with HTTP {}", status_code);
 }
 
+std::string graph_error_code(const Json& response) {
+    if (const auto error = response.find("error");
+        error != response.end() && error->is_object()) {
+        if (const auto code = error->find("code");
+            code != error->end() && code->is_string()) {
+            return code->get<std::string>();
+        }
+    }
+    return {};
+}
+
+bool upload_quota_error(const Json& response, long status_code) {
+    if (status_code == 507) {
+        return true;
+    }
+    auto code = graph_error_code(response);
+    std::ranges::transform(code, code.begin(), [](unsigned char value) {
+        return static_cast<char>(std::tolower(value));
+    });
+    return code == "quotalimitreached" ||
+           code == "storagelimitexceeded" ||
+           code == "insufficientstorage";
+}
+
+[[noreturn]] void throw_upload_response_error(
+    const Json& response,
+    long status_code
+) {
+    const auto message = graph_error_message(response, status_code);
+    if (upload_quota_error(response, status_code)) {
+        throw UploadResourceError{"remote_quota", message};
+    }
+    throw std::runtime_error(message);
+}
+
 std::string normalized_endpoint(std::string endpoint) {
     while (endpoint.ends_with('/')) {
         endpoint.pop_back();
@@ -1406,9 +1441,7 @@ RemoteItem MicrosoftGraphClient::create_directory(
         );
     }
     if (response->status_code < 200 || response->status_code >= 300) {
-        throw std::runtime_error(
-            graph_error_message(json, response->status_code)
-        );
+        throw_upload_response_error(json, response->status_code);
     }
     auto item = parse_drive_item(
         json,
@@ -1648,9 +1681,7 @@ RemoteItem MicrosoftGraphClient::upload_file(
                     graph_error_message(json, response.status_code)
                 );
             }
-            throw std::runtime_error(
-                graph_error_message(json, response.status_code)
-            );
+            throw_upload_response_error(json, response.status_code);
         }
     };
 

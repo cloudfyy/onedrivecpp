@@ -6,6 +6,7 @@
 #include <linux/openat2.h>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <sys/syscall.h>
 #include <unistd.h>
 
@@ -77,9 +78,10 @@ int open_path_no_symlinks(
         );
     }
     if (descriptor == -1) {
-        throw std::runtime_error(
-            "cannot safely open path '" + path.string() + "': " +
-            std::strerror(errno)
+        throw std::system_error(
+            errno,
+            std::generic_category(),
+            "cannot safely open path '" + path.string() + "'"
         );
     }
     return descriptor;

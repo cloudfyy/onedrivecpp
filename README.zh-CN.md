@@ -543,6 +543,11 @@ header，也不会写入日志。pending-upload journal 会持久保存 session 
 时会安全创建新 session；服务端偏移落后于可靠 checkpoint 时会停止，避免重复发送
 数据。设置 `upload = false` 可保持仅下载行为。
 
+OneDrive 配额响应，以及本地上传读取、权限、快照空间或 I/O 失败，会在同一个
+pending-upload journal 中持久记录可操作原因和尝试次数。单个失败项目不会阻止
+其他上传。每轮同步会对已记录失败重试一次；恢复成功后清除 journal，重复失败则
+继续通过警告和 blocked 汇总显示。
+
 已跟踪本地项目消失后，程序会使用保存的 eTag 作为 `If-Match` 前置条件删除远端
 项目。目录删除按父目录优先处理，并同时清理其已跟踪后代。独立的 SQLite journal
 使 Graph 已完成但进程尚未提交状态的删除可以在重启后恢复，因此 HTTP 404 被视为

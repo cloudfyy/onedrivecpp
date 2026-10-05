@@ -500,6 +500,23 @@ bool create_version_twenty_one_database(
     );
 }
 
+bool create_version_twenty_two_database(
+    const std::filesystem::path& path
+) {
+    if (!create_version_twenty_one_database(path)) {
+        return false;
+    }
+    return execute_schema(
+        path,
+        "ALTER TABLE item ADD COLUMN ctag TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE pending_download ADD COLUMN ctag "
+        "TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE partial_download ADD COLUMN ctag "
+        "TEXT NOT NULL DEFAULT '';"
+        "PRAGMA user_version = 22;"
+    );
+}
+
 bool identity_row_is_valid(const std::filesystem::path& path) {
     sqlite3* database = nullptr;
     if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
@@ -1213,7 +1230,7 @@ int main() {
             onedrive::storage::ItemDatabase database{directory, identity()};
             database.open();
         }
-        if (!schema_version_is(database_path, 22) ||
+        if (!schema_version_is(database_path, 23) ||
             !identity_row_is_valid(database_path)) {
             return fail(
                 std::string{fixture.name} +
@@ -1878,6 +1895,46 @@ int main() {
         if (!item || item->ctag != "content-version") {
             return fail(
                 "version twenty-one database did not persist content tags"
+            );
+        }
+    }
+
+    const auto version_twenty_two_directory =
+        temporary_directory.path() / "version-twenty-two";
+    std::filesystem::create_directories(version_twenty_two_directory);
+    if (!create_version_twenty_two_database(
+            version_twenty_two_directory / "items.sqlite3"
+        )) {
+        return fail(
+            "version twenty-two migration fixture could not be created"
+        );
+    }
+    {
+        onedrive::storage::ItemDatabase database{
+            version_twenty_two_directory,
+            identity()
+        };
+        database.open();
+        const onedrive::storage::PendingUpload failure{
+            .drive_id = "me",
+            .remote_path = "quota.txt",
+            .local_path = version_twenty_two_directory / "quota.txt",
+            .snapshot_path =
+                version_twenty_two_directory / ".quota.upload",
+            .content_fingerprint = "fingerprint",
+            .local_size = 5,
+            .failure_code = "remote_quota",
+            .failure_message = "OneDrive quota exceeded",
+            .failure_attempt_count = 2,
+        };
+        database.save_pending_upload(failure);
+        const auto uploads = database.pending_uploads("me");
+        if (uploads.size() != 1 ||
+            uploads[0].failure_code != failure.failure_code ||
+            uploads[0].failure_message != failure.failure_message ||
+            uploads[0].failure_attempt_count != 2) {
+            return fail(
+                "version twenty-two database did not persist upload failures"
             );
         }
     }

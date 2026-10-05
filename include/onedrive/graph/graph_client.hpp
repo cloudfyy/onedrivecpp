@@ -91,6 +91,20 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+class UploadResourceError final : public std::runtime_error {
+public:
+    UploadResourceError(std::string reason_code, std::string message)
+        : std::runtime_error{std::move(message)},
+          reason_code_{std::move(reason_code)} {}
+
+    [[nodiscard]] const std::string& reason_code() const noexcept {
+        return reason_code_;
+    }
+
+private:
+    std::string reason_code_;
+};
+
 struct UploadSession {
     std::string upload_url;
     std::string expiration;

@@ -619,6 +619,13 @@ responses create a new session; a server offset behind the durable checkpoint
 stops the upload instead of risking duplicate data. Set `upload = false` to
 retain download-only behavior.
 
+OneDrive quota responses and local upload read, permission, snapshot-space,
+or I/O failures are recorded in the same pending-upload journal with an
+actionable reason and attempt count. One failed item does not stop unrelated
+uploads. The client retries each recorded failure once per synchronization;
+successful recovery clears the journal, while repeated failures remain
+visible in warnings and the blocked summary.
+
 Missing tracked local items are deleted remotely with their saved eTag as an
 `If-Match` precondition. Directory deletions are parent-first and cover their
 tracked descendants. A dedicated SQLite journal makes an already-completed

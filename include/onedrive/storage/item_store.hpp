@@ -97,6 +97,9 @@ struct PendingUpload {
     std::string upload_url;
     std::string upload_expiration;
     std::uint64_t completed_bytes{0};
+    std::string failure_code;
+    std::string failure_message;
+    std::uint64_t failure_attempt_count{0};
     bool directory{false};
 };
 

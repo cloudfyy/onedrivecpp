@@ -450,6 +450,11 @@ int test_simple_file_uploads() {
                 .body =
                     R"json({"error":{"message":"name already exists"}})json",
             },
+            onedrive::http::HttpResponse{
+                .status_code = 403,
+                .body =
+                    R"json({"error":{"code":"quotaLimitReached","message":"OneDrive quota exceeded"}})json",
+            },
         }
     );
     auto* transport_pointer = transport.get();
@@ -493,8 +498,22 @@ int test_simple_file_uploads() {
         return fail("Graph upload conflict was accepted");
     } catch (const onedrive::graph::UploadConflictError&) {
     }
+    try {
+        static_cast<void>(client.upload_file(
+            "Folder A/quota.txt",
+            std::nullopt,
+            "",
+            source
+        ));
+        return fail("Graph upload quota failure was accepted");
+    } catch (const onedrive::graph::UploadResourceError& error) {
+        if (error.reason_code() != "remote_quota" ||
+            std::string_view{error.what()} != "OneDrive quota exceeded") {
+            return fail("Graph upload quota failure lost its reason");
+        }
+    }
     if (created.id != "file-id" || updated.etag != "new-etag" ||
-        transport_pointer->requests.size() != 4 ||
+        transport_pointer->requests.size() != 5 ||
         transport_pointer->requests[1].method !=
             onedrive::http::HttpMethod::put ||
         transport_pointer->requests[1].url !=
@@ -587,6 +606,11 @@ int test_directory_creation() {
                 .body =
                     R"json({"error":{"code":"nameAlreadyExists","message":"exists"}})json",
             },
+            onedrive::http::HttpResponse{
+                .status_code = 507,
+                .body =
+                    R"json({"error":{"code":"storageLimitExceeded","message":"quota full"}})json",
+            },
         }
     );
     onedrive::graph::MicrosoftGraphClient conflict_client{
@@ -608,6 +632,16 @@ int test_directory_creation() {
         );
         return fail("Graph directory conflict was accepted");
     } catch (const onedrive::graph::UploadConflictError&) {
+    }
+    try {
+        static_cast<void>(
+            conflict_client.create_directory("Quota")
+        );
+        return fail("Graph directory quota failure was accepted");
+    } catch (const onedrive::graph::UploadResourceError& error) {
+        if (error.reason_code() != "remote_quota") {
+            return fail("Graph directory quota failure lost its reason");
+        }
     }
     return EXIT_SUCCESS;
 }
