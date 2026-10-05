@@ -1,3 +1,14 @@
+onedrive-cpp (0.7.23-1~ubuntu24.04) noble; urgency=medium
+
+  * Classify OneDrive quota responses as actionable upload resource failures
+    for simple uploads, upload sessions, and remote directory creation.
+  * Persist remote quota and local read, permission, snapshot-space, and I/O
+    failures in pending-upload journals with cumulative attempt counts.
+  * Continue unrelated uploads, retry each failed resource once per sync, and
+    clear the failure journal after recovery or local file removal.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Mon, 05 Oct 2026 07:59:00 +0000
+
 onedrive-cpp (0.7.22-1~ubuntu24.04) noble; urgency=medium
 
   * Create missing remote parent directories from shallowest to deepest
