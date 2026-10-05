@@ -1,3 +1,14 @@
+onedrive-cpp (0.7.16-1~ubuntu24.04) noble; urgency=medium
+
+  * Persist local filesystem device and inode identity for tracked files and
+    directories as the safe basis for local move detection.
+  * Record identity after downloads, uploads, directory creation, and remote
+    moves, and backfill older snapshots during normal upload scans.
+  * Migrate the state database to schema version 20 and add migration,
+    persistence, download, upload, and backfill coverage.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Mon, 05 Oct 2026 02:00:11 +0000
+
 onedrive-cpp (0.7.15-1~ubuntu24.04) noble; urgency=medium
 
   * Centralize the current SQLite schema version so new database creation,
