@@ -10,12 +10,33 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 
 namespace onedrive::test {
 
 [[nodiscard]] inline int fail(std::string_view message) {
     std::cerr << message << '\n';
     return EXIT_FAILURE;
+}
+
+template <typename Predicate>
+[[nodiscard]] bool wait_until(
+    Predicate&& predicate,
+    std::chrono::milliseconds timeout,
+    std::chrono::milliseconds retry_delay = std::chrono::milliseconds{1}
+) {
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (predicate()) {
+            return true;
+        }
+        if (retry_delay == std::chrono::milliseconds::zero()) {
+            std::this_thread::yield();
+        } else {
+            std::this_thread::sleep_for(retry_delay);
+        }
+    }
+    return predicate();
 }
 
 inline void write_file(

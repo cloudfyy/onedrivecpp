@@ -476,19 +476,32 @@ int Application::run(int argc, char* argv[]) {
         }
         auto items = runtime_factory_->create_item_store(config, identity);
         items->open();
+        if (*download_command) {
+            spdlog::info(
+                "Starting single-file download for '{}'",
+                remote_download_path
+            );
+            return sync::download_single_file(
+                config,
+                remote_download_path,
+                *graph,
+                *items,
+                console
+            );
+        }
+        auto metrics = runtime_factory_->create_metrics();
+        monitor::SyncCallback synchronize{
+            [&config, &graph, &items, &metrics, &console] {
+                return sync::SyncEngine{
+                    config,
+                    *graph,
+                    *items,
+                    *metrics,
+                    &console
+                }.synchronize();
+            }
+        };
         if (*monitor_command) {
-            auto metrics = runtime_factory_->create_metrics();
-            monitor::SyncCallback synchronize{
-                [&config, &graph, &items, &metrics, &console] {
-                    return sync::SyncEngine{
-                        config,
-                        *graph,
-                        *items,
-                        *metrics,
-                        &console
-                    }.synchronize();
-                }
-            };
             console.message(
                 cli::MessageKind::success,
                 "monitor_ready",
@@ -510,27 +523,7 @@ int Application::run(int argc, char* argv[]) {
                 std::move(synchronize)
             )->run();
         }
-        if (*download_command) {
-            spdlog::info(
-                "Starting single-file download for '{}'",
-                remote_download_path
-            );
-            return sync::download_single_file(
-                config,
-                remote_download_path,
-                *graph,
-                *items,
-                console
-            );
-        }
-        auto metrics = runtime_factory_->create_metrics();
-        return sync::SyncEngine{
-            config,
-            *graph,
-            *items,
-            *metrics,
-            &console
-        }.synchronize();
+        return synchronize();
     } catch (const std::exception& error) {
         if (const auto logger = spdlog::default_logger()) {
             logger->error("{}", error.what());

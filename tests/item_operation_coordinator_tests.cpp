@@ -16,12 +16,13 @@ using namespace std::chrono_literals;
 using onedrive::test::fail;
 
 bool wait_until(const std::atomic_bool& value) {
-    const auto deadline = std::chrono::steady_clock::now() + 1s;
-    while (!value.load(std::memory_order_acquire) &&
-           std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::yield();
-    }
-    return value.load(std::memory_order_acquire);
+    return onedrive::test::wait_until(
+        [&] {
+            return value.load(std::memory_order_acquire);
+        },
+        1s,
+        0ms
+    );
 }
 
 }  // namespace

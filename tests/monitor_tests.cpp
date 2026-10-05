@@ -19,22 +19,8 @@ namespace {
 
 using namespace std::chrono_literals;
 
-int fail(const char* message) {
-    std::cerr << message << '\n';
-    return EXIT_FAILURE;
-}
-
-template <typename Predicate>
-bool wait_until(Predicate predicate, std::chrono::milliseconds timeout) {
-    const auto deadline = std::chrono::steady_clock::now() + timeout;
-    while (std::chrono::steady_clock::now() < deadline) {
-        if (predicate()) {
-            return true;
-        }
-        std::this_thread::sleep_for(5ms);
-    }
-    return predicate();
-}
+using onedrive::test::fail;
+using onedrive::test::wait_until;
 
 }  // namespace
 
@@ -59,7 +45,7 @@ int main() {
             local_result = local_monitor.run(stop_token);
         }
     };
-    if (!wait_until([&] { return local_runs == 1; }, 2s)) {
+    if (!wait_until([&] { return local_runs == 1; }, 2s, 5ms)) {
         local_worker.request_stop();
         return fail("monitor did not run its initial synchronization");
     }
@@ -78,7 +64,7 @@ int main() {
         std::ofstream output{local_file, std::ios::app};
         output << "three";
     }
-    if (!wait_until([&] { return local_runs >= 2; }, 2s)) {
+    if (!wait_until([&] { return local_runs >= 2; }, 2s, 5ms)) {
         local_worker.request_stop();
         return fail("local filesystem changes did not trigger synchronization");
     }
@@ -94,7 +80,7 @@ int main() {
         std::ofstream output{nested / "file.txt"};
         output << "nested";
     }
-    if (!wait_until([&] { return local_runs >= 3; }, 2s)) {
+    if (!wait_until([&] { return local_runs >= 3; }, 2s, 5ms)) {
         local_worker.request_stop();
         return fail("new directory subtree did not trigger synchronization");
     }
@@ -135,7 +121,7 @@ int main() {
             periodic_result = periodic_monitor.run(stop_token);
         }
     };
-    if (!wait_until([&] { return periodic_runs >= 2; }, 2s)) {
+    if (!wait_until([&] { return periodic_runs >= 2; }, 2s, 5ms)) {
         periodic_worker.request_stop();
         return fail("Graph polling interval did not trigger synchronization");
     }
@@ -168,7 +154,7 @@ int main() {
             static_cast<void>(settle_monitor.run(stop_token));
         }
     };
-    if (!wait_until([&] { return settled_runs == 1; }, 2s)) {
+    if (!wait_until([&] { return settled_runs == 1; }, 2s, 5ms)) {
         settle_worker.request_stop();
         return fail("settle test monitor did not become ready");
     }
@@ -178,7 +164,7 @@ int main() {
         std::ofstream output{root / "settle.txt"};
         output << "settled";
     }
-    if (!wait_until([&] { return settled_runs >= 2; }, 2s)) {
+    if (!wait_until([&] { return settled_runs >= 2; }, 2s, 5ms)) {
         settle_worker.request_stop();
         return fail("settled local change did not trigger synchronization");
     }
@@ -206,7 +192,11 @@ int main() {
         const int result = signal_monitor.run();
         return result == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
     }
-    if (!wait_until([&] { return std::filesystem::exists(signal_ready); }, 2s)) {
+    if (!wait_until(
+            [&] { return std::filesystem::exists(signal_ready); },
+            2s,
+            5ms
+        )) {
         static_cast<void>(::kill(child, SIGKILL));
         static_cast<void>(::waitpid(child, nullptr, 0));
         return fail("signal-handling monitor did not become ready");
@@ -225,7 +215,8 @@ int main() {
                 signal_stopped = result == child;
                 return signal_stopped;
             },
-            2s
+            2s,
+            5ms
         )) {
         static_cast<void>(::kill(child, SIGKILL));
         static_cast<void>(::waitpid(child, nullptr, 0));

@@ -108,23 +108,24 @@ std::size_t size_value(
     return static_cast<std::size_t>(value);
 }
 
-std::chrono::seconds seconds_value(
+template <typename Duration>
+Duration duration_value(
     const toml::table& table,
     std::string_view key,
     std::string_view full_name
 ) {
     const auto value = unsigned_value(table, key, full_name);
-    using SecondsRepresentation = std::chrono::seconds::rep;
+    using Representation = typename Duration::rep;
     if (value >
         static_cast<std::uint64_t>(
-            std::numeric_limits<SecondsRepresentation>::max()
+            std::numeric_limits<Representation>::max()
         )) {
         throw std::runtime_error(
             "TOML configuration value '" + std::string{full_name} +
             "' is too large"
         );
     }
-    return std::chrono::seconds{static_cast<SecondsRepresentation>(value)};
+    return Duration{static_cast<Representation>(value)};
 }
 
 std::vector<std::string> string_array_values(
@@ -656,7 +657,7 @@ Config Config::load(const std::filesystem::path& path) {
             config.transfer_order = parse_transfer_order(*value);
         }
         if (transfer->contains("connect_timeout_seconds")) {
-            options.connect_timeout = seconds_value(
+            options.connect_timeout = duration_value<std::chrono::seconds>(
                 *transfer,
                 "connect_timeout_seconds",
                 "transfer.connect_timeout_seconds"
@@ -668,7 +669,7 @@ Config Config::load(const std::filesystem::path& path) {
             }
         }
         if (transfer->contains("operation_timeout_seconds")) {
-            options.operation_timeout = seconds_value(
+            options.operation_timeout = duration_value<std::chrono::seconds>(
                 *transfer,
                 "operation_timeout_seconds",
                 "transfer.operation_timeout_seconds"
@@ -680,7 +681,7 @@ Config Config::load(const std::filesystem::path& path) {
             }
         }
         if (transfer->contains("stall_timeout_seconds")) {
-            options.low_speed_timeout = seconds_value(
+            options.low_speed_timeout = duration_value<std::chrono::seconds>(
                 *transfer,
                 "stall_timeout_seconds",
                 "transfer.stall_timeout_seconds"
@@ -867,32 +868,31 @@ Config Config::load(const std::filesystem::path& path) {
             "monitor"
         );
         if (monitor->contains("poll_interval_seconds")) {
-            const auto interval = unsigned_value(
+            const auto interval = duration_value<std::chrono::seconds>(
                 *monitor,
                 "poll_interval_seconds",
                 "monitor.poll_interval_seconds"
             );
-            if (interval == 0 || interval > 86400) {
+            if (interval < std::chrono::seconds{1} ||
+                interval > std::chrono::hours{24}) {
                 throw std::runtime_error(
                     "monitor.poll_interval_seconds must be between 1 and 86400"
                 );
             }
-            config.monitor_poll_interval =
-                std::chrono::seconds{interval};
+            config.monitor_poll_interval = interval;
         }
         if (monitor->contains("settle_delay_milliseconds")) {
-            const auto delay = unsigned_value(
+            const auto delay = duration_value<std::chrono::milliseconds>(
                 *monitor,
                 "settle_delay_milliseconds",
                 "monitor.settle_delay_milliseconds"
             );
-            if (delay > 60000) {
+            if (delay > std::chrono::minutes{1}) {
                 throw std::runtime_error(
                     "monitor.settle_delay_milliseconds must not exceed 60000"
                 );
             }
-            config.monitor_settle_delay =
-                std::chrono::milliseconds{delay};
+            config.monitor_settle_delay = delay;
         }
     }
 
@@ -973,14 +973,16 @@ Config Config::load(const std::filesystem::path& path) {
                 );
             }
             if (throttle->contains("initial_delay_seconds")) {
-                config.graph_initial_throttle_delay = seconds_value(
+                config.graph_initial_throttle_delay =
+                    duration_value<std::chrono::seconds>(
                     *throttle,
                     "initial_delay_seconds",
                     "graph.throttle.initial_delay_seconds"
                 );
             }
             if (throttle->contains("maximum_delay_seconds")) {
-                config.graph_maximum_throttle_delay = seconds_value(
+                config.graph_maximum_throttle_delay =
+                    duration_value<std::chrono::seconds>(
                     *throttle,
                     "maximum_delay_seconds",
                     "graph.throttle.maximum_delay_seconds"
