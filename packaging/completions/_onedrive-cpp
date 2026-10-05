@@ -8,11 +8,11 @@ _onedrive_cpp()
     _arguments -C \
         '(-h --help)'{-h,--help}'[show command help]' \
         '--version[show version information]' \
-        '1:command:(auth logout reset-state download sync monitor)' \
+        '1:command:(auth logout doctor reset-state download sync monitor)' \
         '*::argument:->command_options'
 
     case "${line[1]}" in
-        auth|logout|monitor)
+        auth|logout|doctor|monitor)
             _arguments \
                 '(-h --help)'{-h,--help}'[show command help]' \
                 '--config[path to configuration file]:configuration file:_files' \

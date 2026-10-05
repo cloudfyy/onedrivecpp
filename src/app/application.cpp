@@ -13,6 +13,7 @@
 #include "onedrive/logging/logging.hpp"
 #include "onedrive/metrics/metrics.hpp"
 #include "onedrive/monitor/monitor.hpp"
+#include "onedrive/storage/item_database.hpp"
 #include "onedrive/storage/item_store.hpp"
 #include "monitor/termination_signal_mask.hpp"
 #include "onedrive/sync/download/single_file.hpp"
@@ -143,6 +144,9 @@ int Application::run(int argc, char* argv[]) {
         "logout",
         "Remove the locally stored refresh token"
     );
+    auto* doctor_command = cli.add_subcommand(
+        "doctor", "Run local synchronization-state diagnostics"
+    );
     auto* reset_state_command = cli.add_subcommand(
         "reset-state",
         "Reset the Microsoft Graph delta cursor for the configured drive"
@@ -201,6 +205,7 @@ int Application::run(int argc, char* argv[]) {
     };
     add_common_options(*auth_command);
     add_common_options(*logout_command);
+    add_common_options(*doctor_command);
     add_common_options(*reset_state_command);
     add_common_options(*sync_command);
     add_common_options(*download_command);
@@ -273,12 +278,13 @@ int Application::run(int argc, char* argv[]) {
         config.dry_run = config.dry_run || force_dry_run;
         config.force_large_delete = force_large_delete;
         const auto operation =
-            *auth_command ? detail::Operation::authenticate :
-            *logout_command ? detail::Operation::logout :
-            *reset_state_command ? detail::Operation::reset_state :
-            *download_command ? detail::Operation::download :
-            *monitor_command ? detail::Operation::monitor :
-                               detail::Operation::synchronize;
+            *auth_command          ? detail::Operation::authenticate
+            : *logout_command      ? detail::Operation::logout
+            : *doctor_command      ? detail::Operation::diagnose
+            : *reset_state_command ? detail::Operation::reset_state
+            : *download_command    ? detail::Operation::download
+            : *monitor_command     ? detail::Operation::monitor
+                                   : detail::Operation::synchronize;
         std::optional<monitor::detail::TerminationSignalMask>
             monitor_signal_mask;
         if (operation == detail::Operation::monitor) {
@@ -319,6 +325,54 @@ int Application::run(int argc, char* argv[]) {
                           "No saved authentication was present."
             );
             return 0;
+        }
+        if (*doctor_command) {
+            const auto results =
+                storage::diagnose_state_databases(config.state_directory);
+            if (results.empty()) {
+                console.message(
+                    cli::MessageKind::success,
+                    "database_integrity",
+                    "No synchronization state databases were found."
+                );
+                return 0;
+            }
+
+            bool healthy = true;
+            for (const auto& result : results) {
+                console.section(
+                    "database_integrity",
+                    "Synchronization state database:",
+                    {
+                        {
+                            .label = "path:",
+                            .key = "path",
+                            .value = result.path.string(),
+                        },
+                        {
+                            .label = "status:",
+                            .key = "status",
+                            .value = result.healthy ? "healthy" : "unhealthy",
+                        },
+                        {
+                            .label = "detail:",
+                            .key = "detail",
+                            .value = result.detail,
+                        },
+                    }
+                );
+                healthy = healthy && result.healthy;
+            }
+            console.message(
+                healthy ? cli::MessageKind::success : cli::MessageKind::error,
+                healthy ? "database_integrity_passed"
+                        : "database_integrity_failed",
+                healthy ? "All synchronization state databases passed full "
+                          "integrity and schema checks."
+                        : "One or more synchronization state databases failed "
+                          "integrity or schema checks."
+            );
+            return healthy ? 0 : 1;
         }
         if (*reset_state_command) {
             auto graph = runtime_factory_->create_graph_client(config);

@@ -995,11 +995,24 @@ onedrive-cpp reset-state --clear-all
 
 客户端会在启动时和 migration 完成后对每个 Drive 数据库执行 SQLite
 `quick_check`，并验证所有业务表、列类型、`NOT NULL` 约束和主键索引是否与当前
-程序生成的 schema 一致。数据库损坏、版本为零但并非空库、版本高于当前程序或
-物理结构不兼容时，同步会在读取或更新 item 状态之前停止。错误会指出具体的
-`items.sqlite3`；应先保留副本供诊断，再移走或删除该文件并重新同步，由客户端
-重建可恢复的状态库。本地文件不会被删除，但旧快照丢失后，下一次同步可能报告
-本地修改冲突。
+程序生成的 schema 一致。确认损坏的数据库及其 WAL/SHM sidecar 会在原目录隔离
+为 `items.sqlite3.corrupt-<时间戳>`，随后自动创建可重建的新状态库。版本为零但
+并非空库、版本高于当前程序或物理结构不兼容不属于损坏，仍会在读取 item 状态前
+停止。本地文件不会被删除，但重建后缺少旧快照，下一次同步可能报告本地修改冲突。
+
+数据库连接会关闭 trusted schema 和扩展加载，启用 SQLite defensive 与外键模式，
+限制解析器和数据库增长资源，为短暂锁竞争等待有限时间，并使用 WAL、FULL
+synchronous、自动 checkpoint 和 FAST secure delete。状态目录保持 `0700`；
+数据库及已有 WAL/SHM 必须是当前用户拥有的普通单硬链接文件，并限制为 `0600`。
+
+无需连接 Microsoft Graph，即可对所有 Drive 数据库执行只读的完整
+`integrity_check`、外键检查和精确 schema 检查：
+
+```bash
+onedrive-cpp doctor
+```
+
+任何数据库不健康时命令返回非零；可配合 `--output json` 输出结构化诊断。
 
 无需执行整个 Drive Delta 同步即可下载单个文件：
 

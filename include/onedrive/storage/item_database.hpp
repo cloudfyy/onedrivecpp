@@ -6,8 +6,18 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace onedrive::storage {
+
+struct DatabaseIntegrityResult {
+    std::filesystem::path path;
+    bool healthy{false};
+    std::string detail;
+};
+
+[[nodiscard]] std::vector<DatabaseIntegrityResult>
+diagnose_state_databases(const std::filesystem::path& state_directory);
 
 class ItemDatabase final {
 public:
@@ -107,7 +117,7 @@ public:
 private:
     struct Impl;
 
-    void open_on_worker();
+    void open_on_worker(bool allow_corruption_quarantine);
     void upsert_on_worker(const ItemState& item);
     void apply_delta_on_worker(ItemDelta delta);
     void save_pending_download_on_worker(const PendingDownload& download);

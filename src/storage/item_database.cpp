@@ -1,4 +1,5 @@
 #include "onedrive/storage/item_database.hpp"
+#include "onedrive/util/path_security.hpp"
 
 #include <sqlite3.h>
 #include <spdlog/spdlog.h>
@@ -7,12 +8,14 @@
 #include <algorithm>
 #include <array>
 #include <cerrno>
+#include <chrono>
 #include <compare>
 #include <condition_variable>
 #include <cstring>
 #include <deque>
 #include <functional>
 #include <future>
+#include <fcntl.h>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -23,17 +26,183 @@
 #include <sys/stat.h>
 #include <thread>
 #include <type_traits>
+#include <unistd.h>
 #include <utility>
 #include <vector>
 
 namespace onedrive::storage {
 namespace {
 
+constexpr mode_t private_directory_mode = S_IRWXU;
+constexpr mode_t private_file_mode = S_IRUSR | S_IWUSR;
+constexpr int database_busy_timeout_milliseconds = 5000;
+constexpr int maximum_database_pages = 8 * 1024 * 1024;
+
 struct SqliteCloser {
     void operator()(sqlite3* handle) const noexcept {
         sqlite3_close(handle);
     }
 };
+
+class DatabaseCorruption final : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
+void execute(sqlite3* database, const char* sql);
+void require_pragma_value(
+    sqlite3* database,
+    const char* sql,
+    std::string_view expected,
+    std::string_view description
+);
+
+void require_sqlite_result(
+    sqlite3* database, int result, std::string_view operation
+) {
+    if (result != SQLITE_OK) {
+        throw std::runtime_error(
+            std::string{operation} + ": " + sqlite3_errmsg(database)
+        );
+    }
+}
+
+void configure_database_connection(sqlite3* database) {
+    require_sqlite_result(
+        database,
+        sqlite3_extended_result_codes(database, 1),
+        "cannot enable extended SQLite result codes"
+    );
+    require_sqlite_result(
+        database,
+        sqlite3_busy_timeout(database, database_busy_timeout_milliseconds),
+        "cannot configure SQLite busy timeout"
+    );
+    require_sqlite_result(
+        database,
+        sqlite3_db_config(database, SQLITE_DBCONFIG_DEFENSIVE, 1, nullptr),
+        "cannot enable SQLite defensive mode"
+    );
+    require_sqlite_result(
+        database,
+        sqlite3_db_config(database, SQLITE_DBCONFIG_TRUSTED_SCHEMA, 0, nullptr),
+        "cannot disable trusted SQLite schema"
+    );
+    require_sqlite_result(
+        database,
+        sqlite3_db_config(
+            database, SQLITE_DBCONFIG_ENABLE_LOAD_EXTENSION, 0, nullptr
+        ),
+        "cannot disable SQLite extension loading"
+    );
+
+    sqlite3_limit(database, SQLITE_LIMIT_LENGTH, 16 * 1024 * 1024);
+    sqlite3_limit(database, SQLITE_LIMIT_SQL_LENGTH, 1024 * 1024);
+    sqlite3_limit(database, SQLITE_LIMIT_COLUMN, 128);
+    sqlite3_limit(database, SQLITE_LIMIT_COMPOUND_SELECT, 32);
+    sqlite3_limit(database, SQLITE_LIMIT_ATTACHED, 0);
+    sqlite3_limit(database, SQLITE_LIMIT_VARIABLE_NUMBER, 128);
+}
+
+void activate_database_pragmas(sqlite3* database, bool writable) {
+    execute(database, "PRAGMA trusted_schema = OFF;");
+    execute(database, "PRAGMA foreign_keys = ON;");
+    require_pragma_value(
+        database, "PRAGMA trusted_schema;", "0", "trusted schema"
+    );
+    require_pragma_value(
+        database, "PRAGMA foreign_keys;", "1", "foreign-key enforcement"
+    );
+    if (!writable) {
+        execute(database, "PRAGMA query_only = ON;");
+        require_pragma_value(
+            database, "PRAGMA query_only;", "1", "read-only diagnostics"
+        );
+    }
+}
+
+void secure_directory(
+    const std::filesystem::path& path, std::string_view description
+) {
+    onedrive::util::reject_symlink_components(path, description);
+    const int descriptor =
+        ::open(path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
+    if (descriptor == -1) {
+        throw std::runtime_error(
+            "cannot open " + std::string{description} + " '" + path.string() +
+            "': " + std::strerror(errno)
+        );
+    }
+    struct stat status{};
+    if (::fstat(descriptor, &status) == -1) {
+        const std::string message = std::strerror(errno);
+        ::close(descriptor);
+        throw std::runtime_error(
+            "cannot inspect " + std::string{description} + " '" +
+            path.string() + "': " + message
+        );
+    }
+    if (!S_ISDIR(status.st_mode) || status.st_uid != ::geteuid()) {
+        ::close(descriptor);
+        throw std::runtime_error(
+            std::string{description} +
+            " must be a directory owned by the current user: " + path.string()
+        );
+    }
+    if ((status.st_mode & 07777) != private_directory_mode &&
+        ::fchmod(descriptor, private_directory_mode) == -1) {
+        const std::string message = std::strerror(errno);
+        ::close(descriptor);
+        throw std::runtime_error(
+            "cannot secure " + std::string{description} + " '" + path.string() +
+            "': " + message
+        );
+    }
+    ::close(descriptor);
+}
+
+void secure_database_file(const std::filesystem::path& path, bool create) {
+    const int flags = O_RDWR | (create ? O_CREAT : 0);
+    int descriptor = -1;
+    try {
+        descriptor = onedrive::util::open_path_no_symlinks(
+            path, flags, create ? private_file_mode : 0
+        );
+    } catch (const std::system_error& error) {
+        if (!create && error.code().value() == ENOENT) {
+            return;
+        }
+        throw;
+    }
+    struct stat status{};
+    if (::fstat(descriptor, &status) == -1) {
+        const std::string message = std::strerror(errno);
+        ::close(descriptor);
+        throw std::runtime_error(
+            "cannot inspect SQLite state file '" + path.string() +
+            "': " + message
+        );
+    }
+    if (!S_ISREG(status.st_mode) || status.st_uid != ::geteuid() ||
+        status.st_nlink != 1) {
+        ::close(descriptor);
+        throw std::runtime_error(
+            "SQLite state file must be a regular, single-link file owned by "
+            "the current user: " +
+            path.string()
+        );
+    }
+    if ((status.st_mode & 07777) != private_file_mode &&
+        ::fchmod(descriptor, private_file_mode) == -1) {
+        const std::string message = std::strerror(errno);
+        ::close(descriptor);
+        throw std::runtime_error(
+            "cannot secure SQLite state file '" + path.string() +
+            "': " + message
+        );
+    }
+    ::close(descriptor);
+}
 
 class Statement {
 public:
@@ -141,6 +310,22 @@ std::string column_text(sqlite3_stmt* statement, int column) {
     const auto* value = sqlite3_column_text(statement, column);
     return value == nullptr ? std::string{} :
                               std::string{reinterpret_cast<const char*>(value)};
+}
+
+void require_pragma_value(
+    sqlite3* database,
+    const char* sql,
+    std::string_view expected,
+    std::string_view description
+) {
+    Statement statement{database, sql};
+    if (sqlite3_step(statement.get()) != SQLITE_ROW ||
+        column_text(statement.get(), 0) != expected ||
+        sqlite3_step(statement.get()) != SQLITE_DONE) {
+        throw std::runtime_error(
+            "SQLite did not enable " + std::string{description}
+        );
+    }
 }
 
 std::size_t query_count(
@@ -680,24 +865,138 @@ std::vector<IndexShape> table_indexes(
 }
 
 void verify_database_integrity(sqlite3* database) {
-    Statement statement{database, "PRAGMA quick_check;"};
-    if (sqlite3_step(statement.get()) != SQLITE_ROW) {
-        throw std::runtime_error(
-            "SQLite quick_check could not inspect the state database: " +
-            std::string{sqlite3_errmsg(database)}
-        );
+    try {
+        Statement statement{database, "PRAGMA quick_check;"};
+        if (sqlite3_step(statement.get()) != SQLITE_ROW) {
+            throw DatabaseCorruption(
+                "SQLite quick_check could not inspect the state database: " +
+                std::string{sqlite3_errmsg(database)}
+            );
+        }
+        const auto result = column_text(statement.get(), 0);
+        if (result != "ok") {
+            throw DatabaseCorruption(
+                "SQLite quick_check reported state database corruption: " +
+                result
+            );
+        }
+        if (sqlite3_step(statement.get()) != SQLITE_DONE) {
+            throw DatabaseCorruption(
+                "SQLite quick_check returned unexpected additional results"
+            );
+        }
+    } catch (const DatabaseCorruption&) {
+        throw;
+    } catch (const std::exception& error) {
+        const int code = sqlite3_errcode(database) & 0xff;
+        if (code == SQLITE_CORRUPT || code == SQLITE_NOTADB) {
+            throw DatabaseCorruption(error.what());
+        }
+        throw;
     }
-    const auto result = column_text(statement.get(), 0);
-    if (result != "ok") {
-        throw std::runtime_error(
-            "SQLite quick_check reported state database corruption: " + result
-        );
+}
+
+std::string full_integrity_result(sqlite3* database) {
+    Statement integrity{database, "PRAGMA integrity_check;"};
+    std::string detail;
+    while (true) {
+        const int result = sqlite3_step(integrity.get());
+        if (result == SQLITE_DONE) {
+            break;
+        }
+        if (result != SQLITE_ROW) {
+            return "SQLite integrity_check failed: " +
+                   std::string{sqlite3_errmsg(database)};
+        }
+        const auto message = column_text(integrity.get(), 0);
+        if (message != "ok") {
+            if (!detail.empty()) {
+                detail += "; ";
+            }
+            detail += message;
+        }
     }
-    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "SQLite quick_check returned unexpected additional results"
-        );
+
+    Statement foreign_keys{database, "PRAGMA foreign_key_check;"};
+    if (sqlite3_step(foreign_keys.get()) != SQLITE_DONE) {
+        if (!detail.empty()) {
+            detail += "; ";
+        }
+        detail += "foreign key constraint violation";
     }
+    return detail.empty() ? "ok" : detail;
+}
+
+void configure_writable_database(sqlite3* database) {
+    execute(database, "PRAGMA journal_mode = WAL;");
+    execute(database, "PRAGMA synchronous = FULL;");
+    execute(database, "PRAGMA secure_delete = FAST;");
+    execute(database, "PRAGMA wal_autocheckpoint = 1000;");
+    const auto maximum_pages =
+        "PRAGMA max_page_count = " + std::to_string(maximum_database_pages) +
+        ";";
+    execute(database, maximum_pages.c_str());
+    require_pragma_value(
+        database, "PRAGMA journal_mode;", "wal", "WAL journal mode"
+    );
+    require_pragma_value(
+        database, "PRAGMA synchronous;", "2", "full synchronous writes"
+    );
+    require_pragma_value(
+        database, "PRAGMA secure_delete;", "2", "fast secure deletion"
+    );
+    require_pragma_value(
+        database,
+        "PRAGMA wal_autocheckpoint;",
+        "1000",
+        "automatic WAL checkpoints"
+    );
+    require_pragma_value(
+        database,
+        "PRAGMA max_page_count;",
+        std::to_string(maximum_database_pages),
+        "database page limit"
+    );
+}
+
+std::filesystem::path
+quarantine_corrupt_database(const std::filesystem::path& database_path) {
+    const auto timestamp =
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()
+        )
+            .count();
+    std::filesystem::path quarantine_path{
+        database_path.string() + ".corrupt-" + std::to_string(timestamp)
+    };
+    for (std::size_t suffix = 1; std::filesystem::exists(quarantine_path);
+         ++suffix) {
+        quarantine_path = database_path.string() + ".corrupt-" +
+                          std::to_string(timestamp) + "-" +
+                          std::to_string(suffix);
+    }
+
+    const std::array sidecars{
+        std::pair{
+            std::filesystem::path{database_path.string() + "-wal"},
+            std::filesystem::path{quarantine_path.string() + "-wal"},
+        },
+        std::pair{
+            std::filesystem::path{database_path.string() + "-shm"},
+            std::filesystem::path{quarantine_path.string() + "-shm"},
+        },
+    };
+    for (const auto& [source, destination] : sidecars) {
+        if (std::filesystem::exists(source)) {
+            std::filesystem::rename(source, destination);
+        }
+    }
+    std::filesystem::rename(database_path, quarantine_path);
+    spdlog::error(
+        "Quarantined corrupt synchronization state database as '{}'",
+        quarantine_path.string()
+    );
+    return quarantine_path;
 }
 
 void verify_current_schema(sqlite3* database) {
@@ -1132,6 +1431,82 @@ struct ItemDatabase::Impl {
     std::jthread worker;
 };
 
+std::vector<DatabaseIntegrityResult>
+diagnose_state_databases(const std::filesystem::path& state_directory) {
+    if (!std::filesystem::exists(state_directory)) {
+        return {};
+    }
+    onedrive::util::reject_symlink_components(
+        state_directory, "state directory"
+    );
+
+    std::vector<DatabaseIntegrityResult> results;
+    for (const auto& entry :
+         std::filesystem::recursive_directory_iterator{state_directory}) {
+        if (entry.path().filename() != "items.sqlite3") {
+            continue;
+        }
+        DatabaseIntegrityResult result{
+            .path = entry.path(),
+            .healthy = false,
+            .detail = {},
+        };
+        const auto status = entry.symlink_status();
+        if (std::filesystem::is_symlink(status) ||
+            !std::filesystem::is_regular_file(status)) {
+            result.detail =
+                "database path is not a regular non-symbolic-link file";
+            results.push_back(std::move(result));
+            continue;
+        }
+        struct stat file_status{};
+        if (::lstat(entry.path().c_str(), &file_status) == -1) {
+            result.detail = "cannot inspect database security: " +
+                            std::string{std::strerror(errno)};
+            results.push_back(std::move(result));
+            continue;
+        }
+        if (file_status.st_uid != ::geteuid() || file_status.st_nlink != 1 ||
+            (file_status.st_mode & 07777) != private_file_mode) {
+            result.detail =
+                "database must be a single-link, current-user-owned mode "
+                "0600 file";
+            results.push_back(std::move(result));
+            continue;
+        }
+
+        sqlite3* handle = nullptr;
+        const int open_result = sqlite3_open_v2(
+            entry.path().string().c_str(),
+            &handle,
+            SQLITE_OPEN_READONLY | SQLITE_OPEN_NOFOLLOW,
+            nullptr
+        );
+        std::unique_ptr<sqlite3, SqliteCloser> database{handle};
+        if (open_result != SQLITE_OK) {
+            result.detail = handle == nullptr ? "unknown SQLite open error"
+                                              : sqlite3_errmsg(handle);
+            results.push_back(std::move(result));
+            continue;
+        }
+
+        try {
+            configure_database_connection(database.get());
+            activate_database_pragmas(database.get(), false);
+            result.detail = full_integrity_result(database.get());
+            if (result.detail == "ok") {
+                verify_current_schema(database.get());
+                result.healthy = true;
+            }
+        } catch (const std::exception& error) {
+            result.detail = error.what();
+        }
+        results.push_back(std::move(result));
+    }
+    std::ranges::sort(results, {}, &DatabaseIntegrityResult::path);
+    return results;
+}
+
 ItemDatabase::ItemDatabase(
     std::filesystem::path state_directory,
     account::DriveIdentity identity
@@ -1143,12 +1518,10 @@ ItemDatabase::ItemDatabase(
 ItemDatabase::~ItemDatabase() = default;
 
 void ItemDatabase::open() {
-    impl_->invoke([this] {
-        open_on_worker();
-    });
+    impl_->invoke([this] { open_on_worker(true); });
 }
 
-void ItemDatabase::open_on_worker() {
+void ItemDatabase::open_on_worker(bool allow_corruption_quarantine) {
     spdlog::debug("Opening synchronization state database");
     if (identity_.user_id.empty() || identity_.user_display_name.empty() ||
         identity_.configured_drive_id.empty() || identity_.drive_id.empty() ||
@@ -1157,11 +1530,18 @@ void ItemDatabase::open_on_worker() {
             "state database requires a complete account and drive identity"
         );
     }
+    onedrive::util::reject_symlink_components(
+        state_directory_, "SQLite state directory"
+    );
     std::filesystem::create_directories(state_directory_);
+    secure_directory(state_directory_, "SQLite state directory");
     impl_->database.reset();
 
     sqlite3* database = nullptr;
     const auto database_path = state_directory_ / "items.sqlite3";
+    secure_database_file(database_path, true);
+    secure_database_file(database_path.string() + "-wal", false);
+    secure_database_file(database_path.string() + "-shm", false);
     const int result = sqlite3_open_v2(
         database_path.string().c_str(),
         &database,
@@ -1177,19 +1557,31 @@ void ItemDatabase::open_on_worker() {
         );
     }
     impl_->database.reset(database);
-    if (::chmod(database_path.c_str(), S_IRUSR | S_IWUSR) == -1) {
-        throw std::runtime_error(
-            "cannot secure state database '" + database_path.string() + "': " +
-            std::strerror(errno)
-        );
-    }
 
     try {
+        configure_database_connection(database);
         verify_database_integrity(database);
-        execute(database, "PRAGMA journal_mode = WAL;");
+        activate_database_pragmas(database, true);
+        configure_writable_database(database);
         migrate_schema(database);
         verify_database_integrity(database);
         verify_current_schema(database);
+        secure_database_file(database_path, false);
+        secure_database_file(database_path.string() + "-wal", false);
+        secure_database_file(database_path.string() + "-shm", false);
+    } catch (const DatabaseCorruption& error) {
+        impl_->database.reset();
+        if (!allow_corruption_quarantine) {
+            throw std::runtime_error(error.what());
+        }
+        const auto quarantine_path = quarantine_corrupt_database(database_path);
+        spdlog::warn(
+            "Rebuilding synchronization state after corruption; quarantined "
+            "evidence remains at '{}'",
+            quarantine_path.string()
+        );
+        open_on_worker(false);
+        return;
     } catch (const std::exception& error) {
         impl_->database.reset();
         throw std::runtime_error(

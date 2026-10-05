@@ -9,6 +9,7 @@
 #include "onedrive/http/http_client.hpp"
 #include "onedrive/metrics/metrics.hpp"
 #include "onedrive/monitor/monitor.hpp"
+#include "onedrive/storage/item_database.hpp"
 #include "onedrive/storage/item_store.hpp"
 #include "sync_test_support.hpp"
 #include "test_support.hpp"
@@ -614,6 +615,14 @@ int main() {
         !sync_help.standard_output.contains("--force-large-delete")) {
         return fail("sync help did not document the large-delete override");
     }
+    const auto doctor_help =
+        run_application(runtime_factory, {"onedrive-cpp", "doctor", "--help"});
+    if (doctor_help.exit_code != 0 ||
+        !doctor_help.standard_output.contains(
+            "Run local synchronization-state diagnostics"
+        )) {
+        return fail("doctor help was not available");
+    }
 
     if (run_application(runtime_factory, {"onedrive-cpp", "unknown"}).exit_code != 2) {
         return fail("unknown command did not return usage exit code 2");
@@ -698,6 +707,59 @@ int main() {
         state_path,
         std::filesystem::perms::owner_all
     );
+    {
+        onedrive::storage::ItemDatabase database{
+            state_path / "doctor-fixture", onedrive::test::test_drive_identity()
+        };
+        database.open();
+    }
+    const auto healthy_diagnostics = run_application(
+        runtime_factory,
+        {
+            "onedrive-cpp",
+            "doctor",
+            "--config",
+            config_path.string(),
+            "--output",
+            "json",
+        }
+    );
+    if (healthy_diagnostics.exit_code != 0 ||
+        !healthy_diagnostics.standard_output.contains(
+            R"("event":"database_integrity_passed")"
+        ) ||
+        !healthy_diagnostics.standard_output.contains(
+            R"("status":"healthy")"
+        )) {
+        return fail("doctor did not report a healthy state database");
+    }
+    {
+        std::ofstream corrupt{
+            state_path / "doctor-fixture/items.sqlite3",
+            std::ios::binary | std::ios::trunc
+        };
+        corrupt << "not a SQLite database";
+    }
+    const auto unhealthy_diagnostics = run_application(
+        runtime_factory,
+        {
+            "onedrive-cpp",
+            "doctor",
+            "--config",
+            config_path.string(),
+            "--output",
+            "json",
+        }
+    );
+    if (unhealthy_diagnostics.exit_code != 1 ||
+        !unhealthy_diagnostics.standard_error.contains(
+            R"("event":"database_integrity_failed")"
+        ) ||
+        !unhealthy_diagnostics.standard_output.contains(
+            R"("status":"unhealthy")"
+        )) {
+        return fail("doctor did not reject a corrupt state database");
+    }
     const auto authentication = run_application(
         runtime_factory,
         {

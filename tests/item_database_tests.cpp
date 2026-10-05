@@ -639,6 +639,12 @@ std::optional<std::string> database_open_error(
 
 int main() {
     TemporaryDirectory temporary_directory;
+    if (!onedrive::storage::diagnose_state_databases(
+             temporary_directory.path() / "missing-state"
+        )
+             .empty()) {
+        return fail("missing state directory produced database diagnostics");
+    }
 
     {
         onedrive::storage::ItemDatabase database{
@@ -650,11 +656,26 @@ int main() {
             std::filesystem::status(
                 temporary_directory.path() / "items.sqlite3"
             ).permissions();
+        const auto directory_permissions =
+            std::filesystem::status(temporary_directory.path()).permissions();
         if (database.size() != 0 ||
+            (directory_permissions & std::filesystem::perms::all) !=
+                std::filesystem::perms::owner_all ||
             (database_permissions & std::filesystem::perms::all) !=
                 (std::filesystem::perms::owner_read |
                  std::filesystem::perms::owner_write)) {
-            return fail("new state database is not empty");
+            return fail("new state database was not created privately");
+        }
+        for (const auto* suffix : {"-wal", "-shm"}) {
+            const auto sidecar = temporary_directory.path() /
+                                 (std::string{"items.sqlite3"} + suffix);
+            if (std::filesystem::exists(sidecar) &&
+                (std::filesystem::status(sidecar).permissions() &
+                 std::filesystem::perms::all) !=
+                    (std::filesystem::perms::owner_read |
+                     std::filesystem::perms::owner_write)) {
+                return fail("SQLite sidecar file was not private");
+            }
         }
 
         database.upsert({
@@ -2189,6 +2210,15 @@ int main() {
         !execute_schema(
             missing_table_directory / "items.sqlite3",
             "DROP TABLE pending_delete;"
+        )) {
+        return fail("could not create missing-table database fixture");
+    }
+    const auto missing_table_diagnostics =
+        onedrive::storage::diagnose_state_databases(missing_table_directory);
+    if (missing_table_diagnostics.size() != 1 ||
+        missing_table_diagnostics.front().healthy ||
+        !missing_table_diagnostics.front().detail.contains(
+            "missing table 'pending_delete'"
         ) ||
         assert_rejected(
             missing_table_directory,
@@ -2293,6 +2323,75 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    const auto hard_link_directory =
+        temporary_directory.path() / "schema-hard-link";
+    if (!create_current_database(hard_link_directory)) {
+        return fail("could not create hard-link database fixture");
+    }
+    std::filesystem::create_hard_link(
+        hard_link_directory / "items.sqlite3",
+        hard_link_directory / "items.sqlite3.alias"
+    );
+    const auto hard_link_error = database_open_error(hard_link_directory);
+    if (!hard_link_error || !hard_link_error->contains(
+                                "single-link file owned by the current user"
+                            )) {
+        return fail("hard-linked database was not rejected");
+    }
+
+    const auto insecure_mode_directory =
+        temporary_directory.path() / "schema-insecure-mode";
+    if (!create_current_database(insecure_mode_directory)) {
+        return fail("could not create insecure-mode database fixture");
+    }
+    std::filesystem::permissions(
+        insecure_mode_directory, std::filesystem::perms::all
+    );
+    std::filesystem::permissions(
+        insecure_mode_directory / "items.sqlite3", std::filesystem::perms::all
+    );
+    const auto insecure_mode_diagnostics =
+        onedrive::storage::diagnose_state_databases(insecure_mode_directory);
+    if (insecure_mode_diagnostics.size() != 1 ||
+        insecure_mode_diagnostics.front().healthy ||
+        !insecure_mode_diagnostics.front().detail.contains("mode 0600")) {
+        return fail("database diagnostics accepted insecure permissions");
+    }
+    {
+        onedrive::storage::ItemDatabase secured{
+            insecure_mode_directory, identity()
+        };
+        secured.open();
+    }
+    if ((std::filesystem::status(insecure_mode_directory).permissions() &
+         std::filesystem::perms::all) != std::filesystem::perms::owner_all ||
+        (std::filesystem::status(insecure_mode_directory / "items.sqlite3")
+             .permissions() &
+         std::filesystem::perms::all) !=
+            (std::filesystem::perms::owner_read |
+             std::filesystem::perms::owner_write)) {
+        return fail("insecure database permissions were not repaired");
+    }
+
+    const auto symlink_directory =
+        temporary_directory.path() / "schema-symlink";
+    std::filesystem::create_directories(symlink_directory);
+    std::filesystem::create_symlink(
+        insecure_mode_directory / "items.sqlite3",
+        symlink_directory / "items.sqlite3"
+    );
+    const auto symlink_error = database_open_error(symlink_directory);
+    const auto symlink_diagnostics =
+        onedrive::storage::diagnose_state_databases(symlink_directory);
+    if (!symlink_error || symlink_diagnostics.size() != 1 ||
+        symlink_diagnostics.front().healthy ||
+        !symlink_diagnostics.front().detail.contains(
+            "not a regular non-symbolic-link file"
+        ) ||
+        !symlink_error->contains("cannot safely open path")) {
+        return fail("symbolic-link database was not rejected");
+    }
+
     const auto unversioned_directory =
         temporary_directory.path() / "schema-unversioned";
     std::filesystem::create_directories(unversioned_directory);
@@ -2339,12 +2438,47 @@ int main() {
         };
         corrupt << "not a SQLite database";
     }
-    if (assert_rejected(
-            corrupt_directory,
-            "file is not a database",
-            "corrupt database"
-        ) != EXIT_SUCCESS) {
-        return EXIT_FAILURE;
+    const auto corrupt_diagnostics =
+        onedrive::storage::diagnose_state_databases(corrupt_directory);
+    if (corrupt_diagnostics.size() != 1 ||
+        corrupt_diagnostics.front().healthy ||
+        corrupt_diagnostics.front().detail.empty()) {
+        return fail("full integrity diagnostics accepted a corrupt database");
+    }
+    {
+        onedrive::storage::ItemDatabase rebuilt{corrupt_directory, identity()};
+        rebuilt.open();
+        if (rebuilt.size() != 0) {
+            return fail("rebuilt database was not empty");
+        }
+    }
+    std::filesystem::path quarantined;
+    for (const auto& entry :
+         std::filesystem::directory_iterator{corrupt_directory}) {
+        if (entry.path().filename().string().starts_with(
+                "items.sqlite3.corrupt-"
+            ) &&
+            !entry.path().filename().string().ends_with("-wal") &&
+            !entry.path().filename().string().ends_with("-shm")) {
+            quarantined = entry.path();
+            break;
+        }
+    }
+    if (quarantined.empty()) {
+        return fail("corrupt database evidence was not quarantined");
+    }
+    std::ifstream evidence{quarantined, std::ios::binary};
+    const std::string evidence_contents{
+        std::istreambuf_iterator<char>{evidence},
+        std::istreambuf_iterator<char>{}
+    };
+    const auto rebuilt_diagnostics =
+        onedrive::storage::diagnose_state_databases(corrupt_directory);
+    if (evidence_contents != "not a SQLite database" ||
+        rebuilt_diagnostics.size() != 1 ||
+        !rebuilt_diagnostics.front().healthy ||
+        rebuilt_diagnostics.front().detail != "ok") {
+        return fail("corrupt database quarantine or rebuild was incomplete");
     }
 
     return EXIT_SUCCESS;
