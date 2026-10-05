@@ -3166,6 +3166,35 @@ int test_drive_identity_and_profile_photo() {
         ).photo) {
         return fail("missing Graph profile photo was not treated as optional");
     }
+    FakeTransport invalid_identity{
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body = "{",
+            },
+        }
+    };
+    onedrive::http::HttpTransport invalid_identity_proxy{
+        onedrive::detail::borrowed_proxy,
+        invalid_identity
+    };
+    try {
+        static_cast<void>(onedrive::graph::fetch_drive_identity(
+            invalid_identity_proxy,
+            "access-token",
+            {
+                .drive_id = "me",
+                .endpoint = "https://graph.example.test/v1.0",
+            }
+        ));
+        return fail("invalid Graph identity JSON was accepted");
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains(
+                "invalid user identity JSON"
+            )) {
+            return fail("invalid Graph JSON lost its request context");
+        }
+    }
     return EXIT_SUCCESS;
 }
 

@@ -267,6 +267,34 @@ std::string normalized_endpoint(std::string endpoint) {
     return endpoint;
 }
 
+std::string graph_drive_prefix(const GraphOptions& options) {
+    return options.drive_id == "me" ?
+        options.endpoint + "/me/drive" :
+        options.endpoint + "/drives/" +
+            percent_encode_uri_component(options.drive_id);
+}
+
+bool successful_status(long status_code) noexcept {
+    return status_code >= 200 && status_code < 300;
+}
+
+Json parse_graph_json(
+    const http::HttpResponse& response,
+    std::string_view description = {}
+) {
+    try {
+        return Json::parse(response.body);
+    } catch (const Json::exception& error) {
+        throw std::runtime_error(
+            "Microsoft Graph returned invalid" +
+            (description.empty() ?
+                 std::string{} :
+                 " " + std::string{description}) +
+            " JSON: " + error.what()
+        );
+    }
+}
+
 std::optional<std::chrono::seconds> retry_after(
     const http::HttpResponse& response
 ) {
@@ -464,15 +492,11 @@ void roll_back_chunk(
     );
 }
 
-bool successful_download_status(long status_code) {
-    return status_code >= 200 && status_code < 300;
-}
-
 bool accept_successful_download_response(
     long status_code,
     std::span<const http::HttpHeader>
 ) {
-    return successful_download_status(status_code);
+    return successful_status(status_code);
 }
 
 void require_successful_download(
@@ -482,7 +506,7 @@ void require_successful_download(
     if (!response) {
         throw_download_error(description, response.error());
     }
-    if (!successful_download_status(response->status_code)) {
+    if (!successful_status(response->status_code)) {
         throw std::runtime_error(
             std::format(
                 "{} failed with HTTP {}",
@@ -988,16 +1012,8 @@ account::DriveIdentity fetch_drive_identity(
                 " request failed: " + response.error().message
             );
         }
-        Json json;
-        try {
-            json = Json::parse(response->body);
-        } catch (const Json::exception& error) {
-            throw std::runtime_error(
-                "Microsoft Graph returned invalid " + std::string{name} +
-                " JSON: " + error.what()
-            );
-        }
-        if (response->status_code < 200 || response->status_code >= 300) {
+        const auto json = parse_graph_json(*response, name);
+        if (!successful_status(response->status_code)) {
             throw std::runtime_error(
                 "Microsoft Graph " + std::string{name} + " query failed: " +
                 graph_error_message(json, response->status_code)
@@ -1011,11 +1027,7 @@ account::DriveIdentity fetch_drive_identity(
         "user identity"
     );
     const auto drive_url =
-        options.drive_id == "me" ?
-            options.endpoint + "/me/drive?$select=id,name" :
-            options.endpoint + "/drives/" +
-                percent_encode_uri_component(options.drive_id) +
-                "?$select=id,name";
+        graph_drive_prefix(options) + "?$select=id,name";
     const auto drive = request_json(drive_url, "drive identity");
 
     account::DriveIdentity identity;
@@ -1063,7 +1075,7 @@ account::DriveIdentity fetch_drive_identity(
     }
     if (photo->status_code == 404) {
         spdlog::debug("Microsoft account has no profile photo");
-    } else if (photo->status_code >= 200 && photo->status_code < 300) {
+    } else if (successful_status(photo->status_code)) {
         const auto content_type =
             header_value(*photo, "Content-Type").value_or("image/jpeg");
         if (!content_type.starts_with("image/")) {
@@ -1151,11 +1163,7 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
 
     spdlog::info("Starting Microsoft Graph root directory listing");
     std::string next_url =
-        options_.drive_id == "me" ?
-            options_.endpoint + "/me/drive/root/children" :
-            options_.endpoint + "/drives/" +
-                percent_encode_uri_component(options_.drive_id) +
-                "/root/children";
+        graph_drive_prefix(options_) + "/root/children";
     const std::string allowed_url_prefix = options_.endpoint + "/";
     std::unordered_set<std::string> visited_urls;
     std::vector<RemoteItem> items;
@@ -1201,16 +1209,8 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
             );
         }
 
-        Json json;
-        try {
-            json = Json::parse(response->body);
-        } catch (const Json::exception& error) {
-            throw std::runtime_error(
-                "Microsoft Graph returned invalid JSON: " +
-                std::string{error.what()}
-            );
-        }
-        if (response->status_code < 200 || response->status_code >= 300) {
+        const auto json = parse_graph_json(*response);
+        if (!successful_status(response->status_code)) {
             throw std::runtime_error(
                 graph_error_message(json, response->status_code)
             );
@@ -1289,12 +1289,7 @@ RemoteItem MicrosoftGraphClient::item_by_path(
 ) const {
     const auto encoded_path = percent_encode_remote_path(remote_path);
     const std::string url =
-        (options_.drive_id == "me" ?
-            options_.endpoint + "/me/drive/root:/" :
-            options_.endpoint + "/drives/" +
-                percent_encode_uri_component(options_.drive_id) +
-                "/root:/") +
-        encoded_path +
+        graph_drive_prefix(options_) + "/root:/" + encoded_path +
         "?$select=id,name,eTag,cTag,size,fileSystemInfo,parentReference,file,folder,"
         "deleted,malware,remoteItem";
     const auto response = perform_with_retries(
@@ -1321,16 +1316,8 @@ RemoteItem MicrosoftGraphClient::item_by_path(
         );
     }
 
-    Json json;
-    try {
-        json = Json::parse(response->body);
-    } catch (const Json::exception& error) {
-        throw std::runtime_error(
-            "Microsoft Graph returned invalid path lookup JSON: " +
-            std::string{error.what()}
-        );
-    }
-    if (response->status_code < 200 || response->status_code >= 300) {
+    const auto json = parse_graph_json(*response, "path lookup");
+    if (!successful_status(response->status_code)) {
         throw std::runtime_error(
             graph_error_message(json, response->status_code)
         );
@@ -1356,11 +1343,7 @@ RemoteItem MicrosoftGraphClient::create_directory(
             "cannot create a remote directory without a name"
         );
     }
-    const std::string drive_prefix =
-        options_.drive_id == "me" ?
-            options_.endpoint + "/me/drive" :
-            options_.endpoint + "/drives/" +
-                percent_encode_uri_component(options_.drive_id);
+    const auto drive_prefix = graph_drive_prefix(options_);
     const auto parent = separator == std::string::npos ?
         std::string{} :
         remote_path.substr(0, separator);
@@ -1409,21 +1392,13 @@ RemoteItem MicrosoftGraphClient::create_directory(
             response.error().message
         );
     }
-    Json json;
-    try {
-        json = Json::parse(response->body);
-    } catch (const Json::exception& error) {
-        throw std::runtime_error(
-            "Microsoft Graph returned invalid directory creation JSON: " +
-            std::string{error.what()}
-        );
-    }
+    const auto json = parse_graph_json(*response, "directory creation");
     if (response->status_code == 409 || response->status_code == 412) {
         throw UploadConflictError(
             graph_error_message(json, response->status_code)
         );
     }
-    if (response->status_code < 200 || response->status_code >= 300) {
+    if (!successful_status(response->status_code)) {
         throw_upload_response_error(json, response->status_code);
     }
     auto item = parse_drive_item(
@@ -1450,11 +1425,7 @@ void MicrosoftGraphClient::delete_item(
             "remote deletion requires an item ID and a valid eTag"
         );
     }
-    const std::string drive_prefix =
-        options_.drive_id == "me" ?
-            options_.endpoint + "/me/drive" :
-            options_.endpoint + "/drives/" +
-                percent_encode_uri_component(options_.drive_id);
+    const auto drive_prefix = graph_drive_prefix(options_);
     const auto& transfer = options_.upload_transport.transfer;
     const auto response = perform_with_retries(
         [&] {
@@ -1495,18 +1466,10 @@ void MicrosoftGraphClient::delete_item(
     if (response->status_code == 404) {
         return;
     }
-    if (response->status_code >= 200 && response->status_code < 300) {
+    if (successful_status(response->status_code)) {
         return;
     }
-    Json json;
-    try {
-        json = Json::parse(response->body);
-    } catch (const Json::exception& error) {
-        throw std::runtime_error(
-            "Microsoft Graph returned invalid item deletion JSON: " +
-            std::string{error.what()}
-        );
-    }
+    const auto json = parse_graph_json(*response, "item deletion");
     if (response->status_code == 409 || response->status_code == 412) {
         throw UploadConflictError(
             graph_error_message(json, response->status_code)
@@ -1535,11 +1498,7 @@ RemoteItem MicrosoftGraphClient::move_item(
     const auto parent = separator == std::string::npos ?
         std::string{} :
         destination_path.substr(0, separator);
-    const std::string drive_prefix =
-        options_.drive_id == "me" ?
-            options_.endpoint + "/me/drive" :
-            options_.endpoint + "/drives/" +
-                percent_encode_uri_component(options_.drive_id);
+    const auto drive_prefix = graph_drive_prefix(options_);
     const auto body = Json{
         {"name", name},
         {"parentReference", {
@@ -1586,21 +1545,13 @@ RemoteItem MicrosoftGraphClient::move_item(
             response.error().message
         );
     }
-    Json json;
-    try {
-        json = Json::parse(response->body);
-    } catch (const Json::exception& error) {
-        throw std::runtime_error(
-            "Microsoft Graph returned invalid item move JSON: " +
-            std::string{error.what()}
-        );
-    }
+    const auto json = parse_graph_json(*response, "item move");
     if (response->status_code == 409 || response->status_code == 412) {
         throw UploadConflictError(
             graph_error_message(json, response->status_code)
         );
     }
-    if (response->status_code < 200 || response->status_code >= 300) {
+    if (!successful_status(response->status_code)) {
         throw std::runtime_error(
             graph_error_message(json, response->status_code)
         );
@@ -1637,29 +1588,14 @@ RemoteItem MicrosoftGraphClient::upload_file(
         );
     }
 
-    const std::string drive_prefix =
-        options_.drive_id == "me" ?
-            options_.endpoint + "/me/drive" :
-            options_.endpoint + "/drives/" +
-                percent_encode_uri_component(options_.drive_id);
+    const auto drive_prefix = graph_drive_prefix(options_);
     const auto& upload_transport = options_.upload_transport;
     const auto& transfer = upload_transport.transfer;
     const auto maximum_send_speed =
         effective_upload_rate(upload_transport);
-    const auto parse_upload_json = [](const http::HttpResponse& response,
-                                      std::string_view description) {
-        try {
-            return Json::parse(response.body);
-        } catch (const Json::exception& error) {
-            throw std::runtime_error(
-                "Microsoft Graph returned invalid " +
-                std::string{description} + " JSON: " + error.what()
-            );
-        }
-    };
     const auto require_upload_success = [&](const http::HttpResponse& response,
                                             const Json& json) {
-        if (response.status_code < 200 || response.status_code >= 300) {
+        if (!successful_status(response.status_code)) {
             if (response.status_code == 409 ||
                 response.status_code == 412) {
                 throw UploadConflictError(
@@ -1741,7 +1677,7 @@ RemoteItem MicrosoftGraphClient::upload_file(
                 response.error().message
             );
         }
-        const auto json = parse_upload_json(*response, "upload");
+        const auto json = parse_graph_json(*response, "upload");
         require_upload_success(*response, json);
         return parse_drive_item(
             json,
@@ -1831,7 +1767,7 @@ RemoteItem MicrosoftGraphClient::upload_file(
                 response.error().message
             );
         }
-        const auto json = parse_upload_json(*response, "upload session");
+        const auto json = parse_graph_json(*response, "upload session");
         require_upload_success(*response, json);
         require_next_upload_offset(json, 0, total_size);
         auto created = session_from_json(json, 0);
@@ -1885,7 +1821,7 @@ RemoteItem MicrosoftGraphClient::upload_file(
             if (response->status_code != 404 &&
                 response->status_code != 410) {
                 const auto json =
-                    parse_upload_json(*response, "upload session status");
+                    parse_graph_json(*response, "upload session status");
                 require_upload_success(*response, json);
                 const auto remote_offset =
                     next_upload_offset(json, total_size);
@@ -2004,7 +1940,7 @@ RemoteItem MicrosoftGraphClient::upload_file(
             );
         }
         const auto chunk_json =
-            parse_upload_json(*chunk_response, "upload fragment");
+            parse_graph_json(*chunk_response, "upload fragment");
         require_upload_success(*chunk_response, chunk_json);
         const auto next_offset = end + 1;
         if (chunk_response->status_code == 202) {
@@ -2093,12 +2029,7 @@ DeltaResult MicrosoftGraphClient::list_delta(
         next_url = *delta_link;
         spdlog::info("Resuming Microsoft Graph delta query");
     } else {
-        next_url =
-            options_.drive_id == "me" ?
-                options_.endpoint + "/me/drive/root/delta" :
-                options_.endpoint + "/drives/" +
-                    percent_encode_uri_component(options_.drive_id) +
-                    "/root/delta";
+        next_url = graph_drive_prefix(options_) + "/root/delta";
         spdlog::info("Starting initial Microsoft Graph delta query");
     }
 
@@ -2148,16 +2079,8 @@ DeltaResult MicrosoftGraphClient::list_delta(
             );
         }
 
-        Json json;
-        try {
-            json = Json::parse(response->body);
-        } catch (const Json::exception& error) {
-            throw std::runtime_error(
-                "Microsoft Graph returned invalid delta JSON: " +
-                std::string{error.what()}
-            );
-        }
-        if (response->status_code < 200 || response->status_code >= 300) {
+        const auto json = parse_graph_json(*response, "delta");
+        if (!successful_status(response->status_code)) {
             if (delta_link && response->status_code == 410) {
                 throw DeltaCursorInvalidError(
                     "Microsoft Graph rejected the saved delta cursor: " +
@@ -2357,14 +2280,8 @@ void MicrosoftGraphClient::download_file(
         return;
     }
     const std::string content_url =
-        options_.drive_id == "me" ?
-            options_.endpoint + "/me/drive/items/" +
-                percent_encode_uri_component(remote_id) +
-                "/content" :
-            options_.endpoint + "/drives/" +
-                percent_encode_uri_component(options_.drive_id) +
-                "/items/" + percent_encode_uri_component(remote_id) +
-                "/content";
+        graph_drive_prefix(options_) + "/items/" +
+        percent_encode_uri_component(remote_id) + "/content";
 
     const auto request_download_url = [&]() {
         const auto redirect = perform_with_retries(
