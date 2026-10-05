@@ -10,6 +10,7 @@
 #include "onedrive/metrics/metrics.hpp"
 #include "onedrive/monitor/monitor.hpp"
 #include "onedrive/storage/item_store.hpp"
+#include "sync_test_support.hpp"
 #include "test_support.hpp"
 
 #include <chrono>
@@ -142,13 +143,7 @@ public:
 
     [[nodiscard]] onedrive::account::DriveIdentity drive_identity()
         const {
-        return {
-            .user_id = "user-id",
-            .user_display_name = "Test User",
-            .configured_drive_id = configured_drive_id_,
-            .drive_id = "drive-id",
-            .drive_name = "Test Drive",
-        };
+        return onedrive::test::test_drive_identity(configured_drive_id_);
     }
 
     [[nodiscard]] std::vector<onedrive::graph::RemoteItem> list_root() const {
@@ -901,13 +896,7 @@ int main() {
     const auto expected_sync_directory =
         onedrive::account::AccountState::drive_data_directory(
             sync_path,
-            {
-                .user_id = "user-id",
-                .user_display_name = "Test User",
-                .configured_drive_id = "me",
-                .drive_id = "drive-id",
-                .drive_name = "Test Drive",
-            }
+            onedrive::test::test_drive_identity()
         );
     if (dry_run.exit_code != 0 ||
         !dry_run.standard_output.contains("Dry run configuration") ||

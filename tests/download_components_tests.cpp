@@ -4,6 +4,7 @@
 #include "filesystem_metadata.hpp"
 #include "safe_backup.hpp"
 #include "onedrive/sync/single_file_download.hpp"
+#include "sync_test_support.hpp"
 #include "test_support.hpp"
 
 #include <chrono>
@@ -27,13 +28,7 @@ class FakeGraphClient final {
 public:
     [[nodiscard]] onedrive::account::DriveIdentity drive_identity()
         const {
-        return {
-            .user_id = "user-id",
-            .user_display_name = "Test User",
-            .configured_drive_id = "me",
-            .drive_id = "drive-id",
-            .drive_name = "Test Drive",
-        };
+        return onedrive::test::test_drive_identity();
     }
 
     [[nodiscard]] std::vector<onedrive::graph::RemoteItem>

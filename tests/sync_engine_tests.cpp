@@ -5,6 +5,7 @@
 #include "onedrive/storage/item_store.hpp"
 #include "onedrive/sync/sync_engine.hpp"
 #include "../src/sync/selective_sync.hpp"
+#include "sync_test_support.hpp"
 #include "test_support.hpp"
 
 #include <atomic>
@@ -33,13 +34,7 @@ class FakeGraphClient final {
 public:
     [[nodiscard]] onedrive::account::DriveIdentity drive_identity()
         const {
-        return {
-            .user_id = "user-id",
-            .user_display_name = "Test User",
-            .configured_drive_id = "me",
-            .drive_id = "drive-id",
-            .drive_name = "Test Drive",
-        };
+        return onedrive::test::test_drive_identity();
     }
 
     [[nodiscard]] std::vector<onedrive::graph::RemoteItem> list_root() const {
