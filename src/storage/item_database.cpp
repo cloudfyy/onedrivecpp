@@ -4,8 +4,10 @@
 #include <spdlog/spdlog.h>
 #include <gsl/pointers>
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
+#include <compare>
 #include <condition_variable>
 #include <cstring>
 #include <deque>
@@ -17,13 +19,21 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <sys/stat.h>
 #include <thread>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace onedrive::storage {
 namespace {
+
+struct SqliteCloser {
+    void operator()(sqlite3* handle) const noexcept {
+        sqlite3_close(handle);
+    }
+};
 
 class Statement {
 public:
@@ -546,6 +556,227 @@ void ensure_current_schema(sqlite3* database) {
     set_schema_version(database, current_schema_version);
 }
 
+std::string quote_identifier(std::string_view identifier) {
+    std::string quoted{"\""};
+    for (const char character : identifier) {
+        quoted.push_back(character);
+        if (character == '"') {
+            quoted.push_back('"');
+        }
+    }
+    quoted.push_back('"');
+    return quoted;
+}
+
+std::vector<std::string> user_tables(sqlite3* database) {
+    Statement statement{
+        database,
+        "SELECT name FROM sqlite_schema "
+        "WHERE type = 'table' AND name NOT LIKE 'sqlite_%' "
+        "ORDER BY name;"
+    };
+    std::vector<std::string> tables;
+    for (int result = sqlite3_step(statement.get());
+         result != SQLITE_DONE;
+         result = sqlite3_step(statement.get())) {
+        if (result != SQLITE_ROW) {
+            throw std::runtime_error(
+                "cannot inspect state database tables: " +
+                std::string{sqlite3_errmsg(database)}
+            );
+        }
+        tables.push_back(column_text(statement.get(), 0));
+    }
+    return tables;
+}
+
+struct ColumnShape {
+    std::string name;
+    std::string type;
+    int not_null;
+    int primary_key_position;
+
+    auto operator<=>(const ColumnShape&) const = default;
+};
+
+std::vector<ColumnShape> table_columns(
+    sqlite3* database,
+    const std::string& table
+) {
+    const auto sql = "PRAGMA table_info(" + quote_identifier(table) + ");";
+    Statement statement{database, sql.c_str()};
+    std::vector<ColumnShape> columns;
+    for (int result = sqlite3_step(statement.get());
+         result != SQLITE_DONE;
+         result = sqlite3_step(statement.get())) {
+        if (result != SQLITE_ROW) {
+            throw std::runtime_error(
+                "cannot inspect columns for state database table '" + table +
+                "': " + sqlite3_errmsg(database)
+            );
+        }
+        columns.push_back({
+            .name = column_text(statement.get(), 1),
+            .type = column_text(statement.get(), 2),
+            .not_null = sqlite3_column_int(statement.get(), 3),
+            .primary_key_position = sqlite3_column_int(statement.get(), 5),
+        });
+    }
+    std::ranges::sort(columns, {}, &ColumnShape::name);
+    return columns;
+}
+
+struct IndexShape {
+    std::vector<std::string> columns;
+    int unique;
+    std::string origin;
+    int partial;
+
+    auto operator<=>(const IndexShape&) const = default;
+};
+
+std::vector<IndexShape> table_indexes(
+    sqlite3* database,
+    const std::string& table
+) {
+    const auto list_sql =
+        "PRAGMA index_list(" + quote_identifier(table) + ");";
+    Statement list{database, list_sql.c_str()};
+    std::vector<IndexShape> indexes;
+    for (int result = sqlite3_step(list.get());
+         result != SQLITE_DONE;
+         result = sqlite3_step(list.get())) {
+        if (result != SQLITE_ROW) {
+            throw std::runtime_error(
+                "cannot inspect indexes for state database table '" + table +
+                "': " + sqlite3_errmsg(database)
+            );
+        }
+        const auto index_name = column_text(list.get(), 1);
+        const auto info_sql =
+            "PRAGMA index_info(" + quote_identifier(index_name) + ");";
+        Statement info{database, info_sql.c_str()};
+        IndexShape index{
+            .columns = {},
+            .unique = sqlite3_column_int(list.get(), 2),
+            .origin = column_text(list.get(), 3),
+            .partial = sqlite3_column_int(list.get(), 4),
+        };
+        for (int info_result = sqlite3_step(info.get());
+             info_result != SQLITE_DONE;
+             info_result = sqlite3_step(info.get())) {
+            if (info_result != SQLITE_ROW) {
+                throw std::runtime_error(
+                    "cannot inspect state database index '" + index_name +
+                    "': " + sqlite3_errmsg(database)
+                );
+            }
+            index.columns.push_back(column_text(info.get(), 2));
+        }
+        indexes.push_back(std::move(index));
+    }
+    std::ranges::sort(indexes);
+    return indexes;
+}
+
+void verify_database_integrity(sqlite3* database) {
+    Statement statement{database, "PRAGMA quick_check;"};
+    if (sqlite3_step(statement.get()) != SQLITE_ROW) {
+        throw std::runtime_error(
+            "SQLite quick_check could not inspect the state database: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+    const auto result = column_text(statement.get(), 0);
+    if (result != "ok") {
+        throw std::runtime_error(
+            "SQLite quick_check reported state database corruption: " + result
+        );
+    }
+    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
+        throw std::runtime_error(
+            "SQLite quick_check returned unexpected additional results"
+        );
+    }
+}
+
+void verify_current_schema(sqlite3* database) {
+    sqlite3* reference_handle = nullptr;
+    if (sqlite3_open(":memory:", &reference_handle) != SQLITE_OK) {
+        const std::string message =
+            reference_handle == nullptr ?
+                "unknown SQLite error" :
+                sqlite3_errmsg(reference_handle);
+        sqlite3_close(reference_handle);
+        throw std::runtime_error(
+            "cannot create reference state database schema: " + message
+        );
+    }
+    std::unique_ptr<sqlite3, SqliteCloser> reference{reference_handle};
+    ensure_current_schema(reference.get());
+
+    const auto expected_tables = user_tables(reference.get());
+    const auto actual_tables = user_tables(database);
+    for (const auto& expected : expected_tables) {
+        if (!std::ranges::contains(actual_tables, expected)) {
+            throw std::runtime_error(
+                "state database schema is missing table '" + expected + "'"
+            );
+        }
+    }
+    for (const auto& actual : actual_tables) {
+        if (!std::ranges::contains(expected_tables, actual)) {
+            throw std::runtime_error(
+                "state database schema contains unexpected table '" + actual +
+                "'"
+            );
+        }
+    }
+
+    for (const auto& table : expected_tables) {
+        const auto expected_columns = table_columns(reference.get(), table);
+        const auto actual_columns = table_columns(database, table);
+        for (const auto& expected : expected_columns) {
+            const auto actual = std::ranges::find(
+                actual_columns,
+                expected.name,
+                &ColumnShape::name
+            );
+            if (actual == actual_columns.end()) {
+                throw std::runtime_error(
+                    "state database table '" + table +
+                    "' is missing column '" + expected.name + "'"
+                );
+            }
+            if (*actual != expected) {
+                throw std::runtime_error(
+                    "state database table '" + table + "' column '" +
+                    expected.name + "' has an incompatible definition"
+                );
+            }
+        }
+        for (const auto& actual : actual_columns) {
+            if (!std::ranges::contains(
+                    expected_columns,
+                    actual.name,
+                    &ColumnShape::name
+                )) {
+                throw std::runtime_error(
+                    "state database table '" + table +
+                    "' contains unexpected column '" + actual.name + "'"
+                );
+            }
+        }
+        if (table_indexes(database, table) !=
+            table_indexes(reference.get(), table)) {
+            throw std::runtime_error(
+                "state database table '" + table +
+                "' has incompatible primary key or index definitions"
+            );
+        }
+    }
+}
+
 void add_sync_filter_fingerprint(sqlite3* database) {
     execute(
         database,
@@ -781,6 +1012,11 @@ static_assert(schema_migration_chain_is_complete());
 void migrate_schema(sqlite3* database) {
     int version = schema_version(database);
     if (version == 0) {
+        if (!user_tables(database).empty()) {
+            throw std::runtime_error(
+                "unversioned state database contains existing tables"
+            );
+        }
         ensure_current_schema(database);
         return;
     }
@@ -813,18 +1049,11 @@ void migrate_schema(sqlite3* database) {
         version = migration->to_version;
     }
 
-    ensure_current_schema(database);
 }
 
 }  // namespace
 
 struct ItemDatabase::Impl {
-    struct DatabaseCloser {
-        void operator()(sqlite3* handle) const noexcept {
-            sqlite3_close(handle);
-        }
-    };
-
     Impl()
         : worker{[this] {
               run();
@@ -895,7 +1124,7 @@ struct ItemDatabase::Impl {
         }
     }
 
-    std::unique_ptr<sqlite3, DatabaseCloser> database;
+    std::unique_ptr<sqlite3, SqliteCloser> database;
     std::mutex mutex;
     std::condition_variable condition;
     std::deque<std::move_only_function<void()>> commands;
@@ -955,8 +1184,21 @@ void ItemDatabase::open_on_worker() {
         );
     }
 
-    execute(database, "PRAGMA journal_mode = WAL;");
-    migrate_schema(database);
+    try {
+        verify_database_integrity(database);
+        execute(database, "PRAGMA journal_mode = WAL;");
+        migrate_schema(database);
+        verify_database_integrity(database);
+        verify_current_schema(database);
+    } catch (const std::exception& error) {
+        impl_->database.reset();
+        throw std::runtime_error(
+            "cannot safely use state database '" + database_path.string() +
+            "': " + error.what() + ". Move or remove this database file and "
+            "run synchronization again to rebuild its reconstructible state; "
+            "local files will be preserved and may require conflict resolution"
+        );
+    }
 
     Statement identity_query{
         database,

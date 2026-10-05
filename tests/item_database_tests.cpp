@@ -7,6 +7,7 @@
 #include <atomic>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -609,6 +610,29 @@ bool schema_version_is(const std::filesystem::path& path, int expected) {
     sqlite3_finalize(statement);
     sqlite3_close(database);
     return valid;
+}
+
+bool create_current_database(const std::filesystem::path& directory) {
+    std::filesystem::create_directories(directory);
+    try {
+        onedrive::storage::ItemDatabase database{directory, identity()};
+        database.open();
+        return true;
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
+std::optional<std::string> database_open_error(
+    const std::filesystem::path& directory
+) {
+    try {
+        onedrive::storage::ItemDatabase database{directory, identity()};
+        database.open();
+    } catch (const std::exception& error) {
+        return error.what();
+    }
+    return std::nullopt;
 }
 
 }  // namespace
@@ -2142,6 +2166,185 @@ int main() {
             !database.find("me", "moved-id")) {
             return fail("pending move commit was not atomic");
         }
+    }
+
+    const auto assert_rejected =
+        [](const std::filesystem::path& directory,
+           std::string_view expected,
+           std::string_view description) {
+        const auto error = database_open_error(directory);
+        if (!error || !error->contains(expected) ||
+            !error->contains("Move or remove this database file")) {
+            return fail(
+                std::string{description} +
+                " was not rejected with recovery guidance"
+            );
+        }
+        return EXIT_SUCCESS;
+    };
+
+    const auto missing_table_directory =
+        temporary_directory.path() / "schema-missing-table";
+    if (!create_current_database(missing_table_directory) ||
+        !execute_schema(
+            missing_table_directory / "items.sqlite3",
+            "DROP TABLE pending_delete;"
+        ) ||
+        assert_rejected(
+            missing_table_directory,
+            "missing table 'pending_delete'",
+            "database with a missing table"
+        ) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+
+    const auto missing_column_directory =
+        temporary_directory.path() / "schema-missing-column";
+    if (!create_current_database(missing_column_directory) ||
+        !execute_schema(
+            missing_column_directory / "items.sqlite3",
+            "ALTER TABLE item DROP COLUMN ctag;"
+        ) ||
+        assert_rejected(
+            missing_column_directory,
+            "missing column 'ctag'",
+            "database with a missing column"
+        ) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+
+    const auto extra_column_directory =
+        temporary_directory.path() / "schema-extra-column";
+    if (!create_current_database(extra_column_directory) ||
+        !execute_schema(
+            extra_column_directory / "items.sqlite3",
+            "ALTER TABLE drive_state ADD COLUMN unexpected TEXT;"
+        ) ||
+        assert_rejected(
+            extra_column_directory,
+            "unexpected column 'unexpected'",
+            "database with an extra column"
+        ) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+
+    const auto extra_table_directory =
+        temporary_directory.path() / "schema-extra-table";
+    if (!create_current_database(extra_table_directory) ||
+        !execute_schema(
+            extra_table_directory / "items.sqlite3",
+            "CREATE TABLE unexpected (value TEXT);"
+        ) ||
+        assert_rejected(
+            extra_table_directory,
+            "unexpected table 'unexpected'",
+            "database with an extra table"
+        ) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+
+    const auto extra_index_directory =
+        temporary_directory.path() / "schema-extra-index";
+    if (!create_current_database(extra_index_directory) ||
+        !execute_schema(
+            extra_index_directory / "items.sqlite3",
+            "CREATE INDEX unexpected_item_name ON item(name);"
+        ) ||
+        assert_rejected(
+            extra_index_directory,
+            "incompatible primary key or index definitions",
+            "database with an extra index"
+        ) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+
+    const auto wrong_primary_key_directory =
+        temporary_directory.path() / "schema-wrong-primary-key";
+    if (!create_current_database(wrong_primary_key_directory) ||
+        !execute_schema(
+            wrong_primary_key_directory / "items.sqlite3",
+            "DROP TABLE upload_suppression;"
+            "CREATE TABLE upload_suppression ("
+            "drive_id TEXT NOT NULL, remote_id TEXT NOT NULL, "
+            "local_path TEXT NOT NULL, source_device INTEGER NOT NULL, "
+            "source_inode INTEGER NOT NULL, "
+            "PRIMARY KEY (drive_id, remote_id));"
+        ) ||
+        assert_rejected(
+            wrong_primary_key_directory,
+            "incompatible definition",
+            "database with an incorrect primary key"
+        ) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+
+    const auto future_version_directory =
+        temporary_directory.path() / "schema-future-version";
+    if (!create_current_database(future_version_directory) ||
+        !execute_schema(
+            future_version_directory / "items.sqlite3",
+            "PRAGMA user_version = 25;"
+        ) ||
+        assert_rejected(
+            future_version_directory,
+            "unsupported state database schema version 25",
+            "database with a future schema version"
+        ) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+
+    const auto unversioned_directory =
+        temporary_directory.path() / "schema-unversioned";
+    std::filesystem::create_directories(unversioned_directory);
+    if (!execute_schema(
+            unversioned_directory / "items.sqlite3",
+            "CREATE TABLE unexpected (value TEXT);"
+        ) ||
+        assert_rejected(
+            unversioned_directory,
+            "unversioned state database contains existing tables",
+            "unversioned non-empty database"
+        ) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+
+    const auto interrupted_directory =
+        temporary_directory.path() / "schema-interrupted-migration";
+    const auto interrupted_path = interrupted_directory / "items.sqlite3";
+    std::filesystem::create_directories(interrupted_directory);
+    if (!create_version_twenty_two_database(interrupted_path) ||
+        !execute_schema(
+            interrupted_path,
+            "ALTER TABLE pending_upload ADD COLUMN failure_code "
+            "TEXT NOT NULL DEFAULT '';"
+        ) ||
+        assert_rejected(
+            interrupted_directory,
+            "duplicate column name: failure_code",
+            "partially applied migration"
+        ) != EXIT_SUCCESS ||
+        !schema_version_is(interrupted_path, 22)) {
+        return fail(
+            "partially applied migration changed the saved schema version"
+        );
+    }
+
+    const auto corrupt_directory =
+        temporary_directory.path() / "schema-corrupt";
+    std::filesystem::create_directories(corrupt_directory);
+    {
+        std::ofstream corrupt{
+            corrupt_directory / "items.sqlite3",
+            std::ios::binary
+        };
+        corrupt << "not a SQLite database";
+    }
+    if (assert_rejected(
+            corrupt_directory,
+            "file is not a database",
+            "corrupt database"
+        ) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
     }
 
     return EXIT_SUCCESS;

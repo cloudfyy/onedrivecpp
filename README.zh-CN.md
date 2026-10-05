@@ -959,6 +959,14 @@ onedrive-cpp reset-state --clear-all
 `reset-state --clear-all --yes` 显式承担该风险；未指定 `--clear-all` 时
 `--yes` 会被拒绝。
 
+客户端会在启动时和 migration 完成后对每个 Drive 数据库执行 SQLite
+`quick_check`，并验证所有业务表、列类型、`NOT NULL` 约束和主键索引是否与当前
+程序生成的 schema 一致。数据库损坏、版本为零但并非空库、版本高于当前程序或
+物理结构不兼容时，同步会在读取或更新 item 状态之前停止。错误会指出具体的
+`items.sqlite3`；应先保留副本供诊断，再移走或删除该文件并重新同步，由客户端
+重建可恢复的状态库。本地文件不会被删除，但旧快照丢失后，下一次同步可能报告
+本地修改冲突。
+
 无需执行整个 Drive Delta 同步即可下载单个文件：
 
 ```bash
