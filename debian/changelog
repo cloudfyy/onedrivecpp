@@ -1,3 +1,10 @@
+onedrive-cpp (0.7.34-1~ubuntu24.04) noble; urgency=medium
+
+  * Model local move journaling, staging, installation, and restart recovery
+    with reusable template typestates.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Mon, 05 Oct 2026 13:02:50 +0000
+
 onedrive-cpp (0.7.33-1~ubuntu24.04) noble; urgency=medium
 
   * Reuse a family-safe template typestate core for download and upload
