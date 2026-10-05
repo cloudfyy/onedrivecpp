@@ -13,9 +13,10 @@ copy the reference project's D implementation.
 > state and delta-link persistence, safe downloads and local uploads, dry-run support, a
 > systemd user service, and Debian packaging. Synchronization currently
 > creates remote directories, downloads added or changed remote files, and
-> safely removes unchanged local snapshots after remote deletion, and uploads
-> new or modified local files. Local deletion propagation and full two-way
-> conflict resolution are not implemented.
+> safely removes unchanged local snapshots after remote deletion, uploads
+> new or modified local files and directories, and conditionally propagates
+> local deletions. Local move detection and full two-way conflict resolution
+> are not implemented.
 
 ## Architecture
 
@@ -603,6 +604,13 @@ without resending confirmed fragments. Expired sessions and HTTP 404/410
 responses create a new session; a server offset behind the durable checkpoint
 stops the upload instead of risking duplicate data. Set `upload = false` to
 retain download-only behavior.
+
+Missing tracked local items are deleted remotely with their saved eTag as an
+`If-Match` precondition. Directory deletions are parent-first and cover their
+tracked descendants. A dedicated SQLite journal makes an already-completed
+Graph deletion recoverable after a process interruption; HTTP 404 is therefore
+an idempotent success, while 409/412 stops without discarding tracked state.
+Dry-run and paths outside the active sync-list never issue deletions.
 
 `graph.endpoint` selects the Microsoft Graph cloud endpoint and defaults to
 the global service. It is not tied to a specific SharePoint host. For a
@@ -1235,7 +1243,7 @@ or modify the synchronization directory.
 ## Suggested Next Steps
 
 1. Connect the monitor to inotify.
-2. Extend uploads with deletion propagation and local move detection.
+2. Extend uploads with local move and rename detection.
 3. Add integration tests for the Graph and
    file system boundaries.
 

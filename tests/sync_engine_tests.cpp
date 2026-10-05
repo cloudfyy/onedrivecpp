@@ -4,6 +4,7 @@
 #include "onedrive/metrics/metrics.hpp"
 #include "onedrive/storage/item_store.hpp"
 #include "onedrive/sync/sync_engine.hpp"
+#include "../src/sync/selective_sync.hpp"
 #include "test_support.hpp"
 
 #include <atomic>
@@ -258,6 +259,18 @@ public:
         };
     }
 
+    void delete_item(
+        const std::string& remote_id,
+        const std::string& expected_etag
+    ) const {
+        deleted_items.emplace_back(remote_id, expected_etag);
+        if (delete_conflict) {
+            throw onedrive::graph::UploadConflictError{
+                "simulated deletion conflict"
+            };
+        }
+    }
+
     std::vector<onedrive::graph::RemoteItem> changes;
     std::optional<onedrive::graph::RemoteItem> lookup_item;
     std::unordered_map<std::string, std::string> contents;
@@ -270,6 +283,7 @@ public:
     bool reject_saved_cursor{false};
     bool upload_conflict{false};
     bool directory_conflict{false};
+    bool delete_conflict{false};
     bool fail_after_upload_checkpoint{false};
     std::chrono::milliseconds download_delay{0};
     int downloads_started_before_failure{0};
@@ -280,6 +294,7 @@ public:
     mutable int directory_create_count{0};
     mutable std::vector<std::string> uploaded_paths;
     mutable std::vector<std::string> created_directory_paths;
+    mutable std::vector<std::pair<std::string, std::string>> deleted_items;
     mutable std::vector<
         std::optional<onedrive::graph::UploadSession>
     > upload_sessions;
@@ -437,6 +452,54 @@ public:
         pending_uploads_by_path.erase(upload.remote_path);
     }
 
+    void save_pending_delete(onedrive::storage::PendingDelete deletion) {
+        const std::scoped_lock lock{mutex};
+        pending_deletes_by_id.insert_or_assign(
+            deletion.remote_id,
+            std::move(deletion)
+        );
+    }
+
+    void remove_pending_delete(
+        const std::string&,
+        const std::string& remote_id
+    ) {
+        const std::scoped_lock lock{mutex};
+        pending_deletes_by_id.erase(remote_id);
+    }
+
+    [[nodiscard]] std::vector<onedrive::storage::PendingDelete>
+    pending_deletes(const std::string&) const {
+        const std::scoped_lock lock{mutex};
+        std::vector<onedrive::storage::PendingDelete> result;
+        for (const auto& [remote_id, deletion] : pending_deletes_by_id) {
+            static_cast<void>(remote_id);
+            result.push_back(deletion);
+        }
+        return result;
+    }
+
+    void commit_delete(const onedrive::storage::PendingDelete& deletion) {
+        const std::scoped_lock lock{mutex};
+        if (fail_commit_delete) {
+            throw std::runtime_error{"simulated deletion commit failure"};
+        }
+        for (auto iterator = items.begin(); iterator != items.end();) {
+            const auto& path = iterator->second.remote_path;
+            const bool descendant =
+                path.size() > deletion.remote_path.size() &&
+                path.starts_with(deletion.remote_path) &&
+                path[deletion.remote_path.size()] == '/';
+            if (iterator->first == deletion.remote_id ||
+                path == deletion.remote_path || descendant) {
+                iterator = items.erase(iterator);
+            } else {
+                ++iterator;
+            }
+        }
+        pending_deletes_by_id.erase(deletion.remote_id);
+    }
+
     void save_pending_move(onedrive::storage::PendingMove move) {
         const std::scoped_lock lock{mutex};
         pending_moves_by_id.insert_or_assign(
@@ -549,6 +612,8 @@ public:
     std::unordered_map<std::string, onedrive::storage::PartialDownload> partials;
     std::unordered_map<std::string, onedrive::storage::PendingUpload>
         pending_uploads_by_path;
+    std::unordered_map<std::string, onedrive::storage::PendingDelete>
+        pending_deletes_by_id;
     std::unordered_map<std::string, onedrive::storage::PendingMove>
         pending_moves_by_id;
     std::unordered_map<std::string, onedrive::storage::UploadSuppression>
@@ -561,6 +626,7 @@ public:
     int apply_count{0};
     bool fail_upsert{false};
     bool fail_commit_upload{false};
+    bool fail_commit_delete{false};
     bool fail_upload_checkpoint_save{false};
     bool fail_apply_delta{false};
     mutable std::mutex mutex;
@@ -3665,6 +3731,292 @@ int test_local_file_uploads() {
     return EXIT_SUCCESS;
 }
 
+int test_local_deletions() {
+    onedrive::test::TemporaryDirectory temporary;
+    const auto root = temporary.path() / "deletions";
+    std::filesystem::create_directories(root);
+    {
+        std::ofstream output{root / "retained.txt"};
+        output << "retained";
+    }
+    {
+        std::ofstream output{root / "removed.txt"};
+        output << "removed";
+    }
+    std::filesystem::create_directories(root / "Removed");
+    {
+        std::ofstream output{root / "Removed" / "child.txt"};
+        output << "child";
+    }
+    FakeItemStore items;
+    items.saved_delta_link = "saved";
+    items.items.emplace(
+        "removed-file",
+        tracked_item(root, "removed-file", "removed.txt")
+    );
+    items.items.emplace(
+        "removed-directory",
+        tracked_item(root, "removed-directory", "Removed", true)
+    );
+    items.items.emplace(
+        "removed-child",
+        tracked_item(root, "removed-child", "Removed/child.txt")
+    );
+    items.items.emplace(
+        "retained",
+        tracked_item(root, "retained", "retained.txt")
+    );
+    std::filesystem::remove(root / "removed.txt");
+    std::filesystem::remove_all(root / "Removed");
+    FakeGraphClient graph;
+    FakeMetrics metrics;
+    auto config = config_for(root, false);
+    config.upload = true;
+    static_cast<void>(onedrive::sync::SyncEngine{
+        config,
+        graph,
+        items,
+        metrics
+    }.synchronize());
+    if (graph.deleted_items !=
+            std::vector<std::pair<std::string, std::string>>{
+                {"removed-directory", "etag"},
+                {"removed-file", "etag"},
+            } ||
+        items.find("me", "removed-directory") ||
+        items.find("me", "removed-child") ||
+        items.find("me", "removed-file") ||
+        !items.find("me", "retained") ||
+        !items.pending_deletes_by_id.empty() || !metrics.last_success) {
+        return fail(
+            "local deletions were not propagated parent-first"
+        );
+    }
+
+    const auto dry_root = temporary.path() / "dry-deletion";
+    std::filesystem::create_directories(dry_root);
+    {
+        std::ofstream output{dry_root / "removed.txt"};
+        output << "removed";
+    }
+    FakeItemStore dry_items;
+    dry_items.saved_delta_link = "saved";
+    dry_items.items.emplace(
+        "dry-removed",
+        tracked_item(dry_root, "dry-removed", "removed.txt")
+    );
+    std::filesystem::remove(dry_root / "removed.txt");
+    FakeGraphClient dry_graph;
+    FakeMetrics dry_metrics;
+    auto dry_config = config_for(dry_root, true);
+    dry_config.upload = true;
+    static_cast<void>(onedrive::sync::SyncEngine{
+        dry_config,
+        dry_graph,
+        dry_items,
+        dry_metrics
+    }.synchronize());
+    if (!dry_graph.deleted_items.empty() ||
+        !dry_items.pending_deletes_by_id.empty() ||
+        !dry_items.find("me", "dry-removed")) {
+        return fail("deletion dry run changed remote or local state");
+    }
+
+    const auto selective_root = temporary.path() / "selective-deletion";
+    std::filesystem::create_directories(selective_root / "Included");
+    std::filesystem::create_directories(selective_root / "Excluded");
+    {
+        std::ofstream output{selective_root / "Included" / "removed.txt"};
+        output << "included";
+    }
+    {
+        std::ofstream output{selective_root / "Excluded" / "retained.txt"};
+        output << "excluded";
+    }
+    FakeItemStore selective_items;
+    selective_items.saved_delta_link = "saved";
+    selective_items.items.emplace(
+        "included-delete",
+        tracked_item(
+            selective_root,
+            "included-delete",
+            "Included/removed.txt"
+        )
+    );
+    selective_items.items.emplace(
+        "excluded-delete",
+        tracked_item(
+            selective_root,
+            "excluded-delete",
+            "Excluded/retained.txt"
+        )
+    );
+    std::filesystem::remove(
+        selective_root / "Included" / "removed.txt"
+    );
+    std::filesystem::remove(
+        selective_root / "Excluded" / "retained.txt"
+    );
+    const auto sync_list = temporary.path() / "delete-sync-list";
+    {
+        std::ofstream output{sync_list};
+        output << "/Included/\n";
+    }
+    FakeGraphClient selective_graph;
+    FakeMetrics selective_metrics;
+    auto selective_config = config_for(selective_root, false);
+    selective_config.upload = true;
+    selective_config.sync_list = sync_list;
+    selective_items.saved_sync_filter_fingerprint =
+        onedrive::sync::detail::SyncList::load(
+            sync_list,
+            selective_config.sync_root_files
+        ).fingerprint();
+    static_cast<void>(onedrive::sync::SyncEngine{
+        selective_config,
+        selective_graph,
+        selective_items,
+        selective_metrics
+    }.synchronize());
+    if (selective_graph.deleted_items !=
+            std::vector<std::pair<std::string, std::string>>{
+                {"included-delete", "etag"},
+            } ||
+        selective_items.find("me", "included-delete") ||
+        !selective_items.find("me", "excluded-delete")) {
+        return fail("selective sync deletion boundary was not preserved");
+    }
+
+    const auto recovery_root = temporary.path() / "delete-recovery";
+    std::filesystem::create_directories(recovery_root);
+    {
+        std::ofstream output{recovery_root / "recover.txt"};
+        output << "recover";
+    }
+    FakeItemStore recovery_items;
+    recovery_items.saved_delta_link = "saved";
+    recovery_items.items.emplace(
+        "recover-delete",
+        tracked_item(
+            recovery_root,
+            "recover-delete",
+            "recover.txt"
+        )
+    );
+    std::filesystem::remove(recovery_root / "recover.txt");
+    recovery_items.fail_commit_delete = true;
+    FakeGraphClient recovery_graph;
+    FakeMetrics recovery_metrics;
+    auto recovery_config = config_for(recovery_root, false);
+    recovery_config.upload = true;
+    try {
+        static_cast<void>(onedrive::sync::SyncEngine{
+            recovery_config,
+            recovery_graph,
+            recovery_items,
+            recovery_metrics
+        }.synchronize());
+        return fail("deletion commit failure was accepted");
+    } catch (const std::runtime_error&) {
+    }
+    if (recovery_items.pending_deletes_by_id.size() != 1 ||
+        !recovery_items.find("me", "recover-delete")) {
+        return fail("deletion commit failure did not retain its journal");
+    }
+    recovery_items.fail_commit_delete = false;
+    static_cast<void>(onedrive::sync::SyncEngine{
+        recovery_config,
+        recovery_graph,
+        recovery_items,
+        recovery_metrics
+    }.synchronize());
+    if (recovery_graph.deleted_items.size() != 2 ||
+        recovery_items.find("me", "recover-delete") ||
+        !recovery_items.pending_deletes_by_id.empty()) {
+        return fail("pending deletion was not recovered idempotently");
+    }
+
+    const auto reappeared_root = temporary.path() / "delete-reappeared";
+    std::filesystem::create_directories(reappeared_root);
+    {
+        std::ofstream output{reappeared_root / "restored.txt"};
+        output << "restored";
+    }
+    FakeItemStore reappeared_items;
+    reappeared_items.saved_delta_link = "saved";
+    const auto restored =
+        tracked_item(reappeared_root, "restored", "restored.txt");
+    reappeared_items.items.emplace("restored", restored);
+    reappeared_items.pending_deletes_by_id.emplace(
+        "restored",
+        onedrive::storage::PendingDelete{
+            .drive_id = "me",
+            .remote_id = "restored",
+            .expected_etag = restored.etag,
+            .remote_path = restored.remote_path,
+            .local_path = restored.local_path,
+        }
+    );
+    FakeGraphClient reappeared_graph;
+    FakeMetrics reappeared_metrics;
+    auto reappeared_config = config_for(reappeared_root, false);
+    reappeared_config.upload = true;
+    try {
+        static_cast<void>(onedrive::sync::SyncEngine{
+            reappeared_config,
+            reappeared_graph,
+            reappeared_items,
+            reappeared_metrics
+        }.synchronize());
+        return fail("reappeared local item was deleted remotely");
+    } catch (const std::runtime_error&) {
+    }
+    if (!reappeared_graph.deleted_items.empty() ||
+        !reappeared_items.pending_deletes_by_id.empty() ||
+        !reappeared_items.find("me", "restored")) {
+        return fail("reappeared local item did not cancel deletion recovery");
+    }
+
+    const auto conflict_root = temporary.path() / "delete-conflict";
+    std::filesystem::create_directories(conflict_root);
+    {
+        std::ofstream output{conflict_root / "conflict.txt"};
+        output << "conflict";
+    }
+    FakeItemStore conflict_items;
+    conflict_items.saved_delta_link = "saved";
+    conflict_items.items.emplace(
+        "conflict-delete",
+        tracked_item(
+            conflict_root,
+            "conflict-delete",
+            "conflict.txt"
+        )
+    );
+    std::filesystem::remove(conflict_root / "conflict.txt");
+    FakeGraphClient conflict_graph;
+    conflict_graph.delete_conflict = true;
+    FakeMetrics conflict_metrics;
+    auto conflict_config = config_for(conflict_root, false);
+    conflict_config.upload = true;
+    try {
+        static_cast<void>(onedrive::sync::SyncEngine{
+            conflict_config,
+            conflict_graph,
+            conflict_items,
+            conflict_metrics
+        }.synchronize());
+        return fail("remote deletion conflict was accepted");
+    } catch (const std::runtime_error&) {
+    }
+    if (!conflict_items.pending_deletes_by_id.empty() ||
+        !conflict_items.find("me", "conflict-delete") ||
+        conflict_metrics.last_success) {
+        return fail("definite deletion conflict retained recovery state");
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_local_directory_uploads() {
     onedrive::test::TemporaryDirectory temporary;
     const auto root = temporary.path() / "directory-uploads";
@@ -4231,6 +4583,10 @@ int main() {
         return result;
     }
     if (const int result = test_local_file_uploads();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_local_deletions();
         result != EXIT_SUCCESS) {
         return result;
     }

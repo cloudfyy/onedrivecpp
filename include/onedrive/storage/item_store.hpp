@@ -97,6 +97,15 @@ struct PendingUpload {
     bool directory{false};
 };
 
+struct PendingDelete {
+    std::string drive_id;
+    std::string remote_id;
+    std::string expected_etag;
+    std::string remote_path;
+    std::filesystem::path local_path;
+    bool directory{false};
+};
+
 struct PendingMove {
     std::string drive_id;
     std::string remote_id;
@@ -113,6 +122,7 @@ struct ClearedState {
     std::size_t pending_downloads{0};
     std::size_t partial_downloads{0};
     std::size_t pending_uploads{0};
+    std::size_t pending_deletes{0};
     std::size_t pending_moves{0};
     std::size_t upload_suppressions{0};
     std::size_t blocked_items{0};
@@ -132,6 +142,10 @@ PRO_DEF_MEM_DISPATCH(StoreSavePendingUploadDispatch, save_pending_upload);
 PRO_DEF_MEM_DISPATCH(StoreRemovePendingUploadDispatch, remove_pending_upload);
 PRO_DEF_MEM_DISPATCH(StorePendingUploadsDispatch, pending_uploads);
 PRO_DEF_MEM_DISPATCH(StoreCommitUploadDispatch, commit_upload);
+PRO_DEF_MEM_DISPATCH(StoreSavePendingDeleteDispatch, save_pending_delete);
+PRO_DEF_MEM_DISPATCH(StoreRemovePendingDeleteDispatch, remove_pending_delete);
+PRO_DEF_MEM_DISPATCH(StorePendingDeletesDispatch, pending_deletes);
+PRO_DEF_MEM_DISPATCH(StoreCommitDeleteDispatch, commit_delete);
 PRO_DEF_MEM_DISPATCH(StoreSavePendingMoveDispatch, save_pending_move);
 PRO_DEF_MEM_DISPATCH(StoreRemovePendingMoveDispatch, remove_pending_move);
 PRO_DEF_MEM_DISPATCH(StorePendingMovesDispatch, pending_moves);
@@ -192,6 +206,19 @@ struct ItemStoreFacade : pro::facade_builder
     ::add_convention<
         StoreCommitUploadDispatch,
         void(const PendingUpload&, ItemState)
+    >
+    ::add_convention<StoreSavePendingDeleteDispatch, void(PendingDelete)>
+    ::add_convention<
+        StoreRemovePendingDeleteDispatch,
+        void(const std::string&, const std::string&)
+    >
+    ::add_convention<
+        StorePendingDeletesDispatch,
+        std::vector<PendingDelete>(const std::string&) const
+    >
+    ::add_convention<
+        StoreCommitDeleteDispatch,
+        void(const PendingDelete&)
     >
     ::add_convention<StoreSavePendingMoveDispatch, void(PendingMove)>
     ::add_convention<
@@ -313,6 +340,27 @@ public:
         ItemState item
     ) {
         implementation()->commit_upload(upload, std::move(item));
+    }
+
+    void save_pending_delete(PendingDelete deletion) {
+        implementation()->save_pending_delete(std::move(deletion));
+    }
+
+    void remove_pending_delete(
+        const std::string& drive_id,
+        const std::string& remote_id
+    ) {
+        implementation()->remove_pending_delete(drive_id, remote_id);
+    }
+
+    [[nodiscard]] std::vector<PendingDelete> pending_deletes(
+        const std::string& drive_id
+    ) const {
+        return implementation()->pending_deletes(drive_id);
+    }
+
+    void commit_delete(const PendingDelete& deletion) {
+        implementation()->commit_delete(deletion);
     }
 
     void save_pending_move(PendingMove move) {

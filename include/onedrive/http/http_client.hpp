@@ -41,6 +41,7 @@ enum class HttpMethod {
     get,
     post,
     put,
+    delete_,
 };
 
 struct HttpRequest {

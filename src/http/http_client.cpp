@@ -205,6 +205,8 @@ std::string_view method_name(HttpMethod method) {
             return "POST";
         case HttpMethod::put:
             return "PUT";
+        case HttpMethod::delete_:
+            return "DELETE";
     }
     std::unreachable();
 }
@@ -929,6 +931,9 @@ HttpResult perform_request(
     }
     if (result == CURLE_OK && request.method == HttpMethod::put) {
         result = set_option(CURLOPT_CUSTOMREQUEST, "PUT");
+    }
+    if (result == CURLE_OK && request.method == HttpMethod::delete_) {
+        result = set_option(CURLOPT_CUSTOMREQUEST, "DELETE");
     }
     if (result == CURLE_OK && request.method != HttpMethod::get) {
         result = set_option(CURLOPT_POSTFIELDS, request.body.data());

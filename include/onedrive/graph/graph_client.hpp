@@ -130,6 +130,7 @@ PRO_DEF_MEM_DISPATCH(GraphListDeltaDispatch, list_delta);
 PRO_DEF_MEM_DISPATCH(GraphDownloadFileDispatch, download_file);
 PRO_DEF_MEM_DISPATCH(GraphUploadFileDispatch, upload_file);
 PRO_DEF_MEM_DISPATCH(GraphCreateDirectoryDispatch, create_directory);
+PRO_DEF_MEM_DISPATCH(GraphDeleteItemDispatch, delete_item);
 
 struct GraphClientFacade : pro::facade_builder
     ::add_convention<
@@ -179,6 +180,10 @@ struct GraphClientFacade : pro::facade_builder
     ::add_convention<
         GraphCreateDirectoryDispatch,
         RemoteItem(const std::string&) const
+    >
+    ::add_convention<
+        GraphDeleteItemDispatch,
+        void(const std::string&, const std::string&) const
     >
     ::build {};
 
@@ -257,6 +262,13 @@ public:
         return implementation()->create_directory(remote_path);
     }
 
+    void delete_item(
+        const std::string& remote_id,
+        const std::string& expected_etag
+    ) const {
+        implementation()->delete_item(remote_id, expected_etag);
+    }
+
     void download_file(
         const std::string& remote_id,
         const std::string& expected_etag,
@@ -307,6 +319,10 @@ public:
         const std::filesystem::path& source,
         const std::optional<UploadSession>& session = std::nullopt,
         const UploadCheckpoint& checkpoint = {}
+    ) const;
+    void delete_item(
+        const std::string& remote_id,
+        const std::string& expected_etag
     ) const;
     [[nodiscard]] RemoteItem create_directory(
         const std::string& remote_path

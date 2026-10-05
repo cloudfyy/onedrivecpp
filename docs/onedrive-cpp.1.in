@@ -609,6 +609,12 @@ persists the session URL, expiration, and confirmed offset. After a restart,
 the client queries and resumes a valid session without resending confirmed
 fragments. Expired sessions and HTTP 404/410 responses are replaced; a server
 offset behind the durable checkpoint aborts the upload.
+Missing tracked local items are deleted remotely with the saved eTag as an
+If-Match precondition. Parent-directory deletions cover tracked descendants.
+A dedicated SQLite pending-delete journal makes completed Graph deletions
+recoverable after interruption: HTTP 404 is an idempotent success, while
+409/412 leaves tracked item state intact. Dry-run and paths outside the active
+sync-list never issue remote deletions.
 .SH SHELL COMPLETION
 Bash and Zsh completion definitions are installed with the package. They
 complete subcommands, command options, enumerated option values, and paths for

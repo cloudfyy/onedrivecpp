@@ -51,6 +51,15 @@ public:
         const std::string& drive_id
     ) const;
     void commit_upload(const PendingUpload& upload, ItemState item);
+    void save_pending_delete(PendingDelete deletion);
+    void remove_pending_delete(
+        const std::string& drive_id,
+        const std::string& remote_id
+    );
+    [[nodiscard]] std::vector<PendingDelete> pending_deletes(
+        const std::string& drive_id
+    ) const;
+    void commit_delete(const PendingDelete& deletion);
     void save_pending_move(PendingMove move);
     void remove_pending_move(
         const std::string& drive_id,
@@ -121,6 +130,15 @@ private:
         const PendingUpload& upload,
         const ItemState& item
     );
+    void save_pending_delete_on_worker(const PendingDelete& deletion);
+    void remove_pending_delete_on_worker(
+        const std::string& drive_id,
+        const std::string& remote_id
+    );
+    [[nodiscard]] std::vector<PendingDelete> pending_deletes_on_worker(
+        const std::string& drive_id
+    ) const;
+    void commit_delete_on_worker(const PendingDelete& deletion);
     void save_pending_move_on_worker(const PendingMove& move);
     void remove_pending_move_on_worker(
         const std::string& drive_id,

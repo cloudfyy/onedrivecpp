@@ -126,6 +126,8 @@ public:
         throw std::logic_error{"directory creation was not expected"};
     }
 
+    void delete_item(const std::string&, const std::string&) const {}
+
     std::string contents{"data"};
     std::vector<std::uint64_t> progress_updates;
     bool send_checkpoint{true};
@@ -218,6 +220,14 @@ public:
     ) {
         upsert(std::move(item));
     }
+
+    void save_pending_delete(onedrive::storage::PendingDelete) {}
+    void remove_pending_delete(const std::string&, const std::string&) {}
+    [[nodiscard]] std::vector<onedrive::storage::PendingDelete>
+    pending_deletes(const std::string&) const {
+        return {};
+    }
+    void commit_delete(const onedrive::storage::PendingDelete&) {}
 
     void save_pending_move(onedrive::storage::PendingMove) {}
 

@@ -438,6 +438,18 @@ bool create_version_seventeen_database(const std::filesystem::path& path) {
     return succeeded;
 }
 
+bool create_version_eighteen_database(const std::filesystem::path& path) {
+    if (!create_version_seventeen_database(path)) {
+        return false;
+    }
+    return execute_schema(
+        path,
+        "ALTER TABLE pending_upload ADD COLUMN directory "
+        "INTEGER NOT NULL DEFAULT 0;"
+        "PRAGMA user_version = 18;"
+    );
+}
+
 bool identity_row_is_valid(const std::filesystem::path& path) {
     sqlite3* database = nullptr;
     if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
@@ -1146,7 +1158,7 @@ int main() {
             onedrive::storage::ItemDatabase database{directory, identity()};
             database.open();
         }
-        if (!schema_version_is(database_path, 18) ||
+        if (!schema_version_is(database_path, 19) ||
             !identity_row_is_valid(database_path)) {
             return fail(
                 std::string{fixture.name} +
@@ -1611,6 +1623,65 @@ int main() {
         database.remove_pending_upload("me", pending.remote_path);
         if (!database.pending_uploads("me").empty()) {
             return fail("pending directory upload was not removed");
+        }
+    }
+
+    const auto version_eighteen_directory =
+        temporary_directory.path() / "version-eighteen";
+    std::filesystem::create_directories(version_eighteen_directory);
+    if (!create_version_eighteen_database(
+            version_eighteen_directory / "items.sqlite3"
+        )) {
+        return fail(
+            "version eighteen migration fixture could not be created"
+        );
+    }
+    {
+        onedrive::storage::ItemDatabase database{
+            version_eighteen_directory,
+            identity()
+        };
+        database.open();
+        database.upsert({
+            .drive_id = "me",
+            .remote_id = "deleted-directory",
+            .name = "Deleted",
+            .etag = "delete-etag",
+            .remote_path = "Deleted",
+            .local_path = version_eighteen_directory / "Deleted",
+            .directory = true,
+        });
+        database.upsert({
+            .drive_id = "me",
+            .remote_id = "deleted-child",
+            .parent_id = "deleted-directory",
+            .name = "child.txt",
+            .etag = "child-etag",
+            .remote_path = "Deleted/child.txt",
+            .local_path =
+                version_eighteen_directory / "Deleted" / "child.txt",
+        });
+        const onedrive::storage::PendingDelete deletion{
+            .drive_id = "me",
+            .remote_id = "deleted-directory",
+            .expected_etag = "delete-etag",
+            .remote_path = "Deleted",
+            .local_path = version_eighteen_directory / "Deleted",
+            .directory = true,
+        };
+        database.save_pending_delete(deletion);
+        const auto deletions = database.pending_deletes("me");
+        if (deletions.size() != 1 ||
+            deletions[0].expected_etag != "delete-etag") {
+            return fail(
+                "version eighteen database did not gain deletion journal"
+            );
+        }
+        database.commit_delete(deletion);
+        if (!database.pending_deletes("me").empty() ||
+            database.find("me", "deleted-directory") ||
+            database.find("me", "deleted-child")) {
+            return fail("pending directory deletion commit was not atomic");
         }
     }
 

@@ -611,6 +611,57 @@ int test_directory_creation() {
     return EXIT_SUCCESS;
 }
 
+int test_item_deletion() {
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"token_type":"Bearer","expires_in":3600,)"
+                    R"("access_token":"access-secret"})",
+            },
+            onedrive::http::HttpResponse{.status_code = 204},
+            onedrive::http::HttpResponse{.status_code = 404},
+            onedrive::http::HttpResponse{
+                .status_code = 412,
+                .body =
+                    R"json({"error":{"code":"preconditionFailed","message":"changed"}})json",
+            },
+        }
+    );
+    auto* transport_pointer = transport.get();
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(
+                std::string{"existing-refresh"}
+            )
+        ),
+        auth_options(),
+        {
+            .drive_id = "drive/id",
+            .endpoint = "https://graph.example.test/v1.0",
+        },
+    };
+    client.delete_item("file/id", "file-etag");
+    client.delete_item("missing", "missing-etag");
+    try {
+        client.delete_item("changed", "old-etag");
+        return fail("Graph deletion conflict was accepted");
+    } catch (const onedrive::graph::UploadConflictError&) {
+    }
+    const auto& requests = transport_pointer->requests;
+    if (requests.size() != 4 ||
+        requests[1].method != onedrive::http::HttpMethod::delete_ ||
+        requests[1].url !=
+            "https://graph.example.test/v1.0/drives/drive%2Fid/items/file%2Fid" ||
+        !has_header(requests[1], "If-Match: file-etag") ||
+        !has_header(requests[1], "Authorization: ******")) {
+        return fail("Graph item deletion request was invalid");
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_upload_sessions() {
     constexpr std::size_t chunk_size = 320U * 1024U;
     constexpr std::size_t total_size = chunk_size + 7U;
@@ -3043,6 +3094,9 @@ int main() {
     }
     if (const int result = test_directory_creation();
         result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_item_deletion(); result != EXIT_SUCCESS) {
         return result;
     }
     if (const int result = test_upload_sessions();

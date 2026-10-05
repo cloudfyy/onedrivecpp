@@ -34,6 +34,116 @@ struct UploadCandidate {
     bool directory{false};
 };
 
+bool local_path_is_missing(const std::filesystem::path& path) {
+    std::error_code error;
+    const auto status = std::filesystem::symlink_status(path, error);
+    if (!error) {
+        return status.type() == std::filesystem::file_type::not_found;
+    }
+    if (error == std::errc::no_such_file_or_directory) {
+        return true;
+    }
+    throw std::runtime_error(
+        "cannot inspect local deletion candidate '" + path.string() +
+        "': " + error.message()
+    );
+}
+
+std::vector<storage::PendingDelete> discover_deletions(
+    const std::string& drive_id,
+    storage::ItemStore& items,
+    const SyncList* sync_list
+) {
+    std::unordered_set<std::string> blocked_ids;
+    std::unordered_set<std::string> blocked_paths;
+    for (const auto& item : items.blocked_items(drive_id)) {
+        blocked_ids.insert(item.remote_id);
+        blocked_paths.insert(item.remote_path);
+    }
+    std::vector<storage::PendingDelete> candidates;
+    for (const auto& item : items.drive_items(drive_id)) {
+        if (item.remote_path.empty() ||
+            blocked_ids.contains(item.remote_id) ||
+            blocked_paths.contains(item.remote_path) ||
+            (sync_list != nullptr &&
+             (sync_list->excludes(item.remote_path, item.directory) ||
+              !sync_list->includes(item.remote_path, item.directory))) ||
+            !local_path_is_missing(item.local_path)) {
+            continue;
+        }
+        candidates.push_back({
+            .drive_id = drive_id,
+            .remote_id = item.remote_id,
+            .expected_etag = item.etag,
+            .remote_path = item.remote_path,
+            .local_path = item.local_path,
+            .directory = item.directory,
+        });
+    }
+    std::ranges::sort(
+        candidates,
+        [](const auto& left, const auto& right) {
+            const auto left_depth =
+                std::ranges::distance(left.local_path);
+            const auto right_depth =
+                std::ranges::distance(right.local_path);
+            return left_depth != right_depth ?
+                left_depth < right_depth :
+                left.remote_path < right.remote_path;
+        }
+    );
+    std::vector<storage::PendingDelete> deletions;
+    for (auto& candidate : candidates) {
+        const bool covered = std::ranges::any_of(
+            deletions,
+            [&](const auto& parent) {
+                return parent.directory &&
+                       candidate.remote_path.size() >
+                           parent.remote_path.size() &&
+                       candidate.remote_path.starts_with(
+                           parent.remote_path
+                       ) &&
+                       candidate.remote_path[parent.remote_path.size()] ==
+                           '/';
+            }
+        );
+        if (!covered) {
+            deletions.push_back(std::move(candidate));
+        }
+    }
+    return deletions;
+}
+
+void execute_pending_delete(
+    const storage::PendingDelete& deletion,
+    graph::GraphClient& graph,
+    storage::ItemStore& items
+) {
+    if (!local_path_is_missing(deletion.local_path)) {
+        items.remove_pending_delete(
+            deletion.drive_id,
+            deletion.remote_id
+        );
+        throw LocalModificationConflictError(
+            "local item reappeared during remote deletion: " +
+            deletion.local_path.string()
+        );
+    }
+    try {
+        graph.delete_item(deletion.remote_id, deletion.expected_etag);
+    } catch (const graph::UploadConflictError&) {
+        items.remove_pending_delete(
+            deletion.drive_id,
+            deletion.remote_id
+        );
+        throw LocalModificationConflictError(
+            "remote item changed after local deletion: " +
+            deletion.remote_path
+        );
+    }
+    items.commit_delete(deletion);
+}
+
 class UploadSnapshot final {
 public:
     explicit UploadSnapshot(std::filesystem::path path)
@@ -636,6 +746,22 @@ void recover_pending_uploads(
     }
 }
 
+void recover_pending_deletes(
+    const std::string& drive_id,
+    graph::GraphClient& graph,
+    storage::ItemStore& items,
+    const cli::Console& console
+) {
+    for (const auto& deletion : items.pending_deletes(drive_id)) {
+        execute_pending_delete(deletion, graph, items);
+        console.message(
+            cli::MessageKind::information,
+            "pending_delete_recovered",
+            "Recovered remote deletion '" + deletion.remote_path + "'."
+        );
+    }
+}
+
 UploadSummary upload_local_changes(
     const SafeSyncRoot& sync_root,
     const std::string& drive_id,
@@ -647,6 +773,8 @@ UploadSummary upload_local_changes(
     bool dry_run
 ) {
     UploadSummary summary;
+    auto deletions = discover_deletions(drive_id, items, sync_list);
+    summary.planned_deletions = deletions.size();
     auto uploads = discover_uploads(
         sync_root,
         drive_id,
@@ -665,6 +793,16 @@ UploadSummary upload_local_changes(
         uploads.size() - summary.planned;
     if (dry_run) {
         return summary;
+    }
+    for (const auto& deletion : deletions) {
+        items.save_pending_delete(deletion);
+        execute_pending_delete(deletion, graph, items);
+        ++summary.deleted;
+        console.message(
+            cli::MessageKind::information,
+            "local_item_deleted",
+            "Deleted remote item '" + deletion.remote_path + "'."
+        );
     }
     for (const auto& upload : uploads) {
         if (upload.directory) {

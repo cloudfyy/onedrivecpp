@@ -426,6 +426,21 @@ void create_pending_move_schema(sqlite3* database) {
     );
 }
 
+void create_pending_delete_schema(sqlite3* database) {
+    execute(
+        database,
+        "CREATE TABLE IF NOT EXISTS pending_delete ("
+        "drive_id TEXT NOT NULL,"
+        "remote_id TEXT NOT NULL,"
+        "expected_etag TEXT NOT NULL,"
+        "remote_path TEXT NOT NULL,"
+        "local_path TEXT NOT NULL,"
+        "directory INTEGER NOT NULL,"
+        "PRIMARY KEY (drive_id, remote_id)"
+        ");"
+    );
+}
+
 void create_pending_move_v14_schema(sqlite3* database) {
     execute(
         database,
@@ -465,9 +480,10 @@ void ensure_current_schema(sqlite3* database) {
     create_drive_mapping_schema(database);
     create_partial_download_schema(database);
     create_pending_upload_schema(database);
+    create_pending_delete_schema(database);
     create_pending_move_schema(database);
     create_upload_suppression_schema(database);
-    execute(database, "PRAGMA user_version = 18;");
+    execute(database, "PRAGMA user_version = 19;");
 }
 
 void add_sync_filter_fingerprint(sqlite3* database) {
@@ -621,7 +637,7 @@ struct SchemaMigration {
     void (*apply)(sqlite3*);
 };
 
-constexpr int current_schema_version = 18;
+constexpr int current_schema_version = 19;
 
 constexpr std::array schema_migrations{
     SchemaMigration{1, 4, migrate_v1_to_v4},
@@ -641,6 +657,7 @@ constexpr std::array schema_migrations{
     SchemaMigration{15, 16, create_upload_suppression_schema},
     SchemaMigration{16, 17, add_pending_upload_session},
     SchemaMigration{17, 18, add_pending_upload_directory},
+    SchemaMigration{18, 19, create_pending_delete_schema},
 };
 
 consteval bool schema_migration_chain_is_complete() {
@@ -1949,6 +1966,177 @@ void ItemDatabase::commit_upload_on_worker(
     transaction.commit();
 }
 
+void ItemDatabase::save_pending_delete(PendingDelete deletion) {
+    impl_->invoke([this, deletion = std::move(deletion)] {
+        save_pending_delete_on_worker(deletion);
+    });
+}
+
+void ItemDatabase::save_pending_delete_on_worker(
+    const PendingDelete& deletion
+) {
+    sqlite3* database = impl_->database.get();
+    if (database == nullptr) {
+        throw std::runtime_error("state database is not open");
+    }
+    if (deletion.drive_id.empty() || deletion.remote_id.empty() ||
+        deletion.expected_etag.empty() || deletion.remote_path.empty() ||
+        deletion.local_path.empty()) {
+        throw std::invalid_argument(
+            "pending deletion contains invalid metadata"
+        );
+    }
+    Statement statement{
+        database,
+        "INSERT OR REPLACE INTO pending_delete ("
+        "drive_id, remote_id, expected_etag, remote_path, local_path, directory"
+        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6);"
+    };
+    bind_text(database, statement.get(), 1, deletion.drive_id);
+    bind_text(database, statement.get(), 2, deletion.remote_id);
+    bind_text(database, statement.get(), 3, deletion.expected_etag);
+    bind_text(database, statement.get(), 4, deletion.remote_path);
+    bind_text(
+        database,
+        statement.get(),
+        5,
+        deletion.local_path.string()
+    );
+    if (sqlite3_bind_int(
+            statement.get(),
+            6,
+            deletion.directory ? 1 : 0
+        ) != SQLITE_OK ||
+        sqlite3_step(statement.get()) != SQLITE_DONE) {
+        throw std::runtime_error(
+            "cannot persist pending deletion: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+}
+
+void ItemDatabase::remove_pending_delete(
+    const std::string& drive_id,
+    const std::string& remote_id
+) {
+    impl_->invoke([this, drive_id, remote_id] {
+        remove_pending_delete_on_worker(drive_id, remote_id);
+    });
+}
+
+void ItemDatabase::remove_pending_delete_on_worker(
+    const std::string& drive_id,
+    const std::string& remote_id
+) {
+    sqlite3* database = impl_->database.get();
+    if (database == nullptr) {
+        throw std::runtime_error("state database is not open");
+    }
+    Statement statement{
+        database,
+        "DELETE FROM pending_delete WHERE drive_id = ?1 AND remote_id = ?2;"
+    };
+    bind_text(database, statement.get(), 1, drive_id);
+    bind_text(database, statement.get(), 2, remote_id);
+    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
+        throw std::runtime_error(
+            "cannot remove pending deletion: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+}
+
+std::vector<PendingDelete> ItemDatabase::pending_deletes(
+    const std::string& drive_id
+) const {
+    return impl_->invoke([this, drive_id] {
+        return pending_deletes_on_worker(drive_id);
+    });
+}
+
+std::vector<PendingDelete> ItemDatabase::pending_deletes_on_worker(
+    const std::string& drive_id
+) const {
+    sqlite3* database = impl_->database.get();
+    if (database == nullptr) {
+        throw std::runtime_error("state database is not open");
+    }
+    Statement statement{
+        database,
+        "SELECT drive_id, remote_id, expected_etag, remote_path, local_path, "
+        "directory FROM pending_delete WHERE drive_id = ?1 "
+        "ORDER BY length(remote_path), remote_path;"
+    };
+    bind_text(database, statement.get(), 1, drive_id);
+    std::vector<PendingDelete> deletions;
+    while (true) {
+        const int result = sqlite3_step(statement.get());
+        if (result == SQLITE_DONE) {
+            break;
+        }
+        if (result != SQLITE_ROW) {
+            throw std::runtime_error(
+                "cannot read pending deletions: " +
+                std::string{sqlite3_errmsg(database)}
+            );
+        }
+        deletions.push_back({
+            .drive_id = column_text(statement.get(), 0),
+            .remote_id = column_text(statement.get(), 1),
+            .expected_etag = column_text(statement.get(), 2),
+            .remote_path = column_text(statement.get(), 3),
+            .local_path = column_text(statement.get(), 4),
+            .directory = sqlite3_column_int(statement.get(), 5) != 0,
+        });
+    }
+    return deletions;
+}
+
+void ItemDatabase::commit_delete(const PendingDelete& deletion) {
+    impl_->invoke([this, deletion] {
+        commit_delete_on_worker(deletion);
+    });
+}
+
+void ItemDatabase::commit_delete_on_worker(
+    const PendingDelete& deletion
+) {
+    sqlite3* database = impl_->database.get();
+    if (database == nullptr) {
+        throw std::runtime_error("state database is not open");
+    }
+    Transaction transaction{database};
+    Statement remove_items{
+        database,
+        "DELETE FROM item WHERE drive_id = ?1 AND (remote_id = ?2 OR "
+        "remote_path = ?3 OR substr(remote_path, 1, length(?3) + 1) = ?3 || "
+        "'/');"
+    };
+    bind_text(database, remove_items.get(), 1, deletion.drive_id);
+    bind_text(database, remove_items.get(), 2, deletion.remote_id);
+    bind_text(database, remove_items.get(), 3, deletion.remote_path);
+    if (sqlite3_step(remove_items.get()) != SQLITE_DONE) {
+        throw std::runtime_error(
+            "cannot remove deleted item state: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+    Statement remove_journal{
+        database,
+        "DELETE FROM pending_delete WHERE drive_id = ?1 AND remote_id = ?2;"
+    };
+    bind_text(database, remove_journal.get(), 1, deletion.drive_id);
+    bind_text(database, remove_journal.get(), 2, deletion.remote_id);
+    if (sqlite3_step(remove_journal.get()) != SQLITE_DONE ||
+        sqlite3_changes(database) != 1) {
+        throw std::runtime_error(
+            "cannot complete pending deletion journal: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+    transaction.commit();
+}
+
 void ItemDatabase::save_pending_move(PendingMove move) {
     impl_->invoke([this, move = std::move(move)] {
         save_pending_move_on_worker(move);
@@ -2409,6 +2597,20 @@ ClearedState ItemDatabase::clear_on_worker(const std::string& drive_id) {
     cleared.pending_uploads =
         static_cast<std::size_t>(sqlite3_changes(database));
 
+    Statement delete_statement{
+        database,
+        "DELETE FROM pending_delete WHERE drive_id = ?1;"
+    };
+    bind_text(database, delete_statement.get(), 1, drive_id);
+    if (sqlite3_step(delete_statement.get()) != SQLITE_DONE) {
+        throw std::runtime_error(
+            "cannot clear pending deletions: " +
+            std::string{sqlite3_errmsg(database)}
+        );
+    }
+    cleared.pending_deletes =
+        static_cast<std::size_t>(sqlite3_changes(database));
+
     Statement move_statement{
         database,
         "DELETE FROM pending_move WHERE drive_id = ?1;"
@@ -2455,13 +2657,14 @@ ClearedState ItemDatabase::clear_on_worker(const std::string& drive_id) {
     spdlog::warn(
         "Cleared all synchronization state for drive '{}': {} item snapshots, "
         "{} pending downloads, {} partial downloads, {} pending uploads, {} "
-        "pending moves, {} upload suppressions, {} blocked items, saved delta "
-        "cursor {}",
+        "pending deletions, {} pending moves, {} upload suppressions, {} "
+        "blocked items, saved delta cursor {}",
         drive_id,
         cleared.items,
         cleared.pending_downloads,
         cleared.partial_downloads,
         cleared.pending_uploads,
+        cleared.pending_deletes,
         cleared.pending_moves,
         cleared.upload_suppressions,
         cleared.blocked_items,
