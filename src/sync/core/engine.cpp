@@ -5,6 +5,7 @@
 #include "sync/core/item_operation_coordinator.hpp"
 #include "sync/core/plan.hpp"
 #include "sync/core/transfer_order.hpp"
+#include "sync/core/typestate.hpp"
 #include "sync/download/integrity.hpp"
 #include "sync/download/progress.hpp"
 #include "sync/download/recovery.hpp"
@@ -33,8 +34,10 @@
 #include <stop_token>
 #include <stdexcept>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
+#include <variant>
 #include <vector>
 #include <sys/stat.h>
 
@@ -48,6 +51,63 @@ struct ExecutionSummary {
     std::size_t removed{0};
     std::size_t moved{0};
 };
+
+struct LocalMoveTransactionFamily;
+using LocalMoveTransactionState =
+    detail::TransactionState<LocalMoveTransactionFamily>;
+struct LocalMovePreparedState final : LocalMoveTransactionState {};
+struct LocalMoveJournaledState final : LocalMoveTransactionState {};
+struct LocalMoveRecoveredJournalState final : LocalMoveTransactionState {};
+struct LocalMoveStagedState final : LocalMoveTransactionState {};
+struct LocalMoveInstalledState final : LocalMoveTransactionState {};
+
+template <typename State>
+concept LocalMoveState =
+    detail::TransactionStateFor<State, LocalMoveTransactionFamily>;
+
+struct LocalMoveTransactionPayload {
+    storage::PendingMove journal;
+};
+
+template <LocalMoveState State>
+using LocalMoveTransaction = detail::StateTransaction<
+    State,
+    LocalMoveTransactionFamily,
+    LocalMoveTransactionPayload>;
+
+using PreparedLocalMove = LocalMoveTransaction<LocalMovePreparedState>;
+using JournaledLocalMove = LocalMoveTransaction<LocalMoveJournaledState>;
+using RecoveredJournalLocalMove =
+    LocalMoveTransaction<LocalMoveRecoveredJournalState>;
+using StagedLocalMove = LocalMoveTransaction<LocalMoveStagedState>;
+using InstalledLocalMove = LocalMoveTransaction<LocalMoveInstalledState>;
+
+static_assert(std::is_nothrow_move_constructible_v<PreparedLocalMove>);
+static_assert(std::is_nothrow_move_constructible_v<JournaledLocalMove>);
+static_assert(std::is_nothrow_move_constructible_v<StagedLocalMove>);
+static_assert(std::is_nothrow_move_constructible_v<InstalledLocalMove>);
+
+StagedLocalMove stage_local_move(JournaledLocalMove move) noexcept {
+    return detail::transition_transaction<LocalMoveStagedState>(std::move(move)
+    );
+}
+
+StagedLocalMove stage_local_move(RecoveredJournalLocalMove move) noexcept {
+    return detail::transition_transaction<LocalMoveStagedState>(std::move(move)
+    );
+}
+
+InstalledLocalMove install_local_move(JournaledLocalMove move) noexcept {
+    return detail::transition_transaction<LocalMoveInstalledState>(
+        std::move(move)
+    );
+}
+
+InstalledLocalMove install_local_move(StagedLocalMove move) noexcept {
+    return detail::transition_transaction<LocalMoveInstalledState>(
+        std::move(move)
+    );
+}
 
 struct DownloadTask {
     graph::RemoteItem item;
@@ -887,8 +947,11 @@ MoveSummary execute_moves(
                 pending_iterator == pending_moves.end() ?
                     nullptr :
                     &pending_iterator->second;
-            bool journal_saved = saved_pending != nullptr;
-            bool staged_object_may_exist = saved_pending != nullptr;
+            using ActiveStagingMove = std::variant<
+                JournaledLocalMove,
+                RecoveredJournalLocalMove,
+                StagedLocalMove>;
+            std::optional<ActiveStagingMove> move_transaction;
             const auto block = [&](std::string code, std::string message) {
                 block_move(move, std::move(code), std::move(message));
             };
@@ -993,6 +1056,12 @@ MoveSummary execute_moves(
                         );
                         continue;
                     }
+                    move_transaction.emplace(
+                        std::in_place_type<RecoveredJournalLocalMove>,
+                        RecoveredJournalLocalMove{
+                            LocalMoveTransactionPayload{*saved_pending},
+                        }
+                    );
                 } else {
                     std::error_code source_error;
                     const auto source_status =
@@ -1068,21 +1137,31 @@ MoveSummary execute_moves(
                         .source_inode = identity.inode,
                         .directory = move.previous.directory,
                     };
-                    items.save_pending_move(pending);
+                    auto prepared = PreparedLocalMove{
+                        LocalMoveTransactionPayload{pending},
+                    };
+                    items.save_pending_move(prepared.journal);
                     pending_moves.insert_or_assign(
-                        move.item.id,
-                        std::move(pending)
+                        move.item.id, prepared.journal
                     );
-                    journal_saved = true;
+                    move_transaction.emplace(
+                        std::in_place_type<JournaledLocalMove>,
+                        detail::transition_transaction<LocalMoveJournaledState>(
+                            std::move(prepared)
+                        )
+                    );
                 }
 
                 auto staging_operation =
                     operations.acquire_destination(staging);
                 if (!safe_root.rename_no_replace(source, staging)) {
-                    if (!staged_object_may_exist) {
+                    if (move_transaction &&
+                        std::holds_alternative<JournaledLocalMove>(
+                            *move_transaction
+                        )) {
                         items.remove_pending_move(drive_id, move.item.id);
                         pending_moves.erase(move.item.id);
-                        journal_saved = false;
+                        move_transaction.reset();
                     }
                     block(
                         "local_path_conflict",
@@ -1091,7 +1170,23 @@ MoveSummary execute_moves(
                     );
                     continue;
                 }
-                staged_object_may_exist = true;
+                auto staged = std::visit(
+                    [](auto&& transaction) -> StagedLocalMove {
+                        using Transaction =
+                            std::remove_cvref_t<decltype(transaction)>;
+                        if constexpr (std::same_as<
+                                          Transaction,
+                                          StagedLocalMove>) {
+                            return std::move(transaction);
+                        } else {
+                            return stage_local_move(std::move(transaction));
+                        }
+                    },
+                    std::move(*move_transaction)
+                );
+                move_transaction.emplace(
+                    std::in_place_type<StagedLocalMove>, std::move(staged)
+                );
                 safe_root.fsync_directory(source.parent_path());
                 if (move.previous.directory) {
                     completed_directory_moves.push_back({
@@ -1106,19 +1201,25 @@ MoveSummary execute_moves(
                         "' at '" + staging.string() + "'."
                 );
             } catch (const detail::CrossDeviceMoveError& error) {
-                if (journal_saved && !staged_object_may_exist) {
+                if (move_transaction &&
+                    std::holds_alternative<JournaledLocalMove>(*move_transaction
+                    )) {
                     items.remove_pending_move(drive_id, move.item.id);
                     pending_moves.erase(move.item.id);
                 }
                 block("cross_device_move", error.what());
             } catch (const detail::SafePathConflictError& error) {
-                if (journal_saved && !staged_object_may_exist) {
+                if (move_transaction &&
+                    std::holds_alternative<JournaledLocalMove>(*move_transaction
+                    )) {
                     items.remove_pending_move(drive_id, move.item.id);
                     pending_moves.erase(move.item.id);
                 }
                 block("local_path_conflict", error.what());
             } catch (const detail::LocalPathConflictError& error) {
-                if (journal_saved && !staged_object_may_exist) {
+                if (move_transaction &&
+                    std::holds_alternative<JournaledLocalMove>(*move_transaction
+                    )) {
                     items.remove_pending_move(drive_id, move.item.id);
                     pending_moves.erase(move.item.id);
                 }
@@ -1160,7 +1261,51 @@ MoveSummary execute_moves(
                 dependency_source;
         const bool staged_journal =
             pending != nullptr && !pending->staging_path.empty();
-        bool journal_saved = pending != nullptr;
+        using ActiveLocalMove = std::variant<
+            PreparedLocalMove,
+            JournaledLocalMove,
+            StagedLocalMove,
+            InstalledLocalMove>;
+        ActiveLocalMove move_transaction =
+            pending == nullptr ?
+                ActiveLocalMove{std::in_place_type<PreparedLocalMove>} :
+            staged_journal ?
+                ActiveLocalMove{
+                    std::in_place_type<StagedLocalMove>,
+                    StagedLocalMove{
+                        LocalMoveTransactionPayload{*pending},
+                    },
+                } :
+                ActiveLocalMove{
+                    std::in_place_type<JournaledLocalMove>,
+                    JournaledLocalMove{
+                        LocalMoveTransactionPayload{*pending},
+                    },
+                };
+        const auto mark_installed = [&] {
+            auto installed = std::visit(
+                [](auto&& transaction) -> InstalledLocalMove {
+                    using Transaction =
+                        std::remove_cvref_t<decltype(transaction)>;
+                    if constexpr (std::same_as<
+                                      Transaction,
+                                      JournaledLocalMove> ||
+                                  std::same_as<Transaction, StagedLocalMove>) {
+                        return install_local_move(std::move(transaction));
+                    } else if constexpr (std::same_as<
+                                             Transaction,
+                                             InstalledLocalMove>) {
+                        return std::move(transaction);
+                    } else {
+                        throw std::logic_error(
+                            "local move was installed without a journal"
+                        );
+                    }
+                },
+                std::move(move_transaction)
+            );
+            move_transaction.emplace<InstalledLocalMove>(std::move(installed));
+        };
         const auto block = [&](std::string code, std::string message) {
             block_move(move, std::move(code), std::move(message));
         };
@@ -1239,6 +1384,9 @@ MoveSummary execute_moves(
                 pending_destination_matches =
                     identity.device == pending->source_device &&
                     identity.inode == pending->source_inode;
+                if (pending_destination_matches) {
+                    mark_installed();
+                }
             }
             if (!pending_destination_matches && source == destination) {
                 if (!source_exists ||
@@ -1344,7 +1492,9 @@ MoveSummary execute_moves(
                     continue;
                 }
                 if (pending == nullptr) {
-                    items.save_pending_move({
+                    auto& prepared =
+                        std::get<PreparedLocalMove>(move_transaction);
+                    prepared.journal = {
                         .drive_id = drive_id,
                         .remote_id = move.item.id,
                         .source_path = source,
@@ -1353,13 +1503,20 @@ MoveSummary execute_moves(
                         .source_device = source_identity.device,
                         .source_inode = source_identity.inode,
                         .directory = move.previous.directory,
-                    });
-                    journal_saved = true;
+                    };
+                    items.save_pending_move(prepared.journal);
+                    move_transaction.emplace<JournaledLocalMove>(
+                        detail::transition_transaction<LocalMoveJournaledState>(
+                            std::move(prepared)
+                        )
+                    );
                 }
                 if (!safe_root.rename_no_replace(source, destination)) {
-                    if (!staged_journal) {
+                    if (std::holds_alternative<JournaledLocalMove>(
+                            move_transaction
+                        )) {
                         items.remove_pending_move(drive_id, move.item.id);
-                        journal_saved = false;
+                        move_transaction.emplace<PreparedLocalMove>();
                     }
                     block(
                         "local_path_conflict",
@@ -1368,6 +1525,7 @@ MoveSummary execute_moves(
                     );
                     continue;
                 }
+                mark_installed();
                 safe_root.fsync_directory(source.parent_path());
                 if (source.parent_path() != destination.parent_path()) {
                     safe_root.fsync_directory(destination.parent_path());
@@ -1408,17 +1566,17 @@ MoveSummary execute_moves(
             state.local_device = identity.device;
             state.local_inode = identity.inode;
         } catch (const detail::CrossDeviceMoveError& error) {
-            if (journal_saved && !staged_journal) {
+            if (std::holds_alternative<JournaledLocalMove>(move_transaction)) {
                 items.remove_pending_move(drive_id, move.item.id);
             }
             block("cross_device_move", error.what());
         } catch (const detail::SafePathConflictError& error) {
-            if (journal_saved && !staged_journal) {
+            if (std::holds_alternative<JournaledLocalMove>(move_transaction)) {
                 items.remove_pending_move(drive_id, move.item.id);
             }
             block("local_path_conflict", error.what());
         } catch (const detail::LocalPathConflictError& error) {
-            if (journal_saved && !staged_journal) {
+            if (std::holds_alternative<JournaledLocalMove>(move_transaction)) {
                 items.remove_pending_move(drive_id, move.item.id);
             }
             block("local_path_conflict", error.what());

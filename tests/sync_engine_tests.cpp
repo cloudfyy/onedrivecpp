@@ -2951,6 +2951,84 @@ int test_remote_moves() {
         return fail("remote directory name exchange was not staged safely");
     }
 
+    const auto journaled_staging_root =
+        temporary.path() / "journaled-staging-move-cycle";
+    std::filesystem::create_directories(journaled_staging_root);
+    {
+        std::ofstream first{journaled_staging_root / "A.txt"};
+        first << "aaaa";
+        std::ofstream second{journaled_staging_root / "B.txt"};
+        second << "bbbb";
+    }
+    const auto journaled_staging_path =
+        journaled_staging_root / ".A.txt.onedrive-move-journaled";
+    struct stat journaled_source_identity{};
+    if (::stat(
+            (journaled_staging_root / "A.txt").c_str(),
+            &journaled_source_identity
+        ) == -1) {
+        return fail("cannot inspect journaled staging source identity");
+    }
+    FakeGraphClient journaled_staging_graph;
+    journaled_staging_graph.changes = {
+        file("journaled-staging-first", "B.txt", 4),
+        file("journaled-staging-second", "A.txt", 4),
+    };
+    FakeItemStore journaled_staging_items;
+    journaled_staging_items.saved_delta_link = "saved";
+    journaled_staging_items.items.emplace(
+        "journaled-staging-first",
+        tracked_item(journaled_staging_root, "journaled-staging-first", "A.txt")
+    );
+    journaled_staging_items.items.emplace(
+        "journaled-staging-second",
+        tracked_item(
+            journaled_staging_root, "journaled-staging-second", "B.txt"
+        )
+    );
+    journaled_staging_items.pending_moves_by_id.emplace(
+        "journaled-staging-first",
+        onedrive::storage::PendingMove{
+            .drive_id = "me",
+            .remote_id = "journaled-staging-first",
+            .source_path = journaled_staging_root / "A.txt",
+            .destination_path = journaled_staging_root / "B.txt",
+            .staging_path = journaled_staging_path,
+            .source_device =
+                static_cast<std::uint64_t>(journaled_source_identity.st_dev),
+            .source_inode =
+                static_cast<std::uint64_t>(journaled_source_identity.st_ino),
+        }
+    );
+    FakeMetrics journaled_staging_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(journaled_staging_root, false),
+            journaled_staging_graph,
+            journaled_staging_items,
+            journaled_staging_metrics
+        }
+                .synchronize() != 0 ||
+        std::filesystem::exists(journaled_staging_path) ||
+        !journaled_staging_items.pending_moves_by_id.empty() ||
+        !journaled_staging_metrics.last_success) {
+        return fail("journaled staging move was not recovered");
+    }
+    {
+        std::ifstream first{journaled_staging_root / "A.txt"};
+        std::ifstream second{journaled_staging_root / "B.txt"};
+        const std::string first_content{
+            std::istreambuf_iterator<char>{first},
+            std::istreambuf_iterator<char>{}
+        };
+        const std::string second_content{
+            std::istreambuf_iterator<char>{second},
+            std::istreambuf_iterator<char>{}
+        };
+        if (first_content != "bbbb" || second_content != "aaaa") {
+            return fail("journaled staging recovery lost local content");
+        }
+    }
+
     const auto staged_recovery_root =
         temporary.path() / "partially-staged-move-cycle";
     std::filesystem::create_directories(staged_recovery_root);

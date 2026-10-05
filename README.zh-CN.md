@@ -85,6 +85,9 @@ SQLite ItemStore 拥有专用数据库线程。下载、监控和未来上传工
 准备、journal 已持久化和远端已提交阶段，并且只有 journaled 上传可以持久化
 Graph 会话 checkpoint。公共模板不包含 Graph、SQLite 或文件系统策略：Typestate
 负责约束进程内转换，SQLite 仍然是持久化恢复的权威来源。
+本地移动恢复也复用该核心，表达 prepared、journaled、恢复 journal、staged 和
+installed 阶段。只有类型状态能够证明尚未生成 staging 或目标对象时，失败路径
+才会删除 journal；后续阶段始终保留恢复证据供重启使用。
 
 目录与参考项目中的 `main/config/curlEngine/onedrive/sync/itemdb/monitor`
 职责相对应：

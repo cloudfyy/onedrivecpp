@@ -95,6 +95,10 @@ prepared, journaled, and remote-committed phases, and only the journaled upload
 can persist Graph session checkpoints. The shared template contains no Graph,
 SQLite, or filesystem policy: typestates constrain in-process transitions while
 SQLite remains the durable recovery authority.
+Local move recovery uses the same core for prepared, journaled, recovered-
+journal, staged, and installed phases. A journal is removed on failure only
+while its typed state proves that no staging or destination object was
+installed; later phases retain recovery evidence across restarts.
 
 The directories correspond to the responsibilities of
 `main/config/curlEngine/onedrive/sync/itemdb/monitor` in the reference project:
