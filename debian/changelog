@@ -1,3 +1,14 @@
+onedrive-cpp (0.7.22-1~ubuntu24.04) noble; urgency=medium
+
+  * Create missing remote parent directories from shallowest to deepest
+    before moving a tracked local item into a newly created local hierarchy.
+  * Preserve journaled recovery across parent creation and conditional Graph
+    moves, then rescan moved files for simultaneous content changes.
+  * Cover dry-run planning, selective synchronization, directory descendant
+    remapping, tracked parents, and retry after remote move conflicts.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Mon, 05 Oct 2026 07:35:31 +0000
+
 onedrive-cpp (0.7.21-1~ubuntu24.04) noble; urgency=medium
 
   * Reconcile definite upload-recovery conflicts through the remote delta
