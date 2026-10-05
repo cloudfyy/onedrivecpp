@@ -1,5 +1,7 @@
 #include "onedrive/auth/device_auth.hpp"
 
+#include "detail/uri.hpp"
+
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
@@ -44,37 +46,15 @@ AuthError invalid_configuration_error() {
     };
 }
 
-std::string percent_encode(std::string_view value) {
-    constexpr std::string_view hex{"0123456789ABCDEF"};
-    std::string encoded;
-    encoded.reserve(value.size());
-    for (const char raw_character : value) {
-        const auto character = static_cast<unsigned char>(raw_character);
-        const bool unreserved =
-            (character >= 'A' && character <= 'Z') ||
-            (character >= 'a' && character <= 'z') ||
-            (character >= '0' && character <= '9') || character == '-' ||
-            character == '_' || character == '.' || character == '~';
-        if (unreserved) {
-            encoded.push_back(static_cast<char>(character));
-        } else {
-            encoded.push_back('%');
-            encoded.push_back(hex[character >> 4U]);
-            encoded.push_back(hex[character & 0x0FU]);
-        }
-    }
-    return encoded;
-}
-
 std::string encode_form(const FormValues& values) {
     std::string body;
     for (const auto& [name, value] : values) {
         if (!body.empty()) {
             body.push_back('&');
         }
-        body += percent_encode(name);
+        body += onedrive::detail::percent_encode_uri_component(name);
         body.push_back('=');
-        body += percent_encode(value);
+        body += onedrive::detail::percent_encode_uri_component(value);
     }
     return body;
 }

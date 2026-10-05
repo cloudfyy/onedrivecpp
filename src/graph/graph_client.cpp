@@ -3,6 +3,7 @@
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
 #include "detail/ascii.hpp"
+#include "detail/uri.hpp"
 #include "onedrive/http/download_rate_limiter.hpp"
 #include "onedrive/http/http_client.hpp"
 #include "onedrive/remote_time.hpp"
@@ -38,28 +39,7 @@ constexpr std::uint64_t upload_chunk_quantum =
 constexpr std::uint64_t maximum_upload_chunk_size =
     std::uint64_t{60} * 1024U * 1024U;
 
-// Percent-encodes one URI component per RFC 3986, including path separators.
-std::string percent_encode(std::string_view value) {
-    constexpr std::string_view hex{"0123456789ABCDEF"};
-    std::string encoded;
-    encoded.reserve(value.size());
-    for (const char raw_character : value) {
-        const auto character = static_cast<unsigned char>(raw_character);
-        const bool unreserved =
-            (character >= 'A' && character <= 'Z') ||
-            (character >= 'a' && character <= 'z') ||
-            (character >= '0' && character <= '9') || character == '-' ||
-            character == '_' || character == '.' || character == '~';
-        if (unreserved) {
-            encoded.push_back(static_cast<char>(character));
-        } else {
-            encoded.push_back('%');
-            encoded.push_back(hex[character >> 4U]);
-            encoded.push_back(hex[character & 0x0FU]);
-        }
-    }
-    return encoded;
-}
+using onedrive::detail::percent_encode_uri_component;
 
 std::string percent_encode_remote_path(std::string_view path) {
     if (path.empty() || path.starts_with('/') || path.ends_with('/')) {
@@ -86,7 +66,7 @@ std::string percent_encode_remote_path(std::string_view path) {
         if (!encoded.empty()) {
             encoded.push_back('/');
         }
-        encoded += percent_encode(segment);
+        encoded += percent_encode_uri_component(segment);
         if (separator == std::string_view::npos) {
             break;
         }
@@ -1033,7 +1013,8 @@ account::DriveIdentity fetch_drive_identity(
     const auto drive_url =
         options.drive_id == "me" ?
             options.endpoint + "/me/drive?$select=id,name" :
-            options.endpoint + "/drives/" + percent_encode(options.drive_id) +
+            options.endpoint + "/drives/" +
+                percent_encode_uri_component(options.drive_id) +
                 "?$select=id,name";
     const auto drive = request_json(drive_url, "drive identity");
 
@@ -1172,7 +1153,8 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
     std::string next_url =
         options_.drive_id == "me" ?
             options_.endpoint + "/me/drive/root/children" :
-            options_.endpoint + "/drives/" + percent_encode(options_.drive_id) +
+            options_.endpoint + "/drives/" +
+                percent_encode_uri_component(options_.drive_id) +
                 "/root/children";
     const std::string allowed_url_prefix = options_.endpoint + "/";
     std::unordered_set<std::string> visited_urls;
@@ -1309,7 +1291,8 @@ RemoteItem MicrosoftGraphClient::item_by_path(
     const std::string url =
         (options_.drive_id == "me" ?
             options_.endpoint + "/me/drive/root:/" :
-            options_.endpoint + "/drives/" + percent_encode(options_.drive_id) +
+            options_.endpoint + "/drives/" +
+                percent_encode_uri_component(options_.drive_id) +
                 "/root:/") +
         encoded_path +
         "?$select=id,name,eTag,cTag,size,fileSystemInfo,parentReference,file,folder,"
@@ -1377,7 +1360,7 @@ RemoteItem MicrosoftGraphClient::create_directory(
         options_.drive_id == "me" ?
             options_.endpoint + "/me/drive" :
             options_.endpoint + "/drives/" +
-                percent_encode(options_.drive_id);
+                percent_encode_uri_component(options_.drive_id);
     const auto parent = separator == std::string::npos ?
         std::string{} :
         remote_path.substr(0, separator);
@@ -1471,13 +1454,14 @@ void MicrosoftGraphClient::delete_item(
         options_.drive_id == "me" ?
             options_.endpoint + "/me/drive" :
             options_.endpoint + "/drives/" +
-                percent_encode(options_.drive_id);
+                percent_encode_uri_component(options_.drive_id);
     const auto& transfer = options_.upload_transport.transfer;
     const auto response = perform_with_retries(
         [&] {
             return transport_->perform(http::HttpRequest{
                 .method = http::HttpMethod::delete_,
-                .url = drive_prefix + "/items/" + percent_encode(remote_id),
+                .url = drive_prefix + "/items/" +
+                    percent_encode_uri_component(remote_id),
                 .headers = {
                     "Accept: application/json",
                     "Authorization: Bearer " + access_token(),
@@ -1555,7 +1539,7 @@ RemoteItem MicrosoftGraphClient::move_item(
         options_.drive_id == "me" ?
             options_.endpoint + "/me/drive" :
             options_.endpoint + "/drives/" +
-                percent_encode(options_.drive_id);
+                percent_encode_uri_component(options_.drive_id);
     const auto body = Json{
         {"name", name},
         {"parentReference", {
@@ -1569,7 +1553,8 @@ RemoteItem MicrosoftGraphClient::move_item(
         [&] {
             return transport_->perform(http::HttpRequest{
                 .method = http::HttpMethod::patch,
-                .url = drive_prefix + "/items/" + percent_encode(remote_id),
+                .url = drive_prefix + "/items/" +
+                    percent_encode_uri_component(remote_id),
                 .headers = {
                     "Accept: application/json",
                     "Authorization: Bearer " + access_token(),
@@ -1656,7 +1641,7 @@ RemoteItem MicrosoftGraphClient::upload_file(
         options_.drive_id == "me" ?
             options_.endpoint + "/me/drive" :
             options_.endpoint + "/drives/" +
-                percent_encode(options_.drive_id);
+                percent_encode_uri_component(options_.drive_id);
     const auto& upload_transport = options_.upload_transport;
     const auto& transfer = upload_transport.transfer;
     const auto maximum_send_speed =
@@ -1711,7 +1696,8 @@ RemoteItem MicrosoftGraphClient::upload_file(
         }
 
         const std::string url = remote_id ?
-            drive_prefix + "/items/" + percent_encode(*remote_id) +
+            drive_prefix + "/items/" +
+                percent_encode_uri_component(*remote_id) +
                 "/content" :
             drive_prefix + "/root:/" +
                 percent_encode_remote_path(remote_path) +
@@ -1792,7 +1778,8 @@ RemoteItem MicrosoftGraphClient::upload_file(
     };
     const auto create_session = [&] {
         const std::string session_url = remote_id ?
-            drive_prefix + "/items/" + percent_encode(*remote_id) +
+            drive_prefix + "/items/" +
+                percent_encode_uri_component(*remote_id) +
                 "/createUploadSession" :
             drive_prefix + "/root:/" + encoded_path +
                 ":/createUploadSession";
@@ -2109,7 +2096,8 @@ DeltaResult MicrosoftGraphClient::list_delta(
         next_url =
             options_.drive_id == "me" ?
                 options_.endpoint + "/me/drive/root/delta" :
-                options_.endpoint + "/drives/" + percent_encode(options_.drive_id) +
+                options_.endpoint + "/drives/" +
+                    percent_encode_uri_component(options_.drive_id) +
                     "/root/delta";
         spdlog::info("Starting initial Microsoft Graph delta query");
     }
@@ -2370,10 +2358,13 @@ void MicrosoftGraphClient::download_file(
     }
     const std::string content_url =
         options_.drive_id == "me" ?
-            options_.endpoint + "/me/drive/items/" + percent_encode(remote_id) +
+            options_.endpoint + "/me/drive/items/" +
+                percent_encode_uri_component(remote_id) +
                 "/content" :
-            options_.endpoint + "/drives/" + percent_encode(options_.drive_id) +
-                "/items/" + percent_encode(remote_id) + "/content";
+            options_.endpoint + "/drives/" +
+                percent_encode_uri_component(options_.drive_id) +
+                "/items/" + percent_encode_uri_component(remote_id) +
+                "/content";
 
     const auto request_download_url = [&]() {
         const auto redirect = perform_with_retries(
