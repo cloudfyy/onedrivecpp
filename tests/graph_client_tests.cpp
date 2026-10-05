@@ -662,6 +662,55 @@ int test_item_deletion() {
     return EXIT_SUCCESS;
 }
 
+int test_item_move() {
+    const auto moved_json =
+        R"json({"id":"file/id","name":"renamed.txt","eTag":"new-etag","size":7,"fileSystemInfo":{"lastModifiedDateTime":"2026-10-05T02:00:00Z"},"parentReference":{"id":"parent-id","path":"/drive/root:/Target"},"file":{}})json";
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"token_type":"Bearer","expires_in":3600,)"
+                    R"("access_token":"access-secret"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body = moved_json,
+            },
+        }
+    );
+    auto* transport_pointer = transport.get();
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(
+                std::string{"existing-refresh"}
+            )
+        ),
+        auth_options(),
+        {
+            .drive_id = "drive/id",
+            .endpoint = "https://graph.example.test/v1.0",
+        },
+    };
+    const auto moved =
+        client.move_item("file/id", "old-etag", "Target/renamed.txt");
+    const auto& request = transport_pointer->requests[1];
+    if (moved.id != "file/id" ||
+        moved.remote_path != "Target/renamed.txt" ||
+        request.method != onedrive::http::HttpMethod::patch ||
+        request.url !=
+            "https://graph.example.test/v1.0/drives/drive%2Fid/items/file%2Fid" ||
+        !has_header(request, "If-Match: old-etag") ||
+        !request.body.contains(R"("name":"renamed.txt")") ||
+        !request.body.contains(
+            R"("path":"/drive/root:/Target")"
+        )) {
+        return fail("Graph item move request was invalid");
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_upload_sessions() {
     constexpr std::size_t chunk_size = 320U * 1024U;
     constexpr std::size_t total_size = chunk_size + 7U;
@@ -3097,6 +3146,9 @@ int main() {
         return result;
     }
     if (const int result = test_item_deletion(); result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_item_move(); result != EXIT_SUCCESS) {
         return result;
     }
     if (const int result = test_upload_sessions();

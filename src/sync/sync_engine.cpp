@@ -1988,6 +1988,13 @@ int SyncEngine::synchronize() const {
                 private_permissions
             );
             if (config_->upload) {
+                detail::recover_pending_remote_moves(
+                    *safe_root,
+                    config_->drive_id,
+                    graph_,
+                    items_,
+                    console
+                );
                 detail::recover_pending_deletes(
                     config_->drive_id,
                     graph_,
@@ -2200,6 +2207,13 @@ int SyncEngine::synchronize() const {
                     "Local upload plan:",
                     {
                         {
+                            .label = "move remote items:",
+                            .key = "move_remote_items",
+                            .value = std::to_string(
+                                upload_summary.planned_moves
+                            ),
+                        },
+                        {
                             .label = "delete remote items:",
                             .key = "delete_remote_items",
                             .value = std::to_string(
@@ -2299,6 +2313,11 @@ int SyncEngine::synchronize() const {
                         .label = "local removals:",
                         .key = "local_removals",
                         .value = std::to_string(summary.removed),
+                    },
+                    {
+                        .label = "remote moves:",
+                        .key = "remote_moves",
+                        .value = std::to_string(upload_summary.moved),
                     },
                     {
                         .label = "remote removals:",

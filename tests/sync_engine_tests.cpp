@@ -271,6 +271,29 @@ public:
         }
     }
 
+    [[nodiscard]] onedrive::graph::RemoteItem move_item(
+        const std::string& remote_id,
+        const std::string&,
+        const std::string& destination_path
+    ) const {
+        moved_remote_items.emplace_back(remote_id, destination_path);
+        if (move_conflict) {
+            throw onedrive::graph::UploadConflictError{
+                "simulated remote move conflict"
+            };
+        }
+        return {
+            .id = remote_id,
+            .name =
+                std::filesystem::path{destination_path}.filename().string(),
+            .etag = "moved-etag",
+            .parent_id = "moved-parent",
+            .remote_path = destination_path,
+            .last_modified = "2026-10-05T02:00:00Z",
+            .directory = moved_item_directory,
+        };
+    }
+
     std::vector<onedrive::graph::RemoteItem> changes;
     std::optional<onedrive::graph::RemoteItem> lookup_item;
     std::unordered_map<std::string, std::string> contents;
@@ -284,6 +307,8 @@ public:
     bool upload_conflict{false};
     bool directory_conflict{false};
     bool delete_conflict{false};
+    bool move_conflict{false};
+    bool moved_item_directory{false};
     bool fail_after_upload_checkpoint{false};
     std::chrono::milliseconds download_delay{0};
     int downloads_started_before_failure{0};
@@ -295,6 +320,8 @@ public:
     mutable std::vector<std::string> uploaded_paths;
     mutable std::vector<std::string> created_directory_paths;
     mutable std::vector<std::pair<std::string, std::string>> deleted_items;
+    mutable std::vector<std::pair<std::string, std::string>>
+        moved_remote_items;
     mutable std::vector<
         std::optional<onedrive::graph::UploadSession>
     > upload_sessions;
@@ -500,6 +527,74 @@ public:
         pending_deletes_by_id.erase(deletion.remote_id);
     }
 
+    void save_pending_remote_move(
+        onedrive::storage::PendingRemoteMove move
+    ) {
+        const std::scoped_lock lock{mutex};
+        pending_remote_moves_by_id.insert_or_assign(
+            move.remote_id,
+            std::move(move)
+        );
+    }
+
+    void remove_pending_remote_move(
+        const std::string&,
+        const std::string& remote_id
+    ) {
+        const std::scoped_lock lock{mutex};
+        pending_remote_moves_by_id.erase(remote_id);
+    }
+
+    [[nodiscard]] std::vector<onedrive::storage::PendingRemoteMove>
+    pending_remote_moves(const std::string&) const {
+        const std::scoped_lock lock{mutex};
+        std::vector<onedrive::storage::PendingRemoteMove> result;
+        for (const auto& [remote_id, move] :
+             pending_remote_moves_by_id) {
+            static_cast<void>(remote_id);
+            result.push_back(move);
+        }
+        return result;
+    }
+
+    void commit_remote_move(
+        const onedrive::storage::PendingRemoteMove& move,
+        onedrive::storage::ItemState item
+    ) {
+        const std::scoped_lock lock{mutex};
+        if (fail_commit_remote_move) {
+            throw std::runtime_error{
+                "simulated remote move commit failure"
+            };
+        }
+        if (move.directory) {
+            for (auto& [remote_id, state] : items) {
+                if (remote_id == move.remote_id) {
+                    continue;
+                }
+                const auto relative_remote =
+                    std::filesystem::path{state.remote_path}.
+                        lexically_relative(move.source_remote_path);
+                const auto relative_local =
+                    state.local_path.lexically_relative(
+                        move.source_local_path
+                    );
+                if (!relative_remote.empty() &&
+                    !relative_remote.native().starts_with("..") &&
+                    relative_remote == relative_local) {
+                    state.remote_path =
+                        (std::filesystem::path{
+                             move.destination_remote_path
+                         } / relative_remote).generic_string();
+                    state.local_path =
+                        move.destination_local_path / relative_local;
+                }
+            }
+        }
+        items.insert_or_assign(item.remote_id, std::move(item));
+        pending_remote_moves_by_id.erase(move.remote_id);
+    }
+
     void save_pending_move(onedrive::storage::PendingMove move) {
         const std::scoped_lock lock{mutex};
         pending_moves_by_id.insert_or_assign(
@@ -614,6 +709,8 @@ public:
         pending_uploads_by_path;
     std::unordered_map<std::string, onedrive::storage::PendingDelete>
         pending_deletes_by_id;
+    std::unordered_map<std::string, onedrive::storage::PendingRemoteMove>
+        pending_remote_moves_by_id;
     std::unordered_map<std::string, onedrive::storage::PendingMove>
         pending_moves_by_id;
     std::unordered_map<std::string, onedrive::storage::UploadSuppression>
@@ -627,6 +724,7 @@ public:
     bool fail_upsert{false};
     bool fail_commit_upload{false};
     bool fail_commit_delete{false};
+    bool fail_commit_remote_move{false};
     bool fail_upload_checkpoint_save{false};
     bool fail_apply_delta{false};
     mutable std::mutex mutex;
@@ -4021,6 +4119,290 @@ int test_local_deletions() {
     return EXIT_SUCCESS;
 }
 
+int test_local_move_uploads() {
+    onedrive::test::TemporaryDirectory temporary;
+    const auto root = temporary.path() / "local-moves";
+    std::filesystem::create_directories(root);
+    {
+        std::ofstream output{root / "old.txt"};
+        output << "data";
+    }
+    FakeItemStore items;
+    items.saved_delta_link = "saved";
+    items.items.emplace(
+        "moved-file",
+        tracked_item(root, "moved-file", "old.txt")
+    );
+    FakeGraphClient graph;
+    FakeMetrics metrics;
+    auto config = config_for(root, false);
+    config.upload = true;
+    static_cast<void>(onedrive::sync::SyncEngine{
+        config,
+        graph,
+        items,
+        metrics
+    }.synchronize());
+    const auto before = items.find("me", "moved-file");
+    if (!before || before->local_device == 0 ||
+        before->local_inode == 0) {
+        return fail("local move baseline identity was not persisted");
+    }
+
+    std::filesystem::rename(root / "old.txt", root / "renamed.txt");
+    static_cast<void>(onedrive::sync::SyncEngine{
+        config,
+        graph,
+        items,
+        metrics
+    }.synchronize());
+    const auto moved = items.find("me", "moved-file");
+    if (graph.moved_remote_items !=
+            std::vector<std::pair<std::string, std::string>>{
+                {"moved-file", "renamed.txt"},
+            } ||
+        !graph.deleted_items.empty() || graph.upload_count != 0 ||
+        !moved || moved->remote_path != "renamed.txt" ||
+        moved->local_path != root / "renamed.txt" ||
+        moved->local_device != before->local_device ||
+        moved->local_inode != before->local_inode ||
+        !items.pending_remote_moves_by_id.empty()) {
+        return fail("local file rename was not applied as a remote move");
+    }
+
+    std::filesystem::rename(
+        root / "renamed.txt",
+        root / "dry-run.txt"
+    );
+    auto dry_config = config;
+    dry_config.dry_run = true;
+    static_cast<void>(onedrive::sync::SyncEngine{
+        dry_config,
+        graph,
+        items,
+        metrics
+    }.synchronize());
+    if (graph.moved_remote_items.size() != 1 ||
+        !items.pending_remote_moves_by_id.empty() ||
+        items.find("me", "moved-file")->remote_path != "renamed.txt") {
+        return fail("local move dry run changed remote or persisted state");
+    }
+
+    {
+        std::ofstream output{
+            root / "dry-run.txt",
+            std::ios::app
+        };
+        output << "-changed";
+    }
+    static_cast<void>(onedrive::sync::SyncEngine{
+        config,
+        graph,
+        items,
+        metrics
+    }.synchronize());
+    if (graph.moved_remote_items.size() != 2 ||
+        graph.moved_remote_items.back() !=
+            std::pair<std::string, std::string>{
+                "moved-file",
+                "dry-run.txt",
+            } ||
+        graph.upload_count != 1 ||
+        graph.uploaded_paths !=
+            std::vector<std::string>{"dry-run.txt"}) {
+        return fail("moved and modified file was not uploaded after move");
+    }
+
+    const auto recovery_root = temporary.path() / "move-recovery";
+    std::filesystem::create_directories(recovery_root);
+    {
+        std::ofstream output{recovery_root / "before.txt"};
+        output << "data";
+    }
+    FakeItemStore recovery_items;
+    recovery_items.saved_delta_link = "saved";
+    recovery_items.items.emplace(
+        "recovery-move",
+        tracked_item(
+            recovery_root,
+            "recovery-move",
+            "before.txt"
+        )
+    );
+    FakeGraphClient recovery_graph;
+    FakeMetrics recovery_metrics;
+    auto recovery_config = config_for(recovery_root, false);
+    recovery_config.upload = true;
+    static_cast<void>(onedrive::sync::SyncEngine{
+        recovery_config,
+        recovery_graph,
+        recovery_items,
+        recovery_metrics
+    }.synchronize());
+    std::filesystem::rename(
+        recovery_root / "before.txt",
+        recovery_root / "after.txt"
+    );
+    recovery_items.fail_commit_remote_move = true;
+    try {
+        static_cast<void>(onedrive::sync::SyncEngine{
+            recovery_config,
+            recovery_graph,
+            recovery_items,
+            recovery_metrics
+        }.synchronize());
+        return fail("remote move commit failure was accepted");
+    } catch (const std::runtime_error&) {
+    }
+    if (recovery_items.pending_remote_moves_by_id.size() != 1) {
+        return fail("remote move commit failure lost its journal");
+    }
+    recovery_items.fail_commit_remote_move = false;
+    recovery_graph.move_conflict = true;
+    recovery_graph.lookup_item = onedrive::graph::RemoteItem{
+        .id = "recovery-move",
+        .name = "after.txt",
+        .etag = "recovered-etag",
+        .parent_id = "root",
+        .remote_path = "after.txt",
+        .last_modified = "2026-10-05T02:00:00Z",
+    };
+    static_cast<void>(onedrive::sync::SyncEngine{
+        recovery_config,
+        recovery_graph,
+        recovery_items,
+        recovery_metrics
+    }.synchronize());
+    const auto recovered =
+        recovery_items.find("me", "recovery-move");
+    if (!recovered || recovered->remote_path != "after.txt" ||
+        !recovery_items.pending_remote_moves_by_id.empty()) {
+        return fail("pending remote move was not recovered");
+    }
+
+    const auto directory_root = temporary.path() / "directory-move";
+    std::filesystem::create_directories(directory_root / "Old");
+    {
+        std::ofstream output{directory_root / "Old" / "child.txt"};
+        output << "data";
+    }
+    FakeItemStore directory_items;
+    directory_items.saved_delta_link = "saved";
+    directory_items.items.emplace(
+        "move-directory",
+        tracked_item(
+            directory_root,
+            "move-directory",
+            "Old",
+            true
+        )
+    );
+    directory_items.items.emplace(
+        "move-directory-child",
+        tracked_item(
+            directory_root,
+            "move-directory-child",
+            "Old/child.txt"
+        )
+    );
+    FakeGraphClient directory_graph;
+    directory_graph.moved_item_directory = true;
+    FakeMetrics directory_metrics;
+    auto directory_config = config_for(directory_root, false);
+    directory_config.upload = true;
+    static_cast<void>(onedrive::sync::SyncEngine{
+        directory_config,
+        directory_graph,
+        directory_items,
+        directory_metrics
+    }.synchronize());
+    std::filesystem::rename(
+        directory_root / "Old",
+        directory_root / "New"
+    );
+    static_cast<void>(onedrive::sync::SyncEngine{
+        directory_config,
+        directory_graph,
+        directory_items,
+        directory_metrics
+    }.synchronize());
+    const auto moved_directory =
+        directory_items.find("me", "move-directory");
+    const auto moved_child =
+        directory_items.find("me", "move-directory-child");
+    if (directory_graph.moved_remote_items !=
+            std::vector<std::pair<std::string, std::string>>{
+                {"move-directory", "New"},
+            } ||
+        !directory_graph.deleted_items.empty() ||
+        !moved_directory || moved_directory->remote_path != "New" ||
+        !moved_child || moved_child->remote_path != "New/child.txt" ||
+        moved_child->local_path !=
+            directory_root / "New" / "child.txt") {
+        return fail(
+            "local directory rename did not remap remote descendants"
+        );
+    }
+
+    const auto selective_root = temporary.path() / "selective-move";
+    std::filesystem::create_directories(selective_root / "Included");
+    std::filesystem::create_directories(selective_root / "Excluded");
+    {
+        std::ofstream output{
+            selective_root / "Included" / "retained.txt"
+        };
+        output << "data";
+    }
+    const auto sync_list = temporary.path() / "move-sync-list";
+    {
+        std::ofstream output{sync_list};
+        output << "/Included/\n";
+    }
+    FakeItemStore selective_items;
+    selective_items.saved_delta_link = "saved";
+    selective_items.items.emplace(
+        "selective-move",
+        tracked_item(
+            selective_root,
+            "selective-move",
+            "Included/retained.txt"
+        )
+    );
+    FakeGraphClient selective_graph;
+    FakeMetrics selective_metrics;
+    auto selective_config = config_for(selective_root, false);
+    selective_config.upload = true;
+    selective_config.sync_list = sync_list;
+    selective_items.saved_sync_filter_fingerprint =
+        onedrive::sync::detail::SyncList::load(
+            sync_list,
+            selective_config.sync_root_files
+        ).fingerprint();
+    static_cast<void>(onedrive::sync::SyncEngine{
+        selective_config,
+        selective_graph,
+        selective_items,
+        selective_metrics
+    }.synchronize());
+    std::filesystem::rename(
+        selective_root / "Included" / "retained.txt",
+        selective_root / "Excluded" / "retained.txt"
+    );
+    static_cast<void>(onedrive::sync::SyncEngine{
+        selective_config,
+        selective_graph,
+        selective_items,
+        selective_metrics
+    }.synchronize());
+    if (!selective_graph.moved_remote_items.empty() ||
+        !selective_graph.deleted_items.empty() ||
+        selective_graph.upload_count != 0 ||
+        !selective_items.find("me", "selective-move")) {
+        return fail("selective sync boundary move changed remote state");
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_local_directory_uploads() {
     onedrive::test::TemporaryDirectory temporary;
     const auto root = temporary.path() / "directory-uploads";
@@ -4594,6 +4976,10 @@ int main() {
         return result;
     }
     if (const int result = test_local_deletions();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_local_move_uploads();
         result != EXIT_SUCCESS) {
         return result;
     }

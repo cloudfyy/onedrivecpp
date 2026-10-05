@@ -108,6 +108,19 @@ struct PendingDelete {
     bool directory{false};
 };
 
+struct PendingRemoteMove {
+    std::string drive_id;
+    std::string remote_id;
+    std::string expected_etag;
+    std::string source_remote_path;
+    std::string destination_remote_path;
+    std::filesystem::path source_local_path;
+    std::filesystem::path destination_local_path;
+    std::uint64_t local_device{0};
+    std::uint64_t local_inode{0};
+    bool directory{false};
+};
+
 struct PendingMove {
     std::string drive_id;
     std::string remote_id;
@@ -125,6 +138,7 @@ struct ClearedState {
     std::size_t partial_downloads{0};
     std::size_t pending_uploads{0};
     std::size_t pending_deletes{0};
+    std::size_t pending_remote_moves{0};
     std::size_t pending_moves{0};
     std::size_t upload_suppressions{0};
     std::size_t blocked_items{0};
@@ -148,6 +162,10 @@ PRO_DEF_MEM_DISPATCH(StoreSavePendingDeleteDispatch, save_pending_delete);
 PRO_DEF_MEM_DISPATCH(StoreRemovePendingDeleteDispatch, remove_pending_delete);
 PRO_DEF_MEM_DISPATCH(StorePendingDeletesDispatch, pending_deletes);
 PRO_DEF_MEM_DISPATCH(StoreCommitDeleteDispatch, commit_delete);
+PRO_DEF_MEM_DISPATCH(StoreSavePendingRemoteMoveDispatch, save_pending_remote_move);
+PRO_DEF_MEM_DISPATCH(StoreRemovePendingRemoteMoveDispatch, remove_pending_remote_move);
+PRO_DEF_MEM_DISPATCH(StorePendingRemoteMovesDispatch, pending_remote_moves);
+PRO_DEF_MEM_DISPATCH(StoreCommitRemoteMoveDispatch, commit_remote_move);
 PRO_DEF_MEM_DISPATCH(StoreSavePendingMoveDispatch, save_pending_move);
 PRO_DEF_MEM_DISPATCH(StoreRemovePendingMoveDispatch, remove_pending_move);
 PRO_DEF_MEM_DISPATCH(StorePendingMovesDispatch, pending_moves);
@@ -221,6 +239,22 @@ struct ItemStoreFacade : pro::facade_builder
     ::add_convention<
         StoreCommitDeleteDispatch,
         void(const PendingDelete&)
+    >
+    ::add_convention<
+        StoreSavePendingRemoteMoveDispatch,
+        void(PendingRemoteMove)
+    >
+    ::add_convention<
+        StoreRemovePendingRemoteMoveDispatch,
+        void(const std::string&, const std::string&)
+    >
+    ::add_convention<
+        StorePendingRemoteMovesDispatch,
+        std::vector<PendingRemoteMove>(const std::string&) const
+    >
+    ::add_convention<
+        StoreCommitRemoteMoveDispatch,
+        void(const PendingRemoteMove&, ItemState)
     >
     ::add_convention<StoreSavePendingMoveDispatch, void(PendingMove)>
     ::add_convention<
@@ -363,6 +397,30 @@ public:
 
     void commit_delete(const PendingDelete& deletion) {
         implementation()->commit_delete(deletion);
+    }
+
+    void save_pending_remote_move(PendingRemoteMove move) {
+        implementation()->save_pending_remote_move(std::move(move));
+    }
+
+    void remove_pending_remote_move(
+        const std::string& drive_id,
+        const std::string& remote_id
+    ) {
+        implementation()->remove_pending_remote_move(drive_id, remote_id);
+    }
+
+    [[nodiscard]] std::vector<PendingRemoteMove> pending_remote_moves(
+        const std::string& drive_id
+    ) const {
+        return implementation()->pending_remote_moves(drive_id);
+    }
+
+    void commit_remote_move(
+        const PendingRemoteMove& move,
+        ItemState item
+    ) {
+        implementation()->commit_remote_move(move, std::move(item));
     }
 
     void save_pending_move(PendingMove move) {

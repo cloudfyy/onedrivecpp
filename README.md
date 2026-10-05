@@ -15,8 +15,8 @@ copy the reference project's D implementation.
 > creates remote directories, downloads added or changed remote files, and
 > safely removes unchanged local snapshots after remote deletion, uploads
 > new or modified local files and directories, and conditionally propagates
-> local deletions. Local move detection and full two-way conflict resolution
-> are not implemented.
+> local deletions, moves, and renames. Full two-way conflict resolution is not
+> implemented.
 
 ## Architecture
 
@@ -615,7 +615,13 @@ Tracked local files and directories also persist their filesystem device and
 inode identity. Downloads and uploads record it immediately, while a normal
 non-dry-run upload scan backfills older snapshots. This stable identity is the
 basis for safely recognizing local moves without relying on ambiguous size and
-timestamp matches.
+timestamp matches. A recognized move uses the saved eTag in a conditional
+Graph PATCH and a dedicated SQLite journal. File modifications made together
+with a move are uploaded after the move commits. Directory moves remap tracked
+descendants atomically. Restart recovery adopts the destination only when its
+remote ID and local filesystem identity both match. The destination parent
+must already be tracked remotely; moves into a newly created local parent stop
+safely until parent creation and move ordering are implemented.
 
 `graph.endpoint` selects the Microsoft Graph cloud endpoint and defaults to
 the global service. It is not tied to a specific SharePoint host. For a
@@ -1248,7 +1254,7 @@ or modify the synchronization directory.
 ## Suggested Next Steps
 
 1. Connect the monitor to inotify.
-2. Extend uploads with local move and rename detection.
+2. Complete two-way conflict policies and new-parent local move ordering.
 3. Add integration tests for the Graph and
    file system boundaries.
 

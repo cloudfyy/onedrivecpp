@@ -465,6 +465,20 @@ bool create_version_nineteen_database(const std::filesystem::path& path) {
     );
 }
 
+bool create_version_twenty_database(const std::filesystem::path& path) {
+    if (!create_version_nineteen_database(path)) {
+        return false;
+    }
+    return execute_schema(
+        path,
+        "ALTER TABLE item ADD COLUMN local_device "
+        "INTEGER NOT NULL DEFAULT 0;"
+        "ALTER TABLE item ADD COLUMN local_inode "
+        "INTEGER NOT NULL DEFAULT 0;"
+        "PRAGMA user_version = 20;"
+    );
+}
+
 bool identity_row_is_valid(const std::filesystem::path& path) {
     sqlite3* database = nullptr;
     if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
@@ -1173,7 +1187,7 @@ int main() {
             onedrive::storage::ItemDatabase database{directory, identity()};
             database.open();
         }
-        if (!schema_version_is(database_path, 20) ||
+        if (!schema_version_is(database_path, 21) ||
             !identity_row_is_valid(database_path)) {
             return fail(
                 std::string{fixture.name} +
@@ -1732,6 +1746,80 @@ int main() {
             return fail(
                 "version nineteen database did not persist local identity"
             );
+        }
+    }
+
+    const auto version_twenty_directory =
+        temporary_directory.path() / "version-twenty";
+    std::filesystem::create_directories(version_twenty_directory);
+    if (!create_version_twenty_database(
+            version_twenty_directory / "items.sqlite3"
+        )) {
+        return fail("version twenty migration fixture could not be created");
+    }
+    {
+        onedrive::storage::ItemDatabase database{
+            version_twenty_directory,
+            identity()
+        };
+        database.open();
+        database.upsert({
+            .drive_id = "me",
+            .remote_id = "move-directory",
+            .name = "Old",
+            .etag = "old-etag",
+            .remote_path = "Old",
+            .local_path = version_twenty_directory / "Old",
+            .local_device = 11,
+            .local_inode = 22,
+            .directory = true,
+        });
+        database.upsert({
+            .drive_id = "me",
+            .remote_id = "move-child",
+            .parent_id = "move-directory",
+            .name = "child.txt",
+            .etag = "child-etag",
+            .remote_path = "Old/child.txt",
+            .local_path = version_twenty_directory / "Old" / "child.txt",
+            .local_device = 11,
+            .local_inode = 23,
+        });
+        const onedrive::storage::PendingRemoteMove move{
+            .drive_id = "me",
+            .remote_id = "move-directory",
+            .expected_etag = "old-etag",
+            .source_remote_path = "Old",
+            .destination_remote_path = "New",
+            .source_local_path = version_twenty_directory / "Old",
+            .destination_local_path = version_twenty_directory / "New",
+            .local_device = 11,
+            .local_inode = 22,
+            .directory = true,
+        };
+        database.save_pending_remote_move(move);
+        if (database.pending_remote_moves("me").size() != 1) {
+            return fail(
+                "version twenty database did not gain remote move journal"
+            );
+        }
+        database.commit_remote_move(move, {
+            .drive_id = "me",
+            .remote_id = "move-directory",
+            .name = "New",
+            .etag = "new-etag",
+            .remote_path = "New",
+            .local_path = version_twenty_directory / "New",
+            .local_device = 11,
+            .local_inode = 22,
+            .directory = true,
+        });
+        const auto child = database.find("me", "move-child");
+        if (!database.pending_remote_moves("me").empty() || !child ||
+            child->remote_path != "New/child.txt" ||
+            child->local_path !=
+                version_twenty_directory / "New" / "child.txt") {
+            return fail("remote directory move commit was not atomic");
         }
     }
 

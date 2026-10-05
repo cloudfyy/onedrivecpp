@@ -1484,6 +1484,101 @@ void MicrosoftGraphClient::delete_item(
     );
 }
 
+RemoteItem MicrosoftGraphClient::move_item(
+    const std::string& remote_id,
+    const std::string& expected_etag,
+    const std::string& destination_path
+) const {
+    const auto separator = destination_path.rfind('/');
+    const auto name = separator == std::string::npos ?
+        destination_path :
+        destination_path.substr(separator + 1);
+    if (remote_id.empty() || expected_etag.empty() || name.empty() ||
+        expected_etag.find_first_of("\r\n") != std::string::npos) {
+        throw std::invalid_argument(
+            "remote move requires an item ID, valid eTag, and destination"
+        );
+    }
+    const auto parent = separator == std::string::npos ?
+        std::string{} :
+        destination_path.substr(0, separator);
+    const std::string drive_prefix =
+        options_.drive_id == "me" ?
+            options_.endpoint + "/me/drive" :
+            options_.endpoint + "/drives/" +
+                percent_encode(options_.drive_id);
+    const auto body = Json{
+        {"name", name},
+        {"parentReference", {
+            {"path", parent.empty() ?
+                "/drive/root:" :
+                "/drive/root:/" + parent},
+        }},
+    }.dump();
+    const auto& transfer = options_.upload_transport.transfer;
+    const auto response = perform_with_retries(
+        [&] {
+            return transport_->perform(http::HttpRequest{
+                .method = http::HttpMethod::patch,
+                .url = drive_prefix + "/items/" + percent_encode(remote_id),
+                .headers = {
+                    "Accept: application/json",
+                    "Authorization: Bearer " + access_token(),
+                    "Content-Type: application/json",
+                    "If-Match: " + expected_etag,
+                },
+                .body = body,
+                .connect_timeout = transfer.connect_timeout,
+                .operation_timeout = transfer.operation_timeout,
+                .low_speed_timeout = transfer.low_speed_timeout,
+                .low_speed_limit_bytes_per_second =
+                    transfer.low_speed_limit_bytes_per_second,
+                .maximum_send_speed_bytes_per_second =
+                    effective_upload_rate(options_.upload_transport),
+                .http_version = transfer.http_version,
+                .ip_version = transfer.ip_version,
+                .maximum_response_size = std::size_t{1024} * 1024U,
+                .stop_token = {},
+            });
+        },
+        options_,
+        options_.maximum_throttle_retries,
+        sleep_,
+        "Microsoft Graph item move"
+    );
+    if (!response) {
+        throw std::runtime_error(
+            "Microsoft Graph item move failed: " +
+            response.error().message
+        );
+    }
+    Json json;
+    try {
+        json = Json::parse(response->body);
+    } catch (const Json::exception& error) {
+        throw std::runtime_error(
+            "Microsoft Graph returned invalid item move JSON: " +
+            std::string{error.what()}
+        );
+    }
+    if (response->status_code == 409 || response->status_code == 412) {
+        throw UploadConflictError(
+            graph_error_message(json, response->status_code)
+        );
+    }
+    if (response->status_code < 200 || response->status_code >= 300) {
+        throw std::runtime_error(
+            graph_error_message(json, response->status_code)
+        );
+    }
+    return parse_drive_item(
+        json,
+        "item move response",
+        !options_.relaxed_download_validation,
+        true
+    );
+}
+
 RemoteItem MicrosoftGraphClient::upload_file(
     const std::string& remote_path,
     const std::optional<std::string>& remote_id,

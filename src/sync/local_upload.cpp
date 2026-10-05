@@ -34,6 +34,14 @@ struct UploadCandidate {
     bool directory{false};
 };
 
+struct LocalMoveDiscovery {
+    std::vector<storage::PendingRemoteMove> moves;
+    std::unordered_set<std::string> moved_remote_ids;
+    std::unordered_set<std::string> moved_local_paths;
+};
+
+bool reserved_local_name(const std::filesystem::path& path);
+
 bool local_path_is_missing(const std::filesystem::path& path) {
     std::error_code error;
     const auto status = std::filesystem::symlink_status(path, error);
@@ -52,7 +60,8 @@ bool local_path_is_missing(const std::filesystem::path& path) {
 std::vector<storage::PendingDelete> discover_deletions(
     const std::string& drive_id,
     storage::ItemStore& items,
-    const SyncList* sync_list
+    const SyncList* sync_list,
+    const std::unordered_set<std::string>& skipped_remote_ids = {}
 ) {
     std::unordered_set<std::string> blocked_ids;
     std::unordered_set<std::string> blocked_paths;
@@ -63,6 +72,7 @@ std::vector<storage::PendingDelete> discover_deletions(
     std::vector<storage::PendingDelete> candidates;
     for (const auto& item : items.drive_items(drive_id)) {
         if (item.remote_path.empty() ||
+            skipped_remote_ids.contains(item.remote_id) ||
             blocked_ids.contains(item.remote_id) ||
             blocked_paths.contains(item.remote_path) ||
             (sync_list != nullptr &&
@@ -71,6 +81,7 @@ std::vector<storage::PendingDelete> discover_deletions(
             !local_path_is_missing(item.local_path)) {
             continue;
         }
+
         candidates.push_back({
             .drive_id = drive_id,
             .remote_id = item.remote_id,
@@ -114,6 +125,183 @@ std::vector<storage::PendingDelete> discover_deletions(
     return deletions;
 }
 
+LocalMoveDiscovery discover_local_moves(
+    const SafeSyncRoot& sync_root,
+    const std::string& drive_id,
+    storage::ItemStore& items,
+    const SyncList* sync_list
+) {
+    struct CurrentItem {
+        std::filesystem::path path;
+        std::string remote_path;
+        bool directory{false};
+    };
+    auto identity_key = [](std::uint64_t device, std::uint64_t inode) {
+        return std::to_string(device) + ":" + std::to_string(inode);
+    };
+    std::unordered_map<std::string, CurrentItem> current;
+    std::unordered_set<std::string> ambiguous;
+    std::error_code error;
+    std::filesystem::recursive_directory_iterator iterator{
+        sync_root.path(),
+        std::filesystem::directory_options::none,
+        error
+    };
+    if (error) {
+        throw std::runtime_error(
+            "cannot scan synchronization directory for local moves: " +
+            error.message()
+        );
+    }
+    const std::filesystem::recursive_directory_iterator end;
+    while (iterator != end) {
+        const auto path = iterator->path();
+        const auto status = iterator->symlink_status(error);
+        if (error) {
+            throw std::runtime_error(
+                "cannot inspect local move candidate '" + path.string() +
+                "': " + error.message()
+            );
+        }
+        const bool directory = std::filesystem::is_directory(status);
+        const bool regular = std::filesystem::is_regular_file(status);
+        if (std::filesystem::is_symlink(status) ||
+            (!directory && !regular) || reserved_local_name(path)) {
+            if (directory) {
+                iterator.disable_recursion_pending();
+            }
+        } else {
+            const auto relative =
+                path.lexically_relative(sync_root.path());
+            const auto remote_path = relative.generic_string();
+            const auto identity = sync_root.identity(path, directory);
+            const auto key = identity_key(
+                identity.device,
+                identity.inode
+            );
+            if (!current.emplace(
+                    key,
+                    CurrentItem{path, remote_path, directory}
+                ).second) {
+                ambiguous.insert(key);
+            }
+        }
+        iterator.increment(error);
+        if (error) {
+            throw std::runtime_error(
+                "cannot continue local move scan: " + error.message()
+            );
+        }
+    }
+
+    const auto tracked = items.drive_items(drive_id);
+    std::unordered_set<std::string> tracked_paths;
+    for (const auto& item : tracked) {
+        tracked_paths.insert(item.remote_path);
+    }
+    std::unordered_set<std::string> moved_directory_paths;
+    for (const auto& item : tracked) {
+        if (!item.directory || item.local_device == 0 ||
+            item.local_inode == 0 ||
+            !local_path_is_missing(item.local_path)) {
+            continue;
+        }
+        const auto found = current.find(
+            identity_key(item.local_device, item.local_inode)
+        );
+        if (found != current.end() && found->second.directory) {
+            moved_directory_paths.insert(found->second.remote_path);
+        }
+    }
+    LocalMoveDiscovery discovery;
+    for (const auto& item : tracked) {
+        if (item.local_device == 0 || item.local_inode == 0 ||
+            !local_path_is_missing(item.local_path)) {
+            continue;
+        }
+        const auto key =
+            identity_key(item.local_device, item.local_inode);
+        const auto found = current.find(key);
+        if (found == current.end() || ambiguous.contains(key) ||
+            found->second.directory != item.directory ||
+            found->second.path == item.local_path) {
+            continue;
+        }
+        discovery.moved_remote_ids.insert(item.remote_id);
+        discovery.moved_local_paths.insert(
+            found->second.path.lexically_normal().string()
+        );
+        if (sync_list != nullptr &&
+            (sync_list->excludes(
+                 found->second.remote_path,
+                 item.directory
+             ) ||
+             !sync_list->includes(
+                 found->second.remote_path,
+                 item.directory
+             ))) {
+            continue;
+        }
+        const auto parent =
+            std::filesystem::path{found->second.remote_path}.
+                parent_path().generic_string();
+        if (!parent.empty() && !tracked_paths.contains(parent) &&
+            !moved_directory_paths.contains(parent)) {
+            throw LocalModificationConflictError(
+                "local move destination parent is not tracked: " +
+                found->second.remote_path
+            );
+        }
+        discovery.moves.push_back({
+            .drive_id = drive_id,
+            .remote_id = item.remote_id,
+            .expected_etag = item.etag,
+            .source_remote_path = item.remote_path,
+            .destination_remote_path = found->second.remote_path,
+            .source_local_path = item.local_path,
+            .destination_local_path = found->second.path,
+            .local_device = item.local_device,
+            .local_inode = item.local_inode,
+            .directory = item.directory,
+        });
+    }
+    std::ranges::sort(
+        discovery.moves,
+        [](const auto& left, const auto& right) {
+            return std::ranges::distance(left.source_local_path) <
+                   std::ranges::distance(right.source_local_path);
+        }
+    );
+    std::vector<storage::PendingRemoteMove> roots;
+    for (auto& move : discovery.moves) {
+        const bool covered = std::ranges::any_of(
+            roots,
+            [&](const auto& parent) {
+                if (!parent.directory) {
+                    return false;
+                }
+                const auto source_relative =
+                    move.source_local_path.lexically_relative(
+                        parent.source_local_path
+                    );
+                const auto destination_relative =
+                    move.destination_local_path.lexically_relative(
+                        parent.destination_local_path
+                    );
+                return !source_relative.empty() &&
+                       !source_relative.native().starts_with("..") &&
+                       source_relative == destination_relative;
+            }
+        );
+        if (!covered) {
+            roots.push_back(std::move(move));
+        }
+    }
+    discovery.moves = std::move(roots);
+    return discovery;
+}
+
+
 void execute_pending_delete(
     const storage::PendingDelete& deletion,
     graph::GraphClient& graph,
@@ -142,6 +330,81 @@ void execute_pending_delete(
         );
     }
     items.commit_delete(deletion);
+}
+
+bool local_move_identity_matches(
+    const SafeSyncRoot& sync_root,
+    const storage::PendingRemoteMove& move
+) {
+    try {
+        const auto identity = sync_root.identity(
+            move.destination_local_path,
+            move.directory
+        );
+        return identity.device == move.local_device &&
+               identity.inode == move.local_inode;
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
+void execute_pending_remote_move(
+    const SafeSyncRoot& sync_root,
+    const storage::PendingRemoteMove& move,
+    const storage::ItemState& previous,
+    graph::GraphClient& graph,
+    storage::ItemStore& items
+) {
+    if (!local_move_identity_matches(sync_root, move)) {
+        items.remove_pending_remote_move(move.drive_id, move.remote_id);
+        throw LocalModificationConflictError(
+            "local move destination identity changed: " +
+            move.destination_local_path.string()
+        );
+    }
+    graph::RemoteItem remote;
+    try {
+        remote = graph.move_item(
+            move.remote_id,
+            move.expected_etag,
+            move.destination_remote_path
+        );
+    } catch (const graph::UploadConflictError&) {
+        const auto existing =
+            graph.item_by_path(move.destination_remote_path);
+        if (existing.id != move.remote_id ||
+            existing.directory != move.directory) {
+            items.remove_pending_remote_move(
+                move.drive_id,
+                move.remote_id
+            );
+            throw LocalModificationConflictError(
+                "remote move conflicts with '" +
+                move.destination_remote_path + "'"
+            );
+        }
+        remote = existing;
+    }
+    if (remote.id != move.remote_id ||
+        remote.remote_path != move.destination_remote_path ||
+        remote.directory != move.directory ||
+        !local_move_identity_matches(sync_root, move)) {
+        throw LocalModificationConflictError(
+            "remote move result does not match local identity for '" +
+            move.destination_remote_path + "'"
+        );
+    }
+    auto state = previous;
+    state.parent_id = remote.parent_id;
+    state.name = remote.name;
+    state.etag = remote.etag;
+    state.remote_path = remote.remote_path;
+    state.local_path = move.destination_local_path;
+    state.last_modified = remote.last_modified;
+    state.size = remote.size;
+    state.local_device = move.local_device;
+    state.local_inode = move.local_inode;
+    items.commit_remote_move(move, std::move(state));
 }
 
 class UploadSnapshot final {
@@ -281,7 +544,8 @@ std::vector<UploadCandidate> discover_uploads(
     const SyncList* sync_list,
     std::size_t& blocked,
     const cli::Console& console,
-    bool cleanup_suppressions
+    bool cleanup_suppressions,
+    const std::unordered_set<std::string>& skipped_local_paths = {}
 ) {
     std::unordered_map<std::string, storage::ItemState> tracked;
     for (auto item : items.drive_items(drive_id)) {
@@ -434,6 +698,21 @@ std::vector<UploadCandidate> discover_uploads(
         }
         const auto relative = path.lexically_relative(sync_root.path());
         const auto remote_path = relative.generic_string();
+        if (skipped_local_paths.contains(
+                path.lexically_normal().string()
+            )) {
+            if (directory) {
+                iterator.disable_recursion_pending();
+            }
+            iterator.increment(error);
+            if (error) {
+                throw std::runtime_error(
+                    "cannot continue local upload scan: " +
+                    error.message()
+                );
+            }
+            continue;
+        }
         if (relative.empty() || relative.native().starts_with("..") ||
             (sync_list != nullptr &&
              sync_list->excludes(remote_path, directory))) {
@@ -803,6 +1082,37 @@ void recover_pending_deletes(
     }
 }
 
+void recover_pending_remote_moves(
+    const SafeSyncRoot& sync_root,
+    const std::string& drive_id,
+    graph::GraphClient& graph,
+    storage::ItemStore& items,
+    const cli::Console& console
+) {
+    for (const auto& move : items.pending_remote_moves(drive_id)) {
+        const auto previous = items.find(drive_id, move.remote_id);
+        if (!previous) {
+            throw std::runtime_error(
+                "pending remote move has no tracked item: " +
+                move.remote_id
+            );
+        }
+        execute_pending_remote_move(
+            sync_root,
+            move,
+            *previous,
+            graph,
+            items
+        );
+        console.message(
+            cli::MessageKind::information,
+            "pending_remote_move_recovered",
+            "Recovered remote move to '" +
+                move.destination_remote_path + "'."
+        );
+    }
+}
+
 UploadSummary upload_local_changes(
     const SafeSyncRoot& sync_root,
     const std::string& drive_id,
@@ -814,7 +1124,48 @@ UploadSummary upload_local_changes(
     bool dry_run
 ) {
     UploadSummary summary;
-    auto deletions = discover_deletions(drive_id, items, sync_list);
+    auto moves = discover_local_moves(
+        sync_root,
+        drive_id,
+        items,
+        sync_list
+    );
+    summary.planned_moves = moves.moves.size();
+    if (!dry_run) {
+        for (const auto& move : moves.moves) {
+            const auto previous = items.find(drive_id, move.remote_id);
+            if (!previous) {
+                throw std::runtime_error(
+                    "local move has no tracked item: " + move.remote_id
+                );
+            }
+            items.save_pending_remote_move(move);
+            execute_pending_remote_move(
+                sync_root,
+                move,
+                *previous,
+                graph,
+                items
+            );
+            moves.moved_remote_ids.erase(move.remote_id);
+            moves.moved_local_paths.erase(
+                move.destination_local_path.lexically_normal().string()
+            );
+            ++summary.moved;
+            console.message(
+                cli::MessageKind::information,
+                "local_move_uploaded",
+                "Moved remote item to '" +
+                    move.destination_remote_path + "'."
+            );
+        }
+    }
+    auto deletions = discover_deletions(
+        drive_id,
+        items,
+        sync_list,
+        moves.moved_remote_ids
+    );
     summary.planned_deletions = deletions.size();
     auto uploads = discover_uploads(
         sync_root,
@@ -823,7 +1174,8 @@ UploadSummary upload_local_changes(
         sync_list,
         summary.blocked,
         console,
-        !dry_run
+        !dry_run,
+        moves.moved_local_paths
     );
     summary.planned = static_cast<std::size_t>(std::ranges::count(
         uploads,

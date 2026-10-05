@@ -234,6 +234,13 @@ public:
     }
 
     void delete_item(const std::string&, const std::string&) const {}
+    [[nodiscard]] onedrive::graph::RemoteItem move_item(
+        const std::string&,
+        const std::string&,
+        const std::string&
+    ) const {
+        return {};
+    }
 
 private:
     std::string configured_drive_id_;
@@ -315,6 +322,19 @@ public:
         return {};
     }
     void commit_delete(const onedrive::storage::PendingDelete&) {}
+    void save_pending_remote_move(onedrive::storage::PendingRemoteMove) {}
+    void remove_pending_remote_move(
+        const std::string&,
+        const std::string&
+    ) {}
+    [[nodiscard]] std::vector<onedrive::storage::PendingRemoteMove>
+    pending_remote_moves(const std::string&) const {
+        return {};
+    }
+    void commit_remote_move(
+        const onedrive::storage::PendingRemoteMove&,
+        onedrive::storage::ItemState
+    ) {}
 
     void save_pending_move(onedrive::storage::PendingMove) {}
 
