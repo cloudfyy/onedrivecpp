@@ -97,6 +97,9 @@ installed 阶段。只有类型状态能够证明尚未生成 staging 或目标�
 远端删除同样使用 prepared、journaled、Graph 已删除和本地已提交状态。journal
 写入失败时不能调用 Graph；Graph 删除完成后继续保留 journal，直到本地跟踪子树
 完成原子删除。
+远端目录创建使用独立的 prepared、journaled、Graph 已创建和本地已提交状态族。
+新建和重启恢复统一进入同一个 Graph 已创建提交路径，复用本地目录验证、inode
+获取、SQLite 提交和远端身份 metadata 写入。
 
 目录与参考项目中的 `main/config/curlEngine/onedrive/sync/itemdb/monitor`
 职责相对应：

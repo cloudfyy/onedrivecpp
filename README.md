@@ -112,6 +112,10 @@ Remote deletion follows the same durable boundary with prepared, journaled,
 Graph-deleted, and locally committed states. A failed journal write cannot
 reach Graph, and a completed Graph deletion retains its journal until the local
 tracked subtree is removed atomically.
+Remote directory creation has a separate prepared, journaled, Graph-created,
+and locally committed state family. New creation and restart recovery converge
+on one Graph-created commit path for local-directory validation, inode capture,
+SQLite commit, and remote-identity metadata.
 
 The directories correspond to the responsibilities of
 `main/config/curlEngine/onedrive/sync/itemdb/monitor` in the reference project:

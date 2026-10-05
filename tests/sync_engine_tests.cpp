@@ -472,6 +472,11 @@ public:
 
     void save_pending_upload(onedrive::storage::PendingUpload upload) {
         const std::scoped_lock lock{mutex};
+        if (fail_pending_upload_save) {
+            throw std::runtime_error{
+                "simulated pending upload persistence failure"
+            };
+        }
         if (fail_upload_checkpoint_save && !upload.upload_url.empty()) {
             throw std::runtime_error{
                 "simulated upload checkpoint persistence failure"
@@ -769,6 +774,7 @@ public:
     int apply_count{0};
     bool fail_upsert{false};
     bool fail_commit_upload{false};
+    bool fail_pending_upload_save{false};
     bool fail_commit_delete{false};
     bool fail_pending_delete_save{false};
     bool fail_commit_remote_move{false};
@@ -5507,6 +5513,46 @@ int test_local_move_uploads() {
 
 int test_local_directory_uploads() {
     onedrive::test::TemporaryDirectory temporary;
+
+    const auto journal_failure_root =
+        temporary.path() / "directory-journal-failure";
+    std::filesystem::create_directories(journal_failure_root / "Pending");
+    FakeItemStore journal_failure_items;
+    journal_failure_items.saved_delta_link = "saved";
+    journal_failure_items.fail_pending_upload_save = true;
+    FakeGraphClient journal_failure_graph;
+    FakeMetrics journal_failure_metrics;
+    auto journal_failure_config = config_for(journal_failure_root, false);
+    journal_failure_config.upload = true;
+    try {
+        static_cast<void>(onedrive::sync::SyncEngine{
+            journal_failure_config,
+            journal_failure_graph,
+            journal_failure_items,
+            journal_failure_metrics
+        }
+                              .synchronize());
+        return fail("directory journal failure was accepted");
+    } catch (const std::runtime_error&) {
+    }
+    if (journal_failure_graph.directory_create_count != 0 ||
+        !journal_failure_items.pending_uploads_by_path.empty()) {
+        return fail("unjournaled directory creation reached Microsoft Graph");
+    }
+    journal_failure_items.fail_pending_upload_save = false;
+    if (onedrive::sync::SyncEngine{
+            journal_failure_config,
+            journal_failure_graph,
+            journal_failure_items,
+            journal_failure_metrics
+        }
+                .synchronize() != 0 ||
+        journal_failure_graph.created_directory_paths !=
+            std::vector<std::string>{"Pending"} ||
+        !journal_failure_items.pending_uploads_by_path.empty()) {
+        return fail("directory creation did not recover after journal failure");
+    }
+
     const auto root = temporary.path() / "directory-uploads";
     std::filesystem::create_directories(root / "Empty");
     std::filesystem::create_directories(root / "Parent" / "Child");
