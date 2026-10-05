@@ -100,6 +100,8 @@ maximum_total_rate_bytes_per_second = 0
 validation = "strict"
 
 [upload]
+# Files through 250 MB (250,000,000 bytes) use a simple upload. Larger files
+# use an upload session with the fragment size below.
 # Non-final upload-session fragments must be a multiple of 320 KiB and less
 # than 60 MiB.
 chunk_size_bytes = 10485760

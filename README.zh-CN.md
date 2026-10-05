@@ -451,6 +451,8 @@ maximum_total_rate_bytes_per_second = 0
 validation = "strict"
 
 [upload]
+# 不超过 250 MB（250,000,000 字节）的文件使用简单上传；更大的文件使用
+# upload session，下面的配置指定每个分片的大小。
 chunk_size_bytes = 10485760
 maximum_rate_bytes_per_second = 0
 maximum_total_rate_bytes_per_second = 0

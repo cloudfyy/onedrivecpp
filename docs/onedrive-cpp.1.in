@@ -505,8 +505,9 @@ Throttling time counts toward the operation timeout and may contribute to stall
 detection, so very low limits may require longer timeout settings.
 .TP
 .B upload.chunk_size_bytes
-Upload-session fragment size. The default is 10 MiB. The value must be a
-positive multiple of 320 KiB and less than 60 MiB.
+Files through 250 MB (250,000,000 bytes) use a simple upload. Larger files use
+an upload session. This option sets its fragment size; the default is 10 MiB.
+The value must be a positive multiple of 320 KiB and less than 60 MiB.
 .TP
 .B upload.maximum_rate_bytes_per_second
 Maximum send rate for each upload request. The default is

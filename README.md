@@ -499,6 +499,8 @@ maximum_total_rate_bytes_per_second = 0
 validation = "strict"
 
 [upload]
+# Files through 250 MB (250,000,000 bytes) use a simple upload. Larger files
+# use an upload session with the fragment size below.
 chunk_size_bytes = 10485760
 maximum_rate_bytes_per_second = 0
 maximum_total_rate_bytes_per_second = 0
