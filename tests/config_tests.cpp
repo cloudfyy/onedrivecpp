@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <string_view>
 
 int main() {
     const onedrive::test::TemporaryDirectory temporary;
@@ -278,6 +279,140 @@ int main() {
                       << error.what() << '\n';
             return EXIT_FAILURE;
         }
+    }
+
+    const auto check_enum_modes = [&](
+                                      std::string_view section,
+                                      std::string_view key,
+                                      const auto& modes,
+                                      auto extract
+                                  ) {
+        for (const auto& [name, expected] : modes) {
+            {
+                std::ofstream output{path};
+                output << "config_version = 2\n"
+                       << '[' << section << "]\n"
+                       << key << " = \"" << name << "\"\n";
+            }
+            try {
+                const auto parsed = onedrive::config::Config::load(path);
+                if (extract(parsed) != expected) {
+                    std::cerr << "configuration enum '" << section << '.'
+                              << key << "' was parsed incorrectly\n";
+                    return false;
+                }
+            } catch (const std::runtime_error& error) {
+                std::cerr << "valid configuration enum '" << section << '.'
+                          << key << "' was rejected: " << error.what()
+                          << '\n';
+                return false;
+            }
+        }
+        return true;
+    };
+    constexpr std::array filesystem_metadata_modes{
+        std::pair{"auto", onedrive::config::FilesystemMetadataMode::automatic},
+        std::pair{"xattr", onedrive::config::FilesystemMetadataMode::xattr},
+        std::pair{
+            "database",
+            onedrive::config::FilesystemMetadataMode::database
+        },
+    };
+    constexpr std::array http_versions{
+        std::pair{"auto", onedrive::http::HttpVersion::automatic},
+        std::pair{"1.1", onedrive::http::HttpVersion::http_1_1},
+        std::pair{"2", onedrive::http::HttpVersion::http_2},
+    };
+    constexpr std::array ip_versions{
+        std::pair{"auto", onedrive::http::IpVersion::automatic},
+        std::pair{"4", onedrive::http::IpVersion::ipv4},
+        std::pair{"6", onedrive::http::IpVersion::ipv6},
+    };
+    constexpr std::array download_validation_modes{
+        std::pair{
+            "strict",
+            onedrive::config::DownloadValidationMode::strict
+        },
+        std::pair{
+            "relaxed",
+            onedrive::config::DownloadValidationMode::relaxed
+        },
+    };
+    constexpr std::array transfer_orders{
+        std::pair{"default", onedrive::config::TransferOrder::default_order},
+        std::pair{"size_asc", onedrive::config::TransferOrder::size_ascending},
+        std::pair{"size_dsc", onedrive::config::TransferOrder::size_descending},
+        std::pair{"name_asc", onedrive::config::TransferOrder::name_ascending},
+        std::pair{"name_dsc", onedrive::config::TransferOrder::name_descending},
+    };
+    constexpr std::array permission_modes{
+        std::pair{
+            "private",
+            onedrive::config::SyncPermissionsMode::private_access
+        },
+        std::pair{"umask", onedrive::config::SyncPermissionsMode::umask},
+    };
+    constexpr std::array conflict_policies{
+        std::pair{"block", onedrive::config::LocalConflictPolicy::block},
+        std::pair{"backup", onedrive::config::LocalConflictPolicy::backup},
+    };
+    if (!check_enum_modes(
+            "filesystem",
+            "metadata",
+            filesystem_metadata_modes,
+            [](const auto& config) {
+                return config.filesystem_metadata;
+            }
+        ) ||
+        !check_enum_modes(
+            "transfer",
+            "http_version",
+            http_versions,
+            [](const auto& config) {
+                return config.transfer_transport.http_version;
+            }
+        ) ||
+        !check_enum_modes(
+            "transfer",
+            "ip_version",
+            ip_versions,
+            [](const auto& config) {
+                return config.transfer_transport.ip_version;
+            }
+        ) ||
+        !check_enum_modes(
+            "download",
+            "validation",
+            download_validation_modes,
+            [](const auto& config) {
+                return config.download_validation;
+            }
+        ) ||
+        !check_enum_modes(
+            "transfer",
+            "order",
+            transfer_orders,
+            [](const auto& config) {
+                return config.transfer_order;
+            }
+        ) ||
+        !check_enum_modes(
+            "sync",
+            "permissions",
+            permission_modes,
+            [](const auto& config) {
+                return config.sync_permissions;
+            }
+        ) ||
+        !check_enum_modes(
+            "sync",
+            "local_conflict",
+            conflict_policies,
+            [](const auto& config) {
+                return config.local_conflict;
+            }
+        )) {
+        return EXIT_FAILURE;
     }
 
     {

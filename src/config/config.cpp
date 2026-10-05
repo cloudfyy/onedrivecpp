@@ -173,49 +173,48 @@ std::string string_array_value(
     return result;
 }
 
-FilesystemMetadataMode parse_filesystem_metadata(std::string_view value) {
-    if (value == "auto") {
-        return FilesystemMetadataMode::automatic;
-    }
-    if (value == "xattr") {
-        return FilesystemMetadataMode::xattr;
-    }
-    if (value == "database") {
-        return FilesystemMetadataMode::database;
+template <typename Enum, typename Key, std::size_t Size>
+Enum enum_value(
+    std::string_view value,
+    std::string_view full_name,
+    const std::array<std::pair<Key, Enum>, Size>& values
+) {
+    for (const auto& [name, result] : values) {
+        if (value == name) {
+            return result;
+        }
     }
     throw std::runtime_error(
-        "invalid TOML configuration value for 'filesystem.metadata'"
+        "invalid TOML configuration value for '" +
+        std::string{full_name} + "'"
     );
+}
+
+FilesystemMetadataMode parse_filesystem_metadata(std::string_view value) {
+    constexpr std::array values{
+        std::pair{"auto", FilesystemMetadataMode::automatic},
+        std::pair{"xattr", FilesystemMetadataMode::xattr},
+        std::pair{"database", FilesystemMetadataMode::database},
+    };
+    return enum_value(value, "filesystem.metadata", values);
 }
 
 http::HttpVersion parse_http_version(std::string_view value) {
-    if (value == "auto") {
-        return http::HttpVersion::automatic;
-    }
-    if (value == "1.1") {
-        return http::HttpVersion::http_1_1;
-    }
-    if (value == "2") {
-        return http::HttpVersion::http_2;
-    }
-    throw std::runtime_error(
-        "invalid TOML configuration value for 'transfer.http_version'"
-    );
+    constexpr std::array values{
+        std::pair{"auto", http::HttpVersion::automatic},
+        std::pair{"1.1", http::HttpVersion::http_1_1},
+        std::pair{"2", http::HttpVersion::http_2},
+    };
+    return enum_value(value, "transfer.http_version", values);
 }
 
 http::IpVersion parse_ip_version(std::string_view value) {
-    if (value == "auto") {
-        return http::IpVersion::automatic;
-    }
-    if (value == "4") {
-        return http::IpVersion::ipv4;
-    }
-    if (value == "6") {
-        return http::IpVersion::ipv6;
-    }
-    throw std::runtime_error(
-        "invalid TOML configuration value for 'transfer.ip_version'"
-    );
+    constexpr std::array values{
+        std::pair{"auto", http::IpVersion::automatic},
+        std::pair{"4", http::IpVersion::ipv4},
+        std::pair{"6", http::IpVersion::ipv6},
+    };
+    return enum_value(value, "transfer.ip_version", values);
 }
 
 void validate_proxy_url(std::string_view value) {
@@ -246,24 +245,14 @@ void validate_proxy_url(std::string_view value) {
 }
 
 http::ProxyAuth parse_proxy_auth(std::string_view value) {
-    if (value == "auto") {
-        return http::ProxyAuth::automatic;
-    }
-    if (value == "basic") {
-        return http::ProxyAuth::basic;
-    }
-    if (value == "digest") {
-        return http::ProxyAuth::digest;
-    }
-    if (value == "ntlm") {
-        return http::ProxyAuth::ntlm;
-    }
-    if (value == "negotiate") {
-        return http::ProxyAuth::negotiate;
-    }
-    throw std::runtime_error(
-        "invalid TOML configuration value for 'proxy.auth'"
-    );
+    constexpr std::array values{
+        std::pair{"auto", http::ProxyAuth::automatic},
+        std::pair{"basic", http::ProxyAuth::basic},
+        std::pair{"digest", http::ProxyAuth::digest},
+        std::pair{"ntlm", http::ProxyAuth::ntlm},
+        std::pair{"negotiate", http::ProxyAuth::negotiate},
+    };
+    return enum_value(value, "proxy.auth", values);
 }
 
 std::vector<std::string> proxy_bypass_list(
@@ -289,60 +278,38 @@ std::vector<std::string> proxy_bypass_list(
 }
 
 DownloadValidationMode parse_download_validation(std::string_view value) {
-    if (value == "strict") {
-        return DownloadValidationMode::strict;
-    }
-    if (value == "relaxed") {
-        return DownloadValidationMode::relaxed;
-    }
-    throw std::runtime_error(
-        "invalid TOML configuration value for 'download.validation'"
-    );
+    constexpr std::array values{
+        std::pair{"strict", DownloadValidationMode::strict},
+        std::pair{"relaxed", DownloadValidationMode::relaxed},
+    };
+    return enum_value(value, "download.validation", values);
 }
 
 TransferOrder parse_transfer_order(std::string_view value) {
-    if (value == "default") {
-        return TransferOrder::default_order;
-    }
-    if (value == "size_asc") {
-        return TransferOrder::size_ascending;
-    }
-    if (value == "size_dsc") {
-        return TransferOrder::size_descending;
-    }
-    if (value == "name_asc") {
-        return TransferOrder::name_ascending;
-    }
-    if (value == "name_dsc") {
-        return TransferOrder::name_descending;
-    }
-    throw std::runtime_error(
-        "invalid TOML configuration value for 'transfer.order'"
-    );
+    constexpr std::array values{
+        std::pair{"default", TransferOrder::default_order},
+        std::pair{"size_asc", TransferOrder::size_ascending},
+        std::pair{"size_dsc", TransferOrder::size_descending},
+        std::pair{"name_asc", TransferOrder::name_ascending},
+        std::pair{"name_dsc", TransferOrder::name_descending},
+    };
+    return enum_value(value, "transfer.order", values);
 }
 
 SyncPermissionsMode parse_sync_permissions(std::string_view value) {
-    if (value == "private") {
-        return SyncPermissionsMode::private_access;
-    }
-    if (value == "umask") {
-        return SyncPermissionsMode::umask;
-    }
-    throw std::runtime_error(
-        "invalid TOML configuration value for 'sync.permissions'"
-    );
+    constexpr std::array values{
+        std::pair{"private", SyncPermissionsMode::private_access},
+        std::pair{"umask", SyncPermissionsMode::umask},
+    };
+    return enum_value(value, "sync.permissions", values);
 }
 
 LocalConflictPolicy parse_local_conflict(std::string_view value) {
-    if (value == "block") {
-        return LocalConflictPolicy::block;
-    }
-    if (value == "backup") {
-        return LocalConflictPolicy::backup;
-    }
-    throw std::runtime_error(
-        "invalid TOML configuration value for 'sync.local_conflict'"
-    );
+    constexpr std::array values{
+        std::pair{"block", LocalConflictPolicy::block},
+        std::pair{"backup", LocalConflictPolicy::backup},
+    };
+    return enum_value(value, "sync.local_conflict", values);
 }
 
 }  // namespace
