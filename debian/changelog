@@ -1,3 +1,10 @@
+onedrive-cpp (0.7.33-1~ubuntu24.04) noble; urgency=medium
+
+  * Reuse a family-safe template typestate core for download and upload
+    transactions, including journaled upload checkpoints and remote commits.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Mon, 05 Oct 2026 12:55:02 +0000
+
 onedrive-cpp (0.7.32-1~ubuntu24.04) noble; urgency=medium
 
   * Model prepared and journaled download commits with template typestates,
