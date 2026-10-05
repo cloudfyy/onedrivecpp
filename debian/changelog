@@ -1,3 +1,10 @@
+onedrive-cpp (0.7.37-1~ubuntu24.04) noble; urgency=medium
+
+  * Require durable delete journals before Graph mutations and model remote
+    and local deletion commits with reusable template typestates.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Mon, 05 Oct 2026 13:21:37 +0000
+
 onedrive-cpp (0.7.36-1~ubuntu24.04) noble; urgency=medium
 
   * Add mapped typestate payload transitions, named legal edges, and
