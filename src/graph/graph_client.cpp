@@ -38,6 +38,7 @@ constexpr std::uint64_t upload_chunk_quantum =
 constexpr std::uint64_t maximum_upload_chunk_size =
     std::uint64_t{60} * 1024U * 1024U;
 
+// Percent-encodes one URI component per RFC 3986, including path separators.
 std::string percent_encode(std::string_view value) {
     constexpr std::string_view hex{"0123456789ABCDEF"};
     std::string encoded;
