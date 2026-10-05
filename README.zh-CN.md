@@ -299,28 +299,16 @@ ctest --preset e2e -R graph_sync_e2e
 这些诊断信息可能包含远端文件元数据，应按敏感数据保管。临时配置、复制的 token、
 SQLite 状态及下载内容始终会删除。不要让 E2E runner 使用日常状态目录或日常 Drive。
 
-### Clang-Tidy 检查
+### C++ Core Guidelines 检查
 
-检查已拆分，日常分析不再每次承担 Clang 静态分析器和 C++ Core Guidelines
-遍历的开销。快速 preset 运行 bug-prone、performance、portability 和重复
-include 检查：
-
-```bash
-cmake --preset lint-fast
-cmake --build --preset lint-fast
-```
-
-深度 preset 运行 Clang 静态分析器和选定的 C++ Core Guidelines 检查：
+`lint` preset 会在编译时按照项目的 `.clang-tidy` 策略运行 Clang-Tidy。
+Clang 静态分析器、bug-prone、performance、portability 以及选定的 C++ Core
+Guidelines 诊断都会作为构建错误：
 
 ```bash
-cmake --preset lint-deep
-cmake --build --preset lint-deep
+cmake --preset lint
+cmake --build --preset lint
 ```
-
-`lint` 继续保留完整组合策略，供周期性审计或 CI 使用。每个 preset 使用独立
-构建目录，因此普通目标文件可以增量复用；Clang-Tidy 本身不会缓存已完成的分析。
-日常开发建议使用对应配置文件和 `-p build/debug`，只检查发生修改的 translation
-unit。
 
 策略只排除经过审查的必要 C/POSIX API、协议常量和已检查缓冲区边界噪声。
 项目使用 Microsoft GSL 在 API 和 RAII 边界表达非空借用依赖，并使用

@@ -71,25 +71,12 @@ option(
     "Run Clang-Tidy checks while compiling"
     OFF
 )
-set(
-    ONEDRIVE_CLANG_TIDY_CONFIG
-    "${CMAKE_CURRENT_SOURCE_DIR}/.clang-tidy"
-    CACHE FILEPATH
-    "Clang-Tidy configuration file"
-)
 option(
     ONEDRIVE_ENABLE_GRAPH_E2E
     "Enable live Microsoft Graph end-to-end tests"
     OFF
 )
 if(ONEDRIVE_ENABLE_CLANG_TIDY)
-    if(NOT EXISTS "${ONEDRIVE_CLANG_TIDY_CONFIG}")
-        message(
-            FATAL_ERROR
-            "Clang-Tidy configuration does not exist: "
-            "${ONEDRIVE_CLANG_TIDY_CONFIG}"
-        )
-    endif()
     find_program(
         ONEDRIVE_CLANG_TIDY
         NAMES clang-tidy-20 clang-tidy
@@ -97,7 +84,7 @@ if(ONEDRIVE_ENABLE_CLANG_TIDY)
     )
     set(
         CMAKE_CXX_CLANG_TIDY
-        "${ONEDRIVE_CLANG_TIDY};--config-file=${ONEDRIVE_CLANG_TIDY_CONFIG}"
+        "${ONEDRIVE_CLANG_TIDY};--config-file=${CMAKE_CURRENT_SOURCE_DIR}/.clang-tidy"
     )
 endif()
 configure_file(

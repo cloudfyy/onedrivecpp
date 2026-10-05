@@ -333,30 +333,17 @@ as sensitive data. Configuration, copied tokens, SQLite state, and downloaded
 content are always removed. Never point the E2E runner at a daily-use state or
 Drive.
 
-### Clang-Tidy checks
+### C++ Core Guidelines checks
 
-The checks are split so routine analysis does not repeatedly pay the cost of
-the Clang static analyzer and C++ Core Guidelines traversal. The fast preset
-runs bug-prone, performance, portability, and duplicate-include checks:
-
-```bash
-cmake --preset lint-fast
-cmake --build --preset lint-fast
-```
-
-The deep preset runs the Clang static analyzer and selected C++ Core Guidelines
-checks:
+The lint preset runs Clang-Tidy during compilation with the project
+`.clang-tidy` policy. Diagnostics from the Clang static analyzer, bug-prone,
+performance, portability, and selected C++ Core Guidelines checks are treated
+as build errors:
 
 ```bash
-cmake --preset lint-deep
-cmake --build --preset lint-deep
+cmake --preset lint
+cmake --build --preset lint
 ```
-
-`lint` remains the complete combined policy for periodic or CI audits. Each
-preset has its own build directory, so normal object files remain incremental;
-Clang-Tidy itself does not cache completed analysis. For day-to-day work,
-prefer invoking Clang-Tidy only on changed translation units with
-`-p build/debug` and the matching configuration file.
 
 The policy excludes only reviewed noise from required C/POSIX APIs, protocol
 constants, and checked buffer boundaries. Microsoft GSL is used to express

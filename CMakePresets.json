@@ -34,28 +34,10 @@
     },
     {
       "name": "lint",
-      "displayName": "Debug with all Clang-Tidy checks",
+      "displayName": "Debug with Clang-Tidy checks",
       "inherits": "debug",
       "cacheVariables": {
         "ONEDRIVE_ENABLE_CLANG_TIDY": "ON"
-      }
-    },
-    {
-      "name": "lint-fast",
-      "displayName": "Debug with fast Clang-Tidy checks",
-      "inherits": "debug",
-      "cacheVariables": {
-        "ONEDRIVE_ENABLE_CLANG_TIDY": "ON",
-        "ONEDRIVE_CLANG_TIDY_CONFIG": "${sourceDir}/.clang-tidy-fast"
-      }
-    },
-    {
-      "name": "lint-deep",
-      "displayName": "Debug with deep Clang-Tidy checks",
-      "inherits": "debug",
-      "cacheVariables": {
-        "ONEDRIVE_ENABLE_CLANG_TIDY": "ON",
-        "ONEDRIVE_CLANG_TIDY_CONFIG": "${sourceDir}/.clang-tidy-deep"
       }
     },
     {
@@ -79,14 +61,6 @@
     {
       "name": "lint",
       "configurePreset": "lint"
-    },
-    {
-      "name": "lint-fast",
-      "configurePreset": "lint-fast"
-    },
-    {
-      "name": "lint-deep",
-      "configurePreset": "lint-deep"
     },
     {
       "name": "e2e",
