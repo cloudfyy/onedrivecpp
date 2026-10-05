@@ -54,8 +54,8 @@ maximum_delay_seconds = 300
 # "private" creates files as 0600 and directories as 0700.
 # Use "umask" only when synchronized data must follow the process umask.
 permissions = "private"
-# "block" refuses local/remote download conflicts. "backup" first preserves
-# the local file as a same-directory *.safeBackup-* copy.
+# "block" refuses local/remote conflicts. "backup" first preserves a
+# conflicting local regular file as a same-directory *.safeBackup-* copy.
 local_conflict = "block"
 # Root for account- and Drive-specific synchronized data directories.
 # Paths may be absolute or relative to the service working directory.

@@ -15,8 +15,9 @@ copy the reference project's D implementation.
 > creates remote directories, downloads added or changed remote files, and
 > safely removes unchanged local snapshots after remote deletion, uploads
 > new or modified local files and directories, and conditionally propagates
-> local deletions, moves, and renames. Full two-way conflict resolution is not
-> implemented.
+> local deletions, moves, and renames. Conditional Graph operations and the
+> configured local-conflict policy preserve simultaneous local and remote
+> changes.
 
 ## Architecture
 
@@ -564,20 +565,23 @@ effect because normal synchronization already includes all files. Changing
 this value changes the selective-sync fingerprint and therefore triggers a
 full remote-state query before the new selection is committed.
 
-`sync.local_conflict` controls download conflicts with local regular files.
+`sync.local_conflict` controls simultaneous local and remote file changes.
 The default, `"block"`, preserves the existing behavior: synchronization
 records the item as `local_modification`, and explicit single-file download
 stops without downloading. Set it to `"backup"` to copy the stable local
 contents to a durable same-directory name such as
 `report.safeBackup-20261004T051000Z-0001.pdf` before atomically installing the
 authoritative remote version. The copy is independent rather than a hard link,
-retains the local permission bits, and is never uploaded by the current
-one-way client. If local and downloaded contents have the same SHA-256
+retains the local permission bits, and is excluded from upload. If local and
+downloaded contents have the same SHA-256
 fingerprint, the existing file is adopted without creating a backup or
 replacing its inode. Backup creation requires additional disk space equal to
 the local file and fails safely without replacing the destination. This policy
-applies to normal synchronization and `download REMOTE_PATH`; it does not
-change remote deletion or future upload-conflict behavior.
+applies to normal synchronization, `download REMOTE_PATH`, and an upload
+recovery that discovers a simultaneous remote change. Such a recovery
+discards only its stale upload snapshot and journal, then reconciles the
+remote delta through the same policy. Directory and remote-deletion conflicts
+that cannot produce a safe regular-file copy remain blocked.
 
 For tracked files, the state database stores both Graph eTag and cTag values.
 When the local snapshot is unchanged and a delta changes only the eTag while
@@ -1264,7 +1268,7 @@ or modify the synchronization directory.
 ## Suggested Next Steps
 
 1. Connect the monitor to inotify.
-2. Complete two-way conflict policies and new-parent local move ordering.
+2. Complete new-parent local move ordering.
 3. Add integration tests for the Graph and
    file system boundaries.
 

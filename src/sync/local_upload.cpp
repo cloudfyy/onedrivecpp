@@ -34,6 +34,11 @@ struct UploadCandidate {
     bool directory{false};
 };
 
+class RemoteUploadConflictError final : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
 struct LocalMoveDiscovery {
     std::vector<storage::PendingRemoteMove> moves;
     std::unordered_set<std::string> moved_remote_ids;
@@ -945,7 +950,7 @@ graph::RemoteItem recover_uploaded_item(
     } catch (const graph::UploadConflictError&) {
         const auto remote = graph.item_by_path(upload.remote_path);
         if (remote.size != upload.local_size) {
-            throw LocalModificationConflictError(
+            throw RemoteUploadConflictError(
                 "remote upload recovery conflicts with '" +
                 upload.remote_path + "'"
             );
@@ -963,7 +968,7 @@ graph::RemoteItem recover_uploaded_item(
                 upload.content_fingerprint;
             static_cast<void>(remove_no_symlinks(verification));
             if (!matches) {
-                throw LocalModificationConflictError(
+                throw RemoteUploadConflictError(
                     "remote upload recovery content conflicts with '" +
                     upload.remote_path + "'"
                 );
@@ -986,7 +991,7 @@ graph::RemoteItem recover_created_directory(
     } catch (const graph::UploadConflictError&) {
         const auto remote = graph.item_by_path(upload.remote_path);
         if (!remote.directory) {
-            throw LocalModificationConflictError(
+            throw RemoteUploadConflictError(
                 "remote directory recovery conflicts with '" +
                 upload.remote_path + "'"
             );
@@ -1006,66 +1011,92 @@ void recover_pending_uploads(
     const cli::Console& console
 ) {
     for (auto upload : items.pending_uploads(drive_id)) {
-        if (upload.directory) {
-            const auto remote =
-                recover_created_directory(upload, graph);
-            if (remote.remote_path != upload.remote_path) {
+        try {
+            if (upload.directory) {
+                const auto remote =
+                    recover_created_directory(upload, graph);
+                if (remote.remote_path != upload.remote_path) {
+                    throw std::runtime_error(
+                        "Microsoft Graph directory response does not match '" +
+                        upload.remote_path + "'"
+                    );
+                }
+                auto state = uploaded_directory_state(
+                    remote,
+                    upload.local_path,
+                    drive_id
+                );
+                const auto identity =
+                    sync_root.identity(upload.local_path, true);
+                state.local_device = identity.device;
+                state.local_inode = identity.inode;
+                items.commit_upload(upload, std::move(state));
+                metadata.write_remote_identity(
+                    remote,
+                    upload.local_path
+                );
+                console.message(
+                    cli::MessageKind::information,
+                    "pending_upload_recovered",
+                    "Recovered pending directory creation '" +
+                        upload.remote_path + "'."
+                );
+                continue;
+            }
+            if (!std::filesystem::is_regular_file(
+                    upload.snapshot_path
+                ) ||
+                content_fingerprint(upload.snapshot_path) !=
+                    upload.content_fingerprint) {
                 throw std::runtime_error(
-                    "Microsoft Graph directory response does not match '" +
-                    upload.remote_path + "'"
+                    "pending upload snapshot is missing or changed: " +
+                    upload.snapshot_path.string()
                 );
             }
-            auto state = uploaded_directory_state(
+            const auto remote =
+                recover_uploaded_item(upload, graph, items);
+            auto state = uploaded_state(
                 remote,
                 upload.local_path,
+                {
+                    .existed = true,
+                    .size = upload.local_size,
+                    .modified_ticks = upload.local_modified_ticks,
+                    .fingerprint = upload.content_fingerprint,
+                },
                 drive_id
             );
             const auto identity =
-                sync_root.identity(upload.local_path, true);
+                sync_root.identity(upload.local_path, false);
             state.local_device = identity.device;
             state.local_inode = identity.inode;
-            items.commit_upload(upload, std::move(state));
+            items.commit_upload(upload, state);
             metadata.write_remote_identity(remote, upload.local_path);
+            static_cast<void>(
+                remove_no_symlinks(upload.snapshot_path)
+            );
             console.message(
                 cli::MessageKind::information,
                 "pending_upload_recovered",
-                "Recovered pending directory creation '" +
-                    upload.remote_path + "'."
+                "Recovered pending upload '" + upload.remote_path + "'."
             );
-            continue;
-        }
-        if (!std::filesystem::is_regular_file(upload.snapshot_path) ||
-            content_fingerprint(upload.snapshot_path) !=
-                upload.content_fingerprint) {
-            throw std::runtime_error(
-                "pending upload snapshot is missing or changed: " +
-                upload.snapshot_path.string()
+        } catch (const RemoteUploadConflictError& error) {
+            items.remove_pending_upload(
+                upload.drive_id,
+                upload.remote_path
+            );
+            if (!upload.snapshot_path.empty()) {
+                static_cast<void>(
+                    remove_no_symlinks(upload.snapshot_path)
+                );
+            }
+            console.message(
+                cli::MessageKind::warning,
+                "pending_upload_conflict_deferred",
+                std::string{error.what()} +
+                    "; reconciling it through the remote delta."
             );
         }
-        const auto remote = recover_uploaded_item(upload, graph, items);
-        auto state = uploaded_state(
-            remote,
-            upload.local_path,
-            {
-                .existed = true,
-                .size = upload.local_size,
-                .modified_ticks = upload.local_modified_ticks,
-                .fingerprint = upload.content_fingerprint,
-            },
-            drive_id
-        );
-        const auto identity =
-            sync_root.identity(upload.local_path, false);
-        state.local_device = identity.device;
-        state.local_inode = identity.inode;
-        items.commit_upload(upload, state);
-        metadata.write_remote_identity(remote, upload.local_path);
-        static_cast<void>(remove_no_symlinks(upload.snapshot_path));
-        console.message(
-            cli::MessageKind::information,
-            "pending_upload_recovered",
-            "Recovered pending upload '" + upload.remote_path + "'."
-        );
     }
 }
 

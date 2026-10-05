@@ -353,6 +353,7 @@ public:
         ++apply_count;
         if (delta.replace_drive_items) {
             items.clear();
+            blocked.clear();
         }
         for (const auto& remote_id : delta.removals) {
             items.erase(remote_id);
@@ -369,6 +370,26 @@ public:
                 suppression.local_path.lexically_normal().string(),
                 suppression
             );
+        }
+        for (const auto& remote_id : delta.blocked_removals) {
+            std::erase_if(
+                blocked,
+                [&remote_id](const auto& item) {
+                    return item.remote_id == remote_id;
+                }
+            );
+        }
+        for (const auto& item : delta.blocked_upserts) {
+            const auto existing = std::ranges::find(
+                blocked,
+                item.remote_id,
+                &onedrive::storage::BlockedItem::remote_id
+            );
+            if (existing == blocked.end()) {
+                blocked.push_back(item);
+            } else {
+                *existing = item;
+            }
         }
         applied_delta = std::move(delta);
     }
@@ -4722,22 +4743,27 @@ int test_local_directory_uploads() {
     recovery_conflict_graph.directory_conflict = true;
     recovery_conflict_graph.lookup_item =
         file("remote-file", "Conflict", 0);
+    recovery_conflict_graph.changes = {
+        recovery_conflict_graph.lookup_item.value(),
+    };
     FakeMetrics recovery_conflict_metrics;
     auto recovery_conflict_config =
         config_for(recovery_conflict_root, false);
     recovery_conflict_config.upload = true;
-    try {
-        static_cast<void>(onedrive::sync::SyncEngine{
+    if (onedrive::sync::SyncEngine{
             recovery_conflict_config,
             recovery_conflict_graph,
             recovery_conflict_items,
             recovery_conflict_metrics
-        }.synchronize());
-        return fail("directory recovery accepted a remote file");
-    } catch (const std::runtime_error&) {
-    }
-    if (recovery_conflict_items.pending_uploads_by_path.size() != 1) {
-        return fail("directory recovery conflict discarded its journal");
+        }.synchronize() != 2 ||
+        !recovery_conflict_items.pending_uploads_by_path.empty() ||
+        recovery_conflict_items.applied_delta.blocked_upserts.size() != 1 ||
+        recovery_conflict_items.applied_delta.blocked_upserts[0].reason_code !=
+            "local_modification" ||
+        !recovery_conflict_metrics.last_success) {
+        return fail(
+            "directory recovery conflict did not defer to remote delta"
+        );
     }
     return EXIT_SUCCESS;
 }
@@ -4951,56 +4977,168 @@ int test_upload_checkpoint_recovery() {
 
 int test_pending_upload_recovery_conflict() {
     onedrive::test::TemporaryDirectory temporary;
-    const auto root = temporary.path() / "pending-upload-conflict";
-    std::filesystem::create_directories(root);
-    const auto local = root / "conflict.txt";
-    const auto snapshot = root / ".conflict.txt.onedrive-upload-crash";
+    const auto prepare_conflict =
+        [](const std::filesystem::path& root, FakeItemStore& items) {
+            std::filesystem::create_directories(root);
+            const auto local = root / "conflict.txt";
+            const auto snapshot =
+                root / ".conflict.txt.onedrive-upload-crash";
+            {
+                std::ofstream output{local};
+                output << "payload";
+            }
+            std::filesystem::copy_file(local, snapshot);
+            auto previous =
+                tracked_item(root, "remote-conflict", "conflict.txt");
+            previous.local_size = 4;
+            items.saved_delta_link = "saved";
+            items.items.emplace("remote-conflict", previous);
+            items.pending_uploads_by_path.emplace(
+                "conflict.txt",
+                onedrive::storage::PendingUpload{
+                    .drive_id = "me",
+                    .remote_path = "conflict.txt",
+                    .local_path = local,
+                    .snapshot_path = snapshot,
+                    .content_fingerprint =
+                        "239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5",
+                    .local_size = 7,
+                    .local_modified_ticks =
+                        previous.local_modified_ticks,
+                    .remote_id =
+                        std::optional<std::string>{"remote-conflict"},
+                    .expected_etag = previous.etag,
+                }
+            );
+            return snapshot;
+        };
+    const auto prepare_graph = [](FakeGraphClient& graph) {
+        graph.upload_conflict = true;
+        graph.lookup_item =
+            file("remote-conflict", "conflict.txt", 7);
+        graph.changes = {graph.lookup_item.value()};
+        graph.contents.emplace("remote-conflict", "changed");
+    };
+
+    const auto block_root =
+        temporary.path() / "pending-upload-conflict-block";
+    FakeItemStore block_items;
+    const auto block_snapshot =
+        prepare_conflict(block_root, block_items);
+    FakeGraphClient block_graph;
+    prepare_graph(block_graph);
+    FakeMetrics block_metrics;
+    auto block_config = config_for(block_root, false);
+    block_config.upload = true;
+    if (onedrive::sync::SyncEngine{
+            block_config,
+            block_graph,
+            block_items,
+            block_metrics
+        }.synchronize() != 2 ||
+        !block_items.pending_uploads_by_path.empty() ||
+        std::filesystem::exists(block_snapshot) ||
+        block_items.applied_delta.blocked_upserts.size() != 1 ||
+        block_items.applied_delta.blocked_upserts[0].reason_code !=
+            "local_modification" ||
+        block_graph.download_count != 1 ||
+        !block_metrics.last_success) {
+        return fail(
+            "upload recovery conflict did not defer to block policy"
+        );
+    }
     {
-        std::ofstream output{local};
-        output << "payload";
-    }
-    std::filesystem::copy_file(local, snapshot);
-    const auto baseline = tracked_item(root, "remote-conflict", "conflict.txt");
-    FakeItemStore items;
-    items.saved_delta_link = "saved";
-    items.pending_uploads_by_path.emplace(
-        "conflict.txt",
-        onedrive::storage::PendingUpload{
-            .drive_id = "me",
-            .remote_path = "conflict.txt",
-            .local_path = local,
-            .snapshot_path = snapshot,
-            .content_fingerprint =
-                "239f59ed55e737c77147cf55ad0c1b030b6d7ee748a7426952f9b852d5a935e5",
-            .local_size = 7,
-            .local_modified_ticks = baseline.local_modified_ticks,
+        std::ifstream input{block_root / "conflict.txt"};
+        std::string content{
+            std::istreambuf_iterator<char>{input},
+            std::istreambuf_iterator<char>{}
+        };
+        if (content != "payload") {
+            return fail("block policy replaced conflicting local content");
         }
-    );
-    FakeGraphClient graph;
-    graph.upload_conflict = true;
-    graph.lookup_item = file("remote-conflict", "conflict.txt", 7);
-    graph.contents.emplace("remote-conflict", "changed");
-    FakeMetrics metrics;
-    auto config = config_for(root, false);
-    config.upload = true;
-    try {
-        static_cast<void>(onedrive::sync::SyncEngine{
-            config,
-            graph,
-            items,
-            metrics
-        }.synchronize());
-        return fail("conflicting pending upload recovery was accepted");
-    } catch (const std::runtime_error& error) {
-        if (!std::string_view{error.what()}.contains(
-                "remote upload recovery content conflicts"
+    }
+
+    const auto backup_root =
+        temporary.path() / "pending-upload-conflict-backup";
+    FakeItemStore backup_items;
+    const auto backup_snapshot =
+        prepare_conflict(backup_root, backup_items);
+    FakeGraphClient backup_graph;
+    prepare_graph(backup_graph);
+    FakeMetrics backup_metrics;
+    auto backup_config = config_for(backup_root, false);
+    backup_config.upload = true;
+    backup_config.local_conflict =
+        onedrive::config::LocalConflictPolicy::backup;
+    if (onedrive::sync::SyncEngine{
+            backup_config,
+            backup_graph,
+            backup_items,
+            backup_metrics
+        }.synchronize() != 0 ||
+        !backup_items.pending_uploads_by_path.empty() ||
+        std::filesystem::exists(backup_snapshot) ||
+        backup_graph.download_count != 2 ||
+        !backup_items.applied_delta.blocked_upserts.empty() ||
+        !backup_metrics.last_success) {
+        return fail(
+            "upload recovery conflict did not defer to backup policy"
+        );
+    }
+    std::filesystem::path preserved;
+    for (const auto& entry :
+         std::filesystem::directory_iterator{backup_root}) {
+        if (entry.path().filename().string().starts_with(
+                "conflict.safeBackup-"
             )) {
-            throw;
+            preserved = entry.path();
         }
     }
-    if (items.pending_uploads_by_path.size() != 1 ||
-        !std::filesystem::exists(snapshot) || metrics.last_success) {
-        return fail("conflicting pending upload journal was not preserved");
+    std::ifstream remote_input{backup_root / "conflict.txt"};
+    const std::string remote_content{
+        std::istreambuf_iterator<char>{remote_input},
+        std::istreambuf_iterator<char>{}
+    };
+    std::ifstream local_input{preserved};
+    const std::string local_content{
+        std::istreambuf_iterator<char>{local_input},
+        std::istreambuf_iterator<char>{}
+    };
+    if (preserved.empty() || remote_content != "changed" ||
+        local_content != "payload") {
+        return fail(
+            "backup policy did not preserve both conflict versions"
+        );
+    }
+
+    const auto size_root =
+        temporary.path() / "pending-upload-conflict-size";
+    FakeItemStore size_items;
+    const auto size_snapshot =
+        prepare_conflict(size_root, size_items);
+    FakeGraphClient size_graph;
+    size_graph.upload_conflict = true;
+    size_graph.lookup_item =
+        file("remote-conflict", "conflict.txt", 8);
+    size_graph.changes = {size_graph.lookup_item.value()};
+    size_graph.contents.emplace("remote-conflict", "remote!!");
+    FakeMetrics size_metrics;
+    auto size_config = config_for(size_root, false);
+    size_config.upload = true;
+    if (onedrive::sync::SyncEngine{
+            size_config,
+            size_graph,
+            size_items,
+            size_metrics
+        }.synchronize() != 2 ||
+        !size_items.pending_uploads_by_path.empty() ||
+        std::filesystem::exists(size_snapshot) ||
+        size_graph.download_count != 0 ||
+        size_items.applied_delta.blocked_upserts.size() != 1 ||
+        !size_metrics.last_success) {
+        return fail(
+            "different-size upload conflict was not reconciled safely"
+        );
     }
     return EXIT_SUCCESS;
 }

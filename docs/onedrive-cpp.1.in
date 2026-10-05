@@ -280,7 +280,7 @@ The default is
 .BR private .
 .TP
 .B sync.local_conflict
-Policy for a remote download that conflicts with a local regular file.
+Policy for simultaneous local and remote regular-file changes.
 .B block
 is the default and refuses the replacement.
 .B backup
@@ -292,8 +292,10 @@ permission bits, is not uploaded, and requires additional disk space equal to
 the local file. Backup failure leaves the destination unchanged. This setting
 applies to normal synchronization and the
 .B download
-command. Remote deletion conflicts are always blocked rather than backed up;
-the setting does not control upload conflict handling.
+command. If upload recovery discovers a simultaneous remote change, it
+discards only the stale upload snapshot and journal, then reconciles the
+remote delta through this same policy. Directory and remote-deletion conflicts
+that cannot produce a safe regular-file copy remain blocked.
 .TP
 .B state.directory
 Directory containing the refresh token and SQLite synchronization state.
