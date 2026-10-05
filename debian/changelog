@@ -1,3 +1,10 @@
+onedrive-cpp (0.7.40-1~ubuntu24.04) noble; urgency=medium
+
+  * Model monitor startup, local settling, overflow recovery, Graph polling,
+    synchronization, and shutdown with an explicit runtime state machine.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Mon, 05 Oct 2026 22:57:00 +0000
+
 onedrive-cpp (0.7.39-1~ubuntu24.04) noble; urgency=medium
 
   * Model Graph large-file upload session creation, validated resume,
