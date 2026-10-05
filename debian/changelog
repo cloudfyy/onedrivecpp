@@ -1,3 +1,10 @@
+onedrive-cpp (0.7.27-1~ubuntu24.04) noble; urgency=medium
+
+  * Reuse the shared UniqueFileDescriptor RAII wrapper for monitor inotify,
+    signalfd, and eventfd handles instead of maintaining a duplicate owner.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Mon, 05 Oct 2026 08:46:00 +0000
+
 onedrive-cpp (0.7.26-1~ubuntu24.04) noble; urgency=medium
 
   * Run an initial synchronization and reuse the existing sync engine for
