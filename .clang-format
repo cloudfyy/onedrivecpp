@@ -1,0 +1,17 @@
+BasedOnStyle: LLVM
+AccessModifierOffset: -4
+AlignAfterOpenBracket: BlockIndent
+AllowShortBlocksOnASingleLine: Never
+AllowShortFunctionsOnASingleLine: None
+BinPackArguments: false
+BinPackParameters: OnePerLine
+BreakFunctionDefinitionParameters: false
+ColumnLimit: 80
+ContinuationIndentWidth: 4
+IndentWidth: 4
+PackConstructorInitializers: Never
+PenaltyBreakBeforeFirstCallParameter: 0
+PointerAlignment: Left
+ReferenceAlignment: Left
+SortIncludes: Never
+UseTab: Never

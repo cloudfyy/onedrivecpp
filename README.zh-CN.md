@@ -115,7 +115,8 @@ Ubuntu 24.04 的官方仓库已经提供项目所需的 CMake、Ninja 和 Clang 
 ```bash
 sudo apt update
 sudo apt install -y build-essential ca-certificates curl git \
-  cmake ninja-build clang-20 clang-tidy-20 zip unzip tar pkg-config \
+  cmake ninja-build clang-20 clang-format-20 clang-tidy-20 \
+  zip unzip tar pkg-config \
   libcli11-dev libcurl4-openssl-dev libfmt-dev libspdlog-dev \
   libmsgsl-dev libsqlite3-dev libssl-dev libtomlplusplus-dev \
   nlohmann-json3-dev
@@ -125,8 +126,18 @@ sudo apt install -y build-essential ca-certificates curl git \
 
 ```bash
 clang++-20 --version
+clang-format-20 --version
 cmake --version
 ```
+
+提交前必须格式化本次修改的所有 C/C++ 源文件和头文件。应从仓库根目录运行固定
+版本的格式化工具，使其读取仓库内的 `.clang-format`：
+
+```bash
+clang-format-20 -i path/to/modified.cpp path/to/modified.hpp
+```
+
+不要使用无版本后缀的命令或其他主版本，因为输出可能与 Clang 20 不一致。
 
 编译库从操作系统解析并动态链接。这样 Debian 的安全更新可以替换 libcurl、
 OpenSSL、SQLite、spdlog 和 fmt，而无需重新构建 `onedrive-cpp`。

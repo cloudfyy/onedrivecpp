@@ -124,7 +124,8 @@ Install the build tools from the Ubuntu 24.04 repositories:
 ```bash
 sudo apt update
 sudo apt install -y build-essential ca-certificates curl git \
-  cmake ninja-build clang-20 clang-tidy-20 zip unzip tar pkg-config \
+  cmake ninja-build clang-20 clang-format-20 clang-tidy-20 \
+  zip unzip tar pkg-config \
   libcli11-dev libcurl4-openssl-dev libfmt-dev libspdlog-dev \
   libmsgsl-dev libsqlite3-dev libssl-dev libtomlplusplus-dev \
   nlohmann-json3-dev
@@ -134,8 +135,20 @@ Verify the installed versions:
 
 ```bash
 clang++-20 --version
+clang-format-20 --version
 cmake --version
 ```
+
+Format every modified C or C++ source/header before committing. Run the
+versioned formatter from the repository root so it uses the checked-in
+`.clang-format`:
+
+```bash
+clang-format-20 -i path/to/modified.cpp path/to/modified.hpp
+```
+
+Do not use an unversioned formatter or a different major version, because its
+output may differ from Clang 20.
 
 The compiled libraries are resolved from the operating system and linked
 dynamically. This lets Debian security updates replace libcurl, OpenSSL,
