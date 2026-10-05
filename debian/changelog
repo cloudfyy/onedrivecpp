@@ -1,3 +1,14 @@
+onedrive-cpp (0.7.20-1~ubuntu24.04) noble; urgency=medium
+
+  * Persist Microsoft Graph cTag values for tracked files and download
+    recovery journals using state database schema version 22.
+  * Reuse unchanged local content when only the remote eTag changes and a
+    stable non-empty cTag confirms that file content is unchanged.
+  * Fall back conservatively to eTag behavior when cTag is absent or changed,
+    and avoid relying on folder cTag behavior.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Mon, 05 Oct 2026 02:42:13 +0000
+
 onedrive-cpp (0.7.19-1~ubuntu24.04) noble; urgency=medium
 
   * Clarify that the Graph URL helper percent-encodes one RFC 3986 URI
