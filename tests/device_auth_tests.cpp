@@ -1,11 +1,11 @@
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
 #include "onedrive/http/http_client.hpp"
+#include "http_test_support.hpp"
 #include "test_support.hpp"
 
 #include <chrono>
 #include <cstdlib>
-#include <deque>
 #include <filesystem>
 
 #include <stdexcept>
@@ -17,43 +17,7 @@ namespace {
 
 using onedrive::test::TemporaryDirectory;
 
-class FakeTransport final {
-public:
-    explicit FakeTransport(std::deque<onedrive::http::HttpResult> responses)
-        : responses_{std::move(responses)} {}
-
-    onedrive::http::HttpResult perform(
-        const onedrive::http::HttpRequest& request
-    ) const {
-        requests.push_back(request);
-        if (responses_.empty()) {
-            return std::unexpected(
-                onedrive::http::HttpError{.message = "no fake response available"}
-            );
-        }
-        auto response = std::move(responses_.front());
-        responses_.pop_front();
-        return response;
-    }
-
-    onedrive::http::HttpResult download(
-        const onedrive::http::HttpRequest&,
-        const std::filesystem::path&,
-        const onedrive::http::DownloadProgress&,
-        const onedrive::http::DownloadData&,
-        const onedrive::http::DownloadCheckpoint&,
-        const onedrive::http::DownloadResponseGate&
-    ) const {
-        return std::unexpected(
-            onedrive::http::HttpError{.message = "download was not expected"}
-        );
-    }
-
-    mutable std::vector<onedrive::http::HttpRequest> requests;
-
-private:
-    mutable std::deque<onedrive::http::HttpResult> responses_;
-};
+using FakeTransport = onedrive::test::QueuedHttpTransport;
 
 using onedrive::test::fail;
 
@@ -64,6 +28,18 @@ onedrive::auth::DeviceAuthOptions test_options() {
         .auth_endpoint = "https://login.example.test",
         .scope = "Files.ReadWrite offline_access",
     };
+}
+
+int test_queued_transport_contract() {
+    FakeTransport transport{{}};
+    const auto response = transport.perform({});
+    const auto download = transport.download({}, {}, {}, {}, {}, {});
+    if (response || download || transport.requests.size() != 1 ||
+        response.error().message != "no fake response available" ||
+        download.error().message != "download was not expected") {
+        return fail("queued HTTP test transport contract was incorrect");
+    }
+    return EXIT_SUCCESS;
 }
 
 int test_device_flow() {
@@ -221,6 +197,10 @@ int test_declined_authorization() {
 }  // namespace
 
 int main() {
+    if (const int result = test_queued_transport_contract();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
     if (const int result = test_device_flow(); result != EXIT_SUCCESS) {
         return result;
     }

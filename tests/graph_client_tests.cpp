@@ -1,6 +1,7 @@
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
 #include "onedrive/graph/graph_client.hpp"
+#include "http_test_support.hpp"
 #include "test_support.hpp"
 #include "onedrive/http/http_client.hpp"
 
@@ -30,20 +31,12 @@ const std::filesystem::path& test_directory() {
 class FakeTransport final {
 public:
     explicit FakeTransport(std::deque<onedrive::http::HttpResult> responses)
-        : responses_{std::move(responses)} {}
+        : queued{std::move(responses)} {}
 
     onedrive::http::HttpResult perform(
         const onedrive::http::HttpRequest& request
     ) const {
-        requests.push_back(request);
-        if (responses_.empty()) {
-            return std::unexpected(
-                onedrive::http::HttpError{.message = "no fake response available"}
-            );
-        }
-        auto response = std::move(responses_.front());
-        responses_.pop_front();
-        return response;
+        return queued.perform(request);
     }
 
     onedrive::http::HttpResult download(
@@ -153,14 +146,13 @@ public:
     }
 
     mutable std::vector<onedrive::http::HttpRequest> requests;
+    mutable onedrive::test::QueuedHttpTransport queued;
     mutable std::vector<onedrive::http::HttpRequest> download_requests;
     mutable std::deque<onedrive::http::HttpResult> download_responses;
     mutable std::size_t download_response_gate_count{0};
     mutable std::uint64_t partial_failure_bytes{0};
     std::string download_body{"download"};
 
-private:
-    mutable std::deque<onedrive::http::HttpResult> responses_;
 };
 
 class FakeTokenStore final {
@@ -342,18 +334,18 @@ int test_list_root_with_refresh_and_pagination() {
         std::vector<std::string>{"rotated-refresh"}) {
         return fail("rotated refresh token was not persisted");
     }
-    if (transport_pointer->requests.size() != 3 ||
-        transport_pointer->requests[0].method !=
+    if (transport_pointer->queued.requests.size() != 3 ||
+        transport_pointer->queued.requests[0].method !=
             onedrive::http::HttpMethod::post ||
-        !transport_pointer->requests[0].body.contains(
+        !transport_pointer->queued.requests[0].body.contains(
             "refresh_token=existing-refresh"
         ) ||
-        transport_pointer->requests[1].url !=
+        transport_pointer->queued.requests[1].url !=
             "https://graph.example.test/v1.0/drives/drive%20id/root/children" ||
-        transport_pointer->requests[2].url !=
+        transport_pointer->queued.requests[2].url !=
             "https://graph.example.test/v1.0/next?page=2" ||
         !has_header(
-            transport_pointer->requests[1],
+            transport_pointer->queued.requests[1],
             "Authorization: Bearer access-secret"
         )) {
         return fail("Graph authentication or pagination request was incorrect");
@@ -402,13 +394,13 @@ int test_item_lookup_by_encoded_path() {
         !item.content_hash ||
         item.content_hash->algorithm !=
             onedrive::FileHashAlgorithm::sha256 ||
-        transport_pointer->requests.size() != 2 ||
-        transport_pointer->requests[1].url !=
+        transport_pointer->queued.requests.size() != 2 ||
+        transport_pointer->queued.requests[1].url !=
             "https://graph.example.test/v1.0/me/drive/root:/Folder%20A/"
             "report%20%231.txt?$select=id,name,eTag,cTag,size,fileSystemInfo,"
             "parentReference,file,folder,deleted,malware,remoteItem" ||
         !has_header(
-            transport_pointer->requests[1],
+            transport_pointer->queued.requests[1],
             "Authorization: ******"
         )) {
         return fail("Graph path lookup was not encoded or parsed correctly");
@@ -419,7 +411,7 @@ int test_item_lookup_by_encoded_path() {
         return fail("unsafe Graph path lookup was accepted");
     } catch (const std::invalid_argument&) {
     }
-    if (transport_pointer->requests.size() != 2) {
+    if (transport_pointer->queued.requests.size() != 2) {
         return fail("unsafe Graph path lookup made an HTTP request");
     }
     return EXIT_SUCCESS;
@@ -513,17 +505,17 @@ int test_simple_file_uploads() {
         }
     }
     if (created.id != "file-id" || updated.etag != "new-etag" ||
-        transport_pointer->requests.size() != 5 ||
-        transport_pointer->requests[1].method !=
+        transport_pointer->queued.requests.size() != 5 ||
+        transport_pointer->queued.requests[1].method !=
             onedrive::http::HttpMethod::put ||
-        transport_pointer->requests[1].url !=
+        transport_pointer->queued.requests[1].url !=
             "https://graph.example.test/v1.0/me/drive/root:/Folder%20A/"
             "new%20%231.txt:/content?"
             "@microsoft.graph.conflictBehavior=fail" ||
-        transport_pointer->requests[1].body != "payload" ||
-        transport_pointer->requests[2].url !=
+        transport_pointer->queued.requests[1].body != "payload" ||
+        transport_pointer->queued.requests[2].url !=
             "https://graph.example.test/v1.0/me/drive/items/file%2Fid/content" ||
-        !has_header(transport_pointer->requests[2], "If-Match: old-etag")) {
+        !has_header(transport_pointer->queued.requests[2], "If-Match: old-etag")) {
         return fail("Graph simple uploads were not conditional or encoded");
     }
     return EXIT_SUCCESS;
@@ -572,7 +564,7 @@ int test_directory_creation() {
     };
     const auto root = client.create_directory("New #");
     const auto nested = client.create_directory("New #/Child");
-    const auto& requests = transport_pointer->requests;
+    const auto& requests = transport_pointer->queued.requests;
     if (!root.directory || root.remote_path != "New #" ||
         !nested.directory || nested.remote_path != "New #/Child" ||
         requests.size() != 3 ||
@@ -685,7 +677,7 @@ int test_item_deletion() {
         return fail("Graph deletion conflict was accepted");
     } catch (const onedrive::graph::UploadConflictError&) {
     }
-    const auto& requests = transport_pointer->requests;
+    const auto& requests = transport_pointer->queued.requests;
     if (requests.size() != 4 ||
         requests[1].method != onedrive::http::HttpMethod::delete_ ||
         requests[1].url !=
@@ -730,7 +722,7 @@ int test_item_move() {
     };
     const auto moved =
         client.move_item("file/id", "old-etag", "Target/renamed.txt");
-    const auto& request = transport_pointer->requests[1];
+    const auto& request = transport_pointer->queued.requests[1];
     if (moved.id != "file/id" ||
         moved.remote_path != "Target/renamed.txt" ||
         request.method != onedrive::http::HttpMethod::patch ||
@@ -823,7 +815,7 @@ int test_upload_sessions() {
             upload_checkpoints.push_back(checkpoint);
         }
     );
-    const auto& requests = transport_pointer->requests;
+    const auto& requests = transport_pointer->queued.requests;
     if (uploaded.id != "session-file" || requests.size() != 5 ||
         requests[1].method != onedrive::http::HttpMethod::post ||
         requests[1].url !=
@@ -914,21 +906,21 @@ int test_upload_sessions() {
         update_source
     );
     if (updated.etag != "updated-etag" ||
-        update_transport_pointer->requests.size() != 3 ||
-        update_transport_pointer->requests[1].url !=
+        update_transport_pointer->queued.requests.size() != 3 ||
+        update_transport_pointer->queued.requests[1].url !=
             "https://graph.example.test/v1.0/drives/drive%2Fid/items/"
             "file%2Fid/createUploadSession" ||
         !has_header(
-            update_transport_pointer->requests[1],
+            update_transport_pointer->queued.requests[1],
             "If-Match: old-etag"
         ) ||
-        !update_transport_pointer->requests[1].body.contains(
+        !update_transport_pointer->queued.requests[1].body.contains(
             R"("@microsoft.graph.conflictBehavior":"replace")"
         ) ||
-        update_transport_pointer->requests[2].
+        update_transport_pointer->queued.requests[2].
                 maximum_send_speed_bytes_per_second != 900 ||
         has_header(
-            update_transport_pointer->requests[2],
+            update_transport_pointer->queued.requests[2],
             "Authorization: ******"
         )) {
         return fail("Graph update upload session was not conditional");
@@ -988,22 +980,22 @@ int test_upload_session_resume() {
         }
     );
     if (uploaded.id != "resumed-file" ||
-        transport_pointer->requests.size() != 2 ||
-        transport_pointer->requests[0].method !=
+        transport_pointer->queued.requests.size() != 2 ||
+        transport_pointer->queued.requests[0].method !=
             onedrive::http::HttpMethod::get ||
-        transport_pointer->requests[1].method !=
+        transport_pointer->queued.requests[1].method !=
             onedrive::http::HttpMethod::put ||
         has_header(
-            transport_pointer->requests[0],
+            transport_pointer->queued.requests[0],
             "Authorization: ******"
         ) ||
         has_header(
-            transport_pointer->requests[1],
+            transport_pointer->queued.requests[1],
             "Authorization: ******"
         ) ||
-        transport_pointer->requests[1].body.size() != 7 ||
+        transport_pointer->queued.requests[1].body.size() != 7 ||
         !has_header(
-            transport_pointer->requests[1],
+            transport_pointer->queued.requests[1],
             "Content-Range: bytes 327680-327686/327687"
         ) ||
         checkpoints.size() != 1 ||
@@ -1051,7 +1043,7 @@ int test_upload_session_resume() {
             return fail("Graph upload session reported the wrong offset error");
         }
     }
-    if (backward_pointer->requests.size() != 1) {
+    if (backward_pointer->queued.requests.size() != 1) {
         return fail("Graph upload continued after a backward offset");
     }
 
@@ -1099,7 +1091,7 @@ int test_upload_session_resume() {
             return fail("Graph upload replaced the checkpoint error");
         }
     }
-    if (checkpoint_pointer->requests.size() != 1) {
+    if (checkpoint_pointer->queued.requests.size() != 1) {
         return fail("Graph upload sent data after a checkpoint failure");
     }
 
@@ -1166,7 +1158,7 @@ int test_upload_session_resume() {
         }
     }
     if (fragment_checkpoint_count != 2 ||
-        fragment_checkpoint_pointer->requests.size() != 3) {
+        fragment_checkpoint_pointer->queued.requests.size() != 3) {
         return fail("Graph upload continued after fragment checkpoint failure");
     }
 
@@ -1234,8 +1226,8 @@ int test_upload_session_resume() {
                 recreated.push_back(checkpoint);
             }
         ));
-        return recreate_pointer->requests.size() == expected_requests &&
-            recreate_pointer->requests.back().body.size() == 7 &&
+        return recreate_pointer->queued.requests.size() == expected_requests &&
+            recreate_pointer->queued.requests.back().body.size() == 7 &&
             recreated.size() == 1 &&
             recreated[0].completed_bytes == 0 &&
             recreated[0].upload_url ==
@@ -1376,7 +1368,7 @@ int test_missing_authentication() {
             return fail("missing authentication error was not actionable");
         }
     }
-    if (!transport_pointer->requests.empty()) {
+    if (!transport_pointer->queued.requests.empty()) {
         return fail("missing authentication unexpectedly made an HTTP request");
     }
     return EXIT_SUCCESS;
@@ -1481,7 +1473,7 @@ int test_untrusted_pagination_url() {
             return fail("untrusted pagination URL error was not reported");
         }
     }
-    if (transport_pointer->requests.size() != 2) {
+    if (transport_pointer->queued.requests.size() != 2) {
         return fail("authorization token was sent to an untrusted pagination URL");
     }
     return EXIT_SUCCESS;
@@ -1522,7 +1514,7 @@ int test_throttling_retry_after() {
 
     if (!client.list_root().empty() ||
         sleeps != std::vector{std::chrono::seconds{3}} ||
-        transport_pointer->requests.size() != 3) {
+        transport_pointer->queued.requests.size() != 3) {
         return fail("Graph Retry-After throttling was not retried correctly");
     }
     return EXIT_SUCCESS;
@@ -1631,7 +1623,7 @@ int test_transient_service_retries() {
                 std::chrono::seconds{3},
                 std::chrono::seconds{8},
             } ||
-        transport_pointer->requests.size() != 6) {
+        transport_pointer->queued.requests.size() != 6) {
         return fail("transient Graph service errors were not retried correctly");
     }
     return EXIT_SUCCESS;
@@ -1714,10 +1706,10 @@ int test_delta_with_pagination() {
             }) {
         return fail("Graph delta items or final link were not parsed");
     }
-    if (transport_pointer->requests.size() != 3 ||
-        transport_pointer->requests[1].url !=
+    if (transport_pointer->queued.requests.size() != 3 ||
+        transport_pointer->queued.requests[1].url !=
             "https://graph.example.test/v1.0/drives/drive%20id/root/delta" ||
-        transport_pointer->requests[2].url !=
+        transport_pointer->queued.requests[2].url !=
             "https://graph.example.test/v1.0/delta?page=2") {
         return fail("Graph delta pagination requests were incorrect");
     }
@@ -1844,8 +1836,8 @@ int test_delta_resume_and_url_validation() {
     if (!delta.changes.empty() ||
         delta.delta_link !=
             "https://graph.example.test/v1.0/delta?token=next" ||
-        transport_pointer->requests.size() != 2 ||
-        transport_pointer->requests[1].url != saved_delta_link) {
+        transport_pointer->queued.requests.size() != 2 ||
+        transport_pointer->queued.requests[1].url != saved_delta_link) {
         return fail("saved Graph delta link was not resumed");
     }
 
@@ -1922,8 +1914,8 @@ int test_invalid_delta_cursor_error() {
             return fail("invalid Graph delta cursor error omitted the server detail");
         }
     }
-    if (transport_pointer->requests.size() != 2 ||
-        transport_pointer->requests[1].url != saved_delta_link) {
+    if (transport_pointer->queued.requests.size() != 2 ||
+        transport_pointer->queued.requests[1].url != saved_delta_link) {
         return fail("invalid Graph delta cursor request was incorrect");
     }
     return EXIT_SUCCESS;
@@ -2014,24 +2006,24 @@ int test_file_download_redirect() {
         std::filesystem::is_regular_file(destination) &&
         std::filesystem::file_size(destination) == 0;
     std::filesystem::remove(destination, ignored);
-    if (transport_pointer->requests.size() != 3 ||
+    if (transport_pointer->queued.requests.size() != 3 ||
         !has_header(
-            transport_pointer->requests[1],
+            transport_pointer->queued.requests[1],
             "If-Match: \"item-etag\""
         ) ||
         !has_header(
-            transport_pointer->requests[2],
+            transport_pointer->queued.requests[2],
             "If-Match: \"empty-etag\""
         )) {
         return fail("Graph download eTag preconditions were not sent");
     }
     if (contents != "download" || !empty_file_downloaded ||
-        transport_pointer->requests.size() != 3 ||
-        transport_pointer->requests[1].url !=
+        transport_pointer->queued.requests.size() != 3 ||
+        transport_pointer->queued.requests[1].url !=
             "https://graph.example.test/v1.0/drives/drive%20id/items/"
             "item%20id/content" ||
         !has_header(
-            transport_pointer->requests[1],
+            transport_pointer->queued.requests[1],
             "Authorization: Bearer access-secret"
         ) ||
         transport_pointer->download_requests.size() != 2 ||
@@ -2125,9 +2117,9 @@ int test_changed_file_download_is_not_retried() {
             return fail("changed Graph drive item error was not actionable");
         }
     }
-    if (transport_pointer->requests.size() != 2 ||
+    if (transport_pointer->queued.requests.size() != 2 ||
         !has_header(
-            transport_pointer->requests[1],
+            transport_pointer->queued.requests[1],
             "If-Match: W/\"expected-etag\""
         ) ||
         !transport_pointer->download_requests.empty() ||
@@ -2146,7 +2138,7 @@ int test_changed_file_download_is_not_retried() {
         return fail("invalid Graph drive item eTag was accepted");
     } catch (const std::invalid_argument&) {
     }
-    if (transport_pointer->requests.size() != 2) {
+    if (transport_pointer->queued.requests.size() != 2) {
         return fail("invalid Graph drive item eTag made an HTTP request");
     }
     return EXIT_SUCCESS;
@@ -2413,7 +2405,7 @@ int test_expired_download_redirect_is_refreshed() {
     }
     std::filesystem::remove(destination, ignored);
 
-    if (transport_pointer->requests.size() != 5 ||
+    if (transport_pointer->queued.requests.size() != 5 ||
         transport_pointer->download_requests.size() != 4 ||
         transport_pointer->download_requests[0].url !=
             "https://download.example.test/expired" ||
@@ -3129,14 +3121,14 @@ int test_drive_identity_and_profile_photo() {
             identity.photo->bytes.begin(),
             identity.photo->bytes.end()
         } != "photo-bytes" ||
-        transport.requests.size() != 3 ||
-        transport.requests[0].url !=
+        transport.queued.requests.size() != 3 ||
+        transport.queued.requests[0].url !=
             "https://graph.example.test/v1.0/me?$select=id,displayName" ||
-        transport.requests[1].url !=
+        transport.queued.requests[1].url !=
             "https://graph.example.test/v1.0/me/drive?$select=id,name" ||
-        transport.requests[2].url !=
+        transport.queued.requests[2].url !=
             "https://graph.example.test/v1.0/me/photo/$value" ||
-        !has_header(transport.requests[2], "Authorization: ******")) {
+        !has_header(transport.queued.requests[2], "Authorization: ******")) {
         return fail("Graph account and drive identity were not loaded");
     }
     FakeTransport without_photo{
