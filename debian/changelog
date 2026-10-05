@@ -1,3 +1,14 @@
+onedrive-cpp (0.7.12-1~ubuntu24.04) noble; urgency=medium
+
+  * Create selected new local directories remotely in deterministic
+    parent-first order before uploading their files.
+  * Persist directory creation in the pending-upload journal and recover
+    ambiguous interruptions without accepting remote file conflicts.
+  * Add schema migration, selective-sync, nested ordering, conflict, and
+    crash-recovery coverage for local directory uploads.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Mon, 05 Oct 2026 00:49:25 +0000
+
 onedrive-cpp (0.7.11-1~ubuntu24.04) noble; urgency=medium
 
   * Persist Graph upload session URLs, expirations, and confirmed offsets in
