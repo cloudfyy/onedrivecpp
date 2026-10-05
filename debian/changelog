@@ -1,3 +1,10 @@
+onedrive-cpp (0.7.29-1~ubuntu24.04) noble; urgency=medium
+
+  * Require clang-format 20 for modified C++ sources and provide a checked-in
+    formatting configuration for reproducible output.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Mon, 05 Oct 2026 11:26:00 +0000
+
 onedrive-cpp (0.7.28-1~ubuntu24.04) noble; urgency=medium
 
   * Validate SQLite integrity, application table shapes, column constraints,
