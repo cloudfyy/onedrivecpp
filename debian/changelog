@@ -1,3 +1,10 @@
+onedrive-cpp (0.7.18-1~ubuntu24.04) noble; urgency=medium
+
+  * Document that files larger than 250 MB use an upload session and clarify
+    that upload.chunk_size_bytes controls the fragment size, not the threshold.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Mon, 05 Oct 2026 02:20:21 +0000
+
 onedrive-cpp (0.7.17-1~ubuntu24.04) noble; urgency=medium
 
   * Detect local file and directory moves using stable filesystem identity and
