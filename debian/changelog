@@ -1,3 +1,10 @@
+onedrive-cpp (0.7.19-1~ubuntu24.04) noble; urgency=medium
+
+  * Clarify that the Graph URL helper percent-encodes one RFC 3986 URI
+    component, including path separators.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Mon, 05 Oct 2026 02:22:35 +0000
+
 onedrive-cpp (0.7.18-1~ubuntu24.04) noble; urgency=medium
 
   * Document that files larger than 250 MB use an upload session and clarify
