@@ -1,3 +1,12 @@
+onedrive-cpp (0.7.28-1~ubuntu24.04) noble; urgency=medium
+
+  * Validate SQLite integrity, application table shapes, column constraints,
+    and primary-key indexes before synchronization uses persisted state.
+  * Reject corrupt, unversioned nonempty, future, or structurally incompatible
+    databases with explicit safe-rebuild guidance.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Mon, 05 Oct 2026 11:12:00 +0000
+
 onedrive-cpp (0.7.27-1~ubuntu24.04) noble; urgency=medium
 
   * Reuse the shared UniqueFileDescriptor RAII wrapper for monitor inotify,
