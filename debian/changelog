@@ -1,3 +1,11 @@
+onedrive-cpp (0.7.39-1~ubuntu24.04) noble; urgency=medium
+
+  * Model Graph large-file upload session creation, validated resume,
+    checkpoint advancement, invalidation, and finalization with reusable
+    template typestates.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Mon, 05 Oct 2026 13:36:00 +0000
+
 onedrive-cpp (0.7.38-1~ubuntu24.04) noble; urgency=medium
 
   * Model durable remote-directory creation and shared new/recovery commits
