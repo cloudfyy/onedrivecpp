@@ -634,7 +634,9 @@ use the saved eTag in a conditional Graph PATCH and a dedicated SQLite
 journal. File modifications made with a move upload after the move commits;
 directory moves atomically remap tracked descendants. Recovery adopts a
 destination only when its remote ID and local filesystem identity match. The
-destination parent must already be tracked remotely.
+client creates newly added destination parents from shallowest to deepest
+before issuing the conditional move. Parent creation and move recovery retain
+their separate durable journals.
 .SH SHELL COMPLETION
 Bash and Zsh completion definitions are installed with the package. They
 complete subcommands, command options, enumerated option values, and paths for

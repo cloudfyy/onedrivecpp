@@ -237,6 +237,7 @@ public:
     ) const {
         ++directory_create_count;
         created_directory_paths.push_back(remote_path);
+        remote_mutations.push_back("mkdir:" + remote_path);
         if (directory_conflict) {
             throw onedrive::graph::UploadConflictError{
                 "simulated directory conflict"
@@ -277,6 +278,9 @@ public:
         const std::string& destination_path
     ) const {
         moved_remote_items.emplace_back(remote_id, destination_path);
+        remote_mutations.push_back(
+            "move:" + remote_id + ":" + destination_path
+        );
         if (move_conflict) {
             throw onedrive::graph::UploadConflictError{
                 "simulated remote move conflict"
@@ -322,6 +326,7 @@ public:
     mutable std::vector<std::pair<std::string, std::string>> deleted_items;
     mutable std::vector<std::pair<std::string, std::string>>
         moved_remote_items;
+    mutable std::vector<std::string> remote_mutations;
     mutable std::vector<
         std::optional<onedrive::graph::UploadSession>
     > upload_sessions;
@@ -4331,6 +4336,246 @@ int test_local_move_uploads() {
         return fail("moved and modified file was not uploaded after move");
     }
 
+    const auto new_parent_root =
+        temporary.path() / "move-new-parent";
+    std::filesystem::create_directories(new_parent_root);
+    {
+        std::ofstream output{new_parent_root / "before.txt"};
+        output << "data";
+    }
+    FakeItemStore new_parent_items;
+    new_parent_items.saved_delta_link = "saved";
+    new_parent_items.items.emplace(
+        "new-parent-file",
+        tracked_item(
+            new_parent_root,
+            "new-parent-file",
+            "before.txt"
+        )
+    );
+    FakeGraphClient new_parent_graph;
+    FakeMetrics new_parent_metrics;
+    auto new_parent_config = config_for(new_parent_root, false);
+    new_parent_config.upload = true;
+    static_cast<void>(onedrive::sync::SyncEngine{
+        new_parent_config,
+        new_parent_graph,
+        new_parent_items,
+        new_parent_metrics
+    }.synchronize());
+    std::filesystem::create_directories(
+        new_parent_root / "New" / "Nested"
+    );
+    std::filesystem::rename(
+        new_parent_root / "before.txt",
+        new_parent_root / "New" / "Nested" / "after.txt"
+    );
+    {
+        std::ofstream output{
+            new_parent_root / "New" / "Nested" / "after.txt",
+            std::ios::app
+        };
+        output << "-changed";
+    }
+    auto new_parent_dry_config = new_parent_config;
+    new_parent_dry_config.dry_run = true;
+    std::ostringstream new_parent_dry_output;
+    std::ostringstream new_parent_dry_error;
+    const onedrive::cli::Console new_parent_dry_console{
+        {
+            .color = onedrive::cli::ColorMode::never,
+            .output = onedrive::cli::OutputMode::json,
+        },
+        new_parent_dry_output,
+        new_parent_dry_error
+    };
+    static_cast<void>(onedrive::sync::SyncEngine{
+        new_parent_dry_config,
+        new_parent_graph,
+        new_parent_items,
+        new_parent_metrics,
+        &new_parent_dry_console
+    }.synchronize());
+    const auto new_parent_before_dry_move =
+        new_parent_items.find("me", "new-parent-file");
+    if (!new_parent_graph.remote_mutations.empty() ||
+        new_parent_graph.upload_count != 0 ||
+        !new_parent_items.pending_uploads_by_path.empty() ||
+        !new_parent_items.pending_remote_moves_by_id.empty() ||
+        !new_parent_before_dry_move ||
+        new_parent_before_dry_move->remote_path != "before.txt" ||
+        !new_parent_dry_output.str().contains(
+            R"("create_directories":"2")"
+        ) ||
+        !new_parent_dry_output.str().contains(
+            R"("move_remote_items":"1")"
+        ) ||
+        !new_parent_dry_error.str().empty()) {
+        return fail(
+            "new-parent move dry run changed state or reported the wrong plan"
+        );
+    }
+    static_cast<void>(onedrive::sync::SyncEngine{
+        new_parent_config,
+        new_parent_graph,
+        new_parent_items,
+        new_parent_metrics
+    }.synchronize());
+    const auto new_parent_file =
+        new_parent_items.find("me", "new-parent-file");
+    if (new_parent_graph.remote_mutations !=
+            std::vector<std::string>{
+                "mkdir:New",
+                "mkdir:New/Nested",
+                "move:new-parent-file:New/Nested/after.txt",
+            } ||
+        new_parent_graph.uploaded_paths !=
+            std::vector<std::string>{"New/Nested/after.txt"} ||
+        !new_parent_file ||
+        new_parent_file->remote_path != "New/Nested/after.txt" ||
+        new_parent_file->local_path !=
+            new_parent_root / "New" / "Nested" / "after.txt") {
+        return fail(
+            "file move into new parent was not ordered before upload"
+        );
+    }
+
+    const auto tracked_parent_root =
+        temporary.path() / "move-tracked-parent";
+    std::filesystem::create_directories(
+        tracked_parent_root / "Existing"
+    );
+    {
+        std::ofstream output{tracked_parent_root / "before.txt"};
+        output << "data";
+    }
+    FakeItemStore tracked_parent_items;
+    tracked_parent_items.saved_delta_link = "saved";
+    tracked_parent_items.items.emplace(
+        "existing-parent",
+        tracked_item(
+            tracked_parent_root,
+            "existing-parent",
+            "Existing",
+            true
+        )
+    );
+    tracked_parent_items.items.emplace(
+        "tracked-parent-file",
+        tracked_item(
+            tracked_parent_root,
+            "tracked-parent-file",
+            "before.txt"
+        )
+    );
+    FakeGraphClient tracked_parent_graph;
+    FakeMetrics tracked_parent_metrics;
+    auto tracked_parent_config =
+        config_for(tracked_parent_root, false);
+    tracked_parent_config.upload = true;
+    static_cast<void>(onedrive::sync::SyncEngine{
+        tracked_parent_config,
+        tracked_parent_graph,
+        tracked_parent_items,
+        tracked_parent_metrics
+    }.synchronize());
+    std::filesystem::rename(
+        tracked_parent_root / "before.txt",
+        tracked_parent_root / "Existing" / "after.txt"
+    );
+    static_cast<void>(onedrive::sync::SyncEngine{
+        tracked_parent_config,
+        tracked_parent_graph,
+        tracked_parent_items,
+        tracked_parent_metrics
+    }.synchronize());
+    if (tracked_parent_graph.remote_mutations !=
+            std::vector<std::string>{
+                "move:tracked-parent-file:Existing/after.txt",
+            } ||
+        tracked_parent_graph.directory_create_count != 0) {
+        return fail(
+            "move into tracked parent created a duplicate directory"
+        );
+    }
+
+    const auto new_directory_parent_root =
+        temporary.path() / "directory-move-new-parent";
+    std::filesystem::create_directories(
+        new_directory_parent_root / "Old"
+    );
+    {
+        std::ofstream output{
+            new_directory_parent_root / "Old" / "child.txt"
+        };
+        output << "data";
+    }
+    FakeItemStore new_directory_parent_items;
+    new_directory_parent_items.saved_delta_link = "saved";
+    new_directory_parent_items.items.emplace(
+        "new-parent-directory",
+        tracked_item(
+            new_directory_parent_root,
+            "new-parent-directory",
+            "Old",
+            true
+        )
+    );
+    auto new_parent_child = tracked_item(
+        new_directory_parent_root,
+        "new-parent-child",
+        "Old/child.txt"
+    );
+    new_parent_child.parent_id = "new-parent-directory";
+    new_directory_parent_items.items.emplace(
+        "new-parent-child",
+        new_parent_child
+    );
+    FakeGraphClient new_directory_parent_graph;
+    new_directory_parent_graph.moved_item_directory = true;
+    FakeMetrics new_directory_parent_metrics;
+    auto new_directory_parent_config =
+        config_for(new_directory_parent_root, false);
+    new_directory_parent_config.upload = true;
+    static_cast<void>(onedrive::sync::SyncEngine{
+        new_directory_parent_config,
+        new_directory_parent_graph,
+        new_directory_parent_items,
+        new_directory_parent_metrics
+    }.synchronize());
+    std::filesystem::create_directories(
+        new_directory_parent_root / "New" / "Nested"
+    );
+    std::filesystem::rename(
+        new_directory_parent_root / "Old",
+        new_directory_parent_root / "New" / "Nested" / "Old"
+    );
+    static_cast<void>(onedrive::sync::SyncEngine{
+        new_directory_parent_config,
+        new_directory_parent_graph,
+        new_directory_parent_items,
+        new_directory_parent_metrics
+    }.synchronize());
+    const auto new_parent_moved_child =
+        new_directory_parent_items.find("me", "new-parent-child");
+    if (new_directory_parent_graph.remote_mutations !=
+            std::vector<std::string>{
+                "mkdir:New",
+                "mkdir:New/Nested",
+                "move:new-parent-directory:New/Nested/Old",
+            } ||
+        !new_parent_moved_child ||
+        new_parent_moved_child->remote_path !=
+            "New/Nested/Old/child.txt" ||
+        new_parent_moved_child->local_path !=
+            new_directory_parent_root /
+                "New" / "Nested" / "Old" / "child.txt" ||
+        new_directory_parent_graph.upload_count != 0) {
+        return fail(
+            "directory move into new parent did not remap descendants"
+        );
+    }
+
     const auto recovery_root = temporary.path() / "move-recovery";
     std::filesystem::create_directories(recovery_root);
     {
@@ -4517,6 +4762,154 @@ int test_local_move_uploads() {
         selective_graph.upload_count != 0 ||
         !selective_items.find("me", "selective-move")) {
         return fail("selective sync boundary move changed remote state");
+    }
+
+    const auto selective_parent_root =
+        temporary.path() / "selective-new-parent-move";
+    std::filesystem::create_directories(
+        selective_parent_root / "Included"
+    );
+    {
+        std::ofstream output{
+            selective_parent_root / "Included" / "before.txt"
+        };
+        output << "data";
+    }
+    FakeItemStore selective_parent_items;
+    selective_parent_items.saved_delta_link = "saved";
+    selective_parent_items.items.emplace(
+        "selective-parent-move",
+        tracked_item(
+            selective_parent_root,
+            "selective-parent-move",
+            "Included/before.txt"
+        )
+    );
+    FakeGraphClient selective_parent_graph;
+    FakeMetrics selective_parent_metrics;
+    auto selective_parent_config =
+        config_for(selective_parent_root, false);
+    selective_parent_config.upload = true;
+    selective_parent_config.sync_list = sync_list;
+    selective_parent_items.saved_sync_filter_fingerprint =
+        onedrive::sync::detail::SyncList::load(
+            sync_list,
+            selective_parent_config.sync_root_files
+        ).fingerprint();
+    static_cast<void>(onedrive::sync::SyncEngine{
+        selective_parent_config,
+        selective_parent_graph,
+        selective_parent_items,
+        selective_parent_metrics
+    }.synchronize());
+    selective_parent_graph.remote_mutations.clear();
+    std::filesystem::create_directories(
+        selective_parent_root / "Included" / "New" / "Nested"
+    );
+    std::filesystem::rename(
+        selective_parent_root / "Included" / "before.txt",
+        selective_parent_root /
+            "Included" / "New" / "Nested" / "after.txt"
+    );
+    static_cast<void>(onedrive::sync::SyncEngine{
+        selective_parent_config,
+        selective_parent_graph,
+        selective_parent_items,
+        selective_parent_metrics
+    }.synchronize());
+    if (selective_parent_graph.remote_mutations !=
+            std::vector<std::string>{
+                "mkdir:Included/New",
+                "mkdir:Included/New/Nested",
+                "move:selective-parent-move:"
+                    "Included/New/Nested/after.txt",
+            }) {
+        return fail(
+            "selective sync did not create included move parents"
+        );
+    }
+
+    const auto parent_recovery_root =
+        temporary.path() / "move-new-parent-recovery";
+    std::filesystem::create_directories(parent_recovery_root);
+    {
+        std::ofstream output{parent_recovery_root / "before.txt"};
+        output << "data";
+    }
+    FakeItemStore parent_recovery_items;
+    parent_recovery_items.saved_delta_link = "saved";
+    parent_recovery_items.items.emplace(
+        "parent-recovery-move",
+        tracked_item(
+            parent_recovery_root,
+            "parent-recovery-move",
+            "before.txt"
+        )
+    );
+    FakeGraphClient parent_recovery_graph;
+    FakeMetrics parent_recovery_metrics;
+    auto parent_recovery_config =
+        config_for(parent_recovery_root, false);
+    parent_recovery_config.upload = true;
+    static_cast<void>(onedrive::sync::SyncEngine{
+        parent_recovery_config,
+        parent_recovery_graph,
+        parent_recovery_items,
+        parent_recovery_metrics
+    }.synchronize());
+    std::filesystem::create_directories(
+        parent_recovery_root / "New" / "Nested"
+    );
+    std::filesystem::rename(
+        parent_recovery_root / "before.txt",
+        parent_recovery_root / "New" / "Nested" / "after.txt"
+    );
+    parent_recovery_graph.move_conflict = true;
+    parent_recovery_graph.lookup_item = onedrive::graph::RemoteItem{
+        .id = "conflicting-item",
+        .name = "after.txt",
+        .etag = "conflicting-etag",
+        .parent_id = "directory-2",
+        .remote_path = "New/Nested/after.txt",
+    };
+    try {
+        static_cast<void>(onedrive::sync::SyncEngine{
+            parent_recovery_config,
+            parent_recovery_graph,
+            parent_recovery_items,
+            parent_recovery_metrics
+        }.synchronize());
+        return fail("new-parent move conflict was accepted");
+    } catch (const std::runtime_error&) {
+    }
+    if (parent_recovery_graph.created_directory_paths !=
+            std::vector<std::string>{"New", "New/Nested"} ||
+        parent_recovery_items.pending_uploads_by_path.size() != 0 ||
+        !parent_recovery_items.find("me", "directory-1") ||
+        !parent_recovery_items.find("me", "directory-2")) {
+        return fail(
+            "new-parent move conflict lost created parent state"
+        );
+    }
+    parent_recovery_graph.move_conflict = false;
+    static_cast<void>(onedrive::sync::SyncEngine{
+        parent_recovery_config,
+        parent_recovery_graph,
+        parent_recovery_items,
+        parent_recovery_metrics
+    }.synchronize());
+    const auto parent_recovered = parent_recovery_items.find(
+        "me",
+        "parent-recovery-move"
+    );
+    if (parent_recovery_graph.directory_create_count != 2 ||
+        parent_recovery_graph.moved_remote_items.size() != 2 ||
+        !parent_recovered ||
+        parent_recovered->remote_path != "New/Nested/after.txt" ||
+        !parent_recovery_items.pending_remote_moves_by_id.empty()) {
+        return fail(
+            "new-parent move did not recover without recreating parents"
+        );
     }
     return EXIT_SUCCESS;
 }

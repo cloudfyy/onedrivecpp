@@ -634,8 +634,9 @@ Graph PATCH and a dedicated SQLite journal. File modifications made together
 with a move are uploaded after the move commits. Directory moves remap tracked
 descendants atomically. Restart recovery adopts the destination only when its
 remote ID and local filesystem identity both match. The destination parent
-must already be tracked remotely; moves into a newly created local parent stop
-safely until parent creation and move ordering are implemented.
+may be newly created locally: synchronization creates each missing remote
+parent from shallowest to deepest before issuing the conditional move. Parent
+creation and the move retain their separate durable journals.
 
 `graph.endpoint` selects the Microsoft Graph cloud endpoint and defaults to
 the global service. It is not tied to a specific SharePoint host. For a
