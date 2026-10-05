@@ -267,9 +267,14 @@ Debug 程序位于 `build/debug/onedrive-cpp`。
 并验证 `sync.local_conflict = "backup"` 发出结构化事件、把本地字节完整保存为同
 目录下唯一的 `safeBackup`、恢复 Graph 权威 fixture、持久化一条快照，而且后续
 增量同步不会改写远端文件或备份。runner 会强制隔离配置使用 `backup` 策略，不会
-修改外部配置。随后它使用复制账户中的 token 创建名称唯一、可丢弃的 Graph
-子树，把一个文件和一个目录跨远端父目录移动并重命名，验证同步复用相同的本地
-inode、更新快照并发出结构化移动事件；远端临时子树即使测试失败也会被删除。
+修改外部配置。它还会创建可丢弃的本地子树，验证远端目录创建、简单上传、超过
+250 MB 的 upload session、已完成上传恢复、本地和远端同时修改时的冲突备份、
+移动到新父目录以及本地删除。大文件默认是 250,000,001 字节；
+`ONEDRIVE_E2E_LARGE_UPLOAD_BYTES` 可以把它增大到 1 GB，但不能降到 upload
+session 阈值以下。随后它使用复制账户中的 token 创建另一个名称唯一、可丢弃的
+Graph 子树，把一个文件和一个目录跨远端父目录移动并重命名，验证同步复用相同
+的本地 inode、更新快照并发出结构化移动事件；即使测试失败，远端临时子树也会
+被删除。
 最后，它会向隔离状态注入一条可信快照；该 ID 不存在于真实完整 Graph Delta
 响应中，并验证安全本地删除、SQLite 清理、结构化输出以及真实 fixture 仍保持
 不变。它还会启用 `sync_root_files`，验证选择摘要变化会触发完整 Graph 查询，
@@ -279,6 +284,8 @@ inode、更新快照并发出结构化移动事件；远端临时子树即使测
 export ONEDRIVE_E2E_CONFIG=/absolute/path/to/dedicated-e2e.toml
 export ONEDRIVE_E2E_EXPECTED_PATH=fixture/small.bin
 export ONEDRIVE_E2E_EXPECTED_SHA256=<64位小写十六进制值>
+# 可选；必须大于 250,000,000，且不能超过 1,000,000,000。
+export ONEDRIVE_E2E_LARGE_UPLOAD_BYTES=250000001
 
 cmake --preset e2e
 cmake --build --preset e2e
@@ -286,7 +293,8 @@ ctest --preset e2e -R graph_sync_e2e
 ```
 
 专用 Drive 必须授予文件写权限，并且只应包含可丢弃的测试数据；runner 生成的
-`sync_list` 只会落地预期 fixture 和临时 fixture。设置
+`sync_list` 只会落地预期 fixture 和临时 fixture。应预留足够的本地空间同时保存
+大文件源和稳定上传快照，并确保测试账号有足够配额保存远端副本。设置
 `ONEDRIVE_E2E_ARTIFACT_DIR` 后，失败时会保留命令输出和客户端日志；
 这些诊断信息可能包含远端文件元数据，应按敏感数据保管。临时配置、复制的 token、
 SQLite 状态及下载内容始终会删除。不要让 E2E runner 使用日常状态目录或日常 Drive。

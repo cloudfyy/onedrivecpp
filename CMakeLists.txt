@@ -363,7 +363,7 @@ if(BUILD_TESTING)
             graph_sync_e2e
             PROPERTIES
                 RUN_SERIAL TRUE
-                TIMEOUT 700
+                TIMEOUT 2400
         )
     endif()
 endif()

@@ -136,6 +136,25 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def write_pattern_file(path: Path, size: int) -> str:
+    if size <= 250_000_000:
+        raise E2EError(
+            "upload-session E2E file must exceed the 250 MB threshold"
+        )
+    pattern = bytes(range(256)) * 4096
+    digest = hashlib.sha256()
+    remaining = size
+    with path.open("wb") as stream:
+        while remaining:
+            chunk = pattern[:min(len(pattern), remaining)]
+            stream.write(chunk)
+            digest.update(chunk)
+            remaining -= len(chunk)
+        stream.flush()
+        os.fsync(stream.fileno())
+    return digest.hexdigest()
+
+
 def tracked_item_count(state_directory: Path, remote_path: Path) -> int:
     databases = list(state_directory.rglob("items.sqlite3"))
     if not databases:
@@ -173,6 +192,70 @@ def tracked_drive_id(state_directory: Path, remote_path: Path) -> str:
             "move fixture requires exactly one tracked Graph Drive"
         )
     return next(iter(drive_ids))
+
+
+def inject_completed_upload(
+    state_directory: Path,
+    local_path: Path,
+    remote_path: Path,
+) -> Path:
+    databases = list(state_directory.rglob("items.sqlite3"))
+    matches: list[tuple[Path, tuple[object, ...]]] = []
+    for database in databases:
+        try:
+            with sqlite3.connect(database) as connection:
+                row = connection.execute(
+                    "SELECT drive_id, remote_id, local_size, "
+                    "local_modified_ticks FROM item WHERE remote_path = ?",
+                    (remote_path.as_posix(),),
+                ).fetchone()
+        except sqlite3.Error as error:
+            raise E2EError(f"cannot query item database: {database}") from error
+        if row is not None:
+            matches.append((database, row))
+    if len(matches) != 1:
+        raise E2EError(
+            "upload recovery injection requires exactly one tracked item"
+        )
+    database, row = matches[0]
+    drive_id, remote_id, local_size, local_modified_ticks = row
+    snapshot = local_path.with_name(
+        f".{local_path.name}.onedrive-upload-e2e-{secrets.token_hex(8)}"
+    )
+    shutil.copyfile(local_path, snapshot)
+    try:
+        with sqlite3.connect(database) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "DELETE FROM item WHERE drive_id = ? AND remote_id = ?",
+                (drive_id, remote_id),
+            )
+            connection.execute(
+                "INSERT INTO pending_upload ("
+                "drive_id, remote_path, local_path, snapshot_path, "
+                "content_fingerprint, local_size, local_modified_ticks, "
+                "remote_id, expected_etag, upload_url, upload_expiration, "
+                "completed_bytes, failure_code, failure_message, "
+                "failure_attempt_count, directory"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, '', '', '', '', 0, '', '', 0, 0)",
+                (
+                    drive_id,
+                    remote_path.as_posix(),
+                    str(local_path),
+                    str(snapshot),
+                    sha256(snapshot),
+                    local_size,
+                    local_modified_ticks,
+                ),
+            )
+            connection.commit()
+    except sqlite3.Error as error:
+        try:
+            snapshot.unlink()
+        except FileNotFoundError:
+            pass
+        raise E2EError("cannot inject completed upload recovery") from error
+    return snapshot
 
 
 def active_refresh_token_path(state_directory: Path) -> Path:
@@ -444,13 +527,41 @@ class GraphMoveFixture:
             expected_statuses={200},
         )
 
+    def item_by_path(self, remote_path: Path) -> dict[str, object]:
+        response = self._request(
+            "GET",
+            "/root:/" + parse.quote(remote_path.as_posix(), safe="/"),
+            expected_statuses={200},
+        )
+        if not isinstance(response, dict):
+            raise E2EError("Graph path lookup response is not a JSON object")
+        return response
+
+    def item_exists(self, remote_path: Path) -> bool:
+        try:
+            self.item_by_path(remote_path)
+            return True
+        except E2EError as error:
+            if "unexpected HTTP status 404" in str(error):
+                return False
+            raise
+
+    def replace_file(self, item_id: str, contents: bytes) -> None:
+        self._request(
+            "PUT",
+            "/items/" + parse.quote(item_id, safe="") + "/content",
+            body=contents,
+            content_type="application/octet-stream",
+            expected_statuses={200},
+        )
+
     def delete_root(self) -> None:
         if self.root_id is None:
             return
         self._request(
             "DELETE",
             "/items/" + parse.quote(self.root_id, safe=""),
-            expected_statuses={204},
+            expected_statuses={204, 404},
         )
         self.root_id = None
 
@@ -1074,6 +1185,271 @@ def run_live(client: Path, work_root: Path) -> None:
                 source_config,
                 state_directory,
             )
+            upload_fixture_name = (
+                "__onedrive_cpp_upload_e2e_" + secrets.token_hex(8)
+            )
+            upload_fixture = GraphMoveFixture(
+                graph_endpoint,
+                tracked_drive_id(state_directory, expected_path),
+                access_token,
+            )
+            upload_root_path = Path(upload_fixture_name)
+            upload_local_root = sync_directory / upload_fixture_name
+            try:
+                sync_list.write_text(
+                    sync_list_rule(expected_path)
+                    + sync_list_subtree_rule(upload_root_path),
+                    encoding="utf-8",
+                )
+                upload_nested = upload_local_root / "nested"
+                upload_source = upload_local_root / "source"
+                upload_nested.mkdir(parents=True)
+                upload_source.mkdir()
+                recovery_file = upload_nested / "recovery.txt"
+                recovery_contents = (
+                    b"onedrive-cpp completed upload recovery E2E\n"
+                )
+                recovery_file.write_bytes(recovery_contents)
+                move_file = upload_source / "move.txt"
+                move_contents = b"onedrive-cpp local move upload E2E\n"
+                move_file.write_bytes(move_contents)
+                large_file = upload_local_root / "session.bin"
+                try:
+                    large_size = int(
+                        os.environ.get(
+                            "ONEDRIVE_E2E_LARGE_UPLOAD_BYTES",
+                            "250000001",
+                        )
+                    )
+                except ValueError as error:
+                    raise E2EError(
+                        "ONEDRIVE_E2E_LARGE_UPLOAD_BYTES must be an integer"
+                    ) from error
+                if large_size > 1_000_000_000:
+                    raise E2EError(
+                        "ONEDRIVE_E2E_LARGE_UPLOAD_BYTES exceeds 1 GB"
+                    )
+                large_sha256 = write_pattern_file(
+                    large_file,
+                    large_size,
+                )
+
+                created_upload_fixture = run_sync(
+                    client,
+                    config,
+                    home,
+                    log_file,
+                )
+                completed.append(created_upload_fixture)
+                if created_upload_fixture.returncode != 0:
+                    raise E2EError(
+                        "local Graph upload fixture creation failed with "
+                        f"{created_upload_fixture.returncode}"
+                    )
+                if json_event_count(
+                    created_upload_fixture,
+                    "local_directory_created",
+                ) < 3:
+                    raise E2EError(
+                        "local Graph upload did not create its directories"
+                    )
+                if json_event_count(
+                    created_upload_fixture,
+                    "local_item_uploaded",
+                ) < 3:
+                    raise E2EError(
+                        "local Graph upload did not upload all fixture files"
+                    )
+
+                upload_root_item = upload_fixture.item_by_path(
+                    upload_root_path
+                )
+                upload_root_id = upload_root_item.get("id")
+                if not isinstance(upload_root_id, str) or not upload_root_id:
+                    raise E2EError(
+                        "uploaded fixture root has no Graph item ID"
+                    )
+                upload_fixture.root_id = upload_root_id
+                large_remote_path = upload_root_path / "session.bin"
+                large_item = upload_fixture.item_by_path(large_remote_path)
+                if large_item.get("size") != large_size:
+                    raise E2EError(
+                        "upload-session E2E file has the wrong remote size"
+                    )
+                if sha256(large_file) != large_sha256:
+                    raise E2EError(
+                        "upload-session E2E changed the local source"
+                    )
+                for remote_path in (
+                    upload_root_path,
+                    upload_root_path / "nested",
+                    upload_root_path / "source",
+                    upload_root_path / "nested" / "recovery.txt",
+                    upload_root_path / "source" / "move.txt",
+                    large_remote_path,
+                ):
+                    if tracked_item_count(
+                        state_directory,
+                        remote_path,
+                    ) != 1:
+                        raise E2EError(
+                            "local Graph upload did not persist its snapshot"
+                        )
+
+                recovery_remote_path = (
+                    upload_root_path / "nested" / "recovery.txt"
+                )
+                recovery_snapshot = inject_completed_upload(
+                    state_directory,
+                    recovery_file,
+                    recovery_remote_path,
+                )
+                recovered_upload = run_sync(
+                    client,
+                    config,
+                    home,
+                    log_file,
+                )
+                completed.append(recovered_upload)
+                if recovered_upload.returncode != 0:
+                    raise E2EError(
+                        "completed Graph upload recovery failed with "
+                        f"{recovered_upload.returncode}"
+                    )
+                if not has_json_event(
+                    recovered_upload,
+                    "pending_upload_recovered",
+                ):
+                    raise E2EError(
+                        "completed Graph upload recovery emitted no event"
+                    )
+                if recovery_snapshot.exists():
+                    raise E2EError(
+                        "completed Graph upload recovery retained its snapshot"
+                    )
+                if (
+                    recovery_file.read_bytes() != recovery_contents
+                    or tracked_item_count(
+                        state_directory,
+                        recovery_remote_path,
+                    ) != 1
+                ):
+                    raise E2EError(
+                        "completed Graph upload recovery changed its file"
+                    )
+
+                local_conflict_contents = (
+                    b"onedrive-cpp local upload conflict bytes\n"
+                )
+                remote_conflict_contents = (
+                    b"onedrive-cpp remote upload conflict bytes\n"
+                )
+                recovery_file.write_bytes(local_conflict_contents)
+                recovery_item = upload_fixture.item_by_path(
+                    recovery_remote_path
+                )
+                recovery_item_id = recovery_item.get("id")
+                if (
+                    not isinstance(recovery_item_id, str)
+                    or not recovery_item_id
+                ):
+                    raise E2EError(
+                        "upload-conflict fixture has no Graph item ID"
+                    )
+                upload_fixture.replace_file(
+                    recovery_item_id,
+                    remote_conflict_contents,
+                )
+                reconciled_upload_conflict = run_sync(
+                    client,
+                    config,
+                    home,
+                    log_file,
+                )
+                completed.append(reconciled_upload_conflict)
+                if reconciled_upload_conflict.returncode != 0:
+                    raise E2EError(
+                        "upload conflict reconciliation failed with "
+                        f"{reconciled_upload_conflict.returncode}"
+                    )
+                conflict_backups = safe_backup_files(recovery_file)
+                if (
+                    recovery_file.read_bytes() != remote_conflict_contents
+                    or len(conflict_backups) != 1
+                    or conflict_backups[0].read_bytes()
+                    != local_conflict_contents
+                    or not has_json_event(
+                        reconciled_upload_conflict,
+                        "local_conflict_backed_up",
+                    )
+                ):
+                    raise E2EError(
+                        "upload conflict did not preserve both versions"
+                    )
+
+                move_remote_path = upload_root_path / "source" / "move.txt"
+                move_item = upload_fixture.item_by_path(move_remote_path)
+                move_item_id = move_item.get("id")
+                if not isinstance(move_item_id, str) or not move_item_id:
+                    raise E2EError(
+                        "local-move upload fixture has no Graph item ID"
+                    )
+                move_target = (
+                    upload_local_root / "new-parent" / "nested" / "moved.txt"
+                )
+                move_target.parent.mkdir(parents=True)
+                move_file.rename(move_target)
+                uploaded_move = run_sync(
+                    client,
+                    config,
+                    home,
+                    log_file,
+                )
+                completed.append(uploaded_move)
+                moved_remote_path = (
+                    upload_root_path /
+                    "new-parent" /
+                    "nested" /
+                    "moved.txt"
+                )
+                moved_item = upload_fixture.item_by_path(moved_remote_path)
+                if (
+                    uploaded_move.returncode != 0
+                    or moved_item.get("id") != move_item_id
+                    or upload_fixture.item_exists(move_remote_path)
+                    or move_target.read_bytes() != move_contents
+                    or not has_json_event(
+                        uploaded_move,
+                        "local_move_uploaded",
+                    )
+                ):
+                    raise E2EError(
+                        "local move upload did not preserve the Graph item"
+                    )
+
+                shutil.rmtree(upload_local_root)
+                deleted_upload_fixture = run_sync(
+                    client,
+                    config,
+                    home,
+                    log_file,
+                )
+                completed.append(deleted_upload_fixture)
+                if (
+                    deleted_upload_fixture.returncode != 0
+                    or upload_fixture.item_exists(upload_root_path)
+                    or not has_json_event(
+                        deleted_upload_fixture,
+                        "local_item_deleted",
+                    )
+                ):
+                    raise E2EError(
+                        "local deletion did not remove the Graph upload fixture"
+                    )
+                upload_fixture.root_id = None
+            finally:
+                upload_fixture.delete_root()
+
             move_fixture_name = (
                 "__onedrive_cpp_move_e2e_" + secrets.token_hex(8)
             )
@@ -1462,6 +1838,70 @@ directory = "/old/state"
             raise E2EError("tracked Drive lookup self-test failed")
         if materialized_files(root) != sorted([expected, database]):
             raise E2EError("materialized file lookup self-test failed")
+        try:
+            write_pattern_file(root / "too-small.bin", 250_000_000)
+            raise E2EError("small upload-session fixture was accepted")
+        except E2EError as error:
+            if "must exceed" not in str(error):
+                raise
+        recovery_source = expected.with_name("recovery.txt")
+        recovery_source.write_text("recovery", encoding="utf-8")
+        with sqlite3.connect(database) as connection:
+            connection.execute(
+                "CREATE TABLE pending_upload ("
+                "drive_id TEXT NOT NULL, remote_path TEXT NOT NULL, "
+                "local_path TEXT NOT NULL, snapshot_path TEXT NOT NULL, "
+                "content_fingerprint TEXT NOT NULL, local_size INTEGER NOT NULL, "
+                "local_modified_ticks INTEGER NOT NULL, remote_id TEXT NOT NULL, "
+                "expected_etag TEXT NOT NULL, upload_url TEXT NOT NULL, "
+                "upload_expiration TEXT NOT NULL, completed_bytes INTEGER NOT NULL, "
+                "failure_code TEXT NOT NULL, failure_message TEXT NOT NULL, "
+                "failure_attempt_count INTEGER NOT NULL, directory INTEGER NOT NULL)"
+            )
+            connection.execute(
+                "INSERT INTO item VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    "drive",
+                    "recovery",
+                    "parent",
+                    "recovery.txt",
+                    "etag",
+                    "fixture/recovery.txt",
+                    str(recovery_source),
+                    "2026-10-04T00:00:00Z",
+                    8,
+                    8,
+                    456,
+                    0,
+                ),
+            )
+        injected_snapshot = inject_completed_upload(
+            state,
+            recovery_source,
+            Path("fixture/recovery.txt"),
+        )
+        with sqlite3.connect(database) as connection:
+            pending = connection.execute(
+                "SELECT content_fingerprint, local_size, "
+                "local_modified_ticks FROM pending_upload "
+                "WHERE remote_path = 'fixture/recovery.txt'"
+            ).fetchone()
+            remaining = connection.execute(
+                "SELECT count(*) FROM item "
+                "WHERE remote_path = 'fixture/recovery.txt'"
+            ).fetchone()
+            connection.execute(
+                "DELETE FROM pending_upload "
+                "WHERE remote_path = 'fixture/recovery.txt'"
+            )
+        if (
+            pending != (sha256(recovery_source), 8, 456)
+            or remaining != (0,)
+            or not injected_snapshot.is_file()
+        ):
+            raise E2EError("completed upload injection self-test failed")
+        injected_snapshot.unlink()
+        recovery_source.unlink()
         account = state / "accounts" / "account--12345678"
         account.mkdir(parents=True)
         token = account / "refresh_token"
@@ -1580,6 +2020,10 @@ directory = "/old/state"
                     "access_token": "access-token",
                     "refresh_token": "rotated-token",
                 }
+            if method == "GET" and url.endswith("/root:/root/missing.bin"):
+                raise E2EError(
+                    "GET request returned unexpected HTTP status 404"
+                )
             if method == "DELETE":
                 return None
             return {"id": f"item-{len(requests)}"}
@@ -1628,6 +2072,16 @@ directory = "/old/state"
                 graph_root_id,
                 "renamed.bin",
             )
+            looked_up = graph_fixture.item_by_path(
+                Path("root/renamed.bin")
+            )
+            if looked_up.get("id") is None:
+                raise E2EError("Graph fixture path lookup self-test failed")
+            if not graph_fixture.item_exists(Path("root/renamed.bin")):
+                raise E2EError("Graph fixture existence self-test failed")
+            if graph_fixture.item_exists(Path("root/missing.bin")):
+                raise E2EError("Graph fixture accepted a missing item")
+            graph_fixture.replace_file(graph_file_id, b"replacement")
             graph_fixture.delete_root()
             if graph_fixture.root_id is not None:
                 raise E2EError("Graph fixture cleanup self-test failed")
@@ -1640,6 +2094,10 @@ directory = "/old/state"
             "POST",
             "PUT",
             "PATCH",
+            "GET",
+            "GET",
+            "GET",
+            "PUT",
             "DELETE",
         ]:
             raise E2EError("Graph fixture request sequence self-test failed")
