@@ -47,6 +47,7 @@ struct BlockedItem {
     std::string parent_id;
     std::string name;
     std::string etag;
+    std::string ctag;
     std::string remote_path;
     std::string last_modified;
     std::int64_t size{0};

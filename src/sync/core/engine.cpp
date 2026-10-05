@@ -267,6 +267,7 @@ graph::RemoteItem remote_item(const storage::BlockedItem& item) {
         .id = item.remote_id,
         .name = item.name,
         .etag = item.etag,
+        .ctag = item.ctag,
         .parent_id = item.parent_id,
         .remote_path = item.remote_path,
         .last_modified = item.last_modified,

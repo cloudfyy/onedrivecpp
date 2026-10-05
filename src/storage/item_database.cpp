@@ -268,6 +268,7 @@ void create_blocked_item_schema(sqlite3* database) {
         "parent_id TEXT NOT NULL,"
         "name TEXT NOT NULL,"
         "etag TEXT NOT NULL,"
+        "ctag TEXT NOT NULL DEFAULT '',"
         "remote_path TEXT NOT NULL,"
         "last_modified TEXT NOT NULL,"
         "size INTEGER NOT NULL,"
@@ -521,7 +522,7 @@ void create_upload_suppression_schema(sqlite3* database) {
     );
 }
 
-constexpr int current_schema_version = 23;
+constexpr int current_schema_version = 24;
 
 void set_schema_version(sqlite3* database, int version) {
     const auto sql =
@@ -621,6 +622,13 @@ void add_pending_upload_failure(sqlite3* database) {
         "TEXT NOT NULL DEFAULT '';"
         "ALTER TABLE pending_upload ADD COLUMN failure_attempt_count "
         "INTEGER NOT NULL DEFAULT 0;"
+    );
+}
+
+void add_blocked_item_content_tag(sqlite3* database) {
+    execute(
+        database,
+        "ALTER TABLE blocked_item ADD COLUMN ctag TEXT NOT NULL DEFAULT '';"
     );
 }
 
@@ -746,6 +754,7 @@ constexpr std::array schema_migrations{
     SchemaMigration{20, 21, create_pending_remote_move_schema},
     SchemaMigration{21, 22, add_content_tags},
     SchemaMigration{22, 23, add_pending_upload_failure},
+    SchemaMigration{23, 24, add_blocked_item_content_tag},
 };
 
 consteval bool schema_migration_chain_is_complete() {
@@ -1385,15 +1394,16 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
     Statement upsert_blocked_statement{
         database,
         "INSERT INTO blocked_item ("
-        "drive_id, remote_id, parent_id, name, etag, remote_path, "
+        "drive_id, remote_id, parent_id, name, etag, ctag, remote_path, "
         "last_modified, size, directory, deleted, reason_code, reason_message, "
         "content_hash_algorithm, content_hash_value"
         ") VALUES ("
-        "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14"
+        "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15"
         ") "
         "ON CONFLICT(drive_id, remote_id) DO UPDATE SET "
         "parent_id = excluded.parent_id, name = excluded.name, "
-        "etag = excluded.etag, remote_path = excluded.remote_path, "
+        "etag = excluded.etag, ctag = excluded.ctag, "
+        "remote_path = excluded.remote_path, "
         "last_modified = excluded.last_modified, size = excluded.size, "
         "directory = excluded.directory, deleted = excluded.deleted, "
         "reason_code = excluded.reason_code, "
@@ -1416,36 +1426,37 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         bind_text(database, upsert_blocked_statement.get(), 3, item.parent_id);
         bind_text(database, upsert_blocked_statement.get(), 4, item.name);
         bind_text(database, upsert_blocked_statement.get(), 5, item.etag);
-        bind_text(database, upsert_blocked_statement.get(), 6, item.remote_path);
+        bind_text(database, upsert_blocked_statement.get(), 6, item.ctag);
+        bind_text(database, upsert_blocked_statement.get(), 7, item.remote_path);
         bind_text(
             database,
             upsert_blocked_statement.get(),
-            7,
+            8,
             item.last_modified
         );
-        bind_integer(database, upsert_blocked_statement.get(), 8, item.size);
+        bind_integer(database, upsert_blocked_statement.get(), 9, item.size);
         bind_integer(
             database,
             upsert_blocked_statement.get(),
-            9,
+            10,
             item.directory ? 1 : 0
         );
         bind_integer(
             database,
             upsert_blocked_statement.get(),
-            10,
+            11,
             item.deleted ? 1 : 0
         );
         bind_text(
             database,
             upsert_blocked_statement.get(),
-            11,
+            12,
             item.reason_code
         );
         bind_text(
             database,
             upsert_blocked_statement.get(),
-            12,
+            13,
             item.reason_message
         );
         std::string hash_algorithm;
@@ -1465,10 +1476,10 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         bind_text(
             database,
             upsert_blocked_statement.get(),
-            13,
+            14,
             hash_algorithm
         );
-        bind_text(database, upsert_blocked_statement.get(), 14, hash_value);
+        bind_text(database, upsert_blocked_statement.get(), 15, hash_value);
         if (sqlite3_step(upsert_blocked_statement.get()) != SQLITE_DONE) {
             throw std::runtime_error(
                 "cannot persist blocked item: " +
@@ -2817,7 +2828,7 @@ std::vector<BlockedItem> ItemDatabase::blocked_items_on_worker(
     }
     Statement statement{
         database,
-        "SELECT drive_id, remote_id, parent_id, name, etag, remote_path, "
+        "SELECT drive_id, remote_id, parent_id, name, etag, ctag, remote_path, "
         "last_modified, size, directory, deleted, reason_code, reason_message, "
         "attempt_count, content_hash_algorithm, content_hash_value "
         "FROM blocked_item WHERE drive_id = ?1 "
@@ -2836,8 +2847,8 @@ std::vector<BlockedItem> ItemDatabase::blocked_items_on_worker(
                 std::string{sqlite3_errmsg(database)}
             );
         }
-        const std::string hash_algorithm = column_text(statement.get(), 13);
-        const std::string hash_value = column_text(statement.get(), 14);
+        const std::string hash_algorithm = column_text(statement.get(), 14);
+        const std::string hash_value = column_text(statement.get(), 15);
         std::optional<util::FileHash> content_hash;
         if (!hash_algorithm.empty() || !hash_value.empty()) {
             if (hash_value.empty() ||
@@ -2860,15 +2871,16 @@ std::vector<BlockedItem> ItemDatabase::blocked_items_on_worker(
             .parent_id = column_text(statement.get(), 2),
             .name = column_text(statement.get(), 3),
             .etag = column_text(statement.get(), 4),
-            .remote_path = column_text(statement.get(), 5),
-            .last_modified = column_text(statement.get(), 6),
-            .size = sqlite3_column_int64(statement.get(), 7),
-            .directory = sqlite3_column_int(statement.get(), 8) != 0,
-            .deleted = sqlite3_column_int(statement.get(), 9) != 0,
-            .reason_code = column_text(statement.get(), 10),
-            .reason_message = column_text(statement.get(), 11),
+            .ctag = column_text(statement.get(), 5),
+            .remote_path = column_text(statement.get(), 6),
+            .last_modified = column_text(statement.get(), 7),
+            .size = sqlite3_column_int64(statement.get(), 8),
+            .directory = sqlite3_column_int(statement.get(), 9) != 0,
+            .deleted = sqlite3_column_int(statement.get(), 10) != 0,
+            .reason_code = column_text(statement.get(), 11),
+            .reason_message = column_text(statement.get(), 12),
             .attempt_count = static_cast<std::uint64_t>(
-                sqlite3_column_int64(statement.get(), 12)
+                sqlite3_column_int64(statement.get(), 13)
             ),
             .content_hash = std::move(content_hash),
         });

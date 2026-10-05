@@ -517,6 +517,24 @@ bool create_version_twenty_two_database(
     );
 }
 
+bool create_version_twenty_three_database(
+    const std::filesystem::path& path
+) {
+    if (!create_version_twenty_two_database(path)) {
+        return false;
+    }
+    return execute_schema(
+        path,
+        "ALTER TABLE pending_upload ADD COLUMN failure_code "
+        "TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE pending_upload ADD COLUMN failure_message "
+        "TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE pending_upload ADD COLUMN failure_attempt_count "
+        "INTEGER NOT NULL DEFAULT 0;"
+        "PRAGMA user_version = 23;"
+    );
+}
+
 bool identity_row_is_valid(const std::filesystem::path& path) {
     sqlite3* database = nullptr;
     if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
@@ -775,6 +793,7 @@ int main() {
                     .remote_id = "blocked-me",
                     .name = "blocked-me.txt",
                     .etag = "blocked-etag",
+                    .ctag = "blocked-ctag",
                     .remote_path = "blocked-me.txt",
                     .deleted = true,
                     .reason_code = "local_modification",
@@ -932,6 +951,7 @@ int main() {
             database.blocked_items("me").size() != 1 ||
             database.blocked_items("other-drive").size() != 1 ||
             database.blocked_items("me")[0].attempt_count != 1 ||
+            database.blocked_items("me")[0].ctag != "blocked-ctag" ||
             !database.blocked_items("me")[0].deleted ||
             !database.blocked_items("me")[0].content_hash ||
             database.blocked_items("me")[0].content_hash->value !=
@@ -1230,7 +1250,7 @@ int main() {
             onedrive::storage::ItemDatabase database{directory, identity()};
             database.open();
         }
-        if (!schema_version_is(database_path, 23) ||
+        if (!schema_version_is(database_path, 24) ||
             !identity_row_is_valid(database_path)) {
             return fail(
                 std::string{fixture.name} +
@@ -1937,6 +1957,67 @@ int main() {
                 "version twenty-two database did not persist upload failures"
             );
         }
+    }
+
+    const auto version_twenty_three_directory =
+        temporary_directory.path() / "version-twenty-three";
+    const auto version_twenty_three_path =
+        version_twenty_three_directory / "items.sqlite3";
+    std::filesystem::create_directories(version_twenty_three_directory);
+    if (!create_version_twenty_three_database(version_twenty_three_path) ||
+        !execute_schema(
+            version_twenty_three_path,
+            "INSERT INTO blocked_item ("
+            "drive_id, remote_id, parent_id, name, etag, remote_path, "
+            "last_modified, size, directory, deleted, reason_code, "
+            "reason_message"
+            ") VALUES ("
+            "'me', 'blocked-ctag', 'root', 'blocked.txt', 'etag', "
+            "'blocked.txt', '2026-10-05T00:00:00Z', 4, 0, 0, "
+            "'local_modification', 'local file changed'"
+            ");"
+        )) {
+        return fail(
+            "version twenty-three migration fixture could not be created"
+        );
+    }
+    {
+        onedrive::storage::ItemDatabase database{
+            version_twenty_three_directory,
+            identity()
+        };
+        database.open();
+        const auto migrated = database.blocked_items("me");
+        if (migrated.size() != 1 || !migrated[0].ctag.empty()) {
+            return fail(
+                "version twenty-three blocked item ctag was not migrated"
+            );
+        }
+        database.apply_delta({
+            .drive_id = "me",
+            .blocked_upserts = {
+                {
+                    .remote_id = "blocked-ctag",
+                    .name = "blocked.txt",
+                    .etag = "metadata-version",
+                    .ctag = "content-version",
+                    .remote_path = "blocked.txt",
+                    .reason_code = "local_modification",
+                    .reason_message = "local file changed",
+                },
+            },
+            .delta_link = "https://graph.example.test/blocked-ctag",
+        });
+        const auto updated = database.blocked_items("me");
+        if (updated.size() != 1 ||
+            updated[0].ctag != "content-version") {
+            return fail("blocked item content tag was not persisted");
+        }
+    }
+    if (!schema_version_is(version_twenty_three_path, 24)) {
+        return fail(
+            "version twenty-three database was not migrated to version 24"
+        );
     }
 
     const auto version_fourteen_directory =

@@ -20,6 +20,7 @@ onedrive::graph::RemoteItem item(
         .id = std::move(id),
         .name = std::filesystem::path{path}.filename().string(),
         .etag = "etag",
+        .ctag = "ctag",
         .parent_id = "parent",
         .remote_path = std::move(path),
         .last_modified = "2026-10-02T00:00:00Z",
@@ -116,6 +117,7 @@ int main() {
             .drive_id = "me",
             .remote_id = "removed",
             .name = "removed.txt",
+            .ctag = "removed-ctag",
             .remote_path = "removed.txt",
             .local_path = "/sync/removed.txt",
             .size = 4,
@@ -128,6 +130,7 @@ int main() {
     if (!blocked_removal_delta.removals.empty() ||
         blocked_removal_delta.blocked_upserts.size() != 1 ||
         !blocked_removal_delta.blocked_upserts[0].deleted ||
+        blocked_removal_delta.blocked_upserts[0].ctag != "removed-ctag" ||
         blocked_removal_delta.blocked_upserts[0].reason_code !=
             "local_modification") {
         return fail("blocked remote deletion lost its retry metadata");
@@ -148,6 +151,7 @@ int main() {
     if (malware_plan.download_count() != 0 ||
         malware_plan.download_bytes() != 0 ||
         malware_plan.blocked_count() != 1 ||
+        malware_plan.blocked(0).ctag != "ctag" ||
         malware_plan.blocked(0).reason_code != "malware_detected") {
         return fail("Graph malware item was not blocked before download");
     }
