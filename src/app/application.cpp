@@ -115,6 +115,7 @@ Application::Application(
 int Application::run(int argc, char* argv[]) {
     std::filesystem::path config_path = default_config_path();
     bool force_dry_run = false;
+    bool force_large_delete = false;
     bool clear_all_state = false;
     bool assume_yes = false;
     std::string log_level{"info"};
@@ -221,6 +222,11 @@ int Application::run(int argc, char* argv[]) {
         force_dry_run,
         "Show synchronization inputs without changing remote files"
     );
+    sync_command->add_flag(
+        "--force-large-delete",
+        force_large_delete,
+        "Allow this sync to exceed the configured remote deletion limit"
+    );
     download_command
         ->add_option(
             "REMOTE_PATH",
@@ -265,6 +271,7 @@ int Application::run(int argc, char* argv[]) {
         );
         auto config = config::Config::load(config_path);
         config.dry_run = config.dry_run || force_dry_run;
+        config.force_large_delete = force_large_delete;
         const auto operation =
             *auth_command ? detail::Operation::authenticate :
             *logout_command ? detail::Operation::logout :
@@ -379,7 +386,8 @@ int Application::run(int argc, char* argv[]) {
                 items->open();
                 const auto cleared = items->clear(config.drive_id);
                 spdlog::warn(
-                    "Full synchronization state clear completed for drive '{}': "
+                    "Full synchronization state clear completed for drive "
+                    "'{}': "
                     "{} item snapshots, {} pending downloads, {} partial "
                     "downloads, {} pending uploads, {} pending moves, {} "
                     "upload suppressions, and {} blocked items "
@@ -442,8 +450,8 @@ int Application::run(int argc, char* argv[]) {
                 cli::MessageKind::success,
                 "state_cursor_reset",
                 "Reset synchronization cursor for drive " + display_drive +
-                    ": saved cursor " +
-                    (removed ? "removed" : "not present") + "."
+                    ": saved cursor " + (removed ? "removed" : "not present") +
+                    "."
             );
             console.message(
                 cli::MessageKind::information,
@@ -484,27 +492,19 @@ int Application::run(int argc, char* argv[]) {
         items->open();
         if (*download_command) {
             spdlog::info(
-                "Starting single-file download for '{}'",
-                remote_download_path
+                "Starting single-file download for '{}'", remote_download_path
             );
             return sync::download_single_file(
-                config,
-                remote_download_path,
-                *graph,
-                *items,
-                console
+                config, remote_download_path, *graph, *items, console
             );
         }
         auto metrics = runtime_factory_->create_metrics();
         monitor::SyncCallback synchronize{
             [&config, &graph, &items, &metrics, &console] {
                 return sync::SyncEngine{
-                    config,
-                    *graph,
-                    *items,
-                    *metrics,
-                    &console
-                }.synchronize();
+                    config, *graph, *items, *metrics, &console
+                }
+                    .synchronize();
             }
         };
         if (*monitor_command) {
@@ -524,10 +524,9 @@ int Application::run(int argc, char* argv[]) {
                     config.monitor_poll_interval.count()
                 )
             );
-            return runtime_factory_->create_monitor(
-                config,
-                std::move(synchronize)
-            )->run();
+            return runtime_factory_
+                ->create_monitor(config, std::move(synchronize))
+                ->run();
         }
         return synchronize();
     } catch (const std::exception& error) {

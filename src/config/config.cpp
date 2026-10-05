@@ -110,15 +110,12 @@ std::size_t size_value(
 
 template <typename Duration>
 Duration duration_value(
-    const toml::table& table,
-    std::string_view key,
-    std::string_view full_name
+    const toml::table& table, std::string_view key, std::string_view full_name
 ) {
     const auto value = unsigned_value(table, key, full_name);
     using Representation = typename Duration::rep;
     if (value >
-        static_cast<std::uint64_t>(
-            std::numeric_limits<Representation>::max()
+        static_cast<std::uint64_t>(std::numeric_limits<Representation>::max()
         )) {
         throw std::runtime_error(
             "TOML configuration value '" + std::string{full_name} +
@@ -185,8 +182,7 @@ Enum enum_value(
         }
     }
     throw std::runtime_error(
-        "invalid TOML configuration value for '" +
-        std::string{full_name} + "'"
+        "invalid TOML configuration value for '" + std::string{full_name} + "'"
     );
 }
 
@@ -322,7 +318,8 @@ Config Config::defaults() {
 
     return {
         .sync_directory = std::filesystem::path{home} / "OneDrive",
-        .state_directory = std::filesystem::path{home} / ".local/state/onedrive-cpp",
+        .state_directory =
+            std::filesystem::path{home} / ".local/state/onedrive-cpp",
         .sync_list = std::nullopt,
         .sync_root_files = false,
         .drive_id = "me",
@@ -338,25 +335,24 @@ Config Config::defaults() {
         .monitor_settle_delay = std::chrono::milliseconds{1000},
         .download_concurrency = 4,
         .download_maximum_retries = 4,
-        .download_chunk_threshold_bytes =
-            std::uint64_t{8} * 1024U * 1024U,
-        .download_checkpoint_interval_bytes =
-            std::uint64_t{1024} * 1024U,
+        .download_chunk_threshold_bytes = std::uint64_t{8} * 1024U * 1024U,
+        .download_checkpoint_interval_bytes = std::uint64_t{1024} * 1024U,
         .transfer_order = TransferOrder::default_order,
         .proxy = {},
         .transfer_transport = {},
         .download_maximum_rate_bytes_per_second = 0,
         .download_maximum_total_rate_bytes_per_second = 0,
-        .upload_chunk_size_bytes =
-            std::uint64_t{10} * 1024U * 1024U,
+        .upload_chunk_size_bytes = std::uint64_t{10} * 1024U * 1024U,
         .upload_maximum_rate_bytes_per_second = 0,
         .upload_maximum_total_rate_bytes_per_second = 0,
         .download_validation = DownloadValidationMode::strict,
         .sync_permissions = SyncPermissionsMode::private_access,
         .local_conflict = LocalConflictPolicy::block,
+        .maximum_remote_deletions = 1000,
         .filesystem_metadata = FilesystemMetadataMode::automatic,
         .upload = true,
         .dry_run = false,
+        .force_large_delete = false,
     };
 }
 
@@ -418,6 +414,7 @@ Config Config::load(const std::filesystem::path& path) {
                 "sync_list",
                 "sync_root_files",
                 "local_conflict",
+                "maximum_remote_deletions",
                 "upload",
             },
             "sync"
@@ -429,6 +426,13 @@ Config Config::load(const std::filesystem::path& path) {
                 "a string"
             )) {
             config.local_conflict = parse_local_conflict(*value);
+        }
+        if (sync->contains("maximum_remote_deletions")) {
+            config.maximum_remote_deletions = size_value(
+                *sync,
+                "maximum_remote_deletions",
+                "sync.maximum_remote_deletions"
+            );
         }
         if (const auto value = optional_value<std::string>(
                 *sync,
@@ -776,8 +780,7 @@ Config Config::load(const std::filesystem::path& path) {
         }
     }
 
-    if (const auto* upload =
-            optional_table(root, "upload", "upload")) {
+    if (const auto* upload = optional_table(root, "upload", "upload")) {
         validate_keys(
             *upload,
             {
@@ -789,16 +792,12 @@ Config Config::load(const std::filesystem::path& path) {
         );
         if (upload->contains("chunk_size_bytes")) {
             const auto chunk_size = unsigned_value(
-                *upload,
-                "chunk_size_bytes",
-                "upload.chunk_size_bytes"
+                *upload, "chunk_size_bytes", "upload.chunk_size_bytes"
             );
-            constexpr std::uint64_t upload_quantum =
-                std::uint64_t{320} * 1024U;
+            constexpr std::uint64_t upload_quantum = std::uint64_t{320} * 1024U;
             constexpr std::uint64_t maximum_chunk_size =
                 std::uint64_t{60} * 1024U * 1024U;
-            if (chunk_size == 0 ||
-                chunk_size % upload_quantum != 0 ||
+            if (chunk_size == 0 || chunk_size % upload_quantum != 0 ||
                 chunk_size >= maximum_chunk_size) {
                 throw std::runtime_error(
                     "upload.chunk_size_bytes must be a positive multiple of "
@@ -808,27 +807,22 @@ Config Config::load(const std::filesystem::path& path) {
             config.upload_chunk_size_bytes = chunk_size;
         }
         if (upload->contains("maximum_rate_bytes_per_second")) {
-            config.upload_maximum_rate_bytes_per_second =
-                unsigned_value(
-                    *upload,
-                    "maximum_rate_bytes_per_second",
-                    "upload.maximum_rate_bytes_per_second"
-                );
+            config.upload_maximum_rate_bytes_per_second = unsigned_value(
+                *upload,
+                "maximum_rate_bytes_per_second",
+                "upload.maximum_rate_bytes_per_second"
+            );
         }
-        if (upload->contains(
-                "maximum_total_rate_bytes_per_second"
-            )) {
-            config.upload_maximum_total_rate_bytes_per_second =
-                unsigned_value(
-                    *upload,
-                    "maximum_total_rate_bytes_per_second",
-                    "upload.maximum_total_rate_bytes_per_second"
-                );
+        if (upload->contains("maximum_total_rate_bytes_per_second")) {
+            config.upload_maximum_total_rate_bytes_per_second = unsigned_value(
+                *upload,
+                "maximum_total_rate_bytes_per_second",
+                "upload.maximum_total_rate_bytes_per_second"
+            );
         }
     }
 
-    if (const auto* monitor =
-            optional_table(root, "monitor", "monitor")) {
+    if (const auto* monitor = optional_table(root, "monitor", "monitor")) {
         validate_keys(
             *monitor,
             {"poll_interval_seconds", "settle_delay_milliseconds"},
@@ -942,18 +936,18 @@ Config Config::load(const std::filesystem::path& path) {
             if (throttle->contains("initial_delay_seconds")) {
                 config.graph_initial_throttle_delay =
                     duration_value<std::chrono::seconds>(
-                    *throttle,
-                    "initial_delay_seconds",
-                    "graph.throttle.initial_delay_seconds"
-                );
+                        *throttle,
+                        "initial_delay_seconds",
+                        "graph.throttle.initial_delay_seconds"
+                    );
             }
             if (throttle->contains("maximum_delay_seconds")) {
                 config.graph_maximum_throttle_delay =
                     duration_value<std::chrono::seconds>(
-                    *throttle,
-                    "maximum_delay_seconds",
-                    "graph.throttle.maximum_delay_seconds"
-                );
+                        *throttle,
+                        "maximum_delay_seconds",
+                        "graph.throttle.maximum_delay_seconds"
+                    );
             }
         }
     }

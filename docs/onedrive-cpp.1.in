@@ -180,6 +180,15 @@ Confirm
 without an interactive prompt. This option is invalid without
 .BR \-\-clear\-all .
 .TP
+.B \-\-force\-large\-delete
+With
+.BR sync ,
+allow this invocation to exceed
+.BR sync.maximum_remote_deletions .
+The override is not available to
+.B monitor
+and cannot be persisted in the configuration file.
+.TP
 .BI \-\-config " PATH"
 Read application configuration from
 .IR PATH .
@@ -611,6 +620,20 @@ Root directories and descendants still require inclusion rules, and explicit
 exclusions override implicit root-file selection. The setting has no effect
 without a sync list. Changing it updates the selective-sync fingerprint and
 forces a full remote-state query.
+.TP
+.B sync.maximum_remote_deletions
+Maximum number of tracked items that one local deletion plan may remove from
+OneDrive. The default is
+.BR 1000 .
+A missing tracked directory counts itself and every tracked descendant even
+when Microsoft Graph needs only one DELETE request for the parent. A value of
+.B 0
+blocks every remote deletion unless a one-shot
+.B sync \-\-force\-large\-delete
+override is used. Normal synchronization and monitor mode stop before a remote
+DELETE when the limit is exceeded. Dry-run output reports the operation count,
+affected tracked-item count, limit, and blocked status. Pending-delete recovery
+uses the same protection.
 .PP
 For tracked files, the state database stores both Graph eTag and cTag values.
 If the local snapshot is unchanged and a delta changes only the eTag while

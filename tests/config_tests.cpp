@@ -22,6 +22,7 @@ int main() {
                << "sync_list = \"rules/sync_list\"\n"
                << "sync_root_files = true\n"
                << "local_conflict = \"backup\"\n"
+               << "maximum_remote_deletions = 42\n"
                << "upload = false\n"
                << "dry_run = true\n"
                << "permissions = \"umask\"\n"
@@ -100,21 +101,17 @@ int main() {
         config.download_maximum_retries != 3 ||
         config.download_chunk_threshold_bytes != 4096 ||
         config.download_checkpoint_interval_bytes != 1024 ||
-        config.transfer_transport.connect_timeout !=
-            std::chrono::seconds{12} ||
+        config.transfer_transport.connect_timeout != std::chrono::seconds{12} ||
         config.transfer_transport.operation_timeout !=
             std::chrono::seconds{600} ||
         config.transfer_transport.low_speed_timeout !=
             std::chrono::seconds{15} ||
         config.transfer_transport.low_speed_limit_bytes_per_second != 128 ||
-        config.download_maximum_rate_bytes_per_second !=
-            1'048'576 ||
-        config.download_maximum_total_rate_bytes_per_second !=
-            2'097'152 ||
+        config.download_maximum_rate_bytes_per_second != 1'048'576 ||
+        config.download_maximum_total_rate_bytes_per_second != 2'097'152 ||
         config.upload_chunk_size_bytes != 10'485'760 ||
         config.upload_maximum_rate_bytes_per_second != 3'145'728 ||
-        config.upload_maximum_total_rate_bytes_per_second !=
-            4'194'304 ||
+        config.upload_maximum_total_rate_bytes_per_second != 4'194'304 ||
         config.transfer_transport.http_version !=
             onedrive::http::HttpVersion::http_2 ||
         config.transfer_transport.ip_version !=
@@ -125,17 +122,15 @@ int main() {
             onedrive::config::SyncPermissionsMode::umask ||
         config.local_conflict !=
             onedrive::config::LocalConflictPolicy::backup ||
+        config.maximum_remote_deletions != 42 || config.force_large_delete ||
         config.upload ||
         config.proxy.url !=
-            std::optional<std::string>{
-                "https://proxy.example.test:8443"
-            } ||
+            std::optional<std::string>{"https://proxy.example.test:8443"} ||
         config.proxy.no_proxy !=
             std::optional<std::vector<std::string>>{
                 {"localhost", ".internal.test"}
             } ||
-        config.proxy.username !=
-            std::optional<std::string>{"proxy-user"} ||
+        config.proxy.username != std::optional<std::string>{"proxy-user"} ||
         config.proxy.password_file !=
             std::optional<std::filesystem::path>{
                 path.parent_path() / "secrets/proxy-password"
@@ -147,21 +142,19 @@ int main() {
             } ||
         graph_options.download_transport.transfer !=
             config.transfer_transport ||
-        graph_options.download_transport.
-                maximum_receive_speed_bytes_per_second !=
+        graph_options.download_transport
+                .maximum_receive_speed_bytes_per_second !=
             config.download_maximum_rate_bytes_per_second ||
-        graph_options.download_transport.
-                maximum_total_receive_speed_bytes_per_second !=
+        graph_options.download_transport
+                .maximum_total_receive_speed_bytes_per_second !=
             config.download_maximum_total_rate_bytes_per_second ||
         graph_options.upload_chunk_size_bytes !=
             config.upload_chunk_size_bytes ||
-        graph_options.upload_transport.transfer !=
-            config.transfer_transport ||
-        graph_options.upload_transport.
-                maximum_send_speed_bytes_per_second !=
+        graph_options.upload_transport.transfer != config.transfer_transport ||
+        graph_options.upload_transport.maximum_send_speed_bytes_per_second !=
             config.upload_maximum_rate_bytes_per_second ||
-        graph_options.upload_transport.
-                maximum_total_send_speed_bytes_per_second !=
+        graph_options.upload_transport
+                .maximum_total_send_speed_bytes_per_second !=
             config.upload_maximum_total_rate_bytes_per_second ||
         graph_options.download_maximum_retries != 3 ||
         graph_options.download_checkpoint_interval_bytes != 1024 ||
@@ -176,15 +169,12 @@ int main() {
     const auto defaults = onedrive::config::Config::load(path);
     if (defaults.download_validation !=
             onedrive::config::DownloadValidationMode::strict ||
-        defaults.auth_scope !=
-            "User.Read Files.ReadWrite offline_access" ||
+        defaults.auth_scope != "User.Read Files.ReadWrite offline_access" ||
         !onedrive::config::has_auth_scope(
-            defaults.auth_scope,
-            "Files.ReadWrite"
+            defaults.auth_scope, "Files.ReadWrite"
         ) ||
         onedrive::config::has_auth_scope(
-            defaults.auth_scope,
-            "Files.ReadWrite.All"
+            defaults.auth_scope, "Files.ReadWrite.All"
         ) ||
         onedrive::config::has_broad_auth_scope(defaults.auth_scope) ||
         !onedrive::config::has_broad_auth_scope(
@@ -198,6 +188,8 @@ int main() {
         !defaults.upload ||
         defaults.local_conflict !=
             onedrive::config::LocalConflictPolicy::block ||
+        defaults.maximum_remote_deletions != 1000 ||
+        defaults.force_large_delete ||
         defaults.monitor_poll_interval != std::chrono::seconds{300} ||
         defaults.monitor_settle_delay != std::chrono::milliseconds{1000} ||
         defaults.sync_root_files ||
@@ -206,23 +198,17 @@ int main() {
         defaults.upload_chunk_size_bytes != 10'485'760 ||
         defaults.upload_maximum_rate_bytes_per_second != 0 ||
         defaults.upload_maximum_total_rate_bytes_per_second != 0 ||
-        defaults.proxy.url ||
-        defaults.proxy.no_proxy ||
-        defaults.proxy.username ||
-        defaults.proxy.password_file ||
-        defaults.proxy.auth !=
-            onedrive::http::ProxyAuth::automatic ||
-        defaults.proxy.ca_file ||
-        defaults.download_maximum_retries != 4 ||
+        defaults.proxy.url || defaults.proxy.no_proxy ||
+        defaults.proxy.username || defaults.proxy.password_file ||
+        defaults.proxy.auth != onedrive::http::ProxyAuth::automatic ||
+        defaults.proxy.ca_file || defaults.download_maximum_retries != 4 ||
         defaults.download_maximum_total_rate_bytes_per_second != 0 ||
         defaults.transfer_transport.ip_version !=
             onedrive::http::IpVersion::automatic ||
         defaults.download_checkpoint_interval_bytes !=
             std::uint64_t{1024} * 1024U ||
-        onedrive::app::graph_options(defaults).
-            relaxed_download_validation ||
-        !onedrive::app::graph_options(defaults).
-            private_download_permissions) {
+        onedrive::app::graph_options(defaults).relaxed_download_validation ||
+        !onedrive::app::graph_options(defaults).private_download_permissions) {
         std::cerr << "secure synchronization defaults were not applied\n";
         return EXIT_FAILURE;
     }
@@ -281,12 +267,10 @@ int main() {
         }
     }
 
-    const auto check_enum_modes = [&](
-                                      std::string_view section,
+    const auto check_enum_modes = [&](std::string_view section,
                                       std::string_view key,
                                       const auto& modes,
-                                      auto extract
-                                  ) {
+                                      auto extract) {
         for (const auto& [name, expected] : modes) {
             {
                 std::ofstream output{path};
@@ -297,14 +281,13 @@ int main() {
             try {
                 const auto parsed = onedrive::config::Config::load(path);
                 if (extract(parsed) != expected) {
-                    std::cerr << "configuration enum '" << section << '.'
-                              << key << "' was parsed incorrectly\n";
+                    std::cerr << "configuration enum '" << section << '.' << key
+                              << "' was parsed incorrectly\n";
                     return false;
                 }
             } catch (const std::runtime_error& error) {
                 std::cerr << "valid configuration enum '" << section << '.'
-                          << key << "' was rejected: " << error.what()
-                          << '\n';
+                          << key << "' was rejected: " << error.what() << '\n';
                 return false;
             }
         }
@@ -314,8 +297,7 @@ int main() {
         std::pair{"auto", onedrive::config::FilesystemMetadataMode::automatic},
         std::pair{"xattr", onedrive::config::FilesystemMetadataMode::xattr},
         std::pair{
-            "database",
-            onedrive::config::FilesystemMetadataMode::database
+            "database", onedrive::config::FilesystemMetadataMode::database
         },
     };
     constexpr std::array http_versions{
@@ -329,14 +311,8 @@ int main() {
         std::pair{"6", onedrive::http::IpVersion::ipv6},
     };
     constexpr std::array download_validation_modes{
-        std::pair{
-            "strict",
-            onedrive::config::DownloadValidationMode::strict
-        },
-        std::pair{
-            "relaxed",
-            onedrive::config::DownloadValidationMode::relaxed
-        },
+        std::pair{"strict", onedrive::config::DownloadValidationMode::strict},
+        std::pair{"relaxed", onedrive::config::DownloadValidationMode::relaxed},
     };
     constexpr std::array transfer_orders{
         std::pair{"default", onedrive::config::TransferOrder::default_order},
@@ -347,8 +323,7 @@ int main() {
     };
     constexpr std::array permission_modes{
         std::pair{
-            "private",
-            onedrive::config::SyncPermissionsMode::private_access
+            "private", onedrive::config::SyncPermissionsMode::private_access
         },
         std::pair{"umask", onedrive::config::SyncPermissionsMode::umask},
     };
@@ -360,9 +335,7 @@ int main() {
             "filesystem",
             "metadata",
             filesystem_metadata_modes,
-            [](const auto& config) {
-                return config.filesystem_metadata;
-            }
+            [](const auto& config) { return config.filesystem_metadata; }
         ) ||
         !check_enum_modes(
             "transfer",
@@ -384,33 +357,25 @@ int main() {
             "download",
             "validation",
             download_validation_modes,
-            [](const auto& config) {
-                return config.download_validation;
-            }
+            [](const auto& config) { return config.download_validation; }
         ) ||
         !check_enum_modes(
             "transfer",
             "order",
             transfer_orders,
-            [](const auto& config) {
-                return config.transfer_order;
-            }
+            [](const auto& config) { return config.transfer_order; }
         ) ||
         !check_enum_modes(
             "sync",
             "permissions",
             permission_modes,
-            [](const auto& config) {
-                return config.sync_permissions;
-            }
+            [](const auto& config) { return config.sync_permissions; }
         ) ||
         !check_enum_modes(
             "sync",
             "local_conflict",
             conflict_policies,
-            [](const auto& config) {
-                return config.local_conflict;
-            }
+            [](const auto& config) { return config.local_conflict; }
         )) {
         return EXIT_FAILURE;
     }

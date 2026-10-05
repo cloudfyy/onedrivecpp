@@ -130,14 +130,18 @@ clang-format-20 --version
 cmake --version
 ```
 
-提交前必须格式化本次修改的所有 C/C++ 源文件和头文件。应从仓库根目录运行固定
-版本的格式化工具，使其读取仓库内的 `.clang-format`：
+提交前必须格式化本次修改的 C/C++ 行。先暂存源文件和头文件，再从仓库根目录
+运行固定版本的 Git 集成，使其读取仓库内的 `.clang-format`，同时避免重排无关
+的历史代码：
 
 ```bash
-clang-format-20 -i path/to/modified.cpp path/to/modified.hpp
+git add path/to/modified.cpp path/to/modified.hpp
+git-clang-format-20 --binary clang-format-20 --staged
+git add path/to/modified.cpp path/to/modified.hpp
 ```
 
-不要使用无版本后缀的命令或其他主版本，因为输出可能与 Clang 20 不一致。
+新文件可以直接使用 `clang-format-20 -i` 完整格式化。不要使用无版本后缀的
+命令或其他主版本，因为输出可能与 Clang 20 不一致。
 
 编译库从操作系统解析并动态链接。这样 Debian 的安全更新可以替换 libcurl、
 OpenSSL、SQLite、spdlog 和 fmt，而无需重新构建 `onedrive-cpp`。
@@ -451,6 +455,7 @@ local_conflict = "block"
 # sync_list = "sync_list"
 sync_root_files = false
 upload = true
+maximum_remote_deletions = 1000
 
 # 指定其他 OneDrive 或 SharePoint 文档库
 # drive_id = "b!YOUR_DRIVE_ID"
@@ -493,6 +498,24 @@ maximum_total_rate_bytes_per_second = 0
 poll_interval_seconds = 300
 settle_delay_milliseconds = 1000
 ```
+
+`sync.maximum_remote_deletions` 限制一次本地删除计划最多可从 OneDrive 删除
+多少个已跟踪项目，默认值为 `1000`；设为 `0` 时，除非显式强制，否则任何远端
+删除都会被阻止。已跟踪目录消失时，计数包含目录自身及其所有已跟踪后代，即使
+Graph 只需要对父目录发出一次 DELETE。客户端会在上传侧移动、建目录、上传或
+删除发生前检查完整批次，并在真正执行删除前再次检查。
+
+超过限制时，普通 sync 和 monitor 都会在发出远端 DELETE 前停止；monitor 永不
+自动绕过保护。`sync --dry-run` 会报告 Graph 删除操作数、受影响快照数、限制值
+以及普通运行是否会被阻止。确认本地文件系统状态且删除确属预期后，可执行一次性
+强制：
+
+```bash
+onedrive-cpp sync --force-large-delete
+```
+
+该开关只作用于本次命令，不能写入配置文件。pending-delete 崩溃恢复也使用同一
+限制，因此重启进程不能绕过保护。
 
 `monitor` 启动时先执行一轮完整同步，随后休眠，直到 inotify 报告已完成的本地
 变化，或者 Graph 轮询周期到期。本地事件突发会按

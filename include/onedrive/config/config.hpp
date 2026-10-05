@@ -72,9 +72,7 @@ struct Config {
     http::TransferTransportOptions transfer_transport;
     std::uint64_t download_maximum_rate_bytes_per_second{0};
     std::uint64_t download_maximum_total_rate_bytes_per_second{0};
-    std::uint64_t upload_chunk_size_bytes{
-        std::uint64_t{10} * 1024U * 1024U
-    };
+    std::uint64_t upload_chunk_size_bytes{std::uint64_t{10} * 1024U * 1024U};
     std::uint64_t upload_maximum_rate_bytes_per_second{0};
     std::uint64_t upload_maximum_total_rate_bytes_per_second{0};
     DownloadValidationMode download_validation{
@@ -84,11 +82,13 @@ struct Config {
         SyncPermissionsMode::private_access
     };
     LocalConflictPolicy local_conflict{LocalConflictPolicy::block};
+    std::size_t maximum_remote_deletions{1000};
     FilesystemMetadataMode filesystem_metadata{
         FilesystemMetadataMode::automatic
     };
     bool upload{true};
     bool dry_run{false};
+    bool force_large_delete{false};
 
     [[nodiscard]] static Config defaults();
     [[nodiscard]] static Config load(const std::filesystem::path& path);

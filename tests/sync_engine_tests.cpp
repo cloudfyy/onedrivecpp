@@ -4265,6 +4265,177 @@ int test_local_deletions() {
         return fail("deletion dry run changed remote or local state");
     }
 
+    const auto add_missing_tree = [](FakeItemStore& store,
+                                     const std::filesystem::path& tree_root) {
+        std::filesystem::create_directories(tree_root / "Missing");
+        {
+            std::ofstream output{tree_root / "Missing" / "a.txt"};
+            output << "aaaa";
+        }
+        {
+            std::ofstream output{tree_root / "Missing" / "b.txt"};
+            output << "bbbb";
+        }
+        store.saved_delta_link = "saved";
+        store.items.emplace(
+            "guard-directory",
+            tracked_item(tree_root, "guard-directory", "Missing", true)
+        );
+        store.items.emplace(
+            "guard-child-a",
+            tracked_item(tree_root, "guard-child-a", "Missing/a.txt")
+        );
+        store.items.emplace(
+            "guard-child-b",
+            tracked_item(tree_root, "guard-child-b", "Missing/b.txt")
+        );
+        std::filesystem::remove_all(tree_root / "Missing");
+    };
+
+    const auto guarded_root = temporary.path() / "guarded-deletion";
+    std::filesystem::create_directories(guarded_root);
+    FakeItemStore guarded_items;
+    add_missing_tree(guarded_items, guarded_root);
+    FakeGraphClient guarded_graph;
+    FakeMetrics guarded_metrics;
+    auto guarded_config = config_for(guarded_root, false);
+    guarded_config.upload = true;
+    guarded_config.maximum_remote_deletions = 2;
+    std::ostringstream guarded_output;
+    std::ostringstream guarded_error;
+    const onedrive::cli::Console guarded_console{
+        {
+            .color = onedrive::cli::ColorMode::never,
+            .output = onedrive::cli::OutputMode::json,
+            .quiet = false,
+        },
+        guarded_output,
+        guarded_error
+    };
+    try {
+        static_cast<void>(onedrive::sync::SyncEngine{
+            guarded_config,
+            guarded_graph,
+            guarded_items,
+            guarded_metrics,
+            &guarded_console
+        }
+                              .synchronize());
+        return fail("large remote deletion was not blocked");
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains("large-delete safeguard")) {
+            return fail("large remote deletion reported the wrong failure");
+        }
+    }
+    if (!guarded_graph.deleted_items.empty() ||
+        !guarded_items.pending_deletes_by_id.empty() ||
+        guarded_items.items.size() != 3 || guarded_metrics.last_success ||
+        !guarded_output.str().contains("\"delete_operations\":\"1\"") ||
+        !guarded_output.str().contains("\"affected_items\":\"3\"") ||
+        !guarded_error.str().contains("\"event\":\"large_delete_blocked\"")) {
+        return fail(
+            "large-delete guard did not preserve state and report its plan"
+        );
+    }
+
+    FakeItemStore guarded_dry_items;
+    add_missing_tree(guarded_dry_items, guarded_root);
+    FakeGraphClient guarded_dry_graph;
+    FakeMetrics guarded_dry_metrics;
+    auto guarded_dry_config = config_for(guarded_root, true);
+    guarded_dry_config.upload = true;
+    guarded_dry_config.maximum_remote_deletions = 2;
+    std::ostringstream guarded_dry_output;
+    std::ostringstream guarded_dry_error;
+    const onedrive::cli::Console guarded_dry_console{
+        {
+            .color = onedrive::cli::ColorMode::never,
+            .output = onedrive::cli::OutputMode::json,
+            .quiet = false,
+        },
+        guarded_dry_output,
+        guarded_dry_error
+    };
+    if (onedrive::sync::SyncEngine{
+            guarded_dry_config,
+            guarded_dry_graph,
+            guarded_dry_items,
+            guarded_dry_metrics,
+            &guarded_dry_console
+        }
+                .synchronize() != 0 ||
+        !guarded_dry_graph.deleted_items.empty() ||
+        guarded_dry_items.items.size() != 3 ||
+        !guarded_dry_output.str().contains(
+            "\"event\":\"large_delete_detected\""
+        ) ||
+        !guarded_dry_output.str().contains(
+            "\"large_delete_blocked\":\"true\""
+        )) {
+        return fail(
+            "large-delete dry run did not report without changing state"
+        );
+    }
+
+    guarded_config.force_large_delete = true;
+    guarded_output.str({});
+    guarded_error.str({});
+    if (onedrive::sync::SyncEngine{
+            guarded_config,
+            guarded_graph,
+            guarded_items,
+            guarded_metrics,
+            &guarded_console
+        }
+                .synchronize() != 0 ||
+        guarded_graph.deleted_items !=
+            std::vector<std::pair<std::string, std::string>>{
+                {"guard-directory", "etag"},
+            } ||
+        !guarded_items.items.empty() || !guarded_metrics.last_success ||
+        !guarded_output.str().contains("\"event\":\"large_delete_forced\"")) {
+        return fail("explicit large-delete override did not execute the plan");
+    }
+
+    const auto pending_guard_root =
+        temporary.path() / "pending-guarded-deletion";
+    std::filesystem::create_directories(pending_guard_root);
+    FakeItemStore pending_guard_items;
+    add_missing_tree(pending_guard_items, pending_guard_root);
+    pending_guard_items.pending_deletes_by_id.emplace(
+        "guard-directory",
+        onedrive::storage::PendingDelete{
+            .drive_id = "me",
+            .remote_id = "guard-directory",
+            .expected_etag = "etag",
+            .remote_path = "Missing",
+            .local_path = pending_guard_root / "Missing",
+            .directory = true,
+        }
+    );
+    FakeGraphClient pending_guard_graph;
+    FakeMetrics pending_guard_metrics;
+    auto pending_guard_config = config_for(pending_guard_root, false);
+    pending_guard_config.upload = true;
+    pending_guard_config.maximum_remote_deletions = 2;
+    try {
+        static_cast<void>(onedrive::sync::SyncEngine{
+            pending_guard_config,
+            pending_guard_graph,
+            pending_guard_items,
+            pending_guard_metrics
+        }
+                              .synchronize());
+        return fail("pending deletions bypassed the large-delete guard");
+    } catch (const std::runtime_error&) {
+    }
+    if (!pending_guard_graph.deleted_items.empty() ||
+        pending_guard_items.pending_deletes_by_id.size() != 1 ||
+        pending_guard_items.items.size() != 3 ||
+        pending_guard_metrics.last_success) {
+        return fail("blocked pending deletions changed remote or local state");
+    }
+
     const auto selective_root = temporary.path() / "selective-deletion";
     std::filesystem::create_directories(selective_root / "Included");
     std::filesystem::create_directories(selective_root / "Excluded");

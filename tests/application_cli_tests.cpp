@@ -608,6 +608,12 @@ int main() {
         !version.standard_output.starts_with("onedrive-cpp ")) {
         return fail("--version did not print the application version");
     }
+    const auto sync_help =
+        run_application(runtime_factory, {"onedrive-cpp", "sync", "--help"});
+    if (sync_help.exit_code != 0 ||
+        !sync_help.standard_output.contains("--force-large-delete")) {
+        return fail("sync help did not document the large-delete override");
+    }
 
     if (run_application(runtime_factory, {"onedrive-cpp", "unknown"}).exit_code != 2) {
         return fail("unknown command did not return usage exit code 2");
@@ -623,6 +629,12 @@ int main() {
             {"onedrive-cpp", "auth", "--dry-run"}
         ).exit_code != 2) {
         return fail("command-specific option was accepted by the wrong command");
+    }
+    if (run_application(
+            runtime_factory, {"onedrive-cpp", "monitor", "--force-large-delete"}
+        )
+            .exit_code != 2) {
+        return fail("monitor accepted the one-shot large-delete override");
     }
     if (run_application(
             runtime_factory,

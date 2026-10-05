@@ -31,6 +31,7 @@ COMP_WORDS=(onedrive-cpp sync --)
 COMP_CWORD=2
 _onedrive_cpp_completion
 assert_contains --dry-run "${COMPREPLY[@]}"
+assert_contains --force-large-delete "${COMPREPLY[@]}"
 assert_contains --output "${COMPREPLY[@]}"
 assert_contains --quiet "${COMPREPLY[@]}"
 

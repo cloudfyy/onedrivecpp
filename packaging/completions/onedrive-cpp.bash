@@ -53,9 +53,13 @@ _onedrive_cpp_completion()
         --help
     "
     case "$command" in
-        download|sync)
+        download)
             mapfile -t COMPREPLY < <(compgen -W \
                 "$common_options --dry-run" -- "$current")
+            ;;
+        sync)
+            mapfile -t COMPREPLY < <(compgen -W \
+                "$common_options --dry-run --force-large-delete" -- "$current")
             ;;
         reset-state)
             mapfile -t COMPREPLY < <(compgen -W \

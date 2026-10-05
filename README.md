@@ -139,16 +139,20 @@ clang-format-20 --version
 cmake --version
 ```
 
-Format every modified C or C++ source/header before committing. Run the
-versioned formatter from the repository root so it uses the checked-in
-`.clang-format`:
+Format modified C or C++ lines before committing. Stage the source/header
+changes, then run the versioned Git integration from the repository root so it
+uses the checked-in `.clang-format` without reformatting unrelated legacy
+lines:
 
 ```bash
-clang-format-20 -i path/to/modified.cpp path/to/modified.hpp
+git add path/to/modified.cpp path/to/modified.hpp
+git-clang-format-20 --binary clang-format-20 --staged
+git add path/to/modified.cpp path/to/modified.hpp
 ```
 
-Do not use an unversioned formatter or a different major version, because its
-output may differ from Clang 20.
+New files may instead be formatted in full with `clang-format-20 -i`. Do not
+use an unversioned formatter or a different major version, because its output
+may differ from Clang 20.
 
 The compiled libraries are resolved from the operating system and linked
 dynamically. This lets Debian security updates replace libcurl, OpenSSL,
@@ -506,6 +510,7 @@ local_conflict = "block"
 # sync_list = "sync_list"
 sync_root_files = false
 upload = true
+maximum_remote_deletions = 1000
 
 # Another OneDrive or SharePoint document library
 # drive_id = "b!YOUR_DRIVE_ID"
@@ -548,6 +553,28 @@ maximum_total_rate_bytes_per_second = 0
 poll_interval_seconds = 300
 settle_delay_milliseconds = 1000
 ```
+
+`sync.maximum_remote_deletions` limits how many tracked items one local
+deletion plan may remove from OneDrive. The default is `1000`; `0` blocks every
+remote deletion unless explicitly overridden. A missing tracked directory
+counts itself and every tracked descendant it would remove, even though Graph
+needs only one DELETE request for the parent. The client checks the complete
+batch before upload-side moves, directory creation, uploads, or deletes, and
+checks it again immediately before deletion execution.
+
+When the limit is exceeded, normal sync and monitor runs stop before issuing a
+remote DELETE. Monitor never bypasses the guard. `sync --dry-run` reports the
+Graph operation count, affected tracked-item count, configured limit, and
+whether a normal run would be blocked. After reviewing the local filesystem,
+an intentional one-shot batch can be approved with:
+
+```bash
+onedrive-cpp sync --force-large-delete
+```
+
+The override applies only to that invocation and cannot be persisted in the
+configuration file. Existing pending-delete recovery is protected by the same
+limit, so restarting the process cannot bypass the safeguard.
 
 `monitor` performs an initial synchronization and then remains idle until
 inotify reports a completed local change or the Graph polling interval expires.

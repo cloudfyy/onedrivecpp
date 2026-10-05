@@ -67,6 +67,9 @@ drive_id = "me"
 sync_root_files = false
 # Upload new and modified local files after applying remote changes.
 upload = true
+# Stop before propagating a larger local disappearance to OneDrive.
+# A deleted parent counts every tracked descendant it would remove.
+maximum_remote_deletions = 1000
 dry_run = true
 
 [transfer]

@@ -1998,7 +1998,12 @@ int SyncEngine::synchronize() const {
                     config_->drive_id,
                     graph_,
                     items_,
-                    console
+                    console,
+                    {
+                        .maximum_affected_items =
+                            config_->maximum_remote_deletions,
+                        .force = config_->force_large_delete,
+                    }
                 );
                 detail::recover_pending_uploads(
                     *safe_root,
@@ -2198,7 +2203,12 @@ int SyncEngine::synchronize() const {
                     *metadata,
                     sync_list ? &*sync_list : nullptr,
                     console,
-                    true
+                    true,
+                    {
+                        .maximum_affected_items =
+                            config_->maximum_remote_deletions,
+                        .force = config_->force_large_delete,
+                    }
                 );
                 blocked_count += upload_summary.blocked;
                 console.section(
@@ -2208,16 +2218,36 @@ int SyncEngine::synchronize() const {
                         {
                             .label = "move remote items:",
                             .key = "move_remote_items",
-                            .value = std::to_string(
-                                upload_summary.planned_moves
-                            ),
+                            .value =
+                                std::to_string(upload_summary.planned_moves),
                         },
                         {
                             .label = "delete remote items:",
                             .key = "delete_remote_items",
-                            .value = std::to_string(
-                                upload_summary.planned_deletions
-                            ),
+                            .value =
+                                std::to_string(upload_summary.planned_deletions
+                                ),
+                        },
+                        {
+                            .label = "affected tracked items:",
+                            .key = "affected_remote_deletions",
+                            .value =
+                                std::to_string(upload_summary.affected_deletions
+                                ),
+                        },
+                        {
+                            .label = "large-delete limit:",
+                            .key = "maximum_remote_deletions",
+                            .value =
+                                std::to_string(config_->maximum_remote_deletions
+                                ),
+                        },
+                        {
+                            .label = "large-delete blocked:",
+                            .key = "large_delete_blocked",
+                            .value = upload_summary.large_delete_blocked
+                                         ? "true"
+                                         : "false",
                         },
                         {
                             .label = "create directories:",
@@ -2229,14 +2259,12 @@ int SyncEngine::synchronize() const {
                         {
                             .label = "upload files:",
                             .key = "upload_files",
-                            .value =
-                                std::to_string(upload_summary.planned),
+                            .value = std::to_string(upload_summary.planned),
                         },
                         {
                             .label = "blocked:",
                             .key = "blocked",
-                            .value =
-                                std::to_string(upload_summary.blocked),
+                            .value = std::to_string(upload_summary.blocked),
                         },
                     }
                 );
@@ -2280,7 +2308,12 @@ int SyncEngine::synchronize() const {
                     *metadata,
                     sync_list ? &*sync_list : nullptr,
                     console,
-                    false
+                    false,
+                    {
+                        .maximum_affected_items =
+                            config_->maximum_remote_deletions,
+                        .force = config_->force_large_delete,
+                    }
                 );
                 blocked_count += upload_summary.blocked;
             }
@@ -2324,11 +2357,16 @@ int SyncEngine::synchronize() const {
                         .value = std::to_string(upload_summary.deleted),
                     },
                     {
+                        .label = "remote items affected:",
+                        .key = "remote_deletion_affected_items",
+                        .value =
+                            std::to_string(upload_summary.affected_deletions),
+                    },
+                    {
                         .label = "remote directories created:",
                         .key = "remote_directories_created",
-                        .value = std::to_string(
-                            upload_summary.created_directories
-                        ),
+                        .value =
+                            std::to_string(upload_summary.created_directories),
                     },
                     {
                         .label = "uploaded:",

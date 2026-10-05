@@ -16,6 +16,7 @@
 #include <cerrno>
 #include <cstring>
 #include <filesystem>
+#include <format>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -35,6 +36,11 @@ struct UploadCandidate {
     std::string remote_path;
     std::optional<storage::ItemState> previous;
     bool directory{false};
+};
+
+struct DeletionPlan {
+    std::vector<storage::PendingDelete> operations;
+    std::size_t affected_items{0};
 };
 
 class RemoteUploadConflictError final : public std::runtime_error {
@@ -94,7 +100,7 @@ bool local_path_is_missing(const std::filesystem::path& path) {
     );
 }
 
-std::vector<storage::PendingDelete> discover_deletions(
+DeletionPlan discover_deletions(
     const std::string& drive_id,
     storage::ItemStore& items,
     const SyncList* sync_list,
@@ -106,10 +112,23 @@ std::vector<storage::PendingDelete> discover_deletions(
         blocked_ids.insert(item.remote_id);
         blocked_paths.insert(item.remote_path);
     }
+    const auto tracked_items = items.drive_items(drive_id);
+    std::vector<std::string> skipped_directory_paths;
+    for (const auto& item : tracked_items) {
+        if (item.directory && skipped_remote_ids.contains(item.remote_id)) {
+            skipped_directory_paths.push_back(item.remote_path);
+        }
+    }
     std::vector<storage::PendingDelete> candidates;
-    for (const auto& item : items.drive_items(drive_id)) {
+    for (const auto& item : tracked_items) {
         if (item.remote_path.empty() ||
             skipped_remote_ids.contains(item.remote_id) ||
+            std::ranges::any_of(
+                skipped_directory_paths,
+                [&item](const std::string& path) {
+                    return remote_path_is_descendant(item.remote_path, path);
+                }
+            ) ||
             blocked_ids.contains(item.remote_id) ||
             blocked_paths.contains(item.remote_path) ||
             (sync_list != nullptr &&
@@ -156,7 +175,103 @@ std::vector<storage::PendingDelete> discover_deletions(
             deletions.push_back(std::move(candidate));
         }
     }
-    return deletions;
+    return {
+        .operations = std::move(deletions),
+        .affected_items = candidates.size(),
+    };
+}
+
+DeletionPlan deletion_plan_for(
+    std::vector<storage::PendingDelete> operations,
+    const std::vector<storage::ItemState>& tracked_items
+) {
+    std::unordered_set<std::string> affected_ids;
+    for (const auto& deletion : operations) {
+        affected_ids.insert(deletion.remote_id);
+        for (const auto& item : tracked_items) {
+            if (item.remote_id == deletion.remote_id ||
+                (deletion.directory &&
+                 remote_path_is_descendant(
+                     item.remote_path, deletion.remote_path
+                 ))) {
+                affected_ids.insert(item.remote_id);
+            }
+        }
+    }
+    return {
+        .operations = std::move(operations),
+        .affected_items = affected_ids.size(),
+    };
+}
+
+bool enforce_remote_deletion_limit(
+    const DeletionPlan& plan,
+    RemoteDeletionPolicy policy,
+    const cli::Console& console,
+    bool dry_run
+) {
+    if (plan.affected_items <= policy.maximum_affected_items) {
+        return false;
+    }
+    const auto message = std::format(
+        "Remote deletion plan affects {} tracked items, exceeding the "
+        "configured limit of {}.",
+        plan.affected_items,
+        policy.maximum_affected_items
+    );
+    console.section(
+        "large_delete_guard",
+        "Large remote deletion safeguard:",
+        {
+            {
+                .label = "Graph delete operations:",
+                .key = "delete_operations",
+                .value = std::to_string(plan.operations.size()),
+            },
+            {
+                .label = "affected tracked items:",
+                .key = "affected_items",
+                .value = std::to_string(plan.affected_items),
+            },
+            {
+                .label = "configured limit:",
+                .key = "maximum_remote_deletions",
+                .value = std::to_string(policy.maximum_affected_items),
+            },
+            {
+                .label = "override:",
+                .key = "forced",
+                .value = policy.force ? "true" : "false",
+            },
+        }
+    );
+    if (policy.force) {
+        spdlog::warn("{} Explicit override accepted.", message);
+        console.message(
+            cli::MessageKind::warning,
+            "large_delete_forced",
+            message + " Proceeding because --force-large-delete was provided."
+        );
+        return false;
+    }
+    if (dry_run) {
+        console.message(
+            cli::MessageKind::warning,
+            "large_delete_detected",
+            message + " A normal sync would be blocked."
+        );
+        return true;
+    }
+    spdlog::error("{}", message);
+    console.message(
+        cli::MessageKind::error,
+        "large_delete_blocked",
+        message + " Review the local filesystem and rerun sync with "
+                  "--force-large-delete only if the deletions are intentional."
+    );
+    throw std::runtime_error{
+        message + " Remote deletion was blocked by the large-delete safeguard."
+    };
 }
 
 LocalMoveDiscovery discover_local_moves(
@@ -1372,9 +1487,30 @@ void recover_pending_deletes(
     const std::string& drive_id,
     graph::GraphClient& graph,
     storage::ItemStore& items,
-    const cli::Console& console
+    const cli::Console& console,
+    RemoteDeletionPolicy deletion_policy
 ) {
+    std::vector<storage::PendingDelete> active;
     for (const auto& deletion : items.pending_deletes(drive_id)) {
+        if (local_path_is_missing(deletion.local_path)) {
+            active.push_back(deletion);
+            continue;
+        }
+        execute_pending_delete(deletion, graph, items);
+        console.message(
+            cli::MessageKind::information,
+            "pending_delete_cancelled",
+            "Cancelled pending remote deletion because the local item "
+            "reappeared: '" +
+                deletion.remote_path + "'."
+        );
+    }
+    const auto plan =
+        deletion_plan_for(std::move(active), items.drive_items(drive_id));
+    static_cast<void>(
+        enforce_remote_deletion_limit(plan, deletion_policy, console, false)
+    );
+    for (const auto& deletion : plan.operations) {
         execute_pending_delete(deletion, graph, items);
         console.message(
             cli::MessageKind::information,
@@ -1423,7 +1559,8 @@ UploadSummary upload_local_changes(
     const FilesystemMetadata& metadata,
     const SyncList* sync_list,
     const cli::Console& console,
-    bool dry_run
+    bool dry_run,
+    RemoteDeletionPolicy deletion_policy
 ) {
     UploadSummary summary;
     auto moves = discover_local_moves(
@@ -1433,14 +1570,14 @@ UploadSummary upload_local_changes(
         sync_list
     );
     summary.planned_moves = moves.moves.size();
+    auto deletion_plan =
+        discover_deletions(drive_id, items, sync_list, moves.moved_remote_ids);
+    summary.planned_deletions = deletion_plan.operations.size();
+    summary.affected_deletions = deletion_plan.affected_items;
+    summary.large_delete_blocked = enforce_remote_deletion_limit(
+        deletion_plan, deletion_policy, console, dry_run
+    );
     if (dry_run) {
-        const auto deletions = discover_deletions(
-            drive_id,
-            items,
-            sync_list,
-            moves.moved_remote_ids
-        );
-        summary.planned_deletions = deletions.size();
         const auto uploads = discover_uploads(
             sync_root,
             drive_id,
@@ -1508,13 +1645,13 @@ UploadSummary upload_local_changes(
                 move.destination_remote_path + "'."
         );
     }
-    auto deletions = discover_deletions(
-        drive_id,
-        items,
-        sync_list,
-        moves.moved_remote_ids
+    deletion_plan =
+        discover_deletions(drive_id, items, sync_list, moves.moved_remote_ids);
+    summary.planned_deletions = deletion_plan.operations.size();
+    summary.affected_deletions = deletion_plan.affected_items;
+    summary.large_delete_blocked = enforce_remote_deletion_limit(
+        deletion_plan, deletion_policy, console, false
     );
-    summary.planned_deletions = deletions.size();
     auto uploads = discover_uploads(
         sync_root,
         drive_id,
@@ -1541,7 +1678,7 @@ UploadSummary upload_local_changes(
             );
         }
     }
-    for (const auto& deletion : deletions) {
+    for (const auto& deletion : deletion_plan.operations) {
         items.save_pending_delete(deletion);
         execute_pending_delete(deletion, graph, items);
         ++summary.deleted;
