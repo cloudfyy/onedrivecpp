@@ -87,6 +87,12 @@ static_assert(std::is_nothrow_move_constructible_v<JournaledLocalMove>);
 static_assert(std::is_nothrow_move_constructible_v<StagedLocalMove>);
 static_assert(std::is_nothrow_move_constructible_v<InstalledLocalMove>);
 
+JournaledLocalMove journal_local_move(PreparedLocalMove move) noexcept {
+    return detail::transition_transaction<LocalMoveJournaledState>(
+        std::move(move)
+    );
+}
+
 StagedLocalMove stage_local_move(JournaledLocalMove move) noexcept {
     return detail::transition_transaction<LocalMoveStagedState>(std::move(move)
     );
@@ -108,6 +114,34 @@ InstalledLocalMove install_local_move(StagedLocalMove move) noexcept {
         std::move(move)
     );
 }
+
+template <typename Transaction>
+concept JournalableLocalMove = requires(Transaction transaction) {
+    journal_local_move(std::move(transaction));
+};
+
+template <typename Transaction>
+concept StageableLocalMove = requires(Transaction transaction) {
+    stage_local_move(std::move(transaction));
+};
+
+template <typename Transaction>
+concept InstallableLocalMove = requires(Transaction transaction) {
+    install_local_move(std::move(transaction));
+};
+
+static_assert(JournalableLocalMove<PreparedLocalMove>);
+static_assert(!JournalableLocalMove<JournaledLocalMove>);
+static_assert(!JournalableLocalMove<StagedLocalMove>);
+static_assert(!JournalableLocalMove<InstalledLocalMove>);
+static_assert(StageableLocalMove<JournaledLocalMove>);
+static_assert(StageableLocalMove<RecoveredJournalLocalMove>);
+static_assert(!StageableLocalMove<PreparedLocalMove>);
+static_assert(!StageableLocalMove<InstalledLocalMove>);
+static_assert(InstallableLocalMove<JournaledLocalMove>);
+static_assert(InstallableLocalMove<StagedLocalMove>);
+static_assert(!InstallableLocalMove<PreparedLocalMove>);
+static_assert(!InstallableLocalMove<InstalledLocalMove>);
 
 struct DownloadTask {
     graph::RemoteItem item;
@@ -1146,9 +1180,7 @@ MoveSummary execute_moves(
                     );
                     move_transaction.emplace(
                         std::in_place_type<JournaledLocalMove>,
-                        detail::transition_transaction<LocalMoveJournaledState>(
-                            std::move(prepared)
-                        )
+                        journal_local_move(std::move(prepared))
                     );
                 }
 
@@ -1506,9 +1538,7 @@ MoveSummary execute_moves(
                     };
                     items.save_pending_move(prepared.journal);
                     move_transaction.emplace<JournaledLocalMove>(
-                        detail::transition_transaction<LocalMoveJournaledState>(
-                            std::move(prepared)
-                        )
+                        journal_local_move(std::move(prepared))
                     );
                 }
                 if (!safe_root.rename_no_replace(source, destination)) {

@@ -579,29 +579,114 @@ template <typename State>
 concept RemoteMoveState =
     TransactionStateFor<State, RemoteMoveTransactionFamily>;
 
-struct RemoteMoveTransactionPayload {
+struct PendingRemoteMovePayload {
     storage::PendingRemoteMove move;
     storage::ItemState previous;
-    std::optional<graph::RemoteItem> remote;
 };
 
-template <RemoteMoveState State>
-using RemoteMoveTransaction = StateTransaction<
-    State,
-    RemoteMoveTransactionFamily,
-    RemoteMoveTransactionPayload>;
+struct GraphCommittedRemoteMovePayload {
+    storage::PendingRemoteMove move;
+    storage::ItemState previous;
+    graph::RemoteItem remote;
+};
 
-using PreparedRemoteMove = RemoteMoveTransaction<RemoteMovePreparedState>;
-using JournaledRemoteMove = RemoteMoveTransaction<RemoteMoveJournaledState>;
-using GraphCommittedRemoteMove =
-    RemoteMoveTransaction<RemoteMoveGraphCommittedState>;
-using LocalCommittedRemoteMove =
-    RemoteMoveTransaction<RemoteMoveLocalCommittedState>;
+struct LocalCommittedRemoteMovePayload {
+    storage::PendingRemoteMove move;
+};
+
+using PreparedRemoteMove = StateTransaction<
+    RemoteMovePreparedState,
+    RemoteMoveTransactionFamily,
+    PendingRemoteMovePayload>;
+using JournaledRemoteMove = StateTransaction<
+    RemoteMoveJournaledState,
+    RemoteMoveTransactionFamily,
+    PendingRemoteMovePayload>;
+using GraphCommittedRemoteMove = StateTransaction<
+    RemoteMoveGraphCommittedState,
+    RemoteMoveTransactionFamily,
+    GraphCommittedRemoteMovePayload>;
+using LocalCommittedRemoteMove = StateTransaction<
+    RemoteMoveLocalCommittedState,
+    RemoteMoveTransactionFamily,
+    LocalCommittedRemoteMovePayload>;
 
 static_assert(std::is_nothrow_move_constructible_v<PreparedRemoteMove>);
 static_assert(std::is_nothrow_move_constructible_v<JournaledRemoteMove>);
 static_assert(std::is_nothrow_move_constructible_v<GraphCommittedRemoteMove>);
 static_assert(std::is_nothrow_move_constructible_v<LocalCommittedRemoteMove>);
+
+JournaledRemoteMove
+journal_remote_move(PreparedRemoteMove transaction) noexcept {
+    return transition_transaction<RemoteMoveJournaledState>(
+        std::move(transaction)
+    );
+}
+
+GraphCommittedRemoteMove mark_graph_remote_move_committed(
+    JournaledRemoteMove transaction, graph::RemoteItem remote
+) noexcept {
+    return transition_transaction<RemoteMoveGraphCommittedState>(
+        std::move(transaction),
+        [remote = std::move(remote)](
+            PendingRemoteMovePayload&& payload
+        ) mutable noexcept {
+            return GraphCommittedRemoteMovePayload{
+                .move = std::move(payload.move),
+                .previous = std::move(payload.previous),
+                .remote = std::move(remote),
+            };
+        }
+    );
+}
+
+LocalCommittedRemoteMove mark_local_remote_move_committed(
+    GraphCommittedRemoteMove transaction
+) noexcept {
+    return transition_transaction<RemoteMoveLocalCommittedState>(
+        std::move(transaction),
+        [](GraphCommittedRemoteMovePayload&& payload) noexcept {
+            return LocalCommittedRemoteMovePayload{
+                .move = std::move(payload.move),
+            };
+        }
+    );
+}
+
+template <typename Transaction>
+concept JournalableRemoteMove = requires(Transaction transaction) {
+    journal_remote_move(std::move(transaction));
+};
+
+template <typename Transaction>
+concept GraphCommittableRemoteMove = requires(
+    Transaction transaction, graph::RemoteItem remote
+) {
+    mark_graph_remote_move_committed(std::move(transaction), std::move(remote));
+};
+
+template <typename Transaction>
+concept LocalCommittableRemoteMove = requires(Transaction transaction) {
+    mark_local_remote_move_committed(std::move(transaction));
+};
+
+template <typename Transaction>
+concept HasRemoteMoveResult =
+    requires(Transaction transaction) { transaction.remote.id; };
+
+static_assert(JournalableRemoteMove<PreparedRemoteMove>);
+static_assert(!JournalableRemoteMove<JournaledRemoteMove>);
+static_assert(!JournalableRemoteMove<GraphCommittedRemoteMove>);
+static_assert(!JournalableRemoteMove<LocalCommittedRemoteMove>);
+static_assert(GraphCommittableRemoteMove<JournaledRemoteMove>);
+static_assert(!GraphCommittableRemoteMove<PreparedRemoteMove>);
+static_assert(!GraphCommittableRemoteMove<GraphCommittedRemoteMove>);
+static_assert(LocalCommittableRemoteMove<GraphCommittedRemoteMove>);
+static_assert(!LocalCommittableRemoteMove<JournaledRemoteMove>);
+static_assert(!HasRemoteMoveResult<PreparedRemoteMove>);
+static_assert(!HasRemoteMoveResult<JournaledRemoteMove>);
+static_assert(HasRemoteMoveResult<GraphCommittedRemoteMove>);
+static_assert(!HasRemoteMoveResult<LocalCommittedRemoteMove>);
 
 LocalCommittedRemoteMove execute_pending_remote_move(
     const SafeSyncRoot& sync_root,
@@ -640,13 +725,11 @@ LocalCommittedRemoteMove execute_pending_remote_move(
         }
         remote = existing;
     }
-    transaction.remote = std::move(remote);
-    auto graph_committed =
-        transition_transaction<RemoteMoveGraphCommittedState>(
-            std::move(transaction)
-        );
+    auto graph_committed = mark_graph_remote_move_committed(
+        std::move(transaction), std::move(remote)
+    );
     const auto& committed_move = graph_committed.move;
-    const auto& committed_remote = *graph_committed.remote;
+    const auto& committed_remote = graph_committed.remote;
     if (committed_remote.id != committed_move.remote_id ||
         committed_remote.remote_path !=
             committed_move.destination_remote_path ||
@@ -669,9 +752,7 @@ LocalCommittedRemoteMove execute_pending_remote_move(
     state.local_device = committed_move.local_device;
     state.local_inode = committed_move.local_inode;
     items.commit_remote_move(committed_move, std::move(state));
-    return transition_transaction<RemoteMoveLocalCommittedState>(
-        std::move(graph_committed)
-    );
+    return mark_local_remote_move_committed(std::move(graph_committed));
 }
 
 class UploadSnapshot final {
@@ -720,19 +801,35 @@ struct UploadRemoteCommittedState final : UploadTransactionState {};
 template <typename State>
 concept UploadState = TransactionStateFor<State, UploadTransactionFamily>;
 
-struct UploadTransactionPayload {
+struct PreparedUploadPayload {
     storage::PendingUpload* pending{};
     LocalFileBaseline baseline;
     UploadSnapshot snapshot;
 };
 
-template <UploadState State>
-using UploadTransaction =
-    StateTransaction<State, UploadTransactionFamily, UploadTransactionPayload>;
+struct JournaledUploadPayload {
+    storage::PendingUpload* pending{};
+    LocalFileBaseline baseline;
+};
 
-using PreparedUpload = UploadTransaction<UploadPreparedState>;
-using JournaledUpload = UploadTransaction<UploadJournaledState>;
-using RemoteCommittedUpload = UploadTransaction<UploadRemoteCommittedState>;
+struct RemoteCommittedUploadPayload {
+    storage::PendingUpload* pending{};
+    LocalFileBaseline baseline;
+    graph::RemoteItem remote;
+};
+
+using PreparedUpload = StateTransaction<
+    UploadPreparedState,
+    UploadTransactionFamily,
+    PreparedUploadPayload>;
+using JournaledUpload = StateTransaction<
+    UploadJournaledState,
+    UploadTransactionFamily,
+    JournaledUploadPayload>;
+using RemoteCommittedUpload = StateTransaction<
+    UploadRemoteCommittedState,
+    UploadTransactionFamily,
+    RemoteCommittedUploadPayload>;
 
 static_assert(std::is_nothrow_move_constructible_v<PreparedUpload>);
 static_assert(std::is_nothrow_move_constructible_v<JournaledUpload>);
@@ -740,11 +837,74 @@ static_assert(std::is_nothrow_move_constructible_v<RemoteCommittedUpload>);
 static_assert(!std::same_as<PreparedUpload, JournaledUpload>);
 static_assert(!std::same_as<JournaledUpload, RemoteCommittedUpload>);
 
-template <UploadState State>
-storage::PendingUpload&
-pending_upload(UploadTransaction<State>& upload) noexcept {
+template <UploadState State, typename Payload>
+storage::PendingUpload& pending_upload(
+    StateTransaction<State, UploadTransactionFamily, Payload>& upload
+) noexcept {
     return *upload.pending;
 }
+
+JournaledUpload journal_upload(PreparedUpload upload) noexcept {
+    return transition_transaction<UploadJournaledState>(
+        std::move(upload),
+        [](PreparedUploadPayload&& payload) noexcept {
+            static_cast<void>(payload.snapshot.release());
+            return JournaledUploadPayload{
+                .pending = payload.pending,
+                .baseline = std::move(payload.baseline),
+            };
+        }
+    );
+}
+
+RemoteCommittedUpload mark_remote_upload_committed(
+    JournaledUpload upload, graph::RemoteItem remote
+) noexcept {
+    return transition_transaction<UploadRemoteCommittedState>(
+        std::move(upload),
+        [remote = std::move(remote)](
+            JournaledUploadPayload&& payload
+        ) mutable noexcept {
+            return RemoteCommittedUploadPayload{
+                .pending = payload.pending,
+                .baseline = std::move(payload.baseline),
+                .remote = std::move(remote),
+            };
+        }
+    );
+}
+
+template <typename Transaction>
+concept JournalableUpload = requires(Transaction transaction) {
+    journal_upload(std::move(transaction));
+};
+
+template <typename Transaction>
+concept RemoteCommittableUpload =
+    requires(Transaction transaction, graph::RemoteItem remote) {
+        mark_remote_upload_committed(std::move(transaction), std::move(remote));
+    };
+
+template <typename Transaction>
+concept HasUploadSnapshot =
+    requires(Transaction transaction) { transaction.snapshot.release(); };
+
+template <typename Transaction>
+concept HasRemoteUploadResult =
+    requires(Transaction transaction) { transaction.remote.id; };
+
+static_assert(JournalableUpload<PreparedUpload>);
+static_assert(!JournalableUpload<JournaledUpload>);
+static_assert(!JournalableUpload<RemoteCommittedUpload>);
+static_assert(RemoteCommittableUpload<JournaledUpload>);
+static_assert(!RemoteCommittableUpload<PreparedUpload>);
+static_assert(!RemoteCommittableUpload<RemoteCommittedUpload>);
+static_assert(HasUploadSnapshot<PreparedUpload>);
+static_assert(!HasUploadSnapshot<JournaledUpload>);
+static_assert(!HasUploadSnapshot<RemoteCommittedUpload>);
+static_assert(!HasRemoteUploadResult<PreparedUpload>);
+static_assert(!HasRemoteUploadResult<JournaledUpload>);
+static_assert(HasRemoteUploadResult<RemoteCommittedUpload>);
 
 graph::UploadCheckpoint
 persist_upload_checkpoints(JournaledUpload& upload, storage::ItemStore& items) {
@@ -1630,10 +1790,9 @@ void recover_pending_remote_moves(
             );
         }
         auto journaled = JournaledRemoteMove{
-            RemoteMoveTransactionPayload{
+            PendingRemoteMovePayload{
                 .move = move,
                 .previous = *previous,
-                .remote = std::nullopt,
             },
         };
         static_cast<void>(execute_pending_remote_move(
@@ -1726,16 +1885,13 @@ UploadSummary upload_local_changes(
             );
         }
         auto prepared = PreparedRemoteMove{
-            RemoteMoveTransactionPayload{
+            PendingRemoteMovePayload{
                 .move = move,
                 .previous = *previous,
-                .remote = std::nullopt,
             },
         };
         items.save_pending_remote_move(prepared.move);
-        auto journaled =
-            transition_transaction<RemoteMoveJournaledState>(std::move(prepared)
-            );
+        auto journaled = journal_remote_move(std::move(prepared));
         static_cast<void>(execute_pending_remote_move(
             sync_root, std::move(journaled), graph, items
         ));
@@ -1836,19 +1992,16 @@ UploadSummary upload_local_changes(
             pending.content_fingerprint = baseline.fingerprint;
             pending.local_size = baseline.size;
             pending.local_modified_ticks = baseline.modified_ticks;
-            auto prepared = PreparedUpload{UploadTransactionPayload{
+            auto prepared = PreparedUpload{PreparedUploadPayload{
                 .pending = &pending,
                 .baseline = baseline,
                 .snapshot = std::move(snapshot),
             }};
             items.save_pending_upload(pending_upload(prepared));
-            static_cast<void>(prepared.snapshot.release());
-            auto journaled =
-                transition_transaction<UploadJournaledState>(std::move(prepared)
-                );
+            auto journaled = journal_upload(std::move(prepared));
             const auto checkpoint =
                 persist_upload_checkpoints(journaled, items);
-            const auto remote = graph.upload_file(
+            auto remote = graph.upload_file(
                 upload.remote_path,
                 pending.remote_id,
                 pending.expected_etag,
@@ -1863,12 +2016,14 @@ UploadSummary upload_local_changes(
                     "file '" + upload.path.string() + "'"
                 );
             }
-            auto remote_committed =
-                transition_transaction<UploadRemoteCommittedState>(
-                    std::move(journaled)
-                );
+            auto remote_committed = mark_remote_upload_committed(
+                std::move(journaled), std::move(remote)
+            );
             auto state = uploaded_state(
-                remote, upload.path, remote_committed.baseline, drive_id
+                remote_committed.remote,
+                upload.path,
+                remote_committed.baseline,
+                drive_id
             );
             const auto identity = sync_root.identity(upload.path, false);
             state.local_device = identity.device;
@@ -1876,7 +2031,9 @@ UploadSummary upload_local_changes(
             items.commit_upload(
                 pending_upload(remote_committed), std::move(state)
             );
-            metadata.write_remote_identity(remote, upload.path);
+            metadata.write_remote_identity(
+                remote_committed.remote, upload.path
+            );
             static_cast<void>(remove_no_symlinks(
                 pending_upload(remote_committed).snapshot_path
             ));

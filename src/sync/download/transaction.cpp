@@ -18,10 +18,32 @@ struct DownloadJournaledState final : DownloadTransactionState {};
 using JournaledDownload = DownloadTransaction<DownloadJournaledState>;
 using ActiveDownload = std::variant<PreparedDownload, JournaledDownload>;
 
+JournaledDownload journal_download(PreparedDownload download) noexcept {
+    return transition_transaction<DownloadJournaledState>(std::move(download));
+}
+
+PreparedDownload retry_download(JournaledDownload download) noexcept {
+    return transition_transaction<DownloadPreparedState>(std::move(download));
+}
+
+template <typename Transaction>
+concept JournalableDownload = requires(Transaction transaction) {
+    journal_download(std::move(transaction));
+};
+
+template <typename Transaction>
+concept RetryableDownload = requires(Transaction transaction) {
+    retry_download(std::move(transaction));
+};
+
 static_assert(std::movable<JournaledDownload>);
 static_assert(!std::copyable<JournaledDownload>);
 static_assert(std::is_nothrow_move_constructible_v<JournaledDownload>);
 static_assert(!std::same_as<PreparedDownload, JournaledDownload>);
+static_assert(JournalableDownload<PreparedDownload>);
+static_assert(!JournalableDownload<JournaledDownload>);
+static_assert(RetryableDownload<JournaledDownload>);
+static_assert(!RetryableDownload<PreparedDownload>);
 
 const std::string& remote_path(const ActiveDownload& download) {
     return std::visit(
@@ -387,9 +409,7 @@ storage::ItemState commit_download(
                 .backup_path = backup ? backup->path : std::filesystem::path{},
                 .backup_fingerprint = backup ? backup->fingerprint : "",
             });
-            auto journaled = transition_transaction<DownloadJournaledState>(
-                std::move(prepared)
-            );
+            auto journaled = journal_download(std::move(prepared));
             active.emplace<JournaledDownload>(std::move(journaled));
             auto& installing = std::get<JournaledDownload>(active);
             items.remove_partial_download(
@@ -401,9 +421,7 @@ storage::ItemState commit_download(
                 items.remove_pending_download(
                     installing.state.drive_id, installing.state.remote_id
                 );
-                auto retry = transition_transaction<DownloadPreparedState>(
-                    std::move(installing)
-                );
+                auto retry = retry_download(std::move(installing));
                 active.emplace<PreparedDownload>(std::move(retry));
                 if (options.local_conflict ==
                     config::LocalConflictPolicy::backup) {

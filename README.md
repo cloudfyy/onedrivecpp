@@ -95,6 +95,11 @@ prepared, journaled, and remote-committed phases, and only the journaled upload
 can persist Graph session checkpoints. The shared template contains no Graph,
 SQLite, or filesystem policy: typestates constrain in-process transitions while
 SQLite remains the durable recovery authority.
+Each transaction exposes named, exactly typed transition edges over the shared
+low-level primitive. Transitions may map payload types, so later states contain
+only valid data: journaled uploads no longer retain a released snapshot, and a
+Graph-committed remote move owns a required remote item rather than an optional
+one.
 Local move recovery uses the same core for prepared, journaled, recovered-
 journal, staged, and installed phases. A journal is removed on failure only
 while its typed state proves that no staging or destination object was
