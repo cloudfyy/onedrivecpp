@@ -11,6 +11,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -23,6 +24,41 @@
 namespace {
 
 using onedrive::test::TemporaryDirectory;
+
+struct TestJournaledDownloadState final
+    : onedrive::sync::detail::DownloadTransactionState {};
+struct InvalidDownloadState {};
+
+using TestJournaledDownload =
+    onedrive::sync::detail::DownloadTransaction<TestJournaledDownloadState>;
+
+template <typename Download>
+concept CommittableDownload = requires(
+    onedrive::storage::ItemStore& items,
+    const onedrive::sync::detail::FilesystemMetadata& metadata,
+    Download download
+) {
+    onedrive::sync::detail::commit_download(
+        items, metadata, std::move(download)
+    );
+};
+
+template <typename Download>
+concept DiscardablePreparedDownload = requires(const Download& download) {
+    onedrive::sync::detail::discard_prepared_download(download);
+};
+
+static_assert(onedrive::sync::detail::DownloadState<
+              onedrive::sync::detail::DownloadPreparedState>);
+static_assert(onedrive::sync::detail::DownloadState<TestJournaledDownloadState>
+);
+static_assert(!onedrive::sync::detail::DownloadState<InvalidDownloadState>);
+static_assert(CommittableDownload<onedrive::sync::detail::PreparedDownload>);
+static_assert(!CommittableDownload<TestJournaledDownload>);
+static_assert(
+    DiscardablePreparedDownload<onedrive::sync::detail::PreparedDownload>
+);
+static_assert(!DiscardablePreparedDownload<TestJournaledDownload>);
 
 class FakeGraphClient final {
 public:
@@ -160,6 +196,9 @@ public:
             download.item.remote_id,
             std::move(download)
         );
+        if (pending_download_saved) {
+            pending_download_saved();
+        }
     }
 
     void remove_pending_download(
@@ -320,6 +359,7 @@ public:
     std::unordered_map<std::string, onedrive::storage::ItemState> states;
     std::unordered_map<std::string, onedrive::storage::PendingDownload> pending;
     std::unordered_map<std::string, onedrive::storage::PartialDownload> partials;
+    std::function<void()> pending_download_saved;
     bool fail_upsert{false};
 };
 
@@ -703,6 +743,61 @@ int main() {
         graph.last_expected_etag != installed_item.etag ||
         !has_remote_modified_time(destination)) {
         return fail("atomic download transaction did not commit");
+    }
+
+    const auto raced_item = remote_item("raced", "raced.txt");
+    const auto raced_destination = root / "raced.txt";
+    {
+        std::ofstream output{raced_destination, std::ios::binary};
+        output << "local";
+    }
+    onedrive::graph::GraphClient graph_proxy{
+        onedrive::util::borrowed_proxy, graph
+    };
+    onedrive::storage::ItemStore store_proxy{
+        onedrive::util::borrowed_proxy, items
+    };
+    bool changed_after_journal = false;
+    items.pending_download_saved = [&] {
+        if (changed_after_journal) {
+            return;
+        }
+        changed_after_journal = true;
+        std::ofstream output{
+            raced_destination, std::ios::binary | std::ios::trunc
+        };
+        output << "changed";
+    };
+    const auto raced = detail::commit_download(
+        store_proxy,
+        detail::SafeSyncRoot{root},
+        metadata,
+        detail::prepare_download(
+            graph_proxy,
+            store_proxy,
+            raced_item,
+            item_state(raced_item, raced_destination),
+            raced_destination,
+            detail::capture_local_file_baseline(raced_destination),
+            metadata,
+            space,
+            {}
+        ),
+        {
+            .local_conflict = onedrive::config::LocalConflictPolicy::backup,
+            .preserve_local = true,
+        }
+    );
+    items.pending_download_saved = {};
+    std::ifstream raced_input{raced_destination, std::ios::binary};
+    const std::string raced_contents{
+        std::istreambuf_iterator<char>{raced_input},
+        std::istreambuf_iterator<char>{}
+    };
+    if (!changed_after_journal || raced_contents != "data" ||
+        raced.local_size != 4 || items.pending.contains("raced") ||
+        items.partials.contains("raced")) {
+        return fail("journaled download did not retry through prepared state");
     }
 
     const auto recover_item = remote_item("recover", "recover.txt");

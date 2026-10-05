@@ -8,14 +8,24 @@
 #include "onedrive/graph/graph_client.hpp"
 #include "onedrive/storage/item_store.hpp"
 
+#include <concepts>
 #include <filesystem>
 #include <functional>
 #include <stop_token>
+#include <type_traits>
 #include <utility>
 
 namespace onedrive::sync::detail {
 
-struct PreparedDownload {
+struct DownloadTransactionState {};
+struct DownloadPreparedState final : DownloadTransactionState {};
+
+template <typename State>
+concept DownloadState = std::derived_from<State, DownloadTransactionState>;
+
+template <DownloadState State> struct DownloadTransaction {
+    using state_type = State;
+
     graph::RemoteItem item;
     storage::ItemState state;
     std::filesystem::path destination;
@@ -25,6 +35,12 @@ struct PreparedDownload {
     LocalFileBaseline destination_baseline;
     DownloadSpaceCoordinator::Lease space_reservation;
 };
+
+using PreparedDownload = DownloadTransaction<DownloadPreparedState>;
+
+static_assert(std::movable<PreparedDownload>);
+static_assert(!std::copyable<PreparedDownload>);
+static_assert(std::is_nothrow_move_constructible_v<PreparedDownload>);
 
 struct DownloadCommitOptions {
     config::LocalConflictPolicy local_conflict{

@@ -9,8 +9,63 @@
 #include <format>
 #include <limits>
 #include <stdexcept>
+#include <variant>
 
 namespace onedrive::sync::detail {
+namespace {
+
+struct DownloadJournaledState final : DownloadTransactionState {};
+using JournaledDownload = DownloadTransaction<DownloadJournaledState>;
+using ActiveDownload = std::variant<PreparedDownload, JournaledDownload>;
+
+template <DownloadState Next, DownloadState Current>
+DownloadTransaction<Next>
+transition_download(DownloadTransaction<Current>&& download) noexcept {
+    return {
+        .item = std::move(download.item),
+        .state = std::move(download.state),
+        .destination = std::move(download.destination),
+        .temporary_path = std::move(download.temporary_path),
+        .content_fingerprint = std::move(download.content_fingerprint),
+        .downloaded_size = download.downloaded_size,
+        .destination_baseline = std::move(download.destination_baseline),
+        .space_reservation = std::move(download.space_reservation),
+    };
+}
+
+static_assert(std::movable<JournaledDownload>);
+static_assert(!std::copyable<JournaledDownload>);
+static_assert(std::is_nothrow_move_constructible_v<JournaledDownload>);
+static_assert(!std::same_as<PreparedDownload, JournaledDownload>);
+
+const std::string& remote_path(const ActiveDownload& download) {
+    return std::visit(
+        [](const auto& active) -> const std::string& {
+            return active.item.remote_path;
+        },
+        download
+    );
+}
+
+template <DownloadState State>
+void discard_download_file(
+    const DownloadTransaction<State>& download
+) noexcept {
+    if (download.temporary_path.empty()) {
+        return;
+    }
+    try {
+        remove_no_symlinks(download.temporary_path);
+    } catch (const std::exception& error) {
+        spdlog::warn(
+            "Could not remove incomplete download '{}': {}",
+            download.temporary_path.string(),
+            error.what()
+        );
+    }
+}
+
+} // namespace
 
 PreparedDownload prepare_download(
     graph::GraphClient& graph,
@@ -293,161 +348,159 @@ storage::ItemState commit_download(
     PreparedDownload download,
     DownloadCommitOptions options
 ) {
-    bool journaled = false;
+    ActiveDownload active{
+        std::in_place_type<PreparedDownload>, std::move(download)
+    };
     try {
-        auto baseline = download.destination_baseline;
+        auto baseline = std::get<PreparedDownload>(active).destination_baseline;
         for (unsigned attempt = 0; attempt < 3; ++attempt) {
-            if (!local_file_matches_baseline(download.destination, baseline)) {
+            auto& prepared = std::get<PreparedDownload>(active);
+            if (!local_file_matches_baseline(prepared.destination, baseline)) {
                 if (options.local_conflict ==
                     config::LocalConflictPolicy::block) {
                     throw LocalModificationConflictError(
                         "local file changed while downloading: " +
-                        download.destination.string()
+                        prepared.destination.string()
                     );
                 }
-                baseline = capture_local_file_baseline(download.destination);
+                baseline = capture_local_file_baseline(prepared.destination);
                 options.preserve_local = baseline.existed;
             }
 
-            download.state.local_path = download.destination;
+            prepared.state.local_path = prepared.destination;
             const bool identical =
                 baseline.existed &&
-                baseline.fingerprint == download.content_fingerprint;
+                baseline.fingerprint == prepared.content_fingerprint;
             std::optional<SafeBackup> backup;
             if (options.preserve_local && baseline.existed && !identical) {
                 backup = preserve_safe_backup(
-                    sync_root,
-                    download.destination,
-                    baseline
+                    sync_root, prepared.destination, baseline
                 );
                 if (options.backup_created) {
                     options.backup_created(backup->path);
                 }
             }
 
-            if (!local_file_matches_baseline(
-                    download.destination,
-                    baseline
-                )) {
+            if (!local_file_matches_baseline(prepared.destination, baseline)) {
                 if (options.local_conflict ==
                     config::LocalConflictPolicy::backup) {
                     options.preserve_local = true;
                     baseline =
-                        capture_local_file_baseline(download.destination);
+                        capture_local_file_baseline(prepared.destination);
                     continue;
                 }
                 throw LocalModificationConflictError(
                     "local file changed while downloading: " +
-                    download.destination.string()
+                    prepared.destination.string()
                 );
             }
 
             items.save_pending_download({
-                .item = download.state,
-                .temporary_path = download.temporary_path,
-                .content_fingerprint = download.content_fingerprint,
-                .backup_path = backup ? backup->path :
-                                       std::filesystem::path{},
+                .item = prepared.state,
+                .temporary_path = prepared.temporary_path,
+                .content_fingerprint = prepared.content_fingerprint,
+                .backup_path = backup ? backup->path : std::filesystem::path{},
                 .backup_fingerprint = backup ? backup->fingerprint : "",
             });
-            journaled = true;
+            auto journaled =
+                transition_download<DownloadJournaledState>(std::move(prepared)
+                );
+            active.emplace<JournaledDownload>(std::move(journaled));
+            auto& installing = std::get<JournaledDownload>(active);
             items.remove_partial_download(
-                download.state.drive_id,
-                download.state.remote_id
+                installing.state.drive_id, installing.state.remote_id
             );
             if (!local_file_matches_baseline(
-                    download.destination,
-                    baseline
+                    installing.destination, baseline
                 )) {
                 items.remove_pending_download(
-                    download.state.drive_id,
-                    download.state.remote_id
+                    installing.state.drive_id, installing.state.remote_id
                 );
-                journaled = false;
+                auto retry = transition_download<DownloadPreparedState>(
+                    std::move(installing)
+                );
+                active.emplace<PreparedDownload>(std::move(retry));
                 if (options.local_conflict ==
                     config::LocalConflictPolicy::backup) {
                     options.preserve_local = true;
-                    baseline =
-                        capture_local_file_baseline(download.destination);
+                    baseline = capture_local_file_baseline(
+                        std::get<PreparedDownload>(active).destination
+                    );
                     continue;
                 }
                 throw LocalModificationConflictError(
                     "local file changed while committing the download: " +
-                    download.destination.string()
+                    std::get<PreparedDownload>(active).destination.string()
                 );
             }
 
             if (identical) {
                 apply_remote_modified_time(
-                    download.destination,
-                    download.item.last_modified
+                    installing.destination, installing.item.last_modified
                 );
                 metadata.write_remote_identity(
-                    download.item,
-                    download.destination
+                    installing.item, installing.destination
                 );
-                fsync_file(download.destination);
-                discard_prepared_download(download);
+                fsync_file(installing.destination);
+                discard_download_file(installing);
                 spdlog::debug(
                     "Reused content-identical local file '{}'",
-                    download.item.remote_path
+                    installing.item.remote_path
                 );
             } else {
                 sync_root.rename(
-                    download.temporary_path,
-                    download.destination
+                    installing.temporary_path, installing.destination
                 );
-                sync_root.fsync_directory(
-                    download.destination.parent_path()
-                );
+                sync_root.fsync_directory(installing.destination.parent_path());
                 spdlog::debug(
                     "Atomically installed '{}' ({} bytes)",
-                    download.item.remote_path,
-                    download.downloaded_size
+                    installing.item.remote_path,
+                    installing.downloaded_size
                 );
             }
-            download.state.local_size =
-                static_cast<std::int64_t>(download.downloaded_size);
-            download.state.local_modified_ticks =
-                modified_ticks(download.destination);
-            const auto identity = sync_root.identity(
-                download.destination,
-                false
-            );
-            download.state.local_device = identity.device;
-            download.state.local_inode = identity.inode;
-            items.upsert(download.state);
+            installing.state.local_size =
+                static_cast<std::int64_t>(installing.downloaded_size);
+            installing.state.local_modified_ticks =
+                modified_ticks(installing.destination);
+            const auto identity =
+                sync_root.identity(installing.destination, false);
+            installing.state.local_device = identity.device;
+            installing.state.local_inode = identity.inode;
+            items.upsert(installing.state);
             items.remove_pending_download(
-                download.state.drive_id,
-                download.state.remote_id
+                installing.state.drive_id, installing.state.remote_id
             );
-            return download.state;
+            return installing.state;
         }
         throw LocalModificationConflictError(
             "local file changed repeatedly while creating safeBackup: " +
-            download.destination.string()
+            std::get<PreparedDownload>(active).destination.string()
         );
     } catch (const std::exception& error) {
+        const bool journaled =
+            std::holds_alternative<JournaledDownload>(active);
         if (!journaled) {
-            discard_prepared_download(download);
+            discard_prepared_download(std::get<PreparedDownload>(active));
         }
         spdlog::warn(
             "Download installation failed for '{}'; {}: {}",
-            download.item.remote_path,
-            journaled ? "recovery journal retained" :
-                        "no recovery journal was created",
+            remote_path(active),
+            journaled ? "recovery journal retained"
+                      : "no recovery journal was created",
             error.what()
         );
         throw;
     } catch (...) {
+        const bool journaled =
+            std::holds_alternative<JournaledDownload>(active);
         if (!journaled) {
-            discard_prepared_download(download);
+            discard_prepared_download(std::get<PreparedDownload>(active));
         }
         spdlog::warn(
             "Download installation failed for '{}'; {} due to an unknown error",
-            download.item.remote_path,
-            journaled ? "recovery journal retained" :
-                        "no recovery journal was created"
+            remote_path(active),
+            journaled ? "recovery journal retained"
+                      : "no recovery journal was created"
         );
         throw;
     }
@@ -470,18 +523,7 @@ storage::ItemState commit_download(
 }
 
 void discard_prepared_download(const PreparedDownload& download) noexcept {
-    if (download.temporary_path.empty()) {
-        return;
-    }
-    try {
-        remove_no_symlinks(download.temporary_path);
-    } catch (const std::exception& error) {
-        spdlog::warn(
-            "Could not remove incomplete download '{}': {}",
-            download.temporary_path.string(),
-            error.what()
-        );
-    }
+    discard_download_file(download);
 }
 
 storage::ItemState download_atomically(

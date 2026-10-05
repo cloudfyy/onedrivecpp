@@ -80,6 +80,9 @@ SQLite、monitor、Graph 和 metrics 适配器；测试则注入内存 fake。�
 SQLite ItemStore 拥有专用数据库线程。下载、监控和未来上传工作线程发起的调用
 都会排队并同步等待完成，因此 SQLite 连接和事务顺序始终由一个线程负责，错误
 则返回给调用方。SQLite 是状态的权威来源，适配器不再维护重复的可变条目缓存。
+下载事务使用模板 Typestate 表达内容已验证和恢复 journal 已持久化阶段。只有
+prepared 事务可以进入 commit；安装失败时保留 journaled 状态供重启恢复。模板
+状态负责约束进程内的合法转换，SQLite 仍然是持久化恢复的权威来源。
 
 目录与参考项目中的 `main/config/curlEngine/onedrive/sync/itemdb/monitor`
 职责相对应：
