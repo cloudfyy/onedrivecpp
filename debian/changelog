@@ -1,3 +1,10 @@
+onedrive-cpp (0.7.32-1~ubuntu24.04) noble; urgency=medium
+
+  * Model prepared and journaled download commits with template typestates,
+    preserving SQLite recovery semantics and covering post-journal races.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Mon, 05 Oct 2026 12:42:39 +0000
+
 onedrive-cpp (0.7.31-1~ubuntu24.04) noble; urgency=medium
 
   * Harden SQLite state files, connections, corruption recovery, resource
