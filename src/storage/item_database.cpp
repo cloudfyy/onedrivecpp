@@ -4,6 +4,7 @@
 #include <spdlog/spdlog.h>
 #include <gsl/pointers>
 
+#include <array>
 #include <cerrno>
 #include <condition_variable>
 #include <cstring>
@@ -198,6 +199,61 @@ int schema_version(sqlite3* database) {
     return sqlite3_column_int(statement.get(), 0);
 }
 
+void create_item_schema(sqlite3* database) {
+    execute(
+        database,
+        "CREATE TABLE IF NOT EXISTS item ("
+        "drive_id TEXT NOT NULL,"
+        "remote_id TEXT NOT NULL,"
+        "parent_id TEXT NOT NULL,"
+        "name TEXT NOT NULL,"
+        "etag TEXT NOT NULL,"
+        "remote_path TEXT NOT NULL,"
+        "local_path TEXT NOT NULL,"
+        "last_modified TEXT NOT NULL,"
+        "size INTEGER NOT NULL,"
+        "local_size INTEGER NOT NULL,"
+        "local_modified_ticks INTEGER NOT NULL,"
+        "directory INTEGER NOT NULL,"
+        "PRIMARY KEY (drive_id, remote_id)"
+        ");"
+    );
+}
+
+void create_drive_state_schema(sqlite3* database) {
+    execute(
+        database,
+        "CREATE TABLE IF NOT EXISTS drive_state ("
+        "drive_id TEXT PRIMARY KEY NOT NULL,"
+        "delta_link TEXT NOT NULL,"
+        "sync_filter_fingerprint TEXT NOT NULL DEFAULT ''"
+        ");"
+    );
+}
+
+void create_pending_download_schema(sqlite3* database) {
+    execute(
+        database,
+        "CREATE TABLE IF NOT EXISTS pending_download ("
+        "drive_id TEXT NOT NULL,"
+        "remote_id TEXT NOT NULL,"
+        "parent_id TEXT NOT NULL,"
+        "name TEXT NOT NULL,"
+        "etag TEXT NOT NULL,"
+        "remote_path TEXT NOT NULL,"
+        "local_path TEXT NOT NULL,"
+        "last_modified TEXT NOT NULL,"
+        "size INTEGER NOT NULL,"
+        "directory INTEGER NOT NULL,"
+        "temporary_path TEXT NOT NULL,"
+        "content_fingerprint TEXT NOT NULL,"
+        "backup_path TEXT NOT NULL DEFAULT '',"
+        "backup_fingerprint TEXT NOT NULL DEFAULT '',"
+        "PRIMARY KEY (drive_id, remote_id)"
+        ");"
+    );
+}
+
 void create_blocked_item_schema(sqlite3* database) {
     execute(
         database,
@@ -216,6 +272,29 @@ void create_blocked_item_schema(sqlite3* database) {
         "reason_message TEXT NOT NULL,"
         "content_hash_algorithm TEXT NOT NULL DEFAULT '',"
         "content_hash_value TEXT NOT NULL DEFAULT '',"
+        "first_seen INTEGER NOT NULL DEFAULT (unixepoch()),"
+        "last_attempt INTEGER NOT NULL DEFAULT (unixepoch()),"
+        "attempt_count INTEGER NOT NULL DEFAULT 1,"
+        "PRIMARY KEY (drive_id, remote_id)"
+        ");"
+    );
+}
+
+void create_blocked_item_v5_schema(sqlite3* database) {
+    execute(
+        database,
+        "CREATE TABLE blocked_item ("
+        "drive_id TEXT NOT NULL,"
+        "remote_id TEXT NOT NULL,"
+        "parent_id TEXT NOT NULL,"
+        "name TEXT NOT NULL,"
+        "etag TEXT NOT NULL,"
+        "remote_path TEXT NOT NULL,"
+        "last_modified TEXT NOT NULL,"
+        "size INTEGER NOT NULL,"
+        "directory INTEGER NOT NULL,"
+        "reason_code TEXT NOT NULL,"
+        "reason_message TEXT NOT NULL,"
         "first_seen INTEGER NOT NULL DEFAULT (unixepoch()),"
         "last_attempt INTEGER NOT NULL DEFAULT (unixepoch()),"
         "attempt_count INTEGER NOT NULL DEFAULT 1,"
@@ -254,6 +333,12 @@ void create_identity_schema(sqlite3* database) {
         "avatar_content_type TEXT NOT NULL,"
         "avatar_bytes BLOB NOT NULL"
         ");"
+    );
+}
+
+void create_drive_mapping_schema(sqlite3* database) {
+    execute(
+        database,
         "CREATE TABLE IF NOT EXISTS drive_mapping ("
         "configured_drive_id TEXT PRIMARY KEY NOT NULL,"
         "canonical_drive_id TEXT NOT NULL,"
@@ -306,6 +391,24 @@ void create_pending_upload_schema(sqlite3* database) {
     );
 }
 
+void create_pending_upload_v13_schema(sqlite3* database) {
+    execute(
+        database,
+        "CREATE TABLE pending_upload ("
+        "drive_id TEXT NOT NULL,"
+        "remote_path TEXT NOT NULL,"
+        "local_path TEXT NOT NULL,"
+        "snapshot_path TEXT NOT NULL,"
+        "content_fingerprint TEXT NOT NULL,"
+        "local_size INTEGER NOT NULL,"
+        "local_modified_ticks INTEGER NOT NULL,"
+        "remote_id TEXT NOT NULL DEFAULT '',"
+        "expected_etag TEXT NOT NULL DEFAULT '',"
+        "PRIMARY KEY (drive_id, remote_path)"
+        ");"
+    );
+}
+
 void create_pending_move_schema(sqlite3* database) {
     execute(
         database,
@@ -315,6 +418,22 @@ void create_pending_move_schema(sqlite3* database) {
         "source_path TEXT NOT NULL,"
         "destination_path TEXT NOT NULL,"
         "staging_path TEXT NOT NULL DEFAULT '',"
+        "source_device INTEGER NOT NULL,"
+        "source_inode INTEGER NOT NULL,"
+        "directory INTEGER NOT NULL,"
+        "PRIMARY KEY (drive_id, remote_id)"
+        ");"
+    );
+}
+
+void create_pending_move_v14_schema(sqlite3* database) {
+    execute(
+        database,
+        "CREATE TABLE pending_move ("
+        "drive_id TEXT NOT NULL,"
+        "remote_id TEXT NOT NULL,"
+        "source_path TEXT NOT NULL,"
+        "destination_path TEXT NOT NULL,"
         "source_device INTEGER NOT NULL,"
         "source_inode INTEGER NOT NULL,"
         "directory INTEGER NOT NULL,"
@@ -337,49 +456,13 @@ void create_upload_suppression_schema(sqlite3* database) {
     );
 }
 
-void create_current_schema(sqlite3* database) {
-    execute(
-        database,
-        "CREATE TABLE IF NOT EXISTS item ("
-        "drive_id TEXT NOT NULL,"
-        "remote_id TEXT NOT NULL,"
-        "parent_id TEXT NOT NULL,"
-        "name TEXT NOT NULL,"
-        "etag TEXT NOT NULL,"
-        "remote_path TEXT NOT NULL,"
-        "local_path TEXT NOT NULL,"
-        "last_modified TEXT NOT NULL,"
-        "size INTEGER NOT NULL,"
-        "local_size INTEGER NOT NULL,"
-        "local_modified_ticks INTEGER NOT NULL,"
-        "directory INTEGER NOT NULL,"
-        "PRIMARY KEY (drive_id, remote_id)"
-        ");"
-        "CREATE TABLE IF NOT EXISTS drive_state ("
-        "drive_id TEXT PRIMARY KEY NOT NULL,"
-        "delta_link TEXT NOT NULL,"
-        "sync_filter_fingerprint TEXT NOT NULL DEFAULT ''"
-        ");"
-        "CREATE TABLE IF NOT EXISTS pending_download ("
-        "drive_id TEXT NOT NULL,"
-        "remote_id TEXT NOT NULL,"
-        "parent_id TEXT NOT NULL,"
-        "name TEXT NOT NULL,"
-        "etag TEXT NOT NULL,"
-        "remote_path TEXT NOT NULL,"
-        "local_path TEXT NOT NULL,"
-        "last_modified TEXT NOT NULL,"
-        "size INTEGER NOT NULL,"
-        "directory INTEGER NOT NULL,"
-        "temporary_path TEXT NOT NULL,"
-        "content_fingerprint TEXT NOT NULL,"
-        "backup_path TEXT NOT NULL DEFAULT '',"
-        "backup_fingerprint TEXT NOT NULL DEFAULT '',"
-        "PRIMARY KEY (drive_id, remote_id)"
-        ");"
-    );
+void ensure_current_schema(sqlite3* database) {
+    create_item_schema(database);
+    create_drive_state_schema(database);
+    create_pending_download_schema(database);
     create_blocked_item_schema(database);
     create_identity_schema(database);
+    create_drive_mapping_schema(database);
     create_partial_download_schema(database);
     create_pending_upload_schema(database);
     create_pending_move_schema(database);
@@ -433,304 +516,190 @@ void add_pending_upload_directory(sqlite3* database) {
     );
 }
 
+void migrate_v1_to_v4(sqlite3* database) {
+    execute(
+        database,
+        "ALTER TABLE item RENAME TO item_v1;"
+        "CREATE TABLE item ("
+        "drive_id TEXT NOT NULL,"
+        "remote_id TEXT NOT NULL,"
+        "parent_id TEXT NOT NULL,"
+        "name TEXT NOT NULL,"
+        "etag TEXT NOT NULL,"
+        "remote_path TEXT NOT NULL,"
+        "local_path TEXT NOT NULL,"
+        "last_modified TEXT NOT NULL,"
+        "size INTEGER NOT NULL,"
+        "local_size INTEGER NOT NULL,"
+        "local_modified_ticks INTEGER NOT NULL,"
+        "directory INTEGER NOT NULL,"
+        "PRIMARY KEY (drive_id, remote_id)"
+        ");"
+        "INSERT INTO item ("
+        "drive_id, remote_id, parent_id, name, etag, remote_path, "
+        "local_path, last_modified, size, local_size, "
+        "local_modified_ticks, directory"
+        ") SELECT '', remote_id, '', '', etag, local_path, local_path, '', "
+        "0, 0, 0, 0 FROM item_v1;"
+        "DROP TABLE item_v1;"
+        "CREATE TABLE drive_state ("
+        "drive_id TEXT PRIMARY KEY NOT NULL,"
+        "delta_link TEXT NOT NULL"
+        ");"
+        "CREATE TABLE pending_download ("
+        "drive_id TEXT NOT NULL,"
+        "remote_id TEXT NOT NULL,"
+        "parent_id TEXT NOT NULL,"
+        "name TEXT NOT NULL,"
+        "etag TEXT NOT NULL,"
+        "remote_path TEXT NOT NULL,"
+        "local_path TEXT NOT NULL,"
+        "last_modified TEXT NOT NULL,"
+        "size INTEGER NOT NULL,"
+        "directory INTEGER NOT NULL,"
+        "temporary_path TEXT NOT NULL,"
+        "content_fingerprint TEXT NOT NULL,"
+        "PRIMARY KEY (drive_id, remote_id)"
+        ");"
+    );
+}
+
+void migrate_v2_to_v4(sqlite3* database) {
+    execute(
+        database,
+        "ALTER TABLE item ADD COLUMN local_size INTEGER NOT NULL DEFAULT 0;"
+        "ALTER TABLE item ADD COLUMN local_modified_ticks INTEGER NOT NULL "
+        "DEFAULT 0;"
+        "CREATE TABLE pending_download ("
+        "drive_id TEXT NOT NULL,"
+        "remote_id TEXT NOT NULL,"
+        "parent_id TEXT NOT NULL,"
+        "name TEXT NOT NULL,"
+        "etag TEXT NOT NULL,"
+        "remote_path TEXT NOT NULL,"
+        "local_path TEXT NOT NULL,"
+        "last_modified TEXT NOT NULL,"
+        "size INTEGER NOT NULL,"
+        "directory INTEGER NOT NULL,"
+        "temporary_path TEXT NOT NULL,"
+        "content_fingerprint TEXT NOT NULL,"
+        "PRIMARY KEY (drive_id, remote_id)"
+        ");"
+    );
+}
+
+void migrate_v3_to_v4(sqlite3* database) {
+    execute(
+        database,
+        "CREATE TABLE pending_download ("
+        "drive_id TEXT NOT NULL,"
+        "remote_id TEXT NOT NULL,"
+        "parent_id TEXT NOT NULL,"
+        "name TEXT NOT NULL,"
+        "etag TEXT NOT NULL,"
+        "remote_path TEXT NOT NULL,"
+        "local_path TEXT NOT NULL,"
+        "last_modified TEXT NOT NULL,"
+        "size INTEGER NOT NULL,"
+        "directory INTEGER NOT NULL,"
+        "temporary_path TEXT NOT NULL,"
+        "content_fingerprint TEXT NOT NULL,"
+        "PRIMARY KEY (drive_id, remote_id)"
+        ");"
+    );
+}
+
+void set_schema_version(sqlite3* database, int version) {
+    const auto sql =
+        "PRAGMA user_version = " + std::to_string(version) + ";";
+    execute(database, sql.c_str());
+}
+
+struct SchemaMigration {
+    int from_version;
+    int to_version;
+    void (*apply)(sqlite3*);
+};
+
+constexpr int current_schema_version = 18;
+
+constexpr std::array schema_migrations{
+    SchemaMigration{1, 4, migrate_v1_to_v4},
+    SchemaMigration{2, 4, migrate_v2_to_v4},
+    SchemaMigration{3, 4, migrate_v3_to_v4},
+    SchemaMigration{4, 5, create_blocked_item_v5_schema},
+    SchemaMigration{5, 6, create_identity_schema},
+    SchemaMigration{6, 7, create_drive_mapping_schema},
+    SchemaMigration{7, 8, create_partial_download_schema},
+    SchemaMigration{8, 9, add_blocked_item_hash_columns},
+    SchemaMigration{9, 10, add_sync_filter_fingerprint},
+    SchemaMigration{10, 11, add_pending_download_backup},
+    SchemaMigration{11, 12, add_blocked_item_deleted_column},
+    SchemaMigration{12, 13, create_pending_upload_v13_schema},
+    SchemaMigration{13, 14, create_pending_move_v14_schema},
+    SchemaMigration{14, 15, add_pending_move_staging},
+    SchemaMigration{15, 16, create_upload_suppression_schema},
+    SchemaMigration{16, 17, add_pending_upload_session},
+    SchemaMigration{17, 18, add_pending_upload_directory},
+};
+
+consteval bool schema_migration_chain_is_complete() {
+    for (int version = 1; version < current_schema_version; ++version) {
+        int matches = 0;
+        for (const auto& migration : schema_migrations) {
+            if (migration.from_version == version) {
+                ++matches;
+                if (migration.to_version <= migration.from_version ||
+                    migration.to_version > current_schema_version) {
+                    return false;
+                }
+            }
+        }
+        if (matches != 1) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static_assert(schema_migration_chain_is_complete());
+
 void migrate_schema(sqlite3* database) {
-    const int version = schema_version(database);
+    int version = schema_version(database);
     if (version == 0) {
-        create_current_schema(database);
+        ensure_current_schema(database);
         return;
     }
-    if (version == 1) {
-        Transaction transaction{database};
-        execute(
-            database,
-            "ALTER TABLE item RENAME TO item_v1;"
-            "CREATE TABLE item ("
-            "drive_id TEXT NOT NULL,"
-            "remote_id TEXT NOT NULL,"
-            "parent_id TEXT NOT NULL,"
-            "name TEXT NOT NULL,"
-            "etag TEXT NOT NULL,"
-            "remote_path TEXT NOT NULL,"
-            "local_path TEXT NOT NULL,"
-            "last_modified TEXT NOT NULL,"
-            "size INTEGER NOT NULL,"
-            "local_size INTEGER NOT NULL,"
-            "local_modified_ticks INTEGER NOT NULL,"
-            "directory INTEGER NOT NULL,"
-            "PRIMARY KEY (drive_id, remote_id)"
-            ");"
-            "INSERT INTO item ("
-            "drive_id, remote_id, parent_id, name, etag, remote_path, "
-            "local_path, last_modified, size, local_size, "
-            "local_modified_ticks, directory"
-            ") SELECT '', remote_id, '', '', etag, local_path, local_path, '', "
-            "0, 0, 0, 0 FROM item_v1;"
-            "DROP TABLE item_v1;"
-            "CREATE TABLE drive_state ("
-            "drive_id TEXT PRIMARY KEY NOT NULL,"
-            "delta_link TEXT NOT NULL"
-            ");"
-            "CREATE TABLE pending_download ("
-            "drive_id TEXT NOT NULL,"
-            "remote_id TEXT NOT NULL,"
-            "parent_id TEXT NOT NULL,"
-            "name TEXT NOT NULL,"
-            "etag TEXT NOT NULL,"
-            "remote_path TEXT NOT NULL,"
-            "local_path TEXT NOT NULL,"
-            "last_modified TEXT NOT NULL,"
-            "size INTEGER NOT NULL,"
-            "directory INTEGER NOT NULL,"
-            "temporary_path TEXT NOT NULL,"
-            "content_fingerprint TEXT NOT NULL,"
-            "PRIMARY KEY (drive_id, remote_id)"
-            ");"
-            "PRAGMA user_version = 4;"
-        );
-        create_blocked_item_schema(database);
-        create_identity_schema(database);
-        create_partial_download_schema(database);
-        add_sync_filter_fingerprint(database);
-        add_pending_download_backup(database);
-        create_pending_upload_schema(database);
-        create_pending_move_schema(database);
-        create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 18;");
-        transaction.commit();
-        return;
-    }
-    if (version == 2) {
-        Transaction transaction{database};
-        execute(
-            database,
-            "ALTER TABLE item ADD COLUMN local_size INTEGER NOT NULL DEFAULT 0;"
-            "ALTER TABLE item ADD COLUMN local_modified_ticks INTEGER NOT NULL "
-            "DEFAULT 0;"
-            "CREATE TABLE pending_download ("
-            "drive_id TEXT NOT NULL,"
-            "remote_id TEXT NOT NULL,"
-            "parent_id TEXT NOT NULL,"
-            "name TEXT NOT NULL,"
-            "etag TEXT NOT NULL,"
-            "remote_path TEXT NOT NULL,"
-            "local_path TEXT NOT NULL,"
-            "last_modified TEXT NOT NULL,"
-            "size INTEGER NOT NULL,"
-            "directory INTEGER NOT NULL,"
-            "temporary_path TEXT NOT NULL,"
-            "content_fingerprint TEXT NOT NULL,"
-            "PRIMARY KEY (drive_id, remote_id)"
-            ");"
-            "PRAGMA user_version = 4;"
-        );
-        create_blocked_item_schema(database);
-        create_identity_schema(database);
-        create_partial_download_schema(database);
-        add_sync_filter_fingerprint(database);
-        add_pending_download_backup(database);
-        create_pending_upload_schema(database);
-        create_pending_move_schema(database);
-        create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 18;");
-        transaction.commit();
-        return;
-    }
-    if (version == 3) {
-        Transaction transaction{database};
-        execute(
-            database,
-            "CREATE TABLE pending_download ("
-            "drive_id TEXT NOT NULL,"
-            "remote_id TEXT NOT NULL,"
-            "parent_id TEXT NOT NULL,"
-            "name TEXT NOT NULL,"
-            "etag TEXT NOT NULL,"
-            "remote_path TEXT NOT NULL,"
-            "local_path TEXT NOT NULL,"
-            "last_modified TEXT NOT NULL,"
-            "size INTEGER NOT NULL,"
-            "directory INTEGER NOT NULL,"
-            "temporary_path TEXT NOT NULL,"
-            "content_fingerprint TEXT NOT NULL,"
-            "PRIMARY KEY (drive_id, remote_id)"
-            ");"
-            "PRAGMA user_version = 4;"
-        );
-        create_blocked_item_schema(database);
-        create_identity_schema(database);
-        create_partial_download_schema(database);
-        add_sync_filter_fingerprint(database);
-        add_pending_download_backup(database);
-        create_pending_upload_schema(database);
-        create_pending_move_schema(database);
-        create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 18;");
-        transaction.commit();
-        return;
-    }
-    if (version == 4) {
-        Transaction transaction{database};
-        create_blocked_item_schema(database);
-        create_identity_schema(database);
-        create_partial_download_schema(database);
-        add_sync_filter_fingerprint(database);
-        add_pending_download_backup(database);
-        create_pending_upload_schema(database);
-        create_pending_move_schema(database);
-        create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 18;");
-        transaction.commit();
-        return;
-    }
-    if (version == 5) {
-        Transaction transaction{database};
-        add_blocked_item_hash_columns(database);
-        add_blocked_item_deleted_column(database);
-        create_identity_schema(database);
-        create_partial_download_schema(database);
-        add_sync_filter_fingerprint(database);
-        add_pending_download_backup(database);
-        create_pending_upload_schema(database);
-        create_pending_move_schema(database);
-        create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 18;");
-        transaction.commit();
-        return;
-    }
-    if (version == 6) {
-        Transaction transaction{database};
-        add_blocked_item_hash_columns(database);
-        add_blocked_item_deleted_column(database);
-        create_identity_schema(database);
-        create_partial_download_schema(database);
-        add_sync_filter_fingerprint(database);
-        add_pending_download_backup(database);
-        create_pending_upload_schema(database);
-        create_pending_move_schema(database);
-        create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 18;");
-        transaction.commit();
-        return;
-    }
-    if (version == 7) {
-        Transaction transaction{database};
-        add_blocked_item_hash_columns(database);
-        add_blocked_item_deleted_column(database);
-        create_partial_download_schema(database);
-        add_sync_filter_fingerprint(database);
-        add_pending_download_backup(database);
-        create_pending_upload_schema(database);
-        create_pending_move_schema(database);
-        create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 18;");
-        transaction.commit();
-        return;
-    }
-    if (version == 8) {
-        Transaction transaction{database};
-        add_blocked_item_hash_columns(database);
-        add_blocked_item_deleted_column(database);
-        add_sync_filter_fingerprint(database);
-        add_pending_download_backup(database);
-        create_pending_upload_schema(database);
-        create_pending_move_schema(database);
-        create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 18;");
-        transaction.commit();
-        return;
-    }
-    if (version == 9) {
-        Transaction transaction{database};
-        add_sync_filter_fingerprint(database);
-        add_pending_download_backup(database);
-        add_blocked_item_deleted_column(database);
-        create_pending_upload_schema(database);
-        create_pending_move_schema(database);
-        create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 18;");
-        transaction.commit();
-        return;
-    }
-    if (version == 10) {
-        Transaction transaction{database};
-        add_pending_download_backup(database);
-        add_blocked_item_deleted_column(database);
-        create_pending_upload_schema(database);
-        create_pending_move_schema(database);
-        create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 18;");
-        transaction.commit();
-        return;
-    }
-    if (version == 12) {
-        Transaction transaction{database};
-        create_pending_upload_schema(database);
-        create_pending_move_schema(database);
-        create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 18;");
-        transaction.commit();
-        return;
-    }
-    if (version == 11) {
-        Transaction transaction{database};
-        add_blocked_item_deleted_column(database);
-        create_pending_upload_schema(database);
-        create_pending_move_schema(database);
-        create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 18;");
-        transaction.commit();
-        return;
-    }
-    if (version == 13) {
-        Transaction transaction{database};
-        add_pending_upload_session(database);
-        add_pending_upload_directory(database);
-        create_pending_move_schema(database);
-        create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 18;");
-        transaction.commit();
-        return;
-    }
-    if (version == 14) {
-        Transaction transaction{database};
-        add_pending_upload_session(database);
-        add_pending_upload_directory(database);
-        add_pending_move_staging(database);
-        create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 18;");
-        transaction.commit();
-        return;
-    }
-    if (version == 15) {
-        Transaction transaction{database};
-        add_pending_upload_session(database);
-        add_pending_upload_directory(database);
-        create_upload_suppression_schema(database);
-        execute(database, "PRAGMA user_version = 18;");
-        transaction.commit();
-        return;
-    }
-    if (version == 16) {
-        Transaction transaction{database};
-        add_pending_upload_session(database);
-        add_pending_upload_directory(database);
-        execute(database, "PRAGMA user_version = 18;");
-        transaction.commit();
-        return;
-    }
-    if (version == 17) {
-        Transaction transaction{database};
-        add_pending_upload_directory(database);
-        execute(database, "PRAGMA user_version = 18;");
-        transaction.commit();
-        return;
-    }
-    if (version != 18) {
+    if (version < 0 || version > current_schema_version) {
         throw std::runtime_error(
-            "unsupported state database schema version " + std::to_string(version)
+            "unsupported state database schema version " +
+            std::to_string(version)
         );
     }
-    create_current_schema(database);
+
+    while (version < current_schema_version) {
+        const SchemaMigration* migration = nullptr;
+        for (const auto& candidate : schema_migrations) {
+            if (candidate.from_version == version) {
+                migration = &candidate;
+                break;
+            }
+        }
+        if (migration == nullptr) {
+            throw std::runtime_error(
+                "no state database migration from schema version " +
+                std::to_string(version)
+            );
+        }
+
+        Transaction transaction{database};
+        migration->apply(database);
+        set_schema_version(database, migration->to_version);
+        transaction.commit();
+        version = migration->to_version;
+    }
+
+    ensure_current_schema(database);
 }
 
 }  // namespace

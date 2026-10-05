@@ -32,6 +32,59 @@ onedrive::account::DriveIdentity identity() {
     };
 }
 
+bool execute_schema(
+    const std::filesystem::path& path,
+    const char* schema
+) {
+    sqlite3* database = nullptr;
+    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
+        sqlite3_close(database);
+        return false;
+    }
+    const bool succeeded =
+        sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
+    sqlite3_close(database);
+    return succeeded;
+}
+
+bool create_version_one_database(const std::filesystem::path& path) {
+    return execute_schema(
+        path,
+        "CREATE TABLE item ("
+        "remote_id TEXT PRIMARY KEY NOT NULL, etag TEXT NOT NULL, "
+        "local_path TEXT NOT NULL);"
+        "PRAGMA user_version = 1;"
+    );
+}
+
+bool create_version_two_database(const std::filesystem::path& path) {
+    return execute_schema(
+        path,
+        "CREATE TABLE item ("
+        "drive_id TEXT NOT NULL, remote_id TEXT NOT NULL, "
+        "parent_id TEXT NOT NULL, name TEXT NOT NULL, etag TEXT NOT NULL, "
+        "remote_path TEXT NOT NULL, local_path TEXT NOT NULL, "
+        "last_modified TEXT NOT NULL, size INTEGER NOT NULL, "
+        "directory INTEGER NOT NULL, PRIMARY KEY (drive_id, remote_id));"
+        "CREATE TABLE drive_state ("
+        "drive_id TEXT PRIMARY KEY NOT NULL, delta_link TEXT NOT NULL);"
+        "PRAGMA user_version = 2;"
+    );
+}
+
+bool create_version_three_database(const std::filesystem::path& path) {
+    if (!create_version_two_database(path)) {
+        return false;
+    }
+    return execute_schema(
+        path,
+        "ALTER TABLE item ADD COLUMN local_size INTEGER NOT NULL DEFAULT 0;"
+        "ALTER TABLE item ADD COLUMN local_modified_ticks INTEGER NOT NULL "
+        "DEFAULT 0;"
+        "PRAGMA user_version = 3;"
+    );
+}
+
 bool create_version_four_database(const std::filesystem::path& path) {
     sqlite3* database = nullptr;
     if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
@@ -57,6 +110,33 @@ bool create_version_four_database(const std::filesystem::path& path) {
         "content_fingerprint TEXT NOT NULL, "
         "PRIMARY KEY (drive_id, remote_id));"
         "PRAGMA user_version = 4;";
+    const bool succeeded =
+        sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
+    sqlite3_close(database);
+    return succeeded;
+}
+
+bool create_version_five_database(const std::filesystem::path& path) {
+    if (!create_version_four_database(path)) {
+        return false;
+    }
+    sqlite3* database = nullptr;
+    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
+        sqlite3_close(database);
+        return false;
+    }
+    constexpr const char* schema =
+        "CREATE TABLE blocked_item ("
+        "drive_id TEXT NOT NULL, remote_id TEXT NOT NULL, "
+        "parent_id TEXT NOT NULL, name TEXT NOT NULL, etag TEXT NOT NULL, "
+        "remote_path TEXT NOT NULL, last_modified TEXT NOT NULL, "
+        "size INTEGER NOT NULL, directory INTEGER NOT NULL, "
+        "reason_code TEXT NOT NULL, reason_message TEXT NOT NULL, "
+        "first_seen INTEGER NOT NULL DEFAULT (unixepoch()), "
+        "last_attempt INTEGER NOT NULL DEFAULT (unixepoch()), "
+        "attempt_count INTEGER NOT NULL DEFAULT 1, "
+        "PRIMARY KEY (drive_id, remote_id));"
+        "PRAGMA user_version = 5;";
     const bool succeeded =
         sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
     sqlite3_close(database);
@@ -410,6 +490,28 @@ bool identity_row_is_valid(const std::filesystem::path& path) {
     sqlite3_finalize(statement);
     sqlite3_close(database);
     return valid && mapping_valid;
+}
+
+bool schema_version_is(const std::filesystem::path& path, int expected) {
+    sqlite3* database = nullptr;
+    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
+        sqlite3_close(database);
+        return false;
+    }
+    sqlite3_stmt* statement = nullptr;
+    const bool prepared = sqlite3_prepare_v2(
+        database,
+        "PRAGMA user_version;",
+        -1,
+        &statement,
+        nullptr
+    ) == SQLITE_OK;
+    const bool valid =
+        prepared && sqlite3_step(statement) == SQLITE_ROW &&
+        sqlite3_column_int(statement, 0) == expected;
+    sqlite3_finalize(statement);
+    sqlite3_close(database);
+    return valid;
 }
 
 }  // namespace
@@ -1021,6 +1123,38 @@ int main() {
         }
     }
 
+    struct LegacyMigrationFixture {
+        const char* name;
+        bool (*create)(const std::filesystem::path&);
+    };
+    constexpr LegacyMigrationFixture legacy_migrations[] = {
+        {"version-one", create_version_one_database},
+        {"version-two", create_version_two_database},
+        {"version-three", create_version_three_database},
+    };
+    for (const auto& fixture : legacy_migrations) {
+        const auto directory = temporary_directory.path() / fixture.name;
+        const auto database_path = directory / "items.sqlite3";
+        std::filesystem::create_directories(directory);
+        if (!fixture.create(database_path)) {
+            return fail(
+                std::string{fixture.name} +
+                " migration fixture could not be created"
+            );
+        }
+        {
+            onedrive::storage::ItemDatabase database{directory, identity()};
+            database.open();
+        }
+        if (!schema_version_is(database_path, 18) ||
+            !identity_row_is_valid(database_path)) {
+            return fail(
+                std::string{fixture.name} +
+                " database was not migrated to the current schema"
+            );
+        }
+    }
+
     const auto migration_directory =
         temporary_directory.path() / "version-four";
     std::filesystem::create_directories(migration_directory);
@@ -1063,6 +1197,29 @@ int main() {
             database.blocked_items("me")[0].remote_id !=
                 "migrated-blocked") {
             return fail("migrated blocked item was not persisted");
+        }
+    }
+
+    const auto version_five_directory =
+        temporary_directory.path() / "version-five";
+    std::filesystem::create_directories(version_five_directory);
+    if (!create_version_five_database(
+            version_five_directory / "items.sqlite3"
+        )) {
+        return fail("version five migration fixture could not be created");
+    }
+    {
+        onedrive::storage::ItemDatabase database{
+            version_five_directory,
+            identity()
+        };
+        database.open();
+        if (!identity_row_is_valid(
+                version_five_directory / "items.sqlite3"
+            )) {
+            return fail(
+                "version five database did not gain account identity state"
+            );
         }
     }
 
