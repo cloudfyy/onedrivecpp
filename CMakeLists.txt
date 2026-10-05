@@ -324,6 +324,11 @@ if(BUILD_TESTING)
         INCLUDE_DIRS src
     )
     add_onedrive_test(
+        typestate_tests
+        SOURCES tests/typestate_tests.cpp
+        INCLUDE_DIRS src
+    )
+    add_onedrive_test(
         download_space_coordinator_tests
         SOURCES tests/download_space_coordinator_tests.cpp
         INCLUDE_DIRS src

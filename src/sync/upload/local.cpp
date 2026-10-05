@@ -3,6 +3,7 @@
 #include "util/unique_file_descriptor.hpp"
 #include "onedrive/cli/console.hpp"
 #include "onedrive/util/path_security.hpp"
+#include "sync/core/typestate.hpp"
 #include "sync/filesystem/local.hpp"
 #include "sync/filesystem/metadata.hpp"
 #include "sync/filesystem/safe_sync_root.hpp"
@@ -662,6 +663,52 @@ public:
 private:
     std::filesystem::path path_;
 };
+
+struct UploadTransactionFamily;
+using UploadTransactionState = TransactionState<UploadTransactionFamily>;
+struct UploadPreparedState final : UploadTransactionState {};
+struct UploadJournaledState final : UploadTransactionState {};
+struct UploadRemoteCommittedState final : UploadTransactionState {};
+
+template <typename State>
+concept UploadState = TransactionStateFor<State, UploadTransactionFamily>;
+
+struct UploadTransactionPayload {
+    storage::PendingUpload* pending{};
+    LocalFileBaseline baseline;
+    UploadSnapshot snapshot;
+};
+
+template <UploadState State>
+using UploadTransaction =
+    StateTransaction<State, UploadTransactionFamily, UploadTransactionPayload>;
+
+using PreparedUpload = UploadTransaction<UploadPreparedState>;
+using JournaledUpload = UploadTransaction<UploadJournaledState>;
+using RemoteCommittedUpload = UploadTransaction<UploadRemoteCommittedState>;
+
+static_assert(std::is_nothrow_move_constructible_v<PreparedUpload>);
+static_assert(std::is_nothrow_move_constructible_v<JournaledUpload>);
+static_assert(std::is_nothrow_move_constructible_v<RemoteCommittedUpload>);
+static_assert(!std::same_as<PreparedUpload, JournaledUpload>);
+static_assert(!std::same_as<JournaledUpload, RemoteCommittedUpload>);
+
+template <UploadState State>
+storage::PendingUpload&
+pending_upload(UploadTransaction<State>& upload) noexcept {
+    return *upload.pending;
+}
+
+graph::UploadCheckpoint
+persist_upload_checkpoints(JournaledUpload& upload, storage::ItemStore& items) {
+    return [&](const graph::UploadSession& state) {
+        auto& pending = pending_upload(upload);
+        pending.upload_url = state.upload_url;
+        pending.upload_expiration = state.expiration;
+        pending.completed_bytes = state.completed_bytes;
+        items.save_pending_upload(pending);
+    };
+}
 
 bool reserved_local_name(const std::filesystem::path& path) {
     const auto name = path.filename().string();
@@ -1733,15 +1780,18 @@ UploadSummary upload_local_changes(
             pending.content_fingerprint = baseline.fingerprint;
             pending.local_size = baseline.size;
             pending.local_modified_ticks = baseline.modified_ticks;
-            items.save_pending_upload(pending);
-            pending.snapshot_path = snapshot.release();
-            const graph::UploadCheckpoint checkpoint =
-                [&](const graph::UploadSession& state) {
-                    pending.upload_url = state.upload_url;
-                    pending.upload_expiration = state.expiration;
-                    pending.completed_bytes = state.completed_bytes;
-                    items.save_pending_upload(pending);
-                };
+            auto prepared = PreparedUpload{UploadTransactionPayload{
+                .pending = &pending,
+                .baseline = baseline,
+                .snapshot = std::move(snapshot),
+            }};
+            items.save_pending_upload(pending_upload(prepared));
+            static_cast<void>(prepared.snapshot.release());
+            auto journaled =
+                transition_transaction<UploadJournaledState>(std::move(prepared)
+                );
+            const auto checkpoint =
+                persist_upload_checkpoints(journaled, items);
             const auto remote = graph.upload_file(
                 upload.remote_path,
                 pending.remote_id,
@@ -1757,20 +1807,23 @@ UploadSummary upload_local_changes(
                     "file '" + upload.path.string() + "'"
                 );
             }
+            auto remote_committed =
+                transition_transaction<UploadRemoteCommittedState>(
+                    std::move(journaled)
+                );
             auto state = uploaded_state(
-                remote,
-                upload.path,
-                baseline,
-                drive_id
+                remote, upload.path, remote_committed.baseline, drive_id
             );
             const auto identity = sync_root.identity(upload.path, false);
             state.local_device = identity.device;
             state.local_inode = identity.inode;
-            items.commit_upload(pending, std::move(state));
-            metadata.write_remote_identity(remote, upload.path);
-            static_cast<void>(
-                remove_no_symlinks(pending.snapshot_path)
+            items.commit_upload(
+                pending_upload(remote_committed), std::move(state)
             );
+            metadata.write_remote_identity(remote, upload.path);
+            static_cast<void>(remove_no_symlinks(
+                pending_upload(remote_committed).snapshot_path
+            ));
             ++summary.uploaded;
             console.message(
                 cli::MessageKind::information,

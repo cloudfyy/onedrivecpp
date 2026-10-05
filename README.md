@@ -88,11 +88,13 @@ monitor, and future upload workers are queued and completed synchronously, so
 one thread owns the SQLite connection and transaction order while errors are
 returned to the caller. SQLite is the authoritative state source; the adapter
 does not maintain duplicate mutable item caches.
-The download transaction uses template typestates for its content-verified
-and recovery-journaled phases. Only a prepared transaction can enter commit,
-and installation failures retain the journaled state for restart recovery;
-the template state is an in-process correctness constraint while SQLite
-remains the durable recovery authority.
+Download and upload transactions reuse a small template typestate core that
+isolates state families and moves their payloads between legal phases. Download
+uses content-verified and recovery-journaled phases; upload uses snapshot
+prepared, journaled, and remote-committed phases, and only the journaled upload
+can persist Graph session checkpoints. The shared template contains no Graph,
+SQLite, or filesystem policy: typestates constrain in-process transitions while
+SQLite remains the durable recovery authority.
 
 The directories correspond to the responsibilities of
 `main/config/curlEngine/onedrive/sync/itemdb/monitor` in the reference project:

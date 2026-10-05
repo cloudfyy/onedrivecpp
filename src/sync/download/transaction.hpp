@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sync/download/space_coordinator.hpp"
+#include "sync/core/typestate.hpp"
 #include "sync/filesystem/local.hpp"
 #include "sync/filesystem/metadata.hpp"
 #include "sync/filesystem/safe_sync_root.hpp"
@@ -17,15 +18,14 @@
 
 namespace onedrive::sync::detail {
 
-struct DownloadTransactionState {};
+struct DownloadTransactionFamily;
+using DownloadTransactionState = TransactionState<DownloadTransactionFamily>;
 struct DownloadPreparedState final : DownloadTransactionState {};
 
 template <typename State>
-concept DownloadState = std::derived_from<State, DownloadTransactionState>;
+concept DownloadState = TransactionStateFor<State, DownloadTransactionFamily>;
 
-template <DownloadState State> struct DownloadTransaction {
-    using state_type = State;
-
+struct DownloadTransactionPayload {
     graph::RemoteItem item;
     storage::ItemState state;
     std::filesystem::path destination;
@@ -35,6 +35,12 @@ template <DownloadState State> struct DownloadTransaction {
     LocalFileBaseline destination_baseline;
     DownloadSpaceCoordinator::Lease space_reservation;
 };
+
+template <DownloadState State>
+using DownloadTransaction = StateTransaction<
+    State,
+    DownloadTransactionFamily,
+    DownloadTransactionPayload>;
 
 using PreparedDownload = DownloadTransaction<DownloadPreparedState>;
 

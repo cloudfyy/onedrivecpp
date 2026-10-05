@@ -18,21 +18,6 @@ struct DownloadJournaledState final : DownloadTransactionState {};
 using JournaledDownload = DownloadTransaction<DownloadJournaledState>;
 using ActiveDownload = std::variant<PreparedDownload, JournaledDownload>;
 
-template <DownloadState Next, DownloadState Current>
-DownloadTransaction<Next>
-transition_download(DownloadTransaction<Current>&& download) noexcept {
-    return {
-        .item = std::move(download.item),
-        .state = std::move(download.state),
-        .destination = std::move(download.destination),
-        .temporary_path = std::move(download.temporary_path),
-        .content_fingerprint = std::move(download.content_fingerprint),
-        .downloaded_size = download.downloaded_size,
-        .destination_baseline = std::move(download.destination_baseline),
-        .space_reservation = std::move(download.space_reservation),
-    };
-}
-
 static_assert(std::movable<JournaledDownload>);
 static_assert(!std::copyable<JournaledDownload>);
 static_assert(std::is_nothrow_move_constructible_v<JournaledDownload>);
@@ -289,7 +274,7 @@ PreparedDownload prepare_download(
         apply_remote_modified_time(temporary, item.last_modified);
         metadata.write_remote_identity(item, temporary);
         fsync_file(temporary);
-        return {
+        return PreparedDownload{DownloadTransactionPayload{
             .item = item,
             .state = std::move(state),
             .destination = destination,
@@ -298,7 +283,7 @@ PreparedDownload prepare_download(
             .downloaded_size = downloaded_size,
             .destination_baseline = std::move(destination_baseline),
             .space_reservation = std::move(space_reservation),
-        };
+        }};
     } catch (const DownloadIntegrityError& error) {
         items.remove_partial_download(state.drive_id, item.id);
         PreparedDownload incomplete;
@@ -402,9 +387,9 @@ storage::ItemState commit_download(
                 .backup_path = backup ? backup->path : std::filesystem::path{},
                 .backup_fingerprint = backup ? backup->fingerprint : "",
             });
-            auto journaled =
-                transition_download<DownloadJournaledState>(std::move(prepared)
-                );
+            auto journaled = transition_transaction<DownloadJournaledState>(
+                std::move(prepared)
+            );
             active.emplace<JournaledDownload>(std::move(journaled));
             auto& installing = std::get<JournaledDownload>(active);
             items.remove_partial_download(
@@ -416,7 +401,7 @@ storage::ItemState commit_download(
                 items.remove_pending_download(
                     installing.state.drive_id, installing.state.remote_id
                 );
-                auto retry = transition_download<DownloadPreparedState>(
+                auto retry = transition_transaction<DownloadPreparedState>(
                     std::move(installing)
                 );
                 active.emplace<PreparedDownload>(std::move(retry));
