@@ -1,3 +1,14 @@
+onedrive-cpp (0.7.13-1~ubuntu24.04) noble; urgency=medium
+
+  * Refactor schema upgrades into a table-driven, transactional migration
+    pipeline with compile-time chain validation.
+  * Split current-schema creation into reusable table helpers while preserving
+    legacy version 1 through 18 upgrades.
+  * Add direct migration coverage for previously untested version 1, 2, 3,
+    and 5 databases.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Mon, 05 Oct 2026 01:27:00 +0000
+
 onedrive-cpp (0.7.12-1~ubuntu24.04) noble; urgency=medium
 
   * Create selected new local directories remotely in deterministic
