@@ -1,5 +1,6 @@
 #include "onedrive/monitor/monitor.hpp"
 
+#include "monitor/state_machine.hpp"
 #include "monitor/termination_signal_mask.hpp"
 #include "util/unique_file_descriptor.hpp"
 
@@ -106,7 +107,9 @@ public:
         add_tree(root);
     }
 
-    [[nodiscard]] bool drain(const std::filesystem::path& root) {
+    [[nodiscard]] std::optional<detail::LocalChangeKind> drain(
+        const std::filesystem::path& root
+    ) {
         alignas(inotify_event)
             std::array<char, std::size_t{64} * 1024U> buffer{};
         bool changed = false;
@@ -187,7 +190,13 @@ public:
             );
             rebuild(root);
         }
-        return changed;
+        if (overflow) {
+            return detail::LocalChangeKind::watch_overflow;
+        }
+        if (changed) {
+            return detail::LocalChangeKind::filesystem;
+        }
+        return std::nullopt;
     }
 
 private:
@@ -332,11 +341,32 @@ int Monitor::run_loop(
     const std::stop_token& stop_token,
     int signal_descriptor
 ) const {
+    const detail::MonitorTiming timing{
+        .poll_interval = poll_interval_,
+        .settle_delay = settle_delay_,
+    };
+    detail::MonitorState state = detail::StartingState{};
     if (stop_token.stop_requested()) {
+        state = detail::transition_monitor(
+            std::move(state),
+            detail::StopRequestedEvent{},
+            timing
+        ).state;
         return 0;
     }
 
-    spdlog::info("Running initial monitor synchronization");
+    auto transition = detail::transition_monitor(
+        std::move(state),
+        detail::StartEvent{},
+        timing
+    );
+    state = std::move(transition.state);
+    const auto initial_reason =
+        std::get<detail::SynchronizingState>(state).reason;
+    spdlog::info(
+        "Running synchronization triggered by {}",
+        detail::synchronization_reason_name(initial_reason)
+    );
     const int initial_result = synchronize_();
     if (initial_result != 0) {
         spdlog::warn(
@@ -345,9 +375,13 @@ int Monitor::run_loop(
         );
     }
     if (stop_token.stop_requested()) {
+        state = detail::transition_monitor(
+            std::move(state),
+            detail::StopRequestedEvent{},
+            timing
+        ).state;
         return 0;
     }
-
     WatchSet watches{root_};
     onedrive::util::UniqueFileDescriptor stop_descriptor{
         ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC)
@@ -372,10 +406,15 @@ int Monitor::run_loop(
         settle_delay_.count(),
         poll_interval_.count()
     );
+    state = detail::transition_monitor(
+        std::move(state),
+        detail::SynchronizationCompletedEvent{
+            .status = initial_result,
+            .completed_at = std::chrono::steady_clock::now(),
+        },
+        timing
+    ).state;
 
-    bool local_change_pending = false;
-    auto local_deadline = std::chrono::steady_clock::time_point::max();
-    auto graph_deadline = std::chrono::steady_clock::now() + poll_interval_;
     while (true) {
         std::array<pollfd, 3> descriptors{{
             {
@@ -397,13 +436,16 @@ int Monitor::run_loop(
             },
         }};
         const auto now = std::chrono::steady_clock::now();
-        const auto deadline = local_change_pending ?
-            local_deadline :
-            graph_deadline;
+        const auto deadline = detail::next_deadline(state);
+        if (!deadline) {
+            throw std::logic_error(
+                "monitor entered a non-waiting state before poll"
+            );
+        }
         const int ready = ::poll(
             descriptors.data(),
             descriptors.size(),
-            poll_timeout(deadline, now)
+            poll_timeout(*deadline, now)
         );
         if (ready < 0) {
             if (errno == EINTR) {
@@ -439,36 +481,56 @@ int Monitor::run_loop(
                 );
             }
             spdlog::info("Monitor shutdown requested");
+            state = detail::transition_monitor(
+                std::move(state),
+                detail::StopRequestedEvent{},
+                timing
+            ).state;
             return 0;
         }
         if ((descriptors[1].revents & POLLIN) != 0 ||
             stop_token.stop_requested()) {
             spdlog::info("Monitor shutdown requested");
+            state = detail::transition_monitor(
+                std::move(state),
+                detail::StopRequestedEvent{},
+                timing
+            ).state;
             return 0;
         }
         if ((descriptors[0].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
             throw std::runtime_error("inotify descriptor became unavailable");
         }
-        if ((descriptors[0].revents & POLLIN) != 0 &&
-            watches.drain(root_)) {
-            local_change_pending = true;
-            local_deadline =
-                std::chrono::steady_clock::now() + settle_delay_;
+        if ((descriptors[0].revents & POLLIN) != 0) {
+            if (const auto changed = watches.drain(root_)) {
+                state = detail::transition_monitor(
+                    std::move(state),
+                    detail::LocalChangeEvent{
+                        .kind = *changed,
+                        .observed_at =
+                            std::chrono::steady_clock::now(),
+                    },
+                    timing
+                ).state;
+            }
         }
 
         const auto after_events = std::chrono::steady_clock::now();
-        const bool local_due =
-            local_change_pending && after_events >= local_deadline;
-        const bool graph_due =
-            !local_change_pending && after_events >= graph_deadline;
-        if (!local_due && !graph_due) {
+        transition = detail::transition_monitor(
+            std::move(state),
+            detail::DeadlineReachedEvent{after_events},
+            timing
+        );
+        state = std::move(transition.state);
+        if (transition.effect != detail::MonitorEffect::synchronize) {
             continue;
         }
 
+        const auto reason =
+            std::get<detail::SynchronizingState>(state).reason;
         spdlog::info(
             "Monitor synchronization triggered by {}",
-            local_due ? "local filesystem changes" :
-                        "the Graph polling interval"
+            detail::synchronization_reason_name(reason)
         );
         const int result = synchronize_();
         if (result != 0) {
@@ -478,10 +540,14 @@ int Monitor::run_loop(
             );
         }
         watches.rebuild(root_);
-        local_change_pending = false;
-        local_deadline = std::chrono::steady_clock::time_point::max();
-        graph_deadline =
-            std::chrono::steady_clock::now() + poll_interval_;
+        state = detail::transition_monitor(
+            std::move(state),
+            detail::SynchronizationCompletedEvent{
+                .status = result,
+                .completed_at = std::chrono::steady_clock::now(),
+            },
+            timing
+        ).state;
     }
 }
 

@@ -618,6 +618,12 @@ undetected when there is no local activity. Newly created and moved directory
 trees are watched recursively; an inotify queue overflow rebuilds every watch
 and schedules a complete synchronization. `SIGINT` and `SIGTERM` wake the
 blocking wait and stop cleanly after the active synchronization finishes.
+The monitor scheduler is an explicit single-threaded runtime state machine with
+starting, idle, local-settling, synchronizing, and stopped states. Local bursts
+reset the settle deadline, queue overflow upgrades the pending reason, and a
+pending local settle remains ahead of an expired Graph poll. System I/O and
+`SyncEngine` stay outside the state reducer, so the scheduler constrains event
+ordering without duplicating synchronization policy.
 
 `sync.sync_list` enables client-side selective synchronization. It names a
 separate UTF-8 rule file; relative paths are resolved from the directory

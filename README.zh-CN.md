@@ -547,6 +547,11 @@ onedrive-cpp sync --force-large-delete
 `monitor.poll_interval_seconds` 也限制远端变化的最长发现延迟。新建或移入的
 目录树会被递归监听；inotify 队列溢出时会重建全部 watch 并安排完整同步。
 `SIGINT` 和 `SIGTERM` 会唤醒阻塞等待，并在当前同步结束后安全退出。
+Monitor 调度器使用显式的单线程运行时状态机，状态包括 starting、idle、本地事件
+settling、synchronizing 和 stopped。本地事件突发会重置 settle deadline，队列
+溢出会升级待处理原因，并且待完成的本地 settle 优先于已到期的 Graph poll。
+系统 I/O 和 `SyncEngine` 保持在纯状态 reducer 之外，因此调度器只约束事件顺序，
+不会复制同步策略。
 
 `sync.sync_list` 用于启用客户端选择性同步。它指向一个独立的 UTF-8 规则文件；
 相对路径以 TOML 配置文件所在目录为基准解析。未配置时，所有远端项目都可以参与
