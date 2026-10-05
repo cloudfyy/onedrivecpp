@@ -674,6 +674,7 @@ int main() {
     if (!std::filesystem::exists(destination) || !items.pending.empty() ||
         !items.partials.empty() || !items.find("me", "installed") ||
         installed.local_size != 4 || installed.local_modified_ticks == 0 ||
+        installed.local_device == 0 || installed.local_inode == 0 ||
         graph.last_expected_etag != installed_item.etag ||
         !has_remote_modified_time(destination)) {
         return fail("atomic download transaction did not commit");

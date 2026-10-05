@@ -38,6 +38,7 @@ struct UploadSummary {
     bool dry_run
 );
 void recover_pending_uploads(
+    const SafeSyncRoot& sync_root,
     const std::string& drive_id,
     graph::GraphClient& graph,
     storage::ItemStore& items,

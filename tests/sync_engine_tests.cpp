@@ -3714,6 +3714,7 @@ int test_local_file_uploads() {
         }
     }
     const auto modified = items.find("me", "modified");
+    const auto unchanged = items.find("me", "unchanged");
     if (result != 2 || graph.upload_count != 2 ||
         graph.uploaded_paths !=
             std::vector<std::string>{"modified.txt", "new.txt"} ||
@@ -3721,6 +3722,9 @@ int test_local_file_uploads() {
         (modified->etag != "uploaded-etag-1" &&
          modified->etag != "uploaded-etag-2") ||
         modified->local_size != 7 ||
+        modified->local_device == 0 || modified->local_inode == 0 ||
+        !unchanged || unchanged->local_device == 0 ||
+        unchanged->local_inode == 0 ||
         (!items.find("me", "uploaded-1") &&
          !items.find("me", "uploaded-2")) ||
         upload_snapshot_found || !metrics.last_success) {
@@ -4049,6 +4053,9 @@ int test_local_directory_uploads() {
         graph.upload_count != 1 ||
         graph.directory_create_count != 3 ||
         items.size() != 4 ||
+        !items.find("me", "directory-1") ||
+        items.find("me", "directory-1")->local_device == 0 ||
+        items.find("me", "directory-1")->local_inode == 0 ||
         !items.pending_uploads_by_path.empty() ||
         !metrics.last_success) {
         return fail(

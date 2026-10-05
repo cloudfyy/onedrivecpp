@@ -27,6 +27,8 @@ struct ItemState {
     std::int64_t size{0};
     std::int64_t local_size{0};
     std::int64_t local_modified_ticks{0};
+    std::uint64_t local_device{0};
+    std::uint64_t local_inode{0};
     bool directory{false};
 };
 

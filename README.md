@@ -611,6 +611,11 @@ tracked descendants. A dedicated SQLite journal makes an already-completed
 Graph deletion recoverable after a process interruption; HTTP 404 is therefore
 an idempotent success, while 409/412 stops without discarding tracked state.
 Dry-run and paths outside the active sync-list never issue deletions.
+Tracked local files and directories also persist their filesystem device and
+inode identity. Downloads and uploads record it immediately, while a normal
+non-dry-run upload scan backfills older snapshots. This stable identity is the
+basis for safely recognizing local moves without relying on ambiguous size and
+timestamp matches.
 
 `graph.endpoint` selects the Microsoft Graph cloud endpoint and defaults to
 the global service. It is not tied to a specific SharePoint host. For a

@@ -42,6 +42,7 @@ public:
                 std::string{sqlite3_errmsg(database_.get())}
             );
         }
+
     }
 
     ~Statement() {
@@ -214,6 +215,8 @@ void create_item_schema(sqlite3* database) {
         "size INTEGER NOT NULL,"
         "local_size INTEGER NOT NULL,"
         "local_modified_ticks INTEGER NOT NULL,"
+        "local_device INTEGER NOT NULL DEFAULT 0,"
+        "local_inode INTEGER NOT NULL DEFAULT 0,"
         "directory INTEGER NOT NULL,"
         "PRIMARY KEY (drive_id, remote_id)"
         ");"
@@ -471,7 +474,7 @@ void create_upload_suppression_schema(sqlite3* database) {
     );
 }
 
-constexpr int current_schema_version = 19;
+constexpr int current_schema_version = 20;
 
 void set_schema_version(sqlite3* database, int version) {
     const auto sql =
@@ -536,6 +539,16 @@ void add_pending_upload_directory(sqlite3* database) {
     execute(
         database,
         "ALTER TABLE pending_upload ADD COLUMN directory "
+        "INTEGER NOT NULL DEFAULT 0;"
+    );
+}
+
+void add_item_local_identity(sqlite3* database) {
+    execute(
+        database,
+        "ALTER TABLE item ADD COLUMN local_device "
+        "INTEGER NOT NULL DEFAULT 0;"
+        "ALTER TABLE item ADD COLUMN local_inode "
         "INTEGER NOT NULL DEFAULT 0;"
     );
 }
@@ -658,6 +671,7 @@ constexpr std::array schema_migrations{
     SchemaMigration{16, 17, add_pending_upload_session},
     SchemaMigration{17, 18, add_pending_upload_directory},
     SchemaMigration{18, 19, create_pending_delete_schema},
+    SchemaMigration{19, 20, add_item_local_identity},
 };
 
 consteval bool schema_migration_chain_is_complete() {
@@ -966,8 +980,10 @@ void ItemDatabase::upsert_on_worker(const ItemState& item) {
         database,
         "INSERT INTO item ("
         "drive_id, remote_id, parent_id, name, etag, remote_path, local_path, "
-        "last_modified, size, local_size, local_modified_ticks, directory"
-        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) "
+        "last_modified, size, local_size, local_modified_ticks, local_device, "
+        "local_inode, directory"
+        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, "
+        "?13, ?14) "
         "ON CONFLICT(drive_id, remote_id) DO UPDATE SET "
         "parent_id = excluded.parent_id, name = excluded.name, "
         "etag = excluded.etag, remote_path = excluded.remote_path, "
@@ -975,6 +991,8 @@ void ItemDatabase::upsert_on_worker(const ItemState& item) {
         "last_modified = excluded.last_modified, size = excluded.size, "
         "local_size = excluded.local_size, "
         "local_modified_ticks = excluded.local_modified_ticks, "
+        "local_device = excluded.local_device, "
+        "local_inode = excluded.local_inode, "
         "directory = excluded.directory;"
     };
     const std::string local_path = item.local_path.string();
@@ -989,7 +1007,19 @@ void ItemDatabase::upsert_on_worker(const ItemState& item) {
     bind_integer(database, statement.get(), 9, item.size);
     bind_integer(database, statement.get(), 10, item.local_size);
     bind_integer(database, statement.get(), 11, item.local_modified_ticks);
-    bind_integer(database, statement.get(), 12, item.directory ? 1 : 0);
+    bind_integer(
+        database,
+        statement.get(),
+        12,
+        static_cast<std::int64_t>(item.local_device)
+    );
+    bind_integer(
+        database,
+        statement.get(),
+        13,
+        static_cast<std::int64_t>(item.local_inode)
+    );
+    bind_integer(database, statement.get(), 14, item.directory ? 1 : 0);
 
     if (sqlite3_step(statement.get()) != SQLITE_DONE) {
         throw std::runtime_error(
@@ -1052,8 +1082,10 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         database,
         "INSERT INTO item ("
         "drive_id, remote_id, parent_id, name, etag, remote_path, local_path, "
-        "last_modified, size, local_size, local_modified_ticks, directory"
-        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) "
+        "last_modified, size, local_size, local_modified_ticks, local_device, "
+        "local_inode, directory"
+        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, "
+        "?13, ?14) "
         "ON CONFLICT(drive_id, remote_id) DO UPDATE SET "
         "parent_id = excluded.parent_id, name = excluded.name, "
         "etag = excluded.etag, remote_path = excluded.remote_path, "
@@ -1061,6 +1093,8 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         "last_modified = excluded.last_modified, size = excluded.size, "
         "local_size = excluded.local_size, "
         "local_modified_ticks = excluded.local_modified_ticks, "
+        "local_device = excluded.local_device, "
+        "local_inode = excluded.local_inode, "
         "directory = excluded.directory;"
     };
     for (auto& item : delta.upserts) {
@@ -1085,7 +1119,24 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
             11,
             item.local_modified_ticks
         );
-        bind_integer(database, upsert_statement.get(), 12, item.directory ? 1 : 0);
+        bind_integer(
+            database,
+            upsert_statement.get(),
+            12,
+            static_cast<std::int64_t>(item.local_device)
+        );
+        bind_integer(
+            database,
+            upsert_statement.get(),
+            13,
+            static_cast<std::int64_t>(item.local_inode)
+        );
+        bind_integer(
+            database,
+            upsert_statement.get(),
+            14,
+            item.directory ? 1 : 0
+        );
         if (sqlite3_step(upsert_statement.get()) != SQLITE_DONE) {
             throw std::runtime_error(
                 "cannot apply delta item: " +
@@ -2763,7 +2814,8 @@ std::optional<ItemState> ItemDatabase::find_on_worker(
         database,
         "SELECT drive_id, remote_id, parent_id, name, etag, remote_path, "
         "local_path, last_modified, size, local_size, local_modified_ticks, "
-        "directory FROM item WHERE drive_id = ?1 AND remote_id = ?2;"
+        "local_device, local_inode, directory FROM item "
+        "WHERE drive_id = ?1 AND remote_id = ?2;"
     };
     bind_text(database, statement.get(), 1, drive_id);
     bind_text(database, statement.get(), 2, remote_id);
@@ -2789,7 +2841,13 @@ std::optional<ItemState> ItemDatabase::find_on_worker(
         .size = sqlite3_column_int64(statement.get(), 8),
         .local_size = sqlite3_column_int64(statement.get(), 9),
         .local_modified_ticks = sqlite3_column_int64(statement.get(), 10),
-        .directory = sqlite3_column_int(statement.get(), 11) != 0,
+        .local_device = static_cast<std::uint64_t>(
+            sqlite3_column_int64(statement.get(), 11)
+        ),
+        .local_inode = static_cast<std::uint64_t>(
+            sqlite3_column_int64(statement.get(), 12)
+        ),
+        .directory = sqlite3_column_int(statement.get(), 13) != 0,
     };
 }
 
@@ -2812,7 +2870,8 @@ std::vector<ItemState> ItemDatabase::drive_items_on_worker(
         database,
         "SELECT drive_id, remote_id, parent_id, name, etag, remote_path, "
         "local_path, last_modified, size, local_size, local_modified_ticks, "
-        "directory FROM item WHERE drive_id = ?1 ORDER BY remote_path;"
+        "local_device, local_inode, directory FROM item "
+        "WHERE drive_id = ?1 ORDER BY remote_path;"
     };
     bind_text(database, statement.get(), 1, drive_id);
     std::vector<ItemState> result;
@@ -2840,7 +2899,13 @@ std::vector<ItemState> ItemDatabase::drive_items_on_worker(
             .local_size = sqlite3_column_int64(statement.get(), 9),
             .local_modified_ticks =
                 sqlite3_column_int64(statement.get(), 10),
-            .directory = sqlite3_column_int(statement.get(), 11) != 0,
+            .local_device = static_cast<std::uint64_t>(
+                sqlite3_column_int64(statement.get(), 11)
+            ),
+            .local_inode = static_cast<std::uint64_t>(
+                sqlite3_column_int64(statement.get(), 12)
+            ),
+            .directory = sqlite3_column_int(statement.get(), 13) != 0,
         });
     }
     return result;

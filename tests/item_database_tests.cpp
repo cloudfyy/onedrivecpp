@@ -450,6 +450,21 @@ bool create_version_eighteen_database(const std::filesystem::path& path) {
     );
 }
 
+bool create_version_nineteen_database(const std::filesystem::path& path) {
+    if (!create_version_eighteen_database(path)) {
+        return false;
+    }
+    return execute_schema(
+        path,
+        "CREATE TABLE pending_delete ("
+        "drive_id TEXT NOT NULL, remote_id TEXT NOT NULL, "
+        "expected_etag TEXT NOT NULL, remote_path TEXT NOT NULL, "
+        "local_path TEXT NOT NULL, directory INTEGER NOT NULL, "
+        "PRIMARY KEY (drive_id, remote_id));"
+        "PRAGMA user_version = 19;"
+    );
+}
+
 bool identity_row_is_valid(const std::filesystem::path& path) {
     sqlite3* database = nullptr;
     if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
@@ -1158,7 +1173,7 @@ int main() {
             onedrive::storage::ItemDatabase database{directory, identity()};
             database.open();
         }
-        if (!schema_version_is(database_path, 19) ||
+        if (!schema_version_is(database_path, 20) ||
             !identity_row_is_valid(database_path)) {
             return fail(
                 std::string{fixture.name} +
@@ -1682,6 +1697,41 @@ int main() {
             database.find("me", "deleted-directory") ||
             database.find("me", "deleted-child")) {
             return fail("pending directory deletion commit was not atomic");
+        }
+    }
+
+    const auto version_nineteen_directory =
+        temporary_directory.path() / "version-nineteen";
+    std::filesystem::create_directories(version_nineteen_directory);
+    if (!create_version_nineteen_database(
+            version_nineteen_directory / "items.sqlite3"
+        )) {
+        return fail(
+            "version nineteen migration fixture could not be created"
+        );
+    }
+    {
+        onedrive::storage::ItemDatabase database{
+            version_nineteen_directory,
+            identity()
+        };
+        database.open();
+        database.upsert({
+            .drive_id = "me",
+            .remote_id = "identity-item",
+            .name = "identity.txt",
+            .etag = "identity-etag",
+            .remote_path = "identity.txt",
+            .local_path = version_nineteen_directory / "identity.txt",
+            .local_device = 123,
+            .local_inode = 456,
+        });
+        const auto item = database.find("me", "identity-item");
+        if (!item || item->local_device != 123 ||
+            item->local_inode != 456) {
+            return fail(
+                "version nineteen database did not persist local identity"
+            );
         }
     }
 

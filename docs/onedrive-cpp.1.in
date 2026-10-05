@@ -615,6 +615,10 @@ A dedicated SQLite pending-delete journal makes completed Graph deletions
 recoverable after interruption: HTTP 404 is an idempotent success, while
 409/412 leaves tracked item state intact. Dry-run and paths outside the active
 sync-list never issue remote deletions.
+Tracked local files and directories persist their filesystem device and inode
+identity. Downloads and uploads record it immediately, and normal non-dry-run
+upload scans backfill older snapshots. This identity supports safe local-move
+recognition without relying on size and timestamp matches.
 .SH SHELL COMPLETION
 Bash and Zsh completion definitions are installed with the package. They
 complete subcommands, command options, enumerated option values, and paths for

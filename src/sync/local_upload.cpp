@@ -285,6 +285,40 @@ std::vector<UploadCandidate> discover_uploads(
 ) {
     std::unordered_map<std::string, storage::ItemState> tracked;
     for (auto item : items.drive_items(drive_id)) {
+        if (cleanup_suppressions) {
+            std::error_code identity_error;
+            const auto status = std::filesystem::symlink_status(
+                item.local_path,
+                identity_error
+            );
+            const bool expected_type =
+                !identity_error &&
+                (item.directory ?
+                     std::filesystem::is_directory(status) :
+                     std::filesystem::is_regular_file(status));
+            if (expected_type) {
+                const auto identity = sync_root.identity(
+                    item.local_path,
+                    item.directory
+                );
+                if (item.local_device != identity.device ||
+                    item.local_inode != identity.inode) {
+                    item.local_device = identity.device;
+                    item.local_inode = identity.inode;
+                    items.upsert(item);
+                }
+            } else if (
+                identity_error &&
+                identity_error !=
+                    std::errc::no_such_file_or_directory
+            ) {
+                throw std::runtime_error(
+                    "cannot inspect tracked local identity '" +
+                    item.local_path.string() + "': " +
+                    identity_error.message()
+                );
+            }
+        }
         tracked.emplace(
             item.local_path.lexically_normal().string(),
             std::move(item)
@@ -682,6 +716,7 @@ graph::RemoteItem recover_created_directory(
 }  // namespace
 
 void recover_pending_uploads(
+    const SafeSyncRoot& sync_root,
     const std::string& drive_id,
     graph::GraphClient& graph,
     storage::ItemStore& items,
@@ -698,14 +733,16 @@ void recover_pending_uploads(
                     upload.remote_path + "'"
                 );
             }
-            items.commit_upload(
-                upload,
-                uploaded_directory_state(
-                    remote,
-                    upload.local_path,
-                    drive_id
-                )
+            auto state = uploaded_directory_state(
+                remote,
+                upload.local_path,
+                drive_id
             );
+            const auto identity =
+                sync_root.identity(upload.local_path, true);
+            state.local_device = identity.device;
+            state.local_inode = identity.inode;
+            items.commit_upload(upload, std::move(state));
             metadata.write_remote_identity(remote, upload.local_path);
             console.message(
                 cli::MessageKind::information,
@@ -735,6 +772,10 @@ void recover_pending_uploads(
             },
             drive_id
         );
+        const auto identity =
+            sync_root.identity(upload.local_path, false);
+        state.local_device = identity.device;
+        state.local_inode = identity.inode;
         items.commit_upload(upload, state);
         metadata.write_remote_identity(remote, upload.local_path);
         static_cast<void>(remove_no_symlinks(upload.snapshot_path));
@@ -843,14 +884,15 @@ UploadSummary upload_local_changes(
                     upload.remote_path + "'"
                 );
             }
-            items.commit_upload(
-                pending,
-                uploaded_directory_state(
-                    remote,
-                    upload.path,
-                    drive_id
-                )
+            auto state = uploaded_directory_state(
+                remote,
+                upload.path,
+                drive_id
             );
+            const auto identity = sync_root.identity(upload.path, true);
+            state.local_device = identity.device;
+            state.local_inode = identity.inode;
+            items.commit_upload(pending, std::move(state));
             metadata.write_remote_identity(remote, upload.path);
             ++summary.created_directories;
             console.message(
@@ -906,12 +948,16 @@ UploadSummary upload_local_changes(
                 upload.path.string() + "'"
             );
         }
-        items.commit_upload(pending, uploaded_state(
+        auto state = uploaded_state(
             remote,
             upload.path,
             baseline,
             drive_id
-        ));
+        );
+        const auto identity = sync_root.identity(upload.path, false);
+        state.local_device = identity.device;
+        state.local_inode = identity.inode;
+        items.commit_upload(pending, std::move(state));
         metadata.write_remote_identity(remote, upload.path);
         static_cast<void>(remove_no_symlinks(pending.snapshot_path));
         ++summary.uploaded;

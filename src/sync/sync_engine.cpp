@@ -1397,6 +1397,12 @@ MoveSummary execute_moves(
                     summary.reusable_files.insert(move.item.id);
                 }
             }
+            const auto identity = safe_root.identity(
+                destination,
+                move.previous.directory
+            );
+            state.local_device = identity.device;
+            state.local_inode = identity.inode;
         } catch (const detail::CrossDeviceMoveError& error) {
             if (journal_saved && !staged_journal) {
                 items.remove_pending_move(drive_id, move.item.id);
@@ -1565,10 +1571,15 @@ ExecutionSummary execute_plan(
             continue;
         }
         try {
+            auto& state = plan.state_for(item.id);
             safe_root.ensure_directory_tree(
-                plan.state_for(item.id).local_path,
+                state.local_path,
                 private_permissions
             );
+            const auto identity =
+                safe_root.identity(state.local_path, true);
+            state.local_device = identity.device;
+            state.local_inode = identity.inode;
             ++prepared_directory_count;
         } catch (const detail::LocalPathConflictError& error) {
             plan.block(item, "local_path_conflict", error.what());
@@ -1686,6 +1697,10 @@ ExecutionSummary execute_plan(
                 std::filesystem::file_size(destination)
             );
             state.local_modified_ticks = detail::modified_ticks(destination);
+            const auto identity =
+                safe_root.identity(destination, false);
+            state.local_device = identity.device;
+            state.local_inode = identity.inode;
             ++reused_count;
         } else {
             detail::LocalFileBaseline baseline;
@@ -1980,6 +1995,7 @@ int SyncEngine::synchronize() const {
                     console
                 );
                 detail::recover_pending_uploads(
+                    *safe_root,
                     config_->drive_id,
                     graph_,
                     items_,

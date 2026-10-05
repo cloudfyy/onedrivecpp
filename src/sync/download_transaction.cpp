@@ -410,6 +410,12 @@ storage::ItemState commit_download(
                 static_cast<std::int64_t>(download.downloaded_size);
             download.state.local_modified_ticks =
                 modified_ticks(download.destination);
+            const auto identity = sync_root.identity(
+                download.destination,
+                false
+            );
+            download.state.local_device = identity.device;
+            download.state.local_inode = identity.inode;
             items.upsert(download.state);
             items.remove_pending_download(
                 download.state.drive_id,
