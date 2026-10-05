@@ -1,8 +1,8 @@
 #include "onedrive/account/account_state.hpp"
 
-#include "detail/atomic_file.hpp"
+#include "util/atomic_file.hpp"
 #include "onedrive/auth/token_store.hpp"
-#include "onedrive/sha256.hpp"
+#include "onedrive/util/sha256.hpp"
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -25,7 +25,7 @@ constexpr mode_t private_directory_mode = S_IRWXU;
 constexpr mode_t private_file_mode = S_IRUSR | S_IWUSR;
 
 std::string stable_suffix(std::string_view value) {
-    return sha256_hex(value).substr(0, 8);
+    return util::sha256_hex(value).substr(0, 8);
 }
 
 struct FriendlyComponentInput {
@@ -193,7 +193,7 @@ void write_private_file(
     const std::filesystem::path& path,
     std::string_view contents
 ) {
-    onedrive::detail::write_file_atomically(
+    onedrive::util::write_file_atomically(
         path,
         contents,
         private_file_mode,

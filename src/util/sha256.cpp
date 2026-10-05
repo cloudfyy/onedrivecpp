@@ -1,4 +1,4 @@
-#include "onedrive/sha256.hpp"
+#include "onedrive/util/sha256.hpp"
 
 #include <openssl/evp.h>
 
@@ -6,7 +6,7 @@
 #include <memory>
 #include <stdexcept>
 
-namespace onedrive {
+namespace onedrive::util {
 
 class Sha256Hasher::Impl final {
 public:
@@ -94,4 +94,4 @@ std::string sha256_hex(std::string_view value) {
     return hasher.finish_hex();
 }
 
-}  // namespace onedrive
+}  // namespace onedrive::util

@@ -1,9 +1,9 @@
 #pragma once
 
 #include "onedrive/account/account_state.hpp"
-#include "onedrive/file_hash.hpp"
+#include "onedrive/util/file_hash.hpp"
 #include "onedrive/http/http_options.hpp"
-#include "onedrive/proxy_service.hpp"
+#include "onedrive/util/proxy_service.hpp"
 
 #include <chrono>
 #include <cstddef>
@@ -62,7 +62,7 @@ struct RemoteItem {
     bool deleted{false};
     bool root{false};
     bool malware{false};
-    std::optional<FileHash> content_hash;
+    std::optional<util::FileHash> content_hash;
     bool validate_content{true};
 };
 
@@ -211,8 +211,8 @@ struct GraphClientFacade : pro::facade_builder
     >
     ::build {};
 
-class GraphClient : private detail::ProxyService<GraphClientFacade> {
-    using Base = detail::ProxyService<GraphClientFacade>;
+class GraphClient : private onedrive::util::ProxyService<GraphClientFacade> {
+    using Base = onedrive::util::ProxyService<GraphClientFacade>;
 
 public:
     using Base::Base;

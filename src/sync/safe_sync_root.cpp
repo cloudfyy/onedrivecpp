@@ -1,6 +1,6 @@
 #include "safe_sync_root.hpp"
 
-#include "detail/unique_file_descriptor.hpp"
+#include "util/unique_file_descriptor.hpp"
 
 #include <cerrno>
 #include <cstring>
@@ -15,7 +15,7 @@
 namespace onedrive::sync::detail {
 namespace {
 
-using Descriptor = onedrive::detail::UniqueFileDescriptor;
+using Descriptor = onedrive::util::UniqueFileDescriptor;
 
 int open_beneath(
     int directory,

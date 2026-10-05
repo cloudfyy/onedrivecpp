@@ -1,7 +1,7 @@
 #include "runtime_preflight.hpp"
 
 #include "onedrive/account/account_state.hpp"
-#include "onedrive/path_security.hpp"
+#include "onedrive/util/path_security.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -28,12 +28,12 @@ void secure_state_directory(const std::filesystem::path& directory) {
     if (directory.empty()) {
         throw std::runtime_error("state.directory must not be empty");
     }
-    onedrive::detail::reject_symlink_components(
+    onedrive::util::reject_symlink_components(
         directory,
         "state directory"
     );
     const bool created = std::filesystem::create_directories(directory);
-    onedrive::detail::reject_symlink_components(
+    onedrive::util::reject_symlink_components(
         directory,
         "state directory"
     );
@@ -228,10 +228,10 @@ void validate_distinct_directories(
     const std::filesystem::path& state_directory
 ) {
     const auto sync = std::filesystem::weakly_canonical(
-        onedrive::detail::normalized_absolute(sync_directory)
+        onedrive::util::normalized_absolute(sync_directory)
     );
     const auto state = std::filesystem::weakly_canonical(
-        onedrive::detail::normalized_absolute(state_directory)
+        onedrive::util::normalized_absolute(state_directory)
     );
     if (sync == sync.root_path()) {
         throw std::runtime_error(
@@ -329,7 +329,7 @@ void prepare_sync_directory(
         config.sync_directory,
         config.state_directory
     );
-    onedrive::detail::reject_symlink_components(
+    onedrive::util::reject_symlink_components(
         config.sync_directory,
         "sync directory"
     );
@@ -363,7 +363,7 @@ void prepare_sync_directory(
     }
 
     std::filesystem::create_directories(config.sync_directory);
-    onedrive::detail::reject_symlink_components(
+    onedrive::util::reject_symlink_components(
         config.sync_directory,
         "sync directory"
     );

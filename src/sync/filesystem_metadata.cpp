@@ -1,6 +1,6 @@
 #include "filesystem_metadata.hpp"
 
-#include "onedrive/path_security.hpp"
+#include "onedrive/util/path_security.hpp"
 #include "local_filesystem.hpp"
 
 #include <spdlog/spdlog.h>
@@ -203,7 +203,7 @@ void FilesystemMetadata::write_remote_identity(
         return;
     }
     const int descriptor =
-        onedrive::detail::open_path_no_symlinks(path, O_RDONLY);
+        onedrive::util::open_path_no_symlinks(path, O_RDONLY);
     if (::fsetxattr(
             descriptor,
             "user.onedrive.remote_id",

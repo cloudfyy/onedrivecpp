@@ -1,7 +1,7 @@
 #pragma once
 
 #include "onedrive/http/http_options.hpp"
-#include "onedrive/proxy_service.hpp"
+#include "onedrive/util/proxy_service.hpp"
 
 #include <chrono>
 #include <cstddef>
@@ -118,8 +118,8 @@ struct HttpTransportFacade : pro::facade_builder
     >
     ::build {};
 
-class HttpTransport : private detail::ProxyService<HttpTransportFacade> {
-    using Base = detail::ProxyService<HttpTransportFacade>;
+class HttpTransport : private onedrive::util::ProxyService<HttpTransportFacade> {
+    using Base = onedrive::util::ProxyService<HttpTransportFacade>;
 
 public:
     using Base::Base;

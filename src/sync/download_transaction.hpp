@@ -84,11 +84,11 @@ template <typename GraphImplementation, typename StoreImplementation>
     const graph::DownloadProgress& progress = {}
 ) {
     graph::GraphClient graph_proxy{
-        onedrive::detail::borrowed_proxy,
+        onedrive::util::borrowed_proxy,
         graph
     };
     storage::ItemStore store_proxy{
-        onedrive::detail::borrowed_proxy,
+        onedrive::util::borrowed_proxy,
         items
     };
     return download_atomically(

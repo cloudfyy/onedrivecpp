@@ -1,10 +1,10 @@
-#include "onedrive/remote_time.hpp"
+#include "onedrive/util/remote_time.hpp"
 
 #include <cstdint>
 #include <stdexcept>
 #include <string>
 
-namespace onedrive {
+namespace onedrive::util {
 namespace {
 
 [[noreturn]] void invalid_remote_modified_time(std::string_view timestamp) {
@@ -96,4 +96,4 @@ parse_remote_modified_time(std::string_view timestamp) {
            fraction;
 }
 
-}  // namespace onedrive
+}  // namespace onedrive::util

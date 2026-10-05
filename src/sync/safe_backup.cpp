@@ -1,7 +1,7 @@
 #include "safe_backup.hpp"
 
-#include "detail/unique_file_descriptor.hpp"
-#include "onedrive/sha256.hpp"
+#include "util/unique_file_descriptor.hpp"
+#include "onedrive/util/sha256.hpp"
 
 #include <array>
 #include <cerrno>
@@ -17,7 +17,7 @@
 namespace onedrive::sync::detail {
 namespace {
 
-using Descriptor = onedrive::detail::UniqueFileDescriptor;
+using Descriptor = onedrive::util::UniqueFileDescriptor;
 
 std::string timestamp() {
     const auto now = std::chrono::system_clock::now();
@@ -52,7 +52,7 @@ std::string backup_filename(
     );
     if (stem.size() + suffix.size() + extension.size() > 240) {
         stem = "onedrive-" +
-               sha256_hex(source.filename().string()).substr(0, 16);
+               util::sha256_hex(source.filename().string()).substr(0, 16);
         if (stem.size() + suffix.size() + extension.size() > 240) {
             extension.clear();
         }

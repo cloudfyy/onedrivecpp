@@ -68,7 +68,7 @@ int test_device_flow() {
     std::vector<std::chrono::seconds> sleeps;
     const auto fixed_time = std::chrono::steady_clock::now();
     onedrive::http::HttpTransport transport_proxy{
-        onedrive::detail::borrowed_proxy,
+        onedrive::util::borrowed_proxy,
         transport
     };
     onedrive::auth::DeviceAuthClient client{
@@ -111,7 +111,7 @@ int test_refresh_and_token_store() {
         },
     }};
     onedrive::http::HttpTransport transport_proxy{
-        onedrive::detail::borrowed_proxy,
+        onedrive::util::borrowed_proxy,
         transport
     };
     onedrive::auth::DeviceAuthClient client{&transport_proxy, test_options()};
@@ -168,7 +168,7 @@ int test_declined_authorization() {
     }};
     const auto fixed_time = std::chrono::steady_clock::now();
     onedrive::http::HttpTransport transport_proxy{
-        onedrive::detail::borrowed_proxy,
+        onedrive::util::borrowed_proxy,
         transport
     };
     onedrive::auth::DeviceAuthClient client{

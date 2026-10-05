@@ -6,7 +6,7 @@
 #include <string_view>
 #include <sys/stat.h>
 
-namespace onedrive::detail {
+namespace onedrive::util {
 
 void write_file_atomically(
     const std::filesystem::path& destination,
@@ -29,4 +29,4 @@ inline void write_file_atomically(
     );
 }
 
-}  // namespace onedrive::detail
+}  // namespace onedrive::util

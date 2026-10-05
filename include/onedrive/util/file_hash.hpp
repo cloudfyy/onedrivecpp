@@ -2,7 +2,7 @@
 
 #include <string>
 
-namespace onedrive {
+namespace onedrive::util {
 
 enum class FileHashAlgorithm {
     quick_xor,
@@ -14,4 +14,4 @@ struct FileHash {
     std::string value;
 };
 
-}  // namespace onedrive
+}  // namespace onedrive::util

@@ -1,7 +1,7 @@
 #include "onedrive/auth/token_store.hpp"
 
-#include "detail/ascii.hpp"
-#include "detail/atomic_file.hpp"
+#include "util/ascii.hpp"
+#include "util/atomic_file.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -54,7 +54,7 @@ std::optional<std::string> FileTokenStore::load_refresh_token() const {
         std::istreambuf_iterator<char>{}
     };
     token = std::string{
-        onedrive::detail::trim_ascii_whitespace(token)
+        onedrive::util::trim_ascii_whitespace(token)
     };
     spdlog::debug(
         "Loaded persisted Microsoft refresh token: {}",
@@ -69,7 +69,7 @@ void FileTokenStore::save_refresh_token(const std::string& refresh_token) const 
     }
 
     std::filesystem::create_directories(path_.parent_path());
-    onedrive::detail::write_file_atomically(
+    onedrive::util::write_file_atomically(
         path_,
         refresh_token,
         S_IRUSR | S_IWUSR,

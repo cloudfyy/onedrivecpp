@@ -3,7 +3,7 @@
 #include <unistd.h>
 #include <utility>
 
-namespace onedrive::detail {
+namespace onedrive::util {
 
 class UniqueFileDescriptor final {
 public:
@@ -55,4 +55,4 @@ private:
     int descriptor_{-1};
 };
 
-}  // namespace onedrive::detail
+}  // namespace onedrive::util

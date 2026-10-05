@@ -382,11 +382,11 @@ int test_single_file_download_coordination() {
         remote_item("single", "Documents/single.txt");
     FakeItemStore item_implementation;
     onedrive::graph::GraphClient graph{
-        onedrive::detail::borrowed_proxy,
+        onedrive::util::borrowed_proxy,
         graph_implementation
     };
     onedrive::storage::ItemStore items{
-        onedrive::detail::borrowed_proxy,
+        onedrive::util::borrowed_proxy,
         item_implementation
     };
     std::ostringstream output;
@@ -681,8 +681,8 @@ int main() {
     FakeGraphClient graph;
     FakeItemStore items;
     auto installed_item = remote_item("installed", "installed.txt");
-    installed_item.content_hash = onedrive::FileHash{
-        .algorithm = onedrive::FileHashAlgorithm::sha256,
+    installed_item.content_hash = onedrive::util::FileHash{
+        .algorithm = onedrive::util::FileHashAlgorithm::sha256,
         .value =
             "3A6EB0790F39AC87C94F3856B2DD2C5D110E6811602261A9A923D3BB23ADC8B7",
     };
@@ -760,8 +760,8 @@ int main() {
     graph.progress_updates = {0, 2, 2, 4};
     auto relaxed_item = remote_item("relaxed", "protected.heic");
     relaxed_item.size = 2;
-    relaxed_item.content_hash = onedrive::FileHash{
-        .algorithm = onedrive::FileHashAlgorithm::sha256,
+    relaxed_item.content_hash = onedrive::util::FileHash{
+        .algorithm = onedrive::util::FileHashAlgorithm::sha256,
         .value =
             "0000000000000000000000000000000000000000000000000000000000000000",
     };
@@ -920,8 +920,8 @@ int main() {
 
     graph.send_checkpoint = true;
     auto truncated_item = remote_item("truncated", "truncated.txt");
-    truncated_item.content_hash = onedrive::FileHash{
-        .algorithm = onedrive::FileHashAlgorithm::sha256,
+    truncated_item.content_hash = onedrive::util::FileHash{
+        .algorithm = onedrive::util::FileHashAlgorithm::sha256,
         .value =
             "3A6EB0790F39AC87C94F3856B2DD2C5D110E6811602261A9A923D3BB23ADC8B7",
     };
@@ -1078,8 +1078,8 @@ int main() {
 
     auto quick_xor_item = remote_item("quick-xor", "quick-xor.txt");
     quick_xor_item.size = 1;
-    quick_xor_item.content_hash = onedrive::FileHash{
-        .algorithm = onedrive::FileHashAlgorithm::quick_xor,
+    quick_xor_item.content_hash = onedrive::util::FileHash{
+        .algorithm = onedrive::util::FileHashAlgorithm::quick_xor,
         .value = "SgAAAAAAAAAAAAAAAQAAAAAAAAA=",
     };
     const auto quick_xor_destination = root / "quick-xor.txt";
@@ -1099,8 +1099,8 @@ int main() {
     }
 
     auto corrupt_item = remote_item("corrupt", "corrupt.txt");
-    corrupt_item.content_hash = onedrive::FileHash{
-        .algorithm = onedrive::FileHashAlgorithm::sha256,
+    corrupt_item.content_hash = onedrive::util::FileHash{
+        .algorithm = onedrive::util::FileHashAlgorithm::sha256,
         .value =
             "0000000000000000000000000000000000000000000000000000000000000000",
     };

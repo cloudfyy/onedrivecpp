@@ -1,7 +1,7 @@
 #include "download_integrity.hpp"
 
-#include "detail/ascii.hpp"
-#include "onedrive/sha256.hpp"
+#include "util/ascii.hpp"
+#include "onedrive/util/sha256.hpp"
 
 #include <openssl/evp.h>
 
@@ -127,13 +127,13 @@ public:
 
 private:
     void reset() {
-        sha256_ = Sha256Hasher{};
+        sha256_ = util::Sha256Hasher{};
         quick_xor_ = {};
         length_ = 0;
         valid_ = true;
     }
 
-    Sha256Hasher sha256_;
+    util::Sha256Hasher sha256_;
     QuickXorAccumulator quick_xor_;
     std::uint64_t length_{0};
     bool valid_{true};
@@ -204,16 +204,16 @@ void verify_download_integrity(
     }
     const auto& expected = item.content_hash.value();
     const std::string actual =
-        expected.algorithm == FileHashAlgorithm::sha256 ?
+        expected.algorithm == util::FileHashAlgorithm::sha256 ?
             hashes.sha256 :
             hashes.quick_xor;
     const bool matches =
-        expected.algorithm == FileHashAlgorithm::sha256 ?
-            onedrive::detail::ascii_iequals(actual, expected.value) :
+        expected.algorithm == util::FileHashAlgorithm::sha256 ?
+            onedrive::util::ascii_iequals(actual, expected.value) :
             actual == expected.value;
     if (!matches) {
         const std::string_view algorithm =
-            expected.algorithm == FileHashAlgorithm::sha256 ?
+            expected.algorithm == util::FileHashAlgorithm::sha256 ?
                 "SHA-256" :
                 "QuickXorHash";
         throw DownloadIntegrityError(

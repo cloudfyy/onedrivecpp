@@ -1,7 +1,7 @@
 #include "onedrive/http/http_client.hpp"
 
-#include "detail/unique_file_descriptor.hpp"
-#include "onedrive/path_security.hpp"
+#include "util/unique_file_descriptor.hpp"
+#include "onedrive/util/path_security.hpp"
 #include "onedrive/version.hpp"
 
 #include <curl/curl.h>
@@ -56,7 +56,7 @@ struct CurlHandleDeleter {
 
 using CurlHandle = std::unique_ptr<CURL, CurlHandleDeleter>;
 
-using FileDescriptor = onedrive::detail::UniqueFileDescriptor;
+using FileDescriptor = onedrive::util::UniqueFileDescriptor;
 
 class ThreadCurlHandlePool {
 public:
@@ -592,7 +592,7 @@ std::string read_proxy_password(const std::filesystem::path& path) {
     constexpr std::size_t maximum_password_size =
         std::size_t{64} * 1024U;
     const FileDescriptor descriptor{
-        onedrive::detail::open_path_no_symlinks(path, O_RDONLY)
+        onedrive::util::open_path_no_symlinks(path, O_RDONLY)
     };
     struct stat status {};
     if (::fstat(descriptor.get(), &status) == -1) {
@@ -1145,7 +1145,7 @@ HttpResult CurlHttpClient::download(
                                 S_IROTH | S_IWOTH;
     int descriptor = -1;
     try {
-        descriptor = onedrive::detail::open_path_no_symlinks(
+        descriptor = onedrive::util::open_path_no_symlinks(
             destination,
             flags,
             request.download_offset == 0 ? mode : 0

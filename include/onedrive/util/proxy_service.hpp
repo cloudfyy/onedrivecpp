@@ -4,7 +4,7 @@
 #include <proxy/proxy.h>
 #include <utility>
 
-namespace onedrive::detail {
+namespace onedrive::util {
 
 struct BorrowedProxyTag {
     explicit BorrowedProxyTag() = default;
@@ -52,4 +52,4 @@ private:
     pro::proxy<Facade> implementation_;
 };
 
-}  // namespace onedrive::detail
+}  // namespace onedrive::util

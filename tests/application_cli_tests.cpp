@@ -565,7 +565,7 @@ RunResult run_application(
     auto* original_error = std::cerr.rdbuf(standard_error.rdbuf());
 
     onedrive::app::RuntimeFactory runtime_factory_proxy{
-        onedrive::detail::borrowed_proxy,
+        onedrive::util::borrowed_proxy,
         runtime_factory
     };
     onedrive::app::Application application{&runtime_factory_proxy};

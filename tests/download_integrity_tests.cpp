@@ -1,5 +1,5 @@
 #include "download_integrity.hpp"
-#include "onedrive/sha256.hpp"
+#include "onedrive/util/sha256.hpp"
 #include "test_support.hpp"
 
 #include <cstdlib>
@@ -15,7 +15,7 @@ using onedrive::test::TemporaryDirectory;
 using onedrive::test::fail;
 using onedrive::test::write_file;
 
-onedrive::graph::RemoteItem remote_item(onedrive::FileHash hash) {
+onedrive::graph::RemoteItem remote_item(onedrive::util::FileHash hash) {
     return {
         .id = "item",
         .name = "content.bin",
@@ -70,7 +70,7 @@ int test_integrity_verification() {
     };
     detail::verify_download_integrity(
         remote_item({
-            .algorithm = onedrive::FileHashAlgorithm::sha256,
+            .algorithm = onedrive::util::FileHashAlgorithm::sha256,
             .value =
                 "3A6EB0790F39AC87C94F3856B2DD2C5D110E6811602261A9A923D3BB23ADC8B7",
         }),
@@ -81,7 +81,7 @@ int test_integrity_verification() {
     );
     detail::verify_download_integrity(
         remote_item({
-            .algorithm = onedrive::FileHashAlgorithm::quick_xor,
+            .algorithm = onedrive::util::FileHashAlgorithm::quick_xor,
             .value = "ZAgDHcIAAAAAAAAABAAAAAAAAAA=",
         }),
         {
@@ -93,7 +93,7 @@ int test_integrity_verification() {
     try {
         detail::verify_download_integrity(
             remote_item({
-                .algorithm = onedrive::FileHashAlgorithm::sha256,
+                .algorithm = onedrive::util::FileHashAlgorithm::sha256,
                 .value =
                     "0000000000000000000000000000000000000000000000000000000000000000",
             }),
@@ -109,7 +109,7 @@ int test_integrity_verification() {
     try {
         detail::verify_download_integrity(
             remote_item({
-                .algorithm = onedrive::FileHashAlgorithm::quick_xor,
+                .algorithm = onedrive::util::FileHashAlgorithm::quick_xor,
                 .value = "AAAAAAAAAAAAAAAAAAAAAAAAAAA=",
             }),
             {
@@ -198,10 +198,10 @@ int test_streaming_hashes() {
 int test_shared_sha256_hasher() {
     constexpr std::string_view contents{"data"};
     const auto bytes = std::as_bytes(std::span{contents});
-    onedrive::Sha256Hasher hasher;
+    onedrive::util::Sha256Hasher hasher;
     hasher.update(bytes.first(2));
     hasher.update(bytes.subspan(2));
-    if (hasher.finish_hex() != onedrive::sha256_hex(contents)) {
+    if (hasher.finish_hex() != onedrive::util::sha256_hex(contents)) {
         return fail("shared SHA-256 hasher did not preserve split updates");
     }
     try {

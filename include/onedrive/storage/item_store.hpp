@@ -1,7 +1,7 @@
 #pragma once
 
-#include "onedrive/file_hash.hpp"
-#include "onedrive/proxy_service.hpp"
+#include "onedrive/util/file_hash.hpp"
+#include "onedrive/util/proxy_service.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -55,7 +55,7 @@ struct BlockedItem {
     std::string reason_code;
     std::string reason_message;
     std::uint64_t attempt_count{0};
-    std::optional<FileHash> content_hash;
+    std::optional<util::FileHash> content_hash;
 };
 
 struct ItemDelta {
@@ -305,8 +305,8 @@ struct ItemStoreFacade : pro::facade_builder
     ::add_convention<StoreSizeDispatch, std::size_t() const>
     ::build {};
 
-class ItemStore : private detail::ProxyService<ItemStoreFacade> {
-    using Base = detail::ProxyService<ItemStoreFacade>;
+class ItemStore : private onedrive::util::ProxyService<ItemStoreFacade> {
+    using Base = onedrive::util::ProxyService<ItemStoreFacade>;
 
 public:
     using Base::Base;

@@ -1,7 +1,7 @@
 #include "selective_sync.hpp"
 
-#include "detail/ascii.hpp"
-#include "onedrive/sha256.hpp"
+#include "util/ascii.hpp"
+#include "onedrive/util/sha256.hpp"
 #include "remote_path.hpp"
 
 #include <algorithm>
@@ -170,7 +170,7 @@ SyncList SyncList::load(
     while (std::getline(input, line)) {
         ++line_number;
         line = std::string{
-            onedrive::detail::trim_ascii_whitespace(line)
+            onedrive::util::trim_ascii_whitespace(line)
         };
         if (line.empty() || line.starts_with('#')) {
             continue;
@@ -226,7 +226,7 @@ SyncList SyncList::load(
             "cannot read sync list '" + path.string() + "'"
         );
     }
-    result.fingerprint_ = sha256_hex(canonical);
+    result.fingerprint_ = util::sha256_hex(canonical);
     return result;
 }
 

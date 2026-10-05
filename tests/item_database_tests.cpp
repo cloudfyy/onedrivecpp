@@ -779,8 +779,8 @@ int main() {
                     .deleted = true,
                     .reason_code = "local_modification",
                     .reason_message = "local file was modified",
-                    .content_hash = onedrive::FileHash{
-                        .algorithm = onedrive::FileHashAlgorithm::quick_xor,
+                    .content_hash = onedrive::util::FileHash{
+                        .algorithm = onedrive::util::FileHashAlgorithm::quick_xor,
                         .value = "SgAAAAAAAAAAAAAAAQAAAAAAAAA=",
                     },
                 },
@@ -1388,8 +1388,8 @@ int main() {
                     .remote_path = "hash.txt",
                     .reason_code = "local_modification",
                     .reason_message = "local file was modified",
-                    .content_hash = onedrive::FileHash{
-                        .algorithm = onedrive::FileHashAlgorithm::sha256,
+                    .content_hash = onedrive::util::FileHash{
+                        .algorithm = onedrive::util::FileHashAlgorithm::sha256,
                         .value =
                             "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
                             "AAAAAAAAAAAAAAAA",
@@ -1402,7 +1402,7 @@ int main() {
         const auto blocked = database.blocked_items("me");
         if (blocked.size() != 1 || !blocked[0].content_hash ||
             blocked[0].content_hash->algorithm !=
-                onedrive::FileHashAlgorithm::sha256 ||
+                onedrive::util::FileHashAlgorithm::sha256 ||
             database.sync_filter_fingerprint("me") !=
                 std::optional<std::string>{"migrated-filter"}) {
             return fail(

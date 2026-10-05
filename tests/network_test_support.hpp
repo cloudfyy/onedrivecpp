@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../src/detail/unique_file_descriptor.hpp"
+#include "../src/util/unique_file_descriptor.hpp"
 
 #include <arpa/inet.h>
 #include <array>
@@ -15,7 +15,7 @@
 
 namespace onedrive::test {
 
-using Socket = onedrive::detail::UniqueFileDescriptor;
+using Socket = onedrive::util::UniqueFileDescriptor;
 
 struct TcpListener {
     Socket socket;

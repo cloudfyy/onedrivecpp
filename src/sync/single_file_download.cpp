@@ -1,6 +1,6 @@
 #include "onedrive/sync/single_file_download.hpp"
 
-#include "onedrive/path_security.hpp"
+#include "onedrive/util/path_security.hpp"
 #include "download_recovery.hpp"
 #include "download_space_coordinator.hpp"
 #include "download_target.hpp"
@@ -32,7 +32,7 @@ SingleFileTarget resolve_target(
     graph::GraphClient& graph
 ) {
     const auto configured_root =
-        onedrive::detail::normalized_absolute(config.sync_directory);
+        onedrive::util::normalized_absolute(config.sync_directory);
     static_cast<void>(detail::local_path_for(configured_root, remote_path));
 
     auto item = graph.item_by_path(remote_path);

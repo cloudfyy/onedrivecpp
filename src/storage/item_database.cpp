@@ -1452,7 +1452,7 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         std::string hash_value;
         if (item.content_hash.has_value()) {
             hash_algorithm =
-                item.content_hash->algorithm == FileHashAlgorithm::sha256 ?
+                item.content_hash->algorithm == util::FileHashAlgorithm::sha256 ?
                     "sha256" :
                     "quick_xor";
             hash_value = item.content_hash->value;
@@ -2838,7 +2838,7 @@ std::vector<BlockedItem> ItemDatabase::blocked_items_on_worker(
         }
         const std::string hash_algorithm = column_text(statement.get(), 13);
         const std::string hash_value = column_text(statement.get(), 14);
-        std::optional<FileHash> content_hash;
+        std::optional<util::FileHash> content_hash;
         if (!hash_algorithm.empty() || !hash_value.empty()) {
             if (hash_value.empty() ||
                 (hash_algorithm != "sha256" &&
@@ -2847,10 +2847,10 @@ std::vector<BlockedItem> ItemDatabase::blocked_items_on_worker(
                     "blocked item contains invalid content hash metadata"
                 );
             }
-            content_hash = FileHash{
+            content_hash = util::FileHash{
                 .algorithm = hash_algorithm == "sha256" ?
-                    FileHashAlgorithm::sha256 :
-                    FileHashAlgorithm::quick_xor,
+                    util::FileHashAlgorithm::sha256 :
+                    util::FileHashAlgorithm::quick_xor,
                 .value = hash_value,
             };
         }

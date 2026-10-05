@@ -2,11 +2,11 @@
 
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
-#include "detail/ascii.hpp"
-#include "detail/uri.hpp"
+#include "util/ascii.hpp"
+#include "util/uri.hpp"
 #include "onedrive/http/download_rate_limiter.hpp"
 #include "onedrive/http/http_client.hpp"
-#include "onedrive/remote_time.hpp"
+#include "onedrive/util/remote_time.hpp"
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -39,7 +39,7 @@ constexpr std::uint64_t upload_chunk_quantum =
 constexpr std::uint64_t maximum_upload_chunk_size =
     std::uint64_t{60} * 1024U * 1024U;
 
-using onedrive::detail::percent_encode_uri_component;
+using onedrive::util::percent_encode_uri_component;
 
 std::string percent_encode_remote_path(std::string_view path) {
     if (path.empty() || path.starts_with('/') || path.ends_with('/')) {
@@ -299,7 +299,7 @@ std::optional<std::chrono::seconds> retry_after(
     const http::HttpResponse& response
 ) {
     for (const auto& header : response.headers) {
-        if (!onedrive::detail::ascii_iequals(
+        if (!onedrive::util::ascii_iequals(
                 header.name,
                 "Retry-After"
             )) {
@@ -322,7 +322,7 @@ std::optional<std::string> header_value(
     std::string_view name
 ) {
     for (const auto& header : response.headers) {
-        if (onedrive::detail::ascii_iequals(header.name, name)) {
+        if (onedrive::util::ascii_iequals(header.name, name)) {
             return header.value;
         }
     }
@@ -400,7 +400,7 @@ void validate_chunk_response_metadata(
     }
     std::optional<std::string_view> header;
     for (const auto& candidate : response.headers) {
-        if (!onedrive::detail::ascii_iequals(
+        if (!onedrive::util::ascii_iequals(
                 candidate.name,
                 "Content-Range"
             )) {
@@ -699,7 +699,7 @@ std::optional<std::string> file_system_last_modified(
         );
     }
     auto timestamp = modified->get<std::string>();
-    static_cast<void>(parse_remote_modified_time(timestamp));
+    static_cast<void>(util::parse_remote_modified_time(timestamp));
     return timestamp;
 }
 
@@ -749,7 +749,7 @@ bool item_is_malware(const Json& value) {
             has_malware_facet(*remote_item, "remoteItem"));
 }
 
-std::optional<FileHash> item_content_hash(const Json& value) {
+std::optional<util::FileHash> item_content_hash(const Json& value) {
     const auto file = value.find("file");
     if (file == value.end()) {
         return std::nullopt;
@@ -796,8 +796,8 @@ std::optional<FileHash> item_content_hash(const Json& value) {
                 "Microsoft Graph returned an invalid sha256Hash"
             );
         }
-        return FileHash{
-            .algorithm = onedrive::FileHashAlgorithm::sha256,
+        return util::FileHash{
+            .algorithm = util::FileHashAlgorithm::sha256,
             .value = std::move(sha256.value()),
         };
     }
@@ -819,8 +819,8 @@ std::optional<FileHash> item_content_hash(const Json& value) {
                 "Microsoft Graph returned an invalid quickXorHash"
             );
         }
-        return FileHash{
-            .algorithm = onedrive::FileHashAlgorithm::quick_xor,
+        return util::FileHash{
+            .algorithm = util::FileHashAlgorithm::quick_xor,
             .value = std::move(quick_xor.value()),
         };
     }
@@ -1707,7 +1707,7 @@ RemoteItem MicrosoftGraphClient::upload_file(
         }
         validate_upload_url(result.upload_url);
         static_cast<void>(
-            parse_remote_modified_time(result.expiration)
+            util::parse_remote_modified_time(result.expiration)
         );
         result.completed_bytes = completed_bytes;
         return result;
@@ -1781,7 +1781,7 @@ RemoteItem MicrosoftGraphClient::upload_file(
     if (saved_session) {
         validate_upload_url(saved_session->upload_url);
         const auto expiration =
-            parse_remote_modified_time(saved_session->expiration);
+            util::parse_remote_modified_time(saved_session->expiration);
         if (saved_session->completed_bytes > total_size) {
             throw std::runtime_error(
                 "saved upload session offset exceeds the local snapshot"
@@ -1841,7 +1841,7 @@ RemoteItem MicrosoftGraphClient::upload_file(
                     );
                 }
                 static_cast<void>(
-                    parse_remote_modified_time(resumed.expiration)
+                    util::parse_remote_modified_time(resumed.expiration)
                 );
                 resumed.completed_bytes = remote_offset;
                 if (checkpoint &&
@@ -1964,7 +1964,7 @@ RemoteItem MicrosoftGraphClient::upload_file(
                 );
             }
             static_cast<void>(
-                parse_remote_modified_time(active_session->expiration)
+                util::parse_remote_modified_time(active_session->expiration)
             );
             active_session->completed_bytes = next_offset;
             if (checkpoint) {

@@ -1,7 +1,7 @@
 #include "onedrive/sync/sync_engine.hpp"
 
 #include "onedrive/cli/console.hpp"
-#include "onedrive/path_security.hpp"
+#include "onedrive/util/path_security.hpp"
 #include "download_recovery.hpp"
 #include "download_integrity.hpp"
 #include "download_progress.hpp"
@@ -664,7 +664,7 @@ bool remote_file_content_unchanged(
                item.last_modified == previous.last_modified;
     }
     detail::DownloadHashes hashes;
-    if (item.content_hash->algorithm == FileHashAlgorithm::sha256) {
+    if (item.content_hash->algorithm == util::FileHashAlgorithm::sha256) {
         hashes.sha256 = detail::content_fingerprint(path);
     } else {
         hashes.quick_xor = detail::quick_xor_hash(path);
@@ -1857,7 +1857,7 @@ int SyncEngine::synchronize() const {
         const auto& console =
             console_ == nullptr ? fallback_console : *console_;
         std::filesystem::path sync_root =
-            onedrive::detail::normalized_absolute(config_->sync_directory);
+            onedrive::util::normalized_absolute(config_->sync_directory);
         std::optional<detail::SafeSyncRoot> safe_root;
         std::optional<detail::FilesystemMetadata> metadata;
         if (config_->dry_run) {

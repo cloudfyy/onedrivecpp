@@ -1,4 +1,4 @@
-#include "detail/atomic_file.hpp"
+#include "util/atomic_file.hpp"
 #include "test_support.hpp"
 
 #include <cstdlib>
@@ -16,7 +16,7 @@ using onedrive::test::fail;
 int main() {
     const onedrive::test::TemporaryDirectory temporary;
     const auto destination = temporary.path() / "private";
-    onedrive::detail::write_file_atomically(
+    onedrive::util::write_file_atomically(
         destination,
         "first",
         S_IRUSR | S_IWUSR,
@@ -29,7 +29,7 @@ int main() {
         return fail("atomic test file was not created securely");
     }
 
-    onedrive::detail::write_file_atomically(
+    onedrive::util::write_file_atomically(
         destination,
         "second",
         S_IRUSR | S_IWUSR,
@@ -40,7 +40,7 @@ int main() {
     }
 
     std::jthread first{[&] {
-        onedrive::detail::write_file_atomically(
+        onedrive::util::write_file_atomically(
             destination,
             "concurrent-first",
             S_IRUSR | S_IWUSR,
@@ -48,7 +48,7 @@ int main() {
         );
     }};
     std::jthread second{[&] {
-        onedrive::detail::write_file_atomically(
+        onedrive::util::write_file_atomically(
             destination,
             "concurrent-second",
             S_IRUSR | S_IWUSR,
@@ -74,7 +74,7 @@ int main() {
     std::filesystem::create_directory(real_parent);
     std::filesystem::create_directory_symlink(real_parent, linked_parent);
     try {
-        onedrive::detail::write_file_atomically(
+        onedrive::util::write_file_atomically(
             linked_parent / "private",
             "data",
             S_IRUSR | S_IWUSR,

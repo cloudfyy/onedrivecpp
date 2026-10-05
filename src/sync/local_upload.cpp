@@ -1,8 +1,8 @@
 #include "local_upload.hpp"
 
-#include "detail/unique_file_descriptor.hpp"
+#include "util/unique_file_descriptor.hpp"
 #include "onedrive/cli/console.hpp"
-#include "onedrive/path_security.hpp"
+#include "onedrive/util/path_security.hpp"
 #include "filesystem_metadata.hpp"
 #include "local_filesystem.hpp"
 #include "remote_path.hpp"
@@ -569,10 +569,10 @@ UploadSnapshot create_upload_snapshot(
     const std::filesystem::path& source,
     const LocalFileBaseline& baseline
 ) {
-    onedrive::detail::UniqueFileDescriptor input;
+    onedrive::util::UniqueFileDescriptor input;
     try {
         input.reset(
-            onedrive::detail::open_path_no_symlinks(source, O_RDONLY)
+            onedrive::util::open_path_no_symlinks(source, O_RDONLY)
         );
     } catch (const std::system_error& error) {
         throw LocalUploadResourceError(
@@ -582,11 +582,11 @@ UploadSnapshot create_upload_snapshot(
         );
     }
     std::filesystem::path snapshot_path;
-    onedrive::detail::UniqueFileDescriptor output;
+    onedrive::util::UniqueFileDescriptor output;
     for (std::size_t attempt = 1; attempt <= 100; ++attempt) {
         snapshot_path = upload_snapshot_path(source, attempt);
         try {
-            output.reset(onedrive::detail::open_path_no_symlinks(
+            output.reset(onedrive::util::open_path_no_symlinks(
                 snapshot_path,
                 O_WRONLY | O_CREAT | O_EXCL,
                 S_IRUSR | S_IWUSR

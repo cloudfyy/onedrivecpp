@@ -1,6 +1,6 @@
 #include "filesystem_metadata.hpp"
 #include "local_filesystem.hpp"
-#include "onedrive/path_security.hpp"
+#include "onedrive/util/path_security.hpp"
 #include "safe_sync_root.hpp"
 #include "test_support.hpp"
 
@@ -196,7 +196,7 @@ int main() {
     } catch (const std::runtime_error&) {
     }
     try {
-        const int descriptor = onedrive::detail::open_path_no_symlinks(
+        const int descriptor = onedrive::util::open_path_no_symlinks(
             redirected / "shared-open.txt",
             O_WRONLY | O_CREAT | O_EXCL,
             S_IRUSR | S_IWUSR
@@ -209,7 +209,7 @@ int main() {
     const mode_t original_umask = ::umask(0022);
     const auto umask_file = root / "umask-file.txt";
     const int umask_file_descriptor =
-        onedrive::detail::open_path_no_symlinks(
+        onedrive::util::open_path_no_symlinks(
             umask_file,
             O_WRONLY | O_CREAT | O_EXCL,
             S_IRUSR | S_IWUSR |

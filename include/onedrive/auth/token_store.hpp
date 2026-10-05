@@ -1,6 +1,6 @@
 #pragma once
 
-#include "onedrive/proxy_service.hpp"
+#include "onedrive/util/proxy_service.hpp"
 
 #include <filesystem>
 #include <memory>
@@ -32,8 +32,8 @@ struct TokenStoreFacade : pro::facade_builder
     >
     ::build {};
 
-class TokenStore : private detail::ProxyService<TokenStoreFacade> {
-    using Base = detail::ProxyService<TokenStoreFacade>;
+class TokenStore : private onedrive::util::ProxyService<TokenStoreFacade> {
+    using Base = onedrive::util::ProxyService<TokenStoreFacade>;
 
 public:
     using Base::Base;

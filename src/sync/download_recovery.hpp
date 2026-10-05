@@ -32,7 +32,7 @@ void recover_pending_downloads(
     const FilesystemMetadata& metadata,
     bool private_permissions = true
 ) {
-    storage::ItemStore store_proxy{onedrive::detail::borrowed_proxy, items};
+    storage::ItemStore store_proxy{onedrive::util::borrowed_proxy, items};
     recover_pending_downloads(
         store_proxy,
         sync_root,
@@ -50,7 +50,7 @@ void recover_pending_downloads(
     const FilesystemMetadata& metadata,
     bool private_permissions = true
 ) {
-    storage::ItemStore store_proxy{onedrive::detail::borrowed_proxy, items};
+    storage::ItemStore store_proxy{onedrive::util::borrowed_proxy, items};
     recover_pending_downloads(
         store_proxy,
         sync_root,

@@ -6,7 +6,7 @@
 #include <string>
 #include <string_view>
 
-namespace onedrive {
+namespace onedrive::util {
 
 class Sha256Hasher final {
 public:
@@ -29,4 +29,4 @@ private:
 
 [[nodiscard]] std::string sha256_hex(std::string_view value);
 
-}  // namespace onedrive
+}  // namespace onedrive::util

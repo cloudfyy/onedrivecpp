@@ -4,7 +4,7 @@
 #include <string_view>
 #include <sys/stat.h>
 
-namespace onedrive::detail {
+namespace onedrive::util {
 
 [[nodiscard]] std::filesystem::path normalized_absolute(
     const std::filesystem::path& path
@@ -19,4 +19,4 @@ void reject_symlink_components(
     mode_t mode = 0
 );
 
-}  // namespace onedrive::detail
+}  // namespace onedrive::util

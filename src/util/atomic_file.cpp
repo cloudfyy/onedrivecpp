@@ -1,7 +1,7 @@
-#include "detail/atomic_file.hpp"
+#include "util/atomic_file.hpp"
 
-#include "detail/unique_file_descriptor.hpp"
-#include "onedrive/path_security.hpp"
+#include "util/unique_file_descriptor.hpp"
+#include "onedrive/util/path_security.hpp"
 
 #include <atomic>
 #include <cerrno>
@@ -14,7 +14,7 @@
 #include <unistd.h>
 #include <utility>
 
-namespace onedrive::detail {
+namespace onedrive::util {
 namespace {
 
 [[nodiscard]] std::string error_message(
@@ -220,4 +220,4 @@ void write_file_atomically(
     }
 }
 
-}  // namespace onedrive::detail
+}  // namespace onedrive::util

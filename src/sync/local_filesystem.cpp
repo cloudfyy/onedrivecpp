@@ -1,8 +1,8 @@
 #include "local_filesystem.hpp"
 
-#include "onedrive/path_security.hpp"
-#include "onedrive/remote_time.hpp"
-#include "onedrive/sha256.hpp"
+#include "onedrive/util/path_security.hpp"
+#include "onedrive/util/remote_time.hpp"
+#include "onedrive/util/sha256.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -102,13 +102,13 @@ std::filesystem::path prepare_sync_root(
     bool private_permissions
 ) {
     const auto absolute_root =
-        onedrive::detail::normalized_absolute(configured_root);
-    onedrive::detail::reject_symlink_components(
+        onedrive::util::normalized_absolute(configured_root);
+    onedrive::util::reject_symlink_components(
         absolute_root,
         "synchronization directory"
     );
     const bool created = std::filesystem::create_directories(absolute_root);
-    onedrive::detail::reject_symlink_components(
+    onedrive::util::reject_symlink_components(
         absolute_root,
         "synchronization directory"
     );
@@ -235,7 +235,7 @@ bool remove_no_symlinks(
     const std::filesystem::path& path,
     bool missing_ok
 ) {
-    const int parent = onedrive::detail::open_path_no_symlinks(
+    const int parent = onedrive::util::open_path_no_symlinks(
         path.parent_path(),
         O_RDONLY | O_DIRECTORY
     );
@@ -263,7 +263,7 @@ void apply_remote_modified_time(
     const std::filesystem::path& path,
     std::string_view remote_modified
 ) {
-    const auto timestamp = parse_remote_modified_time(remote_modified);
+    const auto timestamp = util::parse_remote_modified_time(remote_modified);
     const auto whole_seconds =
         std::chrono::floor<std::chrono::seconds>(timestamp.time_since_epoch());
     if (whole_seconds.count() < std::numeric_limits<time_t>::min() ||
@@ -285,7 +285,7 @@ void apply_remote_modified_time(
         },
     };
     const int descriptor =
-        onedrive::detail::open_path_no_symlinks(path, O_WRONLY);
+        onedrive::util::open_path_no_symlinks(path, O_WRONLY);
     if (::futimens(descriptor, times) == -1) {
         const std::string message = std::strerror(errno);
         ::close(descriptor);
@@ -431,7 +431,7 @@ std::string content_fingerprint(const std::filesystem::path& path) {
                 "'"
         );
     }
-    Sha256Hasher hasher;
+    util::Sha256Hasher hasher;
     std::array<char, std::size_t{64} * 1024U> buffer{};
     while (input) {
         input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
@@ -503,7 +503,7 @@ bool is_temporary_path_for(
 
 void fsync_file(const std::filesystem::path& path) {
     const int descriptor =
-        onedrive::detail::open_path_no_symlinks(path, O_RDONLY);
+        onedrive::util::open_path_no_symlinks(path, O_RDONLY);
     if (::fsync(descriptor) == -1) {
         const std::string message = std::strerror(errno);
         ::close(descriptor);

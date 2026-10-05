@@ -8,7 +8,7 @@
 #include "onedrive/http/http_client.hpp"
 #include "onedrive/metrics/metrics.hpp"
 #include "onedrive/monitor/monitor.hpp"
-#include "onedrive/proxy_service.hpp"
+#include "onedrive/util/proxy_service.hpp"
 #include "onedrive/storage/item_store.hpp"
 
 #include <functional>
@@ -99,8 +99,8 @@ struct RuntimeFactoryFacade : pro::facade_builder
     >
     ::build {};
 
-class RuntimeFactory : private detail::ProxyService<RuntimeFactoryFacade> {
-    using Base = detail::ProxyService<RuntimeFactoryFacade>;
+class RuntimeFactory : private onedrive::util::ProxyService<RuntimeFactoryFacade> {
+    using Base = onedrive::util::ProxyService<RuntimeFactoryFacade>;
 
 public:
     using Base::Base;

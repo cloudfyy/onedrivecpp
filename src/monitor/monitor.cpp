@@ -1,6 +1,6 @@
 #include "onedrive/monitor/monitor.hpp"
 
-#include "detail/unique_file_descriptor.hpp"
+#include "util/unique_file_descriptor.hpp"
 
 #include <array>
 #include <cerrno>
@@ -238,7 +238,7 @@ private:
         }
     }
 
-    onedrive::detail::UniqueFileDescriptor descriptor_;
+    onedrive::util::UniqueFileDescriptor descriptor_;
     std::unordered_map<int, std::filesystem::path> paths_;
 };
 
@@ -322,7 +322,7 @@ Monitor::Monitor(
 
 int Monitor::run() const {
     SignalMask signal_mask;
-    onedrive::detail::UniqueFileDescriptor signal_descriptor{
+    onedrive::util::UniqueFileDescriptor signal_descriptor{
         ::signalfd(
             -1,
             &signal_mask.signals(),
@@ -360,7 +360,7 @@ int Monitor::run_loop(
     }
 
     WatchSet watches{root_};
-    onedrive::detail::UniqueFileDescriptor stop_descriptor{
+    onedrive::util::UniqueFileDescriptor stop_descriptor{
         ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC)
     };
     if (stop_descriptor.get() < 0) {

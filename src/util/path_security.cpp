@@ -1,4 +1,4 @@
-#include "onedrive/path_security.hpp"
+#include "onedrive/util/path_security.hpp"
 
 #include <cerrno>
 #include <cstring>
@@ -10,7 +10,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
-namespace onedrive::detail {
+namespace onedrive::util {
 
 std::filesystem::path normalized_absolute(
     const std::filesystem::path& path
@@ -87,4 +87,4 @@ int open_path_no_symlinks(
     return descriptor;
 }
 
-}  // namespace onedrive::detail
+}  // namespace onedrive::util

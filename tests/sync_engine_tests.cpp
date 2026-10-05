@@ -1821,8 +1821,8 @@ int test_blocked_items_continue_and_retry() {
             .reason_code = "local_modification",
             .reason_message = "previous conflict",
             .attempt_count = 1,
-            .content_hash = onedrive::FileHash{
-                .algorithm = onedrive::FileHashAlgorithm::sha256,
+            .content_hash = onedrive::util::FileHash{
+                .algorithm = onedrive::util::FileHashAlgorithm::sha256,
                 .value =
                     "000000000000000000000000000000000000000000000000"
                     "0000000000000000",
@@ -2467,8 +2467,8 @@ int test_remote_moves() {
     auto changed = file("changed", "folder/new.txt", 4);
     changed.etag = "changed-etag";
     changed.last_modified = "2026-10-04T10:00:00Z";
-    changed.content_hash = onedrive::FileHash{
-        .algorithm = onedrive::FileHashAlgorithm::sha256,
+    changed.content_hash = onedrive::util::FileHash{
+        .algorithm = onedrive::util::FileHashAlgorithm::sha256,
         .value =
             "c6c1c9a9c8543f1e4cd980064cf1625eeb61a90703b2464fff039f21682508b3",
     };

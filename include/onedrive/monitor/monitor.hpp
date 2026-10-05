@@ -1,6 +1,6 @@
 #pragma once
 
-#include "onedrive/proxy_service.hpp"
+#include "onedrive/util/proxy_service.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -20,8 +20,8 @@ struct FileMonitorFacade : pro::facade_builder
     ::add_convention<MonitorRunDispatch, int() const>
     ::build {};
 
-class FileMonitor : private detail::ProxyService<FileMonitorFacade> {
-    using Base = detail::ProxyService<FileMonitorFacade>;
+class FileMonitor : private onedrive::util::ProxyService<FileMonitorFacade> {
+    using Base = onedrive::util::ProxyService<FileMonitorFacade>;
 
 public:
     using Base::Base;

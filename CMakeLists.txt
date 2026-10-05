@@ -105,7 +105,7 @@ set(
 )
 
 add_library(onedrive_core
-    src/atomic_file.cpp
+    src/util/atomic_file.cpp
     src/account/account_state.cpp
     src/app/application.cpp
     src/app/runtime_preflight.cpp
@@ -120,9 +120,9 @@ add_library(onedrive_core
     src/logging/logging.cpp
     src/metrics/metrics.cpp
     src/monitor/monitor.cpp
-    src/path_security.cpp
-    src/remote_time.cpp
-    src/sha256.cpp
+    src/util/path_security.cpp
+    src/util/remote_time.cpp
+    src/util/sha256.cpp
     src/storage/item_database.cpp
     src/sync/download_integrity.cpp
     src/sync/download_progress.cpp

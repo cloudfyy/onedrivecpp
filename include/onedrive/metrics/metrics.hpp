@@ -1,6 +1,6 @@
 #pragma once
 
-#include "onedrive/proxy_service.hpp"
+#include "onedrive/util/proxy_service.hpp"
 
 #include <chrono>
 #include <memory>
@@ -18,8 +18,8 @@ struct MetricsFacade : pro::facade_builder
     >
     ::build {};
 
-class Metrics : private detail::ProxyService<MetricsFacade> {
-    using Base = detail::ProxyService<MetricsFacade>;
+class Metrics : private onedrive::util::ProxyService<MetricsFacade> {
+    using Base = onedrive::util::ProxyService<MetricsFacade>;
 
 public:
     using Base::Base;

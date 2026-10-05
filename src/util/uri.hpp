@@ -3,7 +3,7 @@
 #include <string>
 #include <string_view>
 
-namespace onedrive::detail {
+namespace onedrive::util {
 
 [[nodiscard]] inline std::string percent_encode_uri_component(
     std::string_view value
@@ -29,4 +29,4 @@ namespace onedrive::detail {
     return encoded;
 }
 
-}  // namespace onedrive::detail
+}  // namespace onedrive::util

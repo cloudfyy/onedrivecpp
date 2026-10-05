@@ -325,7 +325,7 @@ int test_list_root_with_refresh_and_pagination() {
         !items[1].malware ||
         !items[1].content_hash ||
         items[1].content_hash->algorithm !=
-            onedrive::FileHashAlgorithm::quick_xor ||
+            onedrive::util::FileHashAlgorithm::quick_xor ||
         items[1].content_hash->value !=
             "SgAAAAAAAAAAAAAAAQAAAAAAAAA=") {
         return fail("Graph drive items were not parsed across pages");
@@ -393,7 +393,7 @@ int test_item_lookup_by_encoded_path() {
         item.directory || item.last_modified != "2026-10-04T00:00:00Z" ||
         !item.content_hash ||
         item.content_hash->algorithm !=
-            onedrive::FileHashAlgorithm::sha256 ||
+            onedrive::util::FileHashAlgorithm::sha256 ||
         transport_pointer->queued.requests.size() != 2 ||
         transport_pointer->queued.requests[1].url !=
             "https://graph.example.test/v1.0/me/drive/root:/Folder%20A/"
@@ -1692,7 +1692,7 @@ int test_delta_with_pagination() {
             "2026-10-01T23:59:58.123456789Z" ||
         !delta.changes[2].content_hash ||
         delta.changes[2].content_hash->algorithm !=
-            onedrive::FileHashAlgorithm::sha256 ||
+            onedrive::util::FileHashAlgorithm::sha256 ||
         delta.changes[2].content_hash->value !=
             "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" ||
         delta.changes[2].validate_content ||
@@ -3100,7 +3100,7 @@ int test_drive_identity_and_profile_photo() {
         }
     };
     onedrive::http::HttpTransport transport_proxy{
-        onedrive::detail::borrowed_proxy,
+        onedrive::util::borrowed_proxy,
         transport
     };
     const auto identity = onedrive::graph::fetch_drive_identity(
@@ -3145,7 +3145,7 @@ int test_drive_identity_and_profile_photo() {
         }
     };
     onedrive::http::HttpTransport without_photo_proxy{
-        onedrive::detail::borrowed_proxy,
+        onedrive::util::borrowed_proxy,
         without_photo
     };
     if (onedrive::graph::fetch_drive_identity(
@@ -3167,7 +3167,7 @@ int test_drive_identity_and_profile_photo() {
         }
     };
     onedrive::http::HttpTransport invalid_identity_proxy{
-        onedrive::detail::borrowed_proxy,
+        onedrive::util::borrowed_proxy,
         invalid_identity
     };
     try {

@@ -1,6 +1,6 @@
 #include "onedrive/auth/device_auth.hpp"
 
-#include "detail/uri.hpp"
+#include "util/uri.hpp"
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -52,9 +52,9 @@ std::string encode_form(const FormValues& values) {
         if (!body.empty()) {
             body.push_back('&');
         }
-        body += onedrive::detail::percent_encode_uri_component(name);
+        body += onedrive::util::percent_encode_uri_component(name);
         body.push_back('=');
-        body += onedrive::detail::percent_encode_uri_component(value);
+        body += onedrive::util::percent_encode_uri_component(value);
     }
     return body;
 }

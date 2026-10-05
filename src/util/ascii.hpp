@@ -2,7 +2,7 @@
 
 #include <string_view>
 
-namespace onedrive::detail {
+namespace onedrive::util {
 
 /**
  * Compares two ASCII strings without regard to the case of A-Z.
@@ -50,4 +50,4 @@ namespace onedrive::detail {
     return value.substr(first, last - first + 1);
 }
 
-}  // namespace onedrive::detail
+}  // namespace onedrive::util

@@ -1,7 +1,7 @@
 #include "download_recovery.hpp"
 
 #include "local_filesystem.hpp"
-#include "onedrive/remote_time.hpp"
+#include "onedrive/util/remote_time.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -95,7 +95,7 @@ void validate_pending_download(
         );
     }
     static_cast<void>(
-        parse_remote_modified_time(download.item.last_modified)
+        util::parse_remote_modified_time(download.item.last_modified)
     );
 }
 

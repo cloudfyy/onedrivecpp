@@ -207,7 +207,7 @@ PreparedDownload prepare_download(
             hashes.sha256 = content_fingerprint(temporary);
             if (item.content_hash.has_value() &&
                 item.content_hash->algorithm ==
-                    FileHashAlgorithm::quick_xor) {
+                    util::FileHashAlgorithm::quick_xor) {
                 hashes.quick_xor = quick_xor_hash(temporary);
             }
         }
