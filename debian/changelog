@@ -1,3 +1,14 @@
+onedrive-cpp (0.7.14-1~ubuntu24.04) noble; urgency=medium
+
+  * Propagate selected local file and directory deletions to Microsoft Graph
+    with saved eTag preconditions.
+  * Persist pending remote deletions for idempotent crash recovery and migrate
+    the state database to schema version 19.
+  * Add Graph, database, dry-run, parent-directory, conflict, selective-sync,
+    and interruption-recovery coverage.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Mon, 05 Oct 2026 01:49:05 +0000
+
 onedrive-cpp (0.7.13-1~ubuntu24.04) noble; urgency=medium
 
   * Refactor schema upgrades into a table-driven, transactional migration
