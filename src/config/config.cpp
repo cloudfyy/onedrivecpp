@@ -366,6 +366,8 @@ Config Config::defaults() {
         .graph_maximum_throttle_retries = 4,
         .graph_initial_throttle_delay = std::chrono::seconds{1},
         .graph_maximum_throttle_delay = std::chrono::seconds{300},
+        .monitor_poll_interval = std::chrono::seconds{300},
+        .monitor_settle_delay = std::chrono::milliseconds{1000},
         .download_concurrency = 4,
         .download_maximum_retries = 4,
         .download_chunk_threshold_bytes =
@@ -417,6 +419,7 @@ Config Config::load(const std::filesystem::path& path) {
             "transfer",
             "download",
             "upload",
+            "monitor",
             "state",
             "auth",
             "graph",
@@ -853,6 +856,43 @@ Config Config::load(const std::filesystem::path& path) {
                     "maximum_total_rate_bytes_per_second",
                     "upload.maximum_total_rate_bytes_per_second"
                 );
+        }
+    }
+
+    if (const auto* monitor =
+            optional_table(root, "monitor", "monitor")) {
+        validate_keys(
+            *monitor,
+            {"poll_interval_seconds", "settle_delay_milliseconds"},
+            "monitor"
+        );
+        if (monitor->contains("poll_interval_seconds")) {
+            const auto interval = unsigned_value(
+                *monitor,
+                "poll_interval_seconds",
+                "monitor.poll_interval_seconds"
+            );
+            if (interval == 0 || interval > 86400) {
+                throw std::runtime_error(
+                    "monitor.poll_interval_seconds must be between 1 and 86400"
+                );
+            }
+            config.monitor_poll_interval =
+                std::chrono::seconds{interval};
+        }
+        if (monitor->contains("settle_delay_milliseconds")) {
+            const auto delay = unsigned_value(
+                *monitor,
+                "settle_delay_milliseconds",
+                "monitor.settle_delay_milliseconds"
+            );
+            if (delay > 60000) {
+                throw std::runtime_error(
+                    "monitor.settle_delay_milliseconds must not exceed 60000"
+                );
+            }
+            config.monitor_settle_delay =
+                std::chrono::milliseconds{delay};
         }
     }
 

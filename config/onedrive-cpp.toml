@@ -110,6 +110,12 @@ maximum_rate_bytes_per_second = 0
 # Shared upload ceiling. Uploads currently run sequentially.
 maximum_total_rate_bytes_per_second = 0
 
+[monitor]
+# Poll Graph after this many quiet seconds even without local filesystem events.
+poll_interval_seconds = 300
+# Coalesce bursts of local events for this long before synchronizing.
+settle_delay_milliseconds = 1000
+
 [filesystem]
 # "auto" probes user extended attributes and falls back to the SQLite journal.
 # "xattr" requires extended-attribute support; "database" disables xattrs.

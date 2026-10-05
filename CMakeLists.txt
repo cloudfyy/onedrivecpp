@@ -283,6 +283,10 @@ if(BUILD_TESTING)
         SOURCES tests/application_cli_tests.cpp
     )
     add_onedrive_test(
+        monitor_tests
+        SOURCES tests/monitor_tests.cpp
+    )
+    add_onedrive_test(
         runtime_preflight_tests
         SOURCES tests/runtime_preflight_tests.cpp
         INCLUDE_DIRS src/app

@@ -11,6 +11,7 @@
 #include "onedrive/proxy_service.hpp"
 #include "onedrive/storage/item_store.hpp"
 
+#include <functional>
 #include <memory>
 #include <proxy/proxy.h>
 #include <utility>
@@ -87,7 +88,10 @@ struct RuntimeFactoryFacade : pro::facade_builder
     >
     ::add_convention<
         FactoryMonitorDispatch,
-        std::unique_ptr<monitor::FileMonitor>(const config::Config&) const
+        std::unique_ptr<monitor::FileMonitor>(
+            const config::Config&,
+            monitor::SyncCallback
+        ) const
     >
     ::add_convention<
         FactoryMetricsDispatch,
@@ -134,9 +138,13 @@ public:
     }
 
     [[nodiscard]] std::unique_ptr<monitor::FileMonitor> create_monitor(
-        const config::Config& config
+        const config::Config& config,
+        monitor::SyncCallback synchronize
     ) const {
-        return implementation()->create_monitor(config);
+        return implementation()->create_monitor(
+            config,
+            std::move(synchronize)
+        );
     }
 
     [[nodiscard]] std::unique_ptr<metrics::Metrics> create_metrics() const {
@@ -164,7 +172,8 @@ public:
         const account::DriveIdentity& identity
     ) const;
     [[nodiscard]] std::unique_ptr<monitor::FileMonitor> create_monitor(
-        const config::Config& config
+        const config::Config& config,
+        monitor::SyncCallback synchronize
     ) const;
     [[nodiscard]] std::unique_ptr<metrics::Metrics> create_metrics() const;
 };

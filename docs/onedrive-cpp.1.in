@@ -32,7 +32,7 @@ and synchronize files through Microsoft Graph and OneDrive.
 The current release includes configuration loading, device-code
 authentication, authenticated Microsoft Graph delta queries, local state and
 delta-link storage, safe downloads, local uploads, remote-deletion handling,
-dry-run support, logging, monitoring scaffolding, and packaging integration.
+dry-run support, logging, inotify monitoring, and packaging integration.
 Local-deletion propagation is not implemented.
 .SH COMMANDS
 .TP
@@ -145,7 +145,10 @@ to display the download plan without creating files or updating synchronization
 state.
 .TP
 .B monitor
-Start the long-running filesystem monitor.
+Run an initial synchronization, then monitor the local Drive tree recursively
+with inotify and poll Microsoft Graph periodically. Local event bursts are
+coalesced before synchronization. SIGINT and SIGTERM stop the monitor cleanly
+after the active synchronization finishes.
 .SH OPTIONS
 .TP
 .BR \-h ", " \-\-help
@@ -521,6 +524,15 @@ Combined upload send-rate ceiling. The default is
 .BR 0 .
 Uploads currently run sequentially, so the effective rate is the lower non-zero
 upload limit.
+.TP
+.B monitor.poll_interval_seconds
+Maximum quiet interval between Microsoft Graph delta checks. The default is
+300 seconds. The value must be between 1 and 86400.
+.TP
+.B monitor.settle_delay_milliseconds
+Time used to coalesce a burst of local inotify events before synchronizing.
+The default is 1000 milliseconds and the maximum is 60000. Zero triggers
+immediately after a completed actionable event.
 .TP
 .B transfer.http_version
 HTTP version preference for file downloads:

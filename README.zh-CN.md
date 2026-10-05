@@ -465,7 +465,18 @@ validation = "strict"
 chunk_size_bytes = 10485760
 maximum_rate_bytes_per_second = 0
 maximum_total_rate_bytes_per_second = 0
+
+[monitor]
+poll_interval_seconds = 300
+settle_delay_milliseconds = 1000
 ```
+
+`monitor` 启动时先执行一轮完整同步，随后休眠，直到 inotify 报告已完成的本地
+变化，或者 Graph 轮询周期到期。本地事件突发会按
+`monitor.settle_delay_milliseconds` 合并；即使没有本地活动，
+`monitor.poll_interval_seconds` 也限制远端变化的最长发现延迟。新建或移入的
+目录树会被递归监听；inotify 队列溢出时会重建全部 watch 并安排完整同步。
+`SIGINT` 和 `SIGTERM` 会唤醒阻塞等待，并在当前同步结束后安全退出。
 
 `sync.sync_list` 用于启用客户端选择性同步。它指向一个独立的 UTF-8 规则文件；
 相对路径以 TOML 配置文件所在目录为基准解析。未配置时，所有远端项目都可以参与
@@ -1098,13 +1109,13 @@ systemctl --user enable --now onedrive-cpp.service
 journalctl --user -u onedrive-cpp.service -f
 ```
 
-当前服务运行 monitor 骨架，不会访问 OneDrive 或修改同步目录。
+用户服务会运行长期驻留的 monitor：启动时同步一次，通过 inotify 监听本地
+Drive 目录，按配置周期轮询 Graph，并在意外失败后自动重启。
+`systemctl --user stop` 会发送 `SIGTERM`，使其安全退出。
 
 ## 后续实现建议
 
-1. 使用 inotify 接入 monitor。
-2. 完善本地新父目录移动排序。
-3. 为 Graph 和文件系统边界增加更多集成测试。
+1. 扩展 monitor、Graph、网络、磁盘、权限、崩溃恢复和文件系统边界的集成测试。
 
 ## 许可证
 

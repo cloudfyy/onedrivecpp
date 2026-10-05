@@ -453,23 +453,11 @@ int Application::run(int argc, char* argv[]) {
             );
             return 0;
         }
-        if (*monitor_command) {
-            spdlog::info("Starting filesystem monitor");
-            console.message(
-                cli::MessageKind::success,
-                "monitor_ready",
-                "Monitor scaffold ready for: " +
-                    config.sync_directory.string()
-            );
-            console.message(
-                cli::MessageKind::information,
-                "monitor_status",
-                "Filesystem event integration is planned for the next milestone."
-            );
-            return runtime_factory_->create_monitor(config)->run();
-        }
-
-        spdlog::info("Starting synchronization{}", config.dry_run ? " dry run" : "");
+        spdlog::info(
+            "Starting {}{}",
+            *monitor_command ? "filesystem monitor" : "synchronization",
+            config.dry_run ? " dry run" : ""
+        );
         auto graph = runtime_factory_->create_graph_client(config);
         const auto identity = graph->drive_identity();
         config.drive_id = identity.drive_id;
@@ -488,6 +476,40 @@ int Application::run(int argc, char* argv[]) {
         }
         auto items = runtime_factory_->create_item_store(config, identity);
         items->open();
+        if (*monitor_command) {
+            auto metrics = runtime_factory_->create_metrics();
+            monitor::SyncCallback synchronize{
+                [&config, &graph, &items, &metrics, &console] {
+                    return sync::SyncEngine{
+                        config,
+                        *graph,
+                        *items,
+                        *metrics,
+                        &console
+                    }.synchronize();
+                }
+            };
+            console.message(
+                cli::MessageKind::success,
+                "monitor_ready",
+                "Monitoring local and Microsoft Graph changes for: " +
+                    config.sync_directory.string()
+            );
+            console.message(
+                cli::MessageKind::information,
+                "monitor_status",
+                std::format(
+                    "Local changes settle for {} milliseconds; Graph is "
+                    "polled every {} seconds.",
+                    config.monitor_settle_delay.count(),
+                    config.monitor_poll_interval.count()
+                )
+            );
+            return runtime_factory_->create_monitor(
+                config,
+                std::move(synchronize)
+            )->run();
+        }
         if (*download_command) {
             spdlog::info(
                 "Starting single-file download for '{}'",

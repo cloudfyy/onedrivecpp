@@ -515,7 +515,20 @@ validation = "strict"
 chunk_size_bytes = 10485760
 maximum_rate_bytes_per_second = 0
 maximum_total_rate_bytes_per_second = 0
+
+[monitor]
+poll_interval_seconds = 300
+settle_delay_milliseconds = 1000
 ```
+
+`monitor` performs an initial synchronization and then remains idle until
+inotify reports a completed local change or the Graph polling interval expires.
+Local event bursts are coalesced for `monitor.settle_delay_milliseconds`.
+`monitor.poll_interval_seconds` bounds how long remote changes can remain
+undetected when there is no local activity. Newly created and moved directory
+trees are watched recursively; an inotify queue overflow rebuilds every watch
+and schedules a complete synchronization. `SIGINT` and `SIGTERM` wake the
+blocking wait and stop cleanly after the active synchronization finishes.
 
 `sync.sync_list` enables client-side selective synchronization. It names a
 separate UTF-8 rule file; relative paths are resolved from the directory
@@ -1280,15 +1293,15 @@ systemctl --user enable --now onedrive-cpp.service
 journalctl --user -u onedrive-cpp.service -f
 ```
 
-The service currently runs the monitor scaffold. It does not access OneDrive
-or modify the synchronization directory.
+The user service runs the long-lived monitor. It performs an initial sync,
+watches the local Drive tree with inotify, polls Graph every configured
+interval, and restarts after unexpected failures. `systemctl --user stop`
+delivers `SIGTERM` for a clean shutdown.
 
 ## Suggested Next Steps
 
-1. Connect the monitor to inotify.
-2. Complete new-parent local move ordering.
-3. Add integration tests for the Graph and
-   file system boundaries.
+1. Expand integration tests for monitor, Graph, network, disk, permission,
+   crash-recovery, and file-system boundaries.
 
 ## License
 

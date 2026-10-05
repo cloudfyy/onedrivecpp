@@ -4,9 +4,10 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=oneshot
+Type=simple
 ExecStart=/usr/bin/onedrive-cpp monitor
-RemainAfterExit=yes
+Restart=on-failure
+RestartSec=30
 UMask=0077
 
 [Install]

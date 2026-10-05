@@ -424,15 +424,22 @@ private:
 
 class FakeMonitor final {
 public:
-    explicit FakeMonitor(int& run_count) : run_count_{run_count} {}
+    FakeMonitor(
+        int& run_count,
+        onedrive::monitor::SyncCallback synchronize
+    )
+        : run_count_{run_count},
+          synchronize_{std::move(synchronize)} {}
 
     [[nodiscard]] int run() const {
         ++run_count_;
+        static_cast<void>(synchronize_());
         return 0;
     }
 
 private:
     int& run_count_;
+    onedrive::monitor::SyncCallback synchronize_;
 };
 
 class FakeMetrics final {
@@ -503,12 +510,19 @@ public:
     }
 
     [[nodiscard]] std::unique_ptr<onedrive::monitor::FileMonitor> create_monitor(
-        const onedrive::config::Config&
+        const onedrive::config::Config&,
+        onedrive::monitor::SyncCallback synchronize
     ) const {
         ++monitor_count;
+        auto counted_synchronize =
+            [this, synchronize = std::move(synchronize)] {
+                ++monitor_sync_count;
+                return synchronize();
+            };
         return std::make_unique<onedrive::monitor::FileMonitor>(
             std::in_place_type<FakeMonitor>,
-            monitor_run_count
+            monitor_run_count,
+            std::move(counted_synchronize)
         );
     }
 
@@ -532,6 +546,7 @@ public:
     mutable std::string clear_drive_id_;
     mutable int monitor_count{0};
     mutable int monitor_run_count{0};
+    mutable int monitor_sync_count{0};
     mutable int metrics_count{0};
     mutable std::filesystem::path last_item_store_sync_directory;
 };
@@ -1109,8 +1124,16 @@ int main() {
         }
     );
     if (monitor.exit_code != 0 || runtime_factory.monitor_count != 1 ||
-        runtime_factory.monitor_run_count != 1) {
-        return fail("monitor command was not dispatched through the runtime factory");
+        runtime_factory.monitor_run_count != 1 ||
+        runtime_factory.monitor_sync_count != 1 ||
+        !monitor.standard_output.contains(
+            "Monitoring local and Microsoft Graph changes"
+        ) ||
+        monitor.standard_output.contains("scaffold")) {
+        return fail(
+            "monitor command did not reuse synchronization through the "
+            "runtime factory"
+        );
     }
 
     return EXIT_SUCCESS;

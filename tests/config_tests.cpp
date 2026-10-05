@@ -51,6 +51,9 @@ int main() {
                << "chunk_size_bytes = 10485760\n"
                << "maximum_rate_bytes_per_second = 3145728\n"
                << "maximum_total_rate_bytes_per_second = 4194304\n"
+               << "[monitor]\n"
+               << "poll_interval_seconds = 45\n"
+               << "settle_delay_milliseconds = 250\n"
                << "[state]\n"
                << "directory = \"/tmp/onedrive-state\"\n"
                << "[auth]\n"
@@ -88,6 +91,8 @@ int main() {
         config.graph_maximum_throttle_retries != 7 ||
         config.graph_initial_throttle_delay != std::chrono::seconds{2} ||
         config.graph_maximum_throttle_delay != std::chrono::seconds{90} ||
+        config.monitor_poll_interval != std::chrono::seconds{45} ||
+        config.monitor_settle_delay != std::chrono::milliseconds{250} ||
         config.transfer_order !=
             onedrive::config::TransferOrder::size_descending ||
         config.download_concurrency != 6 ||
@@ -192,6 +197,8 @@ int main() {
         !defaults.upload ||
         defaults.local_conflict !=
             onedrive::config::LocalConflictPolicy::block ||
+        defaults.monitor_poll_interval != std::chrono::seconds{300} ||
+        defaults.monitor_settle_delay != std::chrono::milliseconds{1000} ||
         defaults.sync_root_files ||
         defaults.transfer_order !=
             onedrive::config::TransferOrder::default_order ||
@@ -642,6 +649,48 @@ int main() {
         static_cast<void>(onedrive::config::Config::load(path));
         std::filesystem::remove(path);
         std::cerr << "unaligned upload chunk size was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error&) {
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[monitor]\n"
+               << "poll_interval_seconds = 0\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "zero monitor poll interval was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error&) {
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[monitor]\n"
+               << "settle_delay_milliseconds = 60001\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "excessive monitor settle delay was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error&) {
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[monitor]\n"
+               << "unknown = true\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "unknown monitor key was accepted\n";
         return EXIT_FAILURE;
     } catch (const std::runtime_error&) {
     }
