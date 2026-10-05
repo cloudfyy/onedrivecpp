@@ -471,6 +471,14 @@ void create_upload_suppression_schema(sqlite3* database) {
     );
 }
 
+constexpr int current_schema_version = 19;
+
+void set_schema_version(sqlite3* database, int version) {
+    const auto sql =
+        "PRAGMA user_version = " + std::to_string(version) + ";";
+    execute(database, sql.c_str());
+}
+
 void ensure_current_schema(sqlite3* database) {
     create_item_schema(database);
     create_drive_state_schema(database);
@@ -483,7 +491,7 @@ void ensure_current_schema(sqlite3* database) {
     create_pending_delete_schema(database);
     create_pending_move_schema(database);
     create_upload_suppression_schema(database);
-    execute(database, "PRAGMA user_version = 19;");
+    set_schema_version(database, current_schema_version);
 }
 
 void add_sync_filter_fingerprint(sqlite3* database) {
@@ -625,19 +633,11 @@ void migrate_v3_to_v4(sqlite3* database) {
     );
 }
 
-void set_schema_version(sqlite3* database, int version) {
-    const auto sql =
-        "PRAGMA user_version = " + std::to_string(version) + ";";
-    execute(database, sql.c_str());
-}
-
 struct SchemaMigration {
     int from_version;
     int to_version;
     void (*apply)(sqlite3*);
 };
-
-constexpr int current_schema_version = 19;
 
 constexpr std::array schema_migrations{
     SchemaMigration{1, 4, migrate_v1_to_v4},
