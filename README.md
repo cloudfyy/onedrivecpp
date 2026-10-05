@@ -108,6 +108,10 @@ Remote moves use a separate state family for prepared, journaled, Graph-
 committed, and locally committed phases. Microsoft Graph is never called until
 the move journal is durable, while a successful remote move retains that
 journal until the local item state and directory descendants commit atomically.
+Remote deletion follows the same durable boundary with prepared, journaled,
+Graph-deleted, and locally committed states. A failed journal write cannot
+reach Graph, and a completed Graph deletion retains its journal until the local
+tracked subtree is removed atomically.
 
 The directories correspond to the responsibilities of
 `main/config/curlEngine/onedrive/sync/itemdb/monitor` in the reference project:

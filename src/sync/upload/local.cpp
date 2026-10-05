@@ -520,12 +520,98 @@ std::vector<UploadCandidate> discover_move_parent_uploads(
     return result;
 }
 
+struct RemoteDeleteTransactionFamily;
+using RemoteDeleteTransactionState =
+    TransactionState<RemoteDeleteTransactionFamily>;
+struct RemoteDeletePreparedState final : RemoteDeleteTransactionState {};
+struct RemoteDeleteJournaledState final : RemoteDeleteTransactionState {};
+struct RemoteDeleteGraphDeletedState final : RemoteDeleteTransactionState {};
+struct RemoteDeleteLocalCommittedState final : RemoteDeleteTransactionState {};
 
-void execute_pending_delete(
-    const storage::PendingDelete& deletion,
+struct PendingRemoteDeletePayload {
+    storage::PendingDelete deletion;
+};
+
+struct LocalCommittedRemoteDeletePayload {};
+
+using PreparedRemoteDelete = StateTransaction<
+    RemoteDeletePreparedState,
+    RemoteDeleteTransactionFamily,
+    PendingRemoteDeletePayload>;
+using JournaledRemoteDelete = StateTransaction<
+    RemoteDeleteJournaledState,
+    RemoteDeleteTransactionFamily,
+    PendingRemoteDeletePayload>;
+using GraphDeletedRemoteDelete = StateTransaction<
+    RemoteDeleteGraphDeletedState,
+    RemoteDeleteTransactionFamily,
+    PendingRemoteDeletePayload>;
+using LocalCommittedRemoteDelete = StateTransaction<
+    RemoteDeleteLocalCommittedState,
+    RemoteDeleteTransactionFamily,
+    LocalCommittedRemoteDeletePayload>;
+
+JournaledRemoteDelete
+journal_remote_delete(PreparedRemoteDelete transaction) noexcept {
+    return transition_transaction<RemoteDeleteJournaledState>(
+        std::move(transaction)
+    );
+}
+
+GraphDeletedRemoteDelete
+mark_remote_delete_graph_deleted(JournaledRemoteDelete transaction) noexcept {
+    return transition_transaction<RemoteDeleteGraphDeletedState>(
+        std::move(transaction)
+    );
+}
+
+LocalCommittedRemoteDelete mark_remote_delete_local_committed(
+    GraphDeletedRemoteDelete transaction
+) noexcept {
+    return transition_transaction<RemoteDeleteLocalCommittedState>(
+        std::move(transaction),
+        [](PendingRemoteDeletePayload&&) noexcept {
+            return LocalCommittedRemoteDeletePayload{};
+        }
+    );
+}
+
+template <typename Transaction>
+concept JournalableRemoteDelete = requires(Transaction transaction) {
+    journal_remote_delete(std::move(transaction));
+};
+
+template <typename Transaction>
+concept GraphDeletableRemoteDelete = requires(Transaction transaction) {
+    mark_remote_delete_graph_deleted(std::move(transaction));
+};
+
+template <typename Transaction>
+concept LocallyCommittableRemoteDelete = requires(Transaction transaction) {
+    mark_remote_delete_local_committed(std::move(transaction));
+};
+
+template <typename Transaction>
+concept HasPendingRemoteDelete =
+    requires(Transaction transaction) { transaction.deletion.remote_id; };
+
+static_assert(JournalableRemoteDelete<PreparedRemoteDelete>);
+static_assert(!JournalableRemoteDelete<JournaledRemoteDelete>);
+static_assert(GraphDeletableRemoteDelete<JournaledRemoteDelete>);
+static_assert(!GraphDeletableRemoteDelete<PreparedRemoteDelete>);
+static_assert(LocallyCommittableRemoteDelete<GraphDeletedRemoteDelete>);
+static_assert(!LocallyCommittableRemoteDelete<JournaledRemoteDelete>);
+static_assert(HasPendingRemoteDelete<PreparedRemoteDelete>);
+static_assert(HasPendingRemoteDelete<JournaledRemoteDelete>);
+static_assert(HasPendingRemoteDelete<GraphDeletedRemoteDelete>);
+static_assert(!HasPendingRemoteDelete<LocalCommittedRemoteDelete>);
+
+LocalCommittedRemoteDelete execute_pending_delete(
+    JournaledRemoteDelete transaction,
     graph::GraphClient& graph,
     storage::ItemStore& items
 ) {
+    const auto& deletion = transaction.deletion;
     if (!local_path_is_missing(deletion.local_path)) {
         items.remove_pending_delete(
             deletion.drive_id,
@@ -548,7 +634,10 @@ void execute_pending_delete(
             deletion.remote_path
         );
     }
-    items.commit_delete(deletion);
+    auto graph_deleted =
+        mark_remote_delete_graph_deleted(std::move(transaction));
+    items.commit_delete(graph_deleted.deletion);
+    return mark_remote_delete_local_committed(std::move(graph_deleted));
 }
 
 bool local_move_identity_matches(
@@ -1750,7 +1839,12 @@ void recover_pending_deletes(
             active.push_back(deletion);
             continue;
         }
-        execute_pending_delete(deletion, graph, items);
+        auto journaled = JournaledRemoteDelete{
+            PendingRemoteDeletePayload{deletion},
+        };
+        static_cast<void>(
+            execute_pending_delete(std::move(journaled), graph, items)
+        );
         console.message(
             cli::MessageKind::information,
             "pending_delete_cancelled",
@@ -1765,7 +1859,12 @@ void recover_pending_deletes(
         enforce_remote_deletion_limit(plan, deletion_policy, console, false)
     );
     for (const auto& deletion : plan.operations) {
-        execute_pending_delete(deletion, graph, items);
+        auto journaled = JournaledRemoteDelete{
+            PendingRemoteDeletePayload{deletion},
+        };
+        static_cast<void>(
+            execute_pending_delete(std::move(journaled), graph, items)
+        );
         console.message(
             cli::MessageKind::information,
             "pending_delete_recovered",
@@ -1938,8 +2037,14 @@ UploadSummary upload_local_changes(
         }
     }
     for (const auto& deletion : deletion_plan.operations) {
-        items.save_pending_delete(deletion);
-        execute_pending_delete(deletion, graph, items);
+        auto prepared = PreparedRemoteDelete{
+            PendingRemoteDeletePayload{deletion},
+        };
+        items.save_pending_delete(prepared.deletion);
+        auto journaled = journal_remote_delete(std::move(prepared));
+        static_cast<void>(
+            execute_pending_delete(std::move(journaled), graph, items)
+        );
         ++summary.deleted;
         console.message(
             cli::MessageKind::information,

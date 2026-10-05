@@ -517,6 +517,11 @@ public:
 
     void save_pending_delete(onedrive::storage::PendingDelete deletion) {
         const std::scoped_lock lock{mutex};
+        if (fail_pending_delete_save) {
+            throw std::runtime_error{
+                "simulated pending deletion persistence failure"
+            };
+        }
         pending_deletes_by_id.insert_or_assign(
             deletion.remote_id,
             std::move(deletion)
@@ -765,6 +770,7 @@ public:
     bool fail_upsert{false};
     bool fail_commit_upload{false};
     bool fail_commit_delete{false};
+    bool fail_pending_delete_save{false};
     bool fail_commit_remote_move{false};
     bool fail_pending_remote_move_save{false};
     bool fail_upload_checkpoint_save{false};
@@ -4641,6 +4647,60 @@ int test_local_deletions() {
         selective_items.find("me", "included-delete") ||
         !selective_items.find("me", "excluded-delete")) {
         return fail("selective sync deletion boundary was not preserved");
+    }
+
+    const auto journal_failure_root =
+        temporary.path() / "delete-journal-failure";
+    std::filesystem::create_directories(journal_failure_root);
+    {
+        std::ofstream output{journal_failure_root / "removed.txt"};
+        output << "removed";
+    }
+    FakeItemStore journal_failure_items;
+    journal_failure_items.saved_delta_link = "saved";
+    journal_failure_items.items.emplace(
+        "journal-failure-delete",
+        tracked_item(
+            journal_failure_root, "journal-failure-delete", "removed.txt"
+        )
+    );
+    std::filesystem::remove(journal_failure_root / "removed.txt");
+    journal_failure_items.fail_pending_delete_save = true;
+    FakeGraphClient journal_failure_graph;
+    FakeMetrics journal_failure_metrics;
+    auto journal_failure_config = config_for(journal_failure_root, false);
+    journal_failure_config.upload = true;
+    try {
+        static_cast<void>(onedrive::sync::SyncEngine{
+            journal_failure_config,
+            journal_failure_graph,
+            journal_failure_items,
+            journal_failure_metrics
+        }
+                              .synchronize());
+        return fail("deletion journal failure was accepted");
+    } catch (const std::runtime_error&) {
+    }
+    if (!journal_failure_graph.deleted_items.empty() ||
+        !journal_failure_items.pending_deletes_by_id.empty() ||
+        !journal_failure_items.find("me", "journal-failure-delete")) {
+        return fail("unjournaled deletion reached Microsoft Graph");
+    }
+    journal_failure_items.fail_pending_delete_save = false;
+    static_cast<void>(onedrive::sync::SyncEngine{
+        journal_failure_config,
+        journal_failure_graph,
+        journal_failure_items,
+        journal_failure_metrics
+    }
+                          .synchronize());
+    if (journal_failure_graph.deleted_items !=
+            std::vector<std::pair<std::string, std::string>>{
+                {"journal-failure-delete", "etag"},
+            } ||
+        journal_failure_items.find("me", "journal-failure-delete") ||
+        !journal_failure_items.pending_deletes_by_id.empty()) {
+        return fail("deletion did not recover after journal failure");
     }
 
     const auto recovery_root = temporary.path() / "delete-recovery";

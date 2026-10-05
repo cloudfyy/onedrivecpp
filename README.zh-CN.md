@@ -94,6 +94,9 @@ installed 阶段。只有类型状态能够证明尚未生成 staging 或目标�
 远端移动使用独立状态族表达 prepared、journaled、Graph 已提交和本地已提交阶段。
 只有 journal 持久化后才能调用 Microsoft Graph；远端移动成功后仍保留 journal，
 直到本地条目状态和目录后代路径完成原子提交。
+远端删除同样使用 prepared、journaled、Graph 已删除和本地已提交状态。journal
+写入失败时不能调用 Graph；Graph 删除完成后继续保留 journal，直到本地跟踪子树
+完成原子删除。
 
 目录与参考项目中的 `main/config/curlEngine/onedrive/sync/itemdb/monitor`
 职责相对应：
