@@ -128,6 +128,16 @@ def fixture_path(root: Path, relative: Path) -> Path:
     return candidates[0]
 
 
+def sync_root_for_fixture(path: Path, relative: Path) -> Path:
+    validate_expected_path(relative)
+    if (
+        len(path.parts) < len(relative.parts)
+        or path.parts[-len(relative.parts):] != relative.parts
+    ):
+        raise E2EError(f"fixture path does not end with '{relative}'")
+    return path.parents[len(relative.parts) - 1]
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as stream:
@@ -1194,7 +1204,10 @@ def run_live(client: Path, work_root: Path) -> None:
                 access_token,
             )
             upload_root_path = Path(upload_fixture_name)
-            upload_local_root = sync_directory / upload_fixture_name
+            upload_local_root = (
+                sync_root_for_fixture(stable, expected_path)
+                / upload_fixture_name
+            )
             try:
                 sync_list.write_text(
                     sync_list_rule(expected_path)
@@ -1425,6 +1438,24 @@ def run_live(client: Path, work_root: Path) -> None:
                 ):
                     raise E2EError(
                         "local move upload did not preserve the Graph item"
+                    )
+
+                settled_move = run_sync(
+                    client,
+                    config,
+                    home,
+                    log_file,
+                )
+                completed.append(settled_move)
+                settled_item = upload_fixture.item_by_path(moved_remote_path)
+                if (
+                    settled_move.returncode != 0
+                    or settled_item.get("id") != move_item_id
+                    or upload_fixture.item_exists(move_remote_path)
+                    or move_target.read_bytes() != move_contents
+                ):
+                    raise E2EError(
+                        "local move upload did not settle its Graph delta"
                     )
 
                 shutil.rmtree(upload_local_root)
@@ -1768,6 +1799,17 @@ directory = "/old/state"
         expected.write_text("fixture", encoding="utf-8")
         if fixture_path(root, Path("fixture/small.txt")) != expected:
             raise E2EError("fixture lookup self-test failed")
+        if (
+            sync_root_for_fixture(expected, Path("fixture/small.txt"))
+            != root / "account"
+        ):
+            raise E2EError("fixture sync-root lookup self-test failed")
+        try:
+            sync_root_for_fixture(expected, Path("other/small.txt"))
+            raise E2EError("mismatched fixture suffix was accepted")
+        except E2EError as error:
+            if "does not end with" not in str(error):
+                raise
         if sync_list_rule(Path("fixture/small.txt")) != "/fixture/small.txt\n":
             raise E2EError("selective-sync rule generation self-test failed")
         if (
