@@ -1,7 +1,7 @@
 #pragma once
 
 #include "sync/download/space_coordinator.hpp"
-#include "sync/core/typestate.hpp"
+#include "util/typestate.hpp"
 #include "sync/filesystem/local.hpp"
 #include "sync/filesystem/metadata.hpp"
 #include "sync/filesystem/safe_sync_root.hpp"
@@ -19,11 +19,13 @@
 namespace onedrive::sync::detail {
 
 struct DownloadTransactionFamily;
-using DownloadTransactionState = TransactionState<DownloadTransactionFamily>;
+using DownloadTransactionState =
+    util::TransactionState<DownloadTransactionFamily>;
 struct DownloadPreparedState final : DownloadTransactionState {};
 
 template <typename State>
-concept DownloadState = TransactionStateFor<State, DownloadTransactionFamily>;
+concept DownloadState =
+    util::TransactionStateFor<State, DownloadTransactionFamily>;
 
 struct DownloadTransactionPayload {
     graph::RemoteItem item;
@@ -37,7 +39,7 @@ struct DownloadTransactionPayload {
 };
 
 template <DownloadState State>
-using DownloadTransaction = StateTransaction<
+using DownloadTransaction = util::StateTransaction<
     State,
     DownloadTransactionFamily,
     DownloadTransactionPayload>;

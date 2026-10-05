@@ -116,6 +116,12 @@ Remote directory creation has a separate prepared, journaled, Graph-created,
 and locally committed state family. New creation and restart recovery converge
 on one Graph-created commit path for local-directory validation, inode capture,
 SQLite commit, and remote-identity metadata.
+Graph large-file upload sessions also reuse the core outside the sync layer.
+Absent or saved sessions become active only through creation or validated
+resume; expired, missing, and gone saved sessions return to absent before a new
+session is created. Each accepted fragment advances the active state only after
+its checkpoint succeeds, and only an active session can produce a finalized
+remote item.
 
 The directories correspond to the responsibilities of
 `main/config/curlEngine/onedrive/sync/itemdb/monitor` in the reference project:

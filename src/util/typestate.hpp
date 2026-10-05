@@ -5,7 +5,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace onedrive::sync::detail {
+namespace onedrive::util {
 
 template <typename Family> struct TransactionState {};
 
@@ -56,4 +56,4 @@ template <
     };
 }
 
-} // namespace onedrive::sync::detail
+} // namespace onedrive::util

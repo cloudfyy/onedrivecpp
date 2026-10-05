@@ -3,7 +3,7 @@
 #include "util/unique_file_descriptor.hpp"
 #include "onedrive/cli/console.hpp"
 #include "onedrive/util/path_security.hpp"
-#include "sync/core/typestate.hpp"
+#include "util/typestate.hpp"
 #include "sync/filesystem/local.hpp"
 #include "sync/filesystem/metadata.hpp"
 #include "sync/filesystem/safe_sync_root.hpp"
@@ -31,6 +31,11 @@
 
 namespace onedrive::sync::detail {
 namespace {
+
+using util::StateTransaction;
+using util::TransactionState;
+using util::TransactionStateFor;
+using util::transition_transaction;
 
 struct UploadCandidate {
     std::filesystem::path path;

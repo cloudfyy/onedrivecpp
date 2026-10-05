@@ -3,6 +3,7 @@
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
 #include "util/ascii.hpp"
+#include "util/typestate.hpp"
 #include "util/uri.hpp"
 #include "onedrive/http/download_rate_limiter.hpp"
 #include "onedrive/http/http_client.hpp"
@@ -27,6 +28,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 
 namespace onedrive::graph {
 namespace {
@@ -40,6 +42,183 @@ constexpr std::uint64_t maximum_upload_chunk_size =
     std::uint64_t{60} * 1024U * 1024U;
 
 using onedrive::util::percent_encode_uri_component;
+
+struct UploadSessionTransactionFamily;
+using UploadSessionTransactionState =
+    util::TransactionState<UploadSessionTransactionFamily>;
+struct UploadSessionAbsentState final : UploadSessionTransactionState {};
+struct UploadSessionSavedState final : UploadSessionTransactionState {};
+struct UploadSessionActiveState final : UploadSessionTransactionState {};
+struct UploadSessionFinalizedState final : UploadSessionTransactionState {};
+
+struct AbsentUploadSessionPayload {};
+struct SavedUploadSessionPayload {
+    UploadSession session;
+};
+struct ActiveUploadSessionPayload {
+    UploadSession session;
+};
+struct FinalizedUploadSessionPayload {
+    RemoteItem remote;
+};
+
+using AbsentUploadSession = util::StateTransaction<
+    UploadSessionAbsentState,
+    UploadSessionTransactionFamily,
+    AbsentUploadSessionPayload>;
+using SavedUploadSession = util::StateTransaction<
+    UploadSessionSavedState,
+    UploadSessionTransactionFamily,
+    SavedUploadSessionPayload>;
+using ActiveUploadSession = util::StateTransaction<
+    UploadSessionActiveState,
+    UploadSessionTransactionFamily,
+    ActiveUploadSessionPayload>;
+using FinalizedUploadSession = util::StateTransaction<
+    UploadSessionFinalizedState,
+    UploadSessionTransactionFamily,
+    FinalizedUploadSessionPayload>;
+
+AbsentUploadSession discard_saved_upload_session(
+    SavedUploadSession transaction
+) noexcept {
+    return util::transition_transaction<UploadSessionAbsentState>(
+        std::move(transaction),
+        [](SavedUploadSessionPayload&&) noexcept {
+            return AbsentUploadSessionPayload{};
+        }
+    );
+}
+
+ActiveUploadSession create_upload_session(
+    AbsentUploadSession transaction,
+    UploadSession session
+) noexcept {
+    return util::transition_transaction<UploadSessionActiveState>(
+        std::move(transaction),
+        [session = std::move(session)](
+            AbsentUploadSessionPayload&&
+        ) mutable noexcept {
+            return ActiveUploadSessionPayload{
+                .session = std::move(session),
+            };
+        }
+    );
+}
+
+ActiveUploadSession resume_upload_session(
+    SavedUploadSession transaction,
+    UploadSession session
+) noexcept {
+    return util::transition_transaction<UploadSessionActiveState>(
+        std::move(transaction),
+        [session = std::move(session)](
+            SavedUploadSessionPayload&&
+        ) mutable noexcept {
+            return ActiveUploadSessionPayload{
+                .session = std::move(session),
+            };
+        }
+    );
+}
+
+ActiveUploadSession advance_upload_session(
+    ActiveUploadSession transaction,
+    UploadSession session
+) noexcept {
+    return util::transition_transaction<UploadSessionActiveState>(
+        std::move(transaction),
+        [session = std::move(session)](
+            ActiveUploadSessionPayload&&
+        ) mutable noexcept {
+            return ActiveUploadSessionPayload{
+                .session = std::move(session),
+            };
+        }
+    );
+}
+
+FinalizedUploadSession finalize_upload_session(
+    ActiveUploadSession transaction,
+    RemoteItem remote
+) noexcept {
+    return util::transition_transaction<UploadSessionFinalizedState>(
+        std::move(transaction),
+        [remote = std::move(remote)](
+            ActiveUploadSessionPayload&&
+        ) mutable noexcept {
+            return FinalizedUploadSessionPayload{
+                .remote = std::move(remote),
+            };
+        }
+    );
+}
+
+template <typename Transaction>
+concept DiscardableSavedUploadSession =
+    requires(Transaction transaction) {
+        discard_saved_upload_session(std::move(transaction));
+    };
+
+template <typename Transaction>
+concept CreatableUploadSession = requires(
+    Transaction transaction,
+    UploadSession session
+) {
+    create_upload_session(std::move(transaction), std::move(session));
+};
+
+template <typename Transaction>
+concept ResumableUploadSession = requires(
+    Transaction transaction,
+    UploadSession session
+) {
+    resume_upload_session(std::move(transaction), std::move(session));
+};
+
+template <typename Transaction>
+concept AdvanceableUploadSession = requires(
+    Transaction transaction,
+    UploadSession session
+) {
+    advance_upload_session(std::move(transaction), std::move(session));
+};
+
+template <typename Transaction>
+concept FinalizableUploadSession = requires(
+    Transaction transaction,
+    RemoteItem remote
+) {
+    finalize_upload_session(std::move(transaction), std::move(remote));
+};
+
+template <typename Transaction>
+concept HasUploadSession = requires(Transaction transaction) {
+    transaction.session.upload_url;
+};
+
+template <typename Transaction>
+concept HasFinalizedUpload = requires(Transaction transaction) {
+    transaction.remote.id;
+};
+
+static_assert(DiscardableSavedUploadSession<SavedUploadSession>);
+static_assert(!DiscardableSavedUploadSession<AbsentUploadSession>);
+static_assert(CreatableUploadSession<AbsentUploadSession>);
+static_assert(!CreatableUploadSession<SavedUploadSession>);
+static_assert(ResumableUploadSession<SavedUploadSession>);
+static_assert(!ResumableUploadSession<AbsentUploadSession>);
+static_assert(AdvanceableUploadSession<ActiveUploadSession>);
+static_assert(!AdvanceableUploadSession<SavedUploadSession>);
+static_assert(FinalizableUploadSession<ActiveUploadSession>);
+static_assert(!FinalizableUploadSession<SavedUploadSession>);
+static_assert(!HasUploadSession<AbsentUploadSession>);
+static_assert(HasUploadSession<SavedUploadSession>);
+static_assert(HasUploadSession<ActiveUploadSession>);
+static_assert(!HasUploadSession<FinalizedUploadSession>);
+static_assert(!HasFinalizedUpload<AbsentUploadSession>);
+static_assert(!HasFinalizedUpload<ActiveUploadSession>);
+static_assert(HasFinalizedUpload<FinalizedUploadSession>);
 
 std::string percent_encode_remote_path(std::string_view path) {
     if (path.empty() || path.starts_with('/') || path.ends_with('/')) {
@@ -1712,7 +1891,7 @@ RemoteItem MicrosoftGraphClient::upload_file(
         result.completed_bytes = completed_bytes;
         return result;
     };
-    const auto create_session = [&] {
+    const auto create_session = [&](AbsentUploadSession absent) {
         const std::string session_url = remote_id ?
             drive_prefix + "/items/" +
                 percent_encode_uri_component(*remote_id) +
@@ -1774,89 +1953,112 @@ RemoteItem MicrosoftGraphClient::upload_file(
         if (checkpoint) {
             checkpoint(created);
         }
-        return created;
+        return create_upload_session(
+            std::move(absent),
+            std::move(created)
+        );
     };
 
-    std::optional<UploadSession> active_session;
-    if (saved_session) {
-        validate_upload_url(saved_session->upload_url);
+    using ResolvedUploadSession =
+        std::variant<AbsentUploadSession, ActiveUploadSession>;
+    auto resolved_session = [&]() -> ResolvedUploadSession {
+        if (!saved_session) {
+            return AbsentUploadSession{AbsentUploadSessionPayload{}};
+        }
+        auto saved = SavedUploadSession{
+            SavedUploadSessionPayload{*saved_session},
+        };
+        validate_upload_url(saved.session.upload_url);
         const auto expiration =
-            util::parse_remote_modified_time(saved_session->expiration);
-        if (saved_session->completed_bytes > total_size) {
+            util::parse_remote_modified_time(saved.session.expiration);
+        if (saved.session.completed_bytes > total_size) {
             throw std::runtime_error(
                 "saved upload session offset exceeds the local snapshot"
             );
         }
-        if (expiration > std::chrono::system_clock::now()) {
-            const auto response = perform_with_retries(
-                [&] {
-                    return transport_->perform(http::HttpRequest{
-                        .method = http::HttpMethod::get,
-                        .url = saved_session->upload_url,
-                        .headers = {"Accept: application/json"},
-                        .body = {},
-                        .connect_timeout = transfer.connect_timeout,
-                        .operation_timeout = transfer.operation_timeout,
-                        .low_speed_timeout = transfer.low_speed_timeout,
-                        .low_speed_limit_bytes_per_second =
-                            transfer.low_speed_limit_bytes_per_second,
-                        .maximum_response_size =
-                            std::size_t{1024} * 1024U,
-                        .stop_token = {},
-                    });
-                },
-                options_,
-                options_.maximum_throttle_retries,
-                sleep_,
-                "Microsoft Graph upload session status",
-                {},
-                true
-            );
-            if (!response) {
-                throw std::runtime_error(
-                    "Microsoft Graph upload session status failed: " +
-                    response.error().message
-                );
-            }
-            if (response->status_code != 404 &&
-                response->status_code != 410) {
-                const auto json =
-                    parse_graph_json(*response, "upload session status");
-                require_upload_success(*response, json);
-                const auto remote_offset =
-                    next_upload_offset(json, total_size);
-                if (remote_offset < saved_session->completed_bytes) {
-                    throw std::runtime_error(
-                        "Microsoft Graph upload session offset moved backward"
-                    );
-                }
-                auto resumed = *saved_session;
-                try {
-                    resumed.expiration =
-                        json.at("expirationDateTime").get<std::string>();
-                } catch (const Json::exception& error) {
-                    throw std::runtime_error(
-                        "Microsoft Graph upload session status is missing "
-                        "expiration: " + std::string{error.what()}
-                    );
-                }
-                static_cast<void>(
-                    util::parse_remote_modified_time(resumed.expiration)
-                );
-                resumed.completed_bytes = remote_offset;
-                if (checkpoint &&
-                    (resumed.completed_bytes !=
-                         saved_session->completed_bytes ||
-                     resumed.expiration != saved_session->expiration)) {
-                    checkpoint(resumed);
-                }
-                active_session = std::move(resumed);
-            }
+        if (expiration <= std::chrono::system_clock::now()) {
+            return discard_saved_upload_session(std::move(saved));
         }
-    }
-    if (!active_session) {
-        active_session = create_session();
-    }
+        const auto response = perform_with_retries(
+            [&] {
+                return transport_->perform(http::HttpRequest{
+                    .method = http::HttpMethod::get,
+                    .url = saved.session.upload_url,
+                    .headers = {"Accept: application/json"},
+                    .body = {},
+                    .connect_timeout = transfer.connect_timeout,
+                    .operation_timeout = transfer.operation_timeout,
+                    .low_speed_timeout = transfer.low_speed_timeout,
+                    .low_speed_limit_bytes_per_second =
+                        transfer.low_speed_limit_bytes_per_second,
+                    .maximum_response_size =
+                        std::size_t{1024} * 1024U,
+                    .stop_token = {},
+                });
+            },
+            options_,
+            options_.maximum_throttle_retries,
+            sleep_,
+            "Microsoft Graph upload session status",
+            {},
+            true
+        );
+        if (!response) {
+            throw std::runtime_error(
+                "Microsoft Graph upload session status failed: " +
+                response.error().message
+            );
+        }
+        if (response->status_code == 404 ||
+            response->status_code == 410) {
+            return discard_saved_upload_session(std::move(saved));
+        }
+        const auto json =
+            parse_graph_json(*response, "upload session status");
+        require_upload_success(*response, json);
+        const auto remote_offset =
+            next_upload_offset(json, total_size);
+        if (remote_offset < saved.session.completed_bytes) {
+            throw std::runtime_error(
+                "Microsoft Graph upload session offset moved backward"
+            );
+        }
+        auto resumed = saved.session;
+        try {
+            resumed.expiration =
+                json.at("expirationDateTime").get<std::string>();
+        } catch (const Json::exception& error) {
+            throw std::runtime_error(
+                "Microsoft Graph upload session status is missing "
+                "expiration: " + std::string{error.what()}
+            );
+        }
+        static_cast<void>(
+            util::parse_remote_modified_time(resumed.expiration)
+        );
+        resumed.completed_bytes = remote_offset;
+        if (checkpoint &&
+            (resumed.completed_bytes != saved.session.completed_bytes ||
+             resumed.expiration != saved.session.expiration)) {
+            checkpoint(resumed);
+        }
+        return resume_upload_session(
+            std::move(saved),
+            std::move(resumed)
+        );
+    }();
+    auto active_session = std::visit(
+        [&](auto&& transaction) -> ActiveUploadSession {
+            using Transaction =
+                std::remove_cvref_t<decltype(transaction)>;
+            if constexpr (std::same_as<Transaction, ActiveUploadSession>) {
+                return std::move(transaction);
+            } else {
+                return create_session(std::move(transaction));
+            }
+        },
+        std::move(resolved_session)
+    );
 
     std::ifstream input{source, std::ios::binary};
     if (!input) {
@@ -1865,7 +2067,9 @@ RemoteItem MicrosoftGraphClient::upload_file(
         );
     }
     input.seekg(
-        static_cast<std::streamoff>(active_session->completed_bytes)
+        static_cast<std::streamoff>(
+            active_session.session.completed_bytes
+        )
     );
     if (!input) {
         throw std::runtime_error(
@@ -1873,7 +2077,8 @@ RemoteItem MicrosoftGraphClient::upload_file(
         );
     }
     const auto chunk_size = options_.upload_chunk_size_bytes;
-    for (std::uint64_t offset = active_session->completed_bytes;
+    for (std::uint64_t offset =
+             active_session.session.completed_bytes;
          offset < total_size;) {
         const auto bytes = std::min(chunk_size, total_size - offset);
         if (bytes > static_cast<std::uint64_t>(
@@ -1910,7 +2115,7 @@ RemoteItem MicrosoftGraphClient::upload_file(
             [&] {
                 return transport_->perform(http::HttpRequest{
                     .method = http::HttpMethod::put,
-                    .url = active_session->upload_url,
+                    .url = active_session.session.upload_url,
                     .headers = chunk_headers,
                     .body = body,
                     .connect_timeout = transfer.connect_timeout,
@@ -1954,8 +2159,9 @@ RemoteItem MicrosoftGraphClient::upload_file(
                 next_offset,
                 total_size
             );
+            auto advanced_session = active_session.session;
             try {
-                active_session->expiration =
+                advanced_session.expiration =
                     chunk_json.at("expirationDateTime").get<std::string>();
             } catch (const Json::exception& error) {
                 throw std::runtime_error(
@@ -1964,12 +2170,19 @@ RemoteItem MicrosoftGraphClient::upload_file(
                 );
             }
             static_cast<void>(
-                util::parse_remote_modified_time(active_session->expiration)
+                util::parse_remote_modified_time(
+                    advanced_session.expiration
+                )
             );
-            active_session->completed_bytes = next_offset;
+            advanced_session.completed_bytes = next_offset;
+            auto advanced = advance_upload_session(
+                std::move(active_session),
+                std::move(advanced_session)
+            );
             if (checkpoint) {
-                checkpoint(*active_session);
+                checkpoint(advanced.session);
             }
+            active_session = std::move(advanced);
             offset = next_offset;
             continue;
         }
@@ -1985,11 +2198,15 @@ RemoteItem MicrosoftGraphClient::upload_file(
                 "Microsoft Graph finalized an incomplete upload session"
             );
         }
-        return parse_drive_item(
-            chunk_json,
-            "upload session response",
-            !options_.relaxed_download_validation
+        auto finalized = finalize_upload_session(
+            std::move(active_session),
+            parse_drive_item(
+                chunk_json,
+                "upload session response",
+                !options_.relaxed_download_validation
+            )
         );
+        return std::move(finalized.remote);
     }
     throw std::runtime_error(
         "Microsoft Graph upload session ended without a final item"

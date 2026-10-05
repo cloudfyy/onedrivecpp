@@ -19,11 +19,15 @@ using JournaledDownload = DownloadTransaction<DownloadJournaledState>;
 using ActiveDownload = std::variant<PreparedDownload, JournaledDownload>;
 
 JournaledDownload journal_download(PreparedDownload download) noexcept {
-    return transition_transaction<DownloadJournaledState>(std::move(download));
+    return util::transition_transaction<DownloadJournaledState>(
+        std::move(download)
+    );
 }
 
 PreparedDownload retry_download(JournaledDownload download) noexcept {
-    return transition_transaction<DownloadPreparedState>(std::move(download));
+    return util::transition_transaction<DownloadPreparedState>(
+        std::move(download)
+    );
 }
 
 template <typename Transaction>

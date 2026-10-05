@@ -5,7 +5,7 @@
 #include "sync/core/item_operation_coordinator.hpp"
 #include "sync/core/plan.hpp"
 #include "sync/core/transfer_order.hpp"
-#include "sync/core/typestate.hpp"
+#include "util/typestate.hpp"
 #include "sync/download/integrity.hpp"
 #include "sync/download/progress.hpp"
 #include "sync/download/recovery.hpp"
@@ -54,7 +54,7 @@ struct ExecutionSummary {
 
 struct LocalMoveTransactionFamily;
 using LocalMoveTransactionState =
-    detail::TransactionState<LocalMoveTransactionFamily>;
+    util::TransactionState<LocalMoveTransactionFamily>;
 struct LocalMovePreparedState final : LocalMoveTransactionState {};
 struct LocalMoveJournaledState final : LocalMoveTransactionState {};
 struct LocalMoveRecoveredJournalState final : LocalMoveTransactionState {};
@@ -63,14 +63,14 @@ struct LocalMoveInstalledState final : LocalMoveTransactionState {};
 
 template <typename State>
 concept LocalMoveState =
-    detail::TransactionStateFor<State, LocalMoveTransactionFamily>;
+    util::TransactionStateFor<State, LocalMoveTransactionFamily>;
 
 struct LocalMoveTransactionPayload {
     storage::PendingMove journal;
 };
 
 template <LocalMoveState State>
-using LocalMoveTransaction = detail::StateTransaction<
+using LocalMoveTransaction = util::StateTransaction<
     State,
     LocalMoveTransactionFamily,
     LocalMoveTransactionPayload>;
@@ -88,30 +88,25 @@ static_assert(std::is_nothrow_move_constructible_v<StagedLocalMove>);
 static_assert(std::is_nothrow_move_constructible_v<InstalledLocalMove>);
 
 JournaledLocalMove journal_local_move(PreparedLocalMove move) noexcept {
-    return detail::transition_transaction<LocalMoveJournaledState>(
-        std::move(move)
+    return util::transition_transaction<LocalMoveJournaledState>(std::move(move)
     );
 }
 
 StagedLocalMove stage_local_move(JournaledLocalMove move) noexcept {
-    return detail::transition_transaction<LocalMoveStagedState>(std::move(move)
-    );
+    return util::transition_transaction<LocalMoveStagedState>(std::move(move));
 }
 
 StagedLocalMove stage_local_move(RecoveredJournalLocalMove move) noexcept {
-    return detail::transition_transaction<LocalMoveStagedState>(std::move(move)
-    );
+    return util::transition_transaction<LocalMoveStagedState>(std::move(move));
 }
 
 InstalledLocalMove install_local_move(JournaledLocalMove move) noexcept {
-    return detail::transition_transaction<LocalMoveInstalledState>(
-        std::move(move)
+    return util::transition_transaction<LocalMoveInstalledState>(std::move(move)
     );
 }
 
 InstalledLocalMove install_local_move(StagedLocalMove move) noexcept {
-    return detail::transition_transaction<LocalMoveInstalledState>(
-        std::move(move)
+    return util::transition_transaction<LocalMoveInstalledState>(std::move(move)
     );
 }
 

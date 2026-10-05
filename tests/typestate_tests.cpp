@@ -1,4 +1,4 @@
-#include "sync/core/typestate.hpp"
+#include "util/typestate.hpp"
 
 #include <cstdlib>
 #include <memory>
@@ -8,12 +8,12 @@
 namespace {
 
 struct TransferFamily;
-using TransferState = onedrive::sync::detail::TransactionState<TransferFamily>;
+using TransferState = onedrive::util::TransactionState<TransferFamily>;
 struct PreparedState final : TransferState {};
 struct JournaledState final : TransferState {};
 
 struct OtherFamily;
-using OtherState = onedrive::sync::detail::TransactionState<OtherFamily>;
+using OtherState = onedrive::util::TransactionState<OtherFamily>;
 struct UnrelatedState final : OtherState {};
 
 struct MoveOnlyPayload {
@@ -24,14 +24,14 @@ struct JournaledPayload {
     int value{0};
 };
 
-using PreparedTransaction = onedrive::sync::detail::
+using PreparedTransaction = onedrive::util::
     StateTransaction<PreparedState, TransferFamily, MoveOnlyPayload>;
-using JournaledTransaction = onedrive::sync::detail::
+using JournaledTransaction = onedrive::util::
     StateTransaction<JournaledState, TransferFamily, JournaledPayload>;
 
 JournaledTransaction
 journal_transaction(PreparedTransaction transaction) noexcept {
-    return onedrive::sync::detail::transition_transaction<JournaledState>(
+    return onedrive::util::transition_transaction<JournaledState>(
         std::move(transaction),
         [](MoveOnlyPayload&& payload) noexcept {
             return JournaledPayload{*payload.value};
@@ -54,27 +54,22 @@ struct ThrowingMapper {
     }
 };
 
-static_assert(
-    onedrive::sync::detail::TransactionStateFor<PreparedState, TransferFamily>
+static_assert(onedrive::util::TransactionStateFor<PreparedState, TransferFamily>
 );
 static_assert(
-    !onedrive::sync::detail::TransactionStateFor<UnrelatedState, TransferFamily>
+    !onedrive::util::TransactionStateFor<UnrelatedState, TransferFamily>
 );
 static_assert(!std::copyable<PreparedTransaction>);
 static_assert(std::is_nothrow_move_constructible_v<PreparedTransaction>);
-static_assert(
-    noexcept(onedrive::sync::detail::transition_transaction<JournaledState>(
-        std::declval<PreparedTransaction&&>(),
-        [](MoveOnlyPayload&& payload) noexcept {
-            return JournaledPayload{*payload.value};
-        }
-    ))
-);
-static_assert(
-    !noexcept(onedrive::sync::detail::transition_transaction<JournaledState>(
-        std::declval<PreparedTransaction&&>(), ThrowingMapper{}
-    ))
-);
+static_assert(noexcept(onedrive::util::transition_transaction<JournaledState>(
+    std::declval<PreparedTransaction&&>(),
+    [](MoveOnlyPayload&& payload) noexcept {
+        return JournaledPayload{*payload.value};
+    }
+)));
+static_assert(!noexcept(onedrive::util::transition_transaction<JournaledState>(
+    std::declval<PreparedTransaction&&>(), ThrowingMapper{}
+)));
 static_assert(!std::same_as<PreparedTransaction, JournaledTransaction>);
 static_assert(Journalable<PreparedTransaction>);
 static_assert(!Journalable<JournaledTransaction>);

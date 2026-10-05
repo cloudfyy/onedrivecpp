@@ -100,6 +100,10 @@ installed 阶段。只有类型状态能够证明尚未生成 staging 或目标�
 远端目录创建使用独立的 prepared、journaled、Graph 已创建和本地已提交状态族。
 新建和重启恢复统一进入同一个 Graph 已创建提交路径，复用本地目录验证、inode
 获取、SQLite 提交和远端身份 metadata 写入。
+Graph 大文件上传会话也在同步层之外复用此核心。不存在或已保存的会话只能通过
+创建或验证恢复进入 active；已过期、不存在或已失效的保存会话先返回 absent，
+再创建新会话。每个已接受的分片只有在 checkpoint 成功后才推进 active 状态，
+并且只有 active 会话能够生成包含远端条目的 finalized 状态。
 
 目录与参考项目中的 `main/config/curlEngine/onedrive/sync/itemdb/monitor`
 职责相对应：
