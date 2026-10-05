@@ -1,3 +1,14 @@
+onedrive-cpp (0.7.24-1~ubuntu24.04) noble; urgency=medium
+
+  * Expand the isolated live Graph runner to cover directory and simple-file
+    uploads plus a real upload-session file larger than 250 MB.
+  * Verify completed-upload recovery, simultaneous local and remote conflict
+    backup, moves into new local parents, and local remote-deletion propagation.
+  * Add self-tests for Graph path lookups, missing items, recovery-journal
+    injection, large-fixture validation, and disposable subtree cleanup.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Mon, 05 Oct 2026 08:08:53 +0000
+
 onedrive-cpp (0.7.23-1~ubuntu24.04) noble; urgency=medium
 
   * Classify OneDrive quota responses as actionable upload resource failures
