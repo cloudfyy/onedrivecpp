@@ -78,7 +78,8 @@ public:
     }
 
     [[nodiscard]] bool drain(const std::filesystem::path& root) {
-        alignas(inotify_event) std::array<char, 64 * 1024> buffer{};
+        alignas(inotify_event)
+            std::array<char, std::size_t{64} * 1024U> buffer{};
         bool changed = false;
         bool overflow = false;
         while (true) {
@@ -260,6 +261,8 @@ public:
 
     SignalMask(const SignalMask&) = delete;
     SignalMask& operator=(const SignalMask&) = delete;
+    SignalMask(SignalMask&&) = delete;
+    SignalMask& operator=(SignalMask&&) = delete;
 
     ~SignalMask() {
         if (active_) {
@@ -332,12 +335,12 @@ int Monitor::run() const {
     return run_loop({}, signal_descriptor.get());
 }
 
-int Monitor::run(std::stop_token stop_token) const {
-    return run_loop(std::move(stop_token), -1);
+int Monitor::run(const std::stop_token& stop_token) const {
+    return run_loop(stop_token, -1);
 }
 
 int Monitor::run_loop(
-    std::stop_token stop_token,
+    const std::stop_token& stop_token,
     int signal_descriptor
 ) const {
     if (stop_token.stop_requested()) {

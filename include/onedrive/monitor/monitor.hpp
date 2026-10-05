@@ -40,11 +40,11 @@ public:
         std::chrono::milliseconds settle_delay
     );
     [[nodiscard]] int run() const;
-    [[nodiscard]] int run(std::stop_token stop_token) const;
+    [[nodiscard]] int run(const std::stop_token& stop_token) const;
 
 private:
     [[nodiscard]] int run_loop(
-        std::stop_token stop_token,
+        const std::stop_token& stop_token,
         int signal_descriptor
     ) const;
 
