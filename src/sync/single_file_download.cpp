@@ -3,6 +3,7 @@
 #include "onedrive/path_security.hpp"
 #include "download_recovery.hpp"
 #include "download_space_coordinator.hpp"
+#include "download_target.hpp"
 #include "download_transaction.hpp"
 #include "filesystem_metadata.hpp"
 #include "local_filesystem.hpp"
@@ -59,28 +60,6 @@ SingleFileTarget resolve_target(
         .item = std::move(item),
         .configured_root = configured_root,
         .destination = std::move(destination),
-    };
-}
-
-storage::ItemState state_for(
-    const std::string& drive_id,
-    const graph::RemoteItem& item,
-    const std::filesystem::path& destination
-) {
-    return {
-        .drive_id = drive_id,
-        .remote_id = item.id,
-        .parent_id = item.parent_id,
-        .name = item.name,
-        .etag = item.etag,
-        .ctag = item.ctag,
-        .remote_path = item.remote_path,
-        .local_path = destination,
-        .last_modified = item.last_modified,
-        .size = item.size,
-        .local_size = 0,
-        .local_modified_ticks = 0,
-        .directory = false,
     };
 }
 
@@ -160,23 +139,15 @@ int download_single_file(
         private_permissions
     );
     const auto previous = items.find(config.drive_id, item.id);
-    const bool exists = std::filesystem::exists(destination);
-    const bool snapshot_matches =
-        exists && previous.has_value() &&
-        detail::local_snapshot_matches(*previous, destination);
-    const bool preserve_local = exists && !snapshot_matches;
-    if (preserve_local &&
+    const auto target_status =
+        detail::inspect_download_target(previous, item, destination);
+    if (target_status.preserve_local &&
         config.local_conflict == config::LocalConflictPolicy::block) {
         throw detail::LocalModificationConflictError(
             "local modification conflict: " + destination.string()
         );
     }
-    if (snapshot_matches &&
-        detail::remote_content_version_matches(
-            *previous,
-            item.etag,
-            item.ctag
-        )) {
+    if (target_status.current_remote_file) {
         console.message(
             cli::MessageKind::success,
             "single_download_reused",
@@ -191,7 +162,8 @@ int download_single_file(
             static_cast<std::uintmax_t>(item.size)
         )
     };
-    auto state = state_for(config.drive_id, item, destination);
+    auto state =
+        detail::item_state_for(config.drive_id, item, destination);
     const auto installed = detail::commit_download(
         items,
         safe_root,
@@ -219,7 +191,7 @@ int download_single_file(
         ),
         {
             .local_conflict = config.local_conflict,
-            .preserve_local = preserve_local,
+            .preserve_local = target_status.preserve_local,
             .backup_created =
                 [&](const std::filesystem::path& backup) {
                     console.message(

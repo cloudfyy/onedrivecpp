@@ -128,6 +128,7 @@ add_library(onedrive_core
     src/sync/download_progress.cpp
     src/sync/download_recovery.cpp
     src/sync/download_space_coordinator.cpp
+    src/sync/download_target.cpp
     src/sync/download_transaction.cpp
     src/sync/filesystem_metadata.cpp
     src/sync/item_operation_coordinator.cpp

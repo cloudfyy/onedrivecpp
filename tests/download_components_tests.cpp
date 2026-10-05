@@ -425,6 +425,16 @@ int test_single_file_download_coordination() {
         !item_implementation.states.contains("single")) {
         return fail("single-file download did not reuse the safe transaction");
     }
+    if (onedrive::sync::download_single_file(
+            config,
+            "Documents/single.txt",
+            graph,
+            items,
+            console
+        ) != 0 ||
+        graph_implementation.download_count != 1) {
+        return fail("current single-file download was not reused");
+    }
 
     graph_implementation.lookup_item =
         remote_item("directory", "Documents");

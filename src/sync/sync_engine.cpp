@@ -6,6 +6,7 @@
 #include "download_integrity.hpp"
 #include "download_progress.hpp"
 #include "download_space_coordinator.hpp"
+#include "download_target.hpp"
 #include "download_transaction.hpp"
 #include "filesystem_metadata.hpp"
 #include "item_operation_coordinator.hpp"
@@ -1663,19 +1664,9 @@ ExecutionSummary execute_plan(
             ++reused_count;
             continue;
         }
-        const bool exists = std::filesystem::exists(destination);
-        const bool snapshot_matches =
-            exists && previous.has_value() &&
-            detail::local_snapshot_matches(*previous, destination);
-        const bool current_remote_file =
-            snapshot_matches &&
-            detail::remote_content_version_matches(
-                *previous,
-                item.etag,
-                item.ctag
-            );
-        bool preserve_local =
-            exists && !current_remote_file && !snapshot_matches;
+        const auto target_status =
+            detail::inspect_download_target(previous, item, destination);
+        bool preserve_local = target_status.preserve_local;
         if (preserve_local &&
             local_conflict == config::LocalConflictPolicy::block) {
             spdlog::warn(
@@ -1694,7 +1685,7 @@ ExecutionSummary execute_plan(
             continue;
         }
 
-        if (current_remote_file) {
+        if (target_status.current_remote_file) {
             spdlog::debug(
                 "Reusing completed download for '{}'",
                 item.remote_path

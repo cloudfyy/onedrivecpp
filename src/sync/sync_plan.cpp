@@ -1,5 +1,6 @@
 #include "sync_plan.hpp"
 
+#include "download_target.hpp"
 #include "local_filesystem.hpp"
 
 #include <spdlog/spdlog.h>
@@ -89,21 +90,9 @@ SyncPlan SyncPlan::build(
             plan.download_bytes_ += static_cast<std::uintmax_t>(item.size);
             plan.downloads_.push_back(index);
         }
-        plan.state_delta_.upserts.push_back({
-            .drive_id = drive_id,
-            .remote_id = item.id,
-            .parent_id = item.parent_id,
-            .name = item.name,
-            .etag = item.etag,
-            .ctag = item.ctag,
-            .remote_path = item.remote_path,
-            .local_path = std::move(local_path),
-            .last_modified = item.last_modified,
-            .size = item.size,
-            .local_size = 0,
-            .local_modified_ticks = 0,
-            .directory = item.directory,
-        });
+        plan.state_delta_.upserts.push_back(
+            item_state_for(drive_id, item, std::move(local_path))
+        );
     }
     std::ranges::sort(
         plan.directories_,
