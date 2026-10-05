@@ -56,6 +56,11 @@ void apply_remote_modified_time(
     const storage::ItemState& state,
     const std::filesystem::path& path
 );
+[[nodiscard]] bool remote_content_version_matches(
+    const storage::ItemState& previous,
+    std::string_view etag,
+    std::string_view ctag
+) noexcept;
 [[nodiscard]] LocalFileBaseline capture_local_file_baseline(
     const std::filesystem::path& path
 );

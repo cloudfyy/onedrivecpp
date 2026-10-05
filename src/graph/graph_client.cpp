@@ -788,6 +788,19 @@ std::optional<FileHash> item_content_hash(const Json& value) {
     return std::nullopt;
 }
 
+std::string item_ctag(const Json& item) {
+    const auto ctag = item.find("cTag");
+    if (ctag == item.end() || ctag->is_null()) {
+        return {};
+    }
+    if (!ctag->is_string()) {
+        throw std::runtime_error(
+            "Microsoft Graph returned an invalid cTag"
+        );
+    }
+    return ctag->get<std::string>();
+}
+
 RemoteItem parse_drive_item(
     const Json& json,
     std::string_view description,
@@ -799,6 +812,7 @@ RemoteItem parse_drive_item(
             .id = json.at("id").get<std::string>(),
             .name = json.at("name").get<std::string>(),
             .etag = json.at("eTag").get<std::string>(),
+            .ctag = item_ctag(json),
             .parent_id = {},
             .remote_path = {},
             .last_modified = {},
@@ -1198,6 +1212,7 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
                     .id = value.at("id").get<std::string>(),
                     .name = value.at("name").get<std::string>(),
                     .etag = value.at("eTag").get<std::string>(),
+                    .ctag = item_ctag(value),
                     .parent_id = {},
                     .remote_path = {},
                     .last_modified = {},
@@ -1262,7 +1277,7 @@ RemoteItem MicrosoftGraphClient::item_by_path(
             options_.endpoint + "/drives/" + percent_encode(options_.drive_id) +
                 "/root:/") +
         encoded_path +
-        "?$select=id,name,eTag,size,fileSystemInfo,parentReference,file,folder,"
+        "?$select=id,name,eTag,cTag,size,fileSystemInfo,parentReference,file,folder,"
         "deleted,malware,remoteItem";
     const auto response = perform_with_retries(
         [&] {
@@ -2166,6 +2181,7 @@ DeltaResult MicrosoftGraphClient::list_delta(
                         }
                         item.etag = etag->get<std::string>();
                     }
+                    item.ctag = item_ctag(value);
                     item.directory = value.contains("folder");
                     item.root = value.contains("root");
                     if (!item.root) {

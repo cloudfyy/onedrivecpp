@@ -479,6 +479,27 @@ bool create_version_twenty_database(const std::filesystem::path& path) {
     );
 }
 
+bool create_version_twenty_one_database(
+    const std::filesystem::path& path
+) {
+    if (!create_version_twenty_database(path)) {
+        return false;
+    }
+    return execute_schema(
+        path,
+        "CREATE TABLE pending_remote_move ("
+        "drive_id TEXT NOT NULL, remote_id TEXT NOT NULL, "
+        "expected_etag TEXT NOT NULL, source_remote_path TEXT NOT NULL, "
+        "destination_remote_path TEXT NOT NULL, "
+        "source_local_path TEXT NOT NULL, "
+        "destination_local_path TEXT NOT NULL, "
+        "local_device INTEGER NOT NULL, local_inode INTEGER NOT NULL, "
+        "directory INTEGER NOT NULL, "
+        "PRIMARY KEY (drive_id, remote_id));"
+        "PRAGMA user_version = 21;"
+    );
+}
+
 bool identity_row_is_valid(const std::filesystem::path& path) {
     sqlite3* database = nullptr;
     if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
@@ -778,6 +799,7 @@ int main() {
                 .remote_id = "pending-me",
                 .name = "pending-me.txt",
                 .etag = "pending-etag",
+                .ctag = "pending-ctag",
                 .remote_path = "pending-me.txt",
                 .local_path = temporary_directory.path() / "pending-me.txt",
                 .size = 4,
@@ -808,6 +830,7 @@ int main() {
                 .remote_id = "partial-me",
                 .name = "partial-me.txt",
                 .etag = "partial-etag",
+                .ctag = "partial-ctag",
                 .remote_path = "partial-me.txt",
                 .local_path = temporary_directory.path() / "partial-me.txt",
                 .size = 4,
@@ -874,13 +897,16 @@ int main() {
             .delta_link = "https://graph.example.test/delta-other",
         });
         const auto pending_me = database.pending_downloads("me");
+        const auto partial_me =
+            database.partial_download("me", "partial-me");
         if (pending_me.size() != 1 ||
             database.pending_downloads("other-drive").size() != 1 ||
+            pending_me[0].item.ctag != "pending-ctag" ||
             pending_me[0].backup_path !=
                 temporary_directory.path() /
                     "pending-me.safeBackup-20261004T051000Z-0001.txt" ||
             pending_me[0].backup_fingerprint != "backup-fingerprint-me" ||
-            !database.partial_download("me", "partial-me") ||
+            !partial_me || partial_me->item.ctag != "partial-ctag" ||
             !database.partial_download("other-drive", "partial-other") ||
             database.pending_moves("me").size() != 1 ||
             database.pending_moves("other-drive").size() != 1 ||
@@ -1187,7 +1213,7 @@ int main() {
             onedrive::storage::ItemDatabase database{directory, identity()};
             database.open();
         }
-        if (!schema_version_is(database_path, 21) ||
+        if (!schema_version_is(database_path, 22) ||
             !identity_row_is_valid(database_path)) {
             return fail(
                 std::string{fixture.name} +
@@ -1820,6 +1846,39 @@ int main() {
             child->local_path !=
                 version_twenty_directory / "New" / "child.txt") {
             return fail("remote directory move commit was not atomic");
+        }
+    }
+
+    const auto version_twenty_one_directory =
+        temporary_directory.path() / "version-twenty-one";
+    std::filesystem::create_directories(version_twenty_one_directory);
+    if (!create_version_twenty_one_database(
+            version_twenty_one_directory / "items.sqlite3"
+        )) {
+        return fail(
+            "version twenty-one migration fixture could not be created"
+        );
+    }
+    {
+        onedrive::storage::ItemDatabase database{
+            version_twenty_one_directory,
+            identity()
+        };
+        database.open();
+        database.upsert({
+            .drive_id = "me",
+            .remote_id = "ctag-item",
+            .name = "ctag.txt",
+            .etag = "metadata-version",
+            .ctag = "content-version",
+            .remote_path = "ctag.txt",
+            .local_path = version_twenty_one_directory / "ctag.txt",
+        });
+        const auto item = database.find("me", "ctag-item");
+        if (!item || item->ctag != "content-version") {
+            return fail(
+                "version twenty-one database did not persist content tags"
+            );
         }
     }
 

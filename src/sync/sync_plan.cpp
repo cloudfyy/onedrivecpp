@@ -95,6 +95,7 @@ SyncPlan SyncPlan::build(
             .parent_id = item.parent_id,
             .name = item.name,
             .etag = item.etag,
+            .ctag = item.ctag,
             .remote_path = item.remote_path,
             .local_path = std::move(local_path),
             .last_modified = item.last_modified,

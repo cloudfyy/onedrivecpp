@@ -374,7 +374,7 @@ int test_item_lookup_by_encoded_path() {
             onedrive::http::HttpResponse{
                 .status_code = 200,
                 .body =
-                    R"json({"id":"file-id","name":"report #1.txt","eTag":"file-etag","size":4,"fileSystemInfo":{"lastModifiedDateTime":"2026-10-04T00:00:00Z"},"parentReference":{"id":"folder-id","path":"/drive/root:/Folder A"},"file":{"hashes":{"sha256Hash":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}})json",
+                    R"json({"id":"file-id","name":"report #1.txt","eTag":"file-etag","cTag":"file-ctag","size":4,"fileSystemInfo":{"lastModifiedDateTime":"2026-10-04T00:00:00Z"},"parentReference":{"id":"folder-id","path":"/drive/root:/Folder A"},"file":{"hashes":{"sha256Hash":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}})json",
             },
         }
     );
@@ -396,7 +396,8 @@ int test_item_lookup_by_encoded_path() {
     const auto item = client.item_by_path("Folder A/report #1.txt");
     if (item.id != "file-id" || item.name != "report #1.txt" ||
         item.remote_path != "Folder A/report #1.txt" ||
-        item.parent_id != "folder-id" || item.size != 4 ||
+        item.parent_id != "folder-id" || item.ctag != "file-ctag" ||
+        item.size != 4 ||
         item.directory || item.last_modified != "2026-10-04T00:00:00Z" ||
         !item.content_hash ||
         item.content_hash->algorithm !=
@@ -404,7 +405,7 @@ int test_item_lookup_by_encoded_path() {
         transport_pointer->requests.size() != 2 ||
         transport_pointer->requests[1].url !=
             "https://graph.example.test/v1.0/me/drive/root:/Folder%20A/"
-            "report%20%231.txt?$select=id,name,eTag,size,fileSystemInfo,"
+            "report%20%231.txt?$select=id,name,eTag,cTag,size,fileSystemInfo,"
             "parentReference,file,folder,deleted,malware,remoteItem" ||
         !has_header(
             transport_pointer->requests[1],
@@ -1627,7 +1628,7 @@ int test_delta_with_pagination() {
             onedrive::http::HttpResponse{
                 .status_code = 200,
                 .body =
-                    R"json({"value":[{"id":"file-id","name":"notes.txt","eTag":"file-etag","size":42,"lastModifiedDateTime":"2026-10-02T00:01:00Z","fileSystemInfo":{"lastModifiedDateTime":"2026-10-01T23:59:58.123456789Z"},"parentReference":{"id":"folder-id","path":"/drives/drive-id/root:/Documents"},"file":{"mimeType":"text/plain","hashes":{"quickXorHash":"SgAAAAAAAAAAAAAAAQAAAAAAAAA=","sha256Hash":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}},{"id":"shortcut-id","name":"shared.txt","eTag":"shortcut-etag","size":7,"fileSystemInfo":{"lastModifiedDateTime":"2026-10-01T20:00:00Z"},"remoteItem":{"fileSystemInfo":{"lastModifiedDateTime":"2026-10-01T21:00:00Z"},"malware":{}},"parentReference":{"id":"folder-id","path":"/drives/drive-id/root:/Documents"},"file":{"mimeType":"text/plain"}},{"id":"deleted-id","deleted":{"state":"deleted"}}],"@odata.deltaLink":"https://graph.example.test/v1.0/delta?token=final"})json",
+                    R"json({"value":[{"id":"file-id","name":"notes.txt","eTag":"file-etag","cTag":"file-ctag","size":42,"lastModifiedDateTime":"2026-10-02T00:01:00Z","fileSystemInfo":{"lastModifiedDateTime":"2026-10-01T23:59:58.123456789Z"},"parentReference":{"id":"folder-id","path":"/drives/drive-id/root:/Documents"},"file":{"mimeType":"text/plain","hashes":{"quickXorHash":"SgAAAAAAAAAAAAAAAQAAAAAAAAA=","sha256Hash":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}},{"id":"shortcut-id","name":"shared.txt","eTag":"shortcut-etag","size":7,"fileSystemInfo":{"lastModifiedDateTime":"2026-10-01T20:00:00Z"},"remoteItem":{"fileSystemInfo":{"lastModifiedDateTime":"2026-10-01T21:00:00Z"},"malware":{}},"parentReference":{"id":"folder-id","path":"/drives/drive-id/root:/Documents"},"file":{"mimeType":"text/plain"}},{"id":"deleted-id","deleted":{"state":"deleted"}}],"@odata.deltaLink":"https://graph.example.test/v1.0/delta?token=final"})json",
             },
         }
     );
@@ -1658,6 +1659,7 @@ int test_delta_with_pagination() {
         !delta.changes[1].etag.empty() ||
         delta.changes[1].remote_path != "Documents" ||
         delta.changes[2].remote_path != "Documents/notes.txt" ||
+        delta.changes[2].ctag != "file-ctag" ||
         delta.changes[2].parent_id != "folder-id" ||
         delta.changes[2].size != 42 ||
         delta.changes[2].last_modified !=
@@ -1742,6 +1744,13 @@ int test_delta_requires_valid_file_system_modified_time() {
             "invalid Microsoft Graph modification time"
         )) {
         return fail("Graph delta file with invalid authoritative mtime was accepted");
+    }
+
+    constexpr std::string_view invalid_ctag{
+        R"json({"value":[{"id":"file-id","name":"notes.txt","eTag":"etag","cTag":42,"size":4,"fileSystemInfo":{"lastModifiedDateTime":"2026-10-02T00:00:00Z"},"parentReference":{"id":"root","path":"/drive/root:"},"file":{"mimeType":"text/plain"}}],"@odata.deltaLink":"https://graph.example.test/v1.0/delta?done"})json"
+    };
+    if (!rejected(std::string{invalid_ctag}, "invalid cTag")) {
+        return fail("Graph delta file with an invalid cTag was accepted");
     }
 
     constexpr std::string_view invalid_malware{

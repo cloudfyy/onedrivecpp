@@ -309,6 +309,7 @@ bool local_snapshot_matches(
     if (!std::filesystem::is_regular_file(path, error) || error) {
         return false;
     }
+
     const auto size = std::filesystem::file_size(path, error);
     if (error || size > static_cast<std::uintmax_t>(
                             std::numeric_limits<std::int64_t>::max()
@@ -317,6 +318,16 @@ bool local_snapshot_matches(
     }
     return static_cast<std::int64_t>(size) == state.local_size &&
            modified_ticks(path) == state.local_modified_ticks;
+}
+
+bool remote_content_version_matches(
+    const storage::ItemState& previous,
+    std::string_view etag,
+    std::string_view ctag
+) noexcept {
+    return previous.etag == etag ||
+           (!previous.ctag.empty() && !ctag.empty() &&
+            previous.ctag == ctag);
 }
 
 LocalFileBaseline capture_local_file_baseline(

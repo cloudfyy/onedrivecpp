@@ -398,6 +398,7 @@ void execute_pending_remote_move(
     state.parent_id = remote.parent_id;
     state.name = remote.name;
     state.etag = remote.etag;
+    state.ctag = remote.ctag;
     state.remote_path = remote.remote_path;
     state.local_path = move.destination_local_path;
     state.last_modified = remote.last_modified;
@@ -860,6 +861,7 @@ storage::ItemState uploaded_state(
         .parent_id = item.parent_id,
         .name = item.name,
         .etag = item.etag,
+        .ctag = item.ctag,
         .remote_path = item.remote_path,
         .local_path = local_path,
         .last_modified = item.last_modified,
@@ -887,6 +889,7 @@ storage::ItemState uploaded_directory_state(
         .parent_id = item.parent_id,
         .name = item.name,
         .etag = item.etag,
+        .ctag = item.ctag,
         .remote_path = item.remote_path,
         .local_path = local_path,
         .last_modified = item.last_modified,

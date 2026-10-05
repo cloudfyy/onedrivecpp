@@ -394,6 +394,7 @@ void add_moved_descendants(
                 .id = item.remote_id,
                 .name = item.name,
                 .etag = item.etag,
+                .ctag = item.ctag,
                 .parent_id = item.parent_id,
                 .remote_path = std::move(remote_path),
                 .last_modified = item.last_modified,
@@ -1666,7 +1667,12 @@ ExecutionSummary execute_plan(
             exists && previous.has_value() &&
             detail::local_snapshot_matches(*previous, destination);
         const bool current_remote_file =
-            snapshot_matches && previous->etag == item.etag;
+            snapshot_matches &&
+            detail::remote_content_version_matches(
+                *previous,
+                item.etag,
+                item.ctag
+            );
         bool preserve_local =
             exists && !current_remote_file && !snapshot_matches;
         if (preserve_local &&

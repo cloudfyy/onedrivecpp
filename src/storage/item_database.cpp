@@ -209,6 +209,7 @@ void create_item_schema(sqlite3* database) {
         "parent_id TEXT NOT NULL,"
         "name TEXT NOT NULL,"
         "etag TEXT NOT NULL,"
+        "ctag TEXT NOT NULL DEFAULT '',"
         "remote_path TEXT NOT NULL,"
         "local_path TEXT NOT NULL,"
         "last_modified TEXT NOT NULL,"
@@ -243,6 +244,7 @@ void create_pending_download_schema(sqlite3* database) {
         "parent_id TEXT NOT NULL,"
         "name TEXT NOT NULL,"
         "etag TEXT NOT NULL,"
+        "ctag TEXT NOT NULL DEFAULT '',"
         "remote_path TEXT NOT NULL,"
         "local_path TEXT NOT NULL,"
         "last_modified TEXT NOT NULL,"
@@ -351,6 +353,29 @@ void create_drive_mapping_schema(sqlite3* database) {
 }
 
 void create_partial_download_schema(sqlite3* database) {
+    execute(
+        database,
+        "CREATE TABLE IF NOT EXISTS partial_download ("
+        "drive_id TEXT NOT NULL,"
+        "remote_id TEXT NOT NULL,"
+        "parent_id TEXT NOT NULL,"
+        "name TEXT NOT NULL,"
+        "etag TEXT NOT NULL,"
+        "ctag TEXT NOT NULL DEFAULT '',"
+        "remote_path TEXT NOT NULL,"
+        "local_path TEXT NOT NULL,"
+        "last_modified TEXT NOT NULL,"
+        "size INTEGER NOT NULL,"
+        "directory INTEGER NOT NULL,"
+        "temporary_path TEXT NOT NULL,"
+        "completed_bytes INTEGER NOT NULL,"
+        "updated_at INTEGER NOT NULL DEFAULT (unixepoch()),"
+        "PRIMARY KEY (drive_id, remote_id)"
+        ");"
+    );
+}
+
+void create_partial_download_v8_schema(sqlite3* database) {
     execute(
         database,
         "CREATE TABLE IF NOT EXISTS partial_download ("
@@ -493,7 +518,7 @@ void create_upload_suppression_schema(sqlite3* database) {
     );
 }
 
-constexpr int current_schema_version = 21;
+constexpr int current_schema_version = 22;
 
 void set_schema_version(sqlite3* database, int version) {
     const auto sql =
@@ -570,6 +595,17 @@ void add_item_local_identity(sqlite3* database) {
         "INTEGER NOT NULL DEFAULT 0;"
         "ALTER TABLE item ADD COLUMN local_inode "
         "INTEGER NOT NULL DEFAULT 0;"
+    );
+}
+
+void add_content_tags(sqlite3* database) {
+    execute(
+        database,
+        "ALTER TABLE item ADD COLUMN ctag TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE pending_download ADD COLUMN ctag "
+        "TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE partial_download ADD COLUMN ctag "
+        "TEXT NOT NULL DEFAULT '';"
     );
 }
 
@@ -679,7 +715,7 @@ constexpr std::array schema_migrations{
     SchemaMigration{4, 5, create_blocked_item_v5_schema},
     SchemaMigration{5, 6, create_identity_schema},
     SchemaMigration{6, 7, create_drive_mapping_schema},
-    SchemaMigration{7, 8, create_partial_download_schema},
+    SchemaMigration{7, 8, create_partial_download_v8_schema},
     SchemaMigration{8, 9, add_blocked_item_hash_columns},
     SchemaMigration{9, 10, add_sync_filter_fingerprint},
     SchemaMigration{10, 11, add_pending_download_backup},
@@ -693,6 +729,7 @@ constexpr std::array schema_migrations{
     SchemaMigration{18, 19, create_pending_delete_schema},
     SchemaMigration{19, 20, add_item_local_identity},
     SchemaMigration{20, 21, create_pending_remote_move_schema},
+    SchemaMigration{21, 22, add_content_tags},
 };
 
 consteval bool schema_migration_chain_is_complete() {
@@ -1000,14 +1037,15 @@ void ItemDatabase::upsert_on_worker(const ItemState& item) {
     Statement statement{
         database,
         "INSERT INTO item ("
-        "drive_id, remote_id, parent_id, name, etag, remote_path, local_path, "
-        "last_modified, size, local_size, local_modified_ticks, local_device, "
-        "local_inode, directory"
+        "drive_id, remote_id, parent_id, name, etag, ctag, remote_path, "
+        "local_path, last_modified, size, local_size, local_modified_ticks, "
+        "local_device, local_inode, directory"
         ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, "
-        "?13, ?14) "
+        "?13, ?14, ?15) "
         "ON CONFLICT(drive_id, remote_id) DO UPDATE SET "
         "parent_id = excluded.parent_id, name = excluded.name, "
-        "etag = excluded.etag, remote_path = excluded.remote_path, "
+        "etag = excluded.etag, ctag = excluded.ctag, "
+        "remote_path = excluded.remote_path, "
         "local_path = excluded.local_path, "
         "last_modified = excluded.last_modified, size = excluded.size, "
         "local_size = excluded.local_size, "
@@ -1022,25 +1060,26 @@ void ItemDatabase::upsert_on_worker(const ItemState& item) {
     bind_text(database, statement.get(), 3, item.parent_id);
     bind_text(database, statement.get(), 4, item.name);
     bind_text(database, statement.get(), 5, item.etag);
-    bind_text(database, statement.get(), 6, item.remote_path);
-    bind_text(database, statement.get(), 7, local_path);
-    bind_text(database, statement.get(), 8, item.last_modified);
-    bind_integer(database, statement.get(), 9, item.size);
-    bind_integer(database, statement.get(), 10, item.local_size);
-    bind_integer(database, statement.get(), 11, item.local_modified_ticks);
+    bind_text(database, statement.get(), 6, item.ctag);
+    bind_text(database, statement.get(), 7, item.remote_path);
+    bind_text(database, statement.get(), 8, local_path);
+    bind_text(database, statement.get(), 9, item.last_modified);
+    bind_integer(database, statement.get(), 10, item.size);
+    bind_integer(database, statement.get(), 11, item.local_size);
+    bind_integer(database, statement.get(), 12, item.local_modified_ticks);
     bind_integer(
         database,
         statement.get(),
-        12,
+        13,
         static_cast<std::int64_t>(item.local_device)
     );
     bind_integer(
         database,
         statement.get(),
-        13,
+        14,
         static_cast<std::int64_t>(item.local_inode)
     );
-    bind_integer(database, statement.get(), 14, item.directory ? 1 : 0);
+    bind_integer(database, statement.get(), 15, item.directory ? 1 : 0);
 
     if (sqlite3_step(statement.get()) != SQLITE_DONE) {
         throw std::runtime_error(
@@ -1102,14 +1141,15 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
     Statement upsert_statement{
         database,
         "INSERT INTO item ("
-        "drive_id, remote_id, parent_id, name, etag, remote_path, local_path, "
-        "last_modified, size, local_size, local_modified_ticks, local_device, "
-        "local_inode, directory"
+        "drive_id, remote_id, parent_id, name, etag, ctag, remote_path, "
+        "local_path, last_modified, size, local_size, local_modified_ticks, "
+        "local_device, local_inode, directory"
         ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, "
-        "?13, ?14) "
+        "?13, ?14, ?15) "
         "ON CONFLICT(drive_id, remote_id) DO UPDATE SET "
         "parent_id = excluded.parent_id, name = excluded.name, "
-        "etag = excluded.etag, remote_path = excluded.remote_path, "
+        "etag = excluded.etag, ctag = excluded.ctag, "
+        "remote_path = excluded.remote_path, "
         "local_path = excluded.local_path, "
         "last_modified = excluded.last_modified, size = excluded.size, "
         "local_size = excluded.local_size, "
@@ -1129,33 +1169,34 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         bind_text(database, upsert_statement.get(), 3, item.parent_id);
         bind_text(database, upsert_statement.get(), 4, item.name);
         bind_text(database, upsert_statement.get(), 5, item.etag);
-        bind_text(database, upsert_statement.get(), 6, item.remote_path);
-        bind_text(database, upsert_statement.get(), 7, local_path);
-        bind_text(database, upsert_statement.get(), 8, item.last_modified);
-        bind_integer(database, upsert_statement.get(), 9, item.size);
-        bind_integer(database, upsert_statement.get(), 10, item.local_size);
+        bind_text(database, upsert_statement.get(), 6, item.ctag);
+        bind_text(database, upsert_statement.get(), 7, item.remote_path);
+        bind_text(database, upsert_statement.get(), 8, local_path);
+        bind_text(database, upsert_statement.get(), 9, item.last_modified);
+        bind_integer(database, upsert_statement.get(), 10, item.size);
+        bind_integer(database, upsert_statement.get(), 11, item.local_size);
         bind_integer(
             database,
             upsert_statement.get(),
-            11,
+            12,
             item.local_modified_ticks
         );
         bind_integer(
             database,
             upsert_statement.get(),
-            12,
+            13,
             static_cast<std::int64_t>(item.local_device)
         );
         bind_integer(
             database,
             upsert_statement.get(),
-            13,
+            14,
             static_cast<std::int64_t>(item.local_inode)
         );
         bind_integer(
             database,
             upsert_statement.get(),
-            14,
+            15,
             item.directory ? 1 : 0
         );
         if (sqlite3_step(upsert_statement.get()) != SQLITE_DONE) {
@@ -1488,15 +1529,16 @@ void ItemDatabase::save_pending_download_on_worker(
     Statement statement{
         database,
         "INSERT INTO pending_download ("
-        "drive_id, remote_id, parent_id, name, etag, remote_path, local_path, "
-        "last_modified, size, directory, temporary_path, content_fingerprint"
-        ", backup_path, backup_fingerprint"
+        "drive_id, remote_id, parent_id, name, etag, ctag, remote_path, "
+        "local_path, last_modified, size, directory, temporary_path, "
+        "content_fingerprint, backup_path, backup_fingerprint"
         ") VALUES ("
-        "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14"
+        "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15"
         ") "
         "ON CONFLICT(drive_id, remote_id) DO UPDATE SET "
         "parent_id = excluded.parent_id, name = excluded.name, "
-        "etag = excluded.etag, remote_path = excluded.remote_path, "
+        "etag = excluded.etag, ctag = excluded.ctag, "
+        "remote_path = excluded.remote_path, "
         "local_path = excluded.local_path, "
         "last_modified = excluded.last_modified, size = excluded.size, "
         "directory = excluded.directory, temporary_path = excluded.temporary_path, "
@@ -1509,25 +1551,26 @@ void ItemDatabase::save_pending_download_on_worker(
     bind_text(database, statement.get(), 3, download.item.parent_id);
     bind_text(database, statement.get(), 4, download.item.name);
     bind_text(database, statement.get(), 5, download.item.etag);
-    bind_text(database, statement.get(), 6, download.item.remote_path);
+    bind_text(database, statement.get(), 6, download.item.ctag);
+    bind_text(database, statement.get(), 7, download.item.remote_path);
     bind_text(
         database,
         statement.get(),
-        7,
+        8,
         download.item.local_path.string()
     );
-    bind_text(database, statement.get(), 8, download.item.last_modified);
-    bind_integer(database, statement.get(), 9, download.item.size);
+    bind_text(database, statement.get(), 9, download.item.last_modified);
+    bind_integer(database, statement.get(), 10, download.item.size);
     bind_integer(
         database,
         statement.get(),
-        10,
+        11,
         download.item.directory ? 1 : 0
     );
-    bind_text(database, statement.get(), 11, download.temporary_path.string());
-    bind_text(database, statement.get(), 12, download.content_fingerprint);
-    bind_text(database, statement.get(), 13, download.backup_path.string());
-    bind_text(database, statement.get(), 14, download.backup_fingerprint);
+    bind_text(database, statement.get(), 12, download.temporary_path.string());
+    bind_text(database, statement.get(), 13, download.content_fingerprint);
+    bind_text(database, statement.get(), 14, download.backup_path.string());
+    bind_text(database, statement.get(), 15, download.backup_fingerprint);
     if (sqlite3_step(statement.get()) != SQLITE_DONE) {
         throw std::runtime_error(
             "cannot save pending download: " +
@@ -1593,7 +1636,7 @@ std::vector<PendingDownload> ItemDatabase::pending_downloads_on_worker(
     }
     Statement statement{
         database,
-        "SELECT drive_id, remote_id, parent_id, name, etag, remote_path, "
+        "SELECT drive_id, remote_id, parent_id, name, etag, ctag, remote_path, "
         "local_path, last_modified, size, directory, temporary_path, "
         "content_fingerprint, backup_path, backup_fingerprint "
         "FROM pending_download WHERE drive_id = ?1 "
@@ -1619,18 +1662,19 @@ std::vector<PendingDownload> ItemDatabase::pending_downloads_on_worker(
                 .parent_id = column_text(statement.get(), 2),
                 .name = column_text(statement.get(), 3),
                 .etag = column_text(statement.get(), 4),
-                .remote_path = column_text(statement.get(), 5),
-                .local_path = column_text(statement.get(), 6),
-                .last_modified = column_text(statement.get(), 7),
-                .size = sqlite3_column_int64(statement.get(), 8),
+                .ctag = column_text(statement.get(), 5),
+                .remote_path = column_text(statement.get(), 6),
+                .local_path = column_text(statement.get(), 7),
+                .last_modified = column_text(statement.get(), 8),
+                .size = sqlite3_column_int64(statement.get(), 9),
                 .local_size = 0,
                 .local_modified_ticks = 0,
-                .directory = sqlite3_column_int(statement.get(), 9) != 0,
+                .directory = sqlite3_column_int(statement.get(), 10) != 0,
             },
-            .temporary_path = column_text(statement.get(), 10),
-            .content_fingerprint = column_text(statement.get(), 11),
-            .backup_path = column_text(statement.get(), 12),
-            .backup_fingerprint = column_text(statement.get(), 13),
+            .temporary_path = column_text(statement.get(), 11),
+            .content_fingerprint = column_text(statement.get(), 12),
+            .backup_path = column_text(statement.get(), 13),
+            .backup_fingerprint = column_text(statement.get(), 14),
         });
     }
     return downloads;
@@ -1665,12 +1709,15 @@ void ItemDatabase::save_partial_download_on_worker(
     Statement statement{
         database,
         "INSERT INTO partial_download ("
-        "drive_id, remote_id, parent_id, name, etag, remote_path, local_path, "
-        "last_modified, size, directory, temporary_path, completed_bytes"
-        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) "
+        "drive_id, remote_id, parent_id, name, etag, ctag, remote_path, "
+        "local_path, last_modified, size, directory, temporary_path, "
+        "completed_bytes"
+        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, "
+        "?13) "
         "ON CONFLICT(drive_id, remote_id) DO UPDATE SET "
         "parent_id = excluded.parent_id, name = excluded.name, "
-        "etag = excluded.etag, remote_path = excluded.remote_path, "
+        "etag = excluded.etag, ctag = excluded.ctag, "
+        "remote_path = excluded.remote_path, "
         "local_path = excluded.local_path, "
         "last_modified = excluded.last_modified, size = excluded.size, "
         "directory = excluded.directory, "
@@ -1683,26 +1730,27 @@ void ItemDatabase::save_partial_download_on_worker(
     bind_text(database, statement.get(), 3, download.item.parent_id);
     bind_text(database, statement.get(), 4, download.item.name);
     bind_text(database, statement.get(), 5, download.item.etag);
-    bind_text(database, statement.get(), 6, download.item.remote_path);
+    bind_text(database, statement.get(), 6, download.item.ctag);
+    bind_text(database, statement.get(), 7, download.item.remote_path);
     bind_text(
         database,
         statement.get(),
-        7,
+        8,
         download.item.local_path.string()
     );
-    bind_text(database, statement.get(), 8, download.item.last_modified);
-    bind_integer(database, statement.get(), 9, download.item.size);
+    bind_text(database, statement.get(), 9, download.item.last_modified);
+    bind_integer(database, statement.get(), 10, download.item.size);
     bind_integer(
         database,
         statement.get(),
-        10,
+        11,
         download.item.directory ? 1 : 0
     );
-    bind_text(database, statement.get(), 11, download.temporary_path.string());
+    bind_text(database, statement.get(), 12, download.temporary_path.string());
     bind_integer(
         database,
         statement.get(),
-        12,
+        13,
         static_cast<std::int64_t>(download.completed_bytes)
     );
     if (sqlite3_step(statement.get()) != SQLITE_DONE) {
@@ -1763,7 +1811,7 @@ std::optional<PartialDownload> ItemDatabase::partial_download_on_worker(
     }
     Statement statement{
         database,
-        "SELECT drive_id, remote_id, parent_id, name, etag, remote_path, "
+        "SELECT drive_id, remote_id, parent_id, name, etag, ctag, remote_path, "
         "local_path, last_modified, size, directory, temporary_path, "
         "completed_bytes FROM partial_download "
         "WHERE drive_id = ?1 AND remote_id = ?2;"
@@ -1780,7 +1828,7 @@ std::optional<PartialDownload> ItemDatabase::partial_download_on_worker(
             std::string{sqlite3_errmsg(database)}
         );
     }
-    const auto completed = sqlite3_column_int64(statement.get(), 11);
+    const auto completed = sqlite3_column_int64(statement.get(), 12);
     if (completed < 0) {
         throw std::runtime_error(
             "partial download contains a negative completed byte count"
@@ -1793,15 +1841,16 @@ std::optional<PartialDownload> ItemDatabase::partial_download_on_worker(
             .parent_id = column_text(statement.get(), 2),
             .name = column_text(statement.get(), 3),
             .etag = column_text(statement.get(), 4),
-            .remote_path = column_text(statement.get(), 5),
-            .local_path = column_text(statement.get(), 6),
-            .last_modified = column_text(statement.get(), 7),
-            .size = sqlite3_column_int64(statement.get(), 8),
+            .ctag = column_text(statement.get(), 5),
+            .remote_path = column_text(statement.get(), 6),
+            .local_path = column_text(statement.get(), 7),
+            .last_modified = column_text(statement.get(), 8),
+            .size = sqlite3_column_int64(statement.get(), 9),
             .local_size = 0,
             .local_modified_ticks = 0,
-            .directory = sqlite3_column_int(statement.get(), 9) != 0,
+            .directory = sqlite3_column_int(statement.get(), 10) != 0,
         },
-        .temporary_path = column_text(statement.get(), 10),
+        .temporary_path = column_text(statement.get(), 11),
         .completed_bytes = static_cast<std::uint64_t>(completed),
     };
 }
@@ -3102,7 +3151,7 @@ std::optional<ItemState> ItemDatabase::find_on_worker(
     }
     Statement statement{
         database,
-        "SELECT drive_id, remote_id, parent_id, name, etag, remote_path, "
+        "SELECT drive_id, remote_id, parent_id, name, etag, ctag, remote_path, "
         "local_path, last_modified, size, local_size, local_modified_ticks, "
         "local_device, local_inode, directory FROM item "
         "WHERE drive_id = ?1 AND remote_id = ?2;"
@@ -3125,19 +3174,20 @@ std::optional<ItemState> ItemDatabase::find_on_worker(
         .parent_id = column_text(statement.get(), 2),
         .name = column_text(statement.get(), 3),
         .etag = column_text(statement.get(), 4),
-        .remote_path = column_text(statement.get(), 5),
-        .local_path = column_text(statement.get(), 6),
-        .last_modified = column_text(statement.get(), 7),
-        .size = sqlite3_column_int64(statement.get(), 8),
-        .local_size = sqlite3_column_int64(statement.get(), 9),
-        .local_modified_ticks = sqlite3_column_int64(statement.get(), 10),
+        .ctag = column_text(statement.get(), 5),
+        .remote_path = column_text(statement.get(), 6),
+        .local_path = column_text(statement.get(), 7),
+        .last_modified = column_text(statement.get(), 8),
+        .size = sqlite3_column_int64(statement.get(), 9),
+        .local_size = sqlite3_column_int64(statement.get(), 10),
+        .local_modified_ticks = sqlite3_column_int64(statement.get(), 11),
         .local_device = static_cast<std::uint64_t>(
-            sqlite3_column_int64(statement.get(), 11)
-        ),
-        .local_inode = static_cast<std::uint64_t>(
             sqlite3_column_int64(statement.get(), 12)
         ),
-        .directory = sqlite3_column_int(statement.get(), 13) != 0,
+        .local_inode = static_cast<std::uint64_t>(
+            sqlite3_column_int64(statement.get(), 13)
+        ),
+        .directory = sqlite3_column_int(statement.get(), 14) != 0,
     };
 }
 
@@ -3158,7 +3208,7 @@ std::vector<ItemState> ItemDatabase::drive_items_on_worker(
     }
     Statement statement{
         database,
-        "SELECT drive_id, remote_id, parent_id, name, etag, remote_path, "
+        "SELECT drive_id, remote_id, parent_id, name, etag, ctag, remote_path, "
         "local_path, last_modified, size, local_size, local_modified_ticks, "
         "local_device, local_inode, directory FROM item "
         "WHERE drive_id = ?1 ORDER BY remote_path;"
@@ -3182,20 +3232,21 @@ std::vector<ItemState> ItemDatabase::drive_items_on_worker(
             .parent_id = column_text(statement.get(), 2),
             .name = column_text(statement.get(), 3),
             .etag = column_text(statement.get(), 4),
-            .remote_path = column_text(statement.get(), 5),
-            .local_path = column_text(statement.get(), 6),
-            .last_modified = column_text(statement.get(), 7),
-            .size = sqlite3_column_int64(statement.get(), 8),
-            .local_size = sqlite3_column_int64(statement.get(), 9),
+            .ctag = column_text(statement.get(), 5),
+            .remote_path = column_text(statement.get(), 6),
+            .local_path = column_text(statement.get(), 7),
+            .last_modified = column_text(statement.get(), 8),
+            .size = sqlite3_column_int64(statement.get(), 9),
+            .local_size = sqlite3_column_int64(statement.get(), 10),
             .local_modified_ticks =
-                sqlite3_column_int64(statement.get(), 10),
+                sqlite3_column_int64(statement.get(), 11),
             .local_device = static_cast<std::uint64_t>(
-                sqlite3_column_int64(statement.get(), 11)
-            ),
-            .local_inode = static_cast<std::uint64_t>(
                 sqlite3_column_int64(statement.get(), 12)
             ),
-            .directory = sqlite3_column_int(statement.get(), 13) != 0,
+            .local_inode = static_cast<std::uint64_t>(
+                sqlite3_column_int64(statement.get(), 13)
+            ),
+            .directory = sqlite3_column_int(statement.get(), 14) != 0,
         });
     }
     return result;

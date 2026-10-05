@@ -53,6 +53,7 @@ struct RemoteItem {
     std::string id;
     std::string name;
     std::string etag;
+    std::string ctag;
     std::string parent_id;
     std::string remote_path;
     std::string last_modified;

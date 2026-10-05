@@ -889,6 +889,103 @@ int test_dry_run_and_success() {
     return EXIT_SUCCESS;
 }
 
+int test_remote_content_tag_strategy() {
+    TemporaryDirectory temporary;
+    const auto reused_root = temporary.path() / "ctag-reused";
+    std::filesystem::create_directories(reused_root);
+    {
+        std::ofstream output{reused_root / "file.txt"};
+        output << "data";
+    }
+
+    auto previous = tracked_item(reused_root, "file", "file.txt");
+    previous.etag = "old-etag";
+    previous.ctag = "content-version";
+    auto metadata_change = file("file", "file.txt", 4);
+    metadata_change.etag = "new-etag";
+    metadata_change.ctag = "content-version";
+    metadata_change.last_modified = "2026-10-05T02:00:00Z";
+
+    FakeGraphClient reused_graph;
+    reused_graph.changes = {metadata_change};
+    FakeItemStore reused_items;
+    reused_items.saved_delta_link = "saved";
+    reused_items.items.emplace("file", previous);
+    FakeMetrics reused_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(reused_root, false),
+            reused_graph,
+            reused_items,
+            reused_metrics
+        }.synchronize() != 0 ||
+        reused_graph.download_count != 0 ||
+        reused_items.applied_delta.upserts.size() != 1 ||
+        reused_items.applied_delta.upserts[0].etag != "new-etag" ||
+        reused_items.applied_delta.upserts[0].ctag != "content-version") {
+        return fail("unchanged cTag did not reuse local file content");
+    }
+
+    const auto changed_root = temporary.path() / "ctag-changed";
+    std::filesystem::create_directories(changed_root);
+    {
+        std::ofstream output{changed_root / "file.txt"};
+        output << "data";
+    }
+    auto changed_previous = tracked_item(changed_root, "file", "file.txt");
+    changed_previous.etag = "old-etag";
+    changed_previous.ctag = "old-content";
+    auto content_change = file("file", "file.txt", 4);
+    content_change.etag = "new-etag";
+    content_change.ctag = "new-content";
+
+    FakeGraphClient changed_graph;
+    changed_graph.changes = {content_change};
+    changed_graph.contents["file"] = "next";
+    FakeItemStore changed_items;
+    changed_items.saved_delta_link = "saved";
+    changed_items.items.emplace("file", changed_previous);
+    FakeMetrics changed_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(changed_root, false),
+            changed_graph,
+            changed_items,
+            changed_metrics
+        }.synchronize() != 0 ||
+        changed_graph.download_count != 1) {
+        return fail("changed cTag did not download remote content");
+    }
+
+    const auto missing_root = temporary.path() / "ctag-missing";
+    std::filesystem::create_directories(missing_root);
+    {
+        std::ofstream output{missing_root / "file.txt"};
+        output << "data";
+    }
+    auto missing_previous = tracked_item(missing_root, "file", "file.txt");
+    missing_previous.etag = "old-etag";
+    missing_previous.ctag = "old-content";
+    auto missing_ctag = file("file", "file.txt", 4);
+    missing_ctag.etag = "new-etag";
+
+    FakeGraphClient missing_graph;
+    missing_graph.changes = {missing_ctag};
+    missing_graph.contents["file"] = "next";
+    FakeItemStore missing_items;
+    missing_items.saved_delta_link = "saved";
+    missing_items.items.emplace("file", missing_previous);
+    FakeMetrics missing_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(missing_root, false),
+            missing_graph,
+            missing_items,
+            missing_metrics
+        }.synchronize() != 0 ||
+        missing_graph.download_count != 1) {
+        return fail("missing cTag bypassed the eTag fallback");
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_selective_sync_refreshes_delta_state() {
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "files";
@@ -4912,6 +5009,10 @@ int test_pending_upload_recovery_conflict() {
 
 int main() {
     if (const int result = test_dry_run_and_success(); result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_remote_content_tag_strategy();
+        result != EXIT_SUCCESS) {
         return result;
     }
     if (const int result = test_selective_sync_refreshes_delta_state();

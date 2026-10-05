@@ -579,6 +579,14 @@ the local file and fails safely without replacing the destination. This policy
 applies to normal synchronization and `download REMOTE_PATH`; it does not
 change remote deletion or future upload-conflict behavior.
 
+For tracked files, the state database stores both Graph eTag and cTag values.
+When the local snapshot is unchanged and a delta changes only the eTag while
+retaining the same non-empty cTag, synchronization refreshes the remote
+metadata without downloading the file again. A missing or changed cTag falls
+back to the conservative eTag behavior and downloads the remote content.
+Folder decisions do not rely on cTag because SharePoint and OneDrive for
+Business may omit it or report descendant changes inconsistently.
+
 `sync.upload` defaults to `true`. After remote changes are applied, normal
 synchronization uploads new and modified local regular files selected by the
 same sync-list rules. New files use fail-on-conflict creation; tracked files

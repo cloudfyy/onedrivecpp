@@ -73,6 +73,7 @@ storage::ItemState state_for(
         .parent_id = item.parent_id,
         .name = item.name,
         .etag = item.etag,
+        .ctag = item.ctag,
         .remote_path = item.remote_path,
         .local_path = destination,
         .last_modified = item.last_modified,
@@ -170,7 +171,12 @@ int download_single_file(
             "local modification conflict: " + destination.string()
         );
     }
-    if (snapshot_matches && previous->etag == item.etag) {
+    if (snapshot_matches &&
+        detail::remote_content_version_matches(
+            *previous,
+            item.etag,
+            item.ctag
+        )) {
         console.message(
             cli::MessageKind::success,
             "single_download_reused",

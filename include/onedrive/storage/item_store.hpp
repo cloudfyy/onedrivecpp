@@ -21,6 +21,7 @@ struct ItemState {
     std::string parent_id;
     std::string name;
     std::string etag;
+    std::string ctag;
     std::string remote_path;
     std::filesystem::path local_path;
     std::string last_modified;

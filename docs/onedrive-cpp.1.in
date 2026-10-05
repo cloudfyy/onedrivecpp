@@ -586,6 +586,14 @@ Root directories and descendants still require inclusion rules, and explicit
 exclusions override implicit root-file selection. The setting has no effect
 without a sync list. Changing it updates the selective-sync fingerprint and
 forces a full remote-state query.
+.PP
+For tracked files, the state database stores both Graph eTag and cTag values.
+If the local snapshot is unchanged and a delta changes only the eTag while
+retaining the same non-empty cTag, synchronization refreshes metadata without
+downloading the file again. A missing or changed cTag conservatively falls
+back to the eTag behavior. Folder decisions do not rely on cTag because some
+SharePoint and OneDrive for Business responses omit it or report descendant
+changes inconsistently.
 .TP
 .B sync.dry_run
 Boolean value
