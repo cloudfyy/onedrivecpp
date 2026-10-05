@@ -567,6 +567,11 @@ public:
         onedrive::storage::PendingRemoteMove move
     ) {
         const std::scoped_lock lock{mutex};
+        if (fail_pending_remote_move_save) {
+            throw std::runtime_error{
+                "simulated pending remote move persistence failure"
+            };
+        }
         pending_remote_moves_by_id.insert_or_assign(
             move.remote_id,
             std::move(move)
@@ -761,6 +766,7 @@ public:
     bool fail_commit_upload{false};
     bool fail_commit_delete{false};
     bool fail_commit_remote_move{false};
+    bool fail_pending_remote_move_save{false};
     bool fail_upload_checkpoint_save{false};
     bool fail_apply_delta{false};
     mutable std::mutex mutex;
@@ -2298,6 +2304,64 @@ int test_remote_moves() {
         !renamed_items.pending_moves_by_id.empty() ||
         !renamed_metrics.last_success) {
         return fail("remote file rename was not applied locally");
+    }
+
+    const auto journal_failure_root = temporary.path() / "move-journal-failure";
+    std::filesystem::create_directories(journal_failure_root);
+    {
+        std::ofstream output{journal_failure_root / "before.txt"};
+        output << "data";
+    }
+    FakeItemStore journal_failure_items;
+    journal_failure_items.saved_delta_link = "saved";
+    journal_failure_items.items.emplace(
+        "journal-failure-move",
+        tracked_item(journal_failure_root, "journal-failure-move", "before.txt")
+    );
+    FakeGraphClient journal_failure_graph;
+    FakeMetrics journal_failure_metrics;
+    auto journal_failure_config = config_for(journal_failure_root, false);
+    journal_failure_config.upload = true;
+    static_cast<void>(onedrive::sync::SyncEngine{
+        journal_failure_config,
+        journal_failure_graph,
+        journal_failure_items,
+        journal_failure_metrics
+    }
+                          .synchronize());
+    std::filesystem::rename(
+        journal_failure_root / "before.txt", journal_failure_root / "after.txt"
+    );
+    journal_failure_items.fail_pending_remote_move_save = true;
+    try {
+        static_cast<void>(onedrive::sync::SyncEngine{
+            journal_failure_config,
+            journal_failure_graph,
+            journal_failure_items,
+            journal_failure_metrics
+        }
+                              .synchronize());
+        return fail("remote move journal failure was accepted");
+    } catch (const std::runtime_error&) {
+    }
+    if (!journal_failure_graph.moved_remote_items.empty() ||
+        !journal_failure_items.pending_remote_moves_by_id.empty()) {
+        return fail("unjournaled remote move reached Microsoft Graph");
+    }
+    journal_failure_items.fail_pending_remote_move_save = false;
+    static_cast<void>(onedrive::sync::SyncEngine{
+        journal_failure_config,
+        journal_failure_graph,
+        journal_failure_items,
+        journal_failure_metrics
+    }
+                          .synchronize());
+    if (journal_failure_graph.moved_remote_items !=
+            std::vector<std::pair<std::string, std::string>>{
+                {"journal-failure-move", "after.txt"},
+            } ||
+        !journal_failure_items.pending_remote_moves_by_id.empty()) {
+        return fail("remote move did not recover after journal failure");
     }
 
     const auto recovery_root = temporary.path() / "move-recovery";

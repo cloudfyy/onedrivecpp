@@ -567,13 +567,49 @@ bool local_move_identity_matches(
     }
 }
 
-void execute_pending_remote_move(
+struct RemoteMoveTransactionFamily;
+using RemoteMoveTransactionState =
+    TransactionState<RemoteMoveTransactionFamily>;
+struct RemoteMovePreparedState final : RemoteMoveTransactionState {};
+struct RemoteMoveJournaledState final : RemoteMoveTransactionState {};
+struct RemoteMoveGraphCommittedState final : RemoteMoveTransactionState {};
+struct RemoteMoveLocalCommittedState final : RemoteMoveTransactionState {};
+
+template <typename State>
+concept RemoteMoveState =
+    TransactionStateFor<State, RemoteMoveTransactionFamily>;
+
+struct RemoteMoveTransactionPayload {
+    storage::PendingRemoteMove move;
+    storage::ItemState previous;
+    std::optional<graph::RemoteItem> remote;
+};
+
+template <RemoteMoveState State>
+using RemoteMoveTransaction = StateTransaction<
+    State,
+    RemoteMoveTransactionFamily,
+    RemoteMoveTransactionPayload>;
+
+using PreparedRemoteMove = RemoteMoveTransaction<RemoteMovePreparedState>;
+using JournaledRemoteMove = RemoteMoveTransaction<RemoteMoveJournaledState>;
+using GraphCommittedRemoteMove =
+    RemoteMoveTransaction<RemoteMoveGraphCommittedState>;
+using LocalCommittedRemoteMove =
+    RemoteMoveTransaction<RemoteMoveLocalCommittedState>;
+
+static_assert(std::is_nothrow_move_constructible_v<PreparedRemoteMove>);
+static_assert(std::is_nothrow_move_constructible_v<JournaledRemoteMove>);
+static_assert(std::is_nothrow_move_constructible_v<GraphCommittedRemoteMove>);
+static_assert(std::is_nothrow_move_constructible_v<LocalCommittedRemoteMove>);
+
+LocalCommittedRemoteMove execute_pending_remote_move(
     const SafeSyncRoot& sync_root,
-    const storage::PendingRemoteMove& move,
-    const storage::ItemState& previous,
+    JournaledRemoteMove transaction,
     graph::GraphClient& graph,
     storage::ItemStore& items
 ) {
+    const auto& move = transaction.move;
     if (!local_move_identity_matches(sync_root, move)) {
         items.remove_pending_remote_move(move.drive_id, move.remote_id);
         throw LocalModificationConflictError(
@@ -604,27 +640,38 @@ void execute_pending_remote_move(
         }
         remote = existing;
     }
-    if (remote.id != move.remote_id ||
-        remote.remote_path != move.destination_remote_path ||
-        remote.directory != move.directory ||
-        !local_move_identity_matches(sync_root, move)) {
+    transaction.remote = std::move(remote);
+    auto graph_committed =
+        transition_transaction<RemoteMoveGraphCommittedState>(
+            std::move(transaction)
+        );
+    const auto& committed_move = graph_committed.move;
+    const auto& committed_remote = *graph_committed.remote;
+    if (committed_remote.id != committed_move.remote_id ||
+        committed_remote.remote_path !=
+            committed_move.destination_remote_path ||
+        committed_remote.directory != committed_move.directory ||
+        !local_move_identity_matches(sync_root, committed_move)) {
         throw LocalModificationConflictError(
             "remote move result does not match local identity for '" +
-            move.destination_remote_path + "'"
+            committed_move.destination_remote_path + "'"
         );
     }
-    auto state = previous;
-    state.parent_id = remote.parent_id;
-    state.name = remote.name;
-    state.etag = remote.etag;
-    state.ctag = remote.ctag;
-    state.remote_path = remote.remote_path;
-    state.local_path = move.destination_local_path;
-    state.last_modified = remote.last_modified;
-    state.size = remote.size;
-    state.local_device = move.local_device;
-    state.local_inode = move.local_inode;
-    items.commit_remote_move(move, std::move(state));
+    auto state = graph_committed.previous;
+    state.parent_id = committed_remote.parent_id;
+    state.name = committed_remote.name;
+    state.etag = committed_remote.etag;
+    state.ctag = committed_remote.ctag;
+    state.remote_path = committed_remote.remote_path;
+    state.local_path = committed_move.destination_local_path;
+    state.last_modified = committed_remote.last_modified;
+    state.size = committed_remote.size;
+    state.local_device = committed_move.local_device;
+    state.local_inode = committed_move.local_inode;
+    items.commit_remote_move(committed_move, std::move(state));
+    return transition_transaction<RemoteMoveLocalCommittedState>(
+        std::move(graph_committed)
+    );
 }
 
 class UploadSnapshot final {
@@ -1582,13 +1629,16 @@ void recover_pending_remote_moves(
                 move.remote_id
             );
         }
-        execute_pending_remote_move(
-            sync_root,
-            move,
-            *previous,
-            graph,
-            items
-        );
+        auto journaled = JournaledRemoteMove{
+            RemoteMoveTransactionPayload{
+                .move = move,
+                .previous = *previous,
+                .remote = std::nullopt,
+            },
+        };
+        static_cast<void>(execute_pending_remote_move(
+            sync_root, std::move(journaled), graph, items
+        ));
         console.message(
             cli::MessageKind::information,
             "pending_remote_move_recovered",
@@ -1675,14 +1725,20 @@ UploadSummary upload_local_changes(
                 "local move has no tracked item: " + move.remote_id
             );
         }
-        items.save_pending_remote_move(move);
-        execute_pending_remote_move(
-            sync_root,
-            move,
-            *previous,
-            graph,
-            items
-        );
+        auto prepared = PreparedRemoteMove{
+            RemoteMoveTransactionPayload{
+                .move = move,
+                .previous = *previous,
+                .remote = std::nullopt,
+            },
+        };
+        items.save_pending_remote_move(prepared.move);
+        auto journaled =
+            transition_transaction<RemoteMoveJournaledState>(std::move(prepared)
+            );
+        static_cast<void>(execute_pending_remote_move(
+            sync_root, std::move(journaled), graph, items
+        ));
         moves.moved_remote_ids.erase(move.remote_id);
         ++summary.moved;
         console.message(

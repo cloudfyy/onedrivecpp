@@ -99,6 +99,10 @@ Local move recovery uses the same core for prepared, journaled, recovered-
 journal, staged, and installed phases. A journal is removed on failure only
 while its typed state proves that no staging or destination object was
 installed; later phases retain recovery evidence across restarts.
+Remote moves use a separate state family for prepared, journaled, Graph-
+committed, and locally committed phases. Microsoft Graph is never called until
+the move journal is durable, while a successful remote move retains that
+journal until the local item state and directory descendants commit atomically.
 
 The directories correspond to the responsibilities of
 `main/config/curlEngine/onedrive/sync/itemdb/monitor` in the reference project:

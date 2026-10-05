@@ -88,6 +88,9 @@ Graph 会话 checkpoint。公共模板不包含 Graph、SQLite 或文件系统�
 本地移动恢复也复用该核心，表达 prepared、journaled、恢复 journal、staged 和
 installed 阶段。只有类型状态能够证明尚未生成 staging 或目标对象时，失败路径
 才会删除 journal；后续阶段始终保留恢复证据供重启使用。
+远端移动使用独立状态族表达 prepared、journaled、Graph 已提交和本地已提交阶段。
+只有 journal 持久化后才能调用 Microsoft Graph；远端移动成功后仍保留 journal，
+直到本地条目状态和目录后代路径完成原子提交。
 
 目录与参考项目中的 `main/config/curlEngine/onedrive/sync/itemdb/monitor`
 职责相对应：
