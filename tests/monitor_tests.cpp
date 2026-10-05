@@ -1,4 +1,5 @@
 #include "onedrive/monitor/monitor.hpp"
+#include "monitor/termination_signal_mask.hpp"
 #include "test_support.hpp"
 
 #include <atomic>
@@ -180,6 +181,14 @@ int main() {
         return fail("could not fork signal-handling monitor test");
     }
     if (child == 0) {
+        onedrive::monitor::detail::TerminationSignalMask signal_mask;
+        std::jthread preexisting_worker{
+            [](std::stop_token stop_token) {
+                while (!stop_token.stop_requested()) {
+                    std::this_thread::sleep_for(5ms);
+                }
+            }
+        };
         onedrive::monitor::Monitor signal_monitor{
             root,
             [&] {

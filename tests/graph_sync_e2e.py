@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
+from dataclasses import dataclass
 import hashlib
 import io
 import json
@@ -11,9 +13,12 @@ from pathlib import Path
 import re
 import secrets
 import shutil
+import signal
+import socket
 import sqlite3
 import subprocess
 import tempfile
+import threading
 import time
 import tomllib
 from urllib import error as url_error, parse, request
@@ -23,6 +28,51 @@ class E2EError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class LiveSettings:
+    config_path: Path
+    source_text: str
+    source_config: dict[str, object]
+    source_state: Path
+    expected_path: Path
+    expected_sha256: str
+
+
+def load_live_settings(client: Path) -> LiveSettings:
+    config_path = Path(required_environment("ONEDRIVE_E2E_CONFIG")).expanduser()
+    expected_path = Path(required_environment("ONEDRIVE_E2E_EXPECTED_PATH"))
+    validate_expected_path(expected_path)
+    expected_sha256 = required_environment(
+        "ONEDRIVE_E2E_EXPECTED_SHA256"
+    ).lower()
+    if not client.is_file():
+        raise E2EError(f"onedrive-cpp executable does not exist: {client}")
+    if not config_path.is_file():
+        raise E2EError(f"E2E configuration does not exist: {config_path}")
+    if not re.fullmatch(r"[0-9a-f]{64}", expected_sha256):
+        raise E2EError(
+            "ONEDRIVE_E2E_EXPECTED_SHA256 must be 64 lowercase hex digits"
+        )
+    source_text = config_path.read_text(encoding="utf-8")
+    source_config = tomllib.loads(source_text)
+    if source_config.get("config_version") != 2:
+        raise E2EError("E2E configuration must use config_version = 2")
+    try:
+        source_state = Path(source_config["state"]["directory"]).expanduser()
+    except (KeyError, TypeError) as error:
+        raise E2EError("E2E configuration requires state.directory") from error
+    if not source_state.is_dir():
+        raise E2EError(f"E2E state directory does not exist: {source_state}")
+    return LiveSettings(
+        config_path=config_path,
+        source_text=source_text,
+        source_config=source_config,
+        source_state=source_state,
+        expected_path=expected_path,
+        expected_sha256=expected_sha256,
+    )
+
+
 def rewrite_config(
     source: str,
     sync_directory: Path,
@@ -30,31 +80,69 @@ def rewrite_config(
     sync_list: Path | None = None,
     local_conflict: str | None = None,
     sync_root_files: bool | None = None,
+    proxy_url: str | None = None,
+    monitor_poll_interval_seconds: int | None = None,
+    monitor_settle_delay_milliseconds: int | None = None,
+    upload_maximum_rate_bytes_per_second: int | None = None,
 ) -> str:
     replacements = {
         ("sync", "directory"): json.dumps(str(sync_directory)),
         ("sync", "dry_run"): "false",
         ("state", "directory"): json.dumps(str(state_directory)),
     }
+    insert_missing: set[tuple[str, str]] = set()
     if sync_list is not None:
         replacements[("sync", "sync_list")] = json.dumps(str(sync_list))
+        insert_missing.add(("sync", "sync_list"))
     if local_conflict is not None:
         replacements[("sync", "local_conflict")] = json.dumps(local_conflict)
+        insert_missing.add(("sync", "local_conflict"))
     if sync_root_files is not None:
         replacements[("sync", "sync_root_files")] = json.dumps(sync_root_files)
+        insert_missing.add(("sync", "sync_root_files"))
+    if proxy_url is not None:
+        replacements[("proxy", "url")] = json.dumps(proxy_url)
+        replacements[("proxy", "no_proxy")] = "[]"
+        insert_missing.update({("proxy", "url"), ("proxy", "no_proxy")})
+    if monitor_poll_interval_seconds is not None:
+        replacements[("monitor", "poll_interval_seconds")] = str(
+            monitor_poll_interval_seconds
+        )
+        insert_missing.add(("monitor", "poll_interval_seconds"))
+    if monitor_settle_delay_milliseconds is not None:
+        replacements[("monitor", "settle_delay_milliseconds")] = str(
+            monitor_settle_delay_milliseconds
+        )
+        insert_missing.add(("monitor", "settle_delay_milliseconds"))
+    if upload_maximum_rate_bytes_per_second is not None:
+        replacements[("upload", "maximum_rate_bytes_per_second")] = str(
+            upload_maximum_rate_bytes_per_second
+        )
+        insert_missing.add(("upload", "maximum_rate_bytes_per_second"))
     seen: set[tuple[str, str]] = set()
+    seen_tables: set[str] = set()
     table = ""
     output: list[str] = []
-    sync_insert_index: int | None = None
     table_pattern = re.compile(r"^\s*\[([A-Za-z0-9_.-]+)\]\s*(?:#.*)?$")
     key_pattern = re.compile(r"^(\s*)([A-Za-z0-9_-]+)\s*=.*$")
+
+    def append_missing(table_name: str) -> None:
+        for key in replacements:
+            if (
+                key[0] == table_name
+                and key in insert_missing
+                and key not in seen
+            ):
+                output.append(f"{key[1]} = {replacements[key]}")
+                seen.add(key)
+
     for line in source.splitlines():
         table_match = table_pattern.match(line)
         if table_match:
+            append_missing(table)
             table = table_match.group(1)
+            seen_tables.add(table)
             output.append(line)
-            if table == "sync":
-                sync_insert_index = len(output)
             continue
         key_match = key_pattern.match(line)
         key = (table, key_match.group(2)) if key_match else None
@@ -67,23 +155,18 @@ def rewrite_config(
             )
         else:
             output.append(line)
-    optional_sync_keys = [
-        key
-        for key in (
-            ("sync", "sync_list"),
-            ("sync", "local_conflict"),
-            ("sync", "sync_root_files"),
-        )
-        if key in replacements and key not in seen
-    ]
-    if optional_sync_keys and sync_insert_index is None:
-        raise E2EError("configuration is missing required table: sync")
-    for key in reversed(optional_sync_keys):
-        output.insert(
-            sync_insert_index,
-            f"{key[1]} = {replacements[key]}",
-        )
-        seen.add(key)
+    append_missing(table)
+    missing_tables = {
+        key[0]
+        for key in insert_missing - seen
+        if key[0] not in seen_tables
+    }
+    for table_name in sorted(missing_tables):
+        if output and output[-1]:
+            output.append("")
+        output.append(f"[{table_name}]")
+        seen_tables.add(table_name)
+        append_missing(table_name)
     missing = set(replacements) - seen
     if missing:
         names = ", ".join(f"{table}.{key}" for table, key in sorted(missing))
@@ -722,21 +805,133 @@ def save_artifacts(
         shutil.copy2(log_file, destination / "onedrive-cpp.log")
 
 
+def wait_until(
+    predicate: Callable[[], bool],
+    timeout: float,
+    interval: float = 0.05,
+) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(interval)
+    return bool(predicate())
+
+
+def client_environment(
+    home: Path,
+    overrides: dict[str, str] | None = None,
+) -> dict[str, str]:
+    environment = os.environ.copy()
+    environment["HOME"] = str(home)
+    if overrides is not None:
+        environment.update(overrides)
+    return environment
+
+
+class ConnectionDropProxy:
+    def __init__(self) -> None:
+        self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._socket.bind(("127.0.0.1", 0))
+        self._socket.listen()
+        self._socket.settimeout(0.1)
+        self._stopped = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self.connection_count = 0
+
+    @property
+    def url(self) -> str:
+        return f"http://127.0.0.1:{self._socket.getsockname()[1]}"
+
+    def __enter__(self) -> ConnectionDropProxy:
+        self._thread.start()
+        return self
+
+    def __exit__(self, *arguments: object) -> None:
+        self._stopped.set()
+        self._socket.close()
+        self._thread.join(timeout=2)
+
+    def _run(self) -> None:
+        while not self._stopped.is_set():
+            try:
+                connection, _ = self._socket.accept()
+            except TimeoutError:
+                continue
+            except OSError:
+                return
+            self.connection_count += 1
+            connection.close()
+
+
+def sync_arguments(config: Path, log_file: Path) -> list[str]:
+    return [
+        "sync",
+        "--config",
+        str(config),
+        "--color",
+        "never",
+        "--output",
+        "json",
+        "--log-level",
+        "trace",
+        "--log-file",
+        str(log_file),
+    ]
+
+
+def monitor_arguments(config: Path, log_file: Path) -> list[str]:
+    arguments = sync_arguments(config, log_file)
+    arguments[0] = "monitor"
+    return arguments
+
+
+def pending_upload_row(
+    state_directory: Path,
+    remote_path: Path,
+) -> tuple[str, int, int, str] | None:
+    rows: list[tuple[str, int, int, str]] = []
+    for database in state_directory.rglob("items.sqlite3"):
+        try:
+            with sqlite3.connect(database, timeout=0.1) as connection:
+                row = connection.execute(
+                    "SELECT failure_code, failure_attempt_count, "
+                    "completed_bytes, snapshot_path FROM pending_upload "
+                    "WHERE remote_path = ?",
+                    (remote_path.as_posix(),),
+                ).fetchone()
+        except sqlite3.OperationalError as error:
+            if "locked" in str(error).lower():
+                return None
+            raise E2EError(
+                f"cannot query pending upload database: {database}"
+            ) from error
+        if row is not None:
+            rows.append(
+                (str(row[0]), int(row[1]), int(row[2]), str(row[3]))
+            )
+    if len(rows) > 1:
+        raise E2EError(
+            f"multiple pending uploads found for '{remote_path.as_posix()}'"
+        )
+    return rows[0] if rows else None
+
+
 def run_client(
     client: Path,
     arguments: list[str],
     home: Path,
     timeout: int,
+    environment_overrides: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    environment = os.environ.copy()
-    environment["HOME"] = str(home)
     return subprocess.run(
         [str(client), *arguments],
         check=False,
         capture_output=True,
         text=True,
         timeout=timeout,
-        env=environment,
+        env=client_environment(home, environment_overrides),
     )
 
 
@@ -745,24 +940,191 @@ def run_sync(
     config: Path,
     home: Path,
     log_file: Path,
+    environment_overrides: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     return run_client(
         client,
-        [
-            "sync",
-            "--config",
-            str(config),
-            "--color",
-            "never",
-            "--output",
-            "json",
-            "--log-level",
-            "trace",
-            "--log-file",
-            str(log_file),
-        ],
+        sync_arguments(config, log_file),
         home,
         timeout=600,
+        environment_overrides=environment_overrides,
+    )
+
+
+def run_sync_after_stop(
+    client: Path,
+    config: Path,
+    home: Path,
+    log_file: Path,
+    prepare: Callable[[int], None],
+) -> subprocess.CompletedProcess[str]:
+    arguments = sync_arguments(config, log_file)
+    command = [
+        "/bin/sh",
+        "-c",
+        'kill -STOP "$$"; exec "$@"',
+        "onedrive-e2e-gate",
+        str(client),
+        *arguments,
+    ]
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=client_environment(home),
+    )
+    try:
+        status_path = Path("/proc") / str(process.pid) / "status"
+
+        def stopped() -> bool:
+            try:
+                status = status_path.read_text(encoding="utf-8")
+            except FileNotFoundError:
+                return False
+            return any(
+                line.startswith("State:") and "T" in line
+                for line in status.splitlines()
+            )
+
+        if not wait_until(stopped, 10):
+            raise E2EError("gated client did not stop before execution")
+        prepare(process.pid)
+        os.kill(process.pid, signal.SIGCONT)
+        stdout, stderr = process.communicate(timeout=600)
+    except BaseException:
+        process.kill()
+        process.communicate()
+        raise
+    return subprocess.CompletedProcess(
+        [str(client), *arguments],
+        process.returncode,
+        stdout,
+        stderr,
+    )
+
+
+def run_sync_until_upload_progress_then_kill(
+    client: Path,
+    config: Path,
+    home: Path,
+    log_file: Path,
+    state_directory: Path,
+    remote_path: Path,
+) -> tuple[subprocess.CompletedProcess[str], tuple[str, int, int, str]]:
+    arguments = sync_arguments(config, log_file)
+    process = subprocess.Popen(
+        [str(client), *arguments],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=client_environment(home),
+    )
+    progress: tuple[str, int, int, str] | None = None
+
+    def upload_progressed() -> bool:
+        nonlocal progress
+        if process.poll() is not None:
+            return False
+        row = pending_upload_row(state_directory, remote_path)
+        if row is not None and row[2] > 0:
+            progress = row
+            return True
+        return False
+
+    try:
+        if not wait_until(upload_progressed, 180, 0.05):
+            returncode = process.poll()
+            raise E2EError(
+                "upload did not reach a resumable checkpoint before "
+                f"client exit ({returncode})"
+            )
+        process.kill()
+        stdout, stderr = process.communicate(timeout=30)
+    except BaseException:
+        if process.poll() is None:
+            process.kill()
+        process.communicate()
+        raise
+    if process.returncode != -signal.SIGKILL or progress is None:
+        raise E2EError("upload crash injection did not kill the client")
+    return (
+        subprocess.CompletedProcess(
+            [str(client), *arguments],
+            process.returncode,
+            stdout,
+            stderr,
+        ),
+        progress,
+    )
+
+
+def run_monitor_boundary(
+    client: Path,
+    config: Path,
+    home: Path,
+    log_file: Path,
+    workspace: Path,
+    trigger: Callable[[], None],
+    synchronized: Callable[[], bool],
+) -> subprocess.CompletedProcess[str]:
+    arguments = monitor_arguments(config, log_file)
+    stdout_path = workspace / "monitor.stdout.log"
+    stderr_path = workspace / "monitor.stderr.log"
+    stdbuf = shutil.which("stdbuf")
+    if stdbuf is None:
+        raise E2EError("monitor boundary E2E requires the stdbuf command")
+    command = [stdbuf, "-oL", "-eL", str(client), *arguments]
+    with stdout_path.open("w", encoding="utf-8") as stdout_stream, \
+         stderr_path.open("w", encoding="utf-8") as stderr_stream:
+        process = subprocess.Popen(
+            command,
+            stdout=stdout_stream,
+            stderr=stderr_stream,
+            text=True,
+            env=client_environment(home),
+        )
+        try:
+            def monitor_ready() -> bool:
+                if process.poll() is not None:
+                    return False
+                try:
+                    output = stdout_path.read_text(encoding="utf-8")
+                    return (
+                        "monitor_ready" in output
+                        and "sync_completed" in output
+                    )
+                except FileNotFoundError:
+                    return False
+
+            if not wait_until(monitor_ready, 60, 0.1):
+                raise E2EError(
+                    f"monitor did not become ready ({process.poll()})"
+                )
+            trigger()
+            if not wait_until(synchronized, 180, 0.5):
+                raise E2EError(
+                    f"monitor did not synchronize the local event "
+                    f"({process.poll()})"
+                )
+            process.send_signal(signal.SIGTERM)
+            process.wait(timeout=30)
+        except BaseException:
+            if process.poll() is None:
+                process.kill()
+            process.wait()
+            raise
+    stdout = stdout_path.read_text(encoding="utf-8")
+    stderr = stderr_path.read_text(encoding="utf-8")
+    if process.returncode != 0:
+        raise E2EError(
+            f"monitor did not terminate cleanly ({process.returncode})"
+        )
+    return subprocess.CompletedProcess(
+        [str(client), *arguments],
+        process.returncode,
+        stdout,
+        stderr,
     )
 
 
@@ -839,27 +1201,12 @@ def reset_delta_cursor(
 
 
 def run_live(client: Path, work_root: Path) -> None:
-    config_path = Path(required_environment("ONEDRIVE_E2E_CONFIG")).expanduser()
-    expected_path = Path(required_environment("ONEDRIVE_E2E_EXPECTED_PATH"))
-    validate_expected_path(expected_path)
-    expected_sha256 = required_environment("ONEDRIVE_E2E_EXPECTED_SHA256").lower()
-    if not client.is_file():
-        raise E2EError(f"onedrive-cpp executable does not exist: {client}")
-    if not config_path.is_file():
-        raise E2EError(f"E2E configuration does not exist: {config_path}")
-    if not re.fullmatch(r"[0-9a-f]{64}", expected_sha256):
-        raise E2EError("ONEDRIVE_E2E_EXPECTED_SHA256 must be 64 lowercase hex digits")
-
-    source_text = config_path.read_text(encoding="utf-8")
-    source_config = tomllib.loads(source_text)
-    if source_config.get("config_version") != 2:
-        raise E2EError("E2E configuration must use config_version = 2")
-    try:
-        source_state = Path(source_config["state"]["directory"]).expanduser()
-    except (KeyError, TypeError) as error:
-        raise E2EError("E2E configuration requires state.directory") from error
-    if not source_state.is_dir():
-        raise E2EError(f"E2E state directory does not exist: {source_state}")
+    settings = load_live_settings(client)
+    expected_path = settings.expected_path
+    expected_sha256 = settings.expected_sha256
+    source_text = settings.source_text
+    source_config = settings.source_config
+    source_state = settings.source_state
 
     work_root.mkdir(parents=True, exist_ok=True)
     completed: list[subprocess.CompletedProcess[str]] = []
@@ -1246,7 +1593,6 @@ def run_live(client: Path, work_root: Path) -> None:
                     large_file,
                     large_size,
                 )
-
                 created_upload_fixture = run_sync(
                     client,
                     config,
@@ -1425,11 +1771,28 @@ def run_live(client: Path, work_root: Path) -> None:
                     "nested" /
                     "moved.txt"
                 )
-                moved_item = upload_fixture.item_by_path(moved_remote_path)
+                moved_item: dict[str, object] | None = None
+
+                def moved_item_visible() -> bool:
+                    nonlocal moved_item
+                    try:
+                        candidate = upload_fixture.item_by_path(
+                            moved_remote_path
+                        )
+                    except E2EError:
+                        return False
+                    if (
+                        candidate.get("id") != move_item_id
+                        or upload_fixture.item_exists(move_remote_path)
+                    ):
+                        return False
+                    moved_item = candidate
+                    return True
+
                 if (
                     uploaded_move.returncode != 0
-                    or moved_item.get("id") != move_item_id
-                    or upload_fixture.item_exists(move_remote_path)
+                    or not wait_until(moved_item_visible, 30, 0.5)
+                    or moved_item is None
                     or move_target.read_bytes() != move_contents
                     or not has_json_event(
                         uploaded_move,
@@ -1707,6 +2070,404 @@ def run_live(client: Path, work_root: Path) -> None:
             raise
 
 
+def run_boundary(
+    client: Path,
+    work_root: Path,
+    scenario: str,
+) -> None:
+    scenarios = {"network", "storage", "permission", "crash", "monitor"}
+    if scenario not in scenarios:
+        raise E2EError(f"unknown system boundary scenario: {scenario}")
+    settings = load_live_settings(client)
+    work_root.mkdir(parents=True, exist_ok=True)
+    completed: list[subprocess.CompletedProcess[str]] = []
+    with tempfile.TemporaryDirectory(
+        prefix=f"graph-boundary-{scenario}-",
+        dir=work_root,
+    ) as raw:
+        workspace = Path(raw)
+        sync_directory = workspace / "sync"
+        state_directory = workspace / "state"
+        home = workspace / "home"
+        config = workspace / "config.toml"
+        sync_list = workspace / "sync_list"
+        log_file = workspace / "onedrive-cpp.log"
+        home.mkdir()
+        shutil.copytree(settings.source_state, state_directory)
+        sync_list.write_text(
+            sync_list_rule(settings.expected_path),
+            encoding="utf-8",
+        )
+        config.write_text(
+            rewrite_config(
+                settings.source_text,
+                sync_directory,
+                state_directory,
+                sync_list,
+                "backup",
+                False,
+            ),
+            encoding="utf-8",
+        )
+        fixture: GraphMoveFixture | None = None
+        boundary_root_path = Path(
+            "__onedrive_cpp_boundary_"
+            + scenario
+            + "_"
+            + secrets.token_hex(8)
+        )
+        boundary_local_root: Path | None = None
+        try:
+            reset = reset_copied_state(client, config, home)
+            completed.append(reset)
+            if reset.returncode != 0:
+                raise E2EError(
+                    f"{scenario} boundary state reset failed with "
+                    f"{reset.returncode}"
+                )
+            baseline = run_sync(client, config, home, log_file)
+            completed.append(baseline)
+            if baseline.returncode != 0:
+                raise E2EError(
+                    f"{scenario} boundary baseline failed with "
+                    f"{baseline.returncode}"
+                )
+            baseline_file = fixture_path(
+                sync_directory,
+                settings.expected_path,
+            )
+            if sha256(baseline_file) != settings.expected_sha256:
+                raise E2EError(
+                    f"{scenario} boundary baseline fixture changed"
+                )
+            graph_config = settings.source_config.get("graph", {})
+            if not isinstance(graph_config, dict):
+                raise E2EError("E2E configuration graph table is invalid")
+            graph_endpoint = graph_config.get(
+                "endpoint",
+                "https://graph.microsoft.com/v1.0",
+            )
+            if not isinstance(graph_endpoint, str) or not graph_endpoint:
+                raise E2EError("E2E Graph endpoint is invalid")
+            fixture = GraphMoveFixture(
+                graph_endpoint,
+                tracked_drive_id(
+                    state_directory,
+                    settings.expected_path,
+                ),
+                refresh_graph_access_token(
+                    settings.source_config,
+                    state_directory,
+                ),
+            )
+            boundary_local_root = (
+                sync_root_for_fixture(
+                    baseline_file,
+                    settings.expected_path,
+                )
+                / boundary_root_path
+            )
+            sync_list.write_text(
+                sync_list_rule(settings.expected_path)
+                + sync_list_subtree_rule(boundary_root_path),
+                encoding="utf-8",
+            )
+            config.write_text(
+                rewrite_config(
+                    settings.source_text,
+                    sync_directory,
+                    state_directory,
+                    sync_list,
+                    "backup",
+                    False,
+                ),
+                encoding="utf-8",
+            )
+            refreshed = run_sync(client, config, home, log_file)
+            completed.append(refreshed)
+            if refreshed.returncode != 0:
+                raise E2EError(
+                    f"{scenario} boundary filter refresh failed with "
+                    f"{refreshed.returncode}"
+                )
+
+            def capture_root() -> None:
+                if fixture is None:
+                    raise E2EError("boundary Graph fixture is unavailable")
+                item = fixture.item_by_path(boundary_root_path)
+                item_id = item.get("id")
+                if not isinstance(item_id, str) or not item_id:
+                    raise E2EError(
+                        f"{scenario} boundary root has no Graph item ID"
+                    )
+                fixture.root_id = item_id
+
+            if scenario == "network":
+                with ConnectionDropProxy() as proxy:
+                    network_config = workspace / "network-failure.toml"
+                    network_config.write_text(
+                        rewrite_config(
+                            settings.source_text,
+                            sync_directory,
+                            state_directory,
+                            sync_list,
+                            "backup",
+                            False,
+                            proxy_url=proxy.url,
+                        ),
+                        encoding="utf-8",
+                    )
+                    failed = run_sync(
+                        client,
+                        network_config,
+                        home,
+                        log_file,
+                    )
+                    completed.append(failed)
+                    if failed.returncode == 0 or proxy.connection_count == 0:
+                        raise E2EError(
+                            "network boundary did not fail through the "
+                            "connection-dropping proxy"
+                        )
+                recovered = run_sync(client, config, home, log_file)
+                completed.append(recovered)
+                if recovered.returncode != 0:
+                    raise E2EError("network boundary did not recover")
+
+            elif scenario == "storage":
+                boundary_local_root.mkdir(parents=True)
+                source = boundary_local_root / "storage.txt"
+                contents = b"onedrive-cpp local storage boundary E2E\n"
+                source.write_bytes(contents)
+                remote_path = boundary_root_path / source.name
+                collisions: list[Path] = []
+
+                def block_snapshot(process_id: int) -> None:
+                    for attempt in range(1, 101):
+                        collision = source.with_name(
+                            f".{source.name}.onedrive-upload-"
+                            f"{process_id}-{attempt}"
+                        )
+                        collision.write_bytes(b"occupied")
+                        collisions.append(collision)
+
+                try:
+                    failed = run_sync_after_stop(
+                        client,
+                        config,
+                        home,
+                        log_file,
+                        block_snapshot,
+                    )
+                    completed.append(failed)
+                    pending = pending_upload_row(
+                        state_directory,
+                        remote_path,
+                    )
+                    if (
+                        failed.returncode != 2
+                        or pending is None
+                        or pending[0] != "local_storage"
+                        or fixture.item_exists(remote_path)
+                    ):
+                        raise E2EError(
+                            "storage boundary failure was not persisted"
+                        )
+                finally:
+                    for collision in collisions:
+                        collision.unlink(missing_ok=True)
+                recovered = run_sync(client, config, home, log_file)
+                completed.append(recovered)
+                capture_root()
+                if (
+                    recovered.returncode != 0
+                    or pending_upload_row(state_directory, remote_path)
+                    is not None
+                    or fixture.item_by_path(remote_path).get("size")
+                    != len(contents)
+                ):
+                    raise E2EError("storage boundary did not recover")
+
+            elif scenario == "permission":
+                if os.geteuid() == 0:
+                    raise E2EError(
+                        "permission boundary E2E must run as a non-root user"
+                    )
+                boundary_local_root.mkdir(parents=True)
+                source = boundary_local_root / "permission.txt"
+                contents = b"onedrive-cpp local permission boundary E2E\n"
+                source.write_bytes(contents)
+                remote_path = boundary_root_path / source.name
+                source.chmod(0)
+                try:
+                    failed = run_sync(client, config, home, log_file)
+                    completed.append(failed)
+                    pending = pending_upload_row(
+                        state_directory,
+                        remote_path,
+                    )
+                    if (
+                        failed.returncode != 2
+                        or pending is None
+                        or pending[0] != "local_permission"
+                        or fixture.item_exists(remote_path)
+                    ):
+                        raise E2EError(
+                            "permission boundary failure was not persisted"
+                        )
+                finally:
+                    source.chmod(0o600)
+                recovered = run_sync(client, config, home, log_file)
+                completed.append(recovered)
+                capture_root()
+                if (
+                    recovered.returncode != 0
+                    or pending_upload_row(state_directory, remote_path)
+                    is not None
+                    or fixture.item_by_path(remote_path).get("size")
+                    != len(contents)
+                ):
+                    raise E2EError("permission boundary did not recover")
+
+            elif scenario == "crash":
+                boundary_local_root.mkdir(parents=True)
+                source = boundary_local_root / "session.bin"
+                try:
+                    size = int(
+                        os.environ.get(
+                            "ONEDRIVE_E2E_LARGE_UPLOAD_BYTES",
+                            "250000001",
+                        )
+                    )
+                except ValueError as error:
+                    raise E2EError(
+                        "ONEDRIVE_E2E_LARGE_UPLOAD_BYTES must be an integer"
+                    ) from error
+                if size > 1_000_000_000:
+                    raise E2EError(
+                        "ONEDRIVE_E2E_LARGE_UPLOAD_BYTES exceeds 1 GB"
+                    )
+                digest = write_pattern_file(source, size)
+                remote_path = boundary_root_path / source.name
+                config.write_text(
+                    rewrite_config(
+                        settings.source_text,
+                        sync_directory,
+                        state_directory,
+                        sync_list,
+                        "backup",
+                        False,
+                        upload_maximum_rate_bytes_per_second=5_000_000,
+                    ),
+                    encoding="utf-8",
+                )
+                crashed, progress = (
+                    run_sync_until_upload_progress_then_kill(
+                        client,
+                        config,
+                        home,
+                        log_file,
+                        state_directory,
+                        remote_path,
+                    )
+                )
+                completed.append(crashed)
+                if progress[2] <= 0 or not Path(progress[3]).is_file():
+                    raise E2EError(
+                        "crash boundary did not preserve a resumable journal"
+                    )
+                config.write_text(
+                    rewrite_config(
+                        settings.source_text,
+                        sync_directory,
+                        state_directory,
+                        sync_list,
+                        "backup",
+                        False,
+                        upload_maximum_rate_bytes_per_second=0,
+                    ),
+                    encoding="utf-8",
+                )
+                recovered = run_sync(client, config, home, log_file)
+                completed.append(recovered)
+                capture_root()
+                if (
+                    recovered.returncode != 0
+                    or pending_upload_row(state_directory, remote_path)
+                    is not None
+                    or fixture.item_by_path(remote_path).get("size") != size
+                    or sha256(source) != digest
+                ):
+                    raise E2EError("crash boundary did not resume safely")
+
+            elif scenario == "monitor":
+                boundary_local_root.mkdir(parents=True)
+                source = boundary_local_root / "monitor.txt"
+                contents = b"onedrive-cpp monitor boundary E2E\n"
+                remote_path = boundary_root_path / source.name
+                config.write_text(
+                    rewrite_config(
+                        settings.source_text,
+                        sync_directory,
+                        state_directory,
+                        sync_list,
+                        "backup",
+                        False,
+                        monitor_poll_interval_seconds=60,
+                        monitor_settle_delay_milliseconds=100,
+                    ),
+                    encoding="utf-8",
+                )
+
+                def uploaded() -> bool:
+                    try:
+                        return (
+                            fixture.item_by_path(remote_path).get("size")
+                            == len(contents)
+                        )
+                    except E2EError:
+                        return False
+
+                result = run_monitor_boundary(
+                    client,
+                    config,
+                    home,
+                    log_file,
+                    workspace,
+                    lambda: source.write_bytes(contents),
+                    uploaded,
+                )
+                completed.append(result)
+                capture_root()
+                if (
+                    not has_json_event(result, "local_item_uploaded")
+                    or tracked_item_count(state_directory, remote_path) != 1
+                ):
+                    raise E2EError(
+                        "monitor boundary did not persist its upload"
+                    )
+                settled = run_sync(client, config, home, log_file)
+                completed.append(settled)
+                if settled.returncode != 0:
+                    raise E2EError(
+                        "monitor boundary did not settle its Graph delta"
+                    )
+        except Exception:
+            save_artifacts(completed, log_file)
+            raise
+        finally:
+            if fixture is not None:
+                if fixture.root_id is None:
+                    try:
+                        root_item = fixture.item_by_path(boundary_root_path)
+                        root_id = root_item.get("id")
+                        if isinstance(root_id, str) and root_id:
+                            fixture.root_id = root_id
+                    except E2EError:
+                        pass
+                fixture.delete_root()
+
+
 def self_test() -> None:
     source = """\
 config_version = 2
@@ -1734,6 +2495,36 @@ directory = "/old/state"
         or parsed["state"]["directory"] != "/new/state"
     ):
         raise E2EError("configuration rewrite self-test failed")
+    boundary_rewrite = tomllib.loads(
+        rewrite_config(
+            source,
+            Path("/new/sync"),
+            Path("/new/state"),
+            proxy_url="http://127.0.0.1:12345",
+            monitor_poll_interval_seconds=60,
+            monitor_settle_delay_milliseconds=100,
+            upload_maximum_rate_bytes_per_second=5_000_000,
+        )
+    )
+    if (
+        boundary_rewrite["proxy"]["url"] != "http://127.0.0.1:12345"
+        or boundary_rewrite["proxy"]["no_proxy"] != []
+        or boundary_rewrite["monitor"]["poll_interval_seconds"] != 60
+        or boundary_rewrite["monitor"]["settle_delay_milliseconds"] != 100
+        or boundary_rewrite["upload"][
+            "maximum_rate_bytes_per_second"
+        ]
+        != 5_000_000
+    ):
+        raise E2EError("boundary configuration rewrite self-test failed")
+    with ConnectionDropProxy() as proxy:
+        with socket.create_connection(
+            ("127.0.0.1", int(proxy.url.rsplit(":", 1)[1])),
+            timeout=2,
+        ):
+            pass
+        if not wait_until(lambda: proxy.connection_count == 1, 2):
+            raise E2EError("connection-dropping proxy self-test failed")
     try:
         rewrite_config("[sync]\ndirectory = \"/tmp\"\n", Path("/a"), Path("/b"))
         raise E2EError("incomplete configuration was accepted")
@@ -1794,6 +2585,22 @@ directory = "/old/state"
         raise E2EError("existing root-file policy was not replaced")
     with tempfile.TemporaryDirectory() as raw:
         root = Path(raw)
+        gate_home = root / "gate-home"
+        gate_home.mkdir()
+        gated_process_ids: list[int] = []
+        gated = run_sync_after_stop(
+            Path("/bin/true"),
+            root / "unused.toml",
+            gate_home,
+            root / "unused.log",
+            gated_process_ids.append,
+        )
+        if (
+            gated.returncode != 0
+            or len(gated_process_ids) != 1
+            or gated_process_ids[0] <= 0
+        ):
+            raise E2EError("gated client execution self-test failed")
         expected = root / "account" / "fixture" / "small.txt"
         expected.parent.mkdir(parents=True)
         expected.write_text("fixture", encoding="utf-8")
@@ -1922,6 +2729,18 @@ directory = "/old/state"
             recovery_source,
             Path("fixture/recovery.txt"),
         )
+        pending_upload = pending_upload_row(
+            state,
+            Path("fixture/recovery.txt"),
+        )
+        if (
+            pending_upload is None
+            or pending_upload[0] != ""
+            or pending_upload[1] != 0
+            or pending_upload[2] != 0
+            or Path(pending_upload[3]) != injected_snapshot
+        ):
+            raise E2EError("pending upload lookup self-test failed")
         with sqlite3.connect(database) as connection:
             pending = connection.execute(
                 "SELECT content_fingerprint, local_size, "
@@ -2200,14 +3019,25 @@ def main() -> int:
     parser.add_argument("--client", type=Path)
     parser.add_argument("--work-root", type=Path)
     parser.add_argument("--self-test", action="store_true")
+    parser.add_argument(
+        "--boundary",
+        choices=("network", "storage", "permission", "crash", "monitor"),
+    )
     arguments = parser.parse_args()
     try:
         if arguments.self_test:
+            if arguments.boundary is not None:
+                raise E2EError("--self-test and --boundary cannot be combined")
             self_test()
         else:
             if arguments.client is None or arguments.work_root is None:
                 raise E2EError("--client and --work-root are required")
-            run_live(arguments.client.resolve(), arguments.work_root.resolve())
+            client = arguments.client.resolve()
+            work_root = arguments.work_root.resolve()
+            if arguments.boundary is None:
+                run_live(client, work_root)
+            else:
+                run_boundary(client, work_root, arguments.boundary)
     except (E2EError, OSError, subprocess.SubprocessError) as error:
         print(f"Graph synchronization E2E failed: {error}", file=os.sys.stderr)
         return 1

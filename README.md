@@ -333,6 +333,21 @@ as sensitive data. Configuration, copied tokens, SQLite state, and downloaded
 content are always removed. Never point the E2E runner at a daily-use state or
 Drive.
 
+The live runner also exercises system boundaries with the real executable:
+connections dropped by a local proxy and subsequent recovery, deterministic
+local upload-storage exhaustion and recovery, unreadable upload sources,
+`SIGKILL` during a resumable upload, and an inotify-triggered monitor upload
+followed by clean `SIGTERM` shutdown. Run it as a non-root user; the permission
+scenario depends on ordinary Unix access checks. CMake also requires the
+`stdbuf` command so monitor JSON events are observable without changing
+production buffering.
+
+Each boundary is a separate CTest entry. Run all five with:
+
+```bash
+ctest --test-dir build/e2e --output-on-failure -L boundary
+```
+
 ### C++ Core Guidelines checks
 
 The lint preset runs Clang-Tidy during compilation with the project

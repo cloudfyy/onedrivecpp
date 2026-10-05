@@ -286,6 +286,7 @@ if(BUILD_TESTING)
     add_onedrive_test(
         monitor_tests
         SOURCES tests/monitor_tests.cpp
+        INCLUDE_DIRS src
     )
     add_onedrive_test(
         runtime_preflight_tests
@@ -345,6 +346,7 @@ if(BUILD_TESTING)
 
     if(ONEDRIVE_ENABLE_GRAPH_E2E)
         find_package(Python3 COMPONENTS Interpreter REQUIRED)
+        find_program(STDBUF_EXECUTABLE stdbuf REQUIRED)
         add_test(
             NAME graph_sync_e2e_self_test
             COMMAND
@@ -360,6 +362,31 @@ if(BUILD_TESTING)
                 --client $<TARGET_FILE:onedrive-cpp>
                 --work-root ${CMAKE_CURRENT_BINARY_DIR}/graph-e2e
         )
+        set(ONEDRIVE_BOUNDARY_E2E_TESTS)
+        foreach(
+            ONEDRIVE_BOUNDARY_SCENARIO
+            IN ITEMS network storage permission crash monitor
+        )
+            set(
+                ONEDRIVE_BOUNDARY_TEST
+                "system_boundary_${ONEDRIVE_BOUNDARY_SCENARIO}_e2e"
+            )
+            add_test(
+                NAME ${ONEDRIVE_BOUNDARY_TEST}
+                COMMAND
+                    ${Python3_EXECUTABLE}
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/graph_sync_e2e.py
+                    --client $<TARGET_FILE:onedrive-cpp>
+                    --work-root
+                    ${CMAKE_CURRENT_BINARY_DIR}/system-boundary-e2e
+                    --boundary ${ONEDRIVE_BOUNDARY_SCENARIO}
+            )
+            list(
+                APPEND
+                ONEDRIVE_BOUNDARY_E2E_TESTS
+                ${ONEDRIVE_BOUNDARY_TEST}
+            )
+        endforeach()
         set_tests_properties(
             graph_sync_e2e_self_test
             graph_sync_e2e
@@ -367,9 +394,14 @@ if(BUILD_TESTING)
         )
         set_tests_properties(
             graph_sync_e2e
+            ${ONEDRIVE_BOUNDARY_E2E_TESTS}
             PROPERTIES
                 RUN_SERIAL TRUE
                 TIMEOUT 2400
+        )
+        set_tests_properties(
+            ${ONEDRIVE_BOUNDARY_E2E_TESTS}
+            PROPERTIES LABELS "e2e;graph;boundary"
         )
     endif()
 endif()

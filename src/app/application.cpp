@@ -14,6 +14,7 @@
 #include "onedrive/metrics/metrics.hpp"
 #include "onedrive/monitor/monitor.hpp"
 #include "onedrive/storage/item_store.hpp"
+#include "monitor/termination_signal_mask.hpp"
 #include "onedrive/sync/download/single_file.hpp"
 #include "onedrive/sync/core/engine.hpp"
 #include "onedrive/version.hpp"
@@ -271,6 +272,11 @@ int Application::run(int argc, char* argv[]) {
             *download_command ? detail::Operation::download :
             *monitor_command ? detail::Operation::monitor :
                                detail::Operation::synchronize;
+        std::optional<monitor::detail::TerminationSignalMask>
+            monitor_signal_mask;
+        if (operation == detail::Operation::monitor) {
+            monitor_signal_mask.emplace();
+        }
         const detail::RuntimePreflight runtime_preflight{config, operation};
 
         if (*auth_command) {

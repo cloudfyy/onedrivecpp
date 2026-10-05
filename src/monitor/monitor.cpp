@@ -1,5 +1,6 @@
 #include "onedrive/monitor/monitor.hpp"
 
+#include "monitor/termination_signal_mask.hpp"
 #include "util/unique_file_descriptor.hpp"
 
 #include <array>
@@ -23,6 +24,34 @@
 #include <unistd.h>
 
 namespace onedrive::monitor {
+
+detail::TerminationSignalMask::TerminationSignalMask() {
+    ::sigemptyset(&signals_);
+    ::sigaddset(&signals_, SIGINT);
+    ::sigaddset(&signals_, SIGTERM);
+    const int result = ::pthread_sigmask(SIG_BLOCK, &signals_, &previous_);
+    if (result != 0) {
+        throw std::system_error{
+            result,
+            std::generic_category(),
+            "cannot block monitor termination signals"
+        };
+    }
+    active_ = true;
+}
+
+detail::TerminationSignalMask::~TerminationSignalMask() {
+    if (active_) {
+        static_cast<void>(
+            ::pthread_sigmask(SIG_SETMASK, &previous_, nullptr)
+        );
+    }
+}
+
+const sigset_t& detail::TerminationSignalMask::signals() const noexcept {
+    return signals_;
+}
+
 namespace {
 
 constexpr std::uint32_t watch_mask =
@@ -242,46 +271,6 @@ private:
     std::unordered_map<int, std::filesystem::path> paths_;
 };
 
-class SignalMask final {
-public:
-    SignalMask() {
-        ::sigemptyset(&signals_);
-        ::sigaddset(&signals_, SIGINT);
-        ::sigaddset(&signals_, SIGTERM);
-        const int result = ::pthread_sigmask(SIG_BLOCK, &signals_, &previous_);
-        if (result != 0) {
-            throw std::system_error{
-                result,
-                std::generic_category(),
-                "cannot block monitor termination signals"
-            };
-        }
-        active_ = true;
-    }
-
-    SignalMask(const SignalMask&) = delete;
-    SignalMask& operator=(const SignalMask&) = delete;
-    SignalMask(SignalMask&&) = delete;
-    SignalMask& operator=(SignalMask&&) = delete;
-
-    ~SignalMask() {
-        if (active_) {
-            static_cast<void>(
-                ::pthread_sigmask(SIG_SETMASK, &previous_, nullptr)
-            );
-        }
-    }
-
-    [[nodiscard]] const sigset_t& signals() const noexcept {
-        return signals_;
-    }
-
-private:
-    sigset_t signals_{};
-    sigset_t previous_{};
-    bool active_{false};
-};
-
 int poll_timeout(
     std::chrono::steady_clock::time_point deadline,
     std::chrono::steady_clock::time_point now
@@ -321,7 +310,7 @@ Monitor::Monitor(
 }
 
 int Monitor::run() const {
-    SignalMask signal_mask;
+    detail::TerminationSignalMask signal_mask;
     onedrive::util::UniqueFileDescriptor signal_descriptor{
         ::signalfd(
             -1,

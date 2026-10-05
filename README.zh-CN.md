@@ -299,6 +299,18 @@ ctest --preset e2e -R graph_sync_e2e
 这些诊断信息可能包含远端文件元数据，应按敏感数据保管。临时配置、复制的 token、
 SQLite 状态及下载内容始终会删除。不要让 E2E runner 使用日常状态目录或日常 Drive。
 
+live runner 还会使用真实可执行文件验证系统边界：本地代理主动断开连接及恢复、
+确定性的本地上传存储耗尽及恢复、不可读上传源、可续传上传期间的 `SIGKILL`，
+以及由 inotify 触发的 Monitor 上传和正常 `SIGTERM` 退出。测试必须以非 root
+用户运行，因为权限场景依赖普通 Unix 访问检查。CMake 还要求提供 `stdbuf`
+命令，以便在不改变生产输出缓冲行为的情况下观察 Monitor JSON 事件。
+
+每个边界场景都是独立的 CTest 条目，可通过以下命令运行全部五项：
+
+```bash
+ctest --test-dir build/e2e --output-on-failure -L boundary
+```
+
 ### C++ Core Guidelines 检查
 
 `lint` preset 会在编译时按照项目的 `.clang-tidy` 策略运行 Clang-Tidy。
