@@ -1,3 +1,16 @@
+onedrive-cpp (0.7.17-1~ubuntu24.04) noble; urgency=medium
+
+  * Detect local file and directory moves using stable filesystem identity and
+    propagate them to Microsoft Graph with conditional PATCH requests.
+  * Journal remote moves for crash recovery and atomically remap tracked
+    directory descendants after successful moves.
+  * Preserve dry-run and selective-sync safety, and continue uploading content
+    changes made alongside a local move.
+  * Migrate the state database to schema version 21 and add Graph, migration,
+    recovery, file move, directory move, and boundary coverage.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Mon, 05 Oct 2026 02:19:30 +0000
+
 onedrive-cpp (0.7.16-1~ubuntu24.04) noble; urgency=medium
 
   * Persist local filesystem device and inode identity for tracked files and
