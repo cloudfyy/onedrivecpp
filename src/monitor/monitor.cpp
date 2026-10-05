@@ -1,5 +1,7 @@
 #include "onedrive/monitor/monitor.hpp"
 
+#include "detail/unique_file_descriptor.hpp"
+
 #include <array>
 #include <cerrno>
 #include <chrono>
@@ -26,33 +28,6 @@ namespace {
 constexpr std::uint32_t watch_mask =
     IN_ATTRIB | IN_CLOSE_WRITE | IN_CREATE | IN_DELETE | IN_DELETE_SELF |
     IN_MOVE_SELF | IN_MOVED_FROM | IN_MOVED_TO | IN_IGNORED | IN_Q_OVERFLOW;
-
-class FileDescriptor final {
-public:
-    explicit FileDescriptor(int descriptor = -1) noexcept
-        : descriptor_{descriptor} {}
-
-    FileDescriptor(const FileDescriptor&) = delete;
-    FileDescriptor& operator=(const FileDescriptor&) = delete;
-
-    ~FileDescriptor() {
-        reset();
-    }
-
-    [[nodiscard]] int get() const noexcept {
-        return descriptor_;
-    }
-
-    void reset(int descriptor = -1) noexcept {
-        if (descriptor_ >= 0) {
-            ::close(descriptor_);
-        }
-        descriptor_ = descriptor;
-    }
-
-private:
-    int descriptor_;
-};
 
 [[noreturn]] void throw_system_error(const std::string& operation) {
     throw std::system_error{
@@ -262,7 +237,7 @@ private:
         }
     }
 
-    FileDescriptor descriptor_;
+    onedrive::detail::UniqueFileDescriptor descriptor_;
     std::unordered_map<int, std::filesystem::path> paths_;
 };
 
@@ -344,7 +319,7 @@ Monitor::Monitor(
 
 int Monitor::run() const {
     SignalMask signal_mask;
-    FileDescriptor signal_descriptor{
+    onedrive::detail::UniqueFileDescriptor signal_descriptor{
         ::signalfd(
             -1,
             &signal_mask.signals(),
@@ -382,7 +357,7 @@ int Monitor::run_loop(
     }
 
     WatchSet watches{root_};
-    FileDescriptor stop_descriptor{
+    onedrive::detail::UniqueFileDescriptor stop_descriptor{
         ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC)
     };
     if (stop_descriptor.get() < 0) {
