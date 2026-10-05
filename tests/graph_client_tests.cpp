@@ -509,6 +509,108 @@ int test_simple_file_uploads() {
     return EXIT_SUCCESS;
 }
 
+int test_directory_creation() {
+    const auto root_directory =
+        R"json({"id":"root-directory","name":"New #","eTag":"root-etag","size":0,"fileSystemInfo":{"lastModifiedDateTime":"2026-10-04T09:00:00Z"},"parentReference":{"id":"root","path":"/drive/root:"},"folder":{"childCount":0}})json";
+    const auto nested_directory =
+        R"json({"id":"nested-directory","name":"Child","eTag":"nested-etag","size":0,"fileSystemInfo":{"lastModifiedDateTime":"2026-10-04T09:00:00Z"},"parentReference":{"id":"parent","path":"/drive/root:/New #"},"folder":{"childCount":0}})json";
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"token_type":"Bearer","expires_in":3600,)"
+                    R"("access_token":"access-secret"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 201,
+                .body = root_directory,
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 201,
+                .body = nested_directory,
+            },
+        }
+    );
+    auto* transport_pointer = transport.get();
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(
+                std::string{"existing-refresh"}
+            )
+        ),
+        auth_options(),
+        {
+            .drive_id = "drive/id",
+            .endpoint = "https://graph.example.test/v1.0",
+            .upload_transport = {
+                .maximum_send_speed_bytes_per_second = 900,
+                .maximum_total_send_speed_bytes_per_second = 700,
+            },
+        },
+    };
+    const auto root = client.create_directory("New #");
+    const auto nested = client.create_directory("New #/Child");
+    const auto& requests = transport_pointer->requests;
+    if (!root.directory || root.remote_path != "New #" ||
+        !nested.directory || nested.remote_path != "New #/Child" ||
+        requests.size() != 3 ||
+        requests[1].url !=
+            "https://graph.example.test/v1.0/drives/drive%2Fid/"
+            "root/children" ||
+        requests[2].url !=
+            "https://graph.example.test/v1.0/drives/drive%2Fid/"
+            "root:/New%20%23:/children" ||
+        requests[1].method != onedrive::http::HttpMethod::post ||
+        !has_header(requests[1], "Authorization: ******") ||
+        !requests[1].body.contains(R"("name":"New #")") ||
+        !requests[1].body.contains(R"("folder":{})") ||
+        !requests[1].body.contains(
+            R"("@microsoft.graph.conflictBehavior":"fail")"
+        ) ||
+        requests[1].maximum_send_speed_bytes_per_second != 700) {
+        return fail("Graph directory creation request was invalid");
+    }
+
+    auto conflict_transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"token_type":"Bearer","expires_in":3600,)"
+                    R"("access_token":"access-secret"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 409,
+                .body =
+                    R"json({"error":{"code":"nameAlreadyExists","message":"exists"}})json",
+            },
+        }
+    );
+    onedrive::graph::MicrosoftGraphClient conflict_client{
+        wrap_transport(std::move(conflict_transport)),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(
+                std::string{"existing-refresh"}
+            )
+        ),
+        auth_options(),
+        {
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+        },
+    };
+    try {
+        static_cast<void>(
+            conflict_client.create_directory("Existing")
+        );
+        return fail("Graph directory conflict was accepted");
+    } catch (const onedrive::graph::UploadConflictError&) {
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_upload_sessions() {
     constexpr std::size_t chunk_size = 320U * 1024U;
     constexpr std::size_t total_size = chunk_size + 7U;
@@ -2936,6 +3038,10 @@ int main() {
         return result;
     }
     if (const int result = test_simple_file_uploads();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_directory_creation();
         result != EXIT_SUCCESS) {
         return result;
     }

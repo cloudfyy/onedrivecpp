@@ -584,6 +584,12 @@ safeBackup and transfer-temporary names, blocked remote paths, and type
 conflicts are never uploaded. Each transfer uses a stable private snapshot and
 a durable SQLite pending-upload journal. Recovery verifies an already-created
 remote file by downloading it and comparing SHA-256 before committing state.
+Selected untracked local directories are created remotely in parent-first
+order before their files. Directory creation uses fail-on-conflict semantics
+and the same durable journal. A definite Graph conflict removes the journal
+and blocks the operation; after an ambiguous interruption, recovery retries
+the request and adopts an existing item only when it is a directory at the
+exact expected path.
 Files through 250 MB use a simple upload. Larger files use a Microsoft Graph
 upload session with contiguous fragments and advance only to the exact
 `nextExpectedRanges` offset confirmed by Graph. The default fragment size is

@@ -43,6 +43,10 @@ public:
         const std::string& remote_id
     ) const;
     void save_pending_upload(PendingUpload upload);
+    void remove_pending_upload(
+        const std::string& drive_id,
+        const std::string& remote_path
+    );
     [[nodiscard]] std::vector<PendingUpload> pending_uploads(
         const std::string& drive_id
     ) const;
@@ -106,6 +110,10 @@ private:
         const std::string& remote_id
     ) const;
     void save_pending_upload_on_worker(const PendingUpload& upload);
+    void remove_pending_upload_on_worker(
+        const std::string& drive_id,
+        const std::string& remote_path
+    );
     [[nodiscard]] std::vector<PendingUpload> pending_uploads_on_worker(
         const std::string& drive_id
     ) const;

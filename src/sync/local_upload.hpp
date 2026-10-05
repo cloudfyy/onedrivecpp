@@ -19,7 +19,9 @@ class SyncList;
 
 struct UploadSummary {
     std::size_t planned{0};
+    std::size_t planned_directories{0};
     std::size_t uploaded{0};
+    std::size_t created_directories{0};
     std::size_t blocked{0};
 };
 

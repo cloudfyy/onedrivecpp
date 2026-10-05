@@ -329,6 +329,35 @@ bool create_version_sixteen_database(const std::filesystem::path& path) {
     return succeeded;
 }
 
+bool create_version_seventeen_database(const std::filesystem::path& path) {
+    if (!create_version_sixteen_database(path)) {
+        return false;
+    }
+    sqlite3* database = nullptr;
+    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
+        sqlite3_close(database);
+        return false;
+    }
+    constexpr const char* migration =
+        "ALTER TABLE pending_upload ADD COLUMN upload_url "
+        "TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE pending_upload ADD COLUMN upload_expiration "
+        "TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE pending_upload ADD COLUMN completed_bytes "
+        "INTEGER NOT NULL DEFAULT 0;"
+        "PRAGMA user_version = 17;";
+    const bool succeeded =
+        sqlite3_exec(
+            database,
+            migration,
+            nullptr,
+            nullptr,
+            nullptr
+        ) == SQLITE_OK;
+    sqlite3_close(database);
+    return succeeded;
+}
+
 bool identity_row_is_valid(const std::filesystem::path& path) {
     sqlite3* database = nullptr;
     if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
@@ -1378,6 +1407,53 @@ int main() {
             return fail(
                 "version sixteen database did not persist upload checkpoints"
             );
+        }
+    }
+
+    const auto version_seventeen_directory =
+        temporary_directory.path() / "version-seventeen";
+    std::filesystem::create_directories(version_seventeen_directory);
+    if (!create_version_seventeen_database(
+            version_seventeen_directory / "items.sqlite3"
+        )) {
+        return fail(
+            "version seventeen migration fixture could not be created"
+        );
+    }
+    {
+        onedrive::storage::ItemDatabase database{
+            version_seventeen_directory,
+            identity()
+        };
+        database.open();
+        const onedrive::storage::PendingUpload pending{
+            .drive_id = "me",
+            .remote_path = "Parent/Child",
+            .local_path =
+                version_seventeen_directory / "Parent" / "Child",
+            .snapshot_path = {},
+            .content_fingerprint = {},
+            .local_size = 0,
+            .local_modified_ticks = 0,
+            .remote_id = std::nullopt,
+            .expected_etag = {},
+            .upload_url = {},
+            .upload_expiration = {},
+            .completed_bytes = 0,
+            .directory = true,
+        };
+        database.save_pending_upload(pending);
+        const auto uploads = database.pending_uploads("me");
+        if (uploads.size() != 1 ||
+            !uploads[0].directory ||
+            uploads[0].remote_path != pending.remote_path) {
+            return fail(
+                "version seventeen database did not persist directory uploads"
+            );
+        }
+        database.remove_pending_upload("me", pending.remote_path);
+        if (!database.pending_uploads("me").empty()) {
+            return fail("pending directory upload was not removed");
         }
     }
 

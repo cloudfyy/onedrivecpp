@@ -517,7 +517,11 @@ inode，而是直接采用现有文件。创建备份需要额外占用约等于
 的 eTag 作为 `If-Match` 前置条件。符号链接、safeBackup 和传输临时名称、被阻止
 的远端路径以及类型冲突都不会上传。每次传输使用稳定的私有快照和持久 SQLite
 pending-upload journal；恢复时会下载已经出现的远端文件并比较 SHA-256，匹配后
-才提交状态。250 MB 以内使用简单上传，更大的文件使用 Microsoft Graph upload
+才提交状态。符合 selective sync 规则且尚未跟踪的本地目录会在其文件上传前按
+父目录优先顺序创建到远端。目录创建使用“冲突即失败”和相同的持久 journal：
+Graph 明确返回冲突时会移除 journal 并阻止操作；发生结果不明确的中断后，恢复
+流程会重试请求，并且只有同一路径的远端项目确实是目录时才采用它。
+250 MB 以内使用简单上传，更大的文件使用 Microsoft Graph upload
 session 连续分片，并且只推进到 Graph 通过 `nextExpectedRanges` 精确确认的偏移。
 默认分片大小为 10 MiB；非末尾分片必须是 320 KiB 的整数倍，并低于 Graph 的
 60 MiB 单请求上限。预授权 upload session URL 不会携带 Graph Authorization
@@ -1061,7 +1065,7 @@ journalctl --user -u onedrive-cpp.service -f
 ## 后续实现建议
 
 1. 使用 inotify 接入 monitor。
-2. 为上传增加目录、删除传播和本地移动识别。
+2. 为上传增加删除传播和本地移动识别。
 3. 为 Graph 和文件系统边界增加更多集成测试。
 
 ## 许可证

@@ -10,6 +10,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <cstring>
@@ -30,6 +31,7 @@ struct UploadCandidate {
     std::filesystem::path path;
     std::string remote_path;
     std::optional<storage::ItemState> previous;
+    bool directory{false};
 };
 
 class UploadSnapshot final {
@@ -185,6 +187,7 @@ std::vector<UploadCandidate> discover_uploads(
         blocked_paths.insert(item.remote_path);
     }
     std::unordered_set<std::string> suppressed_paths;
+    std::unordered_set<std::string> suppressed_directories;
     for (const auto& suppression : items.upload_suppressions(drive_id)) {
         std::error_code suppression_error;
         const auto status = std::filesystem::symlink_status(
@@ -216,6 +219,15 @@ std::vector<UploadCandidate> discover_uploads(
             suppressed_paths.insert(
                 suppression.local_path.lexically_normal().string()
             );
+            for (auto parent = suppression.local_path.parent_path();
+                 parent != sync_root.path() &&
+                 parent.lexically_relative(sync_root.path()).
+                     native().starts_with("..") == false;
+                 parent = parent.parent_path()) {
+                suppressed_directories.insert(
+                    parent.lexically_normal().string()
+                );
+            }
         } else if (cleanup_suppressions) {
             items.remove_upload_suppression(
                 drive_id,
@@ -261,8 +273,13 @@ std::vector<UploadCandidate> discover_uploads(
             }
             continue;
         }
-        if (!std::filesystem::is_regular_file(status) ||
-            reserved_local_name(path)) {
+        const bool directory = std::filesystem::is_directory(status);
+        const bool regular_file =
+            std::filesystem::is_regular_file(status);
+        if ((!directory && !regular_file) || reserved_local_name(path)) {
+            if (directory) {
+                iterator.disable_recursion_pending();
+            }
             iterator.increment(error);
             if (error) {
                 throw std::runtime_error(
@@ -275,7 +292,20 @@ std::vector<UploadCandidate> discover_uploads(
         const auto remote_path = relative.generic_string();
         if (relative.empty() || relative.native().starts_with("..") ||
             (sync_list != nullptr &&
-             !sync_list->includes(remote_path, false))) {
+             sync_list->excludes(remote_path, directory))) {
+            if (directory) {
+                iterator.disable_recursion_pending();
+            }
+            iterator.increment(error);
+            if (error) {
+                throw std::runtime_error(
+                    "cannot continue local upload scan: " + error.message()
+                );
+            }
+            continue;
+        }
+        if (sync_list != nullptr &&
+            !sync_list->includes(remote_path, directory)) {
             iterator.increment(error);
             if (error) {
                 throw std::runtime_error(
@@ -285,9 +315,12 @@ std::vector<UploadCandidate> discover_uploads(
             continue;
         }
         const auto previous = tracked.find(path.lexically_normal().string());
-        if (suppressed_paths.contains(
-                path.lexically_normal().string()
-            )) {
+        if ((!directory && suppressed_paths.contains(
+                 path.lexically_normal().string()
+             )) ||
+            (directory && suppressed_directories.contains(
+                 path.lexically_normal().string()
+             ))) {
             iterator.increment(error);
             if (error) {
                 throw std::runtime_error(
@@ -299,6 +332,27 @@ std::vector<UploadCandidate> discover_uploads(
         if (blocked_paths.contains(remote_path) ||
             (previous != tracked.end() &&
              blocked_ids.contains(previous->second.remote_id))) {
+            if (directory) {
+                iterator.disable_recursion_pending();
+            }
+            iterator.increment(error);
+            if (error) {
+                throw std::runtime_error(
+                    "cannot continue local upload scan: " + error.message()
+                );
+            }
+            continue;
+        }
+        if (directory && previous != tracked.end() &&
+            !previous->second.directory) {
+            ++blocked;
+            console.message(
+                cli::MessageKind::warning,
+                "local_upload_blocked",
+                "Refusing to replace tracked remote file '" +
+                    remote_path + "' with a local directory."
+            );
+            iterator.disable_recursion_pending();
             iterator.increment(error);
             if (error) {
                 throw std::runtime_error(
@@ -308,6 +362,16 @@ std::vector<UploadCandidate> discover_uploads(
             continue;
         }
         if (previous != tracked.end() && previous->second.directory) {
+            if (directory) {
+                iterator.increment(error);
+                if (error) {
+                    throw std::runtime_error(
+                        "cannot continue local upload scan: " +
+                        error.message()
+                    );
+                }
+                continue;
+            }
             ++blocked;
             console.message(
                 cli::MessageKind::warning,
@@ -323,7 +387,7 @@ std::vector<UploadCandidate> discover_uploads(
             }
             continue;
         }
-        if (previous == tracked.end() ||
+        if (directory || previous == tracked.end() ||
             !local_snapshot_matches(previous->second, path)) {
             uploads.push_back({
                 .path = path,
@@ -331,6 +395,7 @@ std::vector<UploadCandidate> discover_uploads(
                 .previous = previous == tracked.end() ?
                     std::nullopt :
                     std::optional{previous->second},
+                .directory = directory,
             });
         }
         iterator.increment(error);
@@ -340,6 +405,23 @@ std::vector<UploadCandidate> discover_uploads(
             );
         }
     }
+    std::ranges::stable_sort(
+        uploads,
+        [](const UploadCandidate& left, const UploadCandidate& right) {
+            if (left.directory != right.directory) {
+                return left.directory;
+            }
+            if (!left.directory) {
+                return false;
+            }
+            const auto left_depth = std::ranges::distance(left.path);
+            const auto right_depth = std::ranges::distance(right.path);
+            if (left_depth != right_depth) {
+                return left_depth < right_depth;
+            }
+            return left.remote_path < right.remote_path;
+        }
+    );
     return uploads;
 }
 
@@ -363,6 +445,47 @@ storage::ItemState uploaded_state(
         .local_modified_ticks = baseline.modified_ticks,
         .directory = false,
     };
+}
+
+storage::ItemState uploaded_directory_state(
+    const graph::RemoteItem& item,
+    const std::filesystem::path& local_path,
+    const std::string& drive_id
+) {
+    if (!item.directory) {
+        throw LocalModificationConflictError(
+            "remote directory creation returned a file for '" +
+            item.remote_path + "'"
+        );
+    }
+    return {
+        .drive_id = drive_id,
+        .remote_id = item.id,
+        .parent_id = item.parent_id,
+        .name = item.name,
+        .etag = item.etag,
+        .remote_path = item.remote_path,
+        .local_path = local_path,
+        .last_modified = item.last_modified,
+        .size = item.size,
+        .local_size = 0,
+        .local_modified_ticks = 0,
+        .directory = true,
+    };
+}
+
+void require_local_directory(
+    const storage::PendingUpload& upload
+) {
+    std::error_code error;
+    const auto status =
+        std::filesystem::symlink_status(upload.local_path, error);
+    if (error || !std::filesystem::is_directory(status)) {
+        throw LocalModificationConflictError(
+            "local directory changed during upload: " +
+            upload.local_path.string()
+        );
+    }
 }
 
 graph::RemoteItem recover_uploaded_item(
@@ -427,6 +550,25 @@ graph::RemoteItem recover_uploaded_item(
     }
 }
 
+graph::RemoteItem recover_created_directory(
+    const storage::PendingUpload& upload,
+    graph::GraphClient& graph
+) {
+    require_local_directory(upload);
+    try {
+        return graph.create_directory(upload.remote_path);
+    } catch (const graph::UploadConflictError&) {
+        const auto remote = graph.item_by_path(upload.remote_path);
+        if (!remote.directory) {
+            throw LocalModificationConflictError(
+                "remote directory recovery conflicts with '" +
+                upload.remote_path + "'"
+            );
+        }
+        return remote;
+    }
+}
+
 }  // namespace
 
 void recover_pending_uploads(
@@ -437,6 +579,32 @@ void recover_pending_uploads(
     const cli::Console& console
 ) {
     for (auto upload : items.pending_uploads(drive_id)) {
+        if (upload.directory) {
+            const auto remote =
+                recover_created_directory(upload, graph);
+            if (remote.remote_path != upload.remote_path) {
+                throw std::runtime_error(
+                    "Microsoft Graph directory response does not match '" +
+                    upload.remote_path + "'"
+                );
+            }
+            items.commit_upload(
+                upload,
+                uploaded_directory_state(
+                    remote,
+                    upload.local_path,
+                    drive_id
+                )
+            );
+            metadata.write_remote_identity(remote, upload.local_path);
+            console.message(
+                cli::MessageKind::information,
+                "pending_upload_recovered",
+                "Recovered pending directory creation '" +
+                    upload.remote_path + "'."
+            );
+            continue;
+        }
         if (!std::filesystem::is_regular_file(upload.snapshot_path) ||
             content_fingerprint(upload.snapshot_path) !=
                 upload.content_fingerprint) {
@@ -488,11 +656,72 @@ UploadSummary upload_local_changes(
         console,
         !dry_run
     );
-    summary.planned = uploads.size();
+    summary.planned = static_cast<std::size_t>(std::ranges::count(
+        uploads,
+        false,
+        &UploadCandidate::directory
+    ));
+    summary.planned_directories =
+        uploads.size() - summary.planned;
     if (dry_run) {
         return summary;
     }
     for (const auto& upload : uploads) {
+        if (upload.directory) {
+            storage::PendingUpload pending{
+                .drive_id = drive_id,
+                .remote_path = upload.remote_path,
+                .local_path = upload.path,
+                .snapshot_path = {},
+                .content_fingerprint = {},
+                .local_size = 0,
+                .local_modified_ticks = 0,
+                .remote_id = std::nullopt,
+                .expected_etag = {},
+                .upload_url = {},
+                .upload_expiration = {},
+                .completed_bytes = 0,
+                .directory = true,
+            };
+            items.save_pending_upload(pending);
+            graph::RemoteItem remote;
+            try {
+                remote = graph.create_directory(upload.remote_path);
+            } catch (const graph::UploadConflictError&) {
+                items.remove_pending_upload(
+                    drive_id,
+                    upload.remote_path
+                );
+                throw LocalModificationConflictError(
+                    "remote item conflicts with local directory '" +
+                    upload.remote_path + "'"
+                );
+            }
+            require_local_directory(pending);
+            if (remote.remote_path != upload.remote_path ||
+                !remote.directory) {
+                throw std::runtime_error(
+                    "Microsoft Graph directory response does not match '" +
+                    upload.remote_path + "'"
+                );
+            }
+            items.commit_upload(
+                pending,
+                uploaded_directory_state(
+                    remote,
+                    upload.path,
+                    drive_id
+                )
+            );
+            metadata.write_remote_identity(remote, upload.path);
+            ++summary.created_directories;
+            console.message(
+                cli::MessageKind::information,
+                "local_directory_created",
+                "Created remote directory '" + upload.remote_path + "'."
+            );
+            continue;
+        }
         const auto baseline = capture_local_file_baseline(upload.path);
         if (!baseline.existed) {
             continue;
@@ -513,6 +742,7 @@ UploadSummary upload_local_changes(
             .upload_url = {},
             .upload_expiration = {},
             .completed_bytes = 0,
+            .directory = false,
         };
         items.save_pending_upload(pending);
         pending.snapshot_path = snapshot.release();

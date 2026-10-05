@@ -598,7 +598,10 @@ remote changes are applied. The default is
 .BR true .
 New files fail on remote name conflicts, and tracked modifications use the
 saved eTag as an If-Match precondition. Uploads use stable private snapshots
-and a durable SQLite recovery journal. Files through 250 MB use simple upload;
+and a durable SQLite recovery journal. Selected untracked local directories
+are created remotely in parent-first order before their files, with
+fail-on-conflict semantics and durable recovery. Files through 250 MB use
+simple upload;
 larger files use contiguous Graph upload-session fragments and validate
 nextExpectedRanges before advancing. Session URLs are preauthorized and never
 receive the Graph Authorization header. The SQLite pending-upload journal

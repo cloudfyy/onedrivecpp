@@ -94,6 +94,7 @@ struct PendingUpload {
     std::string upload_url;
     std::string upload_expiration;
     std::uint64_t completed_bytes{0};
+    bool directory{false};
 };
 
 struct PendingMove {
@@ -128,6 +129,7 @@ PRO_DEF_MEM_DISPATCH(StoreSavePartialDispatch, save_partial_download);
 PRO_DEF_MEM_DISPATCH(StoreRemovePartialDispatch, remove_partial_download);
 PRO_DEF_MEM_DISPATCH(StorePartialDispatch, partial_download);
 PRO_DEF_MEM_DISPATCH(StoreSavePendingUploadDispatch, save_pending_upload);
+PRO_DEF_MEM_DISPATCH(StoreRemovePendingUploadDispatch, remove_pending_upload);
 PRO_DEF_MEM_DISPATCH(StorePendingUploadsDispatch, pending_uploads);
 PRO_DEF_MEM_DISPATCH(StoreCommitUploadDispatch, commit_upload);
 PRO_DEF_MEM_DISPATCH(StoreSavePendingMoveDispatch, save_pending_move);
@@ -179,6 +181,10 @@ struct ItemStoreFacade : pro::facade_builder
         ) const
     >
     ::add_convention<StoreSavePendingUploadDispatch, void(PendingUpload)>
+    ::add_convention<
+        StoreRemovePendingUploadDispatch,
+        void(const std::string&, const std::string&)
+    >
     ::add_convention<
         StorePendingUploadsDispatch,
         std::vector<PendingUpload>(const std::string&) const
@@ -287,6 +293,13 @@ public:
 
     void save_pending_upload(PendingUpload upload) {
         implementation()->save_pending_upload(std::move(upload));
+    }
+
+    void remove_pending_upload(
+        const std::string& drive_id,
+        const std::string& remote_path
+    ) {
+        implementation()->remove_pending_upload(drive_id, remote_path);
     }
 
     [[nodiscard]] std::vector<PendingUpload> pending_uploads(

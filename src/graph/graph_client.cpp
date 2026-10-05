@@ -790,7 +790,8 @@ std::optional<FileHash> item_content_hash(const Json& value) {
 RemoteItem parse_drive_item(
     const Json& json,
     std::string_view description,
-    bool validate_content
+    bool validate_content,
+    bool allow_directory = false
 ) {
     try {
         RemoteItem item{
@@ -826,7 +827,8 @@ RemoteItem parse_drive_item(
         }
         if (item.id.empty() || item.name.empty() || item.etag.empty() ||
             item.remote_path.empty() || item.deleted || item.root ||
-            item.directory || item.size < 0 || item.last_modified.empty()) {
+            (item.directory && !allow_directory) || item.size < 0 ||
+            item.last_modified.empty()) {
             throw std::runtime_error(
                 "Microsoft Graph returned invalid " +
                 std::string{description} + " metadata"
@@ -1303,8 +1305,107 @@ RemoteItem MicrosoftGraphClient::item_by_path(
     return parse_drive_item(
         json,
         "path lookup",
-        !options_.relaxed_download_validation
+        !options_.relaxed_download_validation,
+        true
     );
+}
+
+RemoteItem MicrosoftGraphClient::create_directory(
+    const std::string& remote_path
+) const {
+    const auto separator = remote_path.rfind('/');
+    const auto name = separator == std::string::npos ?
+        remote_path :
+        remote_path.substr(separator + 1);
+    if (name.empty()) {
+        throw std::invalid_argument(
+            "cannot create a remote directory without a name"
+        );
+    }
+    const std::string drive_prefix =
+        options_.drive_id == "me" ?
+            options_.endpoint + "/me/drive" :
+            options_.endpoint + "/drives/" +
+                percent_encode(options_.drive_id);
+    const auto parent = separator == std::string::npos ?
+        std::string{} :
+        remote_path.substr(0, separator);
+    const auto url = parent.empty() ?
+        drive_prefix + "/root/children" :
+        drive_prefix + "/root:/" +
+            percent_encode_remote_path(parent) + ":/children";
+    const auto body = Json{
+        {"name", name},
+        {"folder", Json::object()},
+        {"@microsoft.graph.conflictBehavior", "fail"},
+    }.dump();
+    const auto& transfer = options_.upload_transport.transfer;
+    const auto response = perform_with_retries(
+        [&] {
+            return transport_->perform(http::HttpRequest{
+                .method = http::HttpMethod::post,
+                .url = url,
+                .headers = {
+                    "Accept: application/json",
+                    "Authorization: Bearer " + access_token(),
+                    "Content-Type: application/json",
+                },
+                .body = body,
+                .connect_timeout = transfer.connect_timeout,
+                .operation_timeout = transfer.operation_timeout,
+                .low_speed_timeout = transfer.low_speed_timeout,
+                .low_speed_limit_bytes_per_second =
+                    transfer.low_speed_limit_bytes_per_second,
+                .maximum_send_speed_bytes_per_second =
+                    effective_upload_rate(options_.upload_transport),
+                .http_version = transfer.http_version,
+                .ip_version = transfer.ip_version,
+                .maximum_response_size = std::size_t{1024} * 1024U,
+                .stop_token = {},
+            });
+        },
+        options_,
+        options_.maximum_throttle_retries,
+        sleep_,
+        "Microsoft Graph directory creation"
+    );
+    if (!response) {
+        throw std::runtime_error(
+            "Microsoft Graph directory creation failed: " +
+            response.error().message
+        );
+    }
+    Json json;
+    try {
+        json = Json::parse(response->body);
+    } catch (const Json::exception& error) {
+        throw std::runtime_error(
+            "Microsoft Graph returned invalid directory creation JSON: " +
+            std::string{error.what()}
+        );
+    }
+    if (response->status_code == 409 || response->status_code == 412) {
+        throw UploadConflictError(
+            graph_error_message(json, response->status_code)
+        );
+    }
+    if (response->status_code < 200 || response->status_code >= 300) {
+        throw std::runtime_error(
+            graph_error_message(json, response->status_code)
+        );
+    }
+    auto item = parse_drive_item(
+        json,
+        "directory creation response",
+        !options_.relaxed_download_validation,
+        true
+    );
+    if (!item.directory) {
+        throw std::runtime_error(
+            "Microsoft Graph directory creation returned a file"
+        );
+    }
+    return item;
 }
 
 RemoteItem MicrosoftGraphClient::upload_file(

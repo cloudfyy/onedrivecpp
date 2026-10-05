@@ -120,6 +120,12 @@ public:
         throw std::logic_error{"upload was not expected"};
     }
 
+    [[nodiscard]] onedrive::graph::RemoteItem create_directory(
+        const std::string&
+    ) const {
+        throw std::logic_error{"directory creation was not expected"};
+    }
+
     std::string contents{"data"};
     std::vector<std::uint64_t> progress_updates;
     bool send_checkpoint{true};
@@ -199,6 +205,7 @@ public:
     }
 
     void save_pending_upload(onedrive::storage::PendingUpload) {}
+    void remove_pending_upload(const std::string&, const std::string&) {}
 
     [[nodiscard]] std::vector<onedrive::storage::PendingUpload>
     pending_uploads(const std::string&) const {

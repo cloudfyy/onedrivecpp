@@ -129,6 +129,7 @@ PRO_DEF_MEM_DISPATCH(GraphItemByPathDispatch, item_by_path);
 PRO_DEF_MEM_DISPATCH(GraphListDeltaDispatch, list_delta);
 PRO_DEF_MEM_DISPATCH(GraphDownloadFileDispatch, download_file);
 PRO_DEF_MEM_DISPATCH(GraphUploadFileDispatch, upload_file);
+PRO_DEF_MEM_DISPATCH(GraphCreateDirectoryDispatch, create_directory);
 
 struct GraphClientFacade : pro::facade_builder
     ::add_convention<
@@ -174,6 +175,10 @@ struct GraphClientFacade : pro::facade_builder
             const std::optional<UploadSession>&,
             const UploadCheckpoint&
         ) const
+    >
+    ::add_convention<
+        GraphCreateDirectoryDispatch,
+        RemoteItem(const std::string&) const
     >
     ::build {};
 
@@ -246,6 +251,12 @@ public:
         );
     }
 
+    [[nodiscard]] RemoteItem create_directory(
+        const std::string& remote_path
+    ) const {
+        return implementation()->create_directory(remote_path);
+    }
+
     void download_file(
         const std::string& remote_id,
         const std::string& expected_etag,
@@ -296,6 +307,9 @@ public:
         const std::filesystem::path& source,
         const std::optional<UploadSession>& session = std::nullopt,
         const UploadCheckpoint& checkpoint = {}
+    ) const;
+    [[nodiscard]] RemoteItem create_directory(
+        const std::string& remote_path
     ) const;
     [[nodiscard]] DeltaResult list_delta(
         const std::optional<std::string>& delta_link,

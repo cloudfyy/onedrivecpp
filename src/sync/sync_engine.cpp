@@ -2178,6 +2178,13 @@ int SyncEngine::synchronize() const {
                     "Local upload plan:",
                     {
                         {
+                            .label = "create directories:",
+                            .key = "create_directories",
+                            .value = std::to_string(
+                                upload_summary.planned_directories
+                            ),
+                        },
+                        {
                             .label = "upload files:",
                             .key = "upload_files",
                             .value =
@@ -2263,6 +2270,13 @@ int SyncEngine::synchronize() const {
                         .label = "local removals:",
                         .key = "local_removals",
                         .value = std::to_string(summary.removed),
+                    },
+                    {
+                        .label = "remote directories created:",
+                        .key = "remote_directories_created",
+                        .value = std::to_string(
+                            upload_summary.created_directories
+                        ),
                     },
                     {
                         .label = "uploaded:",
