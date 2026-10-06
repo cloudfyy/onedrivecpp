@@ -83,6 +83,12 @@ drive_id = "me"
 # sync_list = "sync_list"
 # Include ordinary files located directly in the Drive root when sync_list is set.
 sync_root_files = false
+# Exclude a directory subtree when it contains a regular .nosync marker file.
+nosync_enabled = true
+# Supported values: "include" and "exclude".
+dotfiles = "include"
+# Skip larger files in both upload and download directions. Zero is unlimited.
+maximum_file_size_bytes = 0
 # "bidirectional" downloads remote changes and uploads local changes.
 # "upload_only" uploads local changes without changing local content from Graph.
 # "download_only" applies remote changes without uploading local changes.

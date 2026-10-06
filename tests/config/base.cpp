@@ -21,6 +21,9 @@ int test_base() {
                << "drive_id = \"test-drive\"\n"
                << "sync_list = \"rules/sync_list\"\n"
                << "sync_root_files = true\n"
+               << "nosync_enabled = false\n"
+               << "dotfiles = \"exclude\"\n"
+               << "maximum_file_size_bytes = 8388608\n"
                << "local_conflict = \"backup\"\n"
                << "maximum_remote_deletions = 42\n"
                << "mode = \"upload_only\"\n"
@@ -100,6 +103,9 @@ int test_base() {
                 path.parent_path() / "rules/sync_list"
             } ||
         !config.sync_root_files ||
+        config.nosync_enabled ||
+        config.dotfiles != onedrive::config::DotfilePolicy::exclude ||
+        config.maximum_file_size_bytes != 8'388'608 ||
         config.application_id != "test-application" ||
         config.azure_tenant_id != "test-tenant" ||
         config.auth_endpoint != "https://login.example.test" ||
@@ -214,6 +220,9 @@ int test_base() {
         defaults.sync_permissions !=
             onedrive::config::SyncPermissionsMode::private_access ||
         defaults.sync_data_mount_point ||
+        !defaults.nosync_enabled ||
+        defaults.dotfiles != onedrive::config::DotfilePolicy::include ||
+        defaults.maximum_file_size_bytes != 0 ||
         defaults.sync_mode != onedrive::sync::SyncMode::bidirectional ||
         defaults.delete_policy != onedrive::sync::DeletePolicy::propagate ||
         defaults.local_conflict !=

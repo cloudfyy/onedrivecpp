@@ -424,6 +424,28 @@ local files that become excluded are not deleted. The explicit
 .B download
 command is not filtered by this setting.
 .TP
+.B sync.nosync_enabled
+When true (the default), a regular local file named
+.B .nosync
+excludes its containing directory and complete subtree from automatic
+synchronization. The marker itself is never synchronized; a symbolic link is
+not a marker. Adding or removing a marker updates the filter fingerprint and
+forces a full Delta query.
+.TP
+.B sync.dotfiles
+Set to
+.B include
+(the default) or
+.BR exclude .
+Exclusion applies when any path component begins with a dot and contains at
+least one additional character.
+.TP
+.B sync.maximum_file_size_bytes
+Maximum eligible regular-file size for both downloads and uploads. Zero (the
+default) means unlimited. Files exactly equal to a positive limit remain
+eligible. Filtered files do not cause remote deletions, and tracked local files
+that become excluded are retained.
+.TP
 .B auth.application_id
 Microsoft Entra Application (client) ID.
 .TP

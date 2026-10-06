@@ -5,6 +5,8 @@
 
 #include <filesystem>
 #include <functional>
+#include <optional>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -14,18 +16,26 @@ namespace onedrive::sync::detail {
 
 class SyncList {
 public:
-    [[nodiscard]] static SyncList load(
-        const std::filesystem::path& path,
-        bool include_root_files = false
+    [[nodiscard]] static SyncList
+    load(const std::filesystem::path& path, bool include_root_files = false);
+    [[nodiscard]] static SyncList configured(
+        const std::optional<std::filesystem::path>& rules_path,
+        bool include_root_files,
+        const std::filesystem::path& sync_root,
+        bool nosync_enabled,
+        bool exclude_dotfiles,
+        std::uint64_t maximum_file_size_bytes
     );
 
     [[nodiscard]] bool includes(
         std::string_view remote_path,
-        bool directory
+        bool directory,
+        std::optional<std::uint64_t> size = std::nullopt
     ) const;
     [[nodiscard]] bool excludes(
         std::string_view remote_path,
-        bool directory
+        bool directory,
+        std::optional<std::uint64_t> size = std::nullopt
     ) const;
     [[nodiscard]] const std::string& fingerprint() const noexcept;
     [[nodiscard]] std::size_t rule_count() const noexcept;
@@ -44,13 +54,24 @@ private:
         bool directory
     ) const;
     [[nodiscard]] bool matches_exclusion(
+        const std::vector<std::string_view>& path_segments, bool directory
+    ) const;
+    [[nodiscard]] bool policy_excludes(
+        std::string_view remote_path,
         const std::vector<std::string_view>& path_segments,
-        bool directory
+        bool directory,
+        std::optional<std::uint64_t> size
     ) const;
 
     std::vector<Rule> rules_;
+    std::vector<std::string> nosync_directories_;
+    std::string canonical_;
     std::string fingerprint_;
     bool include_root_files_{false};
+    bool select_all_{false};
+    bool nosync_enabled_{false};
+    bool exclude_dotfiles_{false};
+    std::uint64_t maximum_file_size_bytes_{0};
 };
 
 struct FilteredDelta {
@@ -67,4 +88,4 @@ struct FilteredDelta {
     storage::DeltaApplyMode apply_mode
 );
 
-}  // namespace onedrive::sync::detail
+} // namespace onedrive::sync::detail

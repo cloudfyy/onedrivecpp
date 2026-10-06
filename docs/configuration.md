@@ -55,6 +55,12 @@ local_conflict = "block"
 # Optional; resolved relative to this TOML file
 # sync_list = "sync_list"
 sync_root_files = false
+# A regular .nosync file excludes its directory subtree.
+nosync_enabled = true
+# "include" or "exclude"
+dotfiles = "include"
+# Zero means unlimited.
+maximum_file_size_bytes = 0
 mode = "bidirectional"
 delete_policy = "propagate"
 maximum_remote_deletions = 1000
@@ -236,6 +242,28 @@ inclusion. The default is `false`; without `sync.sync_list`, the setting has no
 effect because normal synchronization already includes all files. Changing
 this value changes the selective-sync fingerprint and therefore triggers a
 full remote-state query before the new selection is committed.
+
+The same filter also applies to downloads, uploads, local-move discovery, and
+remote-deletion planning:
+
+- `sync.nosync_enabled = true` (the default) treats a regular `.nosync` file as
+  a local marker that excludes the containing directory and its complete
+  subtree. The marker itself is never synchronized. Symbolic links named
+  `.nosync` are not markers.
+- `sync.dotfiles = "include"` keeps Unix dotfiles eligible for synchronization.
+  Set it to `"exclude"` to exclude any path having a component that begins
+  with `.` and contains at least one additional character.
+- `sync.maximum_file_size_bytes = 0` imposes no size limit. A positive value
+  excludes regular files larger than the limit in either direction; a file
+  exactly equal to the limit remains eligible.
+
+Filtered local absence is not interpreted as a remote deletion. Changes to
+these policies, and additions or removals of `.nosync` markers, update the
+filter fingerprint and force a full Delta query. Existing local files that
+become excluded are retained with identity-based upload suppression. If a file
+later becomes eligible again, normal local-conflict protection still applies.
+The explicit `download REMOTE_PATH` command remains outside these automatic
+synchronization filters.
 
 `sync.local_conflict` controls simultaneous local and remote file changes.
 The default, `"block"`, preserves the existing behavior: synchronization

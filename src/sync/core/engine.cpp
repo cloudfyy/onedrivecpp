@@ -234,14 +234,16 @@ int SyncEngine::synchronize() const {
             }
         }
 
-        const auto sync_list = config_->sync_list.has_value() ?
-            std::optional{detail::SyncList::load(
-                *config_->sync_list,
-                config_->sync_root_files
-            )} :
-            std::nullopt;
+        const auto sync_filter = detail::SyncList::configured(
+            config_->sync_list,
+            config_->sync_root_files,
+            sync_root,
+            config_->nosync_enabled,
+            config_->dotfiles == config::DotfilePolicy::exclude,
+            config_->maximum_file_size_bytes
+        );
         const std::string sync_filter_fingerprint =
-            sync_list ? sync_list->fingerprint() : "";
+            sync_filter.fingerprint();
         const auto previous_delta_link = items_.delta_link(config_->drive_id);
         const auto previous_sync_filter_fingerprint =
             items_.sync_filter_fingerprint(config_->drive_id);
@@ -265,15 +267,26 @@ int SyncEngine::synchronize() const {
             );
         }
         std::vector<std::string> snapshot_removals;
-        if (sync_list) {
+        if (config_->sync_list) {
             spdlog::info(
                 "Loaded {} selective synchronization rules from '{}' "
                 "(root files: {})",
-                sync_list->rule_count(),
+                sync_filter.rule_count(),
                 config_->sync_list->string(),
                 config_->sync_root_files ? "included" : "rule-selected"
             );
         }
+        spdlog::info(
+            "Synchronization filters: .nosync {}, dotfiles {}, maximum file "
+            "size {}",
+            config_->nosync_enabled ? "enabled" : "disabled",
+            config_->dotfiles == config::DotfilePolicy::exclude ?
+                "excluded" :
+                "included",
+            config_->maximum_file_size_bytes == 0 ?
+                std::string{"unlimited"} :
+                std::to_string(config_->maximum_file_size_bytes) + " bytes"
+        );
         spdlog::debug(
             "Preparing Microsoft Graph delta query for drive '{}': {} tracked "
             "items, saved cursor {}",
@@ -334,7 +347,7 @@ int SyncEngine::synchronize() const {
                 previously_blocked.size()
             );
         }
-        if (sync_list) {
+        {
             std::unordered_set<std::string> blocked_ids;
             blocked_ids.reserve(previously_blocked.size());
             for (const auto& item : previously_blocked) {
@@ -342,7 +355,7 @@ int SyncEngine::synchronize() const {
             }
             auto filtered = detail::filter_delta(
                 std::move(delta),
-                *sync_list,
+                sync_filter,
                 [&](std::string_view remote_id) {
                     return blocked_ids.contains(std::string{remote_id}) ||
                            items_.find(
@@ -427,7 +440,7 @@ int SyncEngine::synchronize() const {
                     graph_,
                     items_,
                     *metadata,
-                    sync_list ? &*sync_list : nullptr,
+                    &sync_filter,
                     console,
                     capabilities,
                     {
@@ -533,7 +546,7 @@ int SyncEngine::synchronize() const {
                     graph_,
                     items_,
                     *metadata,
-                    sync_list ? &*sync_list : nullptr,
+                    &sync_filter,
                     console,
                     capabilities,
                     {

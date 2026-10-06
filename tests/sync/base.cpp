@@ -296,6 +296,83 @@ int test_selective_sync_refreshes_delta_state() {
     return EXIT_SUCCESS;
 }
 
+int test_filter_policies_apply_in_both_directions() {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path() / "filter-policies";
+    std::filesystem::create_directories(root / "Ignored");
+    {
+        std::ofstream marker{root / "Ignored" / ".nosync"};
+    }
+    {
+        std::ofstream output{root / "Ignored" / "local.txt"};
+        output << "data";
+    }
+    {
+        std::ofstream output{root / ".local-hidden"};
+        output << "data";
+    }
+    {
+        std::ofstream output{root / "local-large.bin"};
+        output << "large";
+    }
+    {
+        std::ofstream output{root / "local-small.bin"};
+        output << "data";
+    }
+
+    FakeGraphClient graph;
+    graph.changes = {
+        file("remote-small", "remote-small.bin", 4),
+        file("remote-large", "remote-large.bin", 5),
+        file("remote-hidden", ".remote-hidden", 4),
+        file("remote-ignored", "Ignored/remote.txt", 4),
+    };
+    graph.contents["remote-small"] = "data";
+    graph.contents["remote-large"] = "large";
+    graph.contents["remote-hidden"] = "data";
+    graph.contents["remote-ignored"] = "data";
+    FakeItemStore items;
+    items.saved_delta_link = "saved";
+    FakeMetrics metrics;
+    auto config = config_for(root, false);
+    config.sync_mode = onedrive::sync::SyncMode::bidirectional;
+    config.dotfiles = onedrive::config::DotfilePolicy::exclude;
+    config.maximum_file_size_bytes = 4;
+
+    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
+        ) != 0 ||
+        graph.delta_requests !=
+            std::vector<std::optional<std::string>>{std::nullopt} ||
+        graph.download_count != 1 ||
+        graph.uploaded_paths != std::vector<std::string>{"local-small.bin"} ||
+        !std::filesystem::is_regular_file(root / "remote-small.bin") ||
+        std::filesystem::exists(root / "remote-large.bin") ||
+        std::filesystem::exists(root / ".remote-hidden") ||
+        std::filesystem::exists(root / "Ignored" / "remote.txt") ||
+        !std::filesystem::is_regular_file(root / "Ignored" / ".nosync") ||
+        items.applied_delta.sync_filter_fingerprint.empty()) {
+        return fail("synchronization filter policies were not bidirectional");
+    }
+
+    items.saved_delta_link = items.applied_delta.delta_link;
+    items.saved_sync_filter_fingerprint =
+        items.applied_delta.sync_filter_fingerprint;
+    graph.delta_requests.clear();
+    graph.uploaded_paths.clear();
+    const auto downloads_before = graph.download_count.load();
+    std::filesystem::remove(root / "Ignored" / ".nosync");
+    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
+        ) != 0 ||
+        graph.delta_requests !=
+            std::vector<std::optional<std::string>>{std::nullopt} ||
+        graph.download_count != downloads_before + 1 ||
+        graph.uploaded_paths != std::vector<std::string>{"Ignored/local.txt"} ||
+        !std::filesystem::is_regular_file(root / "Ignored" / "remote.txt")) {
+        return fail(".nosync removal did not safely re-include its subtree");
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_selective_sync_remote_moves() {
     TemporaryDirectory temporary;
     const auto sync_list = temporary.path() / "sync_list";
@@ -1074,6 +1151,10 @@ int main() {
         return result;
     }
     if (const int result = test_selective_sync_refreshes_delta_state();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_filter_policies_apply_in_both_directions();
         result != EXIT_SUCCESS) {
         return result;
     }

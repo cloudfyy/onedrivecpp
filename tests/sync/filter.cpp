@@ -3,6 +3,7 @@
 #include "support/common.hpp"
 
 #include <cstdlib>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -17,24 +18,23 @@ using onedrive::test::fail;
 onedrive::graph::RemoteItem item(
     std::string id,
     std::string path,
-    bool directory = false
+    bool directory = false,
+    std::int64_t size = 4
 ) {
     const auto separator = path.rfind('/');
     return {
         .id = std::move(id),
-        .name = separator == std::string::npos ?
-            path :
-            path.substr(separator + 1),
+        .name =
+            separator == std::string::npos ? path : path.substr(separator + 1),
         .etag = "etag",
         .remote_path = std::move(path),
-        .size = directory ? 0 : 4,
+        .size = directory ? 0 : size,
         .directory = directory,
     };
 }
 
 void write_rules(
-    const std::filesystem::path& path,
-    const std::string& contents
+    const std::filesystem::path& path, const std::string& contents
 ) {
     std::ofstream output{path};
     output << contents;
@@ -43,15 +43,12 @@ void write_rules(
     }
 }
 
-}  // namespace
+} // namespace
 
 int main() {
     namespace detail = onedrive::sync::detail;
     if (!detail::remote_path_is_descendant("Folder/File", "Folder") ||
-        !detail::remote_path_is_descendant(
-            "Folder/Nested/File",
-            "Folder"
-        ) ||
+        !detail::remote_path_is_descendant("Folder/Nested/File", "Folder") ||
         detail::remote_path_is_descendant("Folder", "Folder") ||
         detail::remote_path_is_descendant("Folder2/File", "Folder") ||
         detail::remote_path_is_descendant("", "") ||
@@ -71,8 +68,7 @@ int main() {
         "Pictures/*.jpg\n"
     );
     const auto rules = detail::SyncList::load(rules_path);
-    if (rules.rule_count() != 4 ||
-        !rules.includes("Documents", true) ||
+    if (rules.rule_count() != 4 || !rules.includes("Documents", true) ||
         rules.includes("Documents", false) ||
         !rules.includes("Documents/report.txt", false) ||
         rules.includes("Documents/Private/secret.txt", false) ||
@@ -116,19 +112,106 @@ int main() {
         !excluded_root_file_rules.includes("included.txt", false)) {
         return fail("root-file exclusion did not override implicit inclusion");
     }
+
+    const auto policy_root = temporary_directory.path() / "policy-root";
+    std::filesystem::create_directories(policy_root / "Ignored");
+    std::filesystem::create_directories(policy_root / "Visible");
+    {
+        std::ofstream marker{policy_root / "Ignored" / ".nosync"};
+    }
+    const auto policy = detail::SyncList::configured(
+        std::nullopt, false, policy_root, true, true, 4
+    );
+    if (policy.includes("Ignored", true) ||
+        policy.includes("Ignored/file.txt", false, 4) ||
+        policy.includes("Ignored/.nosync", false, 0) ||
+        policy.includes(".hidden", true) ||
+        policy.includes("Visible/.secret", false, 1) ||
+        policy.includes("Visible/large.bin", false, 5) ||
+        !policy.includes("Visible/small.bin", false, 4)) {
+        return fail(".nosync, dotfile, or maximum-size policy was incorrect");
+    }
+    const auto policy_fingerprint = policy.fingerprint();
+    std::filesystem::remove(policy_root / "Ignored" / ".nosync");
+    const auto marker_removed = detail::SyncList::configured(
+        std::nullopt, false, policy_root, true, true, 4
+    );
+    if (!marker_removed.includes("Ignored/file.txt", false, 4) ||
+        marker_removed.fingerprint() == policy_fingerprint) {
+        return fail(".nosync marker changes did not update filter state");
+    }
+    const auto policies_disabled = detail::SyncList::configured(
+        std::nullopt, false, policy_root, false, false, 0
+    );
+    const auto default_policy = detail::SyncList::configured(
+        std::nullopt, false, policy_root / "missing", true, false, 0
+    );
+    if (!default_policy.fingerprint().empty() ||
+        !policies_disabled.includes("Ignored/.nosync", false, 1) ||
+        !policies_disabled.includes(".hidden/file.txt", false, 100)) {
+        return fail("disabled synchronization policies still excluded paths");
+    }
+    write_rules(rules_path, "/Visible/\n");
+    if (detail::SyncList::configured(
+            rules_path, false, policy_root, true, false, 0
+        )
+            .fingerprint() != detail::SyncList::load(rules_path).fingerprint()) {
+        return fail("default policies changed the legacy sync-list fingerprint");
+    }
+    {
+        std::ofstream marker{policy_root / ".nosync"};
+    }
+    const auto root_marker = detail::SyncList::configured(
+        std::nullopt, false, policy_root, true, false, 0
+    );
+    if (root_marker.includes("Visible/file.txt", false, 1) ||
+        root_marker.fingerprint().empty()) {
+        return fail("root .nosync marker did not exclude all descendants");
+    }
+    std::filesystem::remove(policy_root / ".nosync");
+    std::filesystem::create_symlink(
+        policy_root / "missing-marker", policy_root / "Visible" / ".nosync"
+    );
+    const auto symlink_marker = detail::SyncList::configured(
+        std::nullopt, false, policy_root, true, false, 4
+    );
+    if (!symlink_marker.includes("Visible/unknown.bin", false) ||
+        !symlink_marker.includes("Visible/small.bin", false, 4)) {
+        return fail("symlink marker or unknown size excluded eligible files");
+    }
+
+    auto policy_filtered = detail::filter_delta(
+        {
+            .changes =
+                {
+                    item("small", "Visible/small.bin"),
+                    item("large", "Visible/large.bin", false, 5),
+                    item("hidden", ".hidden"),
+                },
+            .delta_link = "policy-delta",
+        },
+        policy,
+        [](std::string_view) { return false; },
+        DeltaApplyMode::replace
+    );
+    if (policy_filtered.delta.changes.size() != 1 ||
+        policy_filtered.delta.changes[0].id != "small" ||
+        policy_filtered.excluded != 2) {
+        return fail("policy delta filtering retained excluded files");
+    }
+
     auto root_files_filtered = detail::filter_delta(
         {
-            .changes = {
-                item("root-file", "root.txt"),
-                item("nested-file", "Folder/nested.txt"),
-                item("root-directory", "Folder", true),
-            },
+            .changes =
+                {
+                    item("root-file", "root.txt"),
+                    item("nested-file", "Folder/nested.txt"),
+                    item("root-directory", "Folder", true),
+                },
             .delta_link = "root-files-delta",
         },
         excluded_root_file_rules,
-        [](std::string_view) {
-            return false;
-        },
+        [](std::string_view) { return false; },
         DeltaApplyMode::replace
     );
     if (root_files_filtered.delta.changes.size() != 1 ||
@@ -145,54 +228,50 @@ int main() {
     removed.deleted = true;
     auto filtered = detail::filter_delta(
         {
-            .changes = {
-                root,
-                item("parent", "Parent", true),
-                item("child", "Parent/Child", true),
-                item("selected", "Parent/Child/file.txt"),
-                item("excluded", "Parent/other.txt"),
-                removed,
-            },
+            .changes =
+                {
+                    root,
+                    item("parent", "Parent", true),
+                    item("child", "Parent/Child", true),
+                    item("selected", "Parent/Child/file.txt"),
+                    item("excluded", "Parent/other.txt"),
+                    removed,
+                },
             .delta_link = "delta-1",
         },
         ancestor_rules,
-        [](std::string_view) {
-            return false;
-        },
+        [](std::string_view) { return false; },
         DeltaApplyMode::replace
     );
     std::vector<std::string> filtered_ids;
     for (const auto& change : filtered.delta.changes) {
         filtered_ids.push_back(change.id);
     }
-    if (filtered_ids != std::vector<std::string>{
-            "root", "parent", "child", "selected", "removed"
-        } ||
-        filtered.excluded != 1 ||
-        filtered.delta.delta_link != "delta-1") {
+    if (filtered_ids !=
+            std::vector<std::string>{
+                "root", "parent", "child", "selected", "removed"
+            } ||
+        filtered.excluded != 1 || filtered.delta.delta_link != "delta-1") {
         return fail("full delta filtering did not retain required ancestors");
     }
 
     const std::unordered_set<std::string> tracked{"tracked"};
     filtered = detail::filter_delta(
         {
-            .changes = {
-                item("tracked", "Other/tracked.txt"),
-                item("untracked", "Other/untracked.txt"),
-            },
+            .changes =
+                {
+                    item("tracked", "Other/tracked.txt"),
+                    item("untracked", "Other/untracked.txt"),
+                },
             .delta_link = "delta-2",
         },
         ancestor_rules,
-        [&](std::string_view id) {
-            return tracked.contains(std::string{id});
-        },
+        [&](std::string_view id) { return tracked.contains(std::string{id}); },
         DeltaApplyMode::merge
     );
     if (!filtered.delta.changes.empty() ||
-        filtered.snapshot_removals !=
-            std::vector<std::string>{"tracked"} ||
-        filtered.retained_remote_ids !=
-            std::vector<std::string>{"tracked"} ||
+        filtered.snapshot_removals != std::vector<std::string>{"tracked"} ||
+        filtered.retained_remote_ids != std::vector<std::string>{"tracked"} ||
         filtered.excluded != 2) {
         return fail("incremental filtering did not remove excluded snapshots");
     }
@@ -205,17 +284,16 @@ int main() {
     const auto excluded_parent_rules = detail::SyncList::load(rules_path);
     filtered = detail::filter_delta(
         {
-            .changes = {
-                item("parent", "Parent", true),
-                item("child", "Parent/Child", true),
-                item("selected", "Parent/Child/file.txt"),
-            },
+            .changes =
+                {
+                    item("parent", "Parent", true),
+                    item("child", "Parent/Child", true),
+                    item("selected", "Parent/Child/file.txt"),
+                },
             .delta_link = "delta-3",
         },
         excluded_parent_rules,
-        [](std::string_view) {
-            return false;
-        },
+        [](std::string_view) { return false; },
         DeltaApplyMode::replace
     );
     if (!filtered.delta.changes.empty() || filtered.excluded != 3) {
@@ -241,11 +319,9 @@ int main() {
     } catch (const std::runtime_error&) {
     }
     try {
-        static_cast<void>(
-            detail::SyncList::load(
-                temporary_directory.path() / "missing-sync-list"
-            )
-        );
+        static_cast<void>(detail::SyncList::load(
+            temporary_directory.path() / "missing-sync-list"
+        ));
         return fail("a missing sync list was accepted");
     } catch (const std::runtime_error&) {
     }

@@ -36,6 +36,11 @@ enum class LocalConflictPolicy {
     backup,
 };
 
+enum class DotfilePolicy {
+    include,
+    exclude,
+};
+
 enum class TransferOrder {
     default_order,
     size_ascending,
@@ -52,6 +57,9 @@ struct Config {
     std::filesystem::path state_directory;
     std::optional<std::filesystem::path> sync_list;
     bool sync_root_files{false};
+    bool nosync_enabled{true};
+    DotfilePolicy dotfiles{DotfilePolicy::include};
+    std::uint64_t maximum_file_size_bytes{0};
     std::string drive_id{"me"};
     std::string application_id;
     std::string azure_tenant_id{"common"};

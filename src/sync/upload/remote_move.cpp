@@ -8,8 +8,10 @@
 #include "sync/filter/selective.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <exception>
 #include <filesystem>
+#include <optional>
 #include <ranges>
 #include <stdexcept>
 #include <string>
@@ -33,6 +35,7 @@ LocalMoveDiscovery discover_local_moves(
     struct CurrentItem {
         std::filesystem::path path;
         std::string remote_path;
+        std::optional<std::uint64_t> size;
         bool directory{false};
     };
     auto identity_key = [](std::uint64_t device, std::uint64_t inode) {
@@ -73,6 +76,16 @@ LocalMoveDiscovery discover_local_moves(
             const auto relative =
                 path.lexically_relative(sync_root.path());
             const auto remote_path = relative.generic_string();
+            std::optional<std::uint64_t> size;
+            if (regular) {
+                size = iterator->file_size(error);
+                if (error) {
+                    throw std::runtime_error(
+                        "cannot read local move candidate size '" +
+                        path.string() + "': " + error.message()
+                    );
+                }
+            }
             const auto identity = sync_root.identity(path, directory);
             const auto key = identity_key(
                 identity.device,
@@ -80,7 +93,7 @@ LocalMoveDiscovery discover_local_moves(
             );
             if (!current.emplace(
                     key,
-                    CurrentItem{path, remote_path, directory}
+                    CurrentItem{path, remote_path, size, directory}
                 ).second) {
                 ambiguous.insert(key);
             }
@@ -133,11 +146,13 @@ LocalMoveDiscovery discover_local_moves(
         if (sync_list != nullptr &&
             (sync_list->excludes(
                  found->second.remote_path,
-                 item.directory
+                 item.directory,
+                 found->second.size
              ) ||
              !sync_list->includes(
                  found->second.remote_path,
-                 item.directory
+                 item.directory,
+                 found->second.size
              ))) {
             continue;
         }

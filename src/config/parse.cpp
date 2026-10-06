@@ -264,6 +264,14 @@ LocalConflictPolicy parse_local_conflict(std::string_view value) {
     return enum_value(value, "sync.local_conflict", values);
 }
 
+DotfilePolicy parse_dotfile_policy(std::string_view value) {
+    constexpr std::array values{
+        std::pair{"include", DotfilePolicy::include},
+        std::pair{"exclude", DotfilePolicy::exclude},
+    };
+    return enum_value(value, "sync.dotfiles", values);
+}
+
 sync::SyncMode parse_sync_mode(std::string_view value) {
     constexpr std::array values{
         std::pair{"bidirectional", sync::SyncMode::bidirectional},

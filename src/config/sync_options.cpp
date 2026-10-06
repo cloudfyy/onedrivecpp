@@ -21,6 +21,9 @@ void load_sync_options(Config& config, const toml::table& root, const std::files
                 "permissions",
                 "sync_list",
                 "sync_root_files",
+                "nosync_enabled",
+                "dotfiles",
+                "maximum_file_size_bytes",
                 "local_conflict",
                 "mode",
                 "delete_policy",
@@ -139,6 +142,29 @@ void load_sync_options(Config& config, const toml::table& root, const std::files
                 "a boolean"
             )) {
             config.sync_root_files = *value;
+        }
+        if (const auto value = optional_value<bool>(
+                *sync,
+                "nosync_enabled",
+                "sync.nosync_enabled",
+                "a boolean"
+            )) {
+            config.nosync_enabled = *value;
+        }
+        if (const auto value = optional_value<std::string>(
+                *sync,
+                "dotfiles",
+                "sync.dotfiles",
+                "a string"
+            )) {
+            config.dotfiles = parse_dotfile_policy(*value);
+        }
+        if (sync->contains("maximum_file_size_bytes")) {
+            config.maximum_file_size_bytes = unsigned_value(
+                *sync,
+                "maximum_file_size_bytes",
+                "sync.maximum_file_size_bytes"
+            );
         }
         if (const auto value = optional_value<std::string>(
                 *sync,

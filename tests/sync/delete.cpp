@@ -594,6 +594,64 @@ int test_local_deletions() {
         return fail("selective sync deletion boundary was not preserved");
     }
 
+    const auto policy_root = temporary.path() / "policy-deletion";
+    std::filesystem::create_directories(policy_root / "Ignored");
+    {
+        std::ofstream marker{policy_root / "Ignored" / ".nosync"};
+    }
+    {
+        std::ofstream output{policy_root / ".hidden"};
+        output << "data";
+    }
+    {
+        std::ofstream output{policy_root / "large.bin"};
+        output << "large";
+    }
+    {
+        std::ofstream output{policy_root / "Ignored" / "file.txt"};
+        output << "data";
+    }
+    FakeItemStore policy_items;
+    policy_items.saved_delta_link = "saved";
+    policy_items.items.emplace(
+        "hidden-delete",
+        tracked_item(policy_root, "hidden-delete", ".hidden")
+    );
+    auto large_item =
+        tracked_item(policy_root, "large-delete", "large.bin");
+    large_item.size = 5;
+    policy_items.items.emplace("large-delete", std::move(large_item));
+    policy_items.items.emplace(
+        "nosync-delete",
+        tracked_item(policy_root, "nosync-delete", "Ignored/file.txt")
+    );
+    std::filesystem::remove(policy_root / ".hidden");
+    std::filesystem::remove(policy_root / "large.bin");
+    std::filesystem::remove(policy_root / "Ignored" / "file.txt");
+    FakeGraphClient policy_graph;
+    FakeMetrics policy_metrics;
+    auto policy_config = config_for(policy_root, false);
+    policy_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
+    policy_config.dotfiles = onedrive::config::DotfilePolicy::exclude;
+    policy_config.maximum_file_size_bytes = 4;
+    policy_items.saved_sync_filter_fingerprint =
+        onedrive::sync::detail::SyncList::configured(
+            std::nullopt,
+            policy_config.sync_root_files,
+            policy_root,
+            policy_config.nosync_enabled,
+            true,
+            policy_config.maximum_file_size_bytes
+        )
+            .fingerprint();
+    static_cast<void>(onedrive::sync::SyncEngine{
+        policy_config, policy_graph, policy_items, policy_metrics
+    }
+                          .synchronize());
+    if (!policy_graph.deleted_items.empty() || policy_items.size() != 3) {
+        return fail("filtered local absence propagated remote deletions");
+    }
+
     const auto journal_failure_root =
         temporary.path() / "delete-journal-failure";
     std::filesystem::create_directories(journal_failure_root);

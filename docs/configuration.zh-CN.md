@@ -46,6 +46,12 @@ local_conflict = "block"
 # 可选；相对路径以本 TOML 文件所在目录为基准
 # sync_list = "sync_list"
 sync_root_files = false
+# 普通文件 .nosync 会排除其所在目录子树
+nosync_enabled = true
+# "include" 或 "exclude"
+dotfiles = "include"
+# 0 表示不限制
+maximum_file_size_bytes = 0
 mode = "bidirectional"
 delete_policy = "propagate"
 maximum_remote_deletions = 1000
@@ -198,6 +204,22 @@ Drive 根目录中的普通文件。根目录下的目录及其后代仍然必�
 `!/root-secret.txt` 之类的排除规则优先于自动包含。默认值为 `false`；未配置
 `sync.sync_list` 时，普通同步本来就会包含所有文件，因此该设置没有效果。修改
 该值会改变选择性同步摘要，下次同步会先执行完整远端状态查询，再提交新的选择。
+
+同一个过滤器也用于下载、上传、本地移动发现和远端删除规划：
+
+- `sync.nosync_enabled = true`（默认值）把普通文件 `.nosync` 视为本地标记，
+  排除标记所在目录及其完整子树；标记本身永远不会参与同步，名为 `.nosync`
+  的符号链接不算标记。
+- `sync.dotfiles = "include"` 保持 Unix dotfile 可同步；设为 `"exclude"` 后，
+  路径中任意以 `.` 开头且不止一个字符的组件都会使该路径被排除。
+- `sync.maximum_file_size_bytes = 0` 表示不限制大小。正值会在两个同步方向上
+  排除严格大于该字节数的普通文件；大小恰好等于限制值的文件仍可同步。
+
+被过滤文件在本地不存在不会被解释成远端删除。修改这些策略或增加、删除
+`.nosync` 标记会更新过滤摘要并触发完整 Delta 查询。后来被排除的现有本地文件
+会保留，并使用基于 filesystem identity 的上传抑制；文件重新符合条件时仍执行
+正常的本地冲突保护。显式 `download REMOTE_PATH` 命令不受这些自动同步过滤器
+限制。
 
 `sync.local_conflict` 控制同时发生的本地和远端文件变化。默认值
 `"block"` 保持原有行为：普通同步把项目记录为 `local_modification`，显式单文件

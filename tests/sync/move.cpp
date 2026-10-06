@@ -1157,6 +1157,7 @@ int test_remote_moves() {
         cross_items.items.emplace("cross-device", std::move(cross_state));
         FakeMetrics cross_metrics;
         auto cross_config = config_for("/", false);
+        cross_config.nosync_enabled = false;
         cross_config.sync_permissions =
             onedrive::config::SyncPermissionsMode::umask;
         if (onedrive::sync::SyncEngine{

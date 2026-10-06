@@ -11,8 +11,10 @@
 #include <spdlog/spdlog.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <exception>
 #include <filesystem>
+#include <optional>
 #include <ranges>
 #include <stdexcept>
 #include <string>
@@ -74,8 +76,20 @@ DeletionPlan discover_deletions(
             blocked_ids.contains(item.remote_id) ||
             blocked_paths.contains(item.remote_path) ||
             (sync_list != nullptr &&
-             (sync_list->excludes(item.remote_path, item.directory) ||
-              !sync_list->includes(item.remote_path, item.directory))) ||
+             (sync_list->excludes(
+                  item.remote_path,
+                  item.directory,
+                  !item.directory && item.size >= 0 ?
+                      std::optional{static_cast<std::uint64_t>(item.size)} :
+                      std::nullopt
+              ) ||
+              !sync_list->includes(
+                  item.remote_path,
+                  item.directory,
+                  !item.directory && item.size >= 0 ?
+                      std::optional{static_cast<std::uint64_t>(item.size)} :
+                      std::nullopt
+              ))) ||
             !local_path_is_missing(item.local_path)) {
             continue;
         }

@@ -338,6 +338,24 @@ Microsoft Graph Drive 标识；默认
 .B download
 不受该设置限制。
 .TP
+.B sync.nosync_enabled
+设为 true（默认值）时，本地普通文件
+.B .nosync
+会排除其所在目录及完整子树；标记本身永远不会同步，符号链接不算标记。
+增加或删除标记会更新过滤摘要并触发完整 Delta 查询。
+.TP
+.B sync.dotfiles
+可设为
+.B include
+（默认值）或
+.BR exclude 。
+排除策略会匹配路径中任意以点开头且不止一个字符的组件。
+.TP
+.B sync.maximum_file_size_bytes
+下载和上传共同使用的普通文件最大字节数。默认值 0 表示无限制；大小恰好等于
+正数限制值的文件仍可同步。被过滤文件不会触发远端删除，后来被排除的已跟踪本地
+文件会保留。
+.TP
 .B auth.application_id
 Microsoft Entra Application（客户端）ID。
 .TP
