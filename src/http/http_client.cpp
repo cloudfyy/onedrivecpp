@@ -127,13 +127,25 @@ struct DownloadState {
     bool response_validated{false};
 };
 
+enum class CallbackFailureKind {
+    none,
+    response_too_large,
+    write,
+    throttle,
+    data_callback,
+};
+
+struct CallbackFailure {
+    CallbackFailureKind kind{CallbackFailureKind::none};
+    int system_error{};
+    std::string detail;
+};
+
 struct WriteContext {
     std::string body;
     std::size_t maximum_size;
     int descriptor{-1};
-    bool size_exceeded{false};
-    bool write_failed{false};
-    int write_error{};
+    CallbackFailure failure;
     std::size_t received_size{};
     std::uint64_t file_offset{};
     const DownloadData* download_data{};
@@ -149,10 +161,6 @@ struct WriteContext {
     bool follow_redirects{false};
     std::stop_token stop_token;
     bool throttle_cancelled{false};
-    bool throttle_failed{false};
-    std::string throttle_error;
-    bool data_callback_failed{false};
-    std::string data_callback_error;
 };
 
 struct ReadContext {
@@ -161,8 +169,7 @@ struct ReadContext {
     const UploadThrottle* upload_throttle{};
     std::stop_token stop_token;
     bool throttle_cancelled{false};
-    bool throttle_failed{false};
-    std::string throttle_error;
+    CallbackFailure failure;
 };
 
 std::size_t read_request_body(
@@ -174,8 +181,10 @@ std::size_t read_request_body(
     auto& context = *static_cast<ReadContext*>(user_data);
     if (size != 0 &&
         count > std::numeric_limits<std::size_t>::max() / size) {
-        context.throttle_failed = true;
-        context.throttle_error = "upload read buffer size overflow";
+        context.failure = {
+            .kind = CallbackFailureKind::throttle,
+            .detail = "upload read buffer size overflow",
+        };
         return CURL_READFUNC_ABORT;
     }
     const auto capacity = size * count;
@@ -195,12 +204,16 @@ std::size_t read_request_body(
                 return CURL_READFUNC_ABORT;
             }
         } catch (const std::exception& error) {
-            context.throttle_failed = true;
-            context.throttle_error = error.what();
+            context.failure = {
+                .kind = CallbackFailureKind::throttle,
+                .detail = error.what(),
+            };
             return CURL_READFUNC_ABORT;
         } catch (...) {
-            context.throttle_failed = true;
-            context.throttle_error = "unknown error";
+            context.failure = {
+                .kind = CallbackFailureKind::throttle,
+                .detail = "unknown error",
+            };
             return CURL_READFUNC_ABORT;
         }
     }
@@ -215,20 +228,27 @@ std::size_t read_request_body(
 
 bool make_download_checkpoint(WriteContext& context) {
     if (::fdatasync(context.descriptor) == -1) {
-        context.write_failed = true;
-        context.write_error = errno;
+        context.failure = {
+            .kind = CallbackFailureKind::write,
+            .system_error = errno,
+            .detail = {},
+        };
         return false;
     }
     if (context.checkpoint != nullptr && *context.checkpoint) {
         try {
             (*context.checkpoint)(context.file_offset);
         } catch (const std::exception& error) {
-            context.data_callback_failed = true;
-            context.data_callback_error = error.what();
+            context.failure = {
+                .kind = CallbackFailureKind::data_callback,
+                .detail = error.what(),
+            };
             return false;
         } catch (...) {
-            context.data_callback_failed = true;
-            context.data_callback_error = "unknown error";
+            context.failure = {
+                .kind = CallbackFailureKind::data_callback,
+                .detail = "unknown error",
+            };
             return false;
         }
     }
@@ -429,9 +449,10 @@ std::size_t write_response(char* data, std::size_t size, std::size_t count, void
                     CURLINFO_RESPONSE_CODE,
                     &status_code
                 ) != CURLE_OK) {
-                write_context.data_callback_failed = true;
-                write_context.data_callback_error =
-                    "cannot inspect download response status";
+                write_context.failure = {
+                    .kind = CallbackFailureKind::data_callback,
+                    .detail = "cannot inspect download response status",
+                };
                 return 0;
             }
             if (write_context.follow_redirects &&
@@ -445,12 +466,16 @@ std::size_t write_response(char* data, std::size_t size, std::size_t count, void
                         *write_context.response_headers
                     );
                 } catch (const std::exception& error) {
-                    write_context.data_callback_failed = true;
-                    write_context.data_callback_error = error.what();
+                    write_context.failure = {
+                        .kind = CallbackFailureKind::data_callback,
+                        .detail = error.what(),
+                    };
                     return 0;
                 } catch (...) {
-                    write_context.data_callback_failed = true;
-                    write_context.data_callback_error = "unknown error";
+                    write_context.failure = {
+                        .kind = CallbackFailureKind::data_callback,
+                        .detail = "unknown error",
+                    };
                     return 0;
                 }
             }
@@ -474,13 +499,17 @@ std::size_t write_response(char* data, std::size_t size, std::size_t count, void
                     return 0;
                 }
             } catch (const std::exception& error) {
-                write_context.throttle_failed = true;
-                write_context.throttle_error = error.what();
-                return 0;
+                    write_context.failure = {
+                        .kind = CallbackFailureKind::throttle,
+                        .detail = error.what(),
+                    };
+                    return 0;
             } catch (...) {
-                write_context.throttle_failed = true;
-                write_context.throttle_error = "unknown error";
-                return 0;
+                    write_context.failure = {
+                        .kind = CallbackFailureKind::throttle,
+                        .detail = "unknown error",
+                    };
+                    return 0;
             }
         }
         const auto block_offset = write_context.file_offset;
@@ -490,8 +519,11 @@ std::size_t write_response(char* data, std::size_t size, std::size_t count, void
                 write_context.file_offset + static_cast<std::uint64_t>(written);
             if (position >
                 static_cast<std::uint64_t>(std::numeric_limits<off_t>::max())) {
-                write_context.write_failed = true;
-                write_context.write_error = EFBIG;
+                write_context.failure = {
+                    .kind = CallbackFailureKind::write,
+                    .system_error = EFBIG,
+                    .detail = {},
+                };
                 return 0;
             }
             const auto result = ::pwrite(
@@ -504,8 +536,11 @@ std::size_t write_response(char* data, std::size_t size, std::size_t count, void
                 continue;
             }
             if (result <= 0) {
-                write_context.write_failed = true;
-                write_context.write_error = errno;
+                write_context.failure = {
+                    .kind = CallbackFailureKind::write,
+                    .system_error = errno,
+                    .detail = {},
+                };
                 return 0;
             }
             written += static_cast<std::size_t>(result);
@@ -521,12 +556,16 @@ std::size_t write_response(char* data, std::size_t size, std::size_t count, void
                     std::as_bytes(std::span{data, byte_count})
                 );
             } catch (const std::exception& error) {
-                write_context.data_callback_failed = true;
-                write_context.data_callback_error = error.what();
+                write_context.failure = {
+                    .kind = CallbackFailureKind::data_callback,
+                    .detail = error.what(),
+                };
                 return 0;
             } catch (...) {
-                write_context.data_callback_failed = true;
-                write_context.data_callback_error = "unknown error";
+                write_context.failure = {
+                    .kind = CallbackFailureKind::data_callback,
+                    .detail = "unknown error",
+                };
                 return 0;
             }
         }
@@ -540,7 +579,10 @@ std::size_t write_response(char* data, std::size_t size, std::size_t count, void
         return byte_count;
     }
     if (byte_count > write_context.maximum_size - write_context.body.size()) {
-        write_context.size_exceeded = true;
+        write_context.failure = {
+            .kind = CallbackFailureKind::response_too_large,
+            .detail = {},
+        };
         return 0;
     }
     try {
@@ -585,7 +627,7 @@ std::size_t write_header(char* data, std::size_t size, std::size_t count, void* 
             auto& write_context = *header_context.write_context;
             write_context.body.clear();
             write_context.received_size = 0;
-            write_context.size_exceeded = false;
+            write_context.failure = {};
             write_context.response_accepted.reset();
             write_context.download_state->response_accepted = true;
             write_context.download_state->response_validated = false;
@@ -811,12 +853,13 @@ HttpResult perform_request(
         .body = request.body,
         .upload_throttle = &request.upload_throttle,
         .stop_token = request.stop_token,
-        .throttle_error = {},
+        .failure = {},
     };
     WriteContext write_context{
         .body = {},
         .maximum_size = request.maximum_response_size,
         .descriptor = descriptor,
+        .failure = {},
         .file_offset = request.download_offset,
         .download_data = &data,
         .checkpoint = &checkpoint,
@@ -831,8 +874,6 @@ HttpResult perform_request(
         .response_accepted = std::nullopt,
         .follow_redirects = request.follow_redirects,
         .stop_token = request.stop_token,
-        .throttle_error = {},
-        .data_callback_error = {},
     };
     header_context.write_context = &write_context;
     ProgressContext progress_context{
@@ -1053,12 +1094,13 @@ HttpResult perform_request(
                 write_context.file_offset > write_context.durable_offset;
             if (can_checkpoint_cancelled_data &&
                 !make_download_checkpoint(write_context)) {
-                if (write_context.write_failed) {
+                if (write_context.failure.kind ==
+                    CallbackFailureKind::write) {
                     return std::unexpected(HttpError{
                         .message = "cannot flush cancelled download: " +
                                    std::string{
                                        std::strerror(
-                                           write_context.write_error
+                                           write_context.failure.system_error
                                        )
                                    },
                     });
@@ -1066,7 +1108,7 @@ HttpResult perform_request(
                 return std::unexpected(HttpError{
                     .message =
                         "cancelled download checkpoint callback failed: " +
-                        write_context.data_callback_error,
+                        write_context.failure.detail,
                 });
             }
             return std::unexpected(HttpError{
@@ -1085,33 +1127,37 @@ HttpResult perform_request(
                 .message = "HTTP response headers exceeded the configured size limit",
             });
         }
-        if (write_context.size_exceeded) {
+        if (write_context.failure.kind ==
+            CallbackFailureKind::response_too_large) {
             return std::unexpected(HttpError{
                 .message = "HTTP response exceeded the configured size limit",
             });
         }
-        if (write_context.write_failed) {
+        if (write_context.failure.kind == CallbackFailureKind::write) {
             return std::unexpected(HttpError{
                 .message = "cannot write HTTP response: " +
-                           std::string{std::strerror(write_context.write_error)},
+                           std::string{std::strerror(
+                               write_context.failure.system_error
+                           )},
             });
         }
-        if (write_context.throttle_failed) {
+        if (write_context.failure.kind == CallbackFailureKind::throttle) {
             return std::unexpected(HttpError{
                 .message = "download throttle failed: " +
-                           write_context.throttle_error,
+                           write_context.failure.detail,
             });
         }
-        if (read_context.throttle_failed) {
+        if (read_context.failure.kind == CallbackFailureKind::throttle) {
             return std::unexpected(HttpError{
                 .message = "upload throttle failed: " +
-                           read_context.throttle_error,
+                           read_context.failure.detail,
             });
         }
-        if (write_context.data_callback_failed) {
+        if (write_context.failure.kind ==
+            CallbackFailureKind::data_callback) {
             return std::unexpected(HttpError{
                 .message = "download data callback failed: " +
-                           write_context.data_callback_error,
+                           write_context.failure.detail,
             });
         }
         const std::string detail = error_buffer.front() == '\0' ?
