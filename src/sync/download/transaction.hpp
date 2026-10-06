@@ -22,6 +22,16 @@ struct DownloadTransactionFamily;
 using DownloadTransactionState =
     util::TransactionState<DownloadTransactionFamily>;
 struct DownloadPreparedState final : DownloadTransactionState {};
+struct DownloadJournaledState final : DownloadTransactionState {};
+struct DownloadTransactionFamily {
+    template <typename Current, typename Next>
+    [[nodiscard]] static consteval bool allows_transition() {
+        return (std::same_as<Current, DownloadPreparedState> &&
+                std::same_as<Next, DownloadJournaledState>) ||
+               (std::same_as<Current, DownloadJournaledState> &&
+                std::same_as<Next, DownloadPreparedState>);
+    }
+};
 
 template <typename State>
 concept DownloadState =

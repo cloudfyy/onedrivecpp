@@ -14,7 +14,6 @@
 namespace onedrive::sync::detail {
 namespace {
 
-struct DownloadJournaledState final : DownloadTransactionState {};
 using JournaledDownload = DownloadTransaction<DownloadJournaledState>;
 using ActiveDownload = std::variant<PreparedDownload, JournaledDownload>;
 

@@ -537,6 +537,17 @@ struct RemoteDeletePreparedState final : RemoteDeleteTransactionState {};
 struct RemoteDeleteJournaledState final : RemoteDeleteTransactionState {};
 struct RemoteDeleteGraphDeletedState final : RemoteDeleteTransactionState {};
 struct RemoteDeleteLocalCommittedState final : RemoteDeleteTransactionState {};
+struct RemoteDeleteTransactionFamily {
+    template <typename Current, typename Next>
+    [[nodiscard]] static consteval bool allows_transition() {
+        return (std::same_as<Current, RemoteDeletePreparedState> &&
+                std::same_as<Next, RemoteDeleteJournaledState>) ||
+               (std::same_as<Current, RemoteDeleteJournaledState> &&
+                std::same_as<Next, RemoteDeleteGraphDeletedState>) ||
+               (std::same_as<Current, RemoteDeleteGraphDeletedState> &&
+                std::same_as<Next, RemoteDeleteLocalCommittedState>);
+    }
+};
 
 struct PendingRemoteDeletePayload {
     storage::PendingDelete deletion;
@@ -673,6 +684,17 @@ struct RemoteMovePreparedState final : RemoteMoveTransactionState {};
 struct RemoteMoveJournaledState final : RemoteMoveTransactionState {};
 struct RemoteMoveGraphCommittedState final : RemoteMoveTransactionState {};
 struct RemoteMoveLocalCommittedState final : RemoteMoveTransactionState {};
+struct RemoteMoveTransactionFamily {
+    template <typename Current, typename Next>
+    [[nodiscard]] static consteval bool allows_transition() {
+        return (std::same_as<Current, RemoteMovePreparedState> &&
+                std::same_as<Next, RemoteMoveJournaledState>) ||
+               (std::same_as<Current, RemoteMoveJournaledState> &&
+                std::same_as<Next, RemoteMoveGraphCommittedState>) ||
+               (std::same_as<Current, RemoteMoveGraphCommittedState> &&
+                std::same_as<Next, RemoteMoveLocalCommittedState>);
+    }
+};
 
 template <typename State>
 concept RemoteMoveState =
@@ -896,6 +918,15 @@ using UploadTransactionState = TransactionState<UploadTransactionFamily>;
 struct UploadPreparedState final : UploadTransactionState {};
 struct UploadJournaledState final : UploadTransactionState {};
 struct UploadRemoteCommittedState final : UploadTransactionState {};
+struct UploadTransactionFamily {
+    template <typename Current, typename Next>
+    [[nodiscard]] static consteval bool allows_transition() {
+        return (std::same_as<Current, UploadPreparedState> &&
+                std::same_as<Next, UploadJournaledState>) ||
+               (std::same_as<Current, UploadJournaledState> &&
+                std::same_as<Next, UploadRemoteCommittedState>);
+    }
+};
 
 template <typename State>
 concept UploadState = TransactionStateFor<State, UploadTransactionFamily>;
@@ -1558,6 +1589,17 @@ struct DirectoryUploadGraphCreatedState final
     : DirectoryUploadTransactionState {};
 struct DirectoryUploadLocalCommittedState final
     : DirectoryUploadTransactionState {};
+struct DirectoryUploadTransactionFamily {
+    template <typename Current, typename Next>
+    [[nodiscard]] static consteval bool allows_transition() {
+        return (std::same_as<Current, DirectoryUploadPreparedState> &&
+                std::same_as<Next, DirectoryUploadJournaledState>) ||
+               (std::same_as<Current, DirectoryUploadJournaledState> &&
+                std::same_as<Next, DirectoryUploadGraphCreatedState>) ||
+               (std::same_as<Current, DirectoryUploadGraphCreatedState> &&
+                std::same_as<Next, DirectoryUploadLocalCommittedState>);
+    }
+};
 
 struct PendingDirectoryUploadPayload {
     storage::PendingUpload pending;

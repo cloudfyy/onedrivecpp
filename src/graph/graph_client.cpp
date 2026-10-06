@@ -50,6 +50,19 @@ struct UploadSessionAbsentState final : UploadSessionTransactionState {};
 struct UploadSessionSavedState final : UploadSessionTransactionState {};
 struct UploadSessionActiveState final : UploadSessionTransactionState {};
 struct UploadSessionFinalizedState final : UploadSessionTransactionState {};
+struct UploadSessionTransactionFamily {
+    template <typename Current, typename Next>
+    [[nodiscard]] static consteval bool allows_transition() {
+        return (std::same_as<Current, UploadSessionSavedState> &&
+                std::same_as<Next, UploadSessionAbsentState>) ||
+               ((std::same_as<Current, UploadSessionAbsentState> ||
+                 std::same_as<Current, UploadSessionSavedState> ||
+                 std::same_as<Current, UploadSessionActiveState>) &&
+                std::same_as<Next, UploadSessionActiveState>) ||
+               (std::same_as<Current, UploadSessionActiveState> &&
+                std::same_as<Next, UploadSessionFinalizedState>);
+    }
+};
 
 struct AbsentUploadSessionPayload {};
 struct SavedUploadSessionPayload {

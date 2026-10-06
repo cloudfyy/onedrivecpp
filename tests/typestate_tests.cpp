@@ -11,6 +11,13 @@ struct TransferFamily;
 using TransferState = onedrive::util::TransactionState<TransferFamily>;
 struct PreparedState final : TransferState {};
 struct JournaledState final : TransferState {};
+struct TransferFamily {
+    template <typename Current, typename Next>
+    [[nodiscard]] static consteval bool allows_transition() {
+        return std::same_as<Current, PreparedState> &&
+               std::same_as<Next, JournaledState>;
+    }
+};
 
 struct OtherFamily;
 using OtherState = onedrive::util::TransactionState<OtherFamily>;
@@ -59,6 +66,14 @@ static_assert(onedrive::util::TransactionStateFor<PreparedState, TransferFamily>
 static_assert(
     !onedrive::util::TransactionStateFor<UnrelatedState, TransferFamily>
 );
+static_assert(onedrive::util::TransactionTransitionFor<
+              PreparedState,
+              JournaledState,
+              TransferFamily>);
+static_assert(!onedrive::util::TransactionTransitionFor<
+              JournaledState,
+              PreparedState,
+              TransferFamily>);
 static_assert(!std::copyable<PreparedTransaction>);
 static_assert(std::is_nothrow_move_constructible_v<PreparedTransaction>);
 static_assert(noexcept(onedrive::util::transition_transaction<JournaledState>(

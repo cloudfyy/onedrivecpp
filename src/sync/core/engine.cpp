@@ -60,6 +60,19 @@ struct LocalMoveJournaledState final : LocalMoveTransactionState {};
 struct LocalMoveRecoveredJournalState final : LocalMoveTransactionState {};
 struct LocalMoveStagedState final : LocalMoveTransactionState {};
 struct LocalMoveInstalledState final : LocalMoveTransactionState {};
+struct LocalMoveTransactionFamily {
+    template <typename Current, typename Next>
+    [[nodiscard]] static consteval bool allows_transition() {
+        return (std::same_as<Current, LocalMovePreparedState> &&
+                std::same_as<Next, LocalMoveJournaledState>) ||
+               ((std::same_as<Current, LocalMoveJournaledState> ||
+                 std::same_as<Current, LocalMoveRecoveredJournalState>) &&
+                std::same_as<Next, LocalMoveStagedState>) ||
+               ((std::same_as<Current, LocalMoveJournaledState> ||
+                 std::same_as<Current, LocalMoveStagedState>) &&
+                std::same_as<Next, LocalMoveInstalledState>);
+    }
+};
 
 template <typename State>
 concept LocalMoveState =
