@@ -1,0 +1,55 @@
+#pragma once
+
+#include "onedrive/config/config.hpp"
+#include "onedrive/graph/graph_client.hpp"
+#include "onedrive/storage/item_store.hpp"
+#include "sync/filesystem/local.hpp"
+
+#include <cstddef>
+#include <exception>
+#include <filesystem>
+#include <optional>
+#include <string>
+#include <vector>
+
+namespace onedrive::cli {
+class Console;
+}
+
+namespace onedrive::sync::detail {
+class DownloadSpaceCoordinator;
+class FilesystemMetadata;
+class ItemOperationCoordinator;
+class SafeSyncRoot;
+}
+
+namespace onedrive::sync::engine_detail {
+
+struct DownloadTask {
+    graph::RemoteItem item;
+    storage::ItemState state;
+    std::filesystem::path destination;
+    detail::LocalFileBaseline destination_baseline;
+    bool preserve_local{false};
+};
+
+struct DownloadBatch {
+    std::vector<std::optional<storage::ItemState>> states;
+    std::vector<std::optional<std::string>> conflicts;
+    std::vector<std::exception_ptr> errors;
+};
+
+DownloadBatch download_files(
+    const std::vector<DownloadTask>& tasks,
+    std::size_t concurrency,
+    graph::GraphClient& graph,
+    storage::ItemStore& items,
+    detail::ItemOperationCoordinator& operations,
+    detail::DownloadSpaceCoordinator& space,
+    const detail::FilesystemMetadata& metadata,
+    const cli::Console& console,
+    const detail::SafeSyncRoot& sync_root,
+    config::LocalConflictPolicy local_conflict
+);
+
+}  // namespace onedrive::sync::engine_detail

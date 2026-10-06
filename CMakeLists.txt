@@ -132,6 +132,10 @@ add_library(onedrive_core
     src/sync/download/transaction.cpp
     src/sync/filesystem/metadata.cpp
     src/sync/core/item_operation_coordinator.cpp
+    src/sync/core/download_execution.cpp
+    src/sync/core/local_move_execution.cpp
+    src/sync/core/operation_reporting.cpp
+    src/sync/core/remote_delete_execution.cpp
     src/sync/filesystem/local.cpp
     src/sync/upload/local.cpp
     src/sync/filesystem/safe_sync_root.cpp
