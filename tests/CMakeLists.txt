@@ -69,10 +69,13 @@ add_onedrive_test(
     transfer_rate_limiter_tests
     SOURCES tests/transfer_rate_limiter_tests.cpp
 )
-add_onedrive_test(
-    proxy_client_tests
-    SOURCES tests/proxy_client_tests.cpp
-)
+foreach(PROXY_TEST IN ITEMS socks basic transfer)
+    add_onedrive_test(
+        proxy_${PROXY_TEST}_tests
+        SOURCES tests/proxy/${PROXY_TEST}.cpp
+        INCLUDE_DIRS tests tests/proxy
+    )
+endforeach()
 foreach(GRAPH_TEST IN ITEMS drive delta upload download retry)
     add_onedrive_test(
         graph_${GRAPH_TEST}_tests
@@ -87,16 +90,20 @@ foreach(APP_TEST IN ITEMS args doctor flow)
         INCLUDE_DIRS tests tests/app
     )
 endforeach()
-add_onedrive_test(
-    monitor_tests
-    SOURCES tests/monitor_tests.cpp
-    INCLUDE_DIRS src
-)
-add_onedrive_test(
-    runtime_preflight_tests
-    SOURCES tests/runtime_preflight_tests.cpp
-    INCLUDE_DIRS src
-)
+foreach(MONITOR_TEST IN ITEMS state local timing stop)
+    add_onedrive_test(
+        monitor_${MONITOR_TEST}_tests
+        SOURCES tests/monitor/${MONITOR_TEST}.cpp
+        INCLUDE_DIRS src tests tests/monitor
+    )
+endforeach()
+foreach(PREFLIGHT_TEST IN ITEMS state sync invalid)
+    add_onedrive_test(
+        preflight_${PREFLIGHT_TEST}_tests
+        SOURCES tests/preflight/${PREFLIGHT_TEST}.cpp
+        INCLUDE_DIRS src tests tests/preflight
+    )
+endforeach()
 foreach(SYNC_TEST IN ITEMS base delete move download upload)
     add_onedrive_test(
         sync_${SYNC_TEST}_tests
