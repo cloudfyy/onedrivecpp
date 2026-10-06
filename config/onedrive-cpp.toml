@@ -83,6 +83,7 @@ drive_id = "me"
 sync_root_files = false
 # "bidirectional" downloads remote changes and uploads local changes.
 # "upload_only" uploads local changes without changing local content from Graph.
+# "download_only" applies remote changes without uploading local changes.
 mode = "bidirectional"
 # "propagate" mirrors source deletions to the destination. "preserve" never
 # deletes the destination because an item disappeared from the source.

@@ -221,8 +221,17 @@ inode，而是直接采用现有文件。创建备份需要额外占用约等于
 `sync.mode` 默认为 `bidirectional`，会下载远端变化并上传符合相同 sync-list
 规则的本地变化。`upload_only` 仍会获取并保存 Graph Delta 基线，但不会下载、
 移动或删除本地内容；本地新增和修改仍使用已有冲突检查和持久上传 journal。
+`download_only` 会下载远端变化，但不扫描本地变化进行上传，也不会恢复
+pending upload、远端移动或远端删除操作。
+
+在 `download_only` 下，`sync.delete_policy = "propagate"` 会在远端源项目删除后
+安全删除未变化的已跟踪本地项目。本地修改、类型异常或非空目录会被阻止，并通过
+已有 blocked-item journal 重试。`preserve` 会保留本地实体，但消费远端
+tombstone、移除其跟踪状态，并清理旧的 blocked deletion，避免完整 Delta 刷新
+反复规划同一删除。pending download 仍会在应用最新远端 Delta 前恢复。
+
 设置 `sync.delete_policy = "preserve"` 后，本地项目缺失不会删除远端对应项目；
-当 `upload_only` 未显式设置删除策略时，这是安全默认值。双向同步默认使用
+当 `upload_only` 未显式设置删除策略时，这也是安全默认值。双向同步默认使用
 `propagate`。旧 `sync.upload` 布尔值继续兼容：`true` 映射为
 `bidirectional`，`false` 映射为 `download_only`，但不能与 `sync.mode`
 同时配置。

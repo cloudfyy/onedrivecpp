@@ -693,6 +693,9 @@ which downloads remote changes and uploads local changes.
 .B upload_only
 still records the Graph Delta baseline but does not download, move, or delete
 local content.
+.B download_only
+applies remote changes without scanning local changes for upload or recovering
+pending upload, remote-move, or remote-delete operations.
 .TP
 .B sync.delete_policy
 Deletion propagation policy.
@@ -702,6 +705,14 @@ mirrors source deletions to the destination.
 keeps destination items when their source disappears and is the safe default
 for
 .BR upload_only .
+In
+.BR download_only ,
+.B propagate
+safely removes unchanged tracked local items and blocks local conflicts for
+retry.
+.B preserve
+keeps the local item but consumes the remote tombstone, removes its tracked
+state, and clears an older blocked deletion.
 .TP
 .B sync.upload
 Legacy compatibility boolean.

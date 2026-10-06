@@ -43,16 +43,21 @@ ExecutionSummary execute_plan(
     }
     const auto& sync_root = safe_root.path();
     detail::ItemOperationCoordinator operations;
-    const auto removed_count = capabilities.removes_local_items() ?
-        engine_detail::execute_removals(
+    std::size_t removed_count = 0;
+    if (capabilities.removes_local_items()) {
+        removed_count = engine_detail::execute_removals(
             plan,
             safe_root,
             drive_id,
             items,
             operations,
             console
-        ) :
-        0;
+        );
+    } else if (capabilities.sync_mode() == SyncMode::download_only) {
+        for (std::size_t index = 0; index < plan.removal_count(); ++index) {
+            plan.complete_removal(plan.removal(index).id);
+        }
+    }
     auto move_summary = engine_detail::execute_moves(
         plan,
         safe_root,

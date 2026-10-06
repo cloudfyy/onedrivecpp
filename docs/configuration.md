@@ -267,13 +267,25 @@ Business may omit it or report descendant changes inconsistently.
 uploads local changes selected by the same sync-list rules. `upload_only`
 still fetches and records the Graph Delta baseline, but never downloads,
 moves, or deletes local content. New and modified local files continue through
-the normal conflict checks and durable upload journal. Set
-`sync.delete_policy = "preserve"` to prevent a missing local item from
-deleting its remote counterpart; this is the safe default when `upload_only`
-is selected without an explicit policy. `propagate` remains the default for
-bidirectional synchronization. The legacy `sync.upload` boolean remains
-accepted for compatibility (`true` maps to `bidirectional`, `false` to
-`download_only`) but cannot be combined with `sync.mode`.
+the normal conflict checks and durable upload journal. `download_only`
+downloads remote changes but does not scan local changes for upload and does
+not recover pending upload, remote-move, or remote-delete operations.
+
+With `download_only`, `sync.delete_policy = "propagate"` safely removes an
+unchanged tracked local item after its remote source is deleted. A local
+modification, unexpected type, or nonempty directory is blocked and retried
+through the existing blocked-item journal. `preserve` keeps the local item but
+consumes the remote tombstone, removes its tracked state, and clears an older
+blocked deletion so full Delta refreshes do not repeatedly plan the same
+removal. Pending downloads still recover before applying the latest remote
+Delta.
+
+Set `sync.delete_policy = "preserve"` to prevent a missing local item from
+deleting its remote counterpart; this is also the safe default when
+`upload_only` is selected without an explicit policy. `propagate` remains the
+default for bidirectional synchronization. The legacy `sync.upload` boolean
+remains accepted for compatibility (`true` maps to `bidirectional`, `false`
+to `download_only`) but cannot be combined with `sync.mode`.
 
 New files use fail-on-conflict creation; tracked files use their saved eTag as
 an `If-Match` precondition. Symbolic links, reserved safeBackup and

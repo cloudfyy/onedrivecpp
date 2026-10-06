@@ -535,6 +535,9 @@ URL 最多继续五次 HTTPS 重定向；Graph Authorization 不会发送给 CDN
 会下载远端变化并上传本地变化。
 .B upload_only
 仍保存 Graph Delta 基线，但不下载、移动或删除本地内容。
+.B download_only
+应用远端变化，但不扫描本地变化进行上传，也不恢复 pending upload、远端移动或
+远端删除操作。
 .TP
 .B sync.delete_policy
 删除传播策略。
@@ -544,6 +547,13 @@ URL 最多继续五次 HTTPS 重定向；Graph Authorization 不会发送给 CDN
 在源项目消失时保留目标项目，并且是
 .B upload_only
 的安全默认值。
+在
+.B download_only
+下，
+.B propagate
+安全删除未变化的已跟踪本地项目，并阻止存在本地冲突的删除以便重试；
+.B preserve
+保留本地实体，但消费远端 tombstone、移除跟踪状态并清理旧 blocked deletion。
 .TP
 .B sync.upload
 旧版兼容布尔值；
