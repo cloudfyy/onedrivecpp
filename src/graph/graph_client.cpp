@@ -2595,25 +2595,25 @@ void MicrosoftGraphClient::download_file(
                 }
             } :
             http::DownloadThrottle{};
-    using DownloadRequest = std::pair<
-        std::vector<std::string>,
-        std::uint64_t
-    >;
-    const auto download = [&](const std::function<DownloadRequest()>& request,
-                              const DownloadProgress& chunk_progress,
-                              std::string_view description,
-                              const DownloadCheckpoint& chunk_checkpoint = {},
-                              const http::DownloadResponseGate& response_gate =
-                                  {}) {
+    struct DownloadAttempt {
+        std::vector<std::string> headers;
+        std::uint64_t offset;
+    };
+    const auto download =
+        [&](const std::function<DownloadAttempt()>& make_attempt,
+            const DownloadProgress& chunk_progress,
+            std::string_view description,
+            const DownloadCheckpoint& chunk_checkpoint = {},
+            const http::DownloadResponseGate& response_gate = {}) {
         const auto perform_download = [&] {
             return perform_with_retries(
                 [&] {
-                    auto [headers, offset] = request();
+                    auto attempt = make_attempt();
                     return transport_->download(
                         http::HttpRequest{
                             .method = http::HttpMethod::get,
                             .url = location,
-                            .headers = headers,
+                            .headers = std::move(attempt.headers),
                             .body = {},
                             .connect_timeout =
                                 transfer.connect_timeout,
@@ -2630,7 +2630,7 @@ void MicrosoftGraphClient::download_file(
                             .ip_version =
                                 transfer.ip_version,
                             .maximum_response_size = 0,
-                            .download_offset = offset,
+                            .download_offset = attempt.offset,
                             .download_checkpoint_interval_bytes =
                                 options_.download_checkpoint_interval_bytes,
                             .private_download_permissions =
@@ -2676,9 +2676,9 @@ void MicrosoftGraphClient::download_file(
     if (options_.relaxed_download_validation) {
         auto response = download(
             [] {
-                return DownloadRequest{
-                    {"Accept: application/octet-stream"},
-                    0,
+                return DownloadAttempt{
+                    .headers = {"Accept: application/octet-stream"},
+                    .offset = 0,
                 };
             },
             progress,
@@ -2701,9 +2701,9 @@ void MicrosoftGraphClient::download_file(
         expected_size <= options_.download_chunk_threshold_bytes) {
         auto response = download(
             [] {
-                return DownloadRequest{
-                    {"Accept: application/octet-stream"},
-                    0,
+                return DownloadAttempt{
+                    .headers = {"Accept: application/octet-stream"},
+                    .offset = 0,
                 };
             },
             progress,
@@ -2733,8 +2733,8 @@ void MicrosoftGraphClient::download_file(
         auto response = download(
             [&] {
                 attempt_offset = durable_offset;
-                return DownloadRequest{
-                    {
+                return DownloadAttempt{
+                    .headers = {
                         "Accept: application/octet-stream",
                         std::format(
                             "Range: bytes={}-{}",
@@ -2742,7 +2742,7 @@ void MicrosoftGraphClient::download_file(
                             end
                         ),
                     },
-                    attempt_offset,
+                    .offset = attempt_offset,
                 };
             },
             progress ?
