@@ -1037,7 +1037,7 @@ UploadSnapshot create_upload_snapshot(
     const std::filesystem::path& source,
     const LocalFileBaseline& baseline
 ) {
-    onedrive::util::UniqueFileDescriptor input;
+    onedrive::util::UniqueFD input;
     try {
         input.reset(
             onedrive::util::open_path_no_symlinks(source, O_RDONLY)
@@ -1050,7 +1050,7 @@ UploadSnapshot create_upload_snapshot(
         );
     }
     std::filesystem::path snapshot_path;
-    onedrive::util::UniqueFileDescriptor output;
+    onedrive::util::UniqueFD output;
     for (std::size_t attempt = 1; attempt <= 100; ++attempt) {
         snapshot_path = upload_snapshot_path(source, attempt);
         try {

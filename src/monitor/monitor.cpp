@@ -276,7 +276,7 @@ private:
         }
     }
 
-    onedrive::util::UniqueFileDescriptor descriptor_;
+    onedrive::util::UniqueFD descriptor_;
     std::unordered_map<int, std::filesystem::path> paths_;
 };
 
@@ -320,7 +320,7 @@ Monitor::Monitor(
 
 int Monitor::run() const {
     detail::TerminationSignalMask signal_mask;
-    onedrive::util::UniqueFileDescriptor signal_descriptor{
+    onedrive::util::UniqueFD signal_descriptor{
         ::signalfd(
             -1,
             &signal_mask.signals(),
@@ -383,7 +383,7 @@ int Monitor::run_loop(
         return 0;
     }
     WatchSet watches{root_};
-    onedrive::util::UniqueFileDescriptor stop_descriptor{
+    onedrive::util::UniqueFD stop_descriptor{
         ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC)
     };
     if (stop_descriptor.get() < 0) {

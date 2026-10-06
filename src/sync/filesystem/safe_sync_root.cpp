@@ -15,7 +15,7 @@
 namespace onedrive::sync::detail {
 namespace {
 
-using Descriptor = onedrive::util::UniqueFileDescriptor;
+using Descriptor = onedrive::util::UniqueFD;
 
 int open_beneath(
     int directory,

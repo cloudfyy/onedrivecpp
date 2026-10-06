@@ -5,7 +5,7 @@
 #include "util/ascii.hpp"
 #include "util/typestate.hpp"
 #include "util/uri.hpp"
-#include "onedrive/http/download_rate_limiter.hpp"
+#include "onedrive/http/transfer_rate_limiter.hpp"
 #include "onedrive/http/http_client.hpp"
 #include "onedrive/util/remote_time.hpp"
 

@@ -56,7 +56,7 @@ struct CurlHandleDeleter {
 
 using CurlHandle = std::unique_ptr<CURL, CurlHandleDeleter>;
 
-using FileDescriptor = onedrive::util::UniqueFileDescriptor;
+using FileDescriptor = onedrive::util::UniqueFD;
 
 class ThreadCurlHandlePool {
 public:

@@ -17,7 +17,7 @@
 namespace onedrive::sync::detail {
 namespace {
 
-using Descriptor = onedrive::util::UniqueFileDescriptor;
+using Descriptor = onedrive::util::UniqueFD;
 
 std::string timestamp() {
     const auto now = std::chrono::system_clock::now();

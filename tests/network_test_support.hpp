@@ -15,7 +15,7 @@
 
 namespace onedrive::test {
 
-using Socket = onedrive::util::UniqueFileDescriptor;
+using Socket = onedrive::util::UniqueFD;
 
 struct TcpListener {
     Socket socket;

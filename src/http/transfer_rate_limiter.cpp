@@ -1,4 +1,4 @@
-#include "onedrive/http/download_rate_limiter.hpp"
+#include "onedrive/http/transfer_rate_limiter.hpp"
 
 #include <algorithm>
 #include <cmath>

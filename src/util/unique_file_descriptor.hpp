@@ -5,24 +5,24 @@
 
 namespace onedrive::util {
 
-class UniqueFileDescriptor final {
+class UniqueFD final {
 public:
-    UniqueFileDescriptor() = default;
+    UniqueFD() = default;
 
-    explicit UniqueFileDescriptor(int descriptor) noexcept
+    explicit UniqueFD(int descriptor) noexcept
         : descriptor_{descriptor} {}
 
-    ~UniqueFileDescriptor() {
+    ~UniqueFD() {
         reset();
     }
 
-    UniqueFileDescriptor(const UniqueFileDescriptor&) = delete;
-    UniqueFileDescriptor& operator=(const UniqueFileDescriptor&) = delete;
+    UniqueFD(const UniqueFD&) = delete;
+    UniqueFD& operator=(const UniqueFD&) = delete;
 
-    UniqueFileDescriptor(UniqueFileDescriptor&& other) noexcept
+    UniqueFD(UniqueFD&& other) noexcept
         : descriptor_{other.release()} {}
 
-    UniqueFileDescriptor& operator=(UniqueFileDescriptor&& other) noexcept {
+    UniqueFD& operator=(UniqueFD&& other) noexcept {
         if (this != &other) {
             reset(other.release());
         }

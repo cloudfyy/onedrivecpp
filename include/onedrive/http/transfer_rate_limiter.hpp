@@ -72,6 +72,4 @@ private:
     std::uint64_t next_ticket_{0};
 };
 
-using DownloadRateLimiter = TransferRateLimiter;
-
 }  // namespace onedrive::http

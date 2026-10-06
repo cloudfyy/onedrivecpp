@@ -1,4 +1,4 @@
-#include "onedrive/http/download_rate_limiter.hpp"
+#include "onedrive/http/transfer_rate_limiter.hpp"
 #include "test_support.hpp"
 
 #include <atomic>
@@ -15,25 +15,25 @@ using onedrive::test::fail;
 
 int test_invalid_and_zero_acquisitions() {
     try {
-        const onedrive::http::DownloadRateLimiter invalid{0};
-        return fail("zero aggregate download rate was accepted");
+        const onedrive::http::TransferRateLimiter invalid{0};
+        return fail("zero aggregate transfer rate was accepted");
     } catch (const std::invalid_argument&) {
     }
     try {
-        const onedrive::http::DownloadRateLimiter invalid_burst{10, 11};
-        return fail("oversized aggregate download burst was accepted");
+        const onedrive::http::TransferRateLimiter invalid_burst{10, 11};
+        return fail("oversized aggregate transfer burst was accepted");
     } catch (const std::invalid_argument&) {
     }
     try {
-        const onedrive::http::DownloadRateLimiter invalid_capacity{
+        const onedrive::http::TransferRateLimiter invalid_capacity{
             100'000,
             65'537,
         };
-        return fail("aggregate download burst exceeded 64 KiB");
+        return fail("aggregate transfer burst exceeded 64 KiB");
     } catch (const std::invalid_argument&) {
     }
 
-    onedrive::http::DownloadRateLimiter limiter{1024, 1};
+    onedrive::http::TransferRateLimiter limiter{1024, 1};
     if (!limiter.acquire(0)) {
         return fail("zero-byte rate acquisition changed limiter state");
     }
@@ -49,7 +49,7 @@ int test_invalid_and_zero_acquisitions() {
 int test_concurrent_acquisitions_share_rate() {
     using namespace std::chrono_literals;
 
-    onedrive::http::DownloadRateLimiter limiter{2000, 1};
+    onedrive::http::TransferRateLimiter limiter{2000, 1};
     if (!limiter.acquire(1)) {
         return fail("initial aggregate rate token was unavailable");
     }
@@ -74,7 +74,7 @@ int test_concurrent_acquisitions_share_rate() {
     if (!first_acquired.load(std::memory_order_relaxed) ||
         !second_acquired.load(std::memory_order_relaxed) ||
         elapsed < 80ms || elapsed > 1s) {
-        return fail("concurrent downloads did not share one aggregate rate");
+        return fail("concurrent transfers did not share one aggregate rate");
     }
     return EXIT_SUCCESS;
 }
@@ -82,7 +82,7 @@ int test_concurrent_acquisitions_share_rate() {
 int test_waiting_acquisition_is_cancellable() {
     using namespace std::chrono_literals;
 
-    onedrive::http::DownloadRateLimiter limiter{1, 1};
+    onedrive::http::TransferRateLimiter limiter{1, 1};
     if (!limiter.acquire(1)) {
         return fail("initial cancellation-test token was unavailable");
     }
@@ -113,7 +113,7 @@ int test_waiting_acquisition_is_cancellable() {
 int test_queued_cancellation_does_not_block_following_waiters() {
     using namespace std::chrono_literals;
 
-    onedrive::http::DownloadRateLimiter limiter{1000, 1};
+    onedrive::http::TransferRateLimiter limiter{1000, 1};
     if (!limiter.acquire(1)) {
         return fail("initial queued-cancellation token was unavailable");
     }

@@ -48,7 +48,7 @@ namespace {
     throw std::runtime_error{message};
 }
 
-[[nodiscard]] UniqueFileDescriptor create_temporary_file(
+[[nodiscard]] UniqueFD create_temporary_file(
     int directory,
     const std::string& destination_name,
     mode_t mode,
@@ -73,7 +73,7 @@ namespace {
             mode
         );
         if (descriptor != -1) {
-            return UniqueFileDescriptor{descriptor};
+            return UniqueFD{descriptor};
         }
         if (errno != EEXIST) {
             throw std::runtime_error{error_message(
@@ -108,7 +108,7 @@ void write_file_atomically(
         );
     }
 
-    UniqueFileDescriptor directory{open_path_no_symlinks(
+    UniqueFD directory{open_path_no_symlinks(
         parent,
         O_RDONLY | O_DIRECTORY
     )};

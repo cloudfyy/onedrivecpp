@@ -70,7 +70,7 @@ public:
 
 private:
     std::filesystem::path root_;
-    onedrive::util::UniqueFileDescriptor descriptor_;
+    onedrive::util::UniqueFD descriptor_;
 };
 
 }  // namespace onedrive::sync::detail
