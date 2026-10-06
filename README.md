@@ -181,7 +181,7 @@ The generated package is placed in the current directory. CMake reads
 is named:
 
 ```text
-onedrive-cpp_0.8.0-1~ubuntu24.04_amd64.deb
+onedrive-cpp_0.8.1-1~ubuntu24.04_amd64.deb
 ```
 
 For a cross-distribution build environment, override the detected suffix
@@ -216,12 +216,12 @@ tests. The generated `.deb` is placed in the parent directory of the project,
 for example:
 
 ```text
-../onedrive-cpp_0.8.0-1~ubuntu24.04_amd64.deb
+../onedrive-cpp_0.8.1-1~ubuntu24.04_amd64.deb
 ```
 
 The Debian changelog carries the native build distribution suffix. When
 adding Ubuntu 26.04 support, build from an Ubuntu 26.04 environment with a
-`0.8.0-1~ubuntu26.04` changelog version.
+`0.8.1-1~ubuntu26.04` changelog version.
 
 Install and verify the package:
 
