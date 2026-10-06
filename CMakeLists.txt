@@ -136,9 +136,12 @@ add_library(onedrive_core
     src/storage/item_state.cpp
     src/storage/state_reset.cpp
     src/storage/schema.cpp
-    src/storage/download_journal.cpp
-    src/storage/operation_journal.cpp
-    src/storage/upload_journal.cpp
+    src/storage/downloads.cpp
+    src/storage/deletes.cpp
+    src/storage/local_moves.cpp
+    src/storage/remote_moves.cpp
+    src/storage/markers.cpp
+    src/storage/uploads.cpp
     src/storage/sqlite.cpp
     src/sync/download/integrity.cpp
     src/sync/download/progress.cpp
