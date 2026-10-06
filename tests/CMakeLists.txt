@@ -16,7 +16,13 @@ add_onedrive_test(
     SOURCES tests/ascii_tests.cpp
     INCLUDE_DIRS src
 )
-add_onedrive_test(config_tests SOURCES tests/config_tests.cpp)
+foreach(CONFIG_TEST IN ITEMS base proxy valid schema)
+    add_onedrive_test(
+        config_${CONFIG_TEST}_tests
+        SOURCES tests/config/${CONFIG_TEST}.cpp
+        INCLUDE_DIRS tests tests/config
+    )
+endforeach()
 add_onedrive_test(console_tests SOURCES tests/console_tests.cpp)
 
 add_test(
