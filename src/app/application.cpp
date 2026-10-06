@@ -28,6 +28,7 @@
 #include <filesystem>
 #include <format>
 #include <iostream>
+#include <map>
 #include <string>
 
 namespace onedrive::app {
@@ -121,10 +122,19 @@ int Application::run(int argc, char* argv[]) {
     bool assume_yes = false;
     std::string log_level{"info"};
     std::string log_file;
-    std::string color_mode{"auto"};
-    std::string output_mode{"text"};
+    cli::ColorMode color_mode{cli::ColorMode::automatic};
+    cli::OutputMode output_mode{cli::OutputMode::text};
     bool quiet = false;
     std::string remote_download_path;
+    const std::map<std::string, cli::ColorMode> color_modes{
+        {"auto", cli::ColorMode::automatic},
+        {"always", cli::ColorMode::always},
+        {"never", cli::ColorMode::never},
+    };
+    const std::map<std::string, cli::OutputMode> output_modes{
+        {"text", cli::OutputMode::text},
+        {"json", cli::OutputMode::json},
+    };
 
     CLI::App cli{
         "A modern C++ OneDrive synchronization client",
@@ -166,6 +176,8 @@ int Application::run(int argc, char* argv[]) {
             &log_file,
             &color_mode,
             &output_mode,
+            &color_modes,
+            &output_modes,
             &quiet
         ](CLI::App& command) {
         command
@@ -187,16 +199,16 @@ int Application::run(int argc, char* argv[]) {
                 color_mode,
                 "Color output: auto, always, or never"
             )
-            ->check(CLI::IsMember({"auto", "always", "never"}))
-            ->capture_default_str();
+            ->transform(CLI::CheckedTransformer(color_modes))
+            ->default_str("auto");
         command
             .add_option(
                 "--output",
                 output_mode,
                 "Output format: text or json"
             )
-            ->check(CLI::IsMember({"text", "json"}))
-            ->capture_default_str();
+            ->transform(CLI::CheckedTransformer(output_modes))
+            ->default_str("text");
         command.add_flag(
             "--quiet",
             quiet,
@@ -259,8 +271,8 @@ int Application::run(int argc, char* argv[]) {
 
     const cli::Console console{
         {
-            .color = cli::Console::parse_color_mode(color_mode),
-            .output = cli::Console::parse_output_mode(output_mode),
+            .color = color_mode,
+            .output = output_mode,
             .quiet = quiet,
         }
     };
