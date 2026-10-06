@@ -85,11 +85,13 @@ add_onedrive_test(
     SOURCES tests/runtime_preflight_tests.cpp
     INCLUDE_DIRS src
 )
-add_onedrive_test(
-    sync_engine_tests
-    SOURCES tests/sync_engine_tests.cpp
-    INCLUDE_DIRS src
-)
+foreach(SYNC_TEST IN ITEMS base delete move download upload)
+    add_onedrive_test(
+        sync_${SYNC_TEST}_tests
+        SOURCES tests/sync/${SYNC_TEST}.cpp
+        INCLUDE_DIRS src tests tests/sync
+    )
+endforeach()
 add_onedrive_test(
     local_filesystem_tests
     SOURCES tests/local_filesystem_tests.cpp
