@@ -74,10 +74,13 @@ foreach(GRAPH_TEST IN ITEMS drive delta upload download retry)
         INCLUDE_DIRS tests tests/graph
     )
 endforeach()
-add_onedrive_test(
-    application_cli_tests
-    SOURCES tests/application_cli_tests.cpp
-)
+foreach(APP_TEST IN ITEMS args doctor flow)
+    add_onedrive_test(
+        app_${APP_TEST}_tests
+        SOURCES tests/app/${APP_TEST}.cpp
+        INCLUDE_DIRS tests tests/app
+    )
+endforeach()
 add_onedrive_test(
     monitor_tests
     SOURCES tests/monitor_tests.cpp
