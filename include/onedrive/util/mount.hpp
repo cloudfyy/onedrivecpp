@@ -14,7 +14,7 @@ public:
 [[nodiscard]] bool is_mount_point(const std::filesystem::path& path);
 
 void require_sync_mount(
-    const std::filesystem::path& sync_directory,
+    const std::filesystem::path& sync_data_directory,
     const std::optional<std::filesystem::path>& mount_point
 );
 

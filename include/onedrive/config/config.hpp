@@ -42,7 +42,7 @@ enum class TransferOrder {
 };
 
 struct Config {
-    std::filesystem::path sync_directory;
+    std::filesystem::path sync_data_directory;
     std::optional<std::filesystem::path> sync_mount_point;
     std::filesystem::path state_directory;
     std::optional<std::filesystem::path> sync_list;

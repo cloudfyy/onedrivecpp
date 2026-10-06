@@ -66,12 +66,12 @@ std::filesystem::path existing_ancestor(std::filesystem::path path) {
 }
 
 std::size_t filesystem_limit(
-    const std::filesystem::path& sync_directory,
+    const std::filesystem::path& sync_data_directory,
     int name,
     std::size_t fallback,
     std::string_view description
 ) {
-    const auto probe = existing_ancestor(sync_directory);
+    const auto probe = existing_ancestor(sync_data_directory);
     errno = 0;
     const long limit = ::pathconf(probe.c_str(), name);
     if (limit > 0) {
@@ -128,7 +128,7 @@ std::filesystem::path prepare_sync_root(
 }
 
 std::filesystem::path local_path_for(
-    const std::filesystem::path& sync_directory,
+    const std::filesystem::path& sync_data_directory,
     const std::string& remote_path
 ) {
     if (remote_path.empty()) {
@@ -139,7 +139,7 @@ std::filesystem::path local_path_for(
     }
 
     const auto name_limit = filesystem_limit(
-        sync_directory,
+        sync_data_directory,
         _PC_NAME_MAX,
         NAME_MAX,
         "filename length limit"
@@ -200,9 +200,9 @@ std::filesystem::path local_path_for(
     }
 
     const std::filesystem::path local_path =
-        sync_directory / std::filesystem::path{remote_path};
+        sync_data_directory / std::filesystem::path{remote_path};
     const auto path_limit = filesystem_limit(
-        sync_directory,
+        sync_data_directory,
         _PC_PATH_MAX,
         PATH_MAX,
         "path length limit"

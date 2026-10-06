@@ -43,7 +43,7 @@ enum class MissingPathPolicy {
     config::SyncPermissionsMode permissions
 );
 [[nodiscard]] std::filesystem::path local_path_for(
-    const std::filesystem::path& sync_directory,
+    const std::filesystem::path& sync_data_directory,
     const std::string& remote_path
 );
 [[nodiscard]] std::int64_t modified_ticks(

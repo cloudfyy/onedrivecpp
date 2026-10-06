@@ -20,7 +20,7 @@ sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 使用同一状态目录的进程会立即失败。当前用户拥有的既有私有状态文件会收紧为
 `0600`；符号链接或其他用户拥有的文件会被拒绝。
 
-同步时，`sync.directory` 和 `state.directory` 不能互相包含，不能把文件系统
+同步时，`sync.data_directory` 和 `state.directory` 不能互相包含，不能把文件系统
 根目录用作同步目录，并且所有已存在的路径组件都不能是符号链接。普通同步会在
 访问 Graph 前执行创建、写入、`fsync`、删除探测；dry-run 仍保持不修改同步目录。
 下载会保留实际传输量 5% 或 256 MiB 中的较大值作为安全余量。并发 worker 在
@@ -37,10 +37,11 @@ sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 ```toml
 [sync]
 # 当前账号的默认 OneDrive
+data_directory = "/home/USER/OneDrive"
 drive_id = "me"
 permissions = "private"
 local_conflict = "block"
-# 可选；sync.directory 所在的已挂载祖先目录
+# 可选；sync.data_directory 所在的已挂载祖先目录
 # mount_point = "/mnt/data"
 # 可选；相对路径以本 TOML 文件所在目录为基准
 # sync_list = "sync_list"
@@ -92,19 +93,19 @@ poll_interval_seconds = 300
 settle_delay_milliseconds = 1000
 ```
 
-当 `sync.directory` 位于可移动存储、网络文件系统或其他可能掉线的挂载盘时，
+当 `sync.data_directory` 位于可移动存储、网络文件系统或其他可能掉线的挂载盘时，
 设置 `sync.mount_point`。该路径必须是当前真实挂载的目录，并且是
-`sync.directory` 的祖先。客户端会在启动时检查它，并在每轮完整同步或单文件
+`sync.data_directory` 的祖先。客户端会在启动时检查它，并在每轮完整同步或单文件
 下载前再次检查。如果 Monitor 运行期间挂载盘消失，下一轮同步会在本地扫描、
 pending 操作恢复、下载、上传、远端删除或 Delta 游标更新之前停止。Monitor 会在
 之后的调度中重试，因此相同路径重新挂载后可以恢复正常工作。
 
-此选项默认关闭，客户端不会根据 `sync.directory` 猜测挂载点。例如
+此选项默认关闭，客户端不会根据 `sync.data_directory` 猜测挂载点。例如
 `/mnt/data/OneDrive` 是同步目录、`/mnt/data` 是实际挂载点时，配置为：
 
 ```toml
 [sync]
-directory = "/mnt/data/OneDrive"
+data_directory = "/mnt/data/OneDrive"
 mount_point = "/mnt/data"
 ```
 
@@ -395,17 +396,17 @@ HEIC 文件实际下载的字节可能与 Graph 元数据不同；`"relaxed"` �
 组权限共享同步目录时，才应设置为 `"umask"`，让权限遵循进程 umask。打包的
 systemd 用户服务还会使用 `UMask=0077` 作为纵深防御。
 
-`sync.directory` 是同步数据的公共根目录。实际 Drive 内容会使用与 state 相同的
+`sync.data_directory` 是同步数据的公共根目录。实际 Drive 内容会使用与 state 相同的
 稳定 ID 和友好名称组件进行隔离：
 
 ```text
-<sync.directory>/accounts/<显示名称>--<用户-ID-哈希>/
+<sync.data_directory>/accounts/<显示名称>--<用户-ID-哈希>/
   drives/<Drive-名称>--<Drive-ID-哈希>/
     <同步的 OneDrive 内容>
 ```
 
 因此，同一个配置根目录可以同时容纳多个 Microsoft 用户和多个 Drive，且不会
-发生路径冲突。旧的平面 `<sync.directory>` 布局中的文件不会自动移动，并会
+发生路径冲突。旧的平面 `<sync.data_directory>` 布局中的文件不会自动移动，并会
 保持原样。
 
 状态按稳定的 Microsoft 用户 ID 和真实 Drive ID 隔离，同时保留友好的目录名：

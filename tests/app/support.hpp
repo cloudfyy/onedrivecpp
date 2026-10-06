@@ -484,7 +484,7 @@ public:
         const onedrive::account::DriveIdentity&
     ) const {
         ++item_store_count;
-        last_item_store_sync_directory = config.sync_directory;
+        last_item_store_sync_directory = config.sync_data_directory;
         return std::make_unique<onedrive::storage::ItemStore>(
             std::in_place_type<FakeItemStore>,
             item_store_open_count,
@@ -591,7 +591,7 @@ struct CliFixture final {
         std::ofstream config{config_path};
         config << "config_version = 2\n"
                << "[sync]\n"
-               << "directory = \"" << sync_path.string() << "\"\n"
+               << "data_directory = \"" << sync_path.string() << "\"\n"
                << "upload = false\n"
                << "[state]\n"
                << "directory = \"" << state_path.string() << "\"\n"

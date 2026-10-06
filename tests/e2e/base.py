@@ -60,7 +60,7 @@ def load_live_settings(client: Path) -> LiveSettings:
 
 def rewrite_config(
     source: str,
-    sync_directory: Path,
+    sync_data_directory: Path,
     state_directory: Path,
     sync_list: Path | None = None,
     local_conflict: str | None = None,
@@ -71,7 +71,7 @@ def rewrite_config(
     upload_maximum_rate_bytes_per_second: int | None = None,
 ) -> str:
     replacements = {
-        ("sync", "directory"): json.dumps(str(sync_directory)),
+        ("sync", "data_directory"): json.dumps(str(sync_data_directory)),
         ("sync", "dry_run"): "false",
         ("state", "directory"): json.dumps(str(state_directory)),
     }

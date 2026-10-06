@@ -767,7 +767,7 @@ using onedrive::test::fail;
 inline onedrive::config::Config
 config_for(const std::filesystem::path& root, bool dry_run) {
     auto config = onedrive::config::Config::defaults();
-    config.sync_directory = root;
+    config.sync_data_directory = root;
     config.state_directory = root.parent_path() / "state";
     config.filesystem_metadata =
         onedrive::config::FilesystemMetadataMode::database;

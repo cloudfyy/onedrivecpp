@@ -70,7 +70,7 @@ bool is_mount_point(const std::filesystem::path& path) {
 }
 
 void require_sync_mount(
-    const std::filesystem::path& sync_directory,
+    const std::filesystem::path& sync_data_directory,
     const std::optional<std::filesystem::path>& mount_point
 ) {
     if (!mount_point) {
@@ -82,10 +82,10 @@ void require_sync_mount(
 
     reject_symlink_components(*mount_point, "sync mount point");
     const auto mount = normalized_absolute(*mount_point);
-    const auto sync = normalized_absolute(sync_directory);
+    const auto sync = normalized_absolute(sync_data_directory);
     if (!path_contains(mount, sync)) {
         throw std::runtime_error(
-            "sync.directory must be inside sync.mount_point: " +
+            "sync.data_directory must be inside sync.mount_point: " +
             mount.string()
         );
     }

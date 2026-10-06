@@ -49,7 +49,7 @@ def self_test() -> None:
     source = """\
 config_version = 2
 [sync]
-directory = "/old/sync"
+data_directory = "/old/sync"
 dry_run = true
 [state]
 directory = "/old/state"
@@ -64,7 +64,7 @@ directory = "/old/state"
     )
     parsed = tomllib.loads(rewritten)
     if (
-        parsed["sync"]["directory"] != "/new/sync"
+        parsed["sync"]["data_directory"] != "/new/sync"
         or parsed["sync"]["dry_run"] is not False
         or parsed["sync"]["sync_list"] != "/new/sync_list"
         or parsed["sync"]["local_conflict"] != "backup"
@@ -103,14 +103,18 @@ directory = "/old/state"
         if not wait_until(lambda: proxy.connection_count == 1, 2):
             raise E2EError("connection-dropping proxy self-test failed")
     try:
-        rewrite_config("[sync]\ndirectory = \"/tmp\"\n", Path("/a"), Path("/b"))
+        rewrite_config(
+            "[sync]\ndata_directory = \"/tmp\"\n",
+            Path("/a"),
+            Path("/b"),
+        )
         raise E2EError("incomplete configuration was accepted")
     except E2EError as error:
         if "missing required keys" not in str(error):
             raise
     duplicate = source.replace(
-        'directory = "/old/sync"',
-        'directory = "/old/sync"\ndirectory = "/duplicate"',
+        'data_directory = "/old/sync"',
+        'data_directory = "/old/sync"\ndata_directory = "/duplicate"',
     )
     try:
         rewrite_config(duplicate, Path("/a"), Path("/b"))
@@ -119,8 +123,8 @@ directory = "/old/state"
         if "duplicate configuration key" not in str(error):
             raise
     existing_sync_list = source.replace(
-        'directory = "/old/sync"',
-        'directory = "/old/sync"\nsync_list = "/old/sync_list"',
+        'data_directory = "/old/sync"',
+        'data_directory = "/old/sync"\nsync_list = "/old/sync_list"',
     )
     replaced_sync_list = tomllib.loads(
         rewrite_config(
@@ -133,8 +137,8 @@ directory = "/old/state"
     if replaced_sync_list["sync"]["sync_list"] != "/new/sync_list":
         raise E2EError("existing selective-sync path was not replaced")
     existing_local_conflict = source.replace(
-        'directory = "/old/sync"',
-        'directory = "/old/sync"\nlocal_conflict = "block"',
+        'data_directory = "/old/sync"',
+        'data_directory = "/old/sync"\nlocal_conflict = "block"',
     )
     replaced_local_conflict = tomllib.loads(
         rewrite_config(
@@ -147,8 +151,8 @@ directory = "/old/state"
     if replaced_local_conflict["sync"]["local_conflict"] != "backup":
         raise E2EError("existing local-conflict policy was not replaced")
     existing_root_files = source.replace(
-        'directory = "/old/sync"',
-        'directory = "/old/sync"\nsync_root_files = false',
+        'data_directory = "/old/sync"',
+        'data_directory = "/old/sync"\nsync_root_files = false',
     )
     replaced_root_files = tomllib.loads(
         rewrite_config(

@@ -46,6 +46,27 @@ int test_valid() {
         std::ofstream output{path};
         output << "config_version = 2\n"
                << "[sync]\n"
+               << "directory = \"/tmp/old-OneDrive\"\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "removed sync.directory key was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains(
+                "unknown TOML configuration key 'sync.directory'"
+            )) {
+            std::filesystem::remove(path);
+            std::cerr << "removed sync.directory reported wrong error\n";
+            return EXIT_FAILURE;
+        }
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[sync]\n"
                << "sync_root_files = \"yes\"\n";
     }
     try {

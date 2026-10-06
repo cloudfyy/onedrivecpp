@@ -11,7 +11,7 @@ int test_base() {
         std::ofstream output{path};
         output << "config_version = 2\n"
                << "[sync]\n"
-               << "directory = \"/tmp/OneDrive\"\n"
+               << "data_directory = \"/tmp/OneDrive\"\n"
                << "mount_point = \"/tmp\"\n"
                << "drive_id = \"test-drive\"\n"
                << "sync_list = \"rules/sync_list\"\n"
@@ -73,7 +73,7 @@ int test_base() {
     std::filesystem::remove(path);
     const auto graph_options = onedrive::app::graph_options(config);
 
-    if (config.sync_directory != "/tmp/OneDrive" ||
+    if (config.sync_data_directory != "/tmp/OneDrive" ||
         config.sync_mount_point !=
             std::optional<std::filesystem::path>{"/tmp"} ||
         config.state_directory != "/tmp/onedrive-state" ||

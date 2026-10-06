@@ -15,7 +15,7 @@ public:
     [[nodiscard]] static SyncPlan build(
         graph::DeltaResult delta,
         const std::string& drive_id,
-        const std::filesystem::path& sync_directory,
+        const std::filesystem::path& sync_data_directory,
         storage::DeltaApplyMode apply_mode,
         std::string sync_filter_fingerprint,
         std::vector<std::string> snapshot_removals = {},

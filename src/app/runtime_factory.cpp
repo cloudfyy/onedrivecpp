@@ -76,7 +76,7 @@ std::unique_ptr<monitor::FileMonitor> ProductionRuntimeFactory::create_monitor(
 ) const {
     return std::make_unique<monitor::FileMonitor>(
         std::in_place_type<monitor::Monitor>,
-        config.sync_directory,
+        config.sync_data_directory,
         std::move(synchronize),
         std::chrono::duration_cast<std::chrono::milliseconds>(
             config.monitor_poll_interval

@@ -33,11 +33,11 @@ SingleFileTarget resolve_target(
     graph::GraphClient& graph
 ) {
     onedrive::util::require_sync_mount(
-        config.sync_directory,
+        config.sync_data_directory,
         config.sync_mount_point
     );
     const auto configured_root =
-        onedrive::util::normalized_absolute(config.sync_directory);
+        onedrive::util::normalized_absolute(config.sync_data_directory);
     static_cast<void>(detail::local_path_for(configured_root, remote_path));
 
     auto item = graph.item_by_path(remote_path);

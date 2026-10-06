@@ -15,7 +15,7 @@ void load_sync_options(Config& config, const toml::table& root, const std::files
         validate_keys(
             *sync,
             {
-                "directory",
+                "data_directory",
                 "drive_id",
                 "dry_run",
                 "permissions",
@@ -45,11 +45,11 @@ void load_sync_options(Config& config, const toml::table& root, const std::files
         }
         if (const auto value = optional_value<std::string>(
                 *sync,
-                "directory",
-                "sync.directory",
+                "data_directory",
+                "sync.data_directory",
                 "a string"
             )) {
-            config.sync_directory = *value;
+            config.sync_data_directory = *value;
         }
         if (const auto value = optional_value<std::string>(
                 *sync,

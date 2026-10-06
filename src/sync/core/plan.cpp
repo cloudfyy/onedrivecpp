@@ -15,7 +15,7 @@ namespace onedrive::sync::detail {
 SyncPlan SyncPlan::build(
     graph::DeltaResult delta,
     const std::string& drive_id,
-    const std::filesystem::path& sync_directory,
+    const std::filesystem::path& sync_data_directory,
     storage::DeltaApplyMode apply_mode,
     std::string sync_filter_fingerprint,
     std::vector<std::string> snapshot_removals,
@@ -61,7 +61,7 @@ SyncPlan SyncPlan::build(
         );
         std::filesystem::path local_path;
         try {
-            local_path = local_path_for(sync_directory, item.remote_path);
+            local_path = local_path_for(sync_data_directory, item.remote_path);
         } catch (const InvalidRemotePathError& error) {
             plan.block(item, "invalid_remote_path", error.what());
             continue;

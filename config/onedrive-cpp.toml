@@ -59,7 +59,7 @@ permissions = "private"
 local_conflict = "block"
 # Root for account- and Drive-specific synchronized data directories.
 # Paths may be absolute or relative to the service working directory.
-directory = "/home/USER/OneDrive"
+data_directory = "/home/USER/OneDrive"
 # Optional mounted ancestor of directory. Each synchronization stops before
 # local scanning or recovery when this path is not a current mount point.
 # mount_point = "/mnt/data"

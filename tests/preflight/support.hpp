@@ -19,7 +19,7 @@ using onedrive::test::TemporaryDirectory;
 onedrive::config::Config config_for(const TemporaryDirectory& temporary) {
     auto config = onedrive::config::Config::defaults();
     config.state_directory = temporary.path() / "state";
-    config.sync_directory = temporary.path() / "files";
+    config.sync_data_directory = temporary.path() / "files";
     config.application_id = "test-application";
     config.azure_tenant_id = "common";
     config.auth_endpoint = "https://login.example.test";

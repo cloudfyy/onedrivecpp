@@ -203,24 +203,24 @@ void validate_private_file(
 }
 
 void validate_distinct_directories(
-    const std::filesystem::path& sync_directory,
+    const std::filesystem::path& sync_data_directory,
     const std::filesystem::path& state_directory
 ) {
     const auto sync = std::filesystem::weakly_canonical(
-        onedrive::util::normalized_absolute(sync_directory)
+        onedrive::util::normalized_absolute(sync_data_directory)
     );
     const auto state = std::filesystem::weakly_canonical(
         onedrive::util::normalized_absolute(state_directory)
     );
     if (sync == sync.root_path()) {
         throw std::runtime_error(
-            "sync.directory must not be the filesystem root"
+            "sync.data_directory must not be the filesystem root"
         );
     }
     if (onedrive::util::path_contains(sync, state) ||
         onedrive::util::path_contains(state, sync)) {
         throw std::runtime_error(
-            "sync.directory and state.directory must not contain one another"
+            "sync.data_directory and state.directory must not contain one another"
         );
     }
 }
@@ -305,60 +305,60 @@ void prepare_sync_directory(
     const config::Config& config,
     Operation operation
 ) {
-    if (config.sync_directory.empty()) {
-        throw std::runtime_error("sync.directory must not be empty");
+    if (config.sync_data_directory.empty()) {
+        throw std::runtime_error("sync.data_directory must not be empty");
     }
     validate_distinct_directories(
-        config.sync_directory,
+        config.sync_data_directory,
         config.state_directory
     );
     onedrive::util::reject_symlink_components(
-        config.sync_directory,
+        config.sync_data_directory,
         "sync directory"
     );
     onedrive::util::require_sync_mount(
-        config.sync_directory,
+        config.sync_data_directory,
         config.sync_mount_point
     );
 
     std::error_code error;
     const bool exists = std::filesystem::exists(
-        std::filesystem::symlink_status(config.sync_directory, error)
+        std::filesystem::symlink_status(config.sync_data_directory, error)
     );
     if (error == std::errc::no_such_file_or_directory) {
         error.clear();
     } else if (error) {
         throw std::runtime_error(
             "cannot inspect sync directory '" +
-            config.sync_directory.string() + "': " + error.message()
+            config.sync_data_directory.string() + "': " + error.message()
         );
     }
-    if (exists && !std::filesystem::is_directory(config.sync_directory)) {
+    if (exists && !std::filesystem::is_directory(config.sync_data_directory)) {
         throw std::runtime_error(
-            "sync.directory is not a directory: " +
-            config.sync_directory.string()
+            "sync.data_directory is not a directory: " +
+            config.sync_data_directory.string()
         );
     }
     if (operation == Operation::monitor && !exists) {
         throw std::runtime_error(
-            "monitor requires an existing sync.directory: " +
-            config.sync_directory.string()
+            "monitor requires an existing sync.data_directory: " +
+            config.sync_data_directory.string()
         );
     }
     if (operation != Operation::synchronize || config.dry_run) {
         return;
     }
 
-    std::filesystem::create_directories(config.sync_directory);
+    std::filesystem::create_directories(config.sync_data_directory);
     onedrive::util::reject_symlink_components(
-        config.sync_directory,
+        config.sync_data_directory,
         "sync directory"
     );
     if (config.sync_permissions ==
         config::SyncPermissionsMode::private_access) {
-        secure_sync_directory(config.sync_directory);
+        secure_sync_directory(config.sync_data_directory);
     }
-    probe_writable_directory(config.sync_directory);
+    probe_writable_directory(config.sync_data_directory);
 }
 
 void validate_authentication_config(const config::Config& config) {

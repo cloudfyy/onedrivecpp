@@ -56,11 +56,11 @@ int SyncEngine::synchronize() const {
 
     try {
         onedrive::util::require_sync_mount(
-            config_->sync_directory,
+            config_->sync_data_directory,
             config_->sync_mount_point
         );
         std::filesystem::path sync_root =
-            onedrive::util::normalized_absolute(config_->sync_directory);
+            onedrive::util::normalized_absolute(config_->sync_data_directory);
         std::optional<detail::SafeSyncRoot> safe_root;
         std::optional<detail::FilesystemMetadata> metadata;
         if (config_->dry_run) {
@@ -70,8 +70,8 @@ int SyncEngine::synchronize() const {
                 {
                     {
                         .label = "sync directory:",
-                        .key = "sync_directory",
-                        .value = config_->sync_directory.string(),
+                        .key = "sync_data_directory",
+                        .value = config_->sync_data_directory.string(),
                     },
                     {
                         .label = "state directory:",

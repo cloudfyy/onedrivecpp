@@ -25,7 +25,7 @@ directory fails immediately. Existing private state files are tightened to
 `0600` when owned by the current user; symbolic links and files owned by
 another user are rejected.
 
-For synchronization, `sync.directory` and `state.directory` must not contain
+For synchronization, `sync.data_directory` and `state.directory` must not contain
 one another, the filesystem root cannot be used as the sync directory, and
 every existing path component must be free of symbolic links. Normal sync
 performs a create/write/fsync/remove probe before contacting Graph. Dry-run
@@ -46,10 +46,11 @@ For example:
 ```toml
 [sync]
 # Default OneDrive of the signed-in user
+data_directory = "/home/USER/OneDrive"
 drive_id = "me"
 permissions = "private"
 local_conflict = "block"
-# Optional mounted ancestor of sync.directory
+# Optional mounted ancestor of sync.data_directory
 # mount_point = "/mnt/data"
 # Optional; resolved relative to this TOML file
 # sync_list = "sync_list"
@@ -102,9 +103,9 @@ poll_interval_seconds = 300
 settle_delay_milliseconds = 1000
 ```
 
-Set `sync.mount_point` when `sync.directory` resides on removable storage, a
+Set `sync.mount_point` when `sync.data_directory` resides on removable storage, a
 network filesystem, or another mount that may disappear. The configured path
-must be a mounted directory and an ancestor of `sync.directory`. The client
+must be a mounted directory and an ancestor of `sync.data_directory`. The client
 checks it during startup and again before every full or single-file
 synchronization. If the mount disappears while Monitor is running, the next
 synchronization stops before local scanning, pending-operation recovery,
@@ -113,12 +114,12 @@ on a later scheduled synchronization, so normal operation resumes after the
 same path is mounted again.
 
 This option is disabled by default and does not infer a mount from
-`sync.directory`. For the layout `/mnt/data/OneDrive`, where `/mnt/data` is the
+`sync.data_directory`. For the layout `/mnt/data/OneDrive`, where `/mnt/data` is the
 actual mount point, configure:
 
 ```toml
 [sync]
-directory = "/mnt/data/OneDrive"
+data_directory = "/mnt/data/OneDrive"
 mount_point = "/mnt/data"
 ```
 
@@ -474,19 +475,19 @@ to all downloads and weakens integrity guarantees.
 umask, such as a directory shared through Unix group permissions. The packaged
 systemd user service also uses `UMask=0077` as defense in depth.
 
-`sync.directory` is the common root for synchronized data. Actual Drive
+`sync.data_directory` is the common root for synchronized data. Actual Drive
 contents are isolated with the same stable, friendly account and Drive
 components used by state:
 
 ```text
-<sync.directory>/accounts/<display-name>--<user-id-hash>/
+<sync.data_directory>/accounts/<display-name>--<user-id-hash>/
   drives/<drive-name>--<drive-id-hash>/
     <synchronized OneDrive contents>
 ```
 
 This allows one configured root to hold multiple Microsoft users and multiple
 Drives without path collisions. Existing files in the former flat
-`<sync.directory>` layout are not moved automatically and remain untouched.
+`<sync.data_directory>` layout are not moved automatically and remain untouched.
 
 State is separated by the stable Microsoft user ID and canonical Drive ID while
 retaining friendly directory names:

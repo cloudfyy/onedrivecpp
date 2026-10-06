@@ -541,9 +541,9 @@ int Application::run(int argc, char* argv[]) {
         auto graph = runtime_factory_->create_graph_client(config);
         const auto identity = graph->drive_identity();
         config.drive_id = identity.drive_id;
-        config.sync_directory =
+        config.sync_data_directory =
             account::AccountState::drive_data_directory(
-                config.sync_directory,
+                config.sync_data_directory,
                 identity
             );
         if (*download_command && config.dry_run) {
@@ -578,7 +578,7 @@ int Application::run(int argc, char* argv[]) {
                 cli::MessageKind::success,
                 "monitor_ready",
                 "Monitoring local and Microsoft Graph changes for: " +
-                    config.sync_directory.string()
+                    config.sync_data_directory.string()
             );
             console.message(
                 cli::MessageKind::information,

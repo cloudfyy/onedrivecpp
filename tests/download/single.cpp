@@ -8,7 +8,7 @@ int test_single_file_download_coordination() {
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "single";
     auto config = onedrive::config::Config::defaults();
-    config.sync_directory = root;
+    config.sync_data_directory = root;
     config.drive_id = "drive-id";
     config.filesystem_metadata =
         onedrive::config::FilesystemMetadataMode::database;

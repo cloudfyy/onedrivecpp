@@ -47,7 +47,7 @@ def run_boundary(
         dir=work_root,
     ) as raw:
         workspace = Path(raw)
-        sync_directory = workspace / "sync"
+        sync_data_directory = workspace / "sync"
         state_directory = workspace / "state"
         home = workspace / "home"
         config = workspace / "config.toml"
@@ -62,7 +62,7 @@ def run_boundary(
         config.write_text(
             rewrite_config(
                 settings.source_text,
-                sync_directory,
+                sync_data_directory,
                 state_directory,
                 sync_list,
                 "backup",
@@ -94,7 +94,7 @@ def run_boundary(
                     f"{baseline.returncode}"
                 )
             baseline_file = fixture_path(
-                sync_directory,
+                sync_data_directory,
                 settings.expected_path,
             )
             if sha256(baseline_file) != settings.expected_sha256:
@@ -136,7 +136,7 @@ def run_boundary(
             config.write_text(
                 rewrite_config(
                     settings.source_text,
-                    sync_directory,
+                    sync_data_directory,
                     state_directory,
                     sync_list,
                     "backup",
@@ -169,7 +169,7 @@ def run_boundary(
                     network_config.write_text(
                         rewrite_config(
                             settings.source_text,
-                            sync_directory,
+                            sync_data_directory,
                             state_directory,
                             sync_list,
                             "backup",
@@ -299,7 +299,7 @@ def run_boundary(
                 config.write_text(
                     rewrite_config(
                         settings.source_text,
-                        sync_directory,
+                        sync_data_directory,
                         state_directory,
                         sync_list,
                         "backup",
@@ -326,7 +326,7 @@ def run_boundary(
                 config.write_text(
                     rewrite_config(
                         settings.source_text,
-                        sync_directory,
+                        sync_data_directory,
                         state_directory,
                         sync_list,
                         "backup",
@@ -352,7 +352,7 @@ def run_boundary(
                 config.write_text(
                     rewrite_config(
                         settings.source_text,
-                        sync_directory,
+                        sync_data_directory,
                         state_directory,
                         sync_list,
                         "backup",

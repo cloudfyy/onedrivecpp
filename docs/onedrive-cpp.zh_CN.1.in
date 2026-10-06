@@ -239,7 +239,7 @@ Token、SQLite 及 WAL/SHM 必须是当前用户拥有的普通单硬链接文�
 符号链接。正常同步在访问 Graph 前验证创建、写入、刷盘和删除能力。下载容量保留
 256 MiB 或计划传输字节数 5% 中的较大值。
 .TP
-.B sync.directory
+.B sync.data_directory
 同步数据根目录。实际内容存放于
 .IR accounts/<显示名>--<用户ID哈希>/drives/<Drive名>--<Drive-ID哈希>
 下，以隔离多个账号和 Drive。旧平面布局不会自动移动。

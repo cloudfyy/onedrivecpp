@@ -11,10 +11,10 @@ import time
 from .base import E2EError
 
 
-def materialized_files(sync_directory: Path) -> list[Path]:
+def materialized_files(sync_data_directory: Path) -> list[Path]:
     return sorted(
         path
-        for path in sync_directory.rglob("*")
+        for path in sync_data_directory.rglob("*")
         if path.is_file() and not path.is_symlink()
     )
 

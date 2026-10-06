@@ -44,7 +44,7 @@ def run_live(client: Path, work_root: Path) -> None:
     completed: list[subprocess.CompletedProcess[str]] = []
     with tempfile.TemporaryDirectory(prefix="graph-sync-", dir=work_root) as raw:
         workspace = Path(raw)
-        sync_directory = workspace / "sync"
+        sync_data_directory = workspace / "sync"
         state_directory = workspace / "state"
         home = workspace / "home"
         config = workspace / "config.toml"
@@ -56,7 +56,7 @@ def run_live(client: Path, work_root: Path) -> None:
         config.write_text(
             rewrite_config(
                 source_text,
-                sync_directory,
+                sync_data_directory,
                 state_directory,
                 sync_list,
                 "backup",
@@ -83,7 +83,7 @@ def run_live(client: Path, work_root: Path) -> None:
                 raise E2EError(
                     f"single-file Graph download failed with {single.returncode}"
                 )
-            downloaded = fixture_path(sync_directory, expected_path)
+            downloaded = fixture_path(sync_data_directory, expected_path)
             actual_sha256 = sha256(downloaded)
             if actual_sha256 != expected_sha256:
                 raise E2EError(
@@ -98,7 +98,7 @@ def run_live(client: Path, work_root: Path) -> None:
                     "empty-list live Graph synchronization failed with "
                     f"{excluded.returncode}"
                 )
-            excluded_fixture = fixture_path(sync_directory, expected_path)
+            excluded_fixture = fixture_path(sync_data_directory, expected_path)
             excluded_stat = excluded_fixture.stat()
             if sha256(excluded_fixture) != expected_sha256:
                 raise E2EError("fixture changed during empty-list synchronization")
@@ -135,7 +135,7 @@ def run_live(client: Path, work_root: Path) -> None:
                 raise E2EError(
                     "sync-list change did not report a full remote-state query"
                 )
-            synchronized = fixture_path(sync_directory, expected_path)
+            synchronized = fixture_path(sync_data_directory, expected_path)
             synchronized_stat = synchronized.stat()
             if sha256(synchronized) != expected_sha256:
                 raise E2EError("included fixture SHA-256 mismatch")
@@ -143,7 +143,7 @@ def run_live(client: Path, work_root: Path) -> None:
                 raise E2EError(
                     "included fixture snapshot was not persisted exactly once"
                 )
-            if materialized_files(sync_directory) != [synchronized]:
+            if materialized_files(sync_data_directory) != [synchronized]:
                 raise E2EError(
                     "selective synchronization materialized unexpected files"
                 )
@@ -155,7 +155,7 @@ def run_live(client: Path, work_root: Path) -> None:
                     "repeat live Graph synchronization failed with "
                     f"{repeated_sync.returncode}"
                 )
-            repeated = fixture_path(sync_directory, expected_path)
+            repeated = fixture_path(sync_data_directory, expected_path)
             repeated_stat = repeated.stat()
             if sha256(repeated) != expected_sha256:
                 raise E2EError("fixture changed after repeat synchronization")
@@ -168,7 +168,7 @@ def run_live(client: Path, work_root: Path) -> None:
             config.write_text(
                 rewrite_config(
                     source_text,
-                    sync_directory,
+                    sync_data_directory,
                     state_directory,
                     sync_list,
                     "backup",
@@ -198,7 +198,7 @@ def run_live(client: Path, work_root: Path) -> None:
                     "enabling root files did not report a full remote-state query"
                 )
             root_files_fixture = fixture_path(
-                sync_directory,
+                sync_data_directory,
                 expected_path,
             )
             root_files_stat = root_files_fixture.stat()
@@ -249,7 +249,7 @@ def run_live(client: Path, work_root: Path) -> None:
                 raise E2EError(
                     "safeBackup synchronization did not emit its JSON event"
                 )
-            restored = fixture_path(sync_directory, expected_path)
+            restored = fixture_path(sync_data_directory, expected_path)
             restored_stat = restored.stat()
             if sha256(restored) != expected_sha256:
                 raise E2EError(
@@ -287,7 +287,7 @@ def run_live(client: Path, work_root: Path) -> None:
                     "post-safeBackup incremental synchronization failed with "
                     f"{stable_after_backup.returncode}"
                 )
-            stable = fixture_path(sync_directory, expected_path)
+            stable = fixture_path(sync_data_directory, expected_path)
             stable_stat = stable.stat()
             stable_backups = safe_backup_files(stable)
             if sha256(stable) != expected_sha256:
@@ -728,9 +728,9 @@ def run_live(client: Path, work_root: Path) -> None:
                     Path(move_fixture_name) / "source" / "directory-old"
                 )
                 old_nested_path = old_directory_path / "nested.bin"
-                old_file = fixture_path(sync_directory, old_file_path)
+                old_file = fixture_path(sync_data_directory, old_file_path)
                 old_directory = old_file.parent / "directory-old"
-                old_nested = fixture_path(sync_directory, old_nested_path)
+                old_nested = fixture_path(sync_data_directory, old_nested_path)
                 if old_file.read_bytes() != move_file_contents:
                     raise E2EError("remote file-move fixture content changed")
                 if old_nested.read_bytes() != nested_file_contents:
@@ -772,9 +772,9 @@ def run_live(client: Path, work_root: Path) -> None:
                     Path(move_fixture_name) / "target" / "directory-new"
                 )
                 new_nested_path = new_directory_path / "nested.bin"
-                new_file = fixture_path(sync_directory, new_file_path)
+                new_file = fixture_path(sync_data_directory, new_file_path)
                 new_directory = new_file.parent / "directory-new"
-                new_nested = fixture_path(sync_directory, new_nested_path)
+                new_nested = fixture_path(sync_data_directory, new_nested_path)
                 if old_file.exists() or old_directory.exists():
                     raise E2EError(
                         "remote move left its old local path materialized"

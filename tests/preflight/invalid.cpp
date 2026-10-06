@@ -24,12 +24,12 @@ int test_invalid() {
     }
     config = config_for(temporary);
 
-    config.sync_directory.clear();
+    config.sync_data_directory.clear();
     if (!throws_with(
             [&] {
                 const RuntimePreflight preflight{config, Operation::monitor};
             },
-            "sync.directory must not be empty"
+            "sync.data_directory must not be empty"
         )) {
         return fail("empty sync directory was accepted");
     }
@@ -123,7 +123,7 @@ int test_invalid() {
     }
     config.auth_endpoint = "https://login.example.test";
 
-    config.sync_directory = config.state_directory / "files";
+    config.sync_data_directory = config.state_directory / "files";
     if (!throws_with(
             [&] {
                 const RuntimePreflight preflight{config, Operation::monitor};
@@ -133,22 +133,22 @@ int test_invalid() {
         return fail("overlapping state and sync directories were accepted");
     }
 
-    config.sync_directory = "/";
+    config.sync_data_directory = "/";
     if (!throws_with(
             [&] {
                 const RuntimePreflight preflight{config, Operation::monitor};
             },
             "must not be the filesystem root"
         )) {
-        return fail("filesystem root was accepted as sync.directory");
+        return fail("filesystem root was accepted as sync.data_directory");
     }
 
-    config.sync_directory = temporary.path() / "missing-monitor-root";
+    config.sync_data_directory = temporary.path() / "missing-monitor-root";
     if (!throws_with(
             [&] {
                 const RuntimePreflight preflight{config, Operation::monitor};
             },
-            "requires an existing sync.directory"
+            "requires an existing sync.data_directory"
         )) {
         return fail("missing monitor directory was accepted");
     }
@@ -157,7 +157,7 @@ int test_invalid() {
     const auto link = temporary.path() / "linked-sync";
     std::filesystem::create_directory(real);
     std::filesystem::create_directory_symlink(real, link);
-    config.sync_directory = link;
+    config.sync_data_directory = link;
     if (!throws_with(
             [&] {
                 const RuntimePreflight preflight{config, Operation::monitor};
@@ -168,7 +168,7 @@ int test_invalid() {
     }
 
     config = config_for(temporary);
-    std::filesystem::create_directories(config.sync_directory);
+    std::filesystem::create_directories(config.sync_data_directory);
     config.sync_mount_point = "/proc";
     if (!throws_with(
             [&] {
@@ -203,7 +203,7 @@ int test_invalid() {
 
     const auto missing_mount = temporary.path() / "missing-mount";
     config.sync_mount_point = missing_mount;
-    config.sync_directory = missing_mount / "OneDrive";
+    config.sync_data_directory = missing_mount / "OneDrive";
     if (!throws_with(
             [&] {
                 const RuntimePreflight preflight{config, Operation::monitor};
@@ -219,11 +219,11 @@ int test_invalid() {
         output << "not a mount";
     }
     config.sync_mount_point = mount_file;
-    config.sync_directory = mount_file / "OneDrive";
+    config.sync_data_directory = mount_file / "OneDrive";
     if (!throws_with(
             [&] {
                 onedrive::util::require_sync_mount(
-                    config.sync_directory,
+                    config.sync_data_directory,
                     config.sync_mount_point
                 );
             },
@@ -232,7 +232,7 @@ int test_invalid() {
         return fail("regular file was accepted as a sync mount point");
     }
 
-    config.sync_directory = temporary.path() / "files";
+    config.sync_data_directory = temporary.path() / "files";
     config.sync_mount_point = "/";
     {
         const RuntimePreflight preflight{config, Operation::monitor};
@@ -272,7 +272,7 @@ int test_invalid() {
     std::filesystem::create_directory(real_state);
     std::filesystem::create_directory_symlink(real_state, state_link);
     config.state_directory = state_link;
-    config.sync_directory = real;
+    config.sync_data_directory = real;
     if (!throws_with(
             [&] {
                 const RuntimePreflight preflight{config, Operation::logout};
