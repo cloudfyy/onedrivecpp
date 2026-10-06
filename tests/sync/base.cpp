@@ -4,6 +4,26 @@ namespace {
 
 using namespace onedrive::test::sync;
 
+int test_engine_owns_configuration() {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path() / "owned-config";
+    FakeGraphClient graph;
+    FakeItemStore items;
+    FakeMetrics metrics;
+    auto config = config_for(root, false);
+    onedrive::sync::SyncEngine engine{config, graph, items, metrics};
+    config.sync_data_mount_point = temporary.path() / "missing-mount";
+    config.drive_id = "mutated";
+
+    if (engine.synchronize() != 0 ||
+        graph.delta_requests !=
+            std::vector<std::optional<std::string>>{std::nullopt} ||
+        items.applied_delta.drive_id != "me") {
+        return fail("sync engine did not preserve its owned configuration");
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_dry_run_and_success() {
     TemporaryDirectory temporary;
     const auto guarded_root = temporary.path() / "guarded";
@@ -1143,6 +1163,10 @@ int test_invalid_delta_cursor_restarts_full_query() {
 } // namespace
 
 int main() {
+    if (const int result = test_engine_owns_configuration();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
     if (const int result = test_dry_run_and_success(); result != EXIT_SUCCESS) {
         return result;
     }

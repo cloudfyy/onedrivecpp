@@ -5,13 +5,47 @@
 #include <cstring>
 #include <exception>
 #include <limits>
+#include <new>
 #include <string_view>
+#include <utility>
 #include <unistd.h>
 
 namespace onedrive::http::detail {
 
 constexpr int curl_progress_continue = 0;
 constexpr int curl_progress_abort = 1;
+
+void record_callback_failure(
+    CallbackFailure& failure, std::exception_ptr exception
+) noexcept {
+    if (!exception) {
+        failure.kind = CallbackFailureKind::internal;
+        return;
+    }
+    try {
+        std::rethrow_exception(std::move(exception));
+    } catch (const std::bad_alloc&) {
+        failure.kind = CallbackFailureKind::allocation;
+    } catch (...) {
+        failure.kind = CallbackFailureKind::internal;
+    }
+}
+
+std::string_view callback_storage_error(
+    CallbackFailureKind failure, CallbackStorage storage
+) noexcept {
+    if (failure == CallbackFailureKind::allocation) {
+        return storage == CallbackStorage::response_headers ?
+            "cannot allocate HTTP response header storage" :
+            "cannot allocate HTTP response body storage";
+    }
+    if (failure == CallbackFailureKind::internal) {
+        return storage == CallbackStorage::response_headers ?
+            "HTTP response header callback failed" :
+            "HTTP response body callback failed";
+    }
+    return {};
+}
 
 std::size_t read_request_body(
     char* destination,
@@ -264,8 +298,11 @@ std::size_t write_response(char* data, std::size_t size, std::size_t count, void
         write_context.body.append(data, byte_count);
         return byte_count;
     } catch (...) {
-        return 0;
+        record_callback_failure(
+            write_context.failure, std::current_exception()
+        );
     }
+    return 0;
 }
 
 std::string_view trim_header_value(std::string_view value) {
@@ -326,8 +363,11 @@ std::size_t write_header(char* data, std::size_t size, std::size_t count, void* 
         }
         return byte_count;
     } catch (...) {
-        return 0;
+        record_callback_failure(
+            header_context.failure, std::current_exception()
+        );
     }
+    return 0;
 }
 
 int report_progress(

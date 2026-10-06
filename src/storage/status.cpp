@@ -24,7 +24,7 @@ std::size_t count_for_drive(
 ) {
     const std::string query =
         "SELECT COUNT(*) FROM " + std::string{table} + " WHERE drive_id = ?1;";
-    return query_count(database, query.c_str(), &drive_id);
+    return query_count(database, query.c_str(), drive_id);
 }
 
 } // namespace

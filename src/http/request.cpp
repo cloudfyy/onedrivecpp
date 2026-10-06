@@ -527,6 +527,15 @@ HttpResult perform_request(
                 .message = "HTTP response headers exceeded the configured size limit",
             });
         }
+        if (const auto error = callback_storage_error(
+                header_context.failure.kind,
+                CallbackStorage::response_headers
+            );
+            !error.empty()) {
+            return std::unexpected(HttpError{
+                .message = std::string{error},
+            });
+        }
         if (write_context.failure.kind ==
             CallbackFailureKind::response_too_large) {
             return std::unexpected(HttpError{
@@ -558,6 +567,15 @@ HttpResult perform_request(
             return std::unexpected(HttpError{
                 .message = "download data callback failed: " +
                            write_context.failure.detail,
+            });
+        }
+        if (const auto error = callback_storage_error(
+                write_context.failure.kind,
+                CallbackStorage::response_body
+            );
+            !error.empty()) {
+            return std::unexpected(HttpError{
+                .message = std::string{error},
             });
         }
         const std::string detail = error_buffer.front() == '\0' ?

@@ -39,13 +39,19 @@ void execute(sqlite3* database, const char* sql) {
     throw std::runtime_error("SQLite operation failed: " + message);
 }
 
-void bind_text(sqlite3* database, sqlite3_stmt* statement, int index, const std::string& value) {
-    const int result = sqlite3_bind_text(
+void bind_text(
+    sqlite3* database,
+    sqlite3_stmt* statement,
+    int index,
+    std::string_view value
+) {
+    const int result = sqlite3_bind_text64(
         statement,
         index,
-        value.c_str(),
-        static_cast<int>(value.size()),
-        SQLITE_TRANSIENT
+        value.data(),
+        static_cast<sqlite3_uint64>(value.size()),
+        SQLITE_TRANSIENT,
+        SQLITE_UTF8
     );
     if (result != SQLITE_OK) {
         throw std::runtime_error(

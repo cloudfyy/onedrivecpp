@@ -220,6 +220,9 @@ std::vector<UploadCandidate> discover_uploads(
         }
         const auto relative = path.lexically_relative(sync_root.path());
         const auto remote_path = relative.generic_string();
+        const auto kind = directory ?
+            SyncItemKind::directory :
+            SyncItemKind::file;
         std::optional<std::uint64_t> file_size;
         if (regular_file) {
             file_size = iterator->file_size(error);
@@ -247,7 +250,7 @@ std::vector<UploadCandidate> discover_uploads(
         }
         if (relative.empty() || relative.native().starts_with("..") ||
             (sync_list != nullptr &&
-             sync_list->excludes(remote_path, directory, file_size))) {
+             sync_list->excludes(remote_path, kind, file_size))) {
             if (directory) {
                 iterator.disable_recursion_pending();
             }
@@ -260,7 +263,7 @@ std::vector<UploadCandidate> discover_uploads(
             continue;
         }
         if (sync_list != nullptr &&
-            !sync_list->includes(remote_path, directory, file_size)) {
+            !sync_list->includes(remote_path, kind, file_size)) {
             iterator.increment(error);
             if (error) {
                 throw std::runtime_error(

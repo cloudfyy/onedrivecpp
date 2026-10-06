@@ -1,4 +1,6 @@
 #include "support.hpp"
+#include "http/callbacks.hpp"
+#include "http/curl.hpp"
 #include "onedrive/http/http_client.hpp"
 #include "support/network.hpp"
 #include "support/common.hpp"
@@ -36,6 +38,69 @@ using onedrive::test::http::ScopedUmask;
 } // namespace
 
 int main() {
+    try {
+        static_cast<void>(onedrive::http::detail::curl_proxy_auth(
+            static_cast<onedrive::http::ProxyAuth>(-1)
+        ));
+        return fail("invalid proxy authentication mode was accepted");
+    } catch (const std::invalid_argument&) {
+    }
+    onedrive::http::detail::CallbackFailure callback_failure;
+    try {
+        throw std::bad_alloc{};
+    } catch (...) {
+        onedrive::http::detail::record_callback_failure(
+            callback_failure, std::current_exception()
+        );
+    }
+    if (callback_failure.kind !=
+        onedrive::http::detail::CallbackFailureKind::allocation) {
+        return fail("callback allocation failure was not preserved");
+    }
+    try {
+        throw 42;
+    } catch (...) {
+        onedrive::http::detail::record_callback_failure(
+            callback_failure, std::current_exception()
+        );
+    }
+    if (callback_failure.kind !=
+        onedrive::http::detail::CallbackFailureKind::internal) {
+        return fail("unknown callback failure was not preserved");
+    }
+    callback_failure = {};
+    onedrive::http::detail::record_callback_failure(callback_failure, {});
+    if (callback_failure.kind !=
+        onedrive::http::detail::CallbackFailureKind::internal) {
+        return fail("missing callback exception was not classified");
+    }
+    using onedrive::http::detail::CallbackFailureKind;
+    using onedrive::http::detail::CallbackStorage;
+    using onedrive::http::detail::callback_storage_error;
+    if (callback_storage_error(
+            CallbackFailureKind::allocation,
+            CallbackStorage::response_headers
+        ) != "cannot allocate HTTP response header storage" ||
+        callback_storage_error(
+            CallbackFailureKind::allocation,
+            CallbackStorage::response_body
+        ) != "cannot allocate HTTP response body storage" ||
+        callback_storage_error(
+            CallbackFailureKind::internal,
+            CallbackStorage::response_headers
+        ) != "HTTP response header callback failed" ||
+        callback_storage_error(
+            CallbackFailureKind::internal,
+            CallbackStorage::response_body
+        ) != "HTTP response body callback failed" ||
+        !callback_storage_error(
+             CallbackFailureKind::none,
+             CallbackStorage::response_body
+         )
+             .empty()) {
+        return fail("callback storage failure diagnostics were incorrect");
+    }
+
     const ScopedUmask download_umask{0022};
     const onedrive::test::TemporaryDirectory temporary;
     std::error_code ignored;

@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -47,6 +48,8 @@ void write_rules(
 
 int main() {
     namespace detail = onedrive::sync::detail;
+    constexpr auto file = detail::SyncItemKind::file;
+    constexpr auto directory = detail::SyncItemKind::directory;
     if (!detail::remote_path_is_descendant("Folder/File", "Folder") ||
         !detail::remote_path_is_descendant("Folder/Nested/File", "Folder") ||
         detail::remote_path_is_descendant("Folder", "Folder") ||
@@ -68,15 +71,15 @@ int main() {
         "Pictures/*.jpg\n"
     );
     const auto rules = detail::SyncList::load(rules_path);
-    if (rules.rule_count() != 4 || !rules.includes("Documents", true) ||
-        rules.includes("Documents", false) ||
-        !rules.includes("Documents/report.txt", false) ||
-        rules.includes("Documents/Private/secret.txt", false) ||
-        !rules.includes("Projects/README.md", false) ||
-        !rules.includes("Projects/a/b/README.txt", false) ||
-        !rules.includes("Archive/Pictures/photo.jpg", false) ||
-        rules.includes("Archive/Pictures/photo.png", false) ||
-        rules.includes("Archive/Documents/report.txt", false)) {
+    if (rules.rule_count() != 4 || !rules.includes("Documents", directory) ||
+        rules.includes("Documents", file) ||
+        !rules.includes("Documents/report.txt", file) ||
+        rules.includes("Documents/Private/secret.txt", file) ||
+        !rules.includes("Projects/README.md", file) ||
+        !rules.includes("Projects/a/b/README.txt", file) ||
+        !rules.includes("Archive/Pictures/photo.jpg", file) ||
+        rules.includes("Archive/Pictures/photo.png", file) ||
+        rules.includes("Archive/Documents/report.txt", file)) {
         return fail("sync list matching semantics were incorrect");
     }
 
@@ -95,21 +98,21 @@ int main() {
 
     write_rules(rules_path, "");
     const auto empty_rules = detail::SyncList::load(rules_path);
-    if (empty_rules.includes("anything.txt", false)) {
+    if (empty_rules.includes("anything.txt", file)) {
         return fail("an empty sync list did not exclude everything");
     }
     const auto root_file_rules = detail::SyncList::load(rules_path, true);
-    if (!root_file_rules.includes("root.txt", false) ||
-        root_file_rules.includes("Folder/nested.txt", false) ||
-        root_file_rules.includes("RootFolder", true) ||
+    if (!root_file_rules.includes("root.txt", file) ||
+        root_file_rules.includes("Folder/nested.txt", file) ||
+        root_file_rules.includes("RootFolder", directory) ||
         root_file_rules.fingerprint() == empty_rules.fingerprint()) {
         return fail("implicit root-file selection semantics were incorrect");
     }
     write_rules(rules_path, "!/blocked.txt\n");
     const auto excluded_root_file_rules =
         detail::SyncList::load(rules_path, true);
-    if (excluded_root_file_rules.includes("blocked.txt", false) ||
-        !excluded_root_file_rules.includes("included.txt", false)) {
+    if (excluded_root_file_rules.includes("blocked.txt", file) ||
+        !excluded_root_file_rules.includes("included.txt", file)) {
         return fail("root-file exclusion did not override implicit inclusion");
     }
 
@@ -119,52 +122,60 @@ int main() {
     {
         std::ofstream marker{policy_root / "Ignored" / ".nosync"};
     }
-    const auto policy = detail::SyncList::configured(
-        std::nullopt, false, policy_root, true, true, 4
-    );
-    if (policy.includes("Ignored", true) ||
-        policy.includes("Ignored/file.txt", false, 4) ||
-        policy.includes("Ignored/.nosync", false, 0) ||
-        policy.includes(".hidden", true) ||
-        policy.includes("Visible/.secret", false, 1) ||
-        policy.includes("Visible/large.bin", false, 5) ||
-        !policy.includes("Visible/small.bin", false, 4)) {
+    const auto policy = detail::SyncList::configured({
+        .sync_root = policy_root,
+        .nosync_enabled = true,
+        .dotfiles = onedrive::config::DotfilePolicy::exclude,
+        .maximum_file_size_bytes = 4,
+    });
+    if (policy.includes("Ignored", directory) ||
+        policy.includes("Ignored/file.txt", file, 4) ||
+        policy.includes("Ignored/.nosync", file, 0) ||
+        policy.includes(".hidden", directory) ||
+        policy.includes("Visible/.secret", file, 1) ||
+        policy.includes("Visible/large.bin", file, 5) ||
+        !policy.includes("Visible/small.bin", file, 4)) {
         return fail(".nosync, dotfile, or maximum-size policy was incorrect");
     }
     const auto policy_fingerprint = policy.fingerprint();
     std::filesystem::remove(policy_root / "Ignored" / ".nosync");
-    const auto marker_removed = detail::SyncList::configured(
-        std::nullopt, false, policy_root, true, true, 4
-    );
-    if (!marker_removed.includes("Ignored/file.txt", false, 4) ||
+    const auto marker_removed = detail::SyncList::configured({
+        .sync_root = policy_root,
+        .nosync_enabled = true,
+        .dotfiles = onedrive::config::DotfilePolicy::exclude,
+        .maximum_file_size_bytes = 4,
+    });
+    if (!marker_removed.includes("Ignored/file.txt", file, 4) ||
         marker_removed.fingerprint() == policy_fingerprint) {
         return fail(".nosync marker changes did not update filter state");
     }
-    const auto policies_disabled = detail::SyncList::configured(
-        std::nullopt, false, policy_root, false, false, 0
-    );
-    const auto default_policy = detail::SyncList::configured(
-        std::nullopt, false, policy_root / "missing", true, false, 0
-    );
+    const auto policies_disabled = detail::SyncList::configured({
+        .sync_root = policy_root,
+        .nosync_enabled = false,
+    });
+    const auto default_policy = detail::SyncList::configured({
+        .sync_root = policy_root / "missing",
+    });
     if (!default_policy.fingerprint().empty() ||
-        !policies_disabled.includes("Ignored/.nosync", false, 1) ||
-        !policies_disabled.includes(".hidden/file.txt", false, 100)) {
+        !policies_disabled.includes("Ignored/.nosync", file, 1) ||
+        !policies_disabled.includes(".hidden/file.txt", file, 100)) {
         return fail("disabled synchronization policies still excluded paths");
     }
     write_rules(rules_path, "/Visible/\n");
-    if (detail::SyncList::configured(
-            rules_path, false, policy_root, true, false, 0
-        )
+    if (detail::SyncList::configured({
+            .rules_path = rules_path,
+            .sync_root = policy_root,
+        })
             .fingerprint() != detail::SyncList::load(rules_path).fingerprint()) {
         return fail("default policies changed the legacy sync-list fingerprint");
     }
     {
         std::ofstream marker{policy_root / ".nosync"};
     }
-    const auto root_marker = detail::SyncList::configured(
-        std::nullopt, false, policy_root, true, false, 0
-    );
-    if (root_marker.includes("Visible/file.txt", false, 1) ||
+    const auto root_marker = detail::SyncList::configured({
+        .sync_root = policy_root,
+    });
+    if (root_marker.includes("Visible/file.txt", file, 1) ||
         root_marker.fingerprint().empty()) {
         return fail("root .nosync marker did not exclude all descendants");
     }
@@ -172,11 +183,12 @@ int main() {
     std::filesystem::create_symlink(
         policy_root / "missing-marker", policy_root / "Visible" / ".nosync"
     );
-    const auto symlink_marker = detail::SyncList::configured(
-        std::nullopt, false, policy_root, true, false, 4
-    );
-    if (!symlink_marker.includes("Visible/unknown.bin", false) ||
-        !symlink_marker.includes("Visible/small.bin", false, 4)) {
+    const auto symlink_marker = detail::SyncList::configured({
+        .sync_root = policy_root,
+        .maximum_file_size_bytes = 4,
+    });
+    if (!symlink_marker.includes("Visible/unknown.bin", file) ||
+        !symlink_marker.includes("Visible/small.bin", file, 4)) {
         return fail("symlink marker or unknown size excluded eligible files");
     }
 
@@ -198,6 +210,23 @@ int main() {
         policy_filtered.delta.changes[0].id != "small" ||
         policy_filtered.excluded != 2) {
         return fail("policy delta filtering retained excluded files");
+    }
+    auto move_only_filtered = detail::filter_delta(
+        {
+            .changes = {item("tracked-large", "Visible/large.bin", false, 5)},
+            .delta_link = "move-only-predicate",
+        },
+        policy,
+        [tracked = std::make_unique<std::string>("tracked-large")](
+            std::string_view remote_id
+        ) { return remote_id == *tracked; },
+        DeltaApplyMode::merge
+    );
+    if (move_only_filtered.snapshot_removals !=
+            std::vector<std::string>{"tracked-large"} ||
+        move_only_filtered.retained_remote_ids !=
+            std::vector<std::string>{"tracked-large"}) {
+        return fail("move-only tracked-item predicate was not supported");
     }
 
     auto root_files_filtered = detail::filter_delta(

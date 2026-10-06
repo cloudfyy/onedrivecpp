@@ -5,7 +5,7 @@
 #include "onedrive/metrics/metrics.hpp"
 #include "onedrive/storage/item_store.hpp"
 
-#include <gsl/pointers>
+#include <utility>
 
 namespace onedrive::cli {
 class Console;
@@ -21,25 +21,25 @@ public:
         typename MetricsImplementation
     >
     SyncEngine(
-        const config::Config& config,
+        config::Config config,
         GraphImplementation& graph,
         StoreImplementation& items,
         MetricsImplementation& metrics,
         const cli::Console* console = nullptr
     )
-        : config_{&config},
+        : config_{std::move(config)},
           graph_{onedrive::util::borrowed_proxy, graph},
           items_{onedrive::util::borrowed_proxy, items},
           metrics_{onedrive::util::borrowed_proxy, metrics},
           console_{console} {}
 
-    [[nodiscard]] int synchronize() const;
+    [[nodiscard]] int synchronize();
 
 private:
-    gsl::not_null<const config::Config*> config_;
-    mutable graph::GraphClient graph_;
-    mutable storage::ItemStore items_;
-    mutable metrics::Metrics metrics_;
+    config::Config config_;
+    graph::GraphClient graph_;
+    storage::ItemStore items_;
+    metrics::Metrics metrics_;
     const cli::Console* console_;
 };
 

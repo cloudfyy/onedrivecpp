@@ -78,14 +78,18 @@ DeletionPlan discover_deletions(
             (sync_list != nullptr &&
              (sync_list->excludes(
                   item.remote_path,
-                  item.directory,
+                  item.directory ?
+                      SyncItemKind::directory :
+                      SyncItemKind::file,
                   !item.directory && item.size >= 0 ?
                       std::optional{static_cast<std::uint64_t>(item.size)} :
                       std::nullopt
               ) ||
               !sync_list->includes(
                   item.remote_path,
-                  item.directory,
+                  item.directory ?
+                      SyncItemKind::directory :
+                      SyncItemKind::file,
                   !item.directory && item.size >= 0 ?
                       std::optional{static_cast<std::uint64_t>(item.size)} :
                       std::nullopt

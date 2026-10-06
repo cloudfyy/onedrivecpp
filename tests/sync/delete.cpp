@@ -635,14 +635,14 @@ int test_local_deletions() {
     policy_config.dotfiles = onedrive::config::DotfilePolicy::exclude;
     policy_config.maximum_file_size_bytes = 4;
     policy_items.saved_sync_filter_fingerprint =
-        onedrive::sync::detail::SyncList::configured(
-            std::nullopt,
-            policy_config.sync_root_files,
-            policy_root,
-            policy_config.nosync_enabled,
-            true,
-            policy_config.maximum_file_size_bytes
-        )
+        onedrive::sync::detail::SyncList::configured({
+            .sync_root = policy_root,
+            .include_root_files = policy_config.sync_root_files,
+            .nosync_enabled = policy_config.nosync_enabled,
+            .dotfiles = policy_config.dotfiles,
+            .maximum_file_size_bytes =
+                policy_config.maximum_file_size_bytes,
+        })
             .fingerprint();
     static_cast<void>(onedrive::sync::SyncEngine{
         policy_config, policy_graph, policy_items, policy_metrics

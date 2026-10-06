@@ -50,7 +50,7 @@ inline void throw_if_curl_error(CURLcode result, std::string_view operation) {
     }
 }
 
-[[nodiscard]] inline long curl_proxy_auth(ProxyAuth auth) noexcept {
+[[nodiscard]] inline long curl_proxy_auth(ProxyAuth auth) {
     switch (auth) {
     case ProxyAuth::automatic:
         return static_cast<long>(CURLAUTH_ANY);
@@ -63,7 +63,7 @@ inline void throw_if_curl_error(CURLcode result, std::string_view operation) {
     case ProxyAuth::negotiate:
         return static_cast<long>(CURLAUTH_NEGOTIATE);
     }
-    return static_cast<long>(CURLAUTH_ANY);
+    throw std::invalid_argument("unsupported proxy authentication mode");
 }
 
 struct CurlHandleDeleter {

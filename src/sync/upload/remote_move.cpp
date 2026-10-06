@@ -146,12 +146,16 @@ LocalMoveDiscovery discover_local_moves(
         if (sync_list != nullptr &&
             (sync_list->excludes(
                  found->second.remote_path,
-                 item.directory,
+                 item.directory ?
+                     SyncItemKind::directory :
+                     SyncItemKind::file,
                  found->second.size
              ) ||
              !sync_list->includes(
                  found->second.remote_path,
-                 item.directory,
+                 item.directory ?
+                     SyncItemKind::directory :
+                     SyncItemKind::file,
                  found->second.size
              ))) {
             continue;

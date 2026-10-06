@@ -69,7 +69,7 @@ void bind_text(
     sqlite3* database,
     sqlite3_stmt* statement,
     int index,
-    const std::string& value
+    std::string_view value
 );
 void bind_integer(
     sqlite3* database,

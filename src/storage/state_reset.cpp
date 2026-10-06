@@ -55,7 +55,7 @@ bool ItemDatabase::reset_on_worker(const std::string& drive_id) {
     const auto retained_items = query_count(
         database,
         "SELECT COUNT(*) FROM item WHERE drive_id = ?1;",
-        &drive_id
+        drive_id
     );
     spdlog::debug(
         "Reset synchronization cursor for drive '{}': saved cursor {}, "

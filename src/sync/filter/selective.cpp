@@ -243,15 +243,15 @@ SyncList::load(const std::filesystem::path& path, bool include_root_files) {
 
         Rule rule;
         if (line.starts_with('!') || line.starts_with('-')) {
-            rule.exclude = true;
+            rule.action = RuleAction::exclude;
             line.erase(0, 1);
         }
-        rule.anchored = line.starts_with('/');
-        if (rule.anchored) {
+        if (line.starts_with('/')) {
+            rule.anchor = RuleAnchor::drive_root;
             line.erase(0, 1);
         }
-        rule.directory_only = line.ends_with('/');
-        if (rule.directory_only) {
+        if (line.ends_with('/')) {
+            rule.target = RuleTarget::directory;
             line.pop_back();
         }
         if (line.empty() || line.contains('\\') || line.starts_with('/') ||
@@ -272,10 +272,10 @@ SyncList::load(const std::filesystem::path& path, bool include_root_files) {
             }
             rule.segments.emplace_back(segment);
         }
-        canonical += rule.exclude ? "!" : "+";
-        canonical += rule.anchored ? "/" : "";
+        canonical += rule.action == RuleAction::exclude ? "!" : "+";
+        canonical += rule.anchor == RuleAnchor::drive_root ? "/" : "";
         canonical += line;
-        canonical += rule.directory_only ? "/" : "";
+        canonical += rule.target == RuleTarget::directory ? "/" : "";
         canonical += "\n";
         result.rules_.push_back(std::move(rule));
     }
@@ -289,39 +289,37 @@ SyncList::load(const std::filesystem::path& path, bool include_root_files) {
     return result;
 }
 
-SyncList SyncList::configured(
-    const std::optional<std::filesystem::path>& rules_path,
-    bool include_root_files,
-    const std::filesystem::path& sync_root,
-    bool nosync_enabled,
-    bool exclude_dotfiles,
-    std::uint64_t maximum_file_size_bytes
-) {
-    auto result =
-        rules_path ? load(*rules_path, include_root_files) : SyncList{};
+SyncList SyncList::configured(const SyncFilterPolicy& policy) {
+    auto result = policy.rules_path ?
+        load(*policy.rules_path, policy.include_root_files) :
+        SyncList{};
     const auto rules_fingerprint = result.fingerprint_;
-    if (!rules_path) {
+    if (!policy.rules_path) {
         result.select_all_ = true;
         result.canonical_ = "onedrive-cpp-sync-list-v1\n@all\n";
     }
-    result.nosync_enabled_ = nosync_enabled;
-    result.exclude_dotfiles_ = exclude_dotfiles;
-    result.maximum_file_size_bytes_ = maximum_file_size_bytes;
-    if (nosync_enabled) {
-        result.nosync_directories_ = discover_nosync_directories(sync_root);
+    result.nosync_enabled_ = policy.nosync_enabled;
+    result.dotfiles_ = policy.dotfiles;
+    result.maximum_file_size_bytes_ = policy.maximum_file_size_bytes;
+    if (policy.nosync_enabled) {
+        result.nosync_directories_ =
+            discover_nosync_directories(policy.sync_root);
     }
-    result.canonical_ +=
-        std::string{"@nosync="} + (nosync_enabled ? "true\n" : "false\n");
+    result.canonical_ += std::string{"@nosync="} +
+                         (policy.nosync_enabled ? "true\n" : "false\n");
     result.canonical_ += std::string{"@dotfiles="} +
-                         (exclude_dotfiles ? "exclude\n" : "include\n");
-    result.canonical_ +=
-        "@maximum-file-size=" + std::to_string(maximum_file_size_bytes) + "\n";
+                         (policy.dotfiles == config::DotfilePolicy::exclude ?
+                              "exclude\n" :
+                              "include\n");
+    result.canonical_ += "@maximum-file-size=" +
+                         std::to_string(policy.maximum_file_size_bytes) + "\n";
     for (const auto& directory : result.nosync_directories_) {
         result.canonical_ += "@nosync-directory=" + directory + "\n";
     }
     const bool baseline_policy = result.nosync_directories_.empty() &&
-                                 !exclude_dotfiles &&
-                                 maximum_file_size_bytes == 0;
+                                 policy.dotfiles ==
+                                     config::DotfilePolicy::include &&
+                                 policy.maximum_file_size_bytes == 0;
     result.fingerprint_ = baseline_policy ?
         rules_fingerprint :
         util::sha256_hex(result.canonical_);
@@ -331,13 +329,14 @@ SyncList SyncList::configured(
 bool SyncList::matches(
     const Rule& rule,
     const std::vector<std::string_view>& path_segments,
-    bool directory
+    SyncItemKind kind
 ) const {
-    if (rule.directory_only && !directory &&
+    if (rule.target == RuleTarget::directory &&
+        kind == SyncItemKind::file &&
         rule.segments.size() >= path_segments.size()) {
         return false;
     }
-    if (rule.anchored) {
+    if (rule.anchor == RuleAnchor::drive_root) {
         return match_segments(rule.segments, path_segments, 0, 0);
     }
     for (std::size_t start = 0; start < path_segments.size(); ++start) {
@@ -349,47 +348,51 @@ bool SyncList::matches(
 }
 
 bool SyncList::matches_exclusion(
-    const std::vector<std::string_view>& path_segments, bool directory
+    const std::vector<std::string_view>& path_segments,
+    SyncItemKind kind
 ) const {
     return std::ranges::any_of(rules_, [&](const Rule& rule) {
-        return rule.exclude && matches(rule, path_segments, directory);
+        return rule.action == RuleAction::exclude &&
+               matches(rule, path_segments, kind);
     });
 }
 
 bool SyncList::includes(
     std::string_view remote_path,
-    bool directory,
+    SyncItemKind kind,
     std::optional<std::uint64_t> size
 ) const {
     const auto path_segments = split_path(remote_path);
     if (path_segments.empty() ||
-        policy_excludes(remote_path, path_segments, directory, size) ||
-        matches_exclusion(path_segments, directory)) {
+        policy_excludes(remote_path, path_segments, kind, size) ||
+        matches_exclusion(path_segments, kind)) {
         return false;
     }
 
     return select_all_ ||
-           (include_root_files_ && !directory && path_segments.size() == 1) ||
+           (include_root_files_ && kind == SyncItemKind::file &&
+            path_segments.size() == 1) ||
            std::ranges::any_of(rules_, [&](const Rule& rule) {
-               return !rule.exclude && matches(rule, path_segments, directory);
+               return rule.action == RuleAction::include &&
+                      matches(rule, path_segments, kind);
            });
 }
 
 bool SyncList::excludes(
     std::string_view remote_path,
-    bool directory,
+    SyncItemKind kind,
     std::optional<std::uint64_t> size
 ) const {
     const auto path_segments = split_path(remote_path);
     return !path_segments.empty() &&
-           (policy_excludes(remote_path, path_segments, directory, size) ||
-            matches_exclusion(path_segments, directory));
+           (policy_excludes(remote_path, path_segments, kind, size) ||
+            matches_exclusion(path_segments, kind));
 }
 
 bool SyncList::policy_excludes(
     std::string_view remote_path,
     const std::vector<std::string_view>& path_segments,
-    bool directory,
+    SyncItemKind kind,
     std::optional<std::uint64_t> size
 ) const {
     if (nosync_enabled_ &&
@@ -403,10 +406,12 @@ bool SyncList::policy_excludes(
          ))) {
         return true;
     }
-    if (exclude_dotfiles_ && dotfile_path(path_segments)) {
+    if (dotfiles_ == config::DotfilePolicy::exclude &&
+        dotfile_path(path_segments)) {
         return true;
     }
-    return !directory && maximum_file_size_bytes_ != 0 && size.has_value() &&
+    return kind == SyncItemKind::file && maximum_file_size_bytes_ != 0 &&
+           size.has_value() &&
            *size > maximum_file_size_bytes_;
 }
 
@@ -421,7 +426,7 @@ std::size_t SyncList::rule_count() const noexcept {
 FilteredDelta filter_delta(
     graph::DeltaResult delta,
     const SyncList& sync_list,
-    const std::function<bool(std::string_view)>& is_tracked,
+    TrackedItemPredicate is_tracked,
     storage::DeltaApplyMode apply_mode
 ) {
     enum class SelectionState {
@@ -439,8 +444,11 @@ FilteredDelta filter_delta(
             !item.directory && item.size >= 0
                 ? std::optional{static_cast<std::uint64_t>(item.size)}
                 : std::nullopt;
+        const auto kind = item.directory ?
+            SyncItemKind::directory :
+            SyncItemKind::file;
         if (item.deleted || item.root ||
-            sync_list.includes(item.remote_path, item.directory, size)) {
+            sync_list.includes(item.remote_path, kind, size)) {
             selection[index] = SelectionState::selected;
         }
         if (selection[index] == SelectionState::selected && !item.deleted &&
@@ -461,7 +469,9 @@ FilteredDelta filter_delta(
                     return remote_path_is_descendant(path, item.remote_path);
                 }
             ) &&
-            !sync_list.excludes(item.remote_path, true)) {
+            !sync_list.excludes(
+                item.remote_path, SyncItemKind::directory
+            )) {
             selection[index] = SelectionState::selected;
         }
     }

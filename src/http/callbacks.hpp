@@ -5,6 +5,7 @@
 #include <curl/curl.h>
 
 #include <cstdint>
+#include <exception>
 #include <stop_token>
 #include <string>
 #include <string_view>
@@ -25,6 +26,13 @@ enum class CallbackFailureKind {
     write,
     throttle,
     data_callback,
+    allocation,
+    internal,
+};
+
+enum class CallbackStorage {
+    response_body,
+    response_headers,
 };
 
 struct CallbackFailure {
@@ -74,6 +82,7 @@ struct HeaderContext {
     std::vector<HttpHeader> headers;
     std::size_t total_size{};
     bool size_exceeded{false};
+    CallbackFailure failure;
     WriteContext* write_context{};
 };
 
@@ -85,6 +94,12 @@ struct ProgressContext {
     std::string error;
 };
 
+void record_callback_failure(
+    CallbackFailure& failure, std::exception_ptr exception
+) noexcept;
+[[nodiscard]] std::string_view callback_storage_error(
+    CallbackFailureKind failure, CallbackStorage storage
+) noexcept;
 bool make_download_checkpoint(WriteContext& context);
 std::size_t read_request_body(
     char* destination,

@@ -72,7 +72,7 @@ foreach(HTTP_TEST IN ITEMS req redirect download cancel reuse)
     add_onedrive_test(
         http_${HTTP_TEST}_tests
         SOURCES tests/http/${HTTP_TEST}.cpp
-        INCLUDE_DIRS tests tests/http
+        INCLUDE_DIRS src tests tests/http
         LIBRARIES spdlog::spdlog
     )
 endforeach()
