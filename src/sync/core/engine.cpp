@@ -2042,9 +2042,10 @@ ExecutionSummary execute_plan(
 
 int SyncEngine::synchronize() const {
     const auto started_at = std::chrono::steady_clock::now();
-    const auto record_result = [this, started_at](bool success) {
+    const auto record_result =
+        [this, started_at](metrics::SyncRunOutcome outcome) {
         metrics_.record_sync_run(
-            success,
+            outcome,
             std::chrono::steady_clock::now() - started_at
         );
     };
@@ -2587,7 +2588,7 @@ int SyncEngine::synchronize() const {
             );
         }
 
-        record_result(true);
+        record_result(metrics::SyncRunOutcome::succeeded);
         const auto elapsed = std::chrono::steady_clock::now() - started_at;
         if (blocked_count != 0) {
             spdlog::warn(
@@ -2641,7 +2642,7 @@ int SyncEngine::synchronize() const {
         }
         return blocked_count == 0 ? 0 : 2;
     } catch (...) {
-        record_result(false);
+        record_result(metrics::SyncRunOutcome::failed);
         const auto elapsed = std::chrono::steady_clock::now() - started_at;
         spdlog::warn(
             "Synchronization failed after {} milliseconds",

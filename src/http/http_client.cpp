@@ -166,6 +166,12 @@ struct CallbackFailure {
     std::string detail;
 };
 
+enum class ResponseAcceptance {
+    pending,
+    accepted,
+    rejected,
+};
+
 struct WriteContext {
     std::string body;
     std::size_t maximum_size;
@@ -182,7 +188,7 @@ struct WriteContext {
     std::uint64_t checkpoint_interval{};
     std::uint64_t durable_offset{};
     DownloadState* download_state{};
-    std::optional<bool> response_accepted;
+    ResponseAcceptance response_acceptance{ResponseAcceptance::pending};
     bool follow_redirects{false};
     std::stop_token stop_token;
     bool throttle_cancelled{false};
@@ -466,7 +472,8 @@ std::size_t write_response(char* data, std::size_t size, std::size_t count, void
     }
     write_context.received_size += byte_count;
     if (write_context.descriptor != -1) {
-        if (!write_context.response_accepted.has_value()) {
+        if (write_context.response_acceptance ==
+            ResponseAcceptance::pending) {
             bool accepted = true;
             long status_code = 0;
             if (curl_easy_getinfo(
@@ -504,13 +511,17 @@ std::size_t write_response(char* data, std::size_t size, std::size_t count, void
                     return 0;
                 }
             }
-            write_context.response_accepted = accepted;
+            write_context.response_acceptance =
+                accepted ?
+                    ResponseAcceptance::accepted :
+                    ResponseAcceptance::rejected;
             write_context.download_state->response_accepted = accepted;
             write_context.download_state->response_validated =
                 write_context.response_gate != nullptr &&
                 *write_context.response_gate && accepted;
         }
-        if (!*write_context.response_accepted) {
+        if (write_context.response_acceptance ==
+            ResponseAcceptance::rejected) {
             return byte_count;
         }
         if (write_context.download_throttle != nullptr &&
@@ -653,7 +664,8 @@ std::size_t write_header(char* data, std::size_t size, std::size_t count, void* 
             write_context.body.clear();
             write_context.received_size = 0;
             write_context.failure = {};
-            write_context.response_accepted.reset();
+            write_context.response_acceptance =
+                ResponseAcceptance::pending;
             write_context.download_state->response_accepted = true;
             write_context.download_state->response_validated = false;
         }
@@ -896,7 +908,7 @@ HttpResult perform_request(
             request.download_checkpoint_interval_bytes,
         .durable_offset = request.download_offset,
         .download_state = download_state,
-        .response_accepted = std::nullopt,
+        .response_acceptance = ResponseAcceptance::pending,
         .follow_redirects = request.follow_redirects,
         .stop_token = request.stop_token,
     };
@@ -1204,17 +1216,20 @@ HttpResult perform_request(
         });
     }
 
-    if (descriptor != -1 && !write_context.response_accepted.has_value() &&
+    if (descriptor != -1 &&
+        write_context.response_acceptance == ResponseAcceptance::pending &&
         response_gate) {
         try {
-            write_context.response_accepted = response_gate(
+            const bool accepted = response_gate(
                 status_code,
                 header_context.headers
             );
-            download_state->response_accepted =
-                *write_context.response_accepted;
-            download_state->response_validated =
-                *write_context.response_accepted;
+            write_context.response_acceptance =
+                accepted ?
+                    ResponseAcceptance::accepted :
+                    ResponseAcceptance::rejected;
+            download_state->response_accepted = accepted;
+            download_state->response_validated = accepted;
         } catch (const std::exception& error) {
             return std::unexpected(HttpError{
                 .message = "download response gate failed: " +

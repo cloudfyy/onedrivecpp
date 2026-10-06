@@ -3,7 +3,7 @@
 namespace onedrive::metrics {
 
 void NullMetrics::record_sync_run(
-    bool,
+    SyncRunOutcome,
     std::chrono::duration<double>
 ) noexcept {}
 

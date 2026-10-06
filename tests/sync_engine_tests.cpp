@@ -824,10 +824,11 @@ public:
 class FakeMetrics final {
 public:
     void record_sync_run(
-        bool success,
+        onedrive::metrics::SyncRunOutcome outcome,
         std::chrono::duration<double>
     ) noexcept {
-        last_success = success;
+        last_success =
+            outcome == onedrive::metrics::SyncRunOutcome::succeeded;
     }
 
     bool last_success{false};

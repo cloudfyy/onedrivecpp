@@ -442,7 +442,7 @@ private:
 class FakeMetrics final {
 public:
     void record_sync_run(
-        bool,
+        onedrive::metrics::SyncRunOutcome,
         std::chrono::duration<double>
     ) noexcept {}
 };
