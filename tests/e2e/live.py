@@ -9,6 +9,7 @@ import tempfile
 from .base import (
     E2EError,
     fixture_path,
+    large_upload_size,
     load_live_settings,
     rewrite_config,
     sha256,
@@ -405,21 +406,7 @@ def run_live(client: Path, work_root: Path) -> None:
                 move_contents = b"onedrive-cpp local move upload E2E\n"
                 move_file.write_bytes(move_contents)
                 large_file = upload_local_root / "session.bin"
-                try:
-                    large_size = int(
-                        os.environ.get(
-                            "ONEDRIVE_E2E_LARGE_UPLOAD_BYTES",
-                            "250000001",
-                        )
-                    )
-                except ValueError as error:
-                    raise E2EError(
-                        "ONEDRIVE_E2E_LARGE_UPLOAD_BYTES must be an integer"
-                    ) from error
-                if large_size > 1_000_000_000:
-                    raise E2EError(
-                        "ONEDRIVE_E2E_LARGE_UPLOAD_BYTES exceeds 1 GB"
-                    )
+                large_size = large_upload_size()
                 large_sha256 = write_pattern_file(
                     large_file,
                     large_size,

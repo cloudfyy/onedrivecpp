@@ -179,8 +179,7 @@ def run_monitor_boundary(
     home: Path,
     log_file: Path,
     workspace: Path,
-    trigger: Callable[[], None],
-    synchronized: Callable[[], bool],
+    exercise: Callable[[subprocess.Popen[str], Path], None],
 ) -> subprocess.CompletedProcess[str]:
     arguments = monitor_arguments(config, log_file)
     stdout_path = workspace / "monitor.stdout.log"
@@ -215,12 +214,7 @@ def run_monitor_boundary(
                 raise E2EError(
                     f"monitor did not become ready ({process.poll()})"
                 )
-            trigger()
-            if not wait_until(synchronized, 180, 0.5):
-                raise E2EError(
-                    f"monitor did not synchronize the local event "
-                    f"({process.poll()})"
-                )
+            exercise(process, stdout_path)
             process.send_signal(signal.SIGTERM)
             process.wait(timeout=30)
         except BaseException:

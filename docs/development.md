@@ -64,11 +64,14 @@ Drive.
 
 The live runner also exercises system boundaries with the real executable:
 connections dropped by a local proxy and subsequent recovery, deterministic
-local upload-storage exhaustion and recovery, unreadable upload sources,
-`SIGKILL` during a resumable upload, and an inotify-triggered monitor upload
-followed by clean `SIGTERM` shutdown. Run it as a non-root user; the permission
-scenario depends on ordinary Unix access checks. CMake also requires the
-`stdbuf` command so monitor JSON events are observable without changing
+local upload-storage exhaustion and recovery, unreadable upload sources, and
+`SIGKILL` during a resumable upload. The Monitor boundary covers create,
+modify, delete, file and directory rename, cross-directory move, atomic save,
+burst coalescing, create-then-delete, recursive watches, a large upload-session
+transfer, and recovery from a real inotify queue overflow before clean
+`SIGTERM` shutdown. Run it as a non-root user; the permission scenario depends
+on ordinary Unix access checks. CMake also requires the `stdbuf` command so
+monitor JSON events are observable without changing
 production buffering.
 
 Each boundary is a separate CTest entry. Run all five with:

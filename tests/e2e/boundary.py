@@ -9,6 +9,7 @@ import tempfile
 from .base import (
     E2EError,
     fixture_path,
+    large_upload_size,
     load_live_settings,
     rewrite_config,
     sha256,
@@ -18,16 +19,16 @@ from .base import (
     write_pattern_file,
 )
 from .graph import GraphMoveFixture, refresh_graph_access_token
+from .monitor import run_monitor_scenarios
 from .proxy import ConnectionDropProxy
 from .run import (
     reset_copied_state,
-    run_monitor_boundary,
     run_sync,
     run_sync_after_stop,
     run_sync_until_upload_progress_then_kill,
 )
 from .state import pending_upload_row, tracked_drive_id, tracked_item_count
-from .util import has_json_event, save_artifacts
+from .util import save_artifacts
 
 
 def run_boundary(
@@ -292,21 +293,7 @@ def run_boundary(
             elif scenario == "crash":
                 boundary_local_root.mkdir(parents=True)
                 source = boundary_local_root / "session.bin"
-                try:
-                    size = int(
-                        os.environ.get(
-                            "ONEDRIVE_E2E_LARGE_UPLOAD_BYTES",
-                            "250000001",
-                        )
-                    )
-                except ValueError as error:
-                    raise E2EError(
-                        "ONEDRIVE_E2E_LARGE_UPLOAD_BYTES must be an integer"
-                    ) from error
-                if size > 1_000_000_000:
-                    raise E2EError(
-                        "ONEDRIVE_E2E_LARGE_UPLOAD_BYTES exceeds 1 GB"
-                    )
+                size = large_upload_size()
                 digest = write_pattern_file(source, size)
                 remote_path = boundary_root_path / source.name
                 config.write_text(
@@ -362,9 +349,6 @@ def run_boundary(
 
             elif scenario == "monitor":
                 boundary_local_root.mkdir(parents=True)
-                source = boundary_local_root / "monitor.txt"
-                contents = b"onedrive-cpp monitor boundary E2E\n"
-                remote_path = boundary_root_path / source.name
                 config.write_text(
                     rewrite_config(
                         settings.source_text,
@@ -378,33 +362,24 @@ def run_boundary(
                     ),
                     encoding="utf-8",
                 )
-
-                def uploaded() -> bool:
-                    try:
-                        return (
-                            fixture.item_by_path(remote_path).get("size")
-                            == len(contents)
-                        )
-                    except E2EError:
-                        return False
-
-                result = run_monitor_boundary(
+                result = run_monitor_scenarios(
                     client,
                     config,
                     home,
                     log_file,
                     workspace,
-                    lambda: source.write_bytes(contents),
-                    uploaded,
+                    boundary_local_root,
+                    boundary_root_path,
+                    fixture,
                 )
                 completed.append(result)
                 capture_root()
-                if (
-                    not has_json_event(result, "local_item_uploaded")
-                    or tracked_item_count(state_directory, remote_path) != 1
-                ):
+                if tracked_item_count(
+                    state_directory,
+                    boundary_root_path / "overflow-recovered.txt",
+                ) != 1:
                     raise E2EError(
-                        "monitor boundary did not persist its upload"
+                        "monitor boundary did not persist its recovery upload"
                     )
                 settled = run_sync(client, config, home, log_file)
                 completed.append(settled)

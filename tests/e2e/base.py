@@ -231,3 +231,20 @@ def write_pattern_file(path: Path, size: int) -> str:
         stream.flush()
         os.fsync(stream.fileno())
     return digest.hexdigest()
+
+
+def large_upload_size() -> int:
+    try:
+        size = int(
+            os.environ.get(
+                "ONEDRIVE_E2E_LARGE_UPLOAD_BYTES",
+                "250000001",
+            )
+        )
+    except ValueError as error:
+        raise E2EError(
+            "ONEDRIVE_E2E_LARGE_UPLOAD_BYTES must be an integer"
+        ) from error
+    if size > 1_000_000_000:
+        raise E2EError("ONEDRIVE_E2E_LARGE_UPLOAD_BYTES exceeds 1 GB")
+    return size

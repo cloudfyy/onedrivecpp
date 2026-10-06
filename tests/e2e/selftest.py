@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 from pathlib import Path
 import socket
 import sqlite3
@@ -15,6 +16,7 @@ from . import graph as graph_module
 from .base import (
     E2EError,
     fixture_path,
+    large_upload_size,
     rewrite_config,
     sha256,
     sync_list_rule,
@@ -33,7 +35,14 @@ from .state import (
     tracked_drive_id,
     tracked_item_count,
 )
-from .util import has_json_event, json_event_count, materialized_files, safe_backup_files, wait_until
+from .util import (
+    has_json_event,
+    json_event_count,
+    json_text_event_count,
+    materialized_files,
+    safe_backup_files,
+    wait_until,
+)
 
 
 def self_test() -> None:
@@ -261,6 +270,34 @@ directory = "/old/state"
         except E2EError as error:
             if "must exceed" not in str(error):
                 raise
+        original_large_size = os.environ.get(
+            "ONEDRIVE_E2E_LARGE_UPLOAD_BYTES"
+        )
+        try:
+            os.environ["ONEDRIVE_E2E_LARGE_UPLOAD_BYTES"] = "250000001"
+            if large_upload_size() != 250_000_001:
+                raise E2EError("large upload size self-test failed")
+            os.environ["ONEDRIVE_E2E_LARGE_UPLOAD_BYTES"] = "invalid"
+            try:
+                large_upload_size()
+                raise E2EError("invalid large upload size was accepted")
+            except E2EError as error:
+                if "must be an integer" not in str(error):
+                    raise
+            os.environ["ONEDRIVE_E2E_LARGE_UPLOAD_BYTES"] = "1000000001"
+            try:
+                large_upload_size()
+                raise E2EError("oversized large upload fixture was accepted")
+            except E2EError as error:
+                if "exceeds 1 GB" not in str(error):
+                    raise
+        finally:
+            if original_large_size is None:
+                os.environ.pop("ONEDRIVE_E2E_LARGE_UPLOAD_BYTES", None)
+            else:
+                os.environ["ONEDRIVE_E2E_LARGE_UPLOAD_BYTES"] = (
+                    original_large_size
+                )
         recovery_source = expected.with_name("recovery.txt")
         recovery_source.write_text("recovery", encoding="utf-8")
         with sqlite3.connect(database) as connection:
@@ -570,6 +607,11 @@ directory = "/old/state"
             raise E2EError("safeBackup JSON event self-test failed")
         if json_event_count(event_result, "local_conflict_backed_up") != 1:
             raise E2EError("JSON event count self-test failed")
+        if json_text_event_count(
+            event_result.stdout,
+            "local_conflict_backed_up",
+        ) != 1:
+            raise E2EError("JSON text event count self-test failed")
         disappeared_local, disappeared_remote = inject_disappeared_item(
             state,
             expected,

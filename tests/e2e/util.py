@@ -36,8 +36,12 @@ def json_event_count(
     result: subprocess.CompletedProcess[str],
     event: str,
 ) -> int:
+    return json_text_event_count(result.stdout, event)
+
+
+def json_text_event_count(text: str, event: str) -> int:
     count = 0
-    for line in result.stdout.splitlines():
+    for line in text.splitlines():
         try:
             value = json.loads(line)
         except json.JSONDecodeError:
