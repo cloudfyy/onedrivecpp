@@ -1,6 +1,6 @@
 #include "sync/filesystem/safe_sync_root.hpp"
 
-#include "util/unique_file_descriptor.hpp"
+#include "onedrive/util/unique_file_descriptor.hpp"
 
 #include <cerrno>
 #include <cstring>
@@ -95,7 +95,7 @@ std::filesystem::path SafeSyncRoot::relative_path(
     return relative;
 }
 
-int SafeSyncRoot::open(
+onedrive::util::UniqueFD SafeSyncRoot::open(
     const std::filesystem::path& path,
     int flags,
     mode_t mode
@@ -113,10 +113,10 @@ int SafeSyncRoot::open(
             "': " + std::strerror(errno)
         );
     }
-    return descriptor;
+    return onedrive::util::UniqueFD{descriptor};
 }
 
-int SafeSyncRoot::open_directory(
+onedrive::util::UniqueFD SafeSyncRoot::open_directory(
     const std::filesystem::path& path
 ) const {
     return open(path, O_RDONLY | O_DIRECTORY);

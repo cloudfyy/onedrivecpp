@@ -1,7 +1,7 @@
 #include "onedrive/account/account_state.hpp"
 
 #include "util/atomic_file.hpp"
-#include "util/unique_file_descriptor.hpp"
+#include "onedrive/util/unique_file_descriptor.hpp"
 #include "onedrive/auth/token_store.hpp"
 #include "onedrive/util/sha256.hpp"
 

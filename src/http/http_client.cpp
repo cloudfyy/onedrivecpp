@@ -1,6 +1,6 @@
 #include "onedrive/http/http_client.hpp"
 
-#include "util/unique_file_descriptor.hpp"
+#include "onedrive/util/unique_file_descriptor.hpp"
 #include "onedrive/util/path_security.hpp"
 #include "onedrive/version.hpp"
 
@@ -1317,12 +1317,10 @@ HttpResult CurlHttpClient::download(
                                 S_IROTH | S_IWOTH;
     FileDescriptor descriptor;
     try {
-        descriptor.reset(
-            onedrive::util::open_path_no_symlinks(
-                destination,
-                flags,
-                request.download_offset == 0 ? mode : 0
-            )
+        descriptor = onedrive::util::open_path_no_symlinks(
+            destination,
+            flags,
+            request.download_offset == 0 ? mode : 0
         );
     } catch (const std::runtime_error& error) {
         return std::unexpected(HttpError{.message = error.what()});

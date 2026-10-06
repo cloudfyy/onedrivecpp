@@ -49,7 +49,7 @@ void reject_symlink_components(
     }
 }
 
-int open_path_no_symlinks(
+UniqueFD open_path_no_symlinks(
     const std::filesystem::path& path,
     int flags,
     mode_t mode
@@ -84,7 +84,7 @@ int open_path_no_symlinks(
             "cannot safely open path '" + path.string() + "'"
         );
     }
-    return descriptor;
+    return UniqueFD{descriptor};
 }
 
 }  // namespace onedrive::util

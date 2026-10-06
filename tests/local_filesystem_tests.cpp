@@ -186,37 +186,33 @@ int main() {
     } catch (const std::runtime_error&) {
     }
     try {
-        const int descriptor = assigned_root.open(
+        static_cast<void>(assigned_root.open(
             redirected / "opened.txt",
             O_WRONLY | O_CREAT | O_EXCL,
             S_IRUSR | S_IWUSR
-        );
-        ::close(descriptor);
+        ));
         return fail("safe root opened a file through a directory symlink");
     } catch (const std::runtime_error&) {
     }
     try {
-        const int descriptor = onedrive::util::open_path_no_symlinks(
+        static_cast<void>(onedrive::util::open_path_no_symlinks(
             redirected / "shared-open.txt",
             O_WRONLY | O_CREAT | O_EXCL,
             S_IRUSR | S_IWUSR
-        );
-        ::close(descriptor);
+        ));
         return fail("shared safe open followed a directory symlink");
     } catch (const std::runtime_error&) {
     }
     const auto umask_directory = root / "umask-directory";
     const mode_t original_umask = ::umask(0022);
     const auto umask_file = root / "umask-file.txt";
-    const int umask_file_descriptor =
-        onedrive::util::open_path_no_symlinks(
-            umask_file,
-            O_WRONLY | O_CREAT | O_EXCL,
-            S_IRUSR | S_IWUSR |
-                S_IRGRP | S_IWGRP |
-                S_IROTH | S_IWOTH
-        );
-    ::close(umask_file_descriptor);
+    static_cast<void>(onedrive::util::open_path_no_symlinks(
+        umask_file,
+        O_WRONLY | O_CREAT | O_EXCL,
+        S_IRUSR | S_IWUSR |
+            S_IRGRP | S_IWGRP |
+            S_IROTH | S_IWOTH
+    ));
     assigned_root.ensure_directory_tree(umask_directory, false);
     ::umask(original_umask);
     struct stat umask_status {};

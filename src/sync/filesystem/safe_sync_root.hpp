@@ -1,6 +1,6 @@
 #pragma once
 
-#include "util/unique_file_descriptor.hpp"
+#include "onedrive/util/unique_file_descriptor.hpp"
 
 #include <cstdint>
 #include <filesystem>
@@ -38,12 +38,12 @@ public:
     [[nodiscard]] std::filesystem::path relative_path(
         const std::filesystem::path& path
     ) const;
-    [[nodiscard]] int open(
+    [[nodiscard]] onedrive::util::UniqueFD open(
         const std::filesystem::path& path,
         int flags,
         mode_t mode = 0
     ) const;
-    [[nodiscard]] int open_directory(
+    [[nodiscard]] onedrive::util::UniqueFD open_directory(
         const std::filesystem::path& path
     ) const;
     void ensure_directory_tree(

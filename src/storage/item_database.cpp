@@ -1,5 +1,5 @@
 #include "onedrive/storage/item_database.hpp"
-#include "util/unique_file_descriptor.hpp"
+#include "onedrive/util/unique_file_descriptor.hpp"
 #include "onedrive/util/path_security.hpp"
 
 #include <sqlite3.h>
@@ -183,10 +183,8 @@ void secure_database_file(const std::filesystem::path& path, bool create) {
     const int flags = O_RDWR | (create ? O_CREAT : 0);
     onedrive::util::UniqueFD descriptor;
     try {
-        descriptor.reset(
-            onedrive::util::open_path_no_symlinks(
-                path, flags, create ? private_file_mode : 0
-            )
+        descriptor = onedrive::util::open_path_no_symlinks(
+            path, flags, create ? private_file_mode : 0
         );
     } catch (const std::system_error& error) {
         if (!create && error.code().value() == ENOENT) {
