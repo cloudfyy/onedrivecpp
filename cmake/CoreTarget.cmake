@@ -88,6 +88,27 @@ target_include_directories(onedrive_core
         ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
+target_precompile_headers(onedrive_core PRIVATE
+    <algorithm>
+    <atomic>
+    <chrono>
+    <cstddef>
+    <cstdint>
+    <filesystem>
+    <functional>
+    <memory>
+    <mutex>
+    <optional>
+    <span>
+    <string>
+    <string_view>
+    <system_error>
+    <unordered_map>
+    <utility>
+    <vector>
+    <nlohmann/json.hpp>
+)
+
 target_link_libraries(onedrive_core
     PUBLIC
         Microsoft.GSL::GSL
