@@ -60,11 +60,24 @@ ProductionRuntimeFactory::create_graph_client(
     );
 }
 
+std::unique_ptr<graph::GraphInfoClient>
+ProductionRuntimeFactory::create_graph_info_client(
+    const config::Config& config
+) const {
+    return std::make_unique<graph::GraphInfoClient>(
+        std::in_place_type<graph::MicrosoftGraphClient>,
+        create_http_transport(config),
+        create_token_store(config),
+        device_auth_options(config),
+        graph_options(config)
+    );
+}
+
 std::unique_ptr<storage::ItemStore> ProductionRuntimeFactory::create_item_store(
     const config::Config& config, const account::DriveIdentity& identity
 ) const {
     const auto paths =
-        account::AccountState::prepare(config.state_directory, identity);
+        account::AccountState::locate(config.state_directory, identity);
     return std::make_unique<storage::ItemStore>(
         std::in_place_type<storage::ItemDatabase>,
         paths.drive_directory,
@@ -140,9 +153,15 @@ std::unique_ptr<monitor::FileMonitor> ProductionRuntimeFactory::create_monitor(
 }
 
 std::unique_ptr<metrics::Metrics>
-ProductionRuntimeFactory::create_metrics() const {
+ProductionRuntimeFactory::create_metrics(
+    const config::Config& config,
+    const account::DriveIdentity& identity
+) const {
+    const auto paths =
+        account::AccountState::prepare(config.state_directory, identity);
     return std::make_unique<metrics::Metrics>(
-        std::in_place_type<metrics::NullMetrics>
+        std::in_place_type<metrics::FileMetrics>,
+        paths.drive_directory
     );
 }
 

@@ -9,6 +9,7 @@ add_library(onedrive_core
     src/app/lock.cpp
     src/app/preflight.cpp
     src/app/factory.cpp
+    src/app/info.cpp
     src/auth/device_auth.cpp
     src/auth/token_store.cpp
     src/cli/console.cpp
@@ -40,6 +41,7 @@ add_library(onedrive_core
     src/storage/item_database.cpp
     src/storage/item_state.cpp
     src/storage/state_reset.cpp
+    src/storage/status.cpp
     src/storage/integrity.cpp
     src/storage/migrations.cpp
     src/storage/schema.cpp

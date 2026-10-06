@@ -13,11 +13,16 @@ RuntimePreflight::RuntimePreflight(
     Operation operation
 ) {
     if (operation == Operation::authenticate ||
+        operation == Operation::drives ||
+        operation == Operation::quota ||
+        operation == Operation::status ||
         operation == Operation::download ||
         operation == Operation::synchronize) {
         validate_authentication_config(config);
     }
-    if ((operation == Operation::reset_state ||
+    if ((operation == Operation::quota ||
+         operation == Operation::status ||
+         operation == Operation::reset_state ||
          operation == Operation::download ||
          operation == Operation::synchronize) &&
         config.drive_id.empty()) {
@@ -33,6 +38,9 @@ RuntimePreflight::RuntimePreflight(
         false
     );
     const bool authentication_required =
+        operation == Operation::drives ||
+        operation == Operation::quota ||
+        operation == Operation::status ||
         operation == Operation::reset_state ||
         operation == Operation::download ||
         operation == Operation::synchronize;

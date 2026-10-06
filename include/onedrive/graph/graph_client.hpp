@@ -77,6 +77,23 @@ struct NotificationChannel {
     std::chrono::system_clock::time_point expires_at;
 };
 
+struct DriveQuota {
+    std::uint64_t total{0};
+    std::uint64_t used{0};
+    std::uint64_t remaining{0};
+    std::uint64_t deleted{0};
+    std::string state;
+};
+
+struct DriveInfo {
+    std::string id;
+    std::string name;
+    std::string type;
+    std::string web_url;
+    std::string owner;
+    std::optional<DriveQuota> quota;
+};
+
 class NotificationChannelError final : public std::runtime_error {
 public:
     NotificationChannelError(bool unauthorized, std::string message)
@@ -365,6 +382,41 @@ public:
     }
 };
 
+PRO_DEF_MEM_DISPATCH(GraphListDrivesDispatch, list_drives);
+PRO_DEF_MEM_DISPATCH(GraphDriveInfoDispatch, drive_info);
+
+struct GraphInfoClientFacade : pro::facade_builder
+    ::add_convention<
+        GraphDriveIdentityDispatch,
+        account::DriveIdentity() const
+    >
+    ::add_convention<
+        GraphListDrivesDispatch,
+        std::vector<DriveInfo>() const
+    >
+    ::add_convention<GraphDriveInfoDispatch, DriveInfo() const>
+    ::build {};
+
+class GraphInfoClient
+    : private onedrive::util::ProxyService<GraphInfoClientFacade> {
+    using Base = onedrive::util::ProxyService<GraphInfoClientFacade>;
+
+public:
+    using Base::Base;
+
+    [[nodiscard]] account::DriveIdentity drive_identity() const {
+        return implementation()->drive_identity();
+    }
+
+    [[nodiscard]] std::vector<DriveInfo> list_drives() const {
+        return implementation()->list_drives();
+    }
+
+    [[nodiscard]] DriveInfo drive_info() const {
+        return implementation()->drive_info();
+    }
+};
+
 class MicrosoftGraphClient final {
 public:
     using SleepFunction = std::function<void(std::chrono::seconds)>;
@@ -383,6 +435,8 @@ public:
     MicrosoftGraphClient& operator=(MicrosoftGraphClient&&) = delete;
 
     [[nodiscard]] account::DriveIdentity drive_identity() const;
+    [[nodiscard]] std::vector<DriveInfo> list_drives() const;
+    [[nodiscard]] DriveInfo drive_info() const;
     [[nodiscard]] std::vector<RemoteItem> list_root() const;
     [[nodiscard]] RemoteItem item_by_path(
         const std::string& remote_path

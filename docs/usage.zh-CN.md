@@ -16,6 +16,9 @@ onedrive-cpp monitor --log-file ~/.local/state/onedrive-cpp/onedrive-cpp.log
 onedrive-cpp sync --dry-run --color always
 onedrive-cpp sync --dry-run --output json
 onedrive-cpp sync --dry-run --quiet
+onedrive-cpp drives --output json
+onedrive-cpp quota
+onedrive-cpp status
 ```
 
 支持 `trace`、`debug`、`info`、`warn`、`error`、`critical` 和 `off`。
@@ -27,6 +30,17 @@ Authorization header 写入日志。
 紧凑 JSON 对象且绝不包含 ANSI 序列；危险操作在该模式下必须使用 `--yes`
 显式确认。`--quiet` 隐藏普通信息和成功消息，但保留警告和错误。诊断日志继续
 写入标准错误，命令结果写入标准输出。
+
+## 只读账号与同步信息
+
+`drives` 列出当前 Microsoft 账号可用的 OneDrive Drive，并标记配置正在使用的
+Drive。`quota` 显示配置 Drive 的总量、已用、剩余、回收站占用和配额状态。
+`status` 合并当前账号及规范 Drive 身份与本地只读状态，包括同步模式、删除策略、
+最后一次同步结果、tracked/blocked 数量、pending journal、Delta cursor、
+selective-sync fingerprint 和 WebSocket 配置。
+
+这些命令不会同步文件或修改远端内容。`status` 以只读方式打开已有 SQLite
+数据库，不会创建或迁移缺失或旧版本数据库。三个命令均支持 `--output json`。
 
 ## Shell 自动补全
 

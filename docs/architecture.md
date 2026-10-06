@@ -8,7 +8,7 @@ flowchart TB
     app --> runtime["RuntimeFactory<br/>Proxy 4 ports"]
     runtime -. implemented by .-> adapters["Production adapters"]
 
-    app --> auth["Auth / logout / doctor"]
+    app --> auth["Auth / logout / doctor / drives / quota / status"]
     app --> monitor["Monitor state machine"]
     app --> engine["SyncEngine"]
 

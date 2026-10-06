@@ -50,6 +50,7 @@ int test_list_root_with_refresh_and_pagination() {
         items[1].content_hash->value != "SgAAAAAAAAAAAAAAAQAAAAAAAAA=") {
         return fail("Graph drive items were not parsed across pages");
     }
+
     if (token_store_pointer->saved_tokens !=
         std::vector<std::string>{"rotated-refresh"}) {
         return fail("rotated refresh token was not persisted");
@@ -72,6 +73,185 @@ int test_list_root_with_refresh_and_pagination() {
     }
     return EXIT_SUCCESS;
 }
+
+int test_drive_information_and_quota() {
+    auto transport = std::make_unique<
+        FakeTransport>(std::deque<onedrive::http::HttpResult>{
+        onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body = R"({"token_type":"Bearer","expires_in":3600,)"
+                    R"("access_token":"access-secret"})",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body =
+                R"json({"value":[{"id":"drive-1","name":"OneDrive","driveType":"personal","webUrl":"https://example.test/one","owner":{"user":{"displayName":"Alice"}},"quota":{"total":1000,"used":400,"remaining":600,"deleted":25,"state":"normal"}}],"@odata.nextLink":"https://graph.example.test/v1.0/drives-next"})json",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body =
+                R"json({"value":[{"id":"drive-2","name":"Team","driveType":"business","owner":{"group":{"displayName":"Team Owner"}}}]})json",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body =
+                R"json({"id":"drive-1","name":"OneDrive","driveType":"personal","webUrl":"https://example.test/one","owner":{"user":{"displayName":"Alice"}},"quota":{"total":1000,"used":400,"remaining":600,"deleted":25,"state":"normal"}})json",
+        },
+    });
+    auto* transport_pointer = transport.get();
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(std::string{"existing-refresh"})
+        ),
+        auth_options(),
+        {
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+        },
+    };
+    const auto drives = client.list_drives();
+    const auto current = client.drive_info();
+    const auto& requests = transport_pointer->queued.requests;
+    if (drives.size() != 2 || drives[0].owner != "Alice" || !drives[0].quota ||
+        drives[0].quota->remaining != 600 || drives[1].owner != "Team Owner" ||
+        drives[1].quota || current.id != "drive-1" || !current.quota ||
+        current.quota->deleted != 25 || requests.size() != 4 ||
+        requests[1].url !=
+            "https://graph.example.test/v1.0/me/drives?$select=id,name,"
+            "driveType,webUrl,owner,quota" ||
+        requests[2].url != "https://graph.example.test/v1.0/drives-next" ||
+        requests[3].url !=
+            "https://graph.example.test/v1.0/me/drive?$select=id,name,"
+            "driveType,webUrl,owner,quota") {
+        return fail("Graph drive information or quota was not parsed");
+    }
+    return EXIT_SUCCESS;
+}
+
+int expect_invalid_drive_info(
+    std::string body, std::string_view failure_message
+) {
+    auto transport =
+        std::make_unique<FakeTransport>(std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body = R"({"token_type":"Bearer","expires_in":3600,)"
+                        R"("access_token":"access-secret"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body = std::move(body),
+            },
+        });
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(std::string{"existing-refresh"})
+        ),
+        auth_options(),
+        {
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+        },
+    };
+    try {
+        static_cast<void>(client.drive_info());
+        return fail(failure_message);
+    } catch (const std::runtime_error&) {
+        return EXIT_SUCCESS;
+    }
+}
+
+int test_rejects_invalid_drive_metadata() {
+    {
+        auto transport = std::make_unique<
+            FakeTransport>(std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body = R"({"token_type":"Bearer","expires_in":3600,)"
+                        R"("access_token":"access-secret"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"json({"value":[],"@odata.nextLink":"https://attacker.example/drives"})json",
+            },
+        });
+        onedrive::graph::MicrosoftGraphClient client{
+            wrap_transport(std::move(transport)),
+            wrap_token_store(
+                std::make_unique<FakeTokenStore>(std::string{"existing-refresh"}
+                )
+            ),
+            auth_options(),
+            {
+                .drive_id = "me",
+                .endpoint = "https://graph.example.test/v1.0",
+            },
+        };
+        try {
+            static_cast<void>(client.list_drives());
+            return fail("an external drives pagination URL was accepted");
+        } catch (const std::runtime_error&) {
+        }
+    }
+    {
+        auto transport = std::make_unique<
+            FakeTransport>(std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body = R"({"token_type":"Bearer","expires_in":3600,)"
+                        R"("access_token":"access-secret"})",
+            },
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"json({"id":"drive-1","name":"OneDrive","quota":{"total":1000,"used":400,"remaining":-1,"deleted":25}})json",
+            },
+        });
+        onedrive::graph::MicrosoftGraphClient client{
+            wrap_transport(std::move(transport)),
+            wrap_token_store(
+                std::make_unique<FakeTokenStore>(std::string{"existing-refresh"}
+                )
+            ),
+            auth_options(),
+            {
+                .drive_id = "me",
+                .endpoint = "https://graph.example.test/v1.0",
+            },
+        };
+        try {
+            static_cast<void>(client.drive_info());
+            return fail("a negative drive quota was accepted");
+        } catch (const std::runtime_error&) {
+        }
+    }
+    if (const int result = expect_invalid_drive_info(
+            R"json({"id":"drive-1","name":"OneDrive","quota":[]})json",
+            "a non-object drive quota was accepted"
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = expect_invalid_drive_info(
+            R"json({"id":"drive-1","name":"OneDrive","quota":{"total":1000}})json",
+            "an incomplete drive quota was accepted"
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = expect_invalid_drive_info(
+            R"json({"id":"","name":"OneDrive"})json",
+            "incomplete drive metadata was accepted"
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_item_lookup_by_encoded_path() {
     auto transport = std::make_unique<
         FakeTransport>(std::deque<onedrive::http::HttpResult>{
@@ -422,6 +602,14 @@ int test_drive_identity_and_profile_photo() {
 
 int main() {
     if (const int result = test_list_root_with_refresh_and_pagination();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_drive_information_and_quota();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_rejects_invalid_drive_metadata();
         result != EXIT_SUCCESS) {
         return result;
     }

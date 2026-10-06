@@ -10,6 +10,9 @@ int test_args() {
     const auto help =
         run_application(runtime_factory, {"build/release/onedrive-cpp"});
     if (help.exit_code != 0 || !help.standard_output.contains("auth") ||
+        !help.standard_output.contains("drives") ||
+        !help.standard_output.contains("quota") ||
+        !help.standard_output.contains("status") ||
         !help.standard_output.contains("reset-state") ||
         !help.standard_output.contains("download") ||
         !help.standard_output.contains("sync") ||
@@ -37,6 +40,14 @@ int test_args() {
             "Run local synchronization-state diagnostics"
         )) {
         return fail("doctor help was not available");
+    }
+    const auto status_help =
+        run_application(runtime_factory, {"onedrive-cpp", "status", "--help"});
+    if (status_help.exit_code != 0 ||
+        !status_help.standard_output.contains(
+            "Show read-only synchronization status"
+        )) {
+        return fail("status help was not available");
     }
 
     if (run_application(runtime_factory, {"onedrive-cpp", "unknown"})

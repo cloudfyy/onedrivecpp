@@ -17,6 +17,9 @@ onedrive-cpp monitor --log-file ~/.local/state/onedrive-cpp/onedrive-cpp.log
 onedrive-cpp sync --dry-run --color always
 onedrive-cpp sync --dry-run --output json
 onedrive-cpp sync --dry-run --quiet
+onedrive-cpp drives --output json
+onedrive-cpp quota
+onedrive-cpp status
 ```
 
 Supported levels are `trace`, `debug`, `info`, `warn`, `error`, `critical`,
@@ -31,6 +34,20 @@ emits ANSI sequences; destructive interactive confirmation requires `--yes`
 in this mode. `--quiet` suppresses informational and success output while
 retaining warnings and errors. Diagnostic logs remain on standard error, while
 command results are written to standard output.
+
+## Read-only account and synchronization information
+
+`drives` lists OneDrive drives available to the active Microsoft account and
+marks the configured drive. `quota` reports total, used, remaining, deleted,
+and quota-state values for the configured drive. `status` combines the active
+account and canonical Drive identity with local read-only state: sync mode,
+delete policy, last recorded synchronization result, tracked and blocked item
+counts, pending journals, Delta cursor, selective-sync fingerprint, and
+WebSocket configuration.
+
+These commands do not synchronize files or modify remote content. `status`
+opens an existing SQLite database read-only and does not create or migrate a
+missing or older database. All three commands support `--output json`.
 
 ## Shell completion
 

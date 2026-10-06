@@ -29,6 +29,11 @@ add_onedrive_test(
     SOURCES tests/cli/console.cpp
     INCLUDE_DIRS tests
 )
+add_onedrive_test(
+    metrics_status_tests
+    SOURCES tests/metrics/status.cpp
+    INCLUDE_DIRS tests
+)
 
 add_test(
     NAME bash_completion_tests

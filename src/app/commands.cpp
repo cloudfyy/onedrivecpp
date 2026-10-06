@@ -1,4 +1,5 @@
 #include "commands.hpp"
+#include "info.hpp"
 
 #include "onedrive/account/account_state.hpp"
 #include "onedrive/app/options.hpp"
@@ -177,6 +178,15 @@ int execute_command(
                           "integrity or schema checks."
             );
             return healthy ? 0 : 1;
+        }
+        if (operation == Operation::drives) {
+            return show_drives(config, runtime_factory, console);
+        }
+        if (operation == Operation::quota) {
+            return show_quota(config, runtime_factory, console);
+        }
+        if (operation == Operation::status) {
+            return show_status(config, runtime_factory, console);
         }
         if (operation == Operation::reset_state) {
             auto graph = runtime_factory.create_graph_client(config);
@@ -363,7 +373,7 @@ int execute_command(
                 console
             );
         }
-        auto metrics = runtime_factory.create_metrics();
+        auto metrics = runtime_factory.create_metrics(config, identity);
         monitor::SyncCallback synchronize{
             [&config, &graph, &items, &metrics, &console] {
                 return sync::SyncEngine{

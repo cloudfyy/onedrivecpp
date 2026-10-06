@@ -287,6 +287,13 @@ void write_metadata(
 
 }  // namespace
 
+AccountPaths AccountState::locate(
+    const std::filesystem::path& state_directory,
+    const DriveIdentity& identity
+) {
+    return paths_for(state_directory, identity);
+}
+
 AccountPaths AccountState::prepare(
     const std::filesystem::path& state_directory,
     const DriveIdentity& identity

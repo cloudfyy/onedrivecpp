@@ -31,6 +31,10 @@ struct AccountPaths {
 
 class AccountState {
 public:
+    [[nodiscard]] static AccountPaths locate(
+        const std::filesystem::path& state_directory,
+        const DriveIdentity& identity
+    );
     [[nodiscard]] static AccountPaths activate(
         const std::filesystem::path& state_directory,
         const DriveIdentity& identity,

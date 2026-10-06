@@ -56,6 +56,18 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         "doctor",
         "Run local synchronization-state diagnostics"
     );
+    auto* drives = application.add_subcommand(
+        "drives",
+        "List OneDrive drives available to the active account"
+    );
+    auto* quota = application.add_subcommand(
+        "quota",
+        "Show storage quota for the configured drive"
+    );
+    auto* status = application.add_subcommand(
+        "status",
+        "Show read-only synchronization status"
+    );
     auto* reset = application.add_subcommand(
         "reset-state",
         "Reset the Microsoft Graph delta cursor for the configured drive"
@@ -121,6 +133,9 @@ ParseResult parse_arguments(int argc, char* argv[]) {
              auth,
              logout,
              doctor,
+             drives,
+             quota,
+             status,
              reset,
              sync,
              download,
@@ -180,6 +195,9 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         *auth       ? Operation::authenticate :
         *logout     ? Operation::logout :
         *doctor     ? Operation::diagnose :
+        *drives     ? Operation::drives :
+        *quota      ? Operation::quota :
+        *status     ? Operation::status :
         *reset      ? Operation::reset_state :
         *download   ? Operation::download :
         *monitor    ? Operation::monitor :

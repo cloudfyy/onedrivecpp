@@ -49,8 +49,7 @@ int test_flow() {
             "never",
         }
     );
-    if (logout.exit_code != 0 ||
-        logout.standard_output.contains("\x1b[") ||
+    if (logout.exit_code != 0 || logout.standard_output.contains("\x1b[") ||
         !logout.standard_output.contains("Saved authentication removed") ||
         runtime_factory.token_store_count != 1) {
         return fail("logout did not accept a subcommand configuration path");
@@ -76,6 +75,92 @@ int test_flow() {
         )
             .exit_code != 0) {
         return fail("reauthentication did not restore account state");
+    }
+
+    const auto drives = run_application(
+        runtime_factory,
+        {
+            "onedrive-cpp",
+            "drives",
+            "--config",
+            config_path.string(),
+            "--output",
+            "json",
+        }
+    );
+    if (drives.exit_code != 0 ||
+        !drives.standard_output.contains(R"("event":"drive")") ||
+        !drives.standard_output.contains(R"("id":"drive-id")") ||
+        !drives.standard_output.contains(R"("configured":"true")") ||
+        !drives.standard_output.contains(R"("id":"shared-drive-id")") ||
+        drives.standard_output.find(
+            R"("id":"drive-id")",
+            drives.standard_output.find(R"("id":"drive-id")") + 1
+        ) != std::string::npos) {
+        return fail("drives command did not report available drives");
+    }
+
+    const auto quota = run_application(
+        runtime_factory,
+        {
+            "onedrive-cpp",
+            "quota",
+            "--config",
+            config_path.string(),
+            "--output",
+            "json",
+        }
+    );
+    if (quota.exit_code != 0 ||
+        !quota.standard_output.contains(R"("event":"quota")") ||
+        !quota.standard_output.contains(R"("total":"2.00 KiB")") ||
+        !quota.standard_output.contains(R"("remaining":"600 B")") ||
+        !quota.standard_output.contains(R"("state":"normal")")) {
+        return fail("quota command did not report configured drive quota");
+    }
+
+    const auto status = run_application(
+        runtime_factory,
+        {
+            "onedrive-cpp",
+            "status",
+            "--config",
+            config_path.string(),
+            "--output",
+            "json",
+        }
+    );
+    if (status.exit_code != 0 ||
+        !status.standard_output.contains(R"("event":"status")") ||
+        !status.standard_output.contains(R"("account":"Test User")") ||
+        !status.standard_output.contains(R"("state_database":"absent")") ||
+        !status.standard_output.contains(R"("last_sync":"never")") ||
+        runtime_factory.graph_info_client_count != 3) {
+        return fail("status command did not report read-only local state");
+    }
+    const auto identity = onedrive::test::test_drive_identity("drive-id");
+    const auto paths =
+        onedrive::account::AccountState::locate(state_path, identity);
+    onedrive::metrics::FileMetrics{paths.drive_directory}.record_sync_run(
+        onedrive::metrics::SyncRunOutcome::failed,
+        std::chrono::milliseconds{250}
+    );
+    const auto failed_status = run_application(
+        runtime_factory,
+        {
+            "onedrive-cpp",
+            "status",
+            "--config",
+            config_path.string(),
+            "--output",
+            "json",
+        }
+    );
+    if (failed_status.exit_code != 0 ||
+        !failed_status.standard_output.contains(R"("last_result":"failed")") ||
+        failed_status.standard_output.contains(R"("last_sync":"never")") ||
+        runtime_factory.graph_info_client_count != 4) {
+        return fail("status command did not report the last synchronization");
     }
 
     const auto reset_state = run_application(

@@ -15,6 +15,15 @@ onedrive-cpp \- modern C++ OneDrive synchronization client
 .B onedrive-cpp doctor
 .RI [ options ]
 .PP
+.B onedrive-cpp drives
+.RI [ options ]
+.PP
+.B onedrive-cpp quota
+.RI [ options ]
+.PP
+.B onedrive-cpp status
+.RI [ options ]
+.PP
 .B onedrive-cpp reset-state
 .RI [ options ]
 .PP
@@ -59,6 +68,22 @@ under the configured state directory. The command does not contact Microsoft
 Graph and returns nonzero when any database is unhealthy. Use
 .B \-\-output json
 for structured diagnostics.
+.TP
+.B drives
+List OneDrive drives available to the active Microsoft account and mark the
+configured drive. The command reads Microsoft Graph metadata without changing
+remote or local synchronization state.
+.TP
+.B quota
+Show total, used, remaining, deleted, and quota-state values for the configured
+drive. The command does not run synchronization.
+.TP
+.B status
+Show the active account and canonical Drive identity, synchronization mode and
+delete policy, last recorded synchronization result, tracked and blocked item
+counts, pending journals, Delta cursor, selective-sync fingerprint, state
+database availability, and WebSocket configuration. Existing SQLite state is
+opened read-only and is never created or migrated by this command.
 .TP
 .B reset-state
 Reset the saved delta link for the configured drive. This preserves

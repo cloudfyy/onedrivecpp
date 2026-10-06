@@ -25,6 +25,9 @@ _onedrive_cpp_completion
 assert_contains sync "${COMPREPLY[@]}"
 assert_contains download "${COMPREPLY[@]}"
 assert_contains doctor "${COMPREPLY[@]}"
+assert_contains drives "${COMPREPLY[@]}"
+assert_contains quota "${COMPREPLY[@]}"
+assert_contains status "${COMPREPLY[@]}"
 assert_contains reset-state "${COMPREPLY[@]}"
 assert_contains --version "${COMPREPLY[@]}"
 

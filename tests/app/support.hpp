@@ -148,6 +148,36 @@ public:
         return onedrive::test::test_drive_identity(configured_drive_id_);
     }
 
+    [[nodiscard]] std::vector<onedrive::graph::DriveInfo> list_drives() const {
+        return {
+            {
+                .id = "shared-drive-id",
+                .name = "Shared Drive",
+                .type = "business",
+                .web_url = "https://example.test/shared",
+                .owner = "Example Team",
+                .quota = std::nullopt,
+            },
+        };
+    }
+
+    [[nodiscard]] onedrive::graph::DriveInfo drive_info() const {
+        return {
+            .id = "drive-id",
+            .name = "Test Drive",
+            .type = "business",
+            .web_url = "https://example.test/drive",
+            .owner = "Test User",
+            .quota = onedrive::graph::DriveQuota{
+                .total = 2'048,
+                .used = 400,
+                .remaining = 600,
+                .deleted = 25,
+                .state = "normal",
+            },
+        };
+    }
+
     [[nodiscard]] std::vector<onedrive::graph::RemoteItem> list_root() const {
         return {};
     }
@@ -490,6 +520,14 @@ public:
         );
     }
 
+    [[nodiscard]] std::unique_ptr<onedrive::graph::GraphInfoClient>
+    create_graph_info_client(const onedrive::config::Config&) const {
+        ++graph_info_client_count;
+        return std::make_unique<onedrive::graph::GraphInfoClient>(
+            std::in_place_type<FakeGraphClient>, configured_drive_id
+        );
+    }
+
     [[nodiscard]] std::unique_ptr<onedrive::storage::ItemStore>
     create_item_store(
         const onedrive::config::Config& config,
@@ -527,8 +565,9 @@ public:
         );
     }
 
-    [[nodiscard]] std::unique_ptr<onedrive::metrics::Metrics>
-    create_metrics() const {
+    [[nodiscard]] std::unique_ptr<onedrive::metrics::Metrics> create_metrics(
+        const onedrive::config::Config&, const onedrive::account::DriveIdentity&
+    ) const {
         ++metrics_count;
         return std::make_unique<onedrive::metrics::Metrics>(
             std::in_place_type<FakeMetrics>
@@ -538,6 +577,7 @@ public:
     std::string configured_drive_id{"me"};
     mutable int token_store_count{0};
     mutable int graph_client_count{0};
+    mutable int graph_info_client_count{0};
     mutable int item_store_count{0};
     mutable int item_store_open_count{0};
     mutable int item_store_apply_delta_count{0};

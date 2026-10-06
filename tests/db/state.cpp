@@ -1,5 +1,6 @@
 #include "support.hpp"
 #include "onedrive/storage/item_database.hpp"
+#include "onedrive/storage/status.hpp"
 #include "support/common.hpp"
 
 #include <atomic>
@@ -26,6 +27,13 @@ using onedrive::test::TemporaryDirectory;
 
 int main() {
     TemporaryDirectory temporary_directory;
+    const auto absent_summary = onedrive::storage::read_state_summary(
+        temporary_directory.path() / "missing-drive",
+        "me"
+    );
+    if (absent_summary.database_present) {
+        return fail("missing state database was reported as available");
+    }
     if (!onedrive::storage::diagnose_state_databases(
              temporary_directory.path() / "missing-state"
         )
@@ -110,6 +118,15 @@ int main() {
             database.sync_filter_fingerprint("me") !=
                 std::optional<std::string>{"filter-1"}) {
             return fail("upsert did not preserve the expected item count");
+        }
+        const auto summary = onedrive::storage::read_state_summary(
+            temporary_directory.path(),
+            "me"
+        );
+        if (!summary.database_present || summary.tracked_items != 1 ||
+            summary.blocked_items != 0 || !summary.delta_cursor ||
+            summary.sync_filter_fingerprint != "filter-1") {
+            return fail("read-only synchronization summary was incorrect");
         }
     }
 

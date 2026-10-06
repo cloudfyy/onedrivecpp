@@ -55,6 +55,7 @@ PRO_DEF_MEM_DISPATCH(FactoryHttpDispatch, create_http_transport);
 PRO_DEF_MEM_DISPATCH(FactoryAuthDispatch, create_device_auth_client);
 PRO_DEF_MEM_DISPATCH(FactoryTokenDispatch, create_token_store);
 PRO_DEF_MEM_DISPATCH(FactoryGraphDispatch, create_graph_client);
+PRO_DEF_MEM_DISPATCH(FactoryGraphInfoDispatch, create_graph_info_client);
 PRO_DEF_MEM_DISPATCH(FactoryStoreDispatch, create_item_store);
 PRO_DEF_MEM_DISPATCH(FactoryMonitorDispatch, create_monitor);
 PRO_DEF_MEM_DISPATCH(FactoryMetricsDispatch, create_metrics);
@@ -80,6 +81,10 @@ struct RuntimeFactoryFacade : pro::facade_builder
         std::unique_ptr<graph::GraphClient>(const config::Config&) const
     >
     ::add_convention<
+        FactoryGraphInfoDispatch,
+        std::unique_ptr<graph::GraphInfoClient>(const config::Config&) const
+    >
+    ::add_convention<
         FactoryStoreDispatch,
         std::unique_ptr<storage::ItemStore>(
             const config::Config&,
@@ -96,7 +101,10 @@ struct RuntimeFactoryFacade : pro::facade_builder
     >
     ::add_convention<
         FactoryMetricsDispatch,
-        std::unique_ptr<metrics::Metrics>() const
+        std::unique_ptr<metrics::Metrics>(
+            const config::Config&,
+            const account::DriveIdentity&
+        ) const
     >
     ::build {};
 
@@ -131,6 +139,11 @@ public:
         return implementation()->create_graph_client(config);
     }
 
+    [[nodiscard]] std::unique_ptr<graph::GraphInfoClient>
+    create_graph_info_client(const config::Config& config) const {
+        return implementation()->create_graph_info_client(config);
+    }
+
     [[nodiscard]] std::unique_ptr<storage::ItemStore> create_item_store(
         const config::Config& config,
         const account::DriveIdentity& identity
@@ -150,8 +163,11 @@ public:
         );
     }
 
-    [[nodiscard]] std::unique_ptr<metrics::Metrics> create_metrics() const {
-        return implementation()->create_metrics();
+    [[nodiscard]] std::unique_ptr<metrics::Metrics> create_metrics(
+        const config::Config& config,
+        const account::DriveIdentity& identity
+    ) const {
+        return implementation()->create_metrics(config, identity);
     }
 };
 
@@ -170,6 +186,8 @@ public:
     [[nodiscard]] std::unique_ptr<graph::GraphClient> create_graph_client(
         const config::Config& config
     ) const;
+    [[nodiscard]] std::unique_ptr<graph::GraphInfoClient>
+    create_graph_info_client(const config::Config& config) const;
     [[nodiscard]] std::unique_ptr<storage::ItemStore> create_item_store(
         const config::Config& config,
         const account::DriveIdentity& identity
@@ -179,7 +197,10 @@ public:
         monitor::SyncCallback synchronize,
         graph::GraphClient& graph
     ) const;
-    [[nodiscard]] std::unique_ptr<metrics::Metrics> create_metrics() const;
+    [[nodiscard]] std::unique_ptr<metrics::Metrics> create_metrics(
+        const config::Config& config,
+        const account::DriveIdentity& identity
+    ) const;
 };
 
 }  // namespace onedrive::app
