@@ -17,6 +17,11 @@ namespace {
 using JournaledDownload = DownloadTransaction<DownloadJournaledState>;
 using ActiveDownload = std::variant<PreparedDownload, JournaledDownload>;
 
+enum class FailedDownloadDisposition {
+    discarded,
+    journal_retained,
+};
+
 JournaledDownload journal_download(PreparedDownload download) noexcept {
     return util::transition_transaction<DownloadJournaledState>(
         std::move(download)
@@ -55,6 +60,29 @@ const std::string& remote_path(const ActiveDownload& download) {
         },
         download
     );
+}
+
+FailedDownloadDisposition handle_failed_download(
+    ActiveDownload& download
+) noexcept {
+    return std::visit(
+        [](auto& active) {
+            using Active = std::remove_cvref_t<decltype(active)>;
+            if constexpr (std::same_as<Active, PreparedDownload>) {
+                discard_prepared_download(active);
+                return FailedDownloadDisposition::discarded;
+            } else {
+                return FailedDownloadDisposition::journal_retained;
+            }
+        },
+        download
+    );
+}
+
+const char* describe(FailedDownloadDisposition disposition) noexcept {
+    return disposition == FailedDownloadDisposition::journal_retained ?
+               "recovery journal retained" :
+               "no recovery journal was created";
 }
 
 template <DownloadState State>
@@ -483,30 +511,20 @@ storage::ItemState commit_download(
             std::get<PreparedDownload>(active).destination.string()
         );
     } catch (const std::exception& error) {
-        const bool journaled =
-            std::holds_alternative<JournaledDownload>(active);
-        if (!journaled) {
-            discard_prepared_download(std::get<PreparedDownload>(active));
-        }
+        const auto disposition = handle_failed_download(active);
         spdlog::warn(
             "Download installation failed for '{}'; {}: {}",
             remote_path(active),
-            journaled ? "recovery journal retained"
-                      : "no recovery journal was created",
+            describe(disposition),
             error.what()
         );
         throw;
     } catch (...) {
-        const bool journaled =
-            std::holds_alternative<JournaledDownload>(active);
-        if (!journaled) {
-            discard_prepared_download(std::get<PreparedDownload>(active));
-        }
+        const auto disposition = handle_failed_download(active);
         spdlog::warn(
             "Download installation failed for '{}'; {} due to an unknown error",
             remote_path(active),
-            journaled ? "recovery journal retained"
-                      : "no recovery journal was created"
+            describe(disposition)
         );
         throw;
     }
