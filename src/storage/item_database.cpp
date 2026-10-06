@@ -1,4 +1,5 @@
 #include "onedrive/storage/item_database.hpp"
+#include "util/unique_file_descriptor.hpp"
 #include "onedrive/util/path_security.hpp"
 
 #include <sqlite3.h>
@@ -125,48 +126,50 @@ void secure_directory(
     const std::filesystem::path& path, std::string_view description
 ) {
     onedrive::util::reject_symlink_components(path, description);
-    const int descriptor =
-        ::open(path.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
-    if (descriptor == -1) {
+    onedrive::util::UniqueFD descriptor{
+        ::open(
+            path.c_str(),
+            O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+        )
+    };
+    if (!descriptor) {
         throw std::runtime_error(
             "cannot open " + std::string{description} + " '" + path.string() +
             "': " + std::strerror(errno)
         );
     }
     struct stat status{};
-    if (::fstat(descriptor, &status) == -1) {
+    if (::fstat(descriptor.get(), &status) == -1) {
         const std::string message = std::strerror(errno);
-        ::close(descriptor);
         throw std::runtime_error(
             "cannot inspect " + std::string{description} + " '" +
             path.string() + "': " + message
         );
     }
     if (!S_ISDIR(status.st_mode) || status.st_uid != ::geteuid()) {
-        ::close(descriptor);
         throw std::runtime_error(
             std::string{description} +
             " must be a directory owned by the current user: " + path.string()
         );
     }
     if ((status.st_mode & 07777) != private_directory_mode &&
-        ::fchmod(descriptor, private_directory_mode) == -1) {
+        ::fchmod(descriptor.get(), private_directory_mode) == -1) {
         const std::string message = std::strerror(errno);
-        ::close(descriptor);
         throw std::runtime_error(
             "cannot secure " + std::string{description} + " '" + path.string() +
             "': " + message
         );
     }
-    ::close(descriptor);
 }
 
 void secure_database_file(const std::filesystem::path& path, bool create) {
     const int flags = O_RDWR | (create ? O_CREAT : 0);
-    int descriptor = -1;
+    onedrive::util::UniqueFD descriptor;
     try {
-        descriptor = onedrive::util::open_path_no_symlinks(
-            path, flags, create ? private_file_mode : 0
+        descriptor.reset(
+            onedrive::util::open_path_no_symlinks(
+                path, flags, create ? private_file_mode : 0
+            )
         );
     } catch (const std::system_error& error) {
         if (!create && error.code().value() == ENOENT) {
@@ -175,9 +178,8 @@ void secure_database_file(const std::filesystem::path& path, bool create) {
         throw;
     }
     struct stat status{};
-    if (::fstat(descriptor, &status) == -1) {
+    if (::fstat(descriptor.get(), &status) == -1) {
         const std::string message = std::strerror(errno);
-        ::close(descriptor);
         throw std::runtime_error(
             "cannot inspect SQLite state file '" + path.string() +
             "': " + message
@@ -185,7 +187,6 @@ void secure_database_file(const std::filesystem::path& path, bool create) {
     }
     if (!S_ISREG(status.st_mode) || status.st_uid != ::geteuid() ||
         status.st_nlink != 1) {
-        ::close(descriptor);
         throw std::runtime_error(
             "SQLite state file must be a regular, single-link file owned by "
             "the current user: " +
@@ -193,15 +194,13 @@ void secure_database_file(const std::filesystem::path& path, bool create) {
         );
     }
     if ((status.st_mode & 07777) != private_file_mode &&
-        ::fchmod(descriptor, private_file_mode) == -1) {
+        ::fchmod(descriptor.get(), private_file_mode) == -1) {
         const std::string message = std::strerror(errno);
-        ::close(descriptor);
         throw std::runtime_error(
             "cannot secure SQLite state file '" + path.string() +
             "': " + message
         );
     }
-    ::close(descriptor);
 }
 
 class Statement {

@@ -38,11 +38,13 @@ void secure_state_directory(const std::filesystem::path& directory) {
         "state directory"
     );
 
-    const int descriptor = ::open(
-        directory.c_str(),
-        O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
-    );
-    if (descriptor == -1) {
+    onedrive::util::UniqueFD descriptor{
+        ::open(
+            directory.c_str(),
+            O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+        )
+    };
+    if (!descriptor) {
         throw std::runtime_error(
             "cannot open state directory '" + directory.string() + "': " +
             std::strerror(errno)
@@ -50,34 +52,31 @@ void secure_state_directory(const std::filesystem::path& directory) {
     }
 
     struct stat status {};
-    if (::fstat(descriptor, &status) == -1) {
+    if (::fstat(descriptor.get(), &status) == -1) {
         const std::string message = std::strerror(errno);
-        ::close(descriptor);
         throw std::runtime_error(
             "cannot inspect state directory '" + directory.string() + "': " +
             message
         );
     }
     if (!S_ISDIR(status.st_mode) || status.st_uid != ::geteuid()) {
-        ::close(descriptor);
         throw std::runtime_error(
             "state directory must be owned by the current user: " +
             directory.string()
         );
     }
     if ((status.st_mode & 07777) != private_directory_mode &&
-        ::fchmod(descriptor, private_directory_mode) == -1) {
+        ::fchmod(descriptor.get(), private_directory_mode) == -1) {
         const std::string message = std::strerror(errno);
-        ::close(descriptor);
         throw std::runtime_error(
             "cannot secure state directory '" + directory.string() + "': " +
             message
         );
     }
-    if (::close(descriptor) == -1) {
+    if (const auto error = descriptor.close(); error) {
         throw std::runtime_error(
             "cannot close state directory '" + directory.string() + "': " +
-            std::strerror(errno)
+            error.message()
         );
     }
     if (created) {
@@ -89,45 +88,44 @@ void secure_state_directory(const std::filesystem::path& directory) {
 }
 
 void secure_sync_directory(const std::filesystem::path& directory) {
-    const int descriptor = ::open(
-        directory.c_str(),
-        O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
-    );
-    if (descriptor == -1) {
+    onedrive::util::UniqueFD descriptor{
+        ::open(
+            directory.c_str(),
+            O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+        )
+    };
+    if (!descriptor) {
         throw std::runtime_error(
             "cannot open sync directory '" + directory.string() + "': " +
             std::strerror(errno)
         );
     }
     struct stat status {};
-    if (::fstat(descriptor, &status) == -1) {
+    if (::fstat(descriptor.get(), &status) == -1) {
         const std::string message = std::strerror(errno);
-        ::close(descriptor);
         throw std::runtime_error(
             "cannot inspect sync directory '" + directory.string() + "': " +
             message
         );
     }
     if (!S_ISDIR(status.st_mode) || status.st_uid != ::geteuid()) {
-        ::close(descriptor);
         throw std::runtime_error(
             "sync directory must be owned by the current user: " +
             directory.string()
         );
     }
     if ((status.st_mode & 07777) != private_directory_mode &&
-        ::fchmod(descriptor, private_directory_mode) == -1) {
+        ::fchmod(descriptor.get(), private_directory_mode) == -1) {
         const std::string message = std::strerror(errno);
-        ::close(descriptor);
         throw std::runtime_error(
             "cannot secure sync directory '" + directory.string() + "': " +
             message
         );
     }
-    if (::close(descriptor) == -1) {
+    if (const auto error = descriptor.close(); error) {
         throw std::runtime_error(
             "cannot close sync directory '" + directory.string() + "': " +
-            std::strerror(errno)
+            error.message()
         );
     }
 }
@@ -158,27 +156,24 @@ void validate_private_file(
         return;
     }
 
-    const int descriptor = ::open(
-        path.c_str(),
-        O_RDONLY | O_CLOEXEC | O_NOFOLLOW
-    );
-    if (descriptor == -1) {
+    onedrive::util::UniqueFD descriptor{
+        ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+    };
+    if (!descriptor) {
         throw std::runtime_error(
             "cannot open " + std::string{description} + " '" +
             path.string() + "': " + std::strerror(errno)
         );
     }
     struct stat status {};
-    if (::fstat(descriptor, &status) == -1) {
+    if (::fstat(descriptor.get(), &status) == -1) {
         const std::string message = std::strerror(errno);
-        ::close(descriptor);
         throw std::runtime_error(
             "cannot inspect " + std::string{description} + " '" +
             path.string() + "': " + message
         );
     }
     if (!S_ISREG(status.st_mode) || status.st_uid != ::geteuid()) {
-        ::close(descriptor);
         throw std::runtime_error(
             std::string{description} +
             " must be a regular file owned by the current user: " +
@@ -186,24 +181,22 @@ void validate_private_file(
         );
     }
     if ((status.st_mode & 07777) != private_file_mode &&
-        ::fchmod(descriptor, private_file_mode) == -1) {
+        ::fchmod(descriptor.get(), private_file_mode) == -1) {
         const std::string message = std::strerror(errno);
-        ::close(descriptor);
         throw std::runtime_error(
             "cannot secure " + std::string{description} + " '" +
             path.string() + "': " + message
         );
     }
     if (required && status.st_size == 0) {
-        ::close(descriptor);
         throw std::runtime_error(
             std::string{description} + " is empty; run 'onedrive-cpp auth'"
         );
     }
-    if (::close(descriptor) == -1) {
+    if (const auto close_error = descriptor.close(); close_error) {
         throw std::runtime_error(
             "cannot close " + std::string{description} + " '" +
-            path.string() + "': " + std::strerror(errno)
+            path.string() + "': " + close_error.message()
         );
     }
 }
@@ -252,12 +245,14 @@ void probe_writable_directory(const std::filesystem::path& directory) {
             ::getpid(),
             std::chrono::steady_clock::now().time_since_epoch().count()
         );
-    const int descriptor = ::open(
-        probe.c_str(),
-        O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
-        private_file_mode
-    );
-    if (descriptor == -1) {
+    onedrive::util::UniqueFD descriptor{
+        ::open(
+            probe.c_str(),
+            O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
+            private_file_mode
+        )
+    };
+    if (!descriptor) {
         throw std::runtime_error(
             "sync directory is not writable '" + directory.string() + "': " +
             std::strerror(errno)
@@ -269,21 +264,21 @@ void probe_writable_directory(const std::filesystem::path& directory) {
         std::filesystem::remove(probe, ignored);
     };
     constexpr char content = '\0';
-    if (::write(descriptor, &content, 1) != 1 || ::fsync(descriptor) == -1) {
+    if (::write(descriptor.get(), &content, 1) != 1 ||
+        ::fsync(descriptor.get()) == -1) {
         const std::string message = std::strerror(errno);
-        ::close(descriptor);
+        descriptor.reset();
         cleanup();
         throw std::runtime_error(
             "cannot write and flush sync directory probe '" + probe.string() +
             "': " + message
         );
     }
-    if (::close(descriptor) == -1) {
-        const std::string message = std::strerror(errno);
+    if (const auto error = descriptor.close(); error) {
         cleanup();
         throw std::runtime_error(
             "cannot close sync directory probe '" + probe.string() + "': " +
-            message
+            error.message()
         );
     }
     if (!std::filesystem::remove(probe)) {
@@ -292,28 +287,29 @@ void probe_writable_directory(const std::filesystem::path& directory) {
         );
     }
 
-    const int directory_descriptor = ::open(
-        directory.c_str(),
-        O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
-    );
-    if (directory_descriptor == -1) {
+    onedrive::util::UniqueFD directory_descriptor{
+        ::open(
+            directory.c_str(),
+            O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+        )
+    };
+    if (!directory_descriptor) {
         throw std::runtime_error(
             "cannot open sync directory '" + directory.string() + "': " +
             std::strerror(errno)
         );
     }
-    if (::fsync(directory_descriptor) == -1) {
+    if (::fsync(directory_descriptor.get()) == -1) {
         const std::string message = std::strerror(errno);
-        ::close(directory_descriptor);
         throw std::runtime_error(
             "cannot flush sync directory '" + directory.string() + "': " +
             message
         );
     }
-    if (::close(directory_descriptor) == -1) {
+    if (const auto error = directory_descriptor.close(); error) {
         throw std::runtime_error(
             "cannot close sync directory '" + directory.string() + "': " +
-            std::strerror(errno)
+            error.message()
         );
     }
 }
@@ -387,60 +383,62 @@ void validate_authentication_config(const config::Config& config) {
     }
 }
 
-int acquire_runtime_lock(const std::filesystem::path& state_directory) {
+onedrive::util::UniqueFD acquire_runtime_lock(
+    const std::filesystem::path& state_directory
+) {
     const auto path = state_directory / "onedrive-cpp.lock";
-    const int descriptor = ::open(
-        path.c_str(),
-        O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW,
-        private_file_mode
-    );
-    if (descriptor == -1) {
+    onedrive::util::UniqueFD descriptor{
+        ::open(
+            path.c_str(),
+            O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW,
+            private_file_mode
+        )
+    };
+    if (!descriptor) {
         throw std::runtime_error(
             "cannot open runtime lock '" + path.string() + "': " +
             std::strerror(errno)
         );
     }
     struct stat status {};
-    if (::fstat(descriptor, &status) == -1) {
+    if (::fstat(descriptor.get(), &status) == -1) {
         const std::string message = std::strerror(errno);
-        ::close(descriptor);
         throw std::runtime_error(
             "cannot use runtime lock '" + path.string() + "': " + message
         );
     }
     if (!S_ISREG(status.st_mode) || status.st_uid != ::geteuid() ||
         status.st_nlink != 1) {
-        ::close(descriptor);
         throw std::runtime_error(
             "cannot use runtime lock '" + path.string() +
             "': unsafe lock file"
         );
     }
-    if (::fchmod(descriptor, private_file_mode) == -1) {
+    if (::fchmod(descriptor.get(), private_file_mode) == -1) {
         const std::string message = std::strerror(errno);
-        ::close(descriptor);
         throw std::runtime_error(
             "cannot secure runtime lock '" + path.string() + "': " + message
         );
     }
-    if (::flock(descriptor, LOCK_EX | LOCK_NB) == -1) {
+    if (::flock(descriptor.get(), LOCK_EX | LOCK_NB) == -1) {
         const std::string message = errno == EWOULDBLOCK ?
             "another onedrive-cpp process is already using this state directory" :
             std::strerror(errno);
-        ::close(descriptor);
         throw std::runtime_error(
             "cannot acquire runtime lock '" + path.string() + "': " + message
         );
     }
 
     const std::string process_id = std::to_string(::getpid()) + "\n";
-    if (::ftruncate(descriptor, 0) == -1 ||
-        ::write(descriptor, process_id.data(), process_id.size()) !=
+    if (::ftruncate(descriptor.get(), 0) == -1 ||
+        ::write(
+            descriptor.get(),
+            process_id.data(),
+            process_id.size()
+        ) !=
             static_cast<ssize_t>(process_id.size()) ||
-        ::fsync(descriptor) == -1) {
+        ::fsync(descriptor.get()) == -1) {
         const std::string message = std::strerror(errno);
-        ::flock(descriptor, LOCK_UN);
-        ::close(descriptor);
         throw std::runtime_error(
             "cannot update runtime lock '" + path.string() + "': " + message
         );
@@ -469,50 +467,36 @@ RuntimePreflight::RuntimePreflight(
     secure_state_directory(config.state_directory);
     lock_descriptor_ = acquire_runtime_lock(config.state_directory);
 
-    try {
-        validate_private_file(
-            config.state_directory / "active_account",
-            "active account marker",
-            false
+    validate_private_file(
+        config.state_directory / "active_account",
+        "active account marker",
+        false
+    );
+    const bool authentication_required =
+        operation == Operation::reset_state ||
+        operation == Operation::download ||
+        operation == Operation::synchronize;
+    const auto token_directory =
+        account::AccountState::find_active_token_directory(
+            config.state_directory
         );
-        const bool authentication_required =
-            operation == Operation::reset_state ||
-            operation == Operation::download ||
-            operation == Operation::synchronize;
-        const auto token_directory =
-            account::AccountState::find_active_token_directory(
-                config.state_directory
-            );
-        if (authentication_required && !token_directory) {
-            throw std::runtime_error(
-                "active Microsoft account is missing; run 'onedrive-cpp auth' "
-                "to initialize the account-based state layout"
-            );
-        }
-        if (token_directory) {
-            validate_private_file(
-                *token_directory / "refresh_token",
-                "refresh token",
-                authentication_required
-            );
-        }
-        if (operation == Operation::download ||
-            operation == Operation::synchronize ||
-            operation == Operation::monitor) {
-            prepare_sync_directory(config, operation);
-        }
-    } catch (...) {
-        ::flock(lock_descriptor_, LOCK_UN);
-        ::close(lock_descriptor_);
-        lock_descriptor_ = -1;
-        throw;
+    if (authentication_required && !token_directory) {
+        throw std::runtime_error(
+            "active Microsoft account is missing; run 'onedrive-cpp auth' "
+            "to initialize the account-based state layout"
+        );
     }
-}
-
-RuntimePreflight::~RuntimePreflight() {
-    if (lock_descriptor_ != -1) {
-        ::flock(lock_descriptor_, LOCK_UN);
-        ::close(lock_descriptor_);
+    if (token_directory) {
+        validate_private_file(
+            *token_directory / "refresh_token",
+            "refresh token",
+            authentication_required
+        );
+    }
+    if (operation == Operation::download ||
+        operation == Operation::synchronize ||
+        operation == Operation::monitor) {
+        prepare_sync_directory(config, operation);
     }
 }
 

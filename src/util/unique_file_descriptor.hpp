@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cerrno>
+#include <system_error>
 #include <unistd.h>
 #include <utility>
 
@@ -41,13 +43,22 @@ public:
         return std::exchange(descriptor_, -1);
     }
 
+    [[nodiscard]] std::error_code close() noexcept {
+        if (descriptor_ == -1) {
+            return {};
+        }
+        const int descriptor = release();
+        if (::close(descriptor) == -1) {
+            return {errno, std::generic_category()};
+        }
+        return {};
+    }
+
     void reset(int descriptor = -1) noexcept {
         if (descriptor_ == descriptor) {
             return;
         }
-        if (descriptor_ != -1) {
-            ::close(descriptor_);
-        }
+        static_cast<void>(close());
         descriptor_ = descriptor;
     }
 

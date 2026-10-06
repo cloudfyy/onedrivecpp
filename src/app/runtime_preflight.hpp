@@ -1,5 +1,6 @@
 #pragma once
 
+#include "util/unique_file_descriptor.hpp"
 #include "onedrive/config/config.hpp"
 
 namespace onedrive::app::detail {
@@ -17,7 +18,7 @@ enum class Operation {
 class RuntimePreflight {
 public:
     RuntimePreflight(const config::Config& config, Operation operation);
-    ~RuntimePreflight();
+    ~RuntimePreflight() = default;
 
     RuntimePreflight(const RuntimePreflight&) = delete;
     RuntimePreflight& operator=(const RuntimePreflight&) = delete;
@@ -25,7 +26,7 @@ public:
     RuntimePreflight& operator=(RuntimePreflight&&) = delete;
 
 private:
-    int lock_descriptor_{-1};
+    onedrive::util::UniqueFD lock_descriptor_;
 };
 
 }  // namespace onedrive::app::detail

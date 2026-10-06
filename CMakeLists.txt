@@ -291,7 +291,7 @@ if(BUILD_TESTING)
     add_onedrive_test(
         runtime_preflight_tests
         SOURCES tests/runtime_preflight_tests.cpp
-        INCLUDE_DIRS src/app
+        INCLUDE_DIRS src
     )
     add_onedrive_test(
         sync_engine_tests
