@@ -1,9 +1,7 @@
 #pragma once
 
 #include <chrono>
-#include <concepts>
 #include <optional>
-#include <type_traits>
 #include <utility>
 #include <variant>
 
@@ -90,6 +88,11 @@ struct MonitorTiming {
     std::chrono::milliseconds settle_delay;
 };
 
+template <typename... Callables>
+struct Overloaded : Callables... {
+    using Callables::operator()...;
+};
+
 [[nodiscard]] inline SynchronizationReason
 synchronization_reason(LocalChangeKind kind) noexcept {
     return kind == LocalChangeKind::watch_overflow
@@ -100,101 +103,104 @@ synchronization_reason(LocalChangeKind kind) noexcept {
 [[nodiscard]] inline MonitorTransition transition_monitor(
     MonitorState state, const MonitorEvent& event, MonitorTiming timing
 ) {
-    if (std::holds_alternative<StopRequestedEvent>(event)) {
-        return {
-            .state = StoppedState{},
-            .effect = MonitorEffect::stop,
-        };
-    }
-
     return std::visit(
-        [&](auto&& current) -> MonitorTransition {
-            using State = std::remove_cvref_t<decltype(current)>;
-
-            if constexpr (std::same_as<State, StartingState>) {
-                if (std::holds_alternative<StartEvent>(event)) {
+        Overloaded{
+            [](auto&&, const StopRequestedEvent&) -> MonitorTransition {
+                return {
+                    .state = StoppedState{},
+                    .effect = MonitorEffect::stop,
+                };
+            },
+            [](StartingState, const StartEvent&) -> MonitorTransition {
+                return {
+                    .state =
+                        SynchronizingState{
+                            SynchronizationReason::initial,
+                        },
+                    .effect = MonitorEffect::synchronize,
+                };
+            },
+            [&](IdleState current,
+                const LocalChangeEvent& changed) -> MonitorTransition {
+                return {
+                    .state =
+                        SettlingState{
+                            .local_deadline =
+                                changed.observed_at + timing.settle_delay,
+                            .graph_deadline = current.graph_deadline,
+                            .reason = synchronization_reason(changed.kind),
+                        },
+                    .effect = MonitorEffect::none,
+                };
+            },
+            [](IdleState current,
+               const DeadlineReachedEvent& deadline) -> MonitorTransition {
+                if (deadline.now < current.graph_deadline) {
                     return {
-                        .state =
-                            SynchronizingState{
-                                SynchronizationReason::initial,
-                            },
-                        .effect = MonitorEffect::synchronize,
-                    };
-                }
-            } else if constexpr (std::same_as<State, IdleState>) {
-                if (const auto* changed =
-                        std::get_if<LocalChangeEvent>(&event)) {
-                    return {
-                        .state =
-                            SettlingState{
-                                .local_deadline =
-                                    changed->observed_at + timing.settle_delay,
-                                .graph_deadline = current.graph_deadline,
-                                .reason = synchronization_reason(changed->kind),
-                            },
+                        .state = current,
                         .effect = MonitorEffect::none,
                     };
                 }
-                if (const auto* deadline =
-                        std::get_if<DeadlineReachedEvent>(&event);
-                    deadline != nullptr &&
-                    deadline->now >= current.graph_deadline) {
+                return {
+                    .state =
+                        SynchronizingState{
+                            SynchronizationReason::graph_poll,
+                        },
+                    .effect = MonitorEffect::synchronize,
+                };
+            },
+            [&](SettlingState current,
+                const LocalChangeEvent& changed) -> MonitorTransition {
+                const auto reason =
+                    current.reason == SynchronizationReason::watch_overflow ||
+                            changed.kind == LocalChangeKind::watch_overflow
+                        ? SynchronizationReason::watch_overflow
+                        : SynchronizationReason::local_changes;
+                return {
+                    .state =
+                        SettlingState{
+                            .local_deadline =
+                                changed.observed_at + timing.settle_delay,
+                            .graph_deadline = current.graph_deadline,
+                            .reason = reason,
+                        },
+                    .effect = MonitorEffect::none,
+                };
+            },
+            [](SettlingState current,
+               const DeadlineReachedEvent& deadline) -> MonitorTransition {
+                if (deadline.now < current.local_deadline) {
                     return {
-                        .state =
-                            SynchronizingState{
-                                SynchronizationReason::graph_poll,
-                            },
-                        .effect = MonitorEffect::synchronize,
-                    };
-                }
-            } else if constexpr (std::same_as<State, SettlingState>) {
-                if (const auto* changed =
-                        std::get_if<LocalChangeEvent>(&event)) {
-                    const auto reason =
-                        current.reason ==
-                                    SynchronizationReason::watch_overflow ||
-                                changed->kind == LocalChangeKind::watch_overflow
-                            ? SynchronizationReason::watch_overflow
-                            : SynchronizationReason::local_changes;
-                    return {
-                        .state =
-                            SettlingState{
-                                .local_deadline =
-                                    changed->observed_at + timing.settle_delay,
-                                .graph_deadline = current.graph_deadline,
-                                .reason = reason,
-                            },
+                        .state = current,
                         .effect = MonitorEffect::none,
                     };
                 }
-                if (const auto* deadline =
-                        std::get_if<DeadlineReachedEvent>(&event);
-                    deadline != nullptr &&
-                    deadline->now >= current.local_deadline) {
-                    return {
-                        .state = SynchronizingState{current.reason},
-                        .effect = MonitorEffect::synchronize,
-                    };
-                }
-            } else if constexpr (std::same_as<State, SynchronizingState>) {
-                if (const auto* completed =
-                        std::get_if<SynchronizationCompletedEvent>(&event)) {
-                    return {
-                        .state =
-                            IdleState{
-                                completed->completed_at + timing.poll_interval,
-                            },
-                        .effect = MonitorEffect::none,
-                    };
-                }
-            }
-
-            return {
-                .state = std::move(current),
-                .effect = MonitorEffect::none,
-            };
+                return {
+                    .state = SynchronizingState{current.reason},
+                    .effect = MonitorEffect::synchronize,
+                };
+            },
+            [&](SynchronizingState,
+                const SynchronizationCompletedEvent& completed)
+                -> MonitorTransition {
+                return {
+                    .state =
+                        IdleState{
+                            completed.completed_at + timing.poll_interval,
+                        },
+                    .effect = MonitorEffect::none,
+                };
+            },
+            [](auto&& current, const auto&) -> MonitorTransition {
+                return {
+                    .state =
+                        std::forward<decltype(current)>(current),
+                    .effect = MonitorEffect::none,
+                };
+            },
         },
-        std::move(state)
+        std::move(state),
+        event
     );
 }
 
