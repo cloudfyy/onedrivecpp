@@ -120,6 +120,31 @@ struct HeaderListDeleter {
     }
 };
 
+class HeaderList {
+public:
+    [[nodiscard]] bool append(const char* header) {
+        curl_slist* updated = curl_slist_append(headers_.get(), header);
+        if (updated == nullptr) {
+            return false;
+        }
+
+        static_cast<void>(headers_.release());
+        headers_.reset(updated);
+        return true;
+    }
+
+    [[nodiscard]] curl_slist* get() const noexcept {
+        return headers_.get();
+    }
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return static_cast<bool>(headers_);
+    }
+
+private:
+    std::unique_ptr<curl_slist, HeaderListDeleter> headers_;
+};
+
 struct DownloadState {
     std::uint64_t durable_offset{};
     std::uint64_t file_offset{};
@@ -884,17 +909,12 @@ HttpResult perform_request(
         .error = {},
     };
     std::array<char, CURL_ERROR_SIZE> error_buffer{};
-    std::unique_ptr<curl_slist, HeaderListDeleter> headers;
-    curl_slist* header_list = nullptr;
+    HeaderList headers;
     for (const auto& header : request.headers) {
-        curl_slist* updated = curl_slist_append(header_list, header.c_str());
-        if (updated == nullptr) {
-            curl_slist_free_all(header_list);
+        if (!headers.append(header.c_str())) {
             return std::unexpected(HttpError{.message = "cannot allocate HTTP headers"});
         }
-        header_list = updated;
     }
-    headers.reset(header_list);
 
     const auto set_option = [&handle](CURLoption option, auto value) {
         return curl_easy_setopt(handle.get(), option, value);
