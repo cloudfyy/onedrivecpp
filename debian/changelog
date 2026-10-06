@@ -1,3 +1,10 @@
+onedrive-cpp (0.8.5-1~ubuntu24.04) noble; urgency=medium
+
+  * Design pure remote notification connection and Monitor scheduling state
+    machines with bounded retry, renewal, catch-up, and polling fallback.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Tue, 06 Oct 2026 07:41:14 +0000
+
 onedrive-cpp (0.8.4-1~ubuntu24.04) noble; urgency=medium
 
   * Rename the synchronized-data mount guard to sync.data_mount_point and
