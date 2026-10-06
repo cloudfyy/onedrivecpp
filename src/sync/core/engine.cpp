@@ -12,12 +12,12 @@
 #include "sync/download/recovery.hpp"
 #include "sync/download/space_coordinator.hpp"
 #include "sync/download/target.hpp"
-#include "sync/filesystem/local.hpp"
+#include "sync/filesystem/operations.hpp"
 #include "sync/filesystem/metadata.hpp"
 #include "sync/filesystem/safe_sync_root.hpp"
 #include "sync/filter/remote_path.hpp"
 #include "sync/filter/selective.hpp"
-#include "sync/upload/local.hpp"
+#include "sync/upload/orchestration.hpp"
 
 #include <spdlog/spdlog.h>
 

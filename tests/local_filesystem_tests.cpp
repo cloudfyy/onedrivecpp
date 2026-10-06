@@ -1,4 +1,4 @@
-#include "sync/filesystem/local.hpp"
+#include "sync/filesystem/operations.hpp"
 #include "sync/filesystem/metadata.hpp"
 #include "onedrive/util/path_security.hpp"
 #include "sync/filesystem/safe_sync_root.hpp"

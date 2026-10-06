@@ -1,6 +1,6 @@
 #include "sync/download/target.hpp"
 
-#include "sync/filesystem/local.hpp"
+#include "sync/filesystem/operations.hpp"
 
 #include <utility>
 

@@ -1,4 +1,4 @@
-#include "sync/filesystem/local.hpp"
+#include "sync/filesystem/operations.hpp"
 #include "sync/filesystem/metadata.hpp"
 #include "test_support.hpp"
 

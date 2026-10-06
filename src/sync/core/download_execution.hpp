@@ -3,7 +3,7 @@
 #include "onedrive/config/config.hpp"
 #include "onedrive/graph/graph_client.hpp"
 #include "onedrive/storage/item_store.hpp"
-#include "sync/filesystem/local.hpp"
+#include "sync/filesystem/operations.hpp"
 
 #include <cstddef>
 #include <exception>

@@ -146,8 +146,10 @@ add_library(onedrive_core
     src/sync/core/local_move_execution.cpp
     src/sync/core/operation_reporting.cpp
     src/sync/core/remote_delete_execution.cpp
-    src/sync/filesystem/local.cpp
-    src/sync/upload/local.cpp
+    src/sync/filesystem/operations.cpp
+    src/sync/upload/orchestration.cpp
+    src/sync/upload/remote_delete.cpp
+    src/sync/upload/remote_move.cpp
     src/sync/filesystem/safe_sync_root.cpp
     src/sync/filesystem/safe_backup.cpp
     src/sync/filter/selective.cpp

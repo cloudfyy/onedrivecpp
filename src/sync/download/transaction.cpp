@@ -1,7 +1,7 @@
 #include "sync/download/transaction.hpp"
 
 #include "sync/download/integrity.hpp"
-#include "sync/filesystem/local.hpp"
+#include "sync/filesystem/operations.hpp"
 #include "sync/filesystem/safe_backup.hpp"
 
 #include <spdlog/spdlog.h>

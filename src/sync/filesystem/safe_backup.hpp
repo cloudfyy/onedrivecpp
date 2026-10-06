@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sync/filesystem/local.hpp"
+#include "sync/filesystem/operations.hpp"
 #include "sync/filesystem/safe_sync_root.hpp"
 
 #include <filesystem>

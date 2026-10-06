@@ -2,7 +2,7 @@
 
 #include "sync/download/space_coordinator.hpp"
 #include "util/typestate.hpp"
-#include "sync/filesystem/local.hpp"
+#include "sync/filesystem/operations.hpp"
 #include "sync/filesystem/metadata.hpp"
 #include "sync/filesystem/safe_sync_root.hpp"
 #include "onedrive/config/config.hpp"

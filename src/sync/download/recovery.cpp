@@ -1,6 +1,6 @@
 #include "sync/download/recovery.hpp"
 
-#include "sync/filesystem/local.hpp"
+#include "sync/filesystem/operations.hpp"
 #include "onedrive/util/remote_time.hpp"
 
 #include <spdlog/spdlog.h>

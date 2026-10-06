@@ -2,7 +2,7 @@
 
 #include "onedrive/util/unique_file_descriptor.hpp"
 #include "onedrive/util/path_security.hpp"
-#include "sync/filesystem/local.hpp"
+#include "sync/filesystem/operations.hpp"
 
 #include <spdlog/spdlog.h>
 

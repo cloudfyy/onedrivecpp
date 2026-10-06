@@ -5,7 +5,7 @@
 #include "sync/core/operation_reporting.hpp"
 #include "sync/core/plan.hpp"
 #include "sync/download/integrity.hpp"
-#include "sync/filesystem/local.hpp"
+#include "sync/filesystem/operations.hpp"
 #include "sync/filesystem/safe_sync_root.hpp"
 #include "util/typestate.hpp"
 
