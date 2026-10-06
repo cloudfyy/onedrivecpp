@@ -1,3 +1,10 @@
+onedrive-cpp (0.8.2-1~ubuntu24.04) noble; urgency=medium
+
+  * Stop synchronization when a configured removable or network-backed sync
+    mount is unavailable, and let Monitor retry after the mount returns.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Tue, 06 Oct 2026 06:39:18 +0000
+
 onedrive-cpp (0.8.1-1~ubuntu24.04) noble; urgency=medium
 
   * Expand the real Graph Monitor E2E workflow across local filesystem event,
