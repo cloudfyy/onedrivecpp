@@ -51,11 +51,14 @@ add_onedrive_test(
     device_auth_tests
     SOURCES tests/device_auth_tests.cpp
 )
-add_onedrive_test(
-    http_client_tests
-    SOURCES tests/http_client_tests.cpp
-    LIBRARIES spdlog::spdlog
-)
+foreach(HTTP_TEST IN ITEMS req redirect download cancel reuse)
+    add_onedrive_test(
+        http_${HTTP_TEST}_tests
+        SOURCES tests/http/${HTTP_TEST}.cpp
+        INCLUDE_DIRS tests tests/http
+        LIBRARIES spdlog::spdlog
+    )
+endforeach()
 add_onedrive_test(
     transfer_rate_limiter_tests
     SOURCES tests/transfer_rate_limiter_tests.cpp
