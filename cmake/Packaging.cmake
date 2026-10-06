@@ -75,6 +75,11 @@ configure_file(
     generated/onedrive-cpp.1
     @ONLY
 )
+configure_file(
+    docs/onedrive-cpp.zh_CN.1.in
+    generated/onedrive-cpp.zh_CN.1
+    @ONLY
+)
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
 include(CPack)

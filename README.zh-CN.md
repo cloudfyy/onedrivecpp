@@ -245,11 +245,13 @@ build/release/onedrive-cpp sync --log-level <Tab>
 
 ### 手册页
 
-CMake 安装规则会把 section 1 手册安装到标准的 `share/man/man1` 目录。安装
-DEB 包后可直接查看：
+CMake 安装规则会把英文 section 1 手册安装到标准的 `share/man/man1` 目录，
+并把简体中文版安装到 `share/man/zh_CN/man1`。安装 DEB 包后，`man` 会按照
+当前 locale 自动选择语言：
 
 ```bash
 man onedrive-cpp
+LANG=zh_CN.UTF-8 man onedrive-cpp
 ```
 
 Debian 的 `man-db` trigger 会自动更新索引。直接使用 `cmake --install` 安装到

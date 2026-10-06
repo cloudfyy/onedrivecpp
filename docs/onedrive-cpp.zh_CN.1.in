@@ -1,0 +1,656 @@
+.TH ONEDRIVE-CPP 1 "2026年10月6日" "onedrive-cpp @ONEDRIVE_PACKAGE_VERSION@" "用户命令"
+.SH 名称
+onedrive-cpp \- 现代 C++ OneDrive 同步客户端
+.SH 用法
+.B onedrive-cpp
+.RI [ 选项 ]
+.I 命令
+.PP
+.B onedrive-cpp auth
+.RI [ 选项 ]
+.PP
+.B onedrive-cpp logout
+.RI [ 选项 ]
+.PP
+.B onedrive-cpp doctor
+.RI [ 选项 ]
+.PP
+.B onedrive-cpp reset-state
+.RI [ 选项 ]
+.PP
+.B onedrive-cpp download
+.RI [ 选项 ]
+.I 远端路径
+.PP
+.B onedrive-cpp sync
+.RI [ 选项 ]
+.PP
+.B onedrive-cpp monitor
+.RI [ 选项 ]
+.SH 描述
+.B onedrive-cpp
+是一个独立的开源客户端，用于通过 Microsoft Graph 认证并同步 OneDrive 文件。
+.PP
+当前版本提供双向 Microsoft Graph 同步：Delta 查询和显式下载会在本地应用远端
+创建、修改、移动和删除；本地扫描会上传新增及修改文件、创建目录，并通过条件
+Graph 操作传播删除、移动和重命名。SQLite journal 为传输和元数据操作提供崩溃
+恢复。客户端还支持设备代码认证、选择性同步、dry-run、JSON 输出、inotify
+监控、代理、速率限制、Shell 自动补全和软件包集成。
+.SH 命令
+.TP
+.B auth
+使用 OAuth 2.0 设备代码流程授权应用。成功后将 refresh token 保存到配置的状态
+目录。
+.TP
+.B logout
+删除本地保存的 refresh token。此操作不会撤销 Microsoft 账号上的应用授权；
+需要时应在 Microsoft 账号设置中另行撤销。
+.TP
+.B doctor
+对配置状态目录中的每个 Drive 数据库执行只读 SQLite
+.BR integrity_check 、
+外键检查和精确的应用 schema 检查。该命令不访问 Microsoft Graph；任一数据库
+不健康时返回非零值。使用
+.B \-\-output json
+可获得结构化诊断。
+.TP
+.B reset-state
+重置当前 Drive 保存的 Delta 游标。认证、配置、本地文件、item 快照、
+pending-download、partial-download、pending-upload、pending-move、选择性保留
+对象的上传抑制、blocked item 和其他 Drive 状态均会保留。下一次
+.B sync
+先恢复未完成操作，再执行完整的初始 Delta 查询；完整远端清单会替换旧远端元数据。
+.PP
+指定
+.B \-\-clear\-all
+后，会清除当前 Drive 的 item 快照、Delta 游标、pending-download、
+partial-download、pending-upload、pending-move、上传抑制和 blocked item。
+命令要求交互确认配置的 Drive 引用。本地文件和其他 Drive 不受影响，但缺少旧
+快照时，下一次同步可能报告本地修改冲突。自动化场景必须同时指定
+.BR \-\-yes ；
+未指定
+.B \-\-clear\-all
+时不能使用该选项。
+.PP
+每个 Drive 数据库在启动及迁移后必须通过 SQLite
+.B quick_check
+并精确匹配应用表、列、NOT NULL 约束和主键索引。非空未版本化数据库、版本高于
+客户端或结构不兼容的数据库会在读取 item 状态前停止。确认损坏的数据库及其
+WAL/SHM sidecar 会被隔离为
+.IR items.sqlite3.corrupt\-<时间戳> ，
+然后创建可重建的新数据库。本地文件不会被删除。
+.TP
+.B download
+下载由 Drive 相对
+.I 远端路径
+标识的一个文件。不安全路径会在发送 Graph 请求前被拒绝。该命令复用正常同步的
+eTag 前置条件、HTTPS 重定向、Range 传输、持久 checkpoint、完整性校验、磁盘
+空间预留、本地修改保护和原子安装。目录和带有 Microsoft Graph malware facet
+的文件会被拒绝。item 快照会更新，但不推进 Drive Delta 游标。指定
+.B \-\-dry\-run
+时只显示解析后的远端路径、本地目标和预期大小，不创建 item 数据库，也不修改
+下载文件。
+.TP
+.B sync
+刷新 OAuth access token，并通过 Microsoft Graph Delta API 获取递归 Drive
+变化。非 dry-run 的成功查询会在应用远端变化后扫描本地变化并上传，最后原子
+提交远端元数据和 Delta 游标。本地新增或修改文件、目录、删除、移动和重命名
+使用条件 Graph 操作和持久恢复 journal。
+.PP
+下载使用同目录临时文件、大小及哈希校验、刷盘和原子替换。无法证明未被修改的
+本地文件不会被覆盖，而会记录为 blocked item。非法名称、本地路径冲突、malware
+文件及 blocked 目录的后代会被隔离，其他独立文件继续处理。存在 blocked item
+时安全推进游标并以状态 2 结束；后续同步会重试。安装后的文件采用 Graph 权威的
+修改时间。SQLite pending-download 和 SHA-256 指纹提供不依赖扩展属性的崩溃
+恢复。
+.PP
+Range 分片只有在 HTTP 状态、Content-Range、总大小和实际接收字节数完全匹配时
+才会接受；失败分片回滚到前一个持久 offset。HTTP 408、429、502、503 和 504
+按照 Retry-After 或有界指数退避重试。预认证下载 URL 返回 401 或 403 时会向
+Graph 刷新一次。
+.PP
+远端删除只在本地普通文件的大小和修改时间仍匹配可信快照时删除文件。目录按子项
+优先处理且仅在为空时删除。本地已修改文件、符号链接、意外类型和非空目录保留为
+可重试 blocked item。完整 Delta 刷新会将 Graph 清单与旧快照对账；仅因选择性
+同步被排除的文件会保留在本地，并通过 device/inode 身份抑制错误回传。
+.PP
+保留相同远端 ID 但路径变化的 Delta item 会在本地安全移动，绝不覆盖已有目标。
+目录移动会重映射全部跟踪后代；依赖移动先腾空目标，名称交换等依赖环通过私有
+隐藏 staging 路径打破。SQLite pending-move journal 保存源、目标、可选 staging
+路径和 filesystem identity，使中断可安全恢复。跨文件系统移动记录为
+.B cross_device_move
+blocked item，不执行跨挂载点复制后删除。
+.PP
+使用
+.B \-\-dry\-run
+只显示同步计划，不创建文件、不修改远端，也不更新同步状态。
+.TP
+.B monitor
+执行一次初始同步，然后通过 inotify 递归监控本地 Drive 树，并定期轮询
+Microsoft Graph。本地事件突发会先合并再同步。SIGINT 和 SIGTERM 会唤醒等待，
+并在活动同步完成后干净退出。
+.SH 选项
+.TP
+.BR \-h ", " \-\-help
+显示应用或指定子命令的帮助并退出。
+.TP
+.B \-\-version
+显示应用版本并退出。
+.TP
+.B \-\-clear\-all
+与
+.B reset-state
+一起使用，经确认后删除当前 Drive 的全部同步状态。
+.TP
+.B \-\-yes
+非交互确认
+.BR "reset-state \-\-clear\-all" 。
+没有
+.B \-\-clear\-all
+时该选项无效。
+.TP
+.B \-\-force\-large\-delete
+与
+.B sync
+一起使用，允许本次执行超过
+.B sync.maximum_remote_deletions
+限制。该开关不能用于
+.B monitor
+也不能持久化到配置文件。
+.TP
+.BI \-\-config " 路径"
+从指定路径读取配置。存在
+.B HOME
+时默认使用
+.IR ~/.config/onedrive-cpp/config.toml ，
+否则使用
+.IR /etc/onedrive-cpp/onedrive-cpp.toml 。
+.TP
+.BI \-\-log\-level " 级别"
+设置最低日志级别。支持
+.BR trace 、
+.BR debug 、
+.BR info 、
+.BR warn 、
+.BR error 、
+.BR critical
+和
+.BR off ；
+默认为
+.BR info 。
+trace 会记录协商协议、新建连接数及 DNS、TCP、TLS、服务端等待、正文传输和总
+耗时，不记录请求 URL、header 或正文。
+.TP
+.BI \-\-log\-file " 路径"
+同时将日志写入指定文件。文件达到 5 MiB 时轮转，并保留三个旧文件；诊断仍写入
+标准错误。
+.TP
+.BI \-\-color " 模式"
+控制 ANSI 样式。支持
+.BR auto 、
+.BR always
+和
+.BR never 。
+默认
+.B auto
+只在标准输出为终端且未设置
+.B NO_COLOR
+时启用样式。
+.TP
+.BI \-\-output " 格式"
+选择
+.B text
+或
+.B json
+输出。JSON 每行输出一个紧凑对象，不含 ANSI 序列；需要交互确认的破坏性操作
+必须同时使用
+.BR \-\-yes 。
+.TP
+.B \-\-quiet
+隐藏信息和成功消息，但保留警告与错误。诊断日志仍由
+.B \-\-log\-level
+控制。
+.TP
+.B \-\-dry\-run
+对于
+.B download
+，只解析并显示单文件计划，不创建 item 数据库或修改本地文件。对于
+.B sync
+，显示有效同步输入，不修改本地文件、远端文件或同步状态。
+.SH 配置
+配置文件使用 TOML，且必须声明
+.BR "config_version = 2" 。
+未知 key、无效类型和不支持的版本会被拒绝。版本 1 配置必须把旧
+.B sync.download_*
+key 移到
+.B transfer
+和
+.B download
+表。
+.PP
+命令运行前会把状态目录限制为 0700，并在其中持有独占
+.IR onedrive-cpp.lock 。
+Token、SQLite 及 WAL/SHM 必须是当前用户拥有的普通单硬链接文件；私有状态文件
+限制为 0600，状态路径中的符号链接会被拒绝。SQLite 禁用 trusted schema 和扩展
+加载，启用 defensive、外键、WAL、full synchronous、自动 checkpoint 和快速
+安全删除。
+.PP
+同步目录和状态目录不能互相包含，不能使用文件系统根目录，且现有路径组件不能是
+符号链接。正常同步在访问 Graph 前验证创建、写入、刷盘和删除能力。下载容量保留
+256 MiB 或计划传输字节数 5% 中的较大值。
+.TP
+.B sync.directory
+同步数据根目录。实际内容存放于
+.IR accounts/<显示名>--<用户ID哈希>/drives/<Drive名>--<Drive-ID哈希>
+下，以隔离多个账号和 Drive。旧平面布局不会自动移动。
+.TP
+.B sync.permissions
+本地权限策略。
+.B private
+创建 0600 文件及 0700 同步根和目录；
+.B umask
+使用进程 umask，仅适用于明确需要共享的目录。默认
+.BR private 。
+.TP
+.B sync.local_conflict
+同时发生本地和远端普通文件修改时的策略。
+.B block
+为默认值，拒绝替换；
+.B backup
+先创建同目录独立持久副本，例如
+.IR report.safeBackup-20261004T051000Z-0001.pdf ，
+再原子安装远端版本。备份保留权限位、不会上传，并需要约等于本地文件大小的额外
+空间。内容 SHA-256 相同时直接采用现有文件。该策略适用于正常同步、显式下载和
+上传恢复发现的并发远端变化。
+.TP
+.B state.directory
+账号认证、Drive 元数据和 SQLite 同步状态的根目录。
+.TP
+.B sync.drive_id
+Microsoft Graph Drive 标识；默认
+.BR me 。
+.TP
+.B sync.sync_list
+可选 UTF-8 选择性同步规则文件。相对路径以 TOML 文件目录为基准。配置后文件
+必须可读；空文件不选择任何远端项目。规则默认排除全部；空行和
+.B #
+注释会忽略。普通规则表示包含，
+.B !
+或
+.B -
+前缀表示排除，且排除优先。前导
+.B /
+锚定 Drive 根，末尾
+.B /
+匹配目录及后代，
+.B *
+匹配单路径段，
+.B **
+完整路径段递归匹配。过滤在 Graph Delta 元数据返回后执行。规则指纹与 Delta
+游标原子保存；规则变化会触发完整远端查询。后来被排除的现有本地文件不会删除。
+显式
+.B download
+不受该设置限制。
+.TP
+.B auth.application_id
+Microsoft Entra Application（客户端）ID。
+.TP
+.B auth.tenant_id
+Microsoft identity tenant selector，例如
+.BR common 、
+.BR consumers
+或具体 tenant ID。支持组织和个人账号的应用应使用
+.BR common 。
+.TP
+.B auth.endpoint
+Microsoft identity endpoint；默认
+.IR https://login.microsoftonline.com 。
+.TP
+.B auth.scopes
+OAuth delegated scope 数组。个人 Microsoft 账号应从
+.BR [\(dqUser.Read\(dq,\ \(dqFiles.ReadWrite\(dq,\ \(dqoffline_access\(dq]
+开始。更广泛的
+.B Files.ReadWrite.All
+和
+.B Sites.ReadWrite.All
+必须显式配置，并会在认证时产生警告。
+.TP
+.B graph.endpoint
+Microsoft Graph API endpoint；默认
+.IR https://graph.microsoft.com/v1.0 。
+主权云部署必须配置相互匹配的 Graph 和认证 endpoint。
+.TP
+.B graph.throttle.maximum_retries
+可重试 Graph API 响应的最大重试次数；默认
+.BR 4 。
+.TP
+.B graph.throttle.initial_delay_seconds
+没有有效数字
+.B Retry-After
+时的初始指数退避秒数；默认
+.BR 1 。
+.TP
+.B graph.throttle.maximum_delay_seconds
+允许的最大 Graph 退避秒数；默认
+.BR 300 ，
+且不能小于初始延迟。
+.TP
+.B proxy.url
+认证、Microsoft Graph 和文件传输使用的可选代理 URL。支持
+.BR http 、
+.BR https 、
+.BR socks4 、
+.BR socks4a 、
+.BR socks5
+和
+.BR socks5h 。
+默认不显式选择代理，但 libcurl 仍可读取
+.BR HTTP_PROXY 、
+.BR HTTPS_PROXY 、
+.BR ALL_PROXY
+及其小写形式。需要代理解析目标主机名时使用
+.BR socks5h 。
+.TP
+.B proxy.no_proxy
+主机、域名后缀、IP 或其他 libcurl 免代理模式数组。省略时沿用环境变量
+.B NO_PROXY
+或
+.BR no_proxy ；
+空数组会覆盖环境变量并代理所有目标。
+.TP
+.B proxy.username
+可选代理认证用户名；默认未设置。
+.TP
+.B proxy.password_file
+代理密码文件。相对路径以配置文件目录为基准。必须是不经过符号链接访问的普通
+文件，不能授予 group 或 other 权限，且不超过 64 KiB。会移除一个末尾 LF 或
+CRLF。该设置要求同时配置
+.BR proxy.username 。
+.TP
+.B proxy.auth
+HTTP/HTTPS 代理认证机制：
+.BR auto 、
+.BR basic 、
+.BR digest 、
+.BR ntlm
+或
+.BR negotiate ；
+默认
+.BR auto 。
+SOCKS5 使用自身的用户名和密码认证。
+.TP
+.B proxy.ca_file
+HTTPS 代理 CA 文件。相对路径以配置文件目录为基准；非 HTTPS 代理不能配置。
+代理证书和主机名验证始终开启。
+.TP
+.B download.concurrency
+最大并发下载文件数；默认
+.BR 4 ，
+允许 1 到 16。指向同一规范化本地路径的下载仍然串行。
+.TP
+.B download.maximum_retries
+文件内容请求遇到临时 HTTP 或传输失败后的最大重试次数；默认
+.BR 4 ；
+0 禁用。下载重试使用 Graph 退避设置。
+.TP
+.B download.chunk_threshold_bytes
+大于该值的文件使用顺序 HTTP Range 请求，并以该值作为最大分片大小。默认
+.B 8388608
+字节，且必须大于零。
+.TP
+.B download.checkpoint_interval_bytes
+每新增多少下载字节就刷盘并记录可续传进度；默认
+.B 1048576
+字节，且必须大于零。较小值减少中断后的重复下载，但增加同步写入和数据库开销。
+.TP
+.B transfer.order
+文件传输进入 worker 队列的顺序：
+.BR default 、
+.BR size_asc 、
+.BR size_dsc 、
+.BR name_asc
+或
+.BR name_dsc 。
+默认保留同步计划顺序，相同排序 key 保持稳定。并发 worker 下控制开始顺序而非
+完成顺序。该设置作用于下载队列；上传依赖保持父目录优先顺序。
+.TP
+.B transfer.connect_timeout_seconds
+每个文件传输请求的连接超时；默认 30 秒，且必须大于零。
+.TP
+.B transfer.operation_timeout_seconds
+每个文件传输请求的最长持续时间；默认 3600 秒，且必须大于零。
+.TP
+.B transfer.stall_timeout_seconds
+传输持续低于最低速率多少秒后中止；默认 60，0 禁用停滞检测。
+.TP
+.B transfer.stall_minimum_bytes_per_second
+停滞检测最低传输速率；默认每秒 1 字节，且必须大于零。
+.TP
+.B download.maximum_rate_bytes_per_second
+每个下载的最大接收速率；默认 0，表示不限制。
+.TP
+.B download.maximum_total_rate_bytes_per_second
+所有并发下载共享的总接收速率；默认 0。单请求和总限制同时非零时两者都生效。
+总限制使用公平、可取消、最多突发 64 KiB 的令牌桶。限速时间计入操作超时并可能
+影响停滞检测。
+.TP
+.B upload.chunk_size_bytes
+不超过 250 MB（250,000,000 字节）的文件使用简单上传，更大文件使用 upload
+session。该值设置分片大小；默认 10 MiB，必须是 320 KiB 的正整数倍且小于
+60 MiB。
+.TP
+.B upload.concurrency
+最大并发上传文件数；默认 1，允许 1 到 16。单个 upload session 的分片仍保持
+顺序，目录会在依赖文件上传前创建。
+.TP
+.B upload.maximum_rate_bytes_per_second
+每个上传请求的最大发送速率；默认 0，表示不限制。
+.TP
+.B upload.maximum_total_rate_bytes_per_second
+所有活动上传共享的总发送速率；默认 0。并发上传共享公平、可取消令牌桶，同时
+各自遵守单上传限制。
+.TP
+.B monitor.poll_interval_seconds
+两次 Microsoft Graph Delta 检查之间的最大空闲时间；默认 300 秒，允许 1 到
+86400。
+.TP
+.B monitor.settle_delay_milliseconds
+同步前合并本地 inotify 事件突发的时间；默认 1000 毫秒，最大 60000。0 表示在
+完整可操作事件后立即触发。
+.TP
+.B transfer.http_version
+文件传输的 HTTP 版本偏好：
+.BR auto 、
+.BR 1.1
+或
+.BR 2 ；
+默认
+.BR auto 。
+.TP
+.B transfer.ip_version
+文件传输请求的 IP 地址族：
+.BR auto 、
+.BR 4
+或
+.BR 6 ；
+默认
+.BR auto 。
+强制地址族可绕过损坏的 IPv4/IPv6 路由，但目标在该地址族不可达时会失败。
+.TP
+.B download.validation
+远端元数据校验策略。
+.B strict
+要求下载大小及 Graph 提供的哈希匹配；
+.B relaxed
+接受 SharePoint、AIP 或 HEIC 内容与 Graph 元数据不一致，并禁用续传及分块
+下载。宽松模式仍验证 HTTP 成功、持久写入、原子安装和本地 SHA-256 恢复指纹，
+但会降低完整性保证。默认
+.BR strict 。
+.PP
+请求文件内容前，客户端通过
+.B If-Match
+发送预期 eTag。HTTP 412 表示远端版本变化，不作为临时传输错误重试。预认证下载
+URL 最多继续五次 HTTPS 重定向；Graph Authorization 不会发送给 CDN。
+.TP
+.B filesystem.metadata
+文件系统元数据策略。
+.B auto
+探测 user xattr，不支持时只使用 SQLite journal；
+.B xattr
+要求扩展属性可用；
+.B database
+不读写扩展属性。默认
+.BR auto 。
+.TP
+.B sync.sync_root_files
+配置
+.B sync.sync_list
+时，是否自动选择 Drive 根目录中的普通文件；默认
+.BR false 。
+根目录中的目录和后代仍需包含规则，显式排除优先。没有 sync list 时无效果。
+修改该值会更新规则指纹并强制完整远端查询。
+.TP
+.B sync.maximum_remote_deletions
+一次本地删除计划最多可从 OneDrive 删除的跟踪 item 数；默认
+.BR 1000 。
+缺失目录会连同全部跟踪后代计数，即使 Graph 只需一次 DELETE。0 阻止所有远端
+删除，除非一次性使用
+.BR "sync \-\-force\-large\-delete" 。
+超过限制时正常同步和 monitor 都会在远端 DELETE 前停止。dry-run 会报告操作数、
+受影响 item 数、限制和阻止状态。pending-delete 恢复使用相同保护。
+.PP
+状态数据库同时保存文件 Graph eTag 和 cTag。本地快照未变化、Delta 只改变 eTag
+而非空 cTag 不变时，仅刷新元数据而不下载。cTag 缺失或变化时保守回退到 eTag。
+目录不依赖 cTag。
+.TP
+.B sync.dry_run
+布尔值
+.B true
+或
+.BR false 。
+.TP
+.B sync.upload
+是否在应用远端变化后上传本地新增和修改普通文件；默认
+.BR true 。
+新文件遇到远端同名即失败，已跟踪修改使用保存的 eTag 作为 If-Match。上传采用
+私有稳定快照和持久 SQLite journal。未跟踪的已选择本地目录按父目录优先创建。
+不超过 250 MB 的文件使用简单上传，更大文件使用连续 Graph upload-session
+分片，并根据 nextExpectedRanges 推进。
+.PP
+pending-upload journal 保存 session URL、过期时间和确认 offset。重启后查询并
+恢复有效 session，不重发已确认分片；过期或 HTTP 404/410 session 会替换，服务
+端 offset 落后于持久 checkpoint 时中止。OneDrive 配额、本地读取、权限、快照
+空间或 I/O 失败会在 journal 中保存原因及尝试次数；一个失败项目不阻止其他上传。
+.PP
+已跟踪本地项目缺失时，以保存 eTag 条件删除远端项目。父目录删除覆盖跟踪后代。
+pending-delete journal 使已完成 Graph 删除可在中断后恢复：HTTP 404 视为幂等
+成功，409/412 保留跟踪状态。dry-run 和 sync list 外路径不会远端删除。
+.PP
+跟踪项目保存 device/inode identity，以安全识别本地移动。移动使用保存 eTag
+执行条件 Graph PATCH，并写入专用 SQLite journal。随移动发生的文件修改在移动
+提交后上传；目录移动原子重映射后代。恢复仅在远端 ID 和本地 filesystem identity
+均匹配时采用目标。新目标父目录会先按从浅到深顺序创建。
+.SH SHELL 自动补全
+软件包安装 Bash 和 Zsh 自动补全，覆盖子命令、选项、枚举值和文件路径。
+.PP
+未安装的开发目录可在当前 Bash 中执行：
+.PP
+.EX
+source packaging/completions/onedrive-cpp.bash
+.EE
+.SH 文件
+.TP
+.I ~/.config/onedrive-cpp/config.toml
+默认用户配置文件。
+.TP
+.I /etc/onedrive-cpp/onedrive-cpp.toml
+系统级示例和回退配置。
+.TP
+.I sync_list
+由
+.B sync.sync_list
+配置的可选选择性同步规则文件。
+.TP
+.I *.safeBackup-YYYYMMDDTHHMMSSZ-NNNN*
+当
+.B sync.local_conflict
+为
+.B backup
+时创建的同目录持久冲突副本。
+.TP
+.I ~/.local/state/onedrive-cpp/accounts/<显示名>--<用户ID哈希>/refresh_token
+按账号保存的 OAuth refresh token，权限仅限 owner。
+.TP
+.I ~/.local/state/onedrive-cpp/accounts/<显示名>--<用户ID哈希>/drives/<Drive名>--<Drive-ID哈希>/items.sqlite3
+按账号和 Drive 保存的 SQLite 同步状态数据库。
+.TP
+.I /usr/lib/systemd/user/onedrive-cpp.service
+软件包安装的 systemd 用户服务。
+.SH 日志
+诊断写入标准错误；systemd 用户服务会将其收集到 journal。使用以下命令跟踪：
+.PP
+.RS
+.B journalctl \-\-user \-u onedrive-cpp.service \-f
+.RE
+.PP
+OAuth token、设备代码、Authorization header 和密码不得写入日志。共享调试输出
+前仍应检查其中可能包含的本地路径和文件元数据。
+.SH 环境变量
+.TP
+.B HOME
+用于确定默认配置、状态和同步路径。
+.SH 退出状态
+.TP
+.B 0
+命令成功完成，或已显示帮助及版本信息。
+.TP
+.B 1
+发生运行时、配置、认证、存储或同步错误。
+.TP
+.B 2
+命令行无效，或同步已安全完成但仍有一个或多个 blocked item。
+.SH 示例
+授权 Microsoft 账号：
+.PP
+.RS
+.B onedrive-cpp auth \-\-config ~/.config/onedrive-cpp/config.toml
+.RE
+.PP
+查看同步输入：
+.PP
+.RS
+.B onedrive-cpp sync \-\-dry\-run \-\-log\-level debug
+.RE
+.PP
+下载一个远端文件：
+.PP
+.RS
+.B onedrive-cpp download Documents/report.pdf
+.RE
+.PP
+使用轮转日志运行 monitor：
+.PP
+.RS
+.B onedrive-cpp monitor \-\-log\-file ~/.local/state/onedrive-cpp/onedrive-cpp.log
+.RE
+.SH 安全
+状态目录和 refresh token 应按账号凭据保护。不要在日志或问题报告中公开 token、
+设备代码、Authorization header、私有文件名或文件内容。
+.SH 另请参阅
+.BR journalctl (1)、
+.BR systemctl (1)、
+.BR systemd.service (5)
+.PP
+项目文档：
+.UR https://github.com/cloudfyy/onedrivecpp
+.UE
+.SH 缺陷报告
+请在以下地址报告问题：
+.UR https://github.com/cloudfyy/onedrivecpp/issues
+.UE
+.PP
+问题报告中不得包含密码、OAuth token、设备代码或私有文件内容。
+.SH 版权
+版权所有 2026 onedrive-cpp 贡献者。
+本软件采用 GPL-3.0-or-later 许可证。
+onedrive-cpp 是独立项目，与 Microsoft 无附属或背书关系。

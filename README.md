@@ -279,10 +279,13 @@ The installed definitions are placed in
 ### Manual page
 
 The CMake install rules place the section 1 manual at the standard
-`share/man/man1` location. After installing the DEB package, view it with:
+`share/man/man1` location and the Simplified Chinese translation under
+`share/man/zh_CN/man1`. After installing the DEB package, `man` selects the
+translation matching the current locale:
 
 ```bash
 man onedrive-cpp
+LANG=zh_CN.UTF-8 man onedrive-cpp
 ```
 
 Debian's `man-db` trigger updates the index automatically. After a direct
