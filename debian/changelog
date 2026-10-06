@@ -1,3 +1,10 @@
+onedrive-cpp (0.7.41-1~ubuntu24.04) noble; urgency=medium
+
+  * Upload independent files concurrently while preserving ordered upload
+    session fragments and enforcing a shared total upload rate limit.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Tue, 06 Oct 2026 01:02:35 +0000
+
 onedrive-cpp (0.7.40-1~ubuntu24.04) noble; urgency=medium
 
   * Model monitor startup, local settling, overflow recovery, Graph polling,
