@@ -77,9 +77,12 @@ MicrosoftGraphClient::MicrosoftGraphClient(
         );
     }
     if (options_.initial_throttle_delay < std::chrono::seconds::zero() ||
-        options_.maximum_throttle_delay < options_.initial_throttle_delay) {
+        options_.maximum_throttle_delay < options_.initial_throttle_delay ||
+        options_.notification_request_timeout <=
+            std::chrono::seconds::zero()) {
         throw std::invalid_argument(
-            "Microsoft Graph client requires valid throttle retry delays"
+            "Microsoft Graph client requires valid retry delays and "
+            "notification timeout"
         );
     }
     const auto& download_transport = options_.download_transport;

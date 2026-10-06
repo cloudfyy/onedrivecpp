@@ -77,47 +77,56 @@ std::unique_ptr<monitor::FileMonitor> ProductionRuntimeFactory::create_monitor(
     monitor::SyncCallback synchronize,
     graph::GraphClient& graph
 ) const {
-    monitor::NotificationCallbacks notifications{
-        .acquire_channel = [&graph]() -> monitor::NotificationChannelResult {
-            try {
-                const auto channel = graph.notification_channel();
-                const auto remaining =
-                    channel.expires_at - std::chrono::system_clock::now();
-                constexpr auto renew_early = std::chrono::minutes{2};
-                return monitor::NotificationChannel{
-                    .url = channel.notification_url,
-                    .renew_at = std::chrono::steady_clock::now() +
-                                std::max(
-                                    std::chrono::system_clock::duration::zero(),
-                                    remaining - renew_early
-                                ),
-                };
-            } catch (const graph::NotificationChannelError& error) {
-                spdlog::warn("{}", error.what());
-                return std::unexpected{error.unauthorized()};
-            } catch (const std::exception& error) {
-                spdlog::warn(
-                    "Cannot acquire Graph notification channel: {}",
-                    error.what()
-                );
-                return std::unexpected{false};
-            }
-        },
-        .refresh_token =
-            [&graph] {
+    monitor::NotificationCallbacks notifications;
+    if (config.monitor_websocket_enabled) {
+        notifications = {
+            .acquire_channel =
+                [&graph, renewal_lead = config.monitor_websocket_renewal_lead](
+                ) -> monitor::NotificationChannelResult {
                 try {
-                    graph.refresh_access_token();
-                    return true;
+                    const auto channel = graph.notification_channel();
+                    const auto remaining =
+                        channel.expires_at - std::chrono::system_clock::now();
+                    return monitor::NotificationChannel{
+                        .url = channel.notification_url,
+                        .renew_at =
+                            std::chrono::steady_clock::now() +
+                            std::max(
+                                std::chrono::system_clock::duration::zero(),
+                                remaining - renewal_lead
+                            ),
+                    };
+                } catch (const graph::NotificationChannelError& error) {
+                    spdlog::warn("{}", error.what());
+                    return std::unexpected{error.unauthorized()};
                 } catch (const std::exception& error) {
                     spdlog::warn(
-                        "Cannot refresh notification access token: {}",
+                        "Cannot acquire Graph notification channel: {}",
                         error.what()
                     );
-                    return false;
+                    return std::unexpected{false};
                 }
             },
-        .proxy = config.proxy,
-    };
+            .refresh_token =
+                [&graph] {
+                    try {
+                        graph.refresh_access_token();
+                        return true;
+                    } catch (const std::exception& error) {
+                        spdlog::warn(
+                            "Cannot refresh notification access token: {}",
+                            error.what()
+                        );
+                        return false;
+                    }
+                },
+            .proxy = config.proxy,
+            .request_timeout = config.monitor_websocket_request_timeout,
+            .connect_timeout = config.monitor_websocket_connect_timeout,
+            .initial_backoff = config.monitor_websocket_initial_backoff,
+            .maximum_backoff = config.monitor_websocket_maximum_backoff,
+        };
+    }
     return std::make_unique<monitor::FileMonitor>(
         std::in_place_type<monitor::Monitor>,
         config.sync_data_directory,

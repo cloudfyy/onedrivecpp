@@ -28,14 +28,7 @@ namespace onedrive::monitor::detail {
 namespace {
 
 using namespace std::chrono_literals;
-
-void require_curl(CURLcode result, std::string_view operation) {
-    if (result != CURLE_OK) {
-        throw std::runtime_error(
-            std::string{operation} + ": " + ::curl_easy_strerror(result)
-        );
-    }
-}
+using http::detail::throw_if_curl_error;
 
 int stop_requested(
     void* context, curl_off_t, curl_off_t, curl_off_t, curl_off_t
@@ -46,7 +39,7 @@ int stop_requested(
 
 void send_text(CURL* curl, std::string_view text) {
     std::size_t sent = 0;
-    require_curl(
+    throw_if_curl_error(
         ::curl_ws_send(curl, text.data(), text.size(), &sent, 0, CURLWS_TEXT),
         "cannot send Socket.IO frame"
     );
@@ -68,7 +61,7 @@ std::optional<std::string> receive_text(CURL* curl) {
             return message.empty() ? std::nullopt
                                    : std::optional{std::move(message)};
         }
-        require_curl(result, "cannot receive Socket.IO frame");
+        throw_if_curl_error(result, "cannot receive Socket.IO frame");
         if (frame == nullptr) {
             throw std::runtime_error("Socket.IO frame metadata is missing");
         }
@@ -173,9 +166,17 @@ socket_io_heartbeat_timeout(std::string_view frame) {
 
 class SocketIoTransport::Implementation final {
 public:
-    explicit Implementation(http::ProxyOptions proxy)
+    Implementation(
+        http::ProxyOptions proxy, std::chrono::milliseconds connect_timeout
+    )
         : proxy_{std::move(proxy)},
+          connect_timeout_{connect_timeout},
           descriptor_{::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC)} {
+        if (connect_timeout_ <= std::chrono::milliseconds::zero()) {
+            throw std::invalid_argument(
+                "WebSocket connect timeout must be positive"
+            );
+        }
         if (descriptor_.get() < 0) {
             throw std::system_error{
                 errno,
@@ -242,31 +243,35 @@ private:
     void configure(
         CURL* curl, const std::string& url, const std::stop_token& stop_token
     ) const {
-        require_curl(
+        throw_if_curl_error(
             ::curl_easy_setopt(curl, CURLOPT_URL, url.c_str()),
             "cannot configure WebSocket URL"
         );
-        require_curl(
+        throw_if_curl_error(
             ::curl_easy_setopt(curl, CURLOPT_CONNECT_ONLY, 2L),
             "cannot enable WebSocket mode"
         );
-        require_curl(
-            ::curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L),
+        throw_if_curl_error(
+            ::curl_easy_setopt(
+                curl,
+                CURLOPT_CONNECTTIMEOUT_MS,
+                static_cast<long>(connect_timeout_.count())
+            ),
             "cannot configure WebSocket connect timeout"
         );
-        require_curl(
+        throw_if_curl_error(
             ::curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L),
             "cannot configure WebSocket signal handling"
         );
-        require_curl(
+        throw_if_curl_error(
             ::curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L),
             "cannot enable WebSocket cancellation"
         );
-        require_curl(
+        throw_if_curl_error(
             ::curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, &stop_requested),
             "cannot configure WebSocket cancellation callback"
         );
-        require_curl(
+        throw_if_curl_error(
             ::curl_easy_setopt(
                 curl,
                 CURLOPT_XFERINFODATA,
@@ -275,19 +280,19 @@ private:
             "cannot configure WebSocket cancellation state"
         );
         if (proxy_.url) {
-            require_curl(
+            throw_if_curl_error(
                 ::curl_easy_setopt(curl, CURLOPT_PROXY, proxy_.url->c_str()),
                 "cannot configure WebSocket proxy"
             );
         }
         if (no_proxy_) {
-            require_curl(
+            throw_if_curl_error(
                 ::curl_easy_setopt(curl, CURLOPT_NOPROXY, no_proxy_->c_str()),
                 "cannot configure WebSocket proxy bypass"
             );
         }
         if (proxy_.username) {
-            require_curl(
+            throw_if_curl_error(
                 ::curl_easy_setopt(
                     curl, CURLOPT_PROXYUSERNAME, proxy_.username->c_str()
                 ),
@@ -295,7 +300,7 @@ private:
             );
         }
         if (proxy_password_) {
-            require_curl(
+            throw_if_curl_error(
                 ::curl_easy_setopt(
                     curl, CURLOPT_PROXYPASSWORD, proxy_password_->c_str()
                 ),
@@ -303,7 +308,7 @@ private:
             );
         }
         if (proxy_.url) {
-            require_curl(
+            throw_if_curl_error(
                 ::curl_easy_setopt(
                     curl,
                     CURLOPT_PROXYAUTH,
@@ -313,7 +318,7 @@ private:
             );
         }
         if (proxy_.ca_file) {
-            require_curl(
+            throw_if_curl_error(
                 ::curl_easy_setopt(
                     curl, CURLOPT_PROXY_CAINFO, proxy_.ca_file->c_str()
                 ),
@@ -325,7 +330,7 @@ private:
     void
     run(const std::string& url, const std::stop_token& stop_token) noexcept {
         try {
-            require_curl(
+            throw_if_curl_error(
                 http::detail::initialize_curl(), "cannot initialize libcurl"
             );
             const http::detail::CurlHandleLease handle;
@@ -333,12 +338,12 @@ private:
                 throw std::runtime_error("cannot create WebSocket handle");
             }
             configure(handle.get(), url, stop_token);
-            require_curl(
+            throw_if_curl_error(
                 ::curl_easy_perform(handle.get()),
                 "cannot connect notification WebSocket"
             );
             curl_socket_t socket = CURL_SOCKET_BAD;
-            require_curl(
+            throw_if_curl_error(
                 ::curl_easy_getinfo(
                     handle.get(), CURLINFO_ACTIVESOCKET, &socket
                 ),
@@ -420,6 +425,7 @@ private:
     }
 
     http::ProxyOptions proxy_;
+    std::chrono::milliseconds connect_timeout_;
     std::optional<std::string> proxy_password_;
     std::optional<std::string> no_proxy_;
     onedrive::util::UniqueFD descriptor_;
@@ -428,8 +434,12 @@ private:
     std::vector<SocketEvent> events_;
 };
 
-SocketIoTransport::SocketIoTransport(http::ProxyOptions proxy)
-    : implementation_{std::make_unique<Implementation>(std::move(proxy))} {
+SocketIoTransport::SocketIoTransport(
+    http::ProxyOptions proxy, std::chrono::milliseconds connect_timeout
+)
+    : implementation_{
+          std::make_unique<Implementation>(std::move(proxy), connect_timeout)
+      } {
 }
 
 SocketIoTransport::~SocketIoTransport() = default;

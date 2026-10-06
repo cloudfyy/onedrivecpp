@@ -283,7 +283,16 @@ void load_monitor_options(Config& config, const toml::table& root) {
     if (const auto* monitor = optional_table(root, "monitor", "monitor")) {
         validate_keys(
             *monitor,
-            {"poll_interval_seconds", "settle_delay_milliseconds"},
+            {
+                "poll_interval_seconds",
+                "settle_delay_milliseconds",
+                "websocket_enabled",
+                "websocket_request_timeout_seconds",
+                "websocket_connect_timeout_seconds",
+                "websocket_renewal_lead_seconds",
+                "websocket_initial_backoff_seconds",
+                "websocket_maximum_backoff_seconds",
+            },
             "monitor"
         );
         if (monitor->contains("poll_interval_seconds")) {
@@ -312,6 +321,72 @@ void load_monitor_options(Config& config, const toml::table& root) {
                 );
             }
             config.monitor_settle_delay = delay;
+        }
+        if (const auto enabled = optional_value<bool>(
+                *monitor,
+                "websocket_enabled",
+                "monitor.websocket_enabled",
+                "a boolean"
+            )) {
+            config.monitor_websocket_enabled = *enabled;
+        }
+        const auto load_websocket_duration =
+            [&](std::string_view key,
+                std::chrono::seconds& destination,
+                std::chrono::seconds minimum,
+                std::chrono::seconds maximum) {
+                if (!monitor->contains(key)) {
+                    return;
+                }
+                const auto value = duration_value<std::chrono::seconds>(
+                    *monitor,
+                    key,
+                    "monitor." + std::string{key}
+                );
+                if (value < minimum || value > maximum) {
+                    throw std::runtime_error(
+                        "monitor." + std::string{key} +
+                        " is outside the supported range"
+                    );
+                }
+                destination = value;
+            };
+        load_websocket_duration(
+            "websocket_request_timeout_seconds",
+            config.monitor_websocket_request_timeout,
+            std::chrono::seconds{1},
+            std::chrono::minutes{5}
+        );
+        load_websocket_duration(
+            "websocket_connect_timeout_seconds",
+            config.monitor_websocket_connect_timeout,
+            std::chrono::seconds{1},
+            std::chrono::minutes{5}
+        );
+        load_websocket_duration(
+            "websocket_renewal_lead_seconds",
+            config.monitor_websocket_renewal_lead,
+            std::chrono::seconds::zero(),
+            std::chrono::hours{1}
+        );
+        load_websocket_duration(
+            "websocket_initial_backoff_seconds",
+            config.monitor_websocket_initial_backoff,
+            std::chrono::seconds{1},
+            std::chrono::hours{1}
+        );
+        load_websocket_duration(
+            "websocket_maximum_backoff_seconds",
+            config.monitor_websocket_maximum_backoff,
+            std::chrono::seconds{1},
+            std::chrono::hours{24}
+        );
+        if (config.monitor_websocket_maximum_backoff <
+            config.monitor_websocket_initial_backoff) {
+            throw std::runtime_error(
+                "monitor.websocket_maximum_backoff_seconds must not be less "
+                "than monitor.websocket_initial_backoff_seconds"
+            );
         }
     }
 

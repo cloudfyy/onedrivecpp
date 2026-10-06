@@ -89,6 +89,12 @@ maximum_rate_bytes_per_second = 0
 maximum_total_rate_bytes_per_second = 0
 
 [monitor]
+websocket_enabled = true
+websocket_request_timeout_seconds = 60
+websocket_connect_timeout_seconds = 10
+websocket_renewal_lead_seconds = 120
+websocket_initial_backoff_seconds = 1
+websocket_maximum_backoff_seconds = 300
 poll_interval_seconds = 300
 settle_delay_milliseconds = 1000
 ```
@@ -136,6 +142,11 @@ Graph 轮询周期到期。本地事件突发会按
 仍通过权威 Delta 查询收敛。新建或移入的目录树会被递归监听；inotify 队列溢出时
 会重建全部 watch 并安排完整同步。
 `SIGINT` 和 `SIGTERM` 会唤醒阻塞等待，并在当前同步结束后安全退出。
+设置 `monitor.websocket_enabled = false` 可禁用 Graph Socket.IO/WSS 通知；
+本地 inotify 事件和 Graph 定时轮询仍保持启用。request/connect timeout 分别限制
+channel 获取和 WSS 握手时间，renewal lead 控制提前续期时间，initial/maximum
+backoff 限制指数退避范围。Engine.IO heartbeat 时间由服务器协商，因此不提供
+本地配置。
 Monitor 调度器使用显式的单线程运行时状态机，状态包括 starting、idle、本地事件
 settling、synchronizing 和 stopped。本地事件突发会重置 settle deadline，队列
 溢出会升级待处理原因，并且待完成的本地 settle 优先于已到期的 Graph poll。

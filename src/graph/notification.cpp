@@ -29,8 +29,8 @@ NotificationChannel MicrosoftGraphClient::notification_channel() const {
                     "Authorization: Bearer " + access_token(),
                 },
             .body = {},
-            .connect_timeout = std::chrono::seconds{30},
-            .operation_timeout = std::chrono::seconds{60},
+            .connect_timeout = options_.notification_request_timeout,
+            .operation_timeout = options_.notification_request_timeout,
             .maximum_response_size = std::size_t{1024} * 1024U,
             .stop_token = {},
         }

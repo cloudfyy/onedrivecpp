@@ -99,6 +99,12 @@ maximum_rate_bytes_per_second = 0
 maximum_total_rate_bytes_per_second = 0
 
 [monitor]
+websocket_enabled = true
+websocket_request_timeout_seconds = 60
+websocket_connect_timeout_seconds = 10
+websocket_renewal_lead_seconds = 120
+websocket_initial_backoff_seconds = 1
+websocket_maximum_backoff_seconds = 300
 poll_interval_seconds = 300
 settle_delay_milliseconds = 1000
 ```
@@ -158,6 +164,13 @@ directory trees are watched recursively; an inotify queue overflow rebuilds
 every watch and schedules a complete synchronization. `SIGINT` and `SIGTERM`
 wake the blocking wait and stop cleanly after the active synchronization
 finishes.
+Set `monitor.websocket_enabled = false` to disable Graph Socket.IO/WSS
+notifications; local inotify events and periodic Graph polling remain active.
+The request and connect timeouts bound channel acquisition and the WSS
+handshake. The renewal lead refreshes a channel before expiry, while the
+initial and maximum backoff values bound exponential retries. Engine.IO
+heartbeat timing is negotiated by the server and is intentionally not
+configurable.
 The monitor scheduler is an explicit single-threaded runtime state machine with
 starting, idle, local-settling, synchronizing, and stopped states. Local bursts
 reset the settle deadline, queue overflow upgrades the pending reason, and a

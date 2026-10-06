@@ -424,14 +424,17 @@ int Monitor::run_loop(
         detail::NotificationStoppedState{};
     if (notifications_) {
         notification_socket =
-            std::make_unique<detail::SocketIoTransport>(notifications_.proxy);
+            std::make_unique<detail::SocketIoTransport>(
+                notifications_.proxy,
+                notifications_.connect_timeout
+            );
         notification_state = detail::NotificationDormantState{};
     }
     const detail::NotificationTiming notification_timing{
-        .request_timeout = std::chrono::seconds{60},
-        .connect_timeout = std::chrono::seconds{15},
-        .initial_backoff = std::chrono::seconds{1},
-        .maximum_backoff = std::chrono::minutes{5},
+        .request_timeout = notifications_.request_timeout,
+        .connect_timeout = notifications_.connect_timeout,
+        .initial_backoff = notifications_.initial_backoff,
+        .maximum_backoff = notifications_.maximum_backoff,
     };
     bool notification_sync_requested = false;
     const auto advance_notification =

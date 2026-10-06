@@ -341,6 +341,35 @@ int test_valid() {
         std::ofstream output{path};
         output << "config_version = 2\n"
                << "[monitor]\n"
+               << "websocket_connect_timeout_seconds = 0\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "zero WebSocket connect timeout was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error&) {
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[monitor]\n"
+               << "websocket_initial_backoff_seconds = 30\n"
+               << "websocket_maximum_backoff_seconds = 10\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "inverted WebSocket backoff range was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error&) {
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[monitor]\n"
                << "unknown = true\n";
     }
     try {

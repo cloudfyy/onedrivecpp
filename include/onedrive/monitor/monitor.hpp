@@ -29,6 +29,10 @@ struct NotificationCallbacks {
     std::function<NotificationChannelResult()> acquire_channel;
     std::function<bool()> refresh_token;
     http::ProxyOptions proxy;
+    std::chrono::milliseconds request_timeout{std::chrono::seconds{60}};
+    std::chrono::milliseconds connect_timeout{std::chrono::seconds{10}};
+    std::chrono::milliseconds initial_backoff{std::chrono::seconds{1}};
+    std::chrono::milliseconds maximum_backoff{std::chrono::minutes{5}};
 
     [[nodiscard]] explicit operator bool() const noexcept {
         return acquire_channel && refresh_token;

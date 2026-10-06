@@ -583,13 +583,22 @@ int Application::run(int argc, char* argv[]) {
             console.message(
                 cli::MessageKind::information,
                 "monitor_status",
-                std::format(
-                    "Local changes settle for {} milliseconds; remote "
-                    "WebSocket notifications trigger Delta synchronization, "
-                    "with Graph polling every {} seconds as fallback.",
-                    config.monitor_settle_delay.count(),
-                    config.monitor_poll_interval.count()
-                )
+                config.monitor_websocket_enabled ?
+                    std::format(
+                        "Local changes settle for {} milliseconds; remote "
+                        "WebSocket notifications trigger Delta "
+                        "synchronization, with Graph polling every {} seconds "
+                        "as fallback.",
+                        config.monitor_settle_delay.count(),
+                        config.monitor_poll_interval.count()
+                    ) :
+                    std::format(
+                        "Local changes settle for {} milliseconds; remote "
+                        "WebSocket notifications are disabled, and Graph is "
+                        "polled every {} seconds.",
+                        config.monitor_settle_delay.count(),
+                        config.monitor_poll_interval.count()
+                    )
             );
             return runtime_factory_
                 ->create_monitor(config, std::move(synchronize), *graph)

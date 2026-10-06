@@ -24,7 +24,10 @@ socket_io_heartbeat_timeout(std::string_view frame);
 
 class SocketIoTransport final {
 public:
-    explicit SocketIoTransport(http::ProxyOptions proxy);
+    SocketIoTransport(
+        http::ProxyOptions proxy,
+        std::chrono::milliseconds connect_timeout
+    );
     ~SocketIoTransport();
     SocketIoTransport(const SocketIoTransport&) = delete;
     SocketIoTransport& operator=(const SocketIoTransport&) = delete;

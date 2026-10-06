@@ -52,6 +52,12 @@ int test_base() {
                << "[monitor]\n"
                << "poll_interval_seconds = 45\n"
                << "settle_delay_milliseconds = 250\n"
+               << "websocket_enabled = false\n"
+               << "websocket_request_timeout_seconds = 55\n"
+               << "websocket_connect_timeout_seconds = 7\n"
+               << "websocket_renewal_lead_seconds = 90\n"
+               << "websocket_initial_backoff_seconds = 3\n"
+               << "websocket_maximum_backoff_seconds = 30\n"
                << "[state]\n"
                << "directory = \"/tmp/onedrive-state\"\n"
                << "[auth]\n"
@@ -93,6 +99,14 @@ int test_base() {
         config.graph_maximum_throttle_delay != std::chrono::seconds{90} ||
         config.monitor_poll_interval != std::chrono::seconds{45} ||
         config.monitor_settle_delay != std::chrono::milliseconds{250} ||
+        config.monitor_websocket_enabled ||
+        config.monitor_websocket_request_timeout != std::chrono::seconds{55} ||
+        config.monitor_websocket_connect_timeout != std::chrono::seconds{7} ||
+        config.monitor_websocket_renewal_lead != std::chrono::seconds{90} ||
+        config.monitor_websocket_initial_backoff != std::chrono::seconds{3} ||
+        config.monitor_websocket_maximum_backoff != std::chrono::seconds{30} ||
+        graph_options.notification_request_timeout !=
+            std::chrono::seconds{55} ||
         config.transfer_order !=
             onedrive::config::TransferOrder::size_descending ||
         config.download_concurrency != 6 ||
@@ -184,14 +198,22 @@ int test_base() {
         ) ||
         defaults.sync_permissions !=
             onedrive::config::SyncPermissionsMode::private_access ||
-        defaults.sync_data_mount_point ||
-        !defaults.upload ||
+        defaults.sync_data_mount_point || !defaults.upload ||
         defaults.local_conflict !=
             onedrive::config::LocalConflictPolicy::block ||
         defaults.maximum_remote_deletions != 1000 ||
         defaults.force_large_delete ||
         defaults.monitor_poll_interval != std::chrono::seconds{300} ||
         defaults.monitor_settle_delay != std::chrono::milliseconds{1000} ||
+        !defaults.monitor_websocket_enabled ||
+        defaults.monitor_websocket_request_timeout !=
+            std::chrono::seconds{60} ||
+        defaults.monitor_websocket_connect_timeout !=
+            std::chrono::seconds{10} ||
+        defaults.monitor_websocket_renewal_lead != std::chrono::seconds{120} ||
+        defaults.monitor_websocket_initial_backoff != std::chrono::seconds{1} ||
+        defaults.monitor_websocket_maximum_backoff !=
+            std::chrono::seconds{300} ||
         defaults.sync_root_files ||
         defaults.transfer_order !=
             onedrive::config::TransferOrder::default_order ||

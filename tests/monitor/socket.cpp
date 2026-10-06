@@ -91,7 +91,10 @@ int test_event_parsing() {
 }
 
 int test_transport_failure_event() {
-    onedrive::monitor::detail::SocketIoTransport transport{{}};
+    onedrive::monitor::detail::SocketIoTransport transport{
+        {},
+        std::chrono::seconds{1},
+    };
     transport.connect("https://127.0.0.1:1/notifications?token=test");
     pollfd descriptor{
         .fd = transport.descriptor(),

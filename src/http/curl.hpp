@@ -5,6 +5,9 @@
 #include <curl/curl.h>
 
 #include <memory>
+#include <stdexcept>
+#include <string>
+#include <string_view>
 #include <utility>
 
 namespace onedrive::http::detail {
@@ -37,6 +40,14 @@ private:
 [[nodiscard]] inline CURLcode initialize_curl() {
     static const CurlRuntime runtime;
     return runtime.result();
+}
+
+inline void throw_if_curl_error(CURLcode result, std::string_view operation) {
+    if (result != CURLE_OK) {
+        throw std::runtime_error(
+            std::string{operation} + ": " + ::curl_easy_strerror(result)
+        );
+    }
 }
 
 [[nodiscard]] inline long curl_proxy_auth(ProxyAuth auth) noexcept {

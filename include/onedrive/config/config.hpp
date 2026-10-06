@@ -60,6 +60,12 @@ struct Config {
     std::chrono::seconds graph_maximum_throttle_delay{300};
     std::chrono::seconds monitor_poll_interval{300};
     std::chrono::milliseconds monitor_settle_delay{1000};
+    bool monitor_websocket_enabled{true};
+    std::chrono::seconds monitor_websocket_request_timeout{60};
+    std::chrono::seconds monitor_websocket_connect_timeout{10};
+    std::chrono::seconds monitor_websocket_renewal_lead{120};
+    std::chrono::seconds monitor_websocket_initial_backoff{1};
+    std::chrono::seconds monitor_websocket_maximum_backoff{300};
     std::size_t download_concurrency{4};
     std::size_t download_maximum_retries{4};
     std::uint64_t download_chunk_threshold_bytes{
