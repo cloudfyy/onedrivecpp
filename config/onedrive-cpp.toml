@@ -31,7 +31,7 @@ maximum_retries = 4
 initial_delay_seconds = 1
 maximum_delay_seconds = 300
 
-# Optional proxy for authentication, Graph API, and file downloads.
+# Optional proxy for authentication, Graph API, and file transfers.
 # By default this table is absent, so libcurl may still use HTTP_PROXY,
 # HTTPS_PROXY, ALL_PROXY, and their lowercase variants from the environment.
 # To guarantee direct connections, omit this table and unset those variables.
@@ -112,7 +112,7 @@ concurrency = 1
 chunk_size_bytes = 10485760
 # Zero disables the per-request send-rate limit.
 maximum_rate_bytes_per_second = 0
-# Shared upload ceiling. Uploads currently run sequentially.
+# Shared ceiling across all concurrent uploads. Zero disables the total limit.
 maximum_total_rate_bytes_per_second = 0
 
 [monitor]

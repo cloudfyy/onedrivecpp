@@ -52,15 +52,9 @@ configure_file(
     generated/onedrive/version.hpp
     @ONLY
 )
-configure_file(
-    docs/onedrive-cpp.1.in
-    generated/onedrive-cpp.1
-    @ONLY
-)
 set(
     ONEDRIVE_SYSTEM_CONFIG_DIR
     "/etc/onedrive-cpp"
     CACHE PATH
     "System-wide onedrive-cpp configuration directory"
 )
-

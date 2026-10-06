@@ -2,89 +2,90 @@
 
 English | [简体中文](README.zh-CN.md)
 
-`onedrive-cpp` is a C++26 OneDrive synchronization client scaffold for
+`onedrive-cpp` is a C++26 OneDrive synchronization client for
 Ubuntu 24.04 LTS and later. Its separation of responsibilities is inspired by
 [abraunegg/onedrive](https://github.com/abraunegg/onedrive), but it does not
 copy the reference project's D implementation.
 
-> The current version provides a buildable architecture scaffold,
-> configuration loading, a CLI, Microsoft device-code authentication, an HTTP
-> transport layer, authenticated Microsoft Graph delta queries, SQLite remote
-> state and delta-link persistence, safe downloads and local uploads, dry-run support, a
-> systemd user service, and Debian packaging. Synchronization currently
-> creates remote directories, downloads added or changed remote files, and
-> safely removes unchanged local snapshots after remote deletion, uploads
-> new or modified local files and directories, and conditionally propagates
-> local deletions, moves, and renames. Conditional Graph operations and the
-> configured local-conflict policy preserve simultaneous local and remote
-> changes.
+## Features
+
+- OAuth 2.0 device-code authentication with secure per-account token and
+  profile state.
+- Incremental Microsoft Graph Delta synchronization with multiple account and
+  Drive isolation, selective-sync rules, and explicit single-file downloads.
+- Concurrent, resumable, integrity-checked downloads with atomic installation,
+  disk-space coordination, aggregate rate limiting, and local-conflict backup
+  or blocking policies.
+- Concurrent simple and upload-session transfers with durable snapshots,
+  checkpoints, recovery, per-file and aggregate rate limits, and conditional
+  Graph writes.
+- Bidirectional file and directory creation, modification, deletion, move, and
+  rename propagation, including dependency-cycle staging and configurable
+  large-deletion protection.
+- SQLite-backed crash recovery for downloads, uploads, local and remote moves,
+  remote deletions, and directory creation.
+- Long-running inotify monitoring with Graph polling, event coalescing,
+  overflow recovery, and clean signal handling.
+- Dry-run and structured JSON output, rotating logs, proxy support, shell
+  completion, a manual page, a hardened systemd user service, and Debian
+  packaging.
 
 ## Architecture
 
 ```mermaid
 flowchart TB
-    main["main<br/>composition root"] --> app["Application<br/>CLI and command orchestration"]
-    main --> runtime["RuntimeFactory<br/>Proxy 4 port"]
-    runtime -. implemented by .-> factory["ProductionRuntimeFactory"]
+    main["main<br/>composition root"] --> app["Application<br/>CLI, preflight, commands"]
+    app --> runtime["RuntimeFactory<br/>Proxy 4 ports"]
+    runtime -. implemented by .-> adapters["Production adapters"]
 
-    app --> preflight["RuntimePreflight<br/>configuration and path validation"]
-    app --> runtime
-    app --> auth["Authentication / logout"]
-    app --> monitor["Monitor command"]
+    app --> auth["Auth / logout / doctor"]
+    app --> monitor["Monitor state machine"]
     app --> engine["SyncEngine"]
 
-    factory --> http["CurlHttpClient"]
-    factory --> device_auth["DeviceAuthClient"]
-    factory --> tokens["FileTokenStore"]
-    factory --> graph_client["MicrosoftGraphClient"]
-    factory --> database["ItemDatabase"]
-    factory --> file_monitor["FileMonitor"]
-    factory --> metrics["Metrics"]
-
-    auth --> http
-    auth --> device_auth
-    auth --> tokens
-    monitor --> file_monitor
-
-    engine --> graph_port["GraphClient port"]
-    engine --> store_port["ItemStore port"]
-    engine --> metrics
-    graph_port -. implemented by .-> graph_client
-    store_port -. implemented by .-> database
-
-    subgraph sync_pipeline["Synchronization pipeline"]
-        plan["Delta query and SyncPlan"]
-        recovery["Pending-download recovery"]
-        workers["Concurrent download workers"]
-        commit["Integrity check and atomic commit"]
-        plan --> recovery --> workers --> commit
+    subgraph sync["Bidirectional synchronization"]
+        recover["Recover durable operations"]
+        delta["Graph Delta + remote plan"]
+        remote["Apply remote changes<br/>move, delete, mkdir, download"]
+        scan["Scan local snapshots"]
+        local["Apply local changes<br/>delete, move, mkdir, upload"]
+        recover --> delta --> remote --> scan --> local
     end
 
-    engine --> plan
-    graph_client --> http
-    graph_client --> device_auth
-    graph_client --> tokens
-    graph_client --> cloud[("Microsoft Graph / OneDrive")]
-    device_auth --> http
-    workers --> graph_port
-    workers --> store_port
-    workers --> filesystem[("Local filesystem")]
-    commit --> store_port
-    commit --> filesystem
-    database --> db_thread["Dedicated database thread"]
-    db_thread --> sqlite[("SQLite state")]
+    engine --> recover
+    monitor --> engine
+    remote --> leases["Per-item operation leases"]
+    local --> leases
+    remote --> transfers["Concurrent transfer workers<br/>space + rate coordination"]
+    local --> transfers
+
+    adapters --> graph["MicrosoftGraphClient"]
+    adapters --> http["CurlHttpClient"]
+    adapters --> store["ItemDatabase"]
+    adapters --> files["Filesystem + inotify"]
+    graph --> cloud[("Microsoft Graph / OneDrive")]
+    graph --> http
+    remote --> graph
+    local --> graph
+    remote --> files
+    local --> files
+    recover --> store
+    delta --> store
+    remote --> store
+    local --> store
+    store --> db_thread["Dedicated database thread"]
+    db_thread --> sqlite[("SQLite snapshots, cursors,<br/>journals, blocked items")]
 ```
 
 The application uses constructor injection and explicit port interfaces rather
 than a service locator. `main` is the only composition root. The production
 runtime factory creates the libcurl, file-token, SQLite, monitor, Graph, and
 metrics adapters after configuration is loaded; tests inject in-memory fakes.
-This keeps business orchestration independent of infrastructure and leaves a
-stable metrics port for a future Linux metrics exporter.
+This keeps business orchestration and instrumentation independent of
+infrastructure.
 Runtime ports use Proxy 4 type erasure, so adapters satisfy the required
 operations without inheriting from project-owned abstract base classes.
 The SQLite ItemStore owns a dedicated database thread. Calls from download,
-monitor, and future upload workers are queued and completed synchronously, so
+monitor, and upload workers are queued and completed synchronously, so
 one thread owns the SQLite connection and transaction order while errors are
 returned to the caller. SQLite is the authoritative state source; the adapter
 does not maintain duplicate mutable item caches.
@@ -127,13 +128,16 @@ The directories correspond to the responsibilities of
 `main/config/curlEngine/onedrive/sync/itemdb/monitor` in the reference project:
 
 - `src/app`: CLI parsing, application lifecycle, and runtime dependency factory.
+- `src/account`: Stable account and Drive identity, metadata, and paths.
 - `src/auth`: Device-code OAuth, token refresh, and secure token persistence.
+- `src/cli`: Text and JSON user output.
 - `src/config`: Configuration file loading and validation.
 - `src/graph`: Microsoft Graph API boundary.
 - `src/http`: Typed libcurl HTTP transport.
+- `src/logging`: Runtime diagnostic logging.
 - `src/storage`: Item-store port and SQLite-persisted remote ID, ETag, and local path adapter.
-- `src/sync`: Difference calculation and synchronization orchestration.
-- `src/monitor`: Long-running monitor mode entry point.
+- `src/sync`: Planning, download, upload, filesystem, filtering, and recovery operation families.
+- `src/monitor`: Long-running monitor state machine and inotify adapter.
 - `src/metrics`: Metrics port and no-op production adapter.
 - `packaging/systemd`: systemd user service.
 - `debian`: Native Ubuntu/Debian package metadata.
@@ -432,7 +436,7 @@ The generated package is placed in the current directory. CMake reads
 is named:
 
 ```text
-onedrive-cpp_0.5.0-1~ubuntu24.04_amd64.deb
+onedrive-cpp_0.8.0-1~ubuntu24.04_amd64.deb
 ```
 
 For a cross-distribution build environment, override the detected suffix
@@ -467,12 +471,12 @@ tests. The generated `.deb` is placed in the parent directory of the project,
 for example:
 
 ```text
-../onedrive-cpp_0.5.0-1~ubuntu24.04_amd64.deb
+../onedrive-cpp_0.8.0-1~ubuntu24.04_amd64.deb
 ```
 
 The Debian changelog carries the native build distribution suffix. When
 adding Ubuntu 26.04 support, build from an Ubuntu 26.04 environment with a
-`0.5.0-1~ubuntu26.04` changelog version.
+`0.8.0-1~ubuntu26.04` changelog version.
 
 Install and verify the package:
 
@@ -847,8 +851,8 @@ concurrent.
 queue. Supported values are `default`, `size_asc`, `size_dsc`, `name_asc`, and
 `name_dsc`. The default preserves synchronization-plan order. Equal sort keys
 also preserve plan order. With concurrent workers this controls start order,
-not completion order. The setting currently applies to downloads and is shared
-so future upload support can use the same policy.
+not completion order. The setting applies to the download queue; upload
+dependencies retain their parent-first operation order.
 
 `download.chunk_threshold_bytes` sets the large-file threshold in bytes. Files
 larger than this value are downloaded sequentially with HTTP byte-range
@@ -1184,8 +1188,8 @@ onedrive-cpp reset-state --clear-all
 
 The command requires the configured Drive reference (for example, `me`) to be
 typed exactly before it removes item snapshots, the Delta cursor,
-pending-download, pending-upload, pending-move recovery records, selectively
-retained upload suppressions, and blocked items. If no configured reference is
+pending-download, partial-download, pending-upload, pending-move recovery
+records, selectively retained upload suppressions, and blocked items. If no configured reference is
 available, it requires the raw Drive ID instead. Local files and other Drives
 remain untouched. Because local
 snapshots are no longer available, the next sync may report local modification
@@ -1427,11 +1431,6 @@ The user service runs the long-lived monitor. It performs an initial sync,
 watches the local Drive tree with inotify, polls Graph every configured
 interval, and restarts after unexpected failures. `systemctl --user stop`
 delivers `SIGTERM` for a clean shutdown.
-
-## Suggested Next Steps
-
-1. Expand integration tests for monitor, Graph, network, disk, permission,
-   crash-recovery, and file-system boundaries.
 
 ## License
 

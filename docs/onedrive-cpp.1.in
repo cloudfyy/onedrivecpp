@@ -1,4 +1,4 @@
-.TH ONEDRIVE-CPP 1 "October 2026" "onedrive-cpp @PROJECT_VERSION@" "User Commands"
+.TH ONEDRIVE-CPP 1 "6 October 2026" "onedrive-cpp @ONEDRIVE_PACKAGE_VERSION@" "User Commands"
 .SH NAME
 onedrive-cpp \- modern C++ OneDrive synchronization client
 .SH SYNOPSIS
@@ -32,11 +32,14 @@ onedrive-cpp \- modern C++ OneDrive synchronization client
 is an independent, open-source client intended to authenticate with Microsoft
 and synchronize files through Microsoft Graph and OneDrive.
 .PP
-The current release includes configuration loading, device-code
-authentication, authenticated Microsoft Graph delta queries, local state and
-delta-link storage, safe downloads, local uploads, remote-deletion handling,
-dry-run support, logging, inotify monitoring, and packaging integration.
-Local-deletion propagation is not implemented.
+The current release provides bidirectional Microsoft Graph synchronization:
+Delta queries and explicit downloads apply remote creations, changes, moves,
+and deletions locally, while local scanning uploads new and modified files,
+creates directories, and conditionally propagates deletions, moves, and
+renames. SQLite journals provide crash recovery for transfer and metadata
+operations. The client also includes device-code authentication, selective
+synchronization, dry-run and JSON output, inotify monitoring, proxy support,
+rate limiting, shell completion, and packaging integration.
 .SH COMMANDS
 .TP
 .B auth
@@ -60,8 +63,8 @@ for structured diagnostics.
 .B reset-state
 Reset the saved delta link for the configured drive. This preserves
 authentication, configuration, local files, item snapshots, pending-download,
-pending-upload, pending-move recovery records, selectively retained upload
-suppressions, blocked-item records, and state for other drives. The next
+partial-download, pending-upload, pending-move recovery records, selectively
+retained upload suppressions, blocked-item records, and state for other drives. The next
 .B sync
 recovers pending downloads and performs a full initial delta query for the
 configured drive. The complete remote inventory replaces old item metadata;
@@ -69,9 +72,9 @@ items that still conflict are recorded as blocked.
 .PP
 With
 .BR \-\-clear\-all ,
-remove item snapshots, the delta link, pending-download, pending-upload, and
-pending-move recovery records, selectively retained upload suppressions, and
-blocked items for the configured drive. The command requires the configured
+remove item snapshots, the delta link, pending-download, partial-download,
+pending-upload, and pending-move recovery records, selectively retained upload
+suppressions, and blocked items for the configured drive. The command requires the configured
 drive ID as interactive confirmation. Local files and other drives remain
 untouched, but the next sync may report local modification conflicts. For automation,
 .B \-\-yes
@@ -106,8 +109,10 @@ creating the item database or changing downloaded files.
 .B sync
 Refresh the OAuth access token and retrieve recursive drive changes using the
 Microsoft Graph delta API. Successful non-dry-run queries atomically persist
-remote metadata and the final delta link after creating directories and safely
-downloading added or changed files. Downloads use same-directory temporary
+remote metadata and the final delta link after applying remote changes and
+then scanning for local changes to upload. New and modified local files,
+directories, deletions, moves, and renames use conditional Graph operations
+and durable recovery journals. Downloads use same-directory temporary
 files, size validation, flushing, and atomic replacement. Existing local files
 that cannot be proven unchanged are persisted as blocked items instead of being
 overwritten. Invalid names, local path conflicts, files marked with the
@@ -140,7 +145,6 @@ by selective synchronization retain their local files. A schema-v16 upload
 suppression binds an included-to-excluded retained file to its device/inode,
 preventing the same object from being uploaded again at its old path. Missing
 or identity-replaced objects release stale suppressions during upload scanning.
-Use
 .PP
 Delta items that retain their remote ID while changing path are renamed or
 moved locally without replacing an existing destination. Directory moves
@@ -395,6 +399,12 @@ and
 scopes must be configured explicitly and produce a warning during
 authentication.
 .TP
+.B graph.endpoint
+Microsoft Graph API endpoint. The default is
+.IR https://graph.microsoft.com/v1.0 .
+Sovereign-cloud deployments must configure matching Graph and authentication
+endpoints.
+.TP
 .B graph.throttle.maximum_retries
 Maximum number of retries for a retryable Microsoft Graph API response. The
 default is
@@ -413,7 +423,7 @@ seconds. This value must be greater than or equal to
 .BR graph.throttle.initial_delay_seconds .
 .TP
 .B proxy.url
-Optional proxy URL used for authentication, Microsoft Graph, and file-download
+Optional proxy URL used for authentication, Microsoft Graph, and file-transfer
 requests. Supported schemes are
 .BR http ,
 .BR https ,
@@ -476,6 +486,12 @@ configuration file directory. This setting is rejected for non-HTTPS proxy
 URLs. The default is unset, so HTTPS proxies use the system CA trust store.
 Proxy certificate and host verification remain enabled.
 .TP
+.B download.concurrency
+Maximum number of files downloaded concurrently. The default is
+.B 4
+and the accepted range is 1 through 16. Downloads targeting the same
+normalized local path remain serialized.
+.TP
 .B download.maximum_retries
 Maximum number of retries for a file-content request after a transient HTTP or
 transport failure. The default is
@@ -507,21 +523,21 @@ or
 .BR name_dsc .
 The default preserves synchronization-plan order, and equal sort keys remain
 stable. With concurrent workers this controls start order rather than
-completion order. The setting currently applies to downloads and is shared
-with future upload support.
+completion order. The setting applies to the download queue; upload
+dependencies retain their parent-first operation order.
 .TP
 .B transfer.connect_timeout_seconds
-Connection timeout for each file download request. The default is
+Connection timeout for each file-transfer request. The default is
 .B 30
 seconds and the value must be greater than zero.
 .TP
 .B transfer.operation_timeout_seconds
-Maximum duration of each file download request. The default is
+Maximum duration of each file-transfer request. The default is
 .B 3600
 seconds and the value must be greater than zero.
 .TP
 .B transfer.stall_timeout_seconds
-Abort a download that remains below the configured minimum rate for this many
+Abort a transfer that remains below the configured minimum rate for this many
 seconds. The default is
 .BR 60 ;
 zero disables stall detection.
@@ -576,7 +592,7 @@ The default is 1000 milliseconds and the maximum is 60000. Zero triggers
 immediately after a completed actionable event.
 .TP
 .B transfer.http_version
-HTTP version preference for file downloads:
+HTTP version preference for file transfers:
 .BR auto ,
 .BR 1.1 ,
 or
@@ -585,7 +601,7 @@ The default is
 .BR auto .
 .TP
 .B transfer.ip_version
-IP address family for file-content requests:
+IP address family for file-transfer requests:
 .BR auto ,
 .BR 4 ,
 or
@@ -738,12 +754,12 @@ Durable same-directory local-conflict copies created when
 is
 .BR backup .
 .TP
-.I ~/.local/state/onedrive-cpp/refresh_token
-Default locally stored OAuth refresh token. The file is created with
-owner-only permissions.
+.I ~/.local/state/onedrive-cpp/accounts/<display-name>--<user-id-hash>/refresh_token
+Per-account OAuth refresh token. The file is created with owner-only
+permissions.
 .TP
-.I ~/.local/state/onedrive-cpp/items.sqlite3
-Default SQLite synchronization-state database.
+.I ~/.local/state/onedrive-cpp/accounts/<display-name>--<user-id-hash>/drives/<drive-name>--<drive-id-hash>/items.sqlite3
+Per-account, per-Drive SQLite synchronization-state database.
 .TP
 .I /usr/lib/systemd/user/onedrive-cpp.service
 systemd user service installed by the package.
@@ -772,7 +788,8 @@ A runtime, configuration, authentication, storage, or synchronization error
 occurred.
 .TP
 .B 2
-The command line was invalid.
+The command line was invalid, or synchronization safely completed with one or
+more blocked items.
 .SH EXAMPLES
 Authorize a Microsoft account:
 .PP

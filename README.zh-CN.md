@@ -3,81 +3,79 @@
 [English](README.md) | 简体中文
 
 `onedrive-cpp` 是一个面向 Ubuntu 24.04 LTS 及以上版本的 C++26 OneDrive
-同步客户端项目骨架。它参考
+同步客户端。它参考
 [abraunegg/onedrive](https://github.com/abraunegg/onedrive) 的职责拆分方式，
 但不复制其 D 语言实现。
 
-> 当前版本提供可编译的架构骨架、配置加载、CLI、Microsoft 设备代码认证、
-> HTTP 传输层、经过认证的 Microsoft Graph Delta 查询、SQLite 远端状态和
-> deltaLink 持久化、安全下载与本地上传、dry-run、systemd 用户服务和 Debian
-> 打包。当前同步会创建远端目录、下载新增或修改的远端文件，并在远端删除后
-> 安全移除未修改的本地快照，也会上传本地新增或修改的文件与目录，并有条件地
-> 传播本地删除、移动和重命名。条件 Graph 操作与已配置的本地冲突策略会保护
-> 同时发生的本地和远端变化。
+## 功能
+
+- OAuth 2.0 设备代码认证，以及安全隔离的账号 Token 和资料状态。
+- Microsoft Graph Delta 增量同步、多账号和多 Drive 隔离、选择性同步规则及
+  显式单文件下载。
+- 并发、可续传且带完整性校验的下载，支持原子安装、磁盘空间协调、总速率限制，
+  以及阻止或备份本地冲突。
+- 并发简单上传和 upload session，支持稳定快照、持久 checkpoint、崩溃恢复、
+  单文件及总速率限制和条件 Graph 写入。
+- 文件与目录的双向创建、修改、删除、移动和重命名传播，包括依赖环 staging 和
+  可配置的大批量远端删除保护。
+- 基于 SQLite journal 的下载、上传、本地与远端移动、远端删除和目录创建恢复。
+- inotify 长驻监控、Graph 轮询、事件合并、队列溢出恢复和干净信号退出。
+- dry-run、结构化 JSON 输出、轮转日志、代理、Shell 自动补全、手册页、加固的
+  systemd 用户服务和 Debian 打包。
 
 ## 架构
 
 ```mermaid
 flowchart TB
-    main["main<br/>唯一组合根"] --> app["Application<br/>CLI 与命令编排"]
-    main --> runtime["RuntimeFactory<br/>Proxy 4 端口"]
-    runtime -. 由其实现 .-> factory["ProductionRuntimeFactory"]
+    main["main<br/>唯一组合根"] --> app["Application<br/>CLI、预检与命令"]
+    app --> runtime["RuntimeFactory<br/>Proxy 4 端口"]
+    runtime -. 由其实现 .-> adapters["生产适配器"]
 
-    app --> preflight["RuntimePreflight<br/>配置与路径预检"]
-    app --> runtime
-    app --> auth["认证 / 登出"]
-    app --> monitor["监控命令"]
+    app --> auth["认证 / 登出 / 诊断"]
+    app --> monitor["Monitor 状态机"]
     app --> engine["SyncEngine"]
 
-    factory --> http["CurlHttpClient"]
-    factory --> device_auth["DeviceAuthClient"]
-    factory --> tokens["FileTokenStore"]
-    factory --> graph_client["MicrosoftGraphClient"]
-    factory --> database["ItemDatabase"]
-    factory --> file_monitor["FileMonitor"]
-    factory --> metrics["Metrics"]
-
-    auth --> http
-    auth --> device_auth
-    auth --> tokens
-    monitor --> file_monitor
-
-    engine --> graph_port["GraphClient 端口"]
-    engine --> store_port["ItemStore 端口"]
-    engine --> metrics
-    graph_port -. 由其实现 .-> graph_client
-    store_port -. 由其实现 .-> database
-
-    subgraph sync_pipeline["同步流水线"]
-        plan["Delta 查询与 SyncPlan"]
-        recovery["未完成下载恢复"]
-        workers["并发下载工作线程"]
-        commit["完整性校验与原子提交"]
-        plan --> recovery --> workers --> commit
+    subgraph sync["双向同步"]
+        recover["恢复持久操作"]
+        delta["Graph Delta 与远端计划"]
+        remote["应用远端变化<br/>移动、删除、建目录、下载"]
+        scan["扫描本地快照"]
+        local["应用本地变化<br/>删除、移动、建目录、上传"]
+        recover --> delta --> remote --> scan --> local
     end
 
-    engine --> plan
-    graph_client --> http
-    graph_client --> device_auth
-    graph_client --> tokens
-    graph_client --> cloud[("Microsoft Graph / OneDrive")]
-    device_auth --> http
-    workers --> graph_port
-    workers --> store_port
-    workers --> filesystem[("本地文件系统")]
-    commit --> store_port
-    commit --> filesystem
-    database --> db_thread["专用数据库线程"]
-    db_thread --> sqlite[("SQLite 状态库")]
+    engine --> recover
+    monitor --> engine
+    remote --> leases["按条目加锁的操作协调"]
+    local --> leases
+    remote --> transfers["并发传输 worker<br/>空间与速率协调"]
+    local --> transfers
+
+    adapters --> graph["MicrosoftGraphClient"]
+    adapters --> http["CurlHttpClient"]
+    adapters --> store["ItemDatabase"]
+    adapters --> files["文件系统与 inotify"]
+    graph --> cloud[("Microsoft Graph / OneDrive")]
+    graph --> http
+    remote --> graph
+    local --> graph
+    remote --> files
+    local --> files
+    recover --> store
+    delta --> store
+    remote --> store
+    local --> store
+    store --> db_thread["专用数据库线程"]
+    db_thread --> sqlite[("SQLite 快照、游标、<br/>journal 与 blocked item")]
 ```
 
 应用使用构造器注入和明确的端口接口，不使用 Service Locator。`main` 是唯一的
 composition root。生产 runtime factory 在配置加载后创建 libcurl、文件 token、
 SQLite、monitor、Graph 和 metrics 适配器；测试则注入内存 fake。这样业务编排
-不再依赖基础设施实现，并为后续 Linux metrics exporter 保留稳定端口。
+不再依赖基础设施实现，instrumentation 也通过稳定端口与编排解耦。
 运行时端口使用 Proxy 4 类型擦除，因此适配器只需满足所需操作，无需继承项目
 定义的抽象基类。
-SQLite ItemStore 拥有专用数据库线程。下载、监控和未来上传工作线程发起的调用
+SQLite ItemStore 拥有专用数据库线程。下载、监控和上传工作线程发起的调用
 都会排队并同步等待完成，因此 SQLite 连接和事务顺序始终由一个线程负责，错误
 则返回给调用方。SQLite 是状态的权威来源，适配器不再维护重复的可变条目缓存。
 下载和上传事务复用一个小型模板 Typestate 核心，用于隔离状态族并在合法阶段间
@@ -109,13 +107,16 @@ Graph 大文件上传会话也在同步层之外复用此核心。不存在或�
 职责相对应：
 
 - `src/app`：CLI 解析、应用生命周期和运行时依赖工厂。
+- `src/account`：稳定账号与 Drive 身份、元数据和路径。
 - `src/auth`：设备代码 OAuth、Token 刷新和安全持久化。
+- `src/cli`：文本和 JSON 用户输出。
 - `src/config`：配置文件加载和校验。
 - `src/graph`：Microsoft Graph API 访问边界。
 - `src/http`：强类型 libcurl HTTP 传输层。
+- `src/logging`：运行时诊断日志。
 - `src/storage`：ItemStore 端口，以及使用 SQLite 持久化远端 ID、ETag 与本地路径的适配器。
-- `src/sync`：差异计算和同步流程编排入口。
-- `src/monitor`：长驻监控模式入口。
+- `src/sync`：计划、下载、上传、文件系统、筛选和恢复操作族。
+- `src/monitor`：长驻监控状态机和 inotify 适配器。
 - `src/metrics`：Metrics 端口和无操作生产适配器。
 - `packaging/systemd`：systemd 用户服务。
 - `debian`：Ubuntu/Debian 原生包元数据。
@@ -379,7 +380,7 @@ cpack --config build/release/CPackConfig.cmake -G DEB
 `VERSION_ID`，因此 Ubuntu 24.04 amd64 构建命名为：
 
 ```text
-onedrive-cpp_0.5.0-1~ubuntu24.04_amd64.deb
+onedrive-cpp_0.8.0-1~ubuntu24.04_amd64.deb
 ```
 
 在跨发行版构建环境中，可在配置时显式覆盖检测结果：
@@ -412,11 +413,11 @@ dpkg-buildpackage --build=binary --no-sign
 目录的上一级，例如：
 
 ```text
-../onedrive-cpp_0.5.0-1~ubuntu24.04_amd64.deb
+../onedrive-cpp_0.8.0-1~ubuntu24.04_amd64.deb
 ```
 
 Debian changelog 保存原生构建发行版后缀。将来增加 Ubuntu 26.04 支持时，应在
-Ubuntu 26.04 环境中使用 `0.5.0-1~ubuntu26.04` changelog 版本构建。
+Ubuntu 26.04 环境中使用 `0.8.0-1~ubuntu26.04` changelog 版本构建。
 
 安装并检查：
 
@@ -743,7 +744,7 @@ ASCII 大小写不同的路径；无关目标仍可并发下载。
 `transfer.order` 控制文件传输进入 worker 队列的顺序。支持 `default`、
 `size_asc`、`size_dsc`、`name_asc` 和 `name_dsc`。默认保留同步计划顺序，
 排序键相同时也保持原顺序。并发执行时，它控制任务开始顺序而非完成顺序。
-该设置目前作用于下载，并放在共享传输配置中以供未来上传功能复用。
+该设置作用于下载队列；上传依赖继续使用父目录优先的操作顺序。
 
 `download.chunk_threshold_bytes` 设置大文件阈值（字节）。超过该值的文件会通过
 HTTP 字节范围请求顺序分片下载，并以该值作为单个分片的最大大小。默认值为
@@ -1020,7 +1021,7 @@ onedrive-cpp reset-state --clear-all
 ```
 
 命令要求准确输入当前配置的 Drive 引用（例如 `me`），确认后才会删除 item
-快照、Delta 游标、pending download、pending upload、pending move 恢复记录、
+快照、Delta 游标、pending download、partial download、pending upload、pending move 恢复记录、
 选择性保留副本的上传抑制以及 blocked item。没有可用的配置引用时，改为要求输入
 原始 Drive ID。本地文件和其他 Drive 的状态不会被修改。由于本地快照已被清除，下一次同步可能报告本地
 修改冲突。自动化场景必须使用
@@ -1084,7 +1085,7 @@ token 时安全持久化，并通过分页的 Microsoft Graph Delta 请求获取
 
 每个下载从准备阶段到最终 ItemStore 更新都会持有按 `(drive_id, remote_id)`
 索引的 operation-coordinator 租约。同一远端条目的操作会串行执行，不同条目和
-Drive 仍保持并行。未来上传、删除和重命名路径必须获取同一租约，防止一个条目的
+Drive 仍保持并行。上传、删除和远端移动路径也获取同一租约，防止一个条目的
 网络、文件系统和状态变更相互交错。
 
 程序不会覆盖无法确认未被用户修改的本地文件。下载前会记录目标是否存在、大小、
@@ -1213,10 +1214,6 @@ journalctl --user -u onedrive-cpp.service -f
 用户服务会运行长期驻留的 monitor：启动时同步一次，通过 inotify 监听本地
 Drive 目录，按配置周期轮询 Graph，并在意外失败后自动重启。
 `systemctl --user stop` 会发送 `SIGTERM`，使其安全退出。
-
-## 后续实现建议
-
-1. 扩展 monitor、Graph、网络、磁盘、权限、崩溃恢复和文件系统边界的集成测试。
 
 ## 许可证
 

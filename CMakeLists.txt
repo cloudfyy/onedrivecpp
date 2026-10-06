@@ -6,7 +6,7 @@ string(JSON ONEDRIVE_VERSION GET "${ONEDRIVE_VCPKG_MANIFEST}" version-semver)
 project(
     onedrive-cpp
     VERSION "${ONEDRIVE_VERSION}"
-    DESCRIPTION "A modern C++ OneDrive synchronization client scaffold"
+    DESCRIPTION "A modern C++ OneDrive synchronization client"
     LANGUAGES CXX
 )
 

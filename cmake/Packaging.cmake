@@ -66,6 +66,15 @@ set(
     CPACK_DEBIAN_PACKAGE_RELEASE
     "1~${ONEDRIVE_PACKAGE_DISTRIBUTION}"
 )
+set(
+    ONEDRIVE_PACKAGE_VERSION
+    "${CPACK_PACKAGE_VERSION}-${CPACK_DEBIAN_PACKAGE_RELEASE}"
+)
+configure_file(
+    docs/onedrive-cpp.1.in
+    generated/onedrive-cpp.1
+    @ONLY
+)
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
 include(CPack)
