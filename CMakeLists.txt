@@ -115,6 +115,11 @@ add_library(onedrive_core
     src/cli/console.cpp
     src/config/config.cpp
     src/graph/graph_client.cpp
+    src/graph/delta.cpp
+    src/graph/download.cpp
+    src/graph/drive_ops.cpp
+    src/graph/support.cpp
+    src/graph/upload.cpp
     src/http/transfer_rate_limiter.cpp
     src/http/http_client.cpp
     src/logging/logging.cpp
