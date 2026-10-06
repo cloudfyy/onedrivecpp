@@ -67,10 +67,13 @@ add_onedrive_test(
     proxy_client_tests
     SOURCES tests/proxy_client_tests.cpp
 )
-add_onedrive_test(
-    graph_client_tests
-    SOURCES tests/graph_client_tests.cpp
-)
+foreach(GRAPH_TEST IN ITEMS drive delta upload download retry)
+    add_onedrive_test(
+        graph_${GRAPH_TEST}_tests
+        SOURCES tests/graph/${GRAPH_TEST}.cpp
+        INCLUDE_DIRS tests tests/graph
+    )
+endforeach()
 add_onedrive_test(
     application_cli_tests
     SOURCES tests/application_cli_tests.cpp
