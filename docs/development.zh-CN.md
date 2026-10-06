@@ -36,6 +36,9 @@ cmake --build --preset e2e
 ctest --preset e2e -R graph_sync_e2e
 ```
 
+稳定入口 `graph_sync_e2e.py` 会委托给 `tests/e2e/` 中的 Python 模块；真实
+Graph 场景、系统边界场景、进程编排、状态 fixture 和 runner 自测分别维护。
+
 专用 Drive 必须授予文件写权限，并且只应包含可丢弃的测试数据；runner 生成的
 `sync_list` 只会落地预期 fixture 和临时 fixture。应预留足够的本地空间同时保存
 大文件源和稳定上传快照，并确保测试账号有足够配额保存远端副本。设置

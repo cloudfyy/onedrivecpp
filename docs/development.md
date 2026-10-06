@@ -47,6 +47,10 @@ cmake --build --preset e2e
 ctest --preset e2e -R graph_sync_e2e
 ```
 
+The stable `graph_sync_e2e.py` entry point delegates to the Python modules in
+`tests/e2e/`, which separate live Graph scenarios, system-boundary scenarios,
+process orchestration, state fixtures, and runner self-tests.
+
 The dedicated Drive must grant file write access and should contain only
 disposable test data even though the runner's generated `sync_list` materializes
 only the expected and temporary fixtures. Allow enough local free space for
