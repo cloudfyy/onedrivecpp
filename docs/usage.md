@@ -18,6 +18,8 @@ onedrive-cpp sync --dry-run --color always
 onedrive-cpp sync --dry-run --output json
 onedrive-cpp sync --dry-run --quiet
 onedrive-cpp drives --output json
+onedrive-cpp shared
+onedrive-cpp sites Engineering
 onedrive-cpp quota
 onedrive-cpp status
 ```
@@ -38,16 +40,22 @@ command results are written to standard output.
 ## Read-only account and synchronization information
 
 `drives` lists OneDrive drives available to the active Microsoft account and
-marks the configured drive. `quota` reports total, used, remaining, deleted,
-and quota-state values for the configured drive. `status` combines the active
-account and canonical Drive identity with local read-only state: sync mode,
-delete policy, last recorded synchronization result, tracked and blocked item
-counts, pending journals, Delta cursor, selective-sync fingerprint, and
-WebSocket configuration.
+marks the configured drive. `shared` lists items returned by `sharedWithMe` and
+shortcuts added to the configured OneDrive, including the target Drive and
+item IDs needed for configuration. `sites QUERY` searches accessible
+SharePoint sites and lists each site's document-library Drives. Site discovery
+requires `Sites.Read.All` or `Sites.ReadWrite.All`; change scopes and run
+`onedrive-cpp auth` again before using it.
+
+`quota` reports total, used, remaining, deleted, and quota-state values for the
+configured drive. `status` combines the active account and canonical Drive
+identity with local read-only state: sync mode, delete policy, last recorded
+synchronization result, tracked and blocked item counts, pending journals,
+Delta cursor, selective-sync fingerprint, and WebSocket configuration.
 
 These commands do not synchronize files or modify remote content. `status`
 opens an existing SQLite database read-only and does not create or migrate a
-missing or older database. All three commands support `--output json`.
+missing or older database. All five commands support `--output json`.
 
 ## Shell completion
 

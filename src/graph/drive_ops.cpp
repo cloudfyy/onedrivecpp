@@ -37,8 +37,6 @@ namespace onedrive::graph {
 using namespace client_detail;
 using onedrive::util::percent_encode_uri_component;
 
-namespace {
-
 std::uint64_t quota_value(
     const Json& quota,
     std::string_view name,
@@ -61,7 +59,10 @@ std::uint64_t quota_value(
     }
 }
 
-DriveInfo parse_drive_info(const Json& value, std::string_view description) {
+DriveInfo client_detail::parse_drive_info(
+    const Json& value,
+    std::string_view description
+) {
     try {
         DriveInfo drive{
             .id = value.at("id").get<std::string>(),
@@ -113,118 +114,37 @@ DriveInfo parse_drive_info(const Json& value, std::string_view description) {
     }
 }
 
-}  // namespace
-
 std::vector<DriveInfo> MicrosoftGraphClient::list_drives() const {
-    std::string next_url =
-        options_.endpoint +
-        "/me/drives?$select=id,name,driveType,webUrl,owner,quota";
-    const std::string allowed_url_prefix = options_.endpoint + "/";
-    std::unordered_set<std::string> visited_urls;
     std::vector<DriveInfo> drives;
-    while (!next_url.empty()) {
-        if (!next_url.starts_with(allowed_url_prefix) ||
-            !visited_urls.insert(next_url).second) {
-            throw std::runtime_error(
-                "Microsoft Graph returned an invalid drives pagination URL"
-            );
-        }
-        const auto response = perform_with_retries(
-            [&] {
-                return transport_->perform(http::HttpRequest{
-                    .method = http::HttpMethod::get,
-                    .url = next_url,
-                    .headers = {
-                        "Accept: application/json",
-                        "Authorization: Bearer " + access_token(),
-                    },
-                    .body = {},
-                    .stop_token = {},
-                });
-            },
-            options_,
-            options_.maximum_throttle_retries,
-            sleep_,
-            "Microsoft Graph drives query"
-        );
-        if (!response) {
-            throw std::runtime_error(
-                "Microsoft Graph drives query failed: " +
-                response.error().message
-            );
-        }
-        const auto json = parse_graph_json(*response, "drives");
-        if (!successful_status(response->status_code)) {
-            throw std::runtime_error(
-                graph_error_message(json, response->status_code)
-            );
-        }
-        try {
-            const auto& values = json.at("value");
-            if (!values.is_array()) {
-                throw std::runtime_error(
-                    "Microsoft Graph drives response field 'value' is not an "
-                    "array"
-                );
-            }
-            for (const auto& value : values) {
-                drives.push_back(parse_drive_info(value, "drive"));
-            }
-            next_url.clear();
-            if (const auto next = json.find("@odata.nextLink");
-                next != json.end()) {
-                if (!next->is_string()) {
-                    throw std::runtime_error(
-                        "Microsoft Graph returned an invalid drives "
-                        "pagination URL"
-                    );
-                }
-                next_url = next->get<std::string>();
-            }
-        } catch (const Json::exception& error) {
-            throw std::runtime_error(
-                "Microsoft Graph drives response is missing required data: " +
-                std::string{error.what()}
-            );
-        }
+    for (const auto& value : paged_graph_values(
+             options_.endpoint +
+                 "/me/drives?$select=id,name,driveType,webUrl,owner,quota",
+             options_.endpoint,
+             "drives",
+             [&](const std::string& url) {
+                 return parse_graph_json(
+                     graph_get(url, "drives query"),
+                     "drives"
+                 );
+             }
+         )) {
+        drives.push_back(parse_drive_info(value, "drive"));
     }
     return drives;
 }
 
 DriveInfo MicrosoftGraphClient::drive_info() const {
-    const auto response = perform_with_retries(
-        [&] {
-            return transport_->perform(http::HttpRequest{
-                .method = http::HttpMethod::get,
-                .url =
-                    graph_drive_prefix(options_) +
+    return parse_drive_info(
+        parse_graph_json(
+            graph_get(
+                graph_drive_prefix(options_) +
                     "?$select=id,name,driveType,webUrl,owner,quota",
-                .headers = {
-                    "Accept: application/json",
-                    "Authorization: Bearer " + access_token(),
-                },
-                .body = {},
-                .stop_token = {},
-            });
-        },
-        options_,
-        options_.maximum_throttle_retries,
-        sleep_,
-        "Microsoft Graph drive information query"
+                "drive information query"
+            ),
+            "drive information"
+        ),
+        "drive"
     );
-    if (!response) {
-        throw std::runtime_error(
-            "Microsoft Graph drive information query failed: " +
-            response.error().message
-        );
-    }
-    const auto json = parse_graph_json(*response, "drive information");
-    if (!successful_status(response->status_code)) {
-        throw std::runtime_error(
-            graph_error_message(json, response->status_code)
-        );
-    }
-    return parse_drive_info(json, "drive");
 }
 
 std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {

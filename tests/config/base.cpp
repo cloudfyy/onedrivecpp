@@ -205,6 +205,9 @@ int test_base() {
         !onedrive::config::has_broad_auth_scope(
             "User.Read Sites.ReadWrite.All offline_access"
         ) ||
+        !onedrive::config::has_broad_auth_scope(
+            "User.Read Sites.Read.All offline_access"
+        ) ||
         onedrive::config::has_broad_auth_scope(
             "User.Read Sites.ReadWrite.AllExtra offline_access"
         ) ||

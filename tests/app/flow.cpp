@@ -100,6 +100,83 @@ int test_flow() {
         return fail("drives command did not report available drives");
     }
 
+    const auto shared = run_application(
+        runtime_factory,
+        {
+            "onedrive-cpp",
+            "shared",
+            "--config",
+            config_path.string(),
+            "--output",
+            "json",
+        }
+    );
+    if (shared.exit_code != 0 ||
+        !shared.standard_output.contains(R"("event":"shared_resource")") ||
+        !shared.standard_output.contains(R"("source":"shared_with_me")") ||
+        !shared.standard_output.contains(R"("source":"shortcut")") ||
+        !shared.standard_output.contains(R"("drive_id":"team-drive-id")") ||
+        !shared.standard_output.contains(R"("local_path":"Team Shortcut")")) {
+        return fail("shared command did not report shared resources");
+    }
+
+    const auto sites = run_application(
+        runtime_factory,
+        {
+            "onedrive-cpp",
+            "sites",
+            "Engineering",
+            "--config",
+            config_path.string(),
+            "--output",
+            "json",
+        }
+    );
+    if (sites.exit_code != 0 ||
+        !sites.standard_output.contains(R"("event":"site")") ||
+        !sites.standard_output.contains(R"("name":"Engineering")") ||
+        !sites.standard_output.contains(R"("event":"site_drive")") ||
+        !sites.standard_output.contains(R"("id":"library-drive-id")")) {
+        return fail("sites command did not report document libraries");
+    }
+    runtime_factory.empty_shared = true;
+    const auto no_shared = run_application(
+        runtime_factory,
+        {
+            "onedrive-cpp",
+            "shared",
+            "--config",
+            config_path.string(),
+            "--output",
+            "json",
+        }
+    );
+    runtime_factory.empty_shared = false;
+    if (no_shared.exit_code != 0 || !no_shared.standard_output.contains(
+                                        R"("event":"no_shared_resources")"
+                                    )) {
+        return fail("shared command did not report an empty result");
+    }
+    runtime_factory.empty_sites = true;
+    const auto no_sites = run_application(
+        runtime_factory,
+        {
+            "onedrive-cpp",
+            "sites",
+            "Engineering",
+            "--config",
+            config_path.string(),
+            "--output",
+            "json",
+        }
+    );
+    runtime_factory.empty_sites = false;
+    if (no_sites.exit_code != 0 || !no_sites.standard_output.contains(
+                                       R"("event":"no_sharepoint_sites")"
+                                   )) {
+        return fail("sites command did not report an empty result");
+    }
+
     const auto quota = run_application(
         runtime_factory,
         {
@@ -135,7 +212,7 @@ int test_flow() {
         !status.standard_output.contains(R"("account":"Test User")") ||
         !status.standard_output.contains(R"("state_database":"absent")") ||
         !status.standard_output.contains(R"("last_sync":"never")") ||
-        runtime_factory.graph_info_client_count != 3) {
+        runtime_factory.graph_info_client_count != 7) {
         return fail("status command did not report read-only local state");
     }
     const auto identity = onedrive::test::test_drive_identity("drive-id");
@@ -159,7 +236,7 @@ int test_flow() {
     if (failed_status.exit_code != 0 ||
         !failed_status.standard_output.contains(R"("last_result":"failed")") ||
         failed_status.standard_output.contains(R"("last_sync":"never")") ||
-        runtime_factory.graph_info_client_count != 4) {
+        runtime_factory.graph_info_client_count != 8) {
         return fail("status command did not report the last synchronization");
     }
 

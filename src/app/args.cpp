@@ -60,6 +60,14 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         "drives",
         "List OneDrive drives available to the active account"
     );
+    auto* shared = application.add_subcommand(
+        "shared",
+        "List items shared with the account and OneDrive shortcuts"
+    );
+    auto* sites = application.add_subcommand(
+        "sites",
+        "Find SharePoint sites and their document libraries"
+    );
     auto* quota = application.add_subcommand(
         "quota",
         "Show storage quota for the configured drive"
@@ -134,6 +142,8 @@ ParseResult parse_arguments(int argc, char* argv[]) {
              logout,
              doctor,
              drives,
+             shared,
+             sites,
              quota,
              status,
              reset,
@@ -177,6 +187,13 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         arguments.force_dry_run,
         "Show the single-file download plan without changing local state"
     );
+    sites
+        ->add_option(
+            "QUERY",
+            arguments.site_query,
+            "SharePoint site search query"
+        )
+        ->required();
 
     if (argc < 2) {
         std::cout << application.help();
@@ -196,6 +213,8 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         *logout     ? Operation::logout :
         *doctor     ? Operation::diagnose :
         *drives     ? Operation::drives :
+        *shared     ? Operation::shared :
+        *sites      ? Operation::sites :
         *quota      ? Operation::quota :
         *status     ? Operation::status :
         *reset      ? Operation::reset_state :

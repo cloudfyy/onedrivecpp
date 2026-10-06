@@ -63,8 +63,13 @@ scenarios, add the broader delegated permissions only when required:
 
 ```text
 Files.ReadWrite.All
+Sites.Read.All
 Sites.ReadWrite.All
 ```
+
+`Sites.Read.All` is sufficient for the read-only `sites QUERY` discovery
+command. Use `Sites.ReadWrite.All` only when synchronization must modify a
+SharePoint document library.
 
 Organizational tenant policies may require an administrator to grant consent.
 Personal Microsoft accounts normally grant consent during device sign-in.
@@ -104,11 +109,11 @@ scopes = ["User.Read", "Files.ReadWrite", "offline_access"]
 ```
 
 For a single-tenant organizational application, replace `common` with the
-tenant's Directory (tenant) ID. Add `Files.ReadWrite.All` or
+tenant's Directory (tenant) ID. Add `Files.ReadWrite.All`, `Sites.Read.All`, or
 `Sites.ReadWrite.All` only for organizational scenarios that require them;
-`Sites.ReadWrite.All` is not supported for personal Microsoft accounts. The
+SharePoint site scopes are not supported for personal Microsoft accounts. The
 default scopes are `User.Read Files.ReadWrite offline_access`; authentication
-prints a warning when either broader organizational scope is configured.
+prints a warning when a broader organizational scope is configured.
 
 ## Authorize the client
 

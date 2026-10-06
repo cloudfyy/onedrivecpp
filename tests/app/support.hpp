@@ -140,8 +140,14 @@ public:
 
 class FakeGraphClient final {
 public:
-    explicit FakeGraphClient(std::string configured_drive_id)
-        : configured_drive_id_{std::move(configured_drive_id)} {
+    explicit FakeGraphClient(
+        std::string configured_drive_id,
+        bool empty_shared = false,
+        bool empty_sites = false
+    )
+        : configured_drive_id_{std::move(configured_drive_id)},
+          empty_shared_{empty_shared},
+          empty_sites_{empty_sites} {
     }
 
     [[nodiscard]] onedrive::account::DriveIdentity drive_identity() const {
@@ -174,6 +180,63 @@ public:
                 .remaining = 600,
                 .deleted = 25,
                 .state = "normal",
+            },
+        };
+    }
+
+    [[nodiscard]] std::vector<onedrive::graph::SharedResource>
+    list_shared_resources() const {
+        if (empty_shared_) {
+            return {};
+        }
+        return {
+            {
+                .name = "Shared Plan",
+                .target_name = "Plan",
+                .drive_id = "team-drive-id",
+                .item_id = "shared-item-id",
+                .web_url = "https://example.test/shared-plan",
+                .owner = "Example Team",
+                .local_path = {},
+                .directory = true,
+                .source = onedrive::graph::SharedResourceSource::shared_with_me,
+            },
+            {
+                .name = "Team Shortcut",
+                .target_name = "Team Files",
+                .drive_id = "team-drive-id",
+                .item_id = "shortcut-target-id",
+                .web_url = "https://example.test/team-files",
+                .owner = "Example Team",
+                .local_path = "Team Shortcut",
+                .directory = true,
+                .source = onedrive::graph::SharedResourceSource::shortcut,
+            },
+        };
+    }
+
+    [[nodiscard]] std::vector<onedrive::graph::SiteInfo>
+    search_sites(const std::string& query) const {
+        if (empty_sites_ || query != "Engineering") {
+            return {};
+        }
+        return {
+            {
+                .id = "example.sharepoint.test,site-id,web-id",
+                .name = "engineering",
+                .display_name = "Engineering",
+                .web_url = "https://example.sharepoint.test/engineering",
+                .drives = {
+                    {
+                        .id = "library-drive-id",
+                        .name = "Documents",
+                        .type = "documentLibrary",
+                        .web_url =
+                            "https://example.sharepoint.test/engineering/docs",
+                        .owner = "Engineering",
+                        .quota = std::nullopt,
+                    },
+                },
             },
         };
     }
@@ -282,6 +345,8 @@ public:
 
 private:
     std::string configured_drive_id_;
+    bool empty_shared_;
+    bool empty_sites_;
 };
 
 class FakeItemStore final {
@@ -524,7 +589,10 @@ public:
     create_graph_info_client(const onedrive::config::Config&) const {
         ++graph_info_client_count;
         return std::make_unique<onedrive::graph::GraphInfoClient>(
-            std::in_place_type<FakeGraphClient>, configured_drive_id
+            std::in_place_type<FakeGraphClient>,
+            configured_drive_id,
+            empty_shared,
+            empty_sites
         );
     }
 
@@ -575,6 +643,8 @@ public:
     }
 
     std::string configured_drive_id{"me"};
+    bool empty_shared{false};
+    bool empty_sites{false};
     mutable int token_store_count{0};
     mutable int graph_client_count{0};
     mutable int graph_info_client_count{0};
@@ -656,7 +726,7 @@ struct CliFixture final {
                << "[auth]\n"
                << "application_id = \"test-application\"\n"
                << "scopes = [\"User.Read\", \"Files.ReadWrite.All\", "
-                  "\"offline_access\"]\n"
+                  "\"Sites.Read.All\", \"offline_access\"]\n"
                << "[graph.throttle]\n"
                << "maximum_retries = 6\n"
                << "initial_delay_seconds = 3\n"

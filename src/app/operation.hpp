@@ -7,6 +7,8 @@ enum class Operation {
     logout,
     diagnose,
     drives,
+    shared,
+    sites,
     quota,
     status,
     reset_state,

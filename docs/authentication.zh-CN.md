@@ -59,8 +59,12 @@ Files.ReadWrite
 
 ```text
 Files.ReadWrite.All
+Sites.Read.All
 Sites.ReadWrite.All
 ```
+
+只读 `sites QUERY` 发现命令使用 `Sites.Read.All` 即可。只有同步过程需要修改
+SharePoint 文档库时才应使用 `Sites.ReadWrite.All`。
 
 组织租户的策略可能要求管理员批准权限。个人 Microsoft 账号通常在设备登录时
 由用户自行同意。最新权限定义请参阅
@@ -100,10 +104,10 @@ scopes = ["User.Read", "Files.ReadWrite", "offline_access"]
 ```
 
 单租户组织应用应将 `common` 替换为 Directory (tenant) ID。只有组织场景确实
-需要时才添加 `Files.ReadWrite.All` 或 `Sites.ReadWrite.All`；
-`Sites.ReadWrite.All` 不支持个人 Microsoft 账号。默认 scope 为
-`User.Read Files.ReadWrite offline_access`；配置任一更广泛的组织级 scope 时，
-认证会输出警告。
+需要时才添加 `Files.ReadWrite.All`、`Sites.Read.All` 或
+`Sites.ReadWrite.All`；SharePoint 站点 scope 不支持个人 Microsoft 账号。
+默认 scope 为 `User.Read Files.ReadWrite offline_access`；配置任一更广泛的
+组织级 scope 时，认证会输出警告。
 
 ## 授权客户端
 

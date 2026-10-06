@@ -18,6 +18,13 @@ onedrive-cpp \- modern C++ OneDrive synchronization client
 .B onedrive-cpp drives
 .RI [ options ]
 .PP
+.B onedrive-cpp shared
+.RI [ options ]
+.PP
+.B onedrive-cpp sites
+.RI [ options ]
+.I QUERY
+.PP
 .B onedrive-cpp quota
 .RI [ options ]
 .PP
@@ -73,6 +80,25 @@ for structured diagnostics.
 List OneDrive drives available to the active Microsoft account and mark the
 configured drive. The command reads Microsoft Graph metadata without changing
 remote or local synchronization state.
+.TP
+.B shared
+List items shared with the active account and shortcuts added to the configured
+OneDrive. Output includes target Drive and item IDs, ownership, item kind, web
+URL, and the local OneDrive path for shortcuts. The command performs read-only
+Graph queries and does not synchronize content.
+.TP
+.B sites
+Search accessible SharePoint sites matching
+.I QUERY
+and list their document-library Drives. This read-only command requires
+.B Sites.Read.All
+or
+.B Sites.ReadWrite.All
+in
+.BR auth.scopes ;
+run
+.B onedrive-cpp auth
+again after changing scopes.
 .TP
 .B quota
 Show total, used, remaining, deleted, and quota-state values for the configured
@@ -419,6 +445,8 @@ start with
 .BR [\(dqUser.Read\(dq,\ \(dqFiles.ReadWrite\(dq,\ \(dqoffline_access\(dq] .
 The broader
 .B Files.ReadWrite.All
+,
+.B Sites.Read.All
 and
 .B Sites.ReadWrite.All
 scopes must be configured explicitly and produce a warning during

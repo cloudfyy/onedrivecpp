@@ -17,6 +17,8 @@ onedrive-cpp sync --dry-run --color always
 onedrive-cpp sync --dry-run --output json
 onedrive-cpp sync --dry-run --quiet
 onedrive-cpp drives --output json
+onedrive-cpp shared
+onedrive-cpp sites Engineering
 onedrive-cpp quota
 onedrive-cpp status
 ```
@@ -34,13 +36,19 @@ Authorization header 写入日志。
 ## 只读账号与同步信息
 
 `drives` 列出当前 Microsoft 账号可用的 OneDrive Drive，并标记配置正在使用的
-Drive。`quota` 显示配置 Drive 的总量、已用、剩余、回收站占用和配额状态。
-`status` 合并当前账号及规范 Drive 身份与本地只读状态，包括同步模式、删除策略、
-最后一次同步结果、tracked/blocked 数量、pending journal、Delta cursor、
+Drive。`shared` 列出 `sharedWithMe` 返回的项目和已添加到配置 OneDrive 的
+shortcut，并显示配置共享 Drive 所需的目标 Drive ID 与 item ID。
+`sites QUERY` 搜索可访问的 SharePoint 站点并列出各站点的文档库 Drive。
+站点发现要求 `Sites.Read.All` 或 `Sites.ReadWrite.All`；修改 scope 后需要重新
+运行 `onedrive-cpp auth`。
+
+`quota` 显示配置 Drive 的总量、已用、剩余、回收站占用和配额状态。`status`
+合并当前账号及规范 Drive 身份与本地只读状态，包括同步模式、删除策略、最后一次
+同步结果、tracked/blocked 数量、pending journal、Delta cursor、
 selective-sync fingerprint 和 WebSocket 配置。
 
 这些命令不会同步文件或修改远端内容。`status` 以只读方式打开已有 SQLite
-数据库，不会创建或迁移缺失或旧版本数据库。三个命令均支持 `--output json`。
+数据库，不会创建或迁移缺失或旧版本数据库。五个命令均支持 `--output json`。
 
 ## Shell 自动补全
 

@@ -88,7 +88,10 @@ foreach(PROXY_TEST IN ITEMS socks basic transfer)
         INCLUDE_DIRS tests tests/proxy
     )
 endforeach()
-foreach(GRAPH_TEST IN ITEMS drive delta upload download retry notification)
+foreach(
+    GRAPH_TEST
+    IN ITEMS drive delta discovery upload download retry notification
+)
     add_onedrive_test(
         graph_${GRAPH_TEST}_tests
         SOURCES tests/graph/${GRAPH_TEST}.cpp

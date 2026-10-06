@@ -32,6 +32,7 @@ struct DeviceAuthOptions;
 namespace onedrive::http {
 class TransferRateLimiter;
 class HttpTransport;
+struct HttpResponse;
 }
 
 namespace onedrive::graph {
@@ -92,6 +93,31 @@ struct DriveInfo {
     std::string web_url;
     std::string owner;
     std::optional<DriveQuota> quota;
+};
+
+enum class SharedResourceSource {
+    shared_with_me,
+    shortcut,
+};
+
+struct SharedResource {
+    std::string name;
+    std::string target_name;
+    std::string drive_id;
+    std::string item_id;
+    std::string web_url;
+    std::string owner;
+    std::string local_path;
+    bool directory{false};
+    SharedResourceSource source{SharedResourceSource::shared_with_me};
+};
+
+struct SiteInfo {
+    std::string id;
+    std::string name;
+    std::string display_name;
+    std::string web_url;
+    std::vector<DriveInfo> drives;
 };
 
 class NotificationChannelError final : public std::runtime_error {
@@ -384,6 +410,8 @@ public:
 
 PRO_DEF_MEM_DISPATCH(GraphListDrivesDispatch, list_drives);
 PRO_DEF_MEM_DISPATCH(GraphDriveInfoDispatch, drive_info);
+PRO_DEF_MEM_DISPATCH(GraphListSharedDispatch, list_shared_resources);
+PRO_DEF_MEM_DISPATCH(GraphSearchSitesDispatch, search_sites);
 
 struct GraphInfoClientFacade : pro::facade_builder
     ::add_convention<
@@ -395,6 +423,14 @@ struct GraphInfoClientFacade : pro::facade_builder
         std::vector<DriveInfo>() const
     >
     ::add_convention<GraphDriveInfoDispatch, DriveInfo() const>
+    ::add_convention<
+        GraphListSharedDispatch,
+        std::vector<SharedResource>() const
+    >
+    ::add_convention<
+        GraphSearchSitesDispatch,
+        std::vector<SiteInfo>(const std::string&) const
+    >
     ::build {};
 
 class GraphInfoClient
@@ -414,6 +450,16 @@ public:
 
     [[nodiscard]] DriveInfo drive_info() const {
         return implementation()->drive_info();
+    }
+
+    [[nodiscard]] std::vector<SharedResource>
+    list_shared_resources() const {
+        return implementation()->list_shared_resources();
+    }
+
+    [[nodiscard]] std::vector<SiteInfo>
+    search_sites(const std::string& query) const {
+        return implementation()->search_sites(query);
     }
 };
 
@@ -437,6 +483,10 @@ public:
     [[nodiscard]] account::DriveIdentity drive_identity() const;
     [[nodiscard]] std::vector<DriveInfo> list_drives() const;
     [[nodiscard]] DriveInfo drive_info() const;
+    [[nodiscard]] std::vector<SharedResource>
+    list_shared_resources() const;
+    [[nodiscard]] std::vector<SiteInfo>
+    search_sites(const std::string& query) const;
     [[nodiscard]] std::vector<RemoteItem> list_root() const;
     [[nodiscard]] RemoteItem item_by_path(
         const std::string& remote_path
@@ -512,6 +562,10 @@ private:
     mutable std::chrono::system_clock::time_point access_token_expires_at_{};
 
     [[nodiscard]] std::string access_token() const;
+    [[nodiscard]] http::HttpResponse graph_get(
+        const std::string& url,
+        std::string_view description
+    ) const;
     void invalidate_access_token() const;
 };
 

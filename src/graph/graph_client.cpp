@@ -138,6 +138,47 @@ MicrosoftGraphClient::MicrosoftGraphClient(
 
 MicrosoftGraphClient::~MicrosoftGraphClient() = default;
 
+http::HttpResponse MicrosoftGraphClient::graph_get(
+    const std::string& url,
+    std::string_view description
+) const {
+    auto response = client_detail::perform_with_retries(
+        [&] {
+            return transport_->perform(http::HttpRequest{
+                .method = http::HttpMethod::get,
+                .url = url,
+                .headers = {
+                    "Accept: application/json",
+                    "Authorization: Bearer " + access_token(),
+                },
+                .body = {},
+                .stop_token = {},
+            });
+        },
+        options_,
+        options_.maximum_throttle_retries,
+        sleep_,
+        description
+    );
+    if (!response) {
+        throw std::runtime_error(
+            "Microsoft Graph " + std::string{description} +
+            " failed: " + response.error().message
+        );
+    }
+    if (!client_detail::successful_status(response->status_code)) {
+        const auto document =
+            client_detail::parse_graph_json(*response, description);
+        throw std::runtime_error(
+            client_detail::graph_error_message(
+                document,
+                response->status_code
+            )
+        );
+    }
+    return *std::move(response);
+}
+
 account::DriveIdentity fetch_drive_identity(
     const http::HttpTransport& transport,
     std::string_view access_token,

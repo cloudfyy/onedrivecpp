@@ -50,6 +50,15 @@ int test_invalid() {
 
     if (!throws_with(
             [&] {
+                const RuntimePreflight preflight{config, Operation::sites};
+            },
+            "Sites.Read.All or Sites.ReadWrite.All"
+        )) {
+        return fail("site discovery without a site scope was accepted");
+    }
+
+    if (!throws_with(
+            [&] {
                 const RuntimePreflight preflight{
                     config, Operation::reset_state
                 };

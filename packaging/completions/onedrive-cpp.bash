@@ -29,7 +29,7 @@ _onedrive_cpp_completion()
 
     for word in "${COMP_WORDS[@]:1:COMP_CWORD-1}"; do
         case "$word" in
-            auth|logout|doctor|drives|quota|status|reset-state|download|sync|monitor)
+            auth|logout|doctor|drives|shared|sites|quota|status|reset-state|download|sync|monitor)
                 command="$word"
                 break
                 ;;
@@ -38,7 +38,7 @@ _onedrive_cpp_completion()
 
     if [[ -z "$command" ]]; then
         mapfile -t COMPREPLY < <(compgen -W \
-            "auth logout doctor drives quota status reset-state download sync monitor --help --version" \
+            "auth logout doctor drives shared sites quota status reset-state download sync monitor --help --version" \
             -- "$current")
         return
     fi
@@ -65,7 +65,7 @@ _onedrive_cpp_completion()
             mapfile -t COMPREPLY < <(compgen -W \
                 "$common_options --clear-all --yes" -- "$current")
             ;;
-        auth|logout|doctor|drives|quota|status|monitor)
+        auth|logout|doctor|drives|shared|sites|quota|status|monitor)
             mapfile -t COMPREPLY < <(
                 compgen -W "$common_options" -- "$current"
             )

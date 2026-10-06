@@ -21,6 +21,7 @@ struct Arguments {
     cli::OutputMode output_mode{cli::OutputMode::text};
     bool quiet{false};
     std::string remote_download_path;
+    std::string site_query;
     Operation operation{Operation::synchronize};
 };
 

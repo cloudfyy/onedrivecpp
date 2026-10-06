@@ -14,19 +14,30 @@ RuntimePreflight::RuntimePreflight(
 ) {
     if (operation == Operation::authenticate ||
         operation == Operation::drives ||
+        operation == Operation::shared ||
+        operation == Operation::sites ||
         operation == Operation::quota ||
         operation == Operation::status ||
         operation == Operation::download ||
         operation == Operation::synchronize) {
         validate_authentication_config(config);
     }
-    if ((operation == Operation::quota ||
+    if ((operation == Operation::shared ||
+         operation == Operation::quota ||
          operation == Operation::status ||
          operation == Operation::reset_state ||
          operation == Operation::download ||
          operation == Operation::synchronize) &&
         config.drive_id.empty()) {
         throw std::runtime_error("sync.drive_id must not be empty");
+    }
+    if (operation == Operation::sites &&
+        !config::has_auth_scope(config.auth_scope, "Sites.Read.All") &&
+        !config::has_auth_scope(config.auth_scope, "Sites.ReadWrite.All")) {
+        throw std::runtime_error(
+            "sites requires Sites.Read.All or Sites.ReadWrite.All in "
+            "auth.scopes; run 'onedrive-cpp auth' after changing scopes"
+        );
     }
 
     secure_state_directory(config.state_directory);
@@ -39,6 +50,8 @@ RuntimePreflight::RuntimePreflight(
     );
     const bool authentication_required =
         operation == Operation::drives ||
+        operation == Operation::shared ||
+        operation == Operation::sites ||
         operation == Operation::quota ||
         operation == Operation::status ||
         operation == Operation::reset_state ||

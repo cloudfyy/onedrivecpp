@@ -13,6 +13,8 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <unordered_set>
+#include <vector>
 
 namespace onedrive::graph::client_detail {
 
@@ -52,6 +54,55 @@ using Json = nlohmann::json;
     const MicrosoftGraphClient::SleepFunction& sleep,
     const std::stop_token& stop_token
 );
+
+template <typename Fetch>
+std::vector<Json> paged_graph_values(
+    std::string next_url,
+    const std::string& endpoint,
+    std::string_view description,
+    Fetch&& fetch
+) {
+    const std::string allowed_url_prefix = endpoint + "/";
+    std::unordered_set<std::string> visited_urls;
+    std::vector<Json> values;
+    while (!next_url.empty()) {
+        if (!next_url.starts_with(allowed_url_prefix) ||
+            !visited_urls.insert(next_url).second) {
+            throw std::runtime_error(
+                "Microsoft Graph returned an invalid " +
+                std::string{description} + " pagination URL"
+            );
+        }
+        const auto document = fetch(next_url);
+        try {
+            const auto& page = document.at("value");
+            if (!page.is_array()) {
+                throw std::runtime_error(
+                    "Microsoft Graph " + std::string{description} +
+                    " response field 'value' is not an array"
+                );
+            }
+            values.insert(values.end(), page.begin(), page.end());
+            next_url.clear();
+            if (const auto next = document.find("@odata.nextLink");
+                next != document.end()) {
+                if (!next->is_string()) {
+                    throw std::runtime_error(
+                        "Microsoft Graph returned an invalid " +
+                        std::string{description} + " pagination URL"
+                    );
+                }
+                next_url = next->template get<std::string>();
+            }
+        } catch (const Json::exception& error) {
+            throw std::runtime_error(
+                "Microsoft Graph " + std::string{description} +
+                " response is missing required data: " + error.what()
+            );
+        }
+    }
+    return values;
+}
 
 enum class TransportErrorRetry {
     disabled,
@@ -166,6 +217,10 @@ http::HttpResult perform_with_retries(
     const Json& value
 );
 [[nodiscard]] std::string item_ctag(const Json& item);
+[[nodiscard]] DriveInfo parse_drive_info(
+    const Json& value,
+    std::string_view description
+);
 
 enum class DriveItemKind {
     file_only,

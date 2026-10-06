@@ -1,4 +1,5 @@
 #include "commands.hpp"
+#include "discover.hpp"
 #include "info.hpp"
 
 #include "onedrive/account/account_state.hpp"
@@ -102,9 +103,9 @@ int execute_command(
             if (config::has_broad_auth_scope(config.auth_scope)) {
                 constexpr std::string_view warning{
                     "WARNING: Authentication requests broad organizational "
-                    "file or SharePoint write access. Keep "
-                    "Files.ReadWrite.All and Sites.ReadWrite.All only when "
-                    "the configured Drive requires them."
+                    "file or SharePoint access. Keep Files.ReadWrite.All, "
+                    "Sites.Read.All, and Sites.ReadWrite.All only when the "
+                    "configured Drive or discovery workflow requires them."
                 };
                 spdlog::warn("{}", warning);
                 console.message(
@@ -181,6 +182,17 @@ int execute_command(
         }
         if (operation == Operation::drives) {
             return show_drives(config, runtime_factory, console);
+        }
+        if (operation == Operation::shared) {
+            return show_shared(config, runtime_factory, console);
+        }
+        if (operation == Operation::sites) {
+            return show_sites(
+                config,
+                runtime_factory,
+                console,
+                arguments.site_query
+            );
         }
         if (operation == Operation::quota) {
             return show_quota(config, runtime_factory, console);

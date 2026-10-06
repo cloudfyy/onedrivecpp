@@ -6,6 +6,7 @@ add_library(onedrive_core
     src/app/args.cpp
     src/app/checks.cpp
     src/app/commands.cpp
+    src/app/discover.cpp
     src/app/lock.cpp
     src/app/preflight.cpp
     src/app/factory.cpp
@@ -21,6 +22,7 @@ add_library(onedrive_core
     src/graph/graph_client.cpp
     src/graph/notification.cpp
     src/graph/delta.cpp
+    src/graph/discovery.cpp
     src/graph/download.cpp
     src/graph/drive_ops.cpp
     src/graph/support.cpp

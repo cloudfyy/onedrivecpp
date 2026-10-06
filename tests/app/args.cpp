@@ -11,6 +11,8 @@ int test_args() {
         run_application(runtime_factory, {"build/release/onedrive-cpp"});
     if (help.exit_code != 0 || !help.standard_output.contains("auth") ||
         !help.standard_output.contains("drives") ||
+        !help.standard_output.contains("shared") ||
+        !help.standard_output.contains("sites") ||
         !help.standard_output.contains("quota") ||
         !help.standard_output.contains("status") ||
         !help.standard_output.contains("reset-state") ||
@@ -98,6 +100,10 @@ int test_args() {
     if (run_application(runtime_factory, {"onedrive-cpp", "download"})
             .exit_code != 2) {
         return fail("download command accepted a missing remote path");
+    }
+    if (run_application(runtime_factory, {"onedrive-cpp", "sites"}).exit_code !=
+        2) {
+        return fail("sites command accepted a missing search query");
     }
     return EXIT_SUCCESS;
 }

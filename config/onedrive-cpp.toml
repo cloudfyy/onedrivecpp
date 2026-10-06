@@ -25,6 +25,8 @@ scopes = [
   # "Files.ReadWrite.All",
   # Optional for organizational SharePoint sites; personal accounts do not
   # support this scope.
+  # "Sites.Read.All",
+  # Required instead when SharePoint document libraries will be synchronized.
   # "Sites.ReadWrite.All",
   # Request a refresh token so the client can stay signed in.
   "offline_access",
