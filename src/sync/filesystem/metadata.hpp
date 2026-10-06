@@ -27,9 +27,14 @@ public:
     ) const;
 
 private:
-    explicit FilesystemMetadata(bool use_xattrs);
+    enum class MetadataStorage {
+        database,
+        database_with_xattrs,
+    };
 
-    bool use_xattrs_{false};
+    explicit FilesystemMetadata(MetadataStorage storage);
+
+    MetadataStorage storage_{MetadataStorage::database};
 };
 
 }  // namespace onedrive::sync::detail

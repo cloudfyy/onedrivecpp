@@ -155,8 +155,8 @@ bool xattr_error_is_unavailable(int error) noexcept {
            error == EACCES || error == ENODATA;
 }
 
-FilesystemMetadata::FilesystemMetadata(bool use_xattrs)
-    : use_xattrs_{use_xattrs} {}
+FilesystemMetadata::FilesystemMetadata(MetadataStorage storage)
+    : storage_{storage} {}
 
 FilesystemMetadata FilesystemMetadata::detect(
     config::FilesystemMetadataMode mode,
@@ -187,21 +187,23 @@ FilesystemMetadata FilesystemMetadata::from_detected_support(
             "support"
         );
     }
-    return FilesystemMetadata{
+    const auto storage =
         mode != config::FilesystemMetadataMode::database &&
-        xattrs_supported
-    };
+                xattrs_supported ?
+            MetadataStorage::database_with_xattrs :
+            MetadataStorage::database;
+    return FilesystemMetadata{storage};
 }
 
 bool FilesystemMetadata::uses_xattrs() const noexcept {
-    return use_xattrs_;
+    return storage_ == MetadataStorage::database_with_xattrs;
 }
 
 void FilesystemMetadata::write_remote_identity(
     const graph::RemoteItem& item,
     const std::filesystem::path& path
 ) const {
-    if (!use_xattrs_) {
+    if (!uses_xattrs()) {
         return;
     }
     onedrive::util::UniqueFD descriptor{
