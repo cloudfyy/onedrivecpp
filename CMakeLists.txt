@@ -114,6 +114,9 @@ add_library(onedrive_core
     src/auth/token_store.cpp
     src/cli/console.cpp
     src/config/config.cpp
+    src/config/network.cpp
+    src/config/parse.cpp
+    src/config/sync_options.cpp
     src/graph/graph_client.cpp
     src/graph/delta.cpp
     src/graph/download.cpp
