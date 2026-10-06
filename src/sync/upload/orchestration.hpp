@@ -2,6 +2,7 @@
 
 #include "onedrive/graph/graph_client.hpp"
 #include "onedrive/storage/item_store.hpp"
+#include "sync/core/capabilities.hpp"
 
 #include <cstddef>
 #include <filesystem>
@@ -31,7 +32,7 @@ struct UploadSummary {
     std::size_t blocked{0};
 };
 
-struct RemoteDeletionPolicy {
+struct RemoteDeletionGuard {
     std::size_t maximum_affected_items{1000};
     bool force{false};
 };
@@ -44,8 +45,8 @@ struct RemoteDeletionPolicy {
     const FilesystemMetadata& metadata,
     const SyncList* sync_list,
     const cli::Console& console,
-    bool dry_run,
-    RemoteDeletionPolicy deletion_policy,
+    SyncCapabilities capabilities,
+    RemoteDeletionGuard deletion_guard,
     std::size_t upload_concurrency
 );
 void recover_pending_uploads(
@@ -61,7 +62,7 @@ void recover_pending_deletes(
     graph::GraphClient& graph,
     storage::ItemStore& items,
     const cli::Console& console,
-    RemoteDeletionPolicy deletion_policy
+    RemoteDeletionGuard deletion_guard
 );
 void recover_pending_remote_moves(
     const SafeSyncRoot& sync_root,

@@ -405,8 +405,8 @@ UploadSummary upload_local_changes(
     const FilesystemMetadata& metadata,
     const SyncList* sync_list,
     const cli::Console& console,
-    bool dry_run,
-    RemoteDeletionPolicy deletion_policy,
+    SyncCapabilities capabilities,
+    RemoteDeletionGuard deletion_guard,
     std::size_t upload_concurrency
 ) {
     if (upload_concurrency == 0) {
@@ -422,14 +422,20 @@ UploadSummary upload_local_changes(
         sync_list
     );
     summary.planned_moves = moves.moves.size();
-    auto deletion_plan =
-        discover_deletions(drive_id, items, sync_list, moves.moved_remote_ids);
+    auto deletion_plan = capabilities.plans_remote_deletions() ?
+        discover_deletions(
+            drive_id, items, sync_list, moves.moved_remote_ids
+        ) :
+        DeletionPlan{};
     summary.planned_deletions = deletion_plan.operations.size();
     summary.affected_deletions = deletion_plan.affected_items;
     summary.large_delete_blocked = enforce_remote_deletion_limit(
-        deletion_plan, deletion_policy, console, dry_run
+        deletion_plan,
+        deletion_guard,
+        console,
+        capabilities.execution_mode()
     );
-    if (dry_run) {
+    if (capabilities.previews()) {
         const auto uploads = discover_uploads(
             sync_root,
             drive_id,
@@ -492,12 +498,18 @@ UploadSummary upload_local_changes(
                 move.destination_remote_path + "'."
         );
     }
-    deletion_plan =
-        discover_deletions(drive_id, items, sync_list, moves.moved_remote_ids);
+    deletion_plan = capabilities.plans_remote_deletions() ?
+        discover_deletions(
+            drive_id, items, sync_list, moves.moved_remote_ids
+        ) :
+        DeletionPlan{};
     summary.planned_deletions = deletion_plan.operations.size();
     summary.affected_deletions = deletion_plan.affected_items;
     summary.large_delete_blocked = enforce_remote_deletion_limit(
-        deletion_plan, deletion_policy, console, false
+        deletion_plan,
+        deletion_guard,
+        console,
+        capabilities.execution_mode()
     );
     auto uploads = discover_uploads(
         sync_root,

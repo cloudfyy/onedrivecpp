@@ -4,6 +4,7 @@
 #include "onedrive/util/mount.hpp"
 #include "onedrive/util/path_security.hpp"
 #include "sync/core/delta_plan.hpp"
+#include "sync/core/capabilities.hpp"
 #include "sync/core/downloads.hpp"
 #include "sync/core/plan_execute.hpp"
 #include "sync/core/plan_report.hpp"
@@ -53,6 +54,13 @@ int SyncEngine::synchronize() const {
     cli::Console fallback_console;
     const auto& console =
         console_ == nullptr ? fallback_console : *console_;
+    const auto capabilities = detail::capabilities_for(
+        detail::SyncMode::bidirectional,
+        detail::DeletePolicy::propagate,
+        config_->dry_run ?
+            detail::ExecutionMode::preview :
+            detail::ExecutionMode::apply
+    );
 
     try {
         onedrive::util::require_sync_mount(
@@ -63,7 +71,7 @@ int SyncEngine::synchronize() const {
             onedrive::util::normalized_absolute(config_->sync_data_directory);
         std::optional<detail::SafeSyncRoot> safe_root;
         std::optional<detail::FilesystemMetadata> metadata;
-        if (config_->dry_run) {
+        if (capabilities.previews()) {
             console.section(
                 "dry_run_configuration",
                 "Dry run configuration:",
@@ -185,14 +193,16 @@ int SyncEngine::synchronize() const {
                 config_->filesystem_metadata,
                 sync_root
             ));
-            detail::recover_pending_downloads(
-                items_,
-                *safe_root,
-                config_->drive_id,
-                *metadata,
-                config_->sync_permissions
-            );
-            if (config_->upload) {
+            if (capabilities.downloads()) {
+                detail::recover_pending_downloads(
+                    items_,
+                    *safe_root,
+                    config_->drive_id,
+                    *metadata,
+                    config_->sync_permissions
+                );
+            }
+            if (config_->upload && capabilities.uploads()) {
                 detail::recover_pending_remote_moves(
                     *safe_root,
                     config_->drive_id,
@@ -405,8 +415,9 @@ int SyncEngine::synchronize() const {
 
         std::size_t blocked_count = plan.blocked_count();
         detail::UploadSummary upload_summary;
-        if (config_->dry_run) {
-            if (config_->upload && safe_root && metadata) {
+        if (capabilities.previews()) {
+            if (config_->upload && capabilities.plans_uploads() &&
+                safe_root && metadata) {
                 upload_summary = detail::upload_local_changes(
                     *safe_root,
                     config_->drive_id,
@@ -415,7 +426,7 @@ int SyncEngine::synchronize() const {
                     *metadata,
                     sync_list ? &*sync_list : nullptr,
                     console,
-                    true,
+                    capabilities,
                     {
                         .maximum_affected_items =
                             config_->maximum_remote_deletions,
@@ -500,6 +511,7 @@ int SyncEngine::synchronize() const {
                 items_,
                 *metadata,
                 console,
+                capabilities,
                 config_->download_concurrency,
                 config_->transfer_order,
                 config_->local_conflict,
@@ -511,7 +523,7 @@ int SyncEngine::synchronize() const {
             );
             blocked_count = plan.blocked_count();
             items_.apply_delta(plan.release_state_delta());
-            if (config_->upload) {
+            if (config_->upload && capabilities.uploads()) {
                 upload_summary = detail::upload_local_changes(
                     *safe_root,
                     config_->drive_id,
@@ -520,7 +532,7 @@ int SyncEngine::synchronize() const {
                     *metadata,
                     sync_list ? &*sync_list : nullptr,
                     console,
-                    false,
+                    capabilities,
                     {
                         .maximum_affected_items =
                             config_->maximum_remote_deletions,
@@ -616,7 +628,7 @@ int SyncEngine::synchronize() const {
                     ).count()
                 )
             );
-        } else if (config_->dry_run) {
+        } else if (capabilities.previews()) {
             spdlog::info(
                 "Synchronization dry run completed in {} milliseconds",
                 std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count()

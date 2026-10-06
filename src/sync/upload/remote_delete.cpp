@@ -148,18 +148,18 @@ DeletionPlan deletion_plan_for(
 
 bool enforce_remote_deletion_limit(
     const DeletionPlan& plan,
-    RemoteDeletionPolicy policy,
+    RemoteDeletionGuard guard,
     const cli::Console& console,
-    bool dry_run
+    ExecutionMode execution_mode
 ) {
-    if (plan.affected_items <= policy.maximum_affected_items) {
+    if (plan.affected_items <= guard.maximum_affected_items) {
         return false;
     }
     const auto message = std::format(
         "Remote deletion plan affects {} tracked items, exceeding the "
         "configured limit of {}.",
         plan.affected_items,
-        policy.maximum_affected_items
+        guard.maximum_affected_items
     );
     console.section(
         "large_delete_guard",
@@ -178,16 +178,16 @@ bool enforce_remote_deletion_limit(
             {
                 .label = "configured limit:",
                 .key = "maximum_remote_deletions",
-                .value = std::to_string(policy.maximum_affected_items),
+                .value = std::to_string(guard.maximum_affected_items),
             },
             {
                 .label = "override:",
                 .key = "forced",
-                .value = policy.force ? "true" : "false",
+                .value = guard.force ? "true" : "false",
             },
         }
     );
-    if (policy.force) {
+    if (guard.force) {
         spdlog::warn("{} Explicit override accepted.", message);
         console.message(
             cli::MessageKind::warning,
@@ -196,7 +196,7 @@ bool enforce_remote_deletion_limit(
         );
         return false;
     }
-    if (dry_run) {
+    if (execution_mode == ExecutionMode::preview) {
         console.message(
             cli::MessageKind::warning,
             "large_delete_detected",
@@ -367,7 +367,7 @@ void recover_pending_deletes(
     graph::GraphClient& graph,
     storage::ItemStore& items,
     const cli::Console& console,
-    RemoteDeletionPolicy deletion_policy
+    RemoteDeletionGuard deletion_guard
 ) {
     std::vector<storage::PendingDelete> active;
     for (const auto& deletion : items.pending_deletes(drive_id)) {
@@ -392,7 +392,12 @@ void recover_pending_deletes(
     const auto plan =
         deletion_plan_for(std::move(active), items.drive_items(drive_id));
     static_cast<void>(
-        enforce_remote_deletion_limit(plan, deletion_policy, console, false)
+        enforce_remote_deletion_limit(
+            plan,
+            deletion_guard,
+            console,
+            ExecutionMode::apply
+        )
     );
     for (const auto& deletion : plan.operations) {
         auto journaled = JournaledRemoteDelete{

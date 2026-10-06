@@ -1,6 +1,7 @@
 #pragma once
 
 #include "onedrive/storage/item_store.hpp"
+#include "sync/core/capabilities.hpp"
 
 #include <filesystem>
 #include <optional>
@@ -16,7 +17,7 @@ namespace onedrive::sync::detail {
 
 class SafeSyncRoot;
 class SyncList;
-struct RemoteDeletionPolicy;
+struct RemoteDeletionGuard;
 
 struct UploadCandidate {
     std::filesystem::path path;
@@ -61,9 +62,9 @@ struct LocalMoveDiscovery {
 );
 [[nodiscard]] bool enforce_remote_deletion_limit(
     const DeletionPlan& plan,
-    RemoteDeletionPolicy policy,
+    RemoteDeletionGuard guard,
     const cli::Console& console,
-    bool dry_run
+    ExecutionMode execution_mode
 );
 [[nodiscard]] LocalMoveDiscovery discover_local_moves(
     const SafeSyncRoot& sync_root,

@@ -134,6 +134,11 @@ add_onedrive_test(
     INCLUDE_DIRS src tests
 )
 add_onedrive_test(
+    sync_capability_tests
+    SOURCES tests/sync/capability.cpp
+    INCLUDE_DIRS src tests
+)
+add_onedrive_test(
     selective_sync_tests
     SOURCES tests/sync/filter.cpp
     INCLUDE_DIRS src tests

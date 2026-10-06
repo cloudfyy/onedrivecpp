@@ -32,21 +32,27 @@ ExecutionSummary execute_plan(
     storage::ItemStore& items,
     const detail::FilesystemMetadata& metadata,
     const cli::Console& console,
+    detail::SyncCapabilities capabilities,
     std::size_t download_concurrency,
     config::TransferOrder transfer_order,
     config::LocalConflictPolicy local_conflict,
     config::SyncPermissionsMode permissions
 ) {
+    if (!capabilities.downloads()) {
+        return {};
+    }
     const auto& sync_root = safe_root.path();
     detail::ItemOperationCoordinator operations;
-    const auto removed_count = engine_detail::execute_removals(
-        plan,
-        safe_root,
-        drive_id,
-        items,
-        operations,
-        console
-    );
+    const auto removed_count = capabilities.removes_local_items() ?
+        engine_detail::execute_removals(
+            plan,
+            safe_root,
+            drive_id,
+            items,
+            operations,
+            console
+        ) :
+        0;
     auto move_summary = engine_detail::execute_moves(
         plan,
         safe_root,
