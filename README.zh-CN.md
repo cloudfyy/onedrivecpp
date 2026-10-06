@@ -51,14 +51,14 @@ flowchart TB
     remote --> transfers["并发传输 worker<br/>空间与速率协调"]
     local --> transfers
 
-    adapters --> graph["MicrosoftGraphClient"]
+    adapters --> graph_client["MicrosoftGraphClient"]
     adapters --> http["CurlHttpClient"]
     adapters --> store["ItemDatabase"]
     adapters --> files["文件系统与 inotify"]
-    graph --> cloud[("Microsoft Graph / OneDrive")]
-    graph --> http
-    remote --> graph
-    local --> graph
+    graph_client --> cloud[("Microsoft Graph / OneDrive")]
+    graph_client --> http
+    remote --> graph_client
+    local --> graph_client
     remote --> files
     local --> files
     recover --> store
