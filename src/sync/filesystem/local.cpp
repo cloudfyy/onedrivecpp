@@ -100,7 +100,7 @@ std::size_t filesystem_limit(
 
 std::filesystem::path prepare_sync_root(
     const std::filesystem::path& configured_root,
-    bool private_permissions
+    config::SyncPermissionsMode permissions
 ) {
     const auto absolute_root =
         onedrive::util::normalized_absolute(configured_root);
@@ -113,7 +113,7 @@ std::filesystem::path prepare_sync_root(
         absolute_root,
         "synchronization directory"
     );
-    if (private_permissions &&
+    if (permissions == config::SyncPermissionsMode::private_access &&
         ::chmod(absolute_root.c_str(), S_IRWXU) == -1) {
         throw std::runtime_error(
             "cannot secure synchronization root '" +
@@ -553,7 +553,7 @@ void fsync_directory(const std::filesystem::path& directory) {
 void ensure_directory_tree(
     const std::filesystem::path& root,
     const std::filesystem::path& directory,
-    bool private_permissions
+    config::SyncPermissionsMode permissions
 ) {
     const auto relative = directory.lexically_relative(root);
     if (relative.empty() && directory != root) {
@@ -582,7 +582,7 @@ void ensure_directory_tree(
             continue;
         }
         std::filesystem::create_directory(current);
-        if (private_permissions &&
+        if (permissions == config::SyncPermissionsMode::private_access &&
             ::chmod(current.c_str(), S_IRWXU) == -1) {
             throw std::runtime_error(
                 "cannot secure local synchronization directory '" +

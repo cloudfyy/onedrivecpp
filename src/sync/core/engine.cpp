@@ -816,7 +816,7 @@ MoveSummary execute_moves(
     storage::ItemStore& items,
     detail::ItemOperationCoordinator& operations,
     const cli::Console& console,
-    bool private_permissions
+    config::SyncPermissionsMode permissions
 ) {
     struct Move {
         graph::RemoteItem item;
@@ -1558,7 +1558,7 @@ MoveSummary execute_moves(
                 }
                 safe_root.ensure_directory_tree(
                     destination.parent_path(),
-                    private_permissions
+                    permissions
                 );
                 const auto source_identity = safe_root.identity(
                     source,
@@ -1753,7 +1753,7 @@ ExecutionSummary execute_plan(
     std::size_t download_concurrency,
     config::TransferOrder transfer_order,
     config::LocalConflictPolicy local_conflict,
-    bool private_permissions
+    config::SyncPermissionsMode permissions
 ) {
     const auto& sync_root = safe_root.path();
     detail::ItemOperationCoordinator operations;
@@ -1772,7 +1772,7 @@ ExecutionSummary execute_plan(
         items,
         operations,
         console,
-        private_permissions
+        permissions
     );
     std::unordered_set<std::string> blocked_ids =
         std::move(move_summary.blocked);
@@ -1808,7 +1808,7 @@ ExecutionSummary execute_plan(
             auto& state = plan.state_for(item.id);
             safe_root.ensure_directory_tree(
                 state.local_path,
-                private_permissions
+                permissions
             );
             const auto identity =
                 safe_root.identity(state.local_path, true);
@@ -1858,7 +1858,7 @@ ExecutionSummary execute_plan(
         try {
             safe_root.ensure_directory_tree(
                 destination.parent_path(),
-                private_permissions
+                permissions
             );
         } catch (const detail::LocalPathConflictError& error) {
             plan.block(item, "local_path_conflict", error.what());
@@ -2205,12 +2205,9 @@ int SyncEngine::synchronize() const {
                 );
             }
         } else {
-            const bool private_permissions =
-                config_->sync_permissions ==
-                config::SyncPermissionsMode::private_access;
             sync_root = detail::prepare_sync_root(
                 sync_root,
-                private_permissions
+                config_->sync_permissions
             );
             safe_root.emplace(sync_root);
             metadata.emplace(detail::FilesystemMetadata::detect(
@@ -2222,7 +2219,7 @@ int SyncEngine::synchronize() const {
                 *safe_root,
                 config_->drive_id,
                 *metadata,
-                private_permissions
+                config_->sync_permissions
             );
             if (config_->upload) {
                 detail::recover_pending_remote_moves(
@@ -2529,8 +2526,7 @@ int SyncEngine::synchronize() const {
                 config_->download_concurrency,
                 config_->transfer_order,
                 config_->local_conflict,
-                config_->sync_permissions ==
-                    config::SyncPermissionsMode::private_access
+                config_->sync_permissions
             );
             spdlog::debug(
                 "Persisting remote delta for drive '{}'",

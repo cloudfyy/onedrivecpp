@@ -1,5 +1,6 @@
 #pragma once
 
+#include "onedrive/config/config.hpp"
 #include "sync/filesystem/metadata.hpp"
 #include "sync/filesystem/safe_sync_root.hpp"
 #include "onedrive/storage/item_store.hpp"
@@ -14,14 +15,16 @@ void recover_pending_downloads(
     const SafeSyncRoot& sync_root,
     const std::string& drive_id,
     const FilesystemMetadata& metadata,
-    bool private_permissions = true
+    config::SyncPermissionsMode permissions =
+        config::SyncPermissionsMode::private_access
 );
 void recover_pending_downloads(
     storage::ItemStore& items,
     const std::filesystem::path& sync_root,
     const std::string& drive_id,
     const FilesystemMetadata& metadata,
-    bool private_permissions = true
+    config::SyncPermissionsMode permissions =
+        config::SyncPermissionsMode::private_access
 );
 
 template <typename StoreImplementation>
@@ -30,7 +33,8 @@ void recover_pending_downloads(
     const SafeSyncRoot& sync_root,
     const std::string& drive_id,
     const FilesystemMetadata& metadata,
-    bool private_permissions = true
+    config::SyncPermissionsMode permissions =
+        config::SyncPermissionsMode::private_access
 ) {
     storage::ItemStore store_proxy{onedrive::util::borrowed_proxy, items};
     recover_pending_downloads(
@@ -38,7 +42,7 @@ void recover_pending_downloads(
         sync_root,
         drive_id,
         metadata,
-        private_permissions
+        permissions
     );
 }
 
@@ -48,7 +52,8 @@ void recover_pending_downloads(
     const std::filesystem::path& sync_root,
     const std::string& drive_id,
     const FilesystemMetadata& metadata,
-    bool private_permissions = true
+    config::SyncPermissionsMode permissions =
+        config::SyncPermissionsMode::private_access
 ) {
     storage::ItemStore store_proxy{onedrive::util::borrowed_proxy, items};
     recover_pending_downloads(
@@ -56,7 +61,7 @@ void recover_pending_downloads(
         sync_root,
         drive_id,
         metadata,
-        private_permissions
+        permissions
     );
 }
 

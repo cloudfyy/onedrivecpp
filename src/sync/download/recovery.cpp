@@ -106,7 +106,7 @@ void recover_pending_downloads(
     const SafeSyncRoot& safe_root,
     const std::string& drive_id,
     const FilesystemMetadata& metadata,
-    bool private_permissions
+    config::SyncPermissionsMode permissions
 ) {
     const auto& sync_root = safe_root.path();
     const auto pending = items.pending_downloads(drive_id);
@@ -128,7 +128,7 @@ void recover_pending_downloads(
         );
         safe_root.ensure_directory_tree(
             destination.parent_path(),
-            private_permissions
+            permissions
         );
         if (std::filesystem::is_symlink(
                 std::filesystem::symlink_status(destination)
@@ -240,7 +240,7 @@ void recover_pending_downloads(
     const std::filesystem::path& sync_root,
     const std::string& drive_id,
     const FilesystemMetadata& metadata,
-    bool private_permissions
+    config::SyncPermissionsMode permissions
 ) {
     const SafeSyncRoot safe_root{sync_root};
     recover_pending_downloads(
@@ -248,7 +248,7 @@ void recover_pending_downloads(
         safe_root,
         drive_id,
         metadata,
-        private_permissions
+        permissions
     );
 }
 

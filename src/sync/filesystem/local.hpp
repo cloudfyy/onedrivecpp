@@ -1,5 +1,6 @@
 #pragma once
 
+#include "onedrive/config/config.hpp"
 #include "onedrive/storage/item_store.hpp"
 
 #include <cstdint>
@@ -34,7 +35,7 @@ struct LocalFileBaseline {
 
 [[nodiscard]] std::filesystem::path prepare_sync_root(
     const std::filesystem::path& configured_root,
-    bool private_permissions
+    config::SyncPermissionsMode permissions
 );
 [[nodiscard]] std::filesystem::path local_path_for(
     const std::filesystem::path& sync_directory,
@@ -90,7 +91,8 @@ void fsync_directory(const std::filesystem::path& directory);
 void ensure_directory_tree(
     const std::filesystem::path& root,
     const std::filesystem::path& directory,
-    bool private_permissions = true
+    config::SyncPermissionsMode permissions =
+        config::SyncPermissionsMode::private_access
 );
 
 }  // namespace onedrive::sync::detail

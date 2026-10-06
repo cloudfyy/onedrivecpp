@@ -124,7 +124,7 @@ onedrive::util::UniqueFD SafeSyncRoot::open_directory(
 
 void SafeSyncRoot::ensure_directory_tree(
     const std::filesystem::path& directory,
-    bool private_permissions
+    config::SyncPermissionsMode permissions
 ) const {
     const auto relative = relative_path(directory);
     Descriptor current{::fcntl(descriptor_.get(), F_DUPFD_CLOEXEC, 0)};
@@ -138,7 +138,9 @@ void SafeSyncRoot::ensure_directory_tree(
         if (::mkdirat(
                 current.get(),
                 component.c_str(),
-                private_permissions ? S_IRWXU : S_IRWXU | S_IRWXG | S_IRWXO
+                permissions == config::SyncPermissionsMode::private_access ?
+                    S_IRWXU :
+                    S_IRWXU | S_IRWXG | S_IRWXO
             ) == -1 &&
             errno != EEXIST) {
             throw std::runtime_error(
@@ -158,7 +160,8 @@ void SafeSyncRoot::ensure_directory_tree(
                 (root_ / relative).string() + ": " + std::strerror(errno)
             );
         }
-        if (private_permissions && ::fchmod(next.get(), S_IRWXU) == -1) {
+        if (permissions == config::SyncPermissionsMode::private_access &&
+            ::fchmod(next.get(), S_IRWXU) == -1) {
             throw std::runtime_error(
                 "cannot secure local synchronization directory '" +
                 (root_ / relative).string() + "': " + std::strerror(errno)

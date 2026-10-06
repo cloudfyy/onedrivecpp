@@ -1,5 +1,6 @@
 #pragma once
 
+#include "onedrive/config/config.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"
 
 #include <cstdint>
@@ -48,7 +49,7 @@ public:
     ) const;
     void ensure_directory_tree(
         const std::filesystem::path& directory,
-        bool private_permissions
+        config::SyncPermissionsMode permissions
     ) const;
     void rename(
         const std::filesystem::path& source,

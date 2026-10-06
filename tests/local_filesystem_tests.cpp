@@ -181,7 +181,10 @@ int main() {
     detail::SafeSyncRoot assigned_root{root};
     assigned_root = std::move(moved_root);
     try {
-        assigned_root.ensure_directory_tree(redirected / "directory", true);
+        assigned_root.ensure_directory_tree(
+            redirected / "directory",
+            onedrive::config::SyncPermissionsMode::private_access
+        );
         return fail("safe root followed a directory symlink");
     } catch (const std::runtime_error&) {
     }
@@ -213,7 +216,10 @@ int main() {
             S_IRGRP | S_IWGRP |
             S_IROTH | S_IWOTH
     ));
-    assigned_root.ensure_directory_tree(umask_directory, false);
+    assigned_root.ensure_directory_tree(
+        umask_directory,
+        onedrive::config::SyncPermissionsMode::umask
+    );
     ::umask(original_umask);
     struct stat umask_status {};
     struct stat umask_file_status {};

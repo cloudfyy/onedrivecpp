@@ -117,15 +117,12 @@ int download_single_file(
     const auto& configured_root = target.configured_root;
     const auto& destination = target.destination;
 
-    const bool private_permissions =
-        config.sync_permissions ==
-        config::SyncPermissionsMode::private_access;
     const auto sync_root =
-        detail::prepare_sync_root(configured_root, private_permissions);
+        detail::prepare_sync_root(configured_root, config.sync_permissions);
     detail::SafeSyncRoot safe_root{sync_root};
     safe_root.ensure_directory_tree(
         destination.parent_path(),
-        private_permissions
+        config.sync_permissions
     );
     const auto metadata = detail::FilesystemMetadata::detect(
         config.filesystem_metadata,
@@ -136,7 +133,7 @@ int download_single_file(
         safe_root,
         config.drive_id,
         metadata,
-        private_permissions
+        config.sync_permissions
     );
     const auto previous = items.find(config.drive_id, item.id);
     const auto target_status =
