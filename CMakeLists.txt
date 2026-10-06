@@ -121,7 +121,10 @@ add_library(onedrive_core
     src/graph/support.cpp
     src/graph/upload.cpp
     src/http/transfer_rate_limiter.cpp
+    src/http/callbacks.cpp
     src/http/http_client.cpp
+    src/http/proxy.cpp
+    src/http/request.cpp
     src/logging/logging.cpp
     src/metrics/metrics.cpp
     src/monitor/monitor.cpp
