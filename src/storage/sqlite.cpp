@@ -1,4 +1,4 @@
-#include "storage/sqlite_support.hpp"
+#include "storage/sqlite.hpp"
 
 #include <memory>
 #include <stdexcept>

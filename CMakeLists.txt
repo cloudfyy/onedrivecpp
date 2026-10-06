@@ -131,12 +131,15 @@ add_library(onedrive_core
     src/util/path_security.cpp
     src/util/remote_time.cpp
     src/util/sha256.cpp
+    src/storage/delta.cpp
     src/storage/item_database.cpp
+    src/storage/item_state.cpp
+    src/storage/state_reset.cpp
     src/storage/schema.cpp
     src/storage/download_journal.cpp
     src/storage/operation_journal.cpp
     src/storage/upload_journal.cpp
-    src/storage/sqlite_support.cpp
+    src/storage/sqlite.cpp
     src/sync/download/integrity.cpp
     src/sync/download/progress.cpp
     src/sync/download/recovery.cpp

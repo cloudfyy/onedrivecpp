@@ -1,6 +1,6 @@
 #include "storage/schema.hpp"
 
-#include "storage/sqlite_support.hpp"
+#include "storage/sqlite.hpp"
 
 #include <spdlog/spdlog.h>
 
