@@ -61,7 +61,12 @@ public:
 private:
     friend Lease;
 
-    void reserve(std::uintmax_t bytes, bool expanding);
+    enum class ReservationKind {
+        initial,
+        expansion,
+    };
+
+    void reserve(std::uintmax_t bytes, ReservationKind kind);
     void consume(std::uintmax_t bytes);
     void release(std::uintmax_t remaining) noexcept;
 

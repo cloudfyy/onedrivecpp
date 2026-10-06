@@ -51,7 +51,7 @@ void DownloadSpaceCoordinator::Lease::expand(std::uintmax_t bytes) {
     if (bytes > std::numeric_limits<std::uintmax_t>::max() - remaining_) {
         throw std::overflow_error("download space lease exceeds its size limit");
     }
-    owner_->reserve(bytes, true);
+    owner_->reserve(bytes, ReservationKind::expansion);
     remaining_ += bytes;
 }
 
@@ -117,15 +117,16 @@ DownloadSpaceCoordinator::Lease DownloadSpaceCoordinator::acquire(
         ++active_leases_;
         return Lease{this, 0};
     }
-    reserve(bytes, false);
+    reserve(bytes, ReservationKind::initial);
     return Lease{this, bytes};
 }
 
 void DownloadSpaceCoordinator::reserve(
     std::uintmax_t bytes,
-    bool expanding
+    ReservationKind kind
 ) {
     std::unique_lock lock{mutex_};
+    const bool expanding = kind == ReservationKind::expansion;
     while (true) {
         if (cancelled_) {
             throw DownloadSpaceCancelledError{
