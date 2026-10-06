@@ -135,11 +135,13 @@ add_onedrive_test(
     SOURCES tests/download_progress_tests.cpp
     INCLUDE_DIRS src
 )
-add_onedrive_test(
-    download_components_tests
-    SOURCES tests/download_components_tests.cpp
-    INCLUDE_DIRS src
-)
+foreach(DOWNLOAD_TEST IN ITEMS single safe txn relaxed resume recover)
+    add_onedrive_test(
+        download_${DOWNLOAD_TEST}_tests
+        SOURCES tests/download/${DOWNLOAD_TEST}.cpp
+        INCLUDE_DIRS src tests tests/download
+    )
+endforeach()
 add_onedrive_test(
     download_integrity_tests
     SOURCES tests/download_integrity_tests.cpp
