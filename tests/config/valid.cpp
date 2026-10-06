@@ -10,6 +10,93 @@ int test_valid() {
     {
         std::ofstream output{path};
         output << "config_version = 2\n"
+               << "[sync]\n"
+               << "mode = \"sideways\"\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "invalid synchronization mode was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains("sync.mode")) {
+            std::filesystem::remove(path);
+            std::cerr << "invalid synchronization mode reported wrong error\n";
+            return EXIT_FAILURE;
+        }
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[sync]\n"
+               << "delete_policy = \"destroy\"\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "invalid deletion policy was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains("sync.delete_policy")) {
+            std::filesystem::remove(path);
+            std::cerr << "invalid deletion policy reported wrong error\n";
+            return EXIT_FAILURE;
+        }
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[sync]\n"
+               << "mode = \"upload_only\"\n"
+               << "upload = true\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "ambiguous synchronization mode was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains(
+                "must not both be configured"
+            )) {
+            std::filesystem::remove(path);
+            std::cerr << "ambiguous synchronization mode reported wrong error\n";
+            return EXIT_FAILURE;
+        }
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[sync]\n"
+               << "upload = false\n";
+    }
+    const auto legacy = onedrive::config::Config::load(path);
+    if (legacy.sync_mode != onedrive::sync::SyncMode::download_only ||
+        legacy.delete_policy != onedrive::sync::DeletePolicy::propagate) {
+        std::filesystem::remove(path);
+        std::cerr << "legacy upload setting was not mapped safely\n";
+        return EXIT_FAILURE;
+    }
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[sync]\n"
+               << "upload = true\n";
+    }
+    const auto legacy_upload = onedrive::config::Config::load(path);
+    if (legacy_upload.sync_mode !=
+        onedrive::sync::SyncMode::bidirectional) {
+        std::filesystem::remove(path);
+        std::cerr << "legacy enabled upload setting was not mapped safely\n";
+        return EXIT_FAILURE;
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
                << "[console]\n"
                << "color = \"sometimes\"\n";
     }

@@ -1,6 +1,6 @@
 #pragma once
 
-namespace onedrive::sync::detail {
+namespace onedrive::sync {
 
 enum class SyncMode {
     bidirectional,
@@ -105,4 +105,4 @@ private:
     return SyncCapabilities{sync_mode, delete_policy, execution_mode};
 }
 
-} // namespace onedrive::sync::detail
+} // namespace onedrive::sync

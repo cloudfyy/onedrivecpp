@@ -110,6 +110,8 @@ void validate_proxy_url(std::string_view value);
 [[nodiscard]] LocalConflictPolicy parse_local_conflict(
     std::string_view value
 );
+[[nodiscard]] sync::SyncMode parse_sync_mode(std::string_view value);
+[[nodiscard]] sync::DeletePolicy parse_delete_policy(std::string_view value);
 
 void load_sync_options(
     Config& config,

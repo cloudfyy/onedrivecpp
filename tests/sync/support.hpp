@@ -783,7 +783,7 @@ config_for(const std::filesystem::path& root, bool dry_run) {
     config.state_directory = root.parent_path() / "state";
     config.filesystem_metadata =
         onedrive::config::FilesystemMetadataMode::database;
-    config.upload = false;
+    config.sync_mode = onedrive::sync::SyncMode::download_only;
     config.dry_run = dry_run;
     return config;
 }

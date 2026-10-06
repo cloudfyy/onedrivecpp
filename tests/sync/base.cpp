@@ -321,7 +321,7 @@ int test_selective_sync_remote_moves() {
     FakeMetrics metrics;
     auto config = config_for(root, false);
     config.sync_list = sync_list;
-    config.upload = true;
+    config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
         ) != 0 ||
         !std::filesystem::exists(root / "Documents" / "A.txt") ||
@@ -435,7 +435,7 @@ int test_selective_sync_remote_moves() {
     FakeMetrics directory_metrics;
     auto directory_config = config_for(directory_root, false);
     directory_config.sync_list = sync_list;
-    directory_config.upload = true;
+    directory_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     if (onedrive::sync::SyncEngine{
             directory_config,
             directory_graph,
@@ -475,7 +475,7 @@ int test_selective_sync_remote_moves() {
     FakeMetrics dry_metrics;
     auto dry_config = config_for(dry_root, true);
     dry_config.sync_list = sync_list;
-    dry_config.upload = true;
+    dry_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     if (onedrive::sync::SyncEngine{
             dry_config, dry_graph, dry_items, dry_metrics
         }

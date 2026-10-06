@@ -22,6 +22,8 @@ void load_sync_options(Config& config, const toml::table& root, const std::files
                 "sync_list",
                 "sync_root_files",
                 "local_conflict",
+                "mode",
+                "delete_policy",
                 "maximum_remote_deletions",
                 "data_mount_point",
                 "upload",
@@ -72,13 +74,38 @@ void load_sync_options(Config& config, const toml::table& root, const std::files
             )) {
             config.drive_id = *value;
         }
-        if (const auto value = optional_value<bool>(
+        const auto mode = optional_value<std::string>(
+            *sync, "mode", "sync.mode", "a string"
+        );
+        const auto legacy_upload = optional_value<bool>(
+            *sync,
+            "upload",
+            "sync.upload",
+            "a boolean"
+        );
+        if (mode && legacy_upload) {
+            throw std::runtime_error(
+                "sync.mode and legacy sync.upload must not both be configured"
+            );
+        }
+        if (mode) {
+            config.sync_mode = parse_sync_mode(*mode);
+            if (config.sync_mode == sync::SyncMode::upload_only &&
+                !sync->contains("delete_policy")) {
+                config.delete_policy = sync::DeletePolicy::preserve;
+            }
+        } else if (legacy_upload) {
+            config.sync_mode = *legacy_upload ?
+                sync::SyncMode::bidirectional :
+                sync::SyncMode::download_only;
+        }
+        if (const auto value = optional_value<std::string>(
                 *sync,
-                "upload",
-                "sync.upload",
-                "a boolean"
+                "delete_policy",
+                "sync.delete_policy",
+                "a string"
             )) {
-            config.upload = *value;
+            config.delete_policy = parse_delete_policy(*value);
         }
         if (const auto value = optional_value<bool>(
                 *sync,

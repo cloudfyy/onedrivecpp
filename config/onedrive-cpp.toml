@@ -81,8 +81,12 @@ drive_id = "me"
 # sync_list = "sync_list"
 # Include ordinary files located directly in the Drive root when sync_list is set.
 sync_root_files = false
-# Upload new and modified local files after applying remote changes.
-upload = true
+# "bidirectional" downloads remote changes and uploads local changes.
+# "upload_only" uploads local changes without changing local content from Graph.
+mode = "bidirectional"
+# "propagate" mirrors source deletions to the destination. "preserve" never
+# deletes the destination because an item disappeared from the source.
+delete_policy = "propagate"
 # Stop before propagating a larger local disappearance to OneDrive.
 # A deleted parent counts every tracked descendant it would remove.
 maximum_remote_deletions = 1000

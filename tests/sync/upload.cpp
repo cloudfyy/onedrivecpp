@@ -17,7 +17,7 @@ int test_local_file_uploads() {
     FakeGraphClient dry_graph;
     FakeMetrics dry_metrics;
     auto dry_config = config_for(dry_root, true);
-    dry_config.upload = true;
+    dry_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     if (onedrive::sync::SyncEngine{
             dry_config, dry_graph, dry_items, dry_metrics
         }
@@ -74,7 +74,7 @@ int test_local_file_uploads() {
     FakeGraphClient graph;
     FakeMetrics metrics;
     auto config = config_for(root, false);
-    config.upload = true;
+    config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     const auto result =
         onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize();
     std::ranges::sort(graph.uploaded_paths);
@@ -113,7 +113,7 @@ int test_local_file_uploads() {
     concurrent_graph.upload_delay = std::chrono::milliseconds{50};
     FakeMetrics concurrent_metrics;
     auto concurrent_config = config_for(concurrent_root, false);
-    concurrent_config.upload = true;
+    concurrent_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     concurrent_config.upload_concurrency = 2;
     const auto concurrent_result =
         onedrive::sync::SyncEngine{
@@ -154,7 +154,7 @@ int test_local_file_uploads() {
     cancelled_graph.fatal_upload_error = true;
     FakeMetrics cancelled_metrics;
     auto cancelled_config = config_for(cancelled_root, false);
-    cancelled_config.upload = true;
+    cancelled_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     cancelled_config.upload_concurrency = 2;
     try {
         static_cast<void>(onedrive::sync::SyncEngine{
@@ -194,7 +194,7 @@ int test_local_file_uploads() {
     resource_graph.upload_resource_error_path = "quota.txt";
     FakeMetrics resource_metrics;
     auto resource_config = config_for(resource_root, false);
-    resource_config.upload = true;
+    resource_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     static_cast<void>(onedrive::sync::SyncEngine{
         resource_config, resource_graph, resource_items, resource_metrics
     }
@@ -251,7 +251,7 @@ int test_local_file_uploads() {
     FakeGraphClient storage_graph;
     FakeMetrics storage_metrics;
     auto storage_config = config_for(storage_root, false);
-    storage_config.upload = true;
+    storage_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     static_cast<void>(onedrive::sync::SyncEngine{
         storage_config, storage_graph, storage_items, storage_metrics
     }
@@ -305,7 +305,7 @@ int test_local_file_uploads() {
         FakeGraphClient permission_graph;
         FakeMetrics permission_metrics;
         auto permission_config = config_for(permission_root, false);
-        permission_config.upload = true;
+        permission_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
         static_cast<void>(onedrive::sync::SyncEngine{
             permission_config,
             permission_graph,
@@ -351,7 +351,7 @@ int test_local_file_uploads() {
     FakeGraphClient removed_graph;
     FakeMetrics removed_metrics;
     auto removed_config = config_for(removed_root, false);
-    removed_config.upload = true;
+    removed_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     static_cast<void>(onedrive::sync::SyncEngine{
         removed_config, removed_graph, removed_items, removed_metrics
     }
@@ -374,7 +374,7 @@ int test_local_directory_uploads() {
     FakeGraphClient journal_failure_graph;
     FakeMetrics journal_failure_metrics;
     auto journal_failure_config = config_for(journal_failure_root, false);
-    journal_failure_config.upload = true;
+    journal_failure_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     try {
         static_cast<void>(onedrive::sync::SyncEngine{
             journal_failure_config,
@@ -416,7 +416,7 @@ int test_local_directory_uploads() {
     FakeGraphClient graph;
     FakeMetrics metrics;
     auto config = config_for(root, false);
-    config.upload = true;
+    config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
         ) != 0 ||
         graph.created_directory_paths !=
@@ -446,7 +446,7 @@ int test_local_directory_uploads() {
     resource_graph.directory_resource_error_path = "Quota";
     FakeMetrics resource_metrics;
     auto resource_config = config_for(resource_root, false);
-    resource_config.upload = true;
+    resource_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     static_cast<void>(onedrive::sync::SyncEngine{
         resource_config, resource_graph, resource_items, resource_metrics
     }
@@ -480,7 +480,7 @@ int test_local_directory_uploads() {
     conflict_graph.directory_conflict = true;
     FakeMetrics conflict_metrics;
     auto conflict_config = config_for(conflict_root, false);
-    conflict_config.upload = true;
+    conflict_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     try {
         static_cast<void>(onedrive::sync::SyncEngine{
             conflict_config, conflict_graph, conflict_items, conflict_metrics
@@ -502,7 +502,7 @@ int test_local_directory_uploads() {
     FakeGraphClient recovery_graph;
     FakeMetrics recovery_metrics;
     auto recovery_config = config_for(recovery_root, false);
-    recovery_config.upload = true;
+    recovery_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     try {
         static_cast<void>(onedrive::sync::SyncEngine{
             recovery_config, recovery_graph, recovery_items, recovery_metrics
@@ -549,7 +549,7 @@ int test_local_directory_uploads() {
     FakeGraphClient selective_graph;
     FakeMetrics selective_metrics;
     auto selective_config = config_for(selective_root, false);
-    selective_config.upload = true;
+    selective_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     selective_config.sync_list = sync_list;
     if (onedrive::sync::SyncEngine{
             selective_config,
@@ -574,7 +574,7 @@ int test_local_directory_uploads() {
     FakeGraphClient type_graph;
     FakeMetrics type_metrics;
     auto type_config = config_for(type_root, false);
-    type_config.upload = true;
+    type_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     static_cast<void>(onedrive::sync::SyncEngine{
         type_config, type_graph, type_items, type_metrics
     }
@@ -594,7 +594,7 @@ int test_local_directory_uploads() {
     };
     FakeMetrics changing_metrics;
     auto changing_config = config_for(changing_root, false);
-    changing_config.upload = true;
+    changing_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     try {
         static_cast<void>(onedrive::sync::SyncEngine{
             changing_config, changing_graph, changing_items, changing_metrics
@@ -631,7 +631,7 @@ int test_local_directory_uploads() {
     };
     FakeMetrics recovery_conflict_metrics;
     auto recovery_conflict_config = config_for(recovery_conflict_root, false);
-    recovery_conflict_config.upload = true;
+    recovery_conflict_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     if (onedrive::sync::SyncEngine{
             recovery_conflict_config,
             recovery_conflict_graph,
@@ -669,7 +669,7 @@ int test_local_change_during_upload() {
     };
     FakeMetrics metrics;
     auto config = config_for(root, false);
-    config.upload = true;
+    config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
         ) != 0 ||
         graph.upload_count != 1) {
@@ -703,7 +703,7 @@ int test_pending_upload_recovery() {
     FakeGraphClient graph;
     FakeMetrics metrics;
     auto config = config_for(root, false);
-    config.upload = true;
+    config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     try {
         static_cast<void>(
             onedrive::sync::SyncEngine{config, graph, items, metrics}
@@ -762,7 +762,7 @@ int test_upload_checkpoint_recovery() {
     graph.fail_after_upload_checkpoint = true;
     FakeMetrics metrics;
     auto config = config_for(root, false);
-    config.upload = true;
+    config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     try {
         static_cast<void>(
             onedrive::sync::SyncEngine{config, graph, items, metrics}
@@ -807,7 +807,7 @@ int test_upload_checkpoint_recovery() {
     };
     FakeMetrics failing_metrics;
     auto failing_config = config_for(failing_root, false);
-    failing_config.upload = true;
+    failing_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     try {
         static_cast<void>(onedrive::sync::SyncEngine{
             failing_config, failing_graph, failing_items, failing_metrics
@@ -877,7 +877,7 @@ int test_pending_upload_recovery_conflict() {
     prepare_graph(block_graph);
     FakeMetrics block_metrics;
     auto block_config = config_for(block_root, false);
-    block_config.upload = true;
+    block_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     if (onedrive::sync::SyncEngine{
             block_config, block_graph, block_items, block_metrics
         }
@@ -909,7 +909,7 @@ int test_pending_upload_recovery_conflict() {
     prepare_graph(backup_graph);
     FakeMetrics backup_metrics;
     auto backup_config = config_for(backup_root, false);
-    backup_config.upload = true;
+    backup_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     backup_config.local_conflict =
         onedrive::config::LocalConflictPolicy::backup;
     if (onedrive::sync::SyncEngine{
@@ -956,7 +956,7 @@ int test_pending_upload_recovery_conflict() {
     size_graph.contents.emplace("remote-conflict", "remote!!");
     FakeMetrics size_metrics;
     auto size_config = config_for(size_root, false);
-    size_config.upload = true;
+    size_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     if (onedrive::sync::SyncEngine{
             size_config, size_graph, size_items, size_metrics
         }

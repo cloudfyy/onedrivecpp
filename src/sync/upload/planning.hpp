@@ -1,7 +1,7 @@
 #pragma once
 
 #include "onedrive/storage/item_store.hpp"
-#include "sync/core/capabilities.hpp"
+#include "onedrive/sync/capabilities.hpp"
 
 #include <filesystem>
 #include <optional>

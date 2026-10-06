@@ -1,0 +1,104 @@
+#include "support.hpp"
+
+namespace {
+
+using namespace onedrive::test::sync;
+
+int test_upload_only() {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path() / "upload-only";
+    std::filesystem::create_directories(root);
+    {
+        std::ofstream output{root / "new.txt"};
+        output << "new";
+    }
+    {
+        std::ofstream output{root / "preserved.txt"};
+        output << "data";
+    }
+    {
+        std::ofstream output{root / "missing.txt"};
+        output << "data";
+    }
+    {
+        std::ofstream output{root / "modified.txt"};
+        output << "data";
+    }
+
+    FakeItemStore items;
+    items.saved_delta_link = "saved";
+    items.items.emplace(
+        "preserved", tracked_item(root, "preserved", "preserved.txt")
+    );
+    items.items.emplace(
+        "missing", tracked_item(root, "missing", "missing.txt")
+    );
+    items.items.emplace(
+        "modified", tracked_item(root, "modified", "modified.txt")
+    );
+    std::filesystem::remove(root / "missing.txt");
+    {
+        std::ofstream output{root / "modified.txt"};
+        output << "local-change";
+    }
+    items.pending_deletes_by_id.emplace(
+        "missing",
+        onedrive::storage::PendingDelete{
+            .drive_id = "me",
+            .remote_id = "missing",
+            .expected_etag = "etag",
+            .remote_path = "missing.txt",
+            .local_path = root / "missing.txt",
+            .directory = false,
+        }
+    );
+
+    FakeGraphClient graph;
+    graph.changes = {
+        file("remote-only", "remote-only.txt", 6),
+        file("modified", "modified.txt", 6),
+        deleted_item("preserved"),
+    };
+    graph.contents["remote-only"] = "remote";
+    FakeMetrics metrics;
+    auto config = config_for(root, false);
+    config.sync_mode = onedrive::sync::SyncMode::upload_only;
+    config.delete_policy = onedrive::sync::DeletePolicy::preserve;
+
+    std::ostringstream output;
+    std::ostringstream error;
+    const onedrive::cli::Console console{
+        {
+            .color = onedrive::cli::ColorMode::never,
+            .output = onedrive::cli::OutputMode::json,
+        },
+        output,
+        error
+    };
+    const auto result =
+        onedrive::sync::SyncEngine{config, graph, items, metrics, &console}
+            .synchronize();
+    std::ranges::sort(graph.uploaded_paths);
+
+    if (result != 0 || graph.download_count != 0 ||
+        !graph.deleted_items.empty() ||
+        graph.uploaded_paths !=
+            std::vector<std::string>{"modified.txt", "new.txt"} ||
+        !std::filesystem::exists(root / "preserved.txt") ||
+        std::filesystem::exists(root / "remote-only.txt") ||
+        !items.pending_deletes_by_id.contains("missing") ||
+        !items.find("me", "missing") || !metrics.last_success ||
+        !output.str().contains("\"download_files\":\"0\"") ||
+        !output.str().contains("\"local_removals\":\"0\"")) {
+        return fail(
+            "upload-only mode changed local content or deleted remote content"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int main() {
+    return test_upload_only();
+}

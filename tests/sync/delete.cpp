@@ -330,7 +330,7 @@ int test_local_deletions() {
     FakeGraphClient graph;
     FakeMetrics metrics;
     auto config = config_for(root, false);
-    config.upload = true;
+    config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     static_cast<void>(
         onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize()
     );
@@ -361,7 +361,7 @@ int test_local_deletions() {
     FakeGraphClient dry_graph;
     FakeMetrics dry_metrics;
     auto dry_config = config_for(dry_root, true);
-    dry_config.upload = true;
+    dry_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     static_cast<void>(onedrive::sync::SyncEngine{
         dry_config, dry_graph, dry_items, dry_metrics
     }
@@ -406,7 +406,7 @@ int test_local_deletions() {
     FakeGraphClient guarded_graph;
     FakeMetrics guarded_metrics;
     auto guarded_config = config_for(guarded_root, false);
-    guarded_config.upload = true;
+    guarded_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     guarded_config.maximum_remote_deletions = 2;
     std::ostringstream guarded_output;
     std::ostringstream guarded_error;
@@ -450,7 +450,7 @@ int test_local_deletions() {
     FakeGraphClient guarded_dry_graph;
     FakeMetrics guarded_dry_metrics;
     auto guarded_dry_config = config_for(guarded_root, true);
-    guarded_dry_config.upload = true;
+    guarded_dry_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     guarded_dry_config.maximum_remote_deletions = 2;
     std::ostringstream guarded_dry_output;
     std::ostringstream guarded_dry_error;
@@ -523,7 +523,7 @@ int test_local_deletions() {
     FakeGraphClient pending_guard_graph;
     FakeMetrics pending_guard_metrics;
     auto pending_guard_config = config_for(pending_guard_root, false);
-    pending_guard_config.upload = true;
+    pending_guard_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     pending_guard_config.maximum_remote_deletions = 2;
     try {
         static_cast<void>(onedrive::sync::SyncEngine{
@@ -574,7 +574,7 @@ int test_local_deletions() {
     FakeGraphClient selective_graph;
     FakeMetrics selective_metrics;
     auto selective_config = config_for(selective_root, false);
-    selective_config.upload = true;
+    selective_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     selective_config.sync_list = sync_list;
     selective_items.saved_sync_filter_fingerprint =
         onedrive::sync::detail::SyncList::load(
@@ -614,7 +614,7 @@ int test_local_deletions() {
     FakeGraphClient journal_failure_graph;
     FakeMetrics journal_failure_metrics;
     auto journal_failure_config = config_for(journal_failure_root, false);
-    journal_failure_config.upload = true;
+    journal_failure_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     try {
         static_cast<void>(onedrive::sync::SyncEngine{
             journal_failure_config,
@@ -665,7 +665,7 @@ int test_local_deletions() {
     FakeGraphClient recovery_graph;
     FakeMetrics recovery_metrics;
     auto recovery_config = config_for(recovery_root, false);
-    recovery_config.upload = true;
+    recovery_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     try {
         static_cast<void>(onedrive::sync::SyncEngine{
             recovery_config, recovery_graph, recovery_items, recovery_metrics
@@ -713,7 +713,7 @@ int test_local_deletions() {
     FakeGraphClient reappeared_graph;
     FakeMetrics reappeared_metrics;
     auto reappeared_config = config_for(reappeared_root, false);
-    reappeared_config.upload = true;
+    reappeared_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     try {
         static_cast<void>(onedrive::sync::SyncEngine{
             reappeared_config,
@@ -748,7 +748,7 @@ int test_local_deletions() {
     conflict_graph.delete_conflict = true;
     FakeMetrics conflict_metrics;
     auto conflict_config = config_for(conflict_root, false);
-    conflict_config.upload = true;
+    conflict_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     try {
         static_cast<void>(onedrive::sync::SyncEngine{
             conflict_config, conflict_graph, conflict_items, conflict_metrics

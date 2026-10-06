@@ -111,7 +111,7 @@ foreach(PREFLIGHT_TEST IN ITEMS state sync invalid)
         INCLUDE_DIRS src tests tests/preflight
     )
 endforeach()
-foreach(SYNC_TEST IN ITEMS base delete move download upload)
+foreach(SYNC_TEST IN ITEMS base delete move download upload mode)
     add_onedrive_test(
         sync_${SYNC_TEST}_tests
         SOURCES tests/sync/${SYNC_TEST}.cpp

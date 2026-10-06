@@ -23,7 +23,7 @@ int test_base() {
                << "sync_root_files = true\n"
                << "local_conflict = \"backup\"\n"
                << "maximum_remote_deletions = 42\n"
-               << "upload = false\n"
+               << "mode = \"upload_only\"\n"
                << "dry_run = true\n"
                << "permissions = \"umask\"\n"
                << "[proxy]\n"
@@ -147,7 +147,8 @@ int test_base() {
         config.local_conflict !=
             onedrive::config::LocalConflictPolicy::backup ||
         config.maximum_remote_deletions != 42 || config.force_large_delete ||
-        config.upload ||
+        config.sync_mode != onedrive::sync::SyncMode::upload_only ||
+        config.delete_policy != onedrive::sync::DeletePolicy::preserve ||
         config.proxy.url !=
             std::optional<std::string>{"https://proxy.example.test:8443"} ||
         config.proxy.no_proxy !=
@@ -209,7 +210,9 @@ int test_base() {
         ) ||
         defaults.sync_permissions !=
             onedrive::config::SyncPermissionsMode::private_access ||
-        defaults.sync_data_mount_point || !defaults.upload ||
+        defaults.sync_data_mount_point ||
+        defaults.sync_mode != onedrive::sync::SyncMode::bidirectional ||
+        defaults.delete_policy != onedrive::sync::DeletePolicy::propagate ||
         defaults.local_conflict !=
             onedrive::config::LocalConflictPolicy::block ||
         defaults.maximum_remote_deletions != 1000 ||

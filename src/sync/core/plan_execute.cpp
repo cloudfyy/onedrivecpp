@@ -32,7 +32,7 @@ ExecutionSummary execute_plan(
     storage::ItemStore& items,
     const detail::FilesystemMetadata& metadata,
     const cli::Console& console,
-    detail::SyncCapabilities capabilities,
+    SyncCapabilities capabilities,
     std::size_t download_concurrency,
     config::TransferOrder transfer_order,
     config::LocalConflictPolicy local_conflict,

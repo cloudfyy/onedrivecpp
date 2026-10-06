@@ -56,7 +56,7 @@ int test_remote_moves() {
     FakeGraphClient journal_failure_graph;
     FakeMetrics journal_failure_metrics;
     auto journal_failure_config = config_for(journal_failure_root, false);
-    journal_failure_config.upload = true;
+    journal_failure_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     static_cast<void>(onedrive::sync::SyncEngine{
         journal_failure_config,
         journal_failure_graph,
@@ -1192,7 +1192,7 @@ int test_local_move_uploads() {
     FakeGraphClient graph;
     FakeMetrics metrics;
     auto config = config_for(root, false);
-    config.upload = true;
+    config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     static_cast<void>(
         onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize()
     );
@@ -1265,7 +1265,7 @@ int test_local_move_uploads() {
     FakeGraphClient new_parent_graph;
     FakeMetrics new_parent_metrics;
     auto new_parent_config = config_for(new_parent_root, false);
-    new_parent_config.upload = true;
+    new_parent_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     static_cast<void>(onedrive::sync::SyncEngine{
         new_parent_config,
         new_parent_graph,
@@ -1361,7 +1361,7 @@ int test_local_move_uploads() {
     FakeGraphClient tracked_parent_graph;
     FakeMetrics tracked_parent_metrics;
     auto tracked_parent_config = config_for(tracked_parent_root, false);
-    tracked_parent_config.upload = true;
+    tracked_parent_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     static_cast<void>(onedrive::sync::SyncEngine{
         tracked_parent_config,
         tracked_parent_graph,
@@ -1415,7 +1415,7 @@ int test_local_move_uploads() {
     FakeMetrics new_directory_parent_metrics;
     auto new_directory_parent_config =
         config_for(new_directory_parent_root, false);
-    new_directory_parent_config.upload = true;
+    new_directory_parent_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     static_cast<void>(onedrive::sync::SyncEngine{
         new_directory_parent_config,
         new_directory_parent_graph,
@@ -1469,7 +1469,7 @@ int test_local_move_uploads() {
     FakeGraphClient recovery_graph;
     FakeMetrics recovery_metrics;
     auto recovery_config = config_for(recovery_root, false);
-    recovery_config.upload = true;
+    recovery_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     static_cast<void>(onedrive::sync::SyncEngine{
         recovery_config, recovery_graph, recovery_items, recovery_metrics
     }
@@ -1529,7 +1529,7 @@ int test_local_move_uploads() {
     directory_graph.moved_item_directory = true;
     FakeMetrics directory_metrics;
     auto directory_config = config_for(directory_root, false);
-    directory_config.upload = true;
+    directory_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     static_cast<void>(onedrive::sync::SyncEngine{
         directory_config, directory_graph, directory_items, directory_metrics
     }
@@ -1573,7 +1573,7 @@ int test_local_move_uploads() {
     FakeGraphClient selective_graph;
     FakeMetrics selective_metrics;
     auto selective_config = config_for(selective_root, false);
-    selective_config.upload = true;
+    selective_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     selective_config.sync_list = sync_list;
     selective_items.saved_sync_filter_fingerprint =
         onedrive::sync::detail::SyncList::load(
@@ -1619,7 +1619,7 @@ int test_local_move_uploads() {
     FakeGraphClient selective_parent_graph;
     FakeMetrics selective_parent_metrics;
     auto selective_parent_config = config_for(selective_parent_root, false);
-    selective_parent_config.upload = true;
+    selective_parent_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     selective_parent_config.sync_list = sync_list;
     selective_parent_items.saved_sync_filter_fingerprint =
         onedrive::sync::detail::SyncList::load(
@@ -1674,7 +1674,7 @@ int test_local_move_uploads() {
     FakeGraphClient parent_recovery_graph;
     FakeMetrics parent_recovery_metrics;
     auto parent_recovery_config = config_for(parent_recovery_root, false);
-    parent_recovery_config.upload = true;
+    parent_recovery_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     static_cast<void>(onedrive::sync::SyncEngine{
         parent_recovery_config,
         parent_recovery_graph,

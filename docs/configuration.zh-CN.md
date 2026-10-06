@@ -46,7 +46,8 @@ local_conflict = "block"
 # 可选；相对路径以本 TOML 文件所在目录为基准
 # sync_list = "sync_list"
 sync_root_files = false
-upload = true
+mode = "bidirectional"
+delete_policy = "propagate"
 maximum_remote_deletions = 1000
 
 # 指定其他 OneDrive 或 SharePoint 文档库
@@ -217,12 +218,20 @@ inode，而是直接采用现有文件。创建备份需要额外占用约等于
 不依赖 cTag，因为 SharePoint 和 OneDrive for Business 可能不返回目录 cTag，或
 不能一致地反映后代变化。
 
-`sync.upload` 默认为 `true`。应用远端变化后，普通同步会上传符合相同 sync-list
-规则的本地新增和修改普通文件。新文件使用“冲突即失败”创建，已跟踪文件使用保存
-的 eTag 作为 `If-Match` 前置条件。符号链接、safeBackup 和传输临时名称、被阻止
-的远端路径以及类型冲突都不会上传。每次传输使用稳定的私有快照和持久 SQLite
-pending-upload journal；恢复时会下载已经出现的远端文件并比较 SHA-256，匹配后
-才提交状态。符合 selective sync 规则且尚未跟踪的本地目录会在其文件上传前按
+`sync.mode` 默认为 `bidirectional`，会下载远端变化并上传符合相同 sync-list
+规则的本地变化。`upload_only` 仍会获取并保存 Graph Delta 基线，但不会下载、
+移动或删除本地内容；本地新增和修改仍使用已有冲突检查和持久上传 journal。
+设置 `sync.delete_policy = "preserve"` 后，本地项目缺失不会删除远端对应项目；
+当 `upload_only` 未显式设置删除策略时，这是安全默认值。双向同步默认使用
+`propagate`。旧 `sync.upload` 布尔值继续兼容：`true` 映射为
+`bidirectional`，`false` 映射为 `download_only`，但不能与 `sync.mode`
+同时配置。
+
+新文件使用“冲突即失败”创建，已跟踪文件使用保存的 eTag 作为 `If-Match`
+前置条件。符号链接、safeBackup 和传输临时名称、被阻止的远端路径以及类型冲突
+都不会上传。每次传输使用稳定的私有快照和持久 SQLite pending-upload journal；
+恢复时会下载已经出现的远端文件并比较 SHA-256，匹配后才提交状态。符合
+selective sync 规则且尚未跟踪的本地目录会在其文件上传前按
 父目录优先顺序创建到远端。目录创建使用“冲突即失败”和相同的持久 journal：
 Graph 明确返回冲突时会移除 journal 并阻止操作；发生结果不明确的中断后，恢复
 流程会重试请求，并且只有同一路径的远端项目确实是目录时才采用它。
@@ -235,7 +244,7 @@ header，也不会写入日志。pending-upload journal 会持久保存 session 
 情况下查询 session；如果 Graph 进度领先于本地最后一个 checkpoint，则先持久化
 远端进度，再从该位置续传，不会重发已确认分片。session 过期或返回 HTTP 404/410
 时会安全创建新 session；服务端偏移落后于可靠 checkpoint 时会停止，避免重复发送
-数据。设置 `upload = false` 可保持仅下载行为。
+数据。旧配置中的 `upload = false` 会映射为 `mode = "download_only"`。
 
 OneDrive 配额响应，以及本地上传读取、权限、快照空间或 I/O 失败，会在同一个
 pending-upload journal 中持久记录可操作原因和尝试次数。单个失败项目不会阻止

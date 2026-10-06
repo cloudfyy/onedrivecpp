@@ -264,4 +264,21 @@ LocalConflictPolicy parse_local_conflict(std::string_view value) {
     return enum_value(value, "sync.local_conflict", values);
 }
 
+sync::SyncMode parse_sync_mode(std::string_view value) {
+    constexpr std::array values{
+        std::pair{"bidirectional", sync::SyncMode::bidirectional},
+        std::pair{"upload_only", sync::SyncMode::upload_only},
+        std::pair{"download_only", sync::SyncMode::download_only},
+    };
+    return enum_value(value, "sync.mode", values);
+}
+
+sync::DeletePolicy parse_delete_policy(std::string_view value) {
+    constexpr std::array values{
+        std::pair{"propagate", sync::DeletePolicy::propagate},
+        std::pair{"preserve", sync::DeletePolicy::preserve},
+    };
+    return enum_value(value, "sync.delete_policy", values);
+}
+
 }  // namespace onedrive::config::detail

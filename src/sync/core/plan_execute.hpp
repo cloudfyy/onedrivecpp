@@ -3,7 +3,7 @@
 #include "onedrive/config/config.hpp"
 #include "onedrive/graph/graph_client.hpp"
 #include "onedrive/storage/item_store.hpp"
-#include "sync/core/capabilities.hpp"
+#include "onedrive/sync/capabilities.hpp"
 #include "sync/core/plan.hpp"
 
 #include <cstddef>
@@ -36,7 +36,7 @@ struct ExecutionSummary {
     storage::ItemStore& items,
     const detail::FilesystemMetadata& metadata,
     const cli::Console& console,
-    detail::SyncCapabilities capabilities,
+    SyncCapabilities capabilities,
     std::size_t download_concurrency,
     config::TransferOrder transfer_order,
     config::LocalConflictPolicy local_conflict,

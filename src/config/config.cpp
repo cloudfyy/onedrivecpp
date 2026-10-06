@@ -67,9 +67,10 @@ Config Config::defaults() {
         .download_validation = DownloadValidationMode::strict,
         .sync_permissions = SyncPermissionsMode::private_access,
         .local_conflict = LocalConflictPolicy::block,
+        .sync_mode = sync::SyncMode::bidirectional,
+        .delete_policy = sync::DeletePolicy::propagate,
         .maximum_remote_deletions = 1000,
         .filesystem_metadata = FilesystemMetadataMode::automatic,
-        .upload = true,
         .dry_run = false,
         .force_large_delete = false,
     };

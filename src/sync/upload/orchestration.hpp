@@ -2,7 +2,7 @@
 
 #include "onedrive/graph/graph_client.hpp"
 #include "onedrive/storage/item_store.hpp"
-#include "sync/core/capabilities.hpp"
+#include "onedrive/sync/capabilities.hpp"
 
 #include <cstddef>
 #include <filesystem>

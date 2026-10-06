@@ -1,4 +1,4 @@
-#include "sync/core/capabilities.hpp"
+#include "onedrive/sync/capabilities.hpp"
 
 #include <array>
 #include <cstdlib>
@@ -6,11 +6,11 @@
 
 namespace {
 
-using onedrive::sync::detail::capabilities_for;
-using onedrive::sync::detail::DeletePolicy;
-using onedrive::sync::detail::ExecutionMode;
-using onedrive::sync::detail::SyncCapabilities;
-using onedrive::sync::detail::SyncMode;
+using onedrive::sync::capabilities_for;
+using onedrive::sync::DeletePolicy;
+using onedrive::sync::ExecutionMode;
+using onedrive::sync::SyncCapabilities;
+using onedrive::sync::SyncMode;
 
 constexpr auto bidirectional = capabilities_for(
     SyncMode::bidirectional, DeletePolicy::propagate, ExecutionMode::apply

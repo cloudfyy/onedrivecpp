@@ -686,10 +686,33 @@ Boolean value
 or
 .BR false .
 .TP
+.B sync.mode
+Synchronization direction. The default is
+.BR bidirectional ,
+which downloads remote changes and uploads local changes.
+.B upload_only
+still records the Graph Delta baseline but does not download, move, or delete
+local content.
+.TP
+.B sync.delete_policy
+Deletion propagation policy.
+.B propagate
+mirrors source deletions to the destination.
+.B preserve
+keeps destination items when their source disappears and is the safe default
+for
+.BR upload_only .
+.TP
 .B sync.upload
-Boolean controlling upload of new and modified local regular files after
-remote changes are applied. The default is
-.BR true .
+Legacy compatibility boolean.
+.B true
+maps to
+.BR "sync.mode = bidirectional" ;
+.B false
+maps to
+.BR "sync.mode = download_only" .
+It cannot be combined with
+.BR sync.mode .
 New files fail on remote name conflicts, and tracked modifications use the
 saved eTag as an If-Match precondition. Uploads use stable private snapshots
 and a durable SQLite recovery journal. Selected untracked local directories

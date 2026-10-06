@@ -4,7 +4,7 @@
 #include "onedrive/util/mount.hpp"
 #include "onedrive/util/path_security.hpp"
 #include "sync/core/delta_plan.hpp"
-#include "sync/core/capabilities.hpp"
+#include "onedrive/sync/capabilities.hpp"
 #include "sync/core/downloads.hpp"
 #include "sync/core/plan_execute.hpp"
 #include "sync/core/plan_report.hpp"
@@ -54,12 +54,12 @@ int SyncEngine::synchronize() const {
     cli::Console fallback_console;
     const auto& console =
         console_ == nullptr ? fallback_console : *console_;
-    const auto capabilities = detail::capabilities_for(
-        detail::SyncMode::bidirectional,
-        detail::DeletePolicy::propagate,
+    const auto capabilities = capabilities_for(
+        config_->sync_mode,
+        config_->delete_policy,
         config_->dry_run ?
-            detail::ExecutionMode::preview :
-            detail::ExecutionMode::apply
+            ExecutionMode::preview :
+            ExecutionMode::apply
     );
 
     try {
@@ -202,7 +202,7 @@ int SyncEngine::synchronize() const {
                     config_->sync_permissions
                 );
             }
-            if (config_->upload && capabilities.uploads()) {
+            if (capabilities.uploads()) {
                 detail::recover_pending_remote_moves(
                     *safe_root,
                     config_->drive_id,
@@ -210,17 +210,19 @@ int SyncEngine::synchronize() const {
                     items_,
                     console
                 );
-                detail::recover_pending_deletes(
-                    config_->drive_id,
-                    graph_,
-                    items_,
-                    console,
-                    {
-                        .maximum_affected_items =
-                            config_->maximum_remote_deletions,
-                        .force = config_->force_large_delete,
-                    }
-                );
+                if (capabilities.removes_remote_items()) {
+                    detail::recover_pending_deletes(
+                        config_->drive_id,
+                        graph_,
+                        items_,
+                        console,
+                        {
+                            .maximum_affected_items =
+                                config_->maximum_remote_deletions,
+                            .force = config_->force_large_delete,
+                        }
+                    );
+                }
                 detail::recover_pending_uploads(
                     *safe_root,
                     config_->drive_id,
@@ -411,13 +413,14 @@ int SyncEngine::synchronize() const {
             tracked_items,
             std::move(upload_suppressions)
         );
-        engine_detail::report_plan(plan, config_->drive_id, console);
+        engine_detail::report_plan(
+            plan, config_->drive_id, console, capabilities
+        );
 
         std::size_t blocked_count = plan.blocked_count();
         detail::UploadSummary upload_summary;
         if (capabilities.previews()) {
-            if (config_->upload && capabilities.plans_uploads() &&
-                safe_root && metadata) {
+            if (capabilities.plans_uploads() && safe_root && metadata) {
                 upload_summary = detail::upload_local_changes(
                     *safe_root,
                     config_->drive_id,
@@ -523,7 +526,7 @@ int SyncEngine::synchronize() const {
             );
             blocked_count = plan.blocked_count();
             items_.apply_delta(plan.release_state_delta());
-            if (config_->upload && capabilities.uploads()) {
+            if (capabilities.uploads()) {
                 upload_summary = detail::upload_local_changes(
                     *safe_root,
                     config_->drive_id,

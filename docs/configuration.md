@@ -55,7 +55,8 @@ local_conflict = "block"
 # Optional; resolved relative to this TOML file
 # sync_list = "sync_list"
 sync_root_files = false
-upload = true
+mode = "bidirectional"
+delete_policy = "propagate"
 maximum_remote_deletions = 1000
 
 # Another OneDrive or SharePoint document library
@@ -262,14 +263,24 @@ back to the conservative eTag behavior and downloads the remote content.
 Folder decisions do not rely on cTag because SharePoint and OneDrive for
 Business may omit it or report descendant changes inconsistently.
 
-`sync.upload` defaults to `true`. After remote changes are applied, normal
-synchronization uploads new and modified local regular files selected by the
-same sync-list rules. New files use fail-on-conflict creation; tracked files
-use their saved eTag as an `If-Match` precondition. Symbolic links, reserved
-safeBackup and transfer-temporary names, blocked remote paths, and type
-conflicts are never uploaded. Each transfer uses a stable private snapshot and
-a durable SQLite pending-upload journal. Recovery verifies an already-created
-remote file by downloading it and comparing SHA-256 before committing state.
+`sync.mode` defaults to `bidirectional`, which downloads remote changes and
+uploads local changes selected by the same sync-list rules. `upload_only`
+still fetches and records the Graph Delta baseline, but never downloads,
+moves, or deletes local content. New and modified local files continue through
+the normal conflict checks and durable upload journal. Set
+`sync.delete_policy = "preserve"` to prevent a missing local item from
+deleting its remote counterpart; this is the safe default when `upload_only`
+is selected without an explicit policy. `propagate` remains the default for
+bidirectional synchronization. The legacy `sync.upload` boolean remains
+accepted for compatibility (`true` maps to `bidirectional`, `false` to
+`download_only`) but cannot be combined with `sync.mode`.
+
+New files use fail-on-conflict creation; tracked files use their saved eTag as
+an `If-Match` precondition. Symbolic links, reserved safeBackup and
+transfer-temporary names, blocked remote paths, and type conflicts are never
+uploaded. Each transfer uses a stable private snapshot and a durable SQLite
+pending-upload journal. Recovery verifies an already-created remote file by
+downloading it and comparing SHA-256 before committing state.
 Selected untracked local directories are created remotely in parent-first
 order before their files. Directory creation uses fail-on-conflict semantics
 and the same durable journal. A definite Graph conflict removes the journal
@@ -287,8 +298,8 @@ Graph. After a restart, the client queries the session without an Authorization
 header, accepts Graph progress ahead of the last local checkpoint, and resumes
 without resending confirmed fragments. Expired sessions and HTTP 404/410
 responses create a new session; a server offset behind the durable checkpoint
-stops the upload instead of risking duplicate data. Set `upload = false` to
-retain download-only behavior.
+stops the upload instead of risking duplicate data. Legacy
+`upload = false` maps to `mode = "download_only"`.
 
 OneDrive quota responses and local upload read, permission, snapshot-space,
 or I/O failures are recorded in the same pending-upload journal with an

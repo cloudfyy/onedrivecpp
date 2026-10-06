@@ -3,6 +3,7 @@
 #include "onedrive/cli/console.hpp"
 #include "onedrive/http/http_options.hpp"
 #include "onedrive/logging/logging.hpp"
+#include "onedrive/sync/capabilities.hpp"
 
 #include <chrono>
 #include <cstddef>
@@ -94,11 +95,12 @@ struct Config {
         SyncPermissionsMode::private_access
     };
     LocalConflictPolicy local_conflict{LocalConflictPolicy::block};
+    sync::SyncMode sync_mode{sync::SyncMode::bidirectional};
+    sync::DeletePolicy delete_policy{sync::DeletePolicy::propagate};
     std::size_t maximum_remote_deletions{1000};
     FilesystemMetadataMode filesystem_metadata{
         FilesystemMetadataMode::automatic
     };
-    bool upload{true};
     bool dry_run{false};
     bool force_large_delete{false};
 
