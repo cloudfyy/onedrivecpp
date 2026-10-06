@@ -146,15 +146,15 @@ add_library(onedrive_core
     src/sync/download/integrity.cpp
     src/sync/download/progress.cpp
     src/sync/download/recovery.cpp
-    src/sync/download/space_coordinator.cpp
+    src/sync/download/space.cpp
     src/sync/download/target.cpp
     src/sync/download/transaction.cpp
     src/sync/filesystem/metadata.cpp
-    src/sync/core/item_operation_coordinator.cpp
-    src/sync/core/download_execution.cpp
-    src/sync/core/local_move_execution.cpp
-    src/sync/core/operation_reporting.cpp
-    src/sync/core/remote_delete_execution.cpp
+    src/sync/core/item_ops.cpp
+    src/sync/core/downloads.cpp
+    src/sync/core/local_move.cpp
+    src/sync/core/reporting.cpp
+    src/sync/core/remote_delete.cpp
     src/sync/filesystem/operations.cpp
     src/sync/upload/orchestration.cpp
     src/sync/upload/directory.cpp
@@ -166,7 +166,10 @@ add_library(onedrive_core
     src/sync/filter/selective.cpp
     src/sync/download/single_file.cpp
     src/sync/core/plan.cpp
+    src/sync/core/delta_plan.cpp
     src/sync/core/engine.cpp
+    src/sync/core/plan_execute.cpp
+    src/sync/core/plan_report.cpp
 )
 
 target_include_directories(onedrive_core

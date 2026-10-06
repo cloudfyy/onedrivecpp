@@ -2,7 +2,7 @@
 
 #include "onedrive/util/path_security.hpp"
 #include "sync/download/recovery.hpp"
-#include "sync/download/space_coordinator.hpp"
+#include "sync/download/space.hpp"
 #include "sync/download/target.hpp"
 #include "sync/download/transaction.hpp"
 #include "sync/filesystem/operations.hpp"

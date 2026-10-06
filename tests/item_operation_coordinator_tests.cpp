@@ -1,4 +1,4 @@
-#include "sync/core/item_operation_coordinator.hpp"
+#include "sync/core/item_ops.hpp"
 #include "test_support.hpp"
 
 #include <atomic>

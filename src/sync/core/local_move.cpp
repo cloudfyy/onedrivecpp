@@ -1,8 +1,8 @@
-#include "sync/core/local_move_execution.hpp"
+#include "sync/core/local_move.hpp"
 
 #include "onedrive/cli/console.hpp"
-#include "sync/core/item_operation_coordinator.hpp"
-#include "sync/core/operation_reporting.hpp"
+#include "sync/core/item_ops.hpp"
+#include "sync/core/reporting.hpp"
 #include "sync/core/plan.hpp"
 #include "sync/download/integrity.hpp"
 #include "sync/filesystem/operations.hpp"

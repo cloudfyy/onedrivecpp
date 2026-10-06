@@ -1,4 +1,4 @@
-#include "sync/core/operation_reporting.hpp"
+#include "sync/core/reporting.hpp"
 
 #include "onedrive/cli/console.hpp"
 #include "onedrive/storage/item_store.hpp"

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "sync/download/space_coordinator.hpp"
+#include "sync/download/space.hpp"
 #include "util/typestate.hpp"
 #include "sync/filesystem/operations.hpp"
 #include "sync/filesystem/metadata.hpp"

@@ -1,9 +1,9 @@
-#include "sync/core/download_execution.hpp"
+#include "sync/core/downloads.hpp"
 
 #include "onedrive/cli/console.hpp"
-#include "sync/core/item_operation_coordinator.hpp"
+#include "sync/core/item_ops.hpp"
 #include "sync/download/progress.hpp"
-#include "sync/download/space_coordinator.hpp"
+#include "sync/download/space.hpp"
 #include "sync/download/transaction.hpp"
 #include "sync/filesystem/metadata.hpp"
 #include "sync/filesystem/safe_sync_root.hpp"

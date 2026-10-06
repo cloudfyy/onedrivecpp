@@ -1,4 +1,4 @@
-#include "sync/download/space_coordinator.hpp"
+#include "sync/download/space.hpp"
 #include "test_support.hpp"
 
 #include <atomic>
