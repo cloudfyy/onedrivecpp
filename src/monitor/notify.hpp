@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstddef>
 #include <optional>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -55,6 +56,7 @@ struct NotificationConnectingState {
     NotificationTimePoint deadline;
     NotificationTimePoint renew_at;
     std::size_t failure_count;
+    std::string notification_url;
 };
 
 struct NotificationListeningState {
@@ -91,6 +93,7 @@ struct NotificationStartEvent {
 struct NotificationChannelAcquiredEvent {
     NotificationTimePoint acquired_at;
     NotificationTimePoint renew_at;
+    std::string notification_url;
 };
 
 struct NotificationChannelFailedEvent {
@@ -206,6 +209,7 @@ template <typename... Callables> struct NotificationOverloaded : Callables... {
                                 acquired.acquired_at + timing.connect_timeout,
                             .renew_at = acquired.renew_at,
                             .failure_count = current.failure_count,
+                            .notification_url = acquired.notification_url,
                         },
                     .command = NotificationCommand::connect_socket,
                 };

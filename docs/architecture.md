@@ -103,7 +103,9 @@ and a notification received during synchronization is latched for one
 additional pass. The existing periodic Graph poll remains active as the
 authoritative fallback, so channel discovery or socket failures cannot prevent
 eventual convergence. Network adapters execute reducer effects; they do not
-make state-transition policy.
+make state-transition policy. The production adapter acquires the channel
+through Graph and runs Engine.IO 4 / Socket.IO framing over libcurl's
+WebSocket-only transport, including heartbeat handling and eventfd wakeups.
 
 The directories correspond to the responsibilities of
 `main/config/curlEngine/onedrive/sync/itemdb/monitor` in the reference project:

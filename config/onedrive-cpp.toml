@@ -121,7 +121,8 @@ maximum_rate_bytes_per_second = 0
 maximum_total_rate_bytes_per_second = 0
 
 [monitor]
-# Poll Graph after this many quiet seconds even without local filesystem events.
+# WebSocket notifications trigger low-latency Delta synchronization. Poll Graph
+# after this many quiet seconds as the authoritative missed-notification fallback.
 poll_interval_seconds = 300
 # Coalesce bursts of local events for this long before synchronizing.
 settle_delay_milliseconds = 1000

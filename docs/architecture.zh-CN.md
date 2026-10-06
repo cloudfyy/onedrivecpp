@@ -85,7 +85,9 @@ channel 获取、token 刷新、socket 连接、租约续期、有界指数退�
 重连后必须安排一次 catch-up Delta 同步；同步期间收到通知时会锁存，并在完成后
 再执行一轮。原有 Graph 定时轮询始终作为权威 fallback 保持启用，因此 channel
 发现或 socket 故障不会阻止最终收敛。网络 adapter 只执行 reducer effect，不
-决定状态转移策略。
+决定状态转移策略。生产 adapter 通过 Graph 获取 channel，并在 libcurl 的纯
+WebSocket transport 上执行 Engine.IO 4 / Socket.IO framing、心跳处理和 eventfd
+唤醒。
 
 目录与参考项目中的 `main/config/curlEngine/onedrive/sync/itemdb/monitor`
 职责相对应：

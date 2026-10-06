@@ -62,6 +62,18 @@ static_assert(!DiscardablePreparedDownload<TestJournaledDownload>);
 
 class FakeGraphClient final {
 public:
+    [[nodiscard]] onedrive::graph::NotificationChannel
+    notification_channel() const {
+        return {
+            .notification_url = "https://notification.example.test/token",
+            .expires_at =
+                std::chrono::system_clock::now() + std::chrono::hours{1},
+        };
+    }
+
+    void refresh_access_token() const {
+    }
+
     [[nodiscard]] onedrive::account::DriveIdentity drive_identity() const {
         return onedrive::test::test_drive_identity();
     }

@@ -72,6 +72,25 @@ struct DeltaResult {
     std::string delta_link;
 };
 
+struct NotificationChannel {
+    std::string notification_url;
+    std::chrono::system_clock::time_point expires_at;
+};
+
+class NotificationChannelError final : public std::runtime_error {
+public:
+    NotificationChannelError(bool unauthorized, std::string message)
+        : std::runtime_error{std::move(message)},
+          unauthorized_{unauthorized} {}
+
+    [[nodiscard]] bool unauthorized() const noexcept {
+        return unauthorized_;
+    }
+
+private:
+    bool unauthorized_;
+};
+
 class DeltaCursorInvalidError final : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
@@ -148,6 +167,8 @@ PRO_DEF_MEM_DISPATCH(GraphUploadFileDispatch, upload_file);
 PRO_DEF_MEM_DISPATCH(GraphCreateDirectoryDispatch, create_directory);
 PRO_DEF_MEM_DISPATCH(GraphDeleteItemDispatch, delete_item);
 PRO_DEF_MEM_DISPATCH(GraphMoveItemDispatch, move_item);
+PRO_DEF_MEM_DISPATCH(GraphNotificationChannelDispatch, notification_channel);
+PRO_DEF_MEM_DISPATCH(GraphRefreshAccessTokenDispatch, refresh_access_token);
 
 struct GraphClientFacade : pro::facade_builder
     ::add_convention<
@@ -211,6 +232,11 @@ struct GraphClientFacade : pro::facade_builder
             const std::string&
         ) const
     >
+    ::add_convention<
+        GraphNotificationChannelDispatch,
+        NotificationChannel() const
+    >
+    ::add_convention<GraphRefreshAccessTokenDispatch, void() const>
     ::build {};
 
 class GraphClient : private onedrive::util::ProxyService<GraphClientFacade> {
@@ -238,6 +264,14 @@ public:
         const DeltaProgress& progress = {}
     ) const {
         return implementation()->list_delta(delta_link, progress);
+    }
+
+    [[nodiscard]] NotificationChannel notification_channel() const {
+        return implementation()->notification_channel();
+    }
+
+    void refresh_access_token() const {
+        implementation()->refresh_access_token();
     }
 
     void download_file(
@@ -377,6 +411,8 @@ public:
         const std::optional<std::string>& delta_link,
         const DeltaProgress& progress = {}
     ) const;
+    [[nodiscard]] NotificationChannel notification_channel() const;
+    void refresh_access_token() const;
     void download_file(
         const std::string& remote_id,
         const std::string& expected_etag,
@@ -421,6 +457,7 @@ private:
     mutable std::chrono::system_clock::time_point access_token_expires_at_{};
 
     [[nodiscard]] std::string access_token() const;
+    void invalidate_access_token() const;
 };
 
 [[nodiscard]] account::DriveIdentity fetch_drive_identity(

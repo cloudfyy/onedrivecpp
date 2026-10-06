@@ -90,7 +90,8 @@ struct RuntimeFactoryFacade : pro::facade_builder
         FactoryMonitorDispatch,
         std::unique_ptr<monitor::FileMonitor>(
             const config::Config&,
-            monitor::SyncCallback
+            monitor::SyncCallback,
+            graph::GraphClient&
         ) const
     >
     ::add_convention<
@@ -139,11 +140,13 @@ public:
 
     [[nodiscard]] std::unique_ptr<monitor::FileMonitor> create_monitor(
         const config::Config& config,
-        monitor::SyncCallback synchronize
+        monitor::SyncCallback synchronize,
+        graph::GraphClient& graph
     ) const {
         return implementation()->create_monitor(
             config,
-            std::move(synchronize)
+            std::move(synchronize),
+            graph
         );
     }
 
@@ -173,7 +176,8 @@ public:
     ) const;
     [[nodiscard]] std::unique_ptr<monitor::FileMonitor> create_monitor(
         const config::Config& config,
-        monitor::SyncCallback synchronize
+        monitor::SyncCallback synchronize,
+        graph::GraphClient& graph
     ) const;
     [[nodiscard]] std::unique_ptr<metrics::Metrics> create_metrics() const;
 };

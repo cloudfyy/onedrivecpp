@@ -146,14 +146,18 @@ The override applies only to that invocation and cannot be persisted in the
 configuration file. Existing pending-delete recovery is protected by the same
 limit, so restarting the process cannot bypass the safeguard.
 
-`monitor` performs an initial synchronization and then remains idle until
-inotify reports a completed local change or the Graph polling interval expires.
+`monitor` performs an initial synchronization, acquires a Microsoft Graph
+Socket.IO channel, and then remains idle until a remote WebSocket notification,
+an inotify local-change event, or the Graph polling interval expires.
 Local event bursts are coalesced for `monitor.settle_delay_milliseconds`.
 `monitor.poll_interval_seconds` bounds how long remote changes can remain
-undetected when there is no local activity. Newly created and moved directory
-trees are watched recursively; an inotify queue overflow rebuilds every watch
-and schedules a complete synchronization. `SIGINT` and `SIGTERM` wake the
-blocking wait and stop cleanly after the active synchronization finishes.
+undetected if notification acquisition, renewal, or delivery fails. WebSocket
+notifications are advisory wakeups; each one runs an authoritative Delta query,
+and reconnecting also schedules a catch-up query. Newly created and moved
+directory trees are watched recursively; an inotify queue overflow rebuilds
+every watch and schedules a complete synchronization. `SIGINT` and `SIGTERM`
+wake the blocking wait and stop cleanly after the active synchronization
+finishes.
 The monitor scheduler is an explicit single-threaded runtime state machine with
 starting, idle, local-settling, synchronizing, and stopped states. Local bursts
 reset the settle deadline, queue overflow upgrades the pending reason, and a

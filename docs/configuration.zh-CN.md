@@ -127,11 +127,14 @@ onedrive-cpp sync --force-large-delete
 该开关只作用于本次命令，不能写入配置文件。pending-delete 崩溃恢复也使用同一
 限制，因此重启进程不能绕过保护。
 
-`monitor` 启动时先执行一轮完整同步，随后休眠，直到 inotify 报告已完成的本地
-变化，或者 Graph 轮询周期到期。本地事件突发会按
+`monitor` 启动时先执行一轮完整同步并获取 Microsoft Graph Socket.IO channel，
+随后休眠，直到收到远端 WebSocket 通知、inotify 报告已完成的本地变化，或者
+Graph 轮询周期到期。本地事件突发会按
 `monitor.settle_delay_milliseconds` 合并；即使没有本地活动，
-`monitor.poll_interval_seconds` 也限制远端变化的最长发现延迟。新建或移入的
-目录树会被递归监听；inotify 队列溢出时会重建全部 watch 并安排完整同步。
+`monitor.poll_interval_seconds` 也会在通知 channel 获取、续期或投递失败时限制
+远端变化的最长发现延迟。WebSocket 通知只负责唤醒，每次通知及重连后的 catch-up
+仍通过权威 Delta 查询收敛。新建或移入的目录树会被递归监听；inotify 队列溢出时
+会重建全部 watch 并安排完整同步。
 `SIGINT` 和 `SIGTERM` 会唤醒阻塞等待，并在当前同步结束后安全退出。
 Monitor 调度器使用显式的单线程运行时状态机，状态包括 starting、idle、本地事件
 settling、synchronizing 和 stopped。本地事件突发会重置 settle deadline，队列

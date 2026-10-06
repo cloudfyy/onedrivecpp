@@ -37,6 +37,7 @@ int test_happy_path_and_renewal() {
         NotificationChannelAcquiredEvent{
             .acquired_at = origin + 1s,
             .renew_at = origin + 1h,
+            .notification_url = "https://notify.example.test/channel",
         },
         timing
     );
@@ -44,7 +45,8 @@ int test_happy_path_and_renewal() {
         std::get_if<NotificationConnectingState>(&transition.state);
     if (transition.command != NotificationCommand::connect_socket ||
         connecting == nullptr || connecting->deadline != origin + 11s ||
-        connecting->renew_at != origin + 1h) {
+        connecting->renew_at != origin + 1h ||
+        connecting->notification_url != "https://notify.example.test/channel") {
         return fail("acquired notification channel did not begin connecting");
     }
 

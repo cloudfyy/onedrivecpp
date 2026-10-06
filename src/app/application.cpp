@@ -584,14 +584,15 @@ int Application::run(int argc, char* argv[]) {
                 cli::MessageKind::information,
                 "monitor_status",
                 std::format(
-                    "Local changes settle for {} milliseconds; Graph is "
-                    "polled every {} seconds.",
+                    "Local changes settle for {} milliseconds; remote "
+                    "WebSocket notifications trigger Delta synchronization, "
+                    "with Graph polling every {} seconds as fallback.",
                     config.monitor_settle_delay.count(),
                     config.monitor_poll_interval.count()
                 )
             );
             return runtime_factory_
-                ->create_monitor(config, std::move(synchronize))
+                ->create_monitor(config, std::move(synchronize), *graph)
                 ->run();
         }
         return synchronize();

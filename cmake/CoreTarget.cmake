@@ -13,6 +13,7 @@ add_library(onedrive_core
     src/config/parse.cpp
     src/config/sync_options.cpp
     src/graph/graph_client.cpp
+    src/graph/notification.cpp
     src/graph/delta.cpp
     src/graph/download.cpp
     src/graph/drive_ops.cpp
@@ -26,6 +27,7 @@ add_library(onedrive_core
     src/logging/logging.cpp
     src/metrics/metrics.cpp
     src/monitor/monitor.cpp
+    src/monitor/socket.cpp
     src/util/path_security.cpp
     src/util/remote_time.cpp
     src/util/sha256.cpp
@@ -105,4 +107,3 @@ target_link_libraries(onedrive-cpp PRIVATE onedrive_core)
 if(ONEDRIVE_ENABLE_CLANG_TIDY)
     set(CMAKE_CXX_CLANG_TIDY "")
 endif()
-

@@ -1,18 +1,39 @@
 #pragma once
 
+#include "onedrive/http/http_options.hpp"
 #include "onedrive/util/proxy_service.hpp"
 
 #include <chrono>
 #include <filesystem>
 #include <functional>
+#include <expected>
 #include <memory>
 #include <proxy/proxy.h>
 #include <stop_token>
+#include <string>
 #include <utility>
 
 namespace onedrive::monitor {
 
 using SyncCallback = std::function<int()>;
+
+struct NotificationChannel {
+    std::string url;
+    std::chrono::steady_clock::time_point renew_at;
+};
+
+using NotificationChannelResult =
+    std::expected<NotificationChannel, bool>;
+
+struct NotificationCallbacks {
+    std::function<NotificationChannelResult()> acquire_channel;
+    std::function<bool()> refresh_token;
+    http::ProxyOptions proxy;
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return acquire_channel && refresh_token;
+    }
+};
 
 PRO_DEF_MEM_DISPATCH(MonitorRunDispatch, run);
 
@@ -37,7 +58,8 @@ public:
         std::filesystem::path root,
         SyncCallback synchronize,
         std::chrono::milliseconds poll_interval,
-        std::chrono::milliseconds settle_delay
+        std::chrono::milliseconds settle_delay,
+        NotificationCallbacks notifications = {}
     );
     [[nodiscard]] int run() const;
     [[nodiscard]] int run(const std::stop_token& stop_token) const;
@@ -52,6 +74,7 @@ private:
     SyncCallback synchronize_;
     std::chrono::milliseconds poll_interval_;
     std::chrono::milliseconds settle_delay_;
+    NotificationCallbacks notifications_;
 };
 
 }  // namespace onedrive::monitor

@@ -1,4 +1,5 @@
 #include "http/request.hpp"
+#include "http/curl.hpp"
 
 #include "onedrive/version.hpp"
 
@@ -10,100 +11,12 @@
 #include <cerrno>
 #include <cstring>
 #include <limits>
-#include <memory>
 #include <string>
 #include <string_view>
 #include <unistd.h>
 #include <utility>
 
 namespace onedrive::http::detail {
-
-class CurlRuntime {
-public:
-    CurlRuntime() : result_{curl_global_init(CURL_GLOBAL_DEFAULT)} {}
-
-    ~CurlRuntime() {
-        if (result_ == CURLE_OK) {
-            curl_global_cleanup();
-        }
-    }
-
-    CurlRuntime(const CurlRuntime&) = delete;
-    CurlRuntime& operator=(const CurlRuntime&) = delete;
-    CurlRuntime(CurlRuntime&&) = delete;
-    CurlRuntime& operator=(CurlRuntime&&) = delete;
-
-    [[nodiscard]] CURLcode result() const noexcept {
-        return result_;
-    }
-
-private:
-    CURLcode result_;
-};
-
-struct CurlHandleDeleter {
-    void operator()(CURL* handle) const noexcept {
-        curl_easy_cleanup(handle);
-    }
-};
-
-using CurlHandle = std::unique_ptr<CURL, CurlHandleDeleter>;
-
-class ThreadCurlHandlePool {
-public:
-    [[nodiscard]] CurlHandle acquire() {
-        auto handle = std::move(available_);
-        if (!handle) {
-            handle.reset(curl_easy_init());
-        }
-        if (handle) {
-            curl_easy_reset(handle.get());
-        }
-        return handle;
-    }
-
-    void release(CurlHandle handle) noexcept {
-        if (!available_) {
-            available_ = std::move(handle);
-        }
-    }
-
-private:
-    CurlHandle available_;
-};
-
-ThreadCurlHandlePool& thread_curl_handle_pool() {
-    thread_local ThreadCurlHandlePool pool;
-    return pool;
-}
-
-class CurlHandleLease {
-public:
-    CurlHandleLease()
-        : pool_{thread_curl_handle_pool()},
-          handle_{pool_.acquire()} {}
-
-    ~CurlHandleLease() {
-        pool_.release(std::move(handle_));
-    }
-
-    CurlHandleLease(const CurlHandleLease&) = delete;
-    CurlHandleLease& operator=(const CurlHandleLease&) = delete;
-    CurlHandleLease(CurlHandleLease&&) = delete;
-    CurlHandleLease& operator=(CurlHandleLease&&) = delete;
-
-    [[nodiscard]] CURL* get() const noexcept {
-        return handle_.get();
-    }
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return static_cast<bool>(handle_);
-    }
-
-private:
-    ThreadCurlHandlePool& pool_;
-    CurlHandle handle_;
-};
 
 struct HeaderListDeleter {
     void operator()(curl_slist* headers) const noexcept {
@@ -174,22 +87,6 @@ long curl_ip_version(IpVersion version) {
         return CURL_IPRESOLVE_V6;
     }
     return CURL_IPRESOLVE_WHATEVER;
-}
-
-long curl_proxy_auth(ProxyAuth auth) {
-    switch (auth) {
-    case ProxyAuth::automatic:
-        return static_cast<long>(CURLAUTH_ANY);
-    case ProxyAuth::basic:
-        return static_cast<long>(CURLAUTH_BASIC);
-    case ProxyAuth::digest:
-        return static_cast<long>(CURLAUTH_DIGEST);
-    case ProxyAuth::ntlm:
-        return static_cast<long>(CURLAUTH_NTLM);
-    case ProxyAuth::negotiate:
-        return static_cast<long>(CURLAUTH_NEGOTIATE);
-    }
-    return static_cast<long>(CURLAUTH_ANY);
 }
 
 bool fits_curl_long(std::uint64_t value) {
@@ -332,11 +229,11 @@ HttpResult perform_request(
             .message = "HTTP request contains invalid transport options",
         });
     }
-    static const CurlRuntime runtime;
-    if (runtime.result() != CURLE_OK) {
+    const CURLcode initialization = initialize_curl();
+    if (initialization != CURLE_OK) {
         return std::unexpected(HttpError{
             .message = "cannot initialize libcurl: " +
-                       std::string{curl_easy_strerror(runtime.result())},
+                       std::string{curl_easy_strerror(initialization)},
         });
     }
 

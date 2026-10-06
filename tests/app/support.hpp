@@ -152,6 +152,18 @@ public:
         return {};
     }
 
+    [[nodiscard]] onedrive::graph::NotificationChannel
+    notification_channel() const {
+        return {
+            .notification_url = "https://notification.example.test/token",
+            .expires_at =
+                std::chrono::system_clock::now() + std::chrono::hours{1},
+        };
+    }
+
+    void refresh_access_token() const {
+    }
+
     [[nodiscard]] onedrive::graph::RemoteItem
     item_by_path(const std::string& remote_path) const {
         return {
@@ -499,7 +511,8 @@ public:
     [[nodiscard]] std::unique_ptr<onedrive::monitor::FileMonitor>
     create_monitor(
         const onedrive::config::Config&,
-        onedrive::monitor::SyncCallback synchronize
+        onedrive::monitor::SyncCallback synchronize,
+        onedrive::graph::GraphClient&
     ) const {
         ++monitor_count;
         auto counted_synchronize = [this,

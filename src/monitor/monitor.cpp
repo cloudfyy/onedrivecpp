@@ -1,6 +1,8 @@
 #include "onedrive/monitor/monitor.hpp"
 
 #include "monitor/signal.hpp"
+#include "monitor/notify.hpp"
+#include "monitor/socket.hpp"
 #include "monitor/state.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"
 
@@ -301,12 +303,14 @@ Monitor::Monitor(
     std::filesystem::path root,
     SyncCallback synchronize,
     std::chrono::milliseconds poll_interval,
-    std::chrono::milliseconds settle_delay
+    std::chrono::milliseconds settle_delay,
+    NotificationCallbacks notifications
 )
     : root_{std::move(root)},
       synchronize_{std::move(synchronize)},
       poll_interval_{poll_interval},
-      settle_delay_{settle_delay} {
+      settle_delay_{settle_delay},
+      notifications_{std::move(notifications)} {
     if (!synchronize_) {
         throw std::invalid_argument("monitor synchronization callback is empty");
     }
@@ -415,8 +419,109 @@ int Monitor::run_loop(
         timing
     ).state;
 
+    std::unique_ptr<detail::SocketIoTransport> notification_socket;
+    detail::NotificationState notification_state =
+        detail::NotificationStoppedState{};
+    if (notifications_) {
+        notification_socket =
+            std::make_unique<detail::SocketIoTransport>(notifications_.proxy);
+        notification_state = detail::NotificationDormantState{};
+    }
+    const detail::NotificationTiming notification_timing{
+        .request_timeout = std::chrono::seconds{60},
+        .connect_timeout = std::chrono::seconds{15},
+        .initial_backoff = std::chrono::seconds{1},
+        .maximum_backoff = std::chrono::minutes{5},
+    };
+    bool notification_sync_requested = false;
+    const auto advance_notification =
+        [&](const detail::NotificationEvent& event) {
+            auto notification_transition = detail::transition_notification(
+                std::move(notification_state),
+                event,
+                notification_timing
+            );
+            while (true) {
+                notification_state =
+                    std::move(notification_transition.state);
+                notification_sync_requested =
+                    notification_sync_requested ||
+                    notification_transition.synchronize;
+                const auto command = notification_transition.command;
+                if (command == detail::NotificationCommand::none) {
+                    return;
+                }
+                if (command ==
+                    detail::NotificationCommand::disconnect_socket) {
+                    notification_socket->disconnect();
+                    return;
+                }
+                if (command == detail::NotificationCommand::connect_socket) {
+                    notification_socket->connect(
+                        std::get<detail::NotificationConnectingState>(
+                            notification_state
+                        ).notification_url
+                    );
+                    return;
+                }
+                const auto now = std::chrono::steady_clock::now();
+                if (command == detail::NotificationCommand::refresh_token) {
+                    notification_transition =
+                        detail::transition_notification(
+                            std::move(notification_state),
+                            notifications_.refresh_token() ?
+                                detail::NotificationEvent{
+                                    detail::NotificationTokenRefreshedEvent{
+                                        now
+                                    }
+                                } :
+                                detail::NotificationEvent{
+                                    detail::
+                                        NotificationTokenRefreshFailedEvent{
+                                            now
+                                        }
+                                },
+                            notification_timing
+                        );
+                    continue;
+                }
+                const auto channel = notifications_.acquire_channel();
+                if (channel) {
+                    notification_transition =
+                        detail::transition_notification(
+                            std::move(notification_state),
+                            detail::NotificationChannelAcquiredEvent{
+                                .acquired_at = now,
+                                .renew_at = channel->renew_at,
+                                .notification_url = channel->url,
+                            },
+                            notification_timing
+                        );
+                } else {
+                    notification_transition =
+                        detail::transition_notification(
+                            std::move(notification_state),
+                            detail::NotificationChannelFailedEvent{
+                                .failed_at = now,
+                                .failure =
+                                    channel.error() ?
+                                        detail::NotificationFailure::
+                                            unauthorized :
+                                        detail::NotificationFailure::transient,
+                            },
+                            notification_timing
+                        );
+                }
+            }
+        };
+    if (notification_socket) {
+        advance_notification(detail::NotificationStartEvent{
+            std::chrono::steady_clock::now()
+        });
+    }
+
     while (true) {
-        std::array<pollfd, 3> descriptors{{
+        std::array<pollfd, 4> descriptors{{
             {
                 .fd = watches.descriptor(),
                 .events = POLLIN,
@@ -434,13 +539,28 @@ int Monitor::run_loop(
                 ),
                 .revents = 0,
             },
+            {
+                .fd = notification_socket ?
+                          notification_socket->descriptor() :
+                          -1,
+                .events = static_cast<short>(
+                    notification_socket ? POLLIN : 0
+                ),
+                .revents = 0,
+            },
         }};
         const auto now = std::chrono::steady_clock::now();
-        const auto deadline = detail::next_deadline(state);
+        auto deadline = detail::next_deadline(state);
         if (!deadline) {
             throw std::logic_error(
                 "monitor entered a non-waiting state before poll"
             );
+        }
+        if (const auto notification_deadline =
+                detail::next_notification_deadline(notification_state);
+            notification_deadline &&
+            *notification_deadline < *deadline) {
+            deadline = notification_deadline;
         }
         const int ready = ::poll(
             descriptors.data(),
@@ -486,6 +606,9 @@ int Monitor::run_loop(
                 detail::StopRequestedEvent{},
                 timing
             ).state;
+            if (notification_socket) {
+                advance_notification(detail::NotificationStopEvent{});
+            }
             return 0;
         }
         if ((descriptors[1].revents & POLLIN) != 0 ||
@@ -496,6 +619,9 @@ int Monitor::run_loop(
                 detail::StopRequestedEvent{},
                 timing
             ).state;
+            if (notification_socket) {
+                advance_notification(detail::NotificationStopEvent{});
+            }
             return 0;
         }
         if ((descriptors[0].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
@@ -515,12 +641,50 @@ int Monitor::run_loop(
             }
         }
 
-        const auto after_events = std::chrono::steady_clock::now();
-        transition = detail::transition_monitor(
-            std::move(state),
-            detail::DeadlineReachedEvent{after_events},
-            timing
-        );
+        if (notification_socket &&
+            (descriptors[3].revents & POLLIN) != 0) {
+            for (const auto event : notification_socket->drain()) {
+                switch (event) {
+                case detail::SocketEvent::connected:
+                    advance_notification(
+                        detail::NotificationSocketConnectedEvent{}
+                    );
+                    break;
+                case detail::SocketEvent::notification:
+                    advance_notification(
+                        detail::RemoteNotificationReceivedEvent{}
+                    );
+                    break;
+                case detail::SocketEvent::disconnected:
+                    advance_notification(
+                        detail::NotificationSocketDisconnectedEvent{
+                            std::chrono::steady_clock::now()
+                        }
+                    );
+                    break;
+                }
+            }
+        }
+        if (notification_socket) {
+            advance_notification(detail::NotificationDeadlineReachedEvent{
+                std::chrono::steady_clock::now()
+            });
+        }
+        if (notification_sync_requested) {
+            transition = detail::transition_monitor(
+                std::move(state),
+                detail::RemoteChangeEvent{},
+                timing
+            );
+            notification_sync_requested = false;
+        } else {
+            const auto after_events = std::chrono::steady_clock::now();
+            transition = detail::transition_monitor(
+                std::move(state),
+                detail::DeadlineReachedEvent{after_events},
+                timing
+            );
+        }
         state = std::move(transition.state);
         if (transition.effect != detail::MonitorEffect::synchronize) {
             continue;
