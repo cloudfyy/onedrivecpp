@@ -4,8 +4,8 @@
 #include "sync/download/transaction.hpp"
 #include "sync/filesystem/metadata.hpp"
 #include "sync/filesystem/safe_backup.hpp"
-#include "sync_test_support.hpp"
-#include "test_support.hpp"
+#include "support/sync.hpp"
+#include "support/common.hpp"
 
 #include <chrono>
 #include <cstdlib>

@@ -1,6 +1,6 @@
 #include "onedrive/http/http_client.hpp"
-#include "network_test_support.hpp"
-#include "test_support.hpp"
+#include "support/network.hpp"
+#include "support/common.hpp"
 
 #include <arpa/inet.h>
 #include <array>

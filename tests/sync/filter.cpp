@@ -1,6 +1,6 @@
 #include "sync/filter/remote_path.hpp"
 #include "sync/filter/selective.hpp"
-#include "test_support.hpp"
+#include "support/common.hpp"
 
 #include <cstdlib>
 #include <filesystem>

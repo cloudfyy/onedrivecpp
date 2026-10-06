@@ -2,7 +2,7 @@
 #include "sync/filesystem/metadata.hpp"
 #include "onedrive/util/path_security.hpp"
 #include "sync/filesystem/safe_sync_root.hpp"
-#include "test_support.hpp"
+#include "support/common.hpp"
 
 #include <chrono>
 #include <cstdlib>

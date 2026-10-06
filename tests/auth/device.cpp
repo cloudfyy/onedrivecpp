@@ -1,8 +1,8 @@
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
 #include "onedrive/http/http_client.hpp"
-#include "http_test_support.hpp"
-#include "test_support.hpp"
+#include "support/http.hpp"
+#include "support/common.hpp"
 
 #include <chrono>
 #include <cstdlib>

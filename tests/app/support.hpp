@@ -11,8 +11,8 @@
 #include "onedrive/monitor/monitor.hpp"
 #include "onedrive/storage/item_database.hpp"
 #include "onedrive/storage/item_store.hpp"
-#include "sync_test_support.hpp"
-#include "test_support.hpp"
+#include "support/sync.hpp"
+#include "support/common.hpp"
 
 #include <chrono>
 #include <cstdlib>

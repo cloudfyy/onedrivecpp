@@ -4,17 +4,18 @@ find_program(BASH_EXECUTABLE bash REQUIRED)
 
 add_onedrive_test(
     account_state_tests
-    SOURCES tests/account_state_tests.cpp
+    SOURCES tests/account/state.cpp
+    INCLUDE_DIRS tests
 )
 add_onedrive_test(
     atomic_file_tests
-    SOURCES tests/atomic_file_tests.cpp
-    INCLUDE_DIRS src
+    SOURCES tests/util/atomic.cpp
+    INCLUDE_DIRS src tests
 )
 add_onedrive_test(
     ascii_tests
-    SOURCES tests/ascii_tests.cpp
-    INCLUDE_DIRS src
+    SOURCES tests/util/ascii.cpp
+    INCLUDE_DIRS src tests
 )
 foreach(CONFIG_TEST IN ITEMS base proxy valid schema)
     add_onedrive_test(
@@ -23,13 +24,17 @@ foreach(CONFIG_TEST IN ITEMS base proxy valid schema)
         INCLUDE_DIRS tests tests/config
     )
 endforeach()
-add_onedrive_test(console_tests SOURCES tests/console_tests.cpp)
+add_onedrive_test(
+    console_tests
+    SOURCES tests/cli/console.cpp
+    INCLUDE_DIRS tests
+)
 
 add_test(
     NAME bash_completion_tests
     COMMAND
         ${BASH_EXECUTABLE}
-        ${CMAKE_CURRENT_SOURCE_DIR}/bash_completion_tests.sh
+        ${CMAKE_CURRENT_SOURCE_DIR}/cli/completion.sh
         ${PROJECT_SOURCE_DIR}/packaging/completions/onedrive-cpp.bash
 )
 
@@ -55,7 +60,8 @@ foreach(DB_TEST IN ITEMS state journal migrate security)
 endforeach()
 add_onedrive_test(
     device_auth_tests
-    SOURCES tests/device_auth_tests.cpp
+    SOURCES tests/auth/device.cpp
+    INCLUDE_DIRS tests
 )
 foreach(HTTP_TEST IN ITEMS req redirect download cancel reuse)
     add_onedrive_test(
@@ -67,7 +73,8 @@ foreach(HTTP_TEST IN ITEMS req redirect download cancel reuse)
 endforeach()
 add_onedrive_test(
     transfer_rate_limiter_tests
-    SOURCES tests/transfer_rate_limiter_tests.cpp
+    SOURCES tests/transfer/rate.cpp
+    INCLUDE_DIRS tests
 )
 foreach(PROXY_TEST IN ITEMS socks basic transfer)
     add_onedrive_test(
@@ -113,43 +120,43 @@ foreach(SYNC_TEST IN ITEMS base delete move download upload)
 endforeach()
 add_onedrive_test(
     local_filesystem_tests
-    SOURCES tests/local_filesystem_tests.cpp
-    INCLUDE_DIRS src
+    SOURCES tests/fs/local.cpp
+    INCLUDE_DIRS src tests
 )
 add_onedrive_test(
     filesystem_metadata_tests
-    SOURCES tests/filesystem_metadata_tests.cpp
-    INCLUDE_DIRS src
+    SOURCES tests/fs/metadata.cpp
+    INCLUDE_DIRS src tests
 )
 add_onedrive_test(
     sync_plan_tests
-    SOURCES tests/sync_plan_tests.cpp
-    INCLUDE_DIRS src
+    SOURCES tests/sync/plan.cpp
+    INCLUDE_DIRS src tests
 )
 add_onedrive_test(
     selective_sync_tests
-    SOURCES tests/selective_sync_tests.cpp
-    INCLUDE_DIRS src
+    SOURCES tests/sync/filter.cpp
+    INCLUDE_DIRS src tests
 )
 add_onedrive_test(
     item_operation_coordinator_tests
-    SOURCES tests/item_operation_coordinator_tests.cpp
-    INCLUDE_DIRS src
+    SOURCES tests/sync/ops.cpp
+    INCLUDE_DIRS src tests
 )
 add_onedrive_test(
     typestate_tests
-    SOURCES tests/typestate_tests.cpp
-    INCLUDE_DIRS src
+    SOURCES tests/sync/type.cpp
+    INCLUDE_DIRS src tests
 )
 add_onedrive_test(
     download_space_coordinator_tests
-    SOURCES tests/download_space_coordinator_tests.cpp
-    INCLUDE_DIRS src
+    SOURCES tests/download/space.cpp
+    INCLUDE_DIRS src tests
 )
 add_onedrive_test(
     download_progress_tests
-    SOURCES tests/download_progress_tests.cpp
-    INCLUDE_DIRS src
+    SOURCES tests/download/progress.cpp
+    INCLUDE_DIRS src tests
 )
 foreach(DOWNLOAD_TEST IN ITEMS single safe txn relaxed resume recover)
     add_onedrive_test(
@@ -160,8 +167,8 @@ foreach(DOWNLOAD_TEST IN ITEMS single safe txn relaxed resume recover)
 endforeach()
 add_onedrive_test(
     download_integrity_tests
-    SOURCES tests/download_integrity_tests.cpp
-    INCLUDE_DIRS src
+    SOURCES tests/download/integrity.cpp
+    INCLUDE_DIRS src tests
 )
 
 if(ONEDRIVE_ENABLE_GRAPH_E2E)

@@ -1,6 +1,6 @@
 #include "sync/filesystem/operations.hpp"
 #include "sync/filesystem/metadata.hpp"
-#include "test_support.hpp"
+#include "support/common.hpp"
 
 #include <sys/xattr.h>
 

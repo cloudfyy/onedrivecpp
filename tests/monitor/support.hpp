@@ -1,7 +1,7 @@
 #include "onedrive/monitor/monitor.hpp"
 #include "monitor/state_machine.hpp"
 #include "monitor/termination_signal_mask.hpp"
-#include "test_support.hpp"
+#include "support/common.hpp"
 
 #include <atomic>
 #include <chrono>

@@ -1,5 +1,5 @@
 #include "sync/download/space.hpp"
-#include "test_support.hpp"
+#include "support/common.hpp"
 
 #include <atomic>
 #include <chrono>

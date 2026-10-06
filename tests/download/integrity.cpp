@@ -1,6 +1,6 @@
 #include "sync/download/integrity.hpp"
 #include "onedrive/util/sha256.hpp"
-#include "test_support.hpp"
+#include "support/common.hpp"
 
 #include <cstdlib>
 #include <filesystem>

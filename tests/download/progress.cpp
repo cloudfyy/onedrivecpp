@@ -1,5 +1,5 @@
 #include "sync/download/progress.hpp"
-#include "test_support.hpp"
+#include "support/common.hpp"
 
 #include <chrono>
 #include <cstdlib>

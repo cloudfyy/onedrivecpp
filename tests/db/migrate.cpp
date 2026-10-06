@@ -1,6 +1,6 @@
 #include "support.hpp"
 #include "onedrive/storage/item_database.hpp"
-#include "test_support.hpp"
+#include "support/common.hpp"
 
 #include <atomic>
 #include <cstdlib>

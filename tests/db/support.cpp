@@ -1,6 +1,6 @@
 #include "onedrive/storage/item_database.hpp"
 #include "support.hpp"
-#include "test_support.hpp"
+#include "support/common.hpp"
 
 #include <sqlite3.h>
 

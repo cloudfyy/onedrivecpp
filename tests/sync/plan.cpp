@@ -1,5 +1,5 @@
 #include "sync/core/plan.hpp"
-#include "test_support.hpp"
+#include "support/common.hpp"
 
 #include <cstdlib>
 #include <filesystem>

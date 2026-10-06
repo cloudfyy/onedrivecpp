@@ -1,5 +1,5 @@
 #include "onedrive/cli/console.hpp"
-#include "test_support.hpp"
+#include "support/common.hpp"
 
 #include <nlohmann/json.hpp>
 

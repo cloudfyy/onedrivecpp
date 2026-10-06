@@ -1,5 +1,5 @@
 #include "onedrive/http/transfer_rate_limiter.hpp"
-#include "test_support.hpp"
+#include "support/common.hpp"
 
 #include <atomic>
 #include <chrono>

@@ -1,5 +1,5 @@
 #include "sync/core/item_ops.hpp"
-#include "test_support.hpp"
+#include "support/common.hpp"
 
 #include <atomic>
 #include <chrono>
