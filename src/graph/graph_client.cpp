@@ -2469,15 +2469,20 @@ DeltaResult MicrosoftGraphClient::list_delta(
                 result.changes.size()
             );
             scanned_item_count += page_item_count;
-            const bool completed = next_url.empty();
+            const auto progress_state =
+                next_url.empty() ?
+                    util::ProgressState::completed :
+                    util::ProgressState::ongoing;
             spdlog::trace(
                 "Microsoft Graph delta progress: {} pages, {} items scanned ({})",
                 page_number,
                 scanned_item_count,
-                completed ? "complete" : "continuing"
+                progress_state == util::ProgressState::completed ?
+                    "complete" :
+                    "continuing"
             );
             if (progress) {
-                progress(page_number, scanned_item_count, completed);
+                progress(page_number, scanned_item_count, progress_state);
             }
             ++page_number;
         } catch (const Json::exception& error) {

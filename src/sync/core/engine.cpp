@@ -230,8 +230,11 @@ DownloadBatch download_files(
     unsigned last_reported_percentage = 0;
     detail::DownloadProgressEstimator progress_estimator;
     const auto report_progress =
-        [&](std::size_t index, std::uint64_t downloaded, bool completed) {
+        [&](std::size_t index,
+            std::uint64_t downloaded,
+            util::ProgressState state) {
             const std::scoped_lock lock{console_mutex};
+            const bool completed = state == util::ProgressState::completed;
             const auto expected_size =
                 static_cast<std::uint64_t>(tasks[index].item.size);
             const auto current = std::min(downloaded, expected_size);
@@ -273,7 +276,9 @@ DownloadBatch download_files(
                 tasks.size(),
                 downloaded_bytes,
                 total_bytes,
-                all_completed,
+                all_completed ?
+                    util::ProgressState::completed :
+                    util::ProgressState::ongoing,
                 metrics
             );
         };
@@ -336,7 +341,11 @@ DownloadBatch download_files(
                             if (total == 0 || downloaded >= total) {
                                 return;
                             }
-                            report_progress(index, downloaded, false);
+                            report_progress(
+                                index,
+                                downloaded,
+                                util::ProgressState::ongoing
+                            );
                         }
                     ),
                     {
@@ -354,7 +363,11 @@ DownloadBatch download_files(
                             },
                     }
                 ));
-                report_progress(index, expected_size, true);
+                report_progress(
+                    index,
+                    expected_size,
+                    util::ProgressState::completed
+                );
             } catch (const detail::DownloadSpaceCancelledError&) {
                 return;
             } catch (const graph::DownloadCancelledError&) {
@@ -2303,11 +2316,16 @@ int SyncEngine::synchronize() const {
             "delta_query_started",
             "Fetching Microsoft Graph changes..."
         );
-        bool replace_drive_items = !query_delta_link.has_value();
+        auto apply_mode =
+            query_delta_link.has_value() ?
+                storage::DeltaApplyMode::merge :
+                storage::DeltaApplyMode::replace;
         graph::DeltaResult delta;
         const auto delta_progress =
-            [&console](std::size_t pages, std::size_t items, bool completed) {
-                console.delta_progress(pages, items, completed);
+            [&console](std::size_t pages,
+                       std::size_t items,
+                       util::ProgressState state) {
+                console.delta_progress(pages, items, state);
             };
         try {
             delta = graph_.list_delta(query_delta_link, delta_progress);
@@ -2323,12 +2341,12 @@ int SyncEngine::synchronize() const {
                 "fetching the full remote state..."
             );
             delta = graph_.list_delta(std::nullopt, delta_progress);
-            replace_drive_items = true;
+            apply_mode = storage::DeltaApplyMode::replace;
         }
         const auto tracked_items =
             items_.drive_items(config_->drive_id);
         std::vector<storage::UploadSuppression> upload_suppressions;
-        if (replace_drive_items) {
+        if (apply_mode == storage::DeltaApplyMode::replace) {
             add_full_refresh_deletions(
                 delta,
                 tracked_items
@@ -2338,7 +2356,8 @@ int SyncEngine::synchronize() const {
         add_moved_descendants(delta, tracked_items);
         const auto previously_blocked =
             items_.blocked_items(config_->drive_id);
-        if (!replace_drive_items && !previously_blocked.empty()) {
+        if (apply_mode == storage::DeltaApplyMode::merge &&
+            !previously_blocked.empty()) {
             add_blocked_retries(delta, previously_blocked);
             spdlog::debug(
                 "Added {} blocked items to the synchronization retry plan",
@@ -2361,7 +2380,7 @@ int SyncEngine::synchronize() const {
                                std::string{remote_id}
                            ).has_value();
                 },
-                replace_drive_items
+                apply_mode
             );
             spdlog::info(
                 "Selective synchronization excluded {} remote changes",
@@ -2418,7 +2437,7 @@ int SyncEngine::synchronize() const {
             std::move(delta),
             config_->drive_id,
             sync_root,
-            replace_drive_items,
+            apply_mode,
             sync_filter_fingerprint,
             std::move(snapshot_removals),
             tracked_items,

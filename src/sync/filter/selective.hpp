@@ -1,6 +1,7 @@
 #pragma once
 
 #include "onedrive/graph/graph_client.hpp"
+#include "onedrive/storage/item_store.hpp"
 
 #include <filesystem>
 #include <functional>
@@ -63,7 +64,7 @@ struct FilteredDelta {
     graph::DeltaResult delta,
     const SyncList& sync_list,
     const std::function<bool(std::string_view)>& is_tracked,
-    bool replace_drive_items
+    storage::DeltaApplyMode apply_mode
 );
 
 }  // namespace onedrive::sync::detail

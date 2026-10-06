@@ -61,7 +61,11 @@ public:
             };
         }
         if (progress) {
-            progress(1, changes.size(), true);
+            progress(
+                1,
+                changes.size(),
+                onedrive::util::ProgressState::completed
+            );
         }
         return {
             .changes = changes,
@@ -403,7 +407,8 @@ public:
             throw std::runtime_error{"simulated delta persistence failure"};
         }
         ++apply_count;
-        if (delta.replace_drive_items) {
+        if (delta.apply_mode ==
+            onedrive::storage::DeltaApplyMode::replace) {
             items.clear();
             blocked.clear();
         }
@@ -973,7 +978,8 @@ int test_dry_run_and_success() {
         std::istreambuf_iterator<char>{}
     };
     if (contents != "data" || items.applied_delta.upserts.size() != 2 ||
-        !items.applied_delta.replace_drive_items ||
+        items.applied_delta.apply_mode !=
+            onedrive::storage::DeltaApplyMode::replace ||
         items.applied_delta.upserts[1].local_size != 4 ||
         items.applied_delta.upserts[1].local_modified_ticks == 0) {
         return fail("downloaded file or local snapshot was incorrect");
@@ -1130,7 +1136,8 @@ int test_selective_sync_refreshes_delta_state() {
             std::vector<std::optional<std::string>>{std::nullopt} ||
         graph.download_count != 1 ||
         items.applied_delta.upserts.size() != 2 ||
-        !items.applied_delta.replace_drive_items ||
+        items.applied_delta.apply_mode !=
+            onedrive::storage::DeltaApplyMode::replace ||
         items.applied_delta.sync_filter_fingerprint.empty() ||
         !std::filesystem::exists(root / "Pictures/excluded.txt")) {
         return fail(
@@ -1172,7 +1179,8 @@ int test_selective_sync_refreshes_delta_state() {
             std::vector<std::optional<std::string>>{std::nullopt} ||
         graph.download_count != 2 ||
         !std::filesystem::is_regular_file(root / "root-file.txt") ||
-        !items.applied_delta.replace_drive_items) {
+        items.applied_delta.apply_mode !=
+            onedrive::storage::DeltaApplyMode::replace) {
         return fail(
             "enabling root files did not force and apply a filtered full delta"
         );
@@ -2013,7 +2021,9 @@ int test_invalid_delta_cursor_restarts_full_query() {
                 items.saved_delta_link,
                 std::nullopt,
             } ||
-        items.apply_count != 1 || !items.applied_delta.replace_drive_items ||
+        items.apply_count != 1 ||
+        items.applied_delta.apply_mode !=
+            onedrive::storage::DeltaApplyMode::replace ||
         items.applied_delta.upserts.size() != 1 || !metrics.last_success) {
         return fail(
             "invalid delta cursor did not restart a replacing full query"
@@ -2104,7 +2114,8 @@ int test_remote_deletions() {
         std::filesystem::exists(refreshed_root / "gone.txt") ||
         refreshed_items.applied_delta.removals !=
             std::vector<std::string>{"gone"} ||
-        !refreshed_items.applied_delta.replace_drive_items) {
+        refreshed_items.applied_delta.apply_mode !=
+            onedrive::storage::DeltaApplyMode::replace) {
         return fail(
             "full remote refresh did not reconcile a disappeared item"
         );

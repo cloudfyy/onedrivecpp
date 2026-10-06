@@ -1672,11 +1672,17 @@ int test_delta_with_pagination() {
         },
     };
 
-    std::vector<std::tuple<std::size_t, std::size_t, bool>> progress;
+    using ProgressRecord = std::tuple<
+        std::size_t,
+        std::size_t,
+        onedrive::util::ProgressState>;
+    std::vector<ProgressRecord> progress;
     const auto delta = client.list_delta(
         std::nullopt,
-        [&progress](std::size_t pages, std::size_t items, bool completed) {
-            progress.emplace_back(pages, items, completed);
+        [&progress](std::size_t pages,
+                    std::size_t items,
+                    onedrive::util::ProgressState state) {
+            progress.emplace_back(pages, items, state);
         }
     );
     if (delta.changes.size() != 5 ||
@@ -1702,9 +1708,9 @@ int test_delta_with_pagination() {
         !delta.changes[3].malware ||
         !delta.changes[4].deleted ||
         progress !=
-            std::vector<std::tuple<std::size_t, std::size_t, bool>>{
-                {1, 2, false},
-                {2, 5, true},
+            std::vector<ProgressRecord>{
+                {1, 2, onedrive::util::ProgressState::ongoing},
+                {2, 5, onedrive::util::ProgressState::completed},
             }) {
         return fail("Graph delta items or final link were not parsed");
     }

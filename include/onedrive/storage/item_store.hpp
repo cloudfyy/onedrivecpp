@@ -59,6 +59,11 @@ struct BlockedItem {
     std::optional<util::FileHash> content_hash;
 };
 
+enum class DeltaApplyMode {
+    merge,
+    replace,
+};
+
 struct ItemDelta {
     std::string drive_id;
     std::vector<ItemState> upserts;
@@ -68,7 +73,7 @@ struct ItemDelta {
     std::vector<UploadSuppression> upload_suppressions;
     std::string delta_link;
     std::string sync_filter_fingerprint;
-    bool replace_drive_items{false};
+    DeltaApplyMode apply_mode{DeltaApplyMode::merge};
 };
 
 struct PendingDownload {

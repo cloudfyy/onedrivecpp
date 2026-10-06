@@ -33,6 +33,11 @@ struct LocalFileBaseline {
     std::string fingerprint;
 };
 
+enum class MissingPathPolicy {
+    ignore,
+    report,
+};
+
 [[nodiscard]] std::filesystem::path prepare_sync_root(
     const std::filesystem::path& configured_root,
     config::SyncPermissionsMode permissions
@@ -47,7 +52,7 @@ struct LocalFileBaseline {
 [[nodiscard]] std::int64_t modified_ticks(int descriptor);
 bool remove_no_symlinks(
     const std::filesystem::path& path,
-    bool missing_ok = true
+    MissingPathPolicy missing_path = MissingPathPolicy::ignore
 );
 void apply_remote_modified_time(
     const std::filesystem::path& path,

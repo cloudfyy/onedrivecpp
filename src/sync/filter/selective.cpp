@@ -304,7 +304,7 @@ FilteredDelta filter_delta(
     graph::DeltaResult delta,
     const SyncList& sync_list,
     const std::function<bool(std::string_view)>& is_tracked,
-    bool replace_drive_items
+    storage::DeltaApplyMode apply_mode
 ) {
     enum class SelectionState {
         excluded,
@@ -365,7 +365,7 @@ FilteredDelta filter_delta(
         ++result.excluded;
         if (is_tracked(item.id)) {
             result.retained_remote_ids.push_back(item.id);
-            if (!replace_drive_items) {
+            if (apply_mode == storage::DeltaApplyMode::merge) {
                 result.snapshot_removals.push_back(item.id);
             }
         }

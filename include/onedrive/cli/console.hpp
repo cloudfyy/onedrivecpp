@@ -1,5 +1,7 @@
 #pragma once
 
+#include "onedrive/util/progress.hpp"
+
 #include <gsl/pointers>
 
 #include <cstddef>
@@ -69,7 +71,7 @@ public:
     void delta_progress(
         std::size_t pages,
         std::size_t items,
-        bool completed
+        util::ProgressState state
     ) const;
     void blocked_item(
         std::string_view path,
@@ -81,7 +83,7 @@ public:
         std::size_t file_count,
         std::uint64_t downloaded,
         std::uint64_t total,
-        bool completed,
+        util::ProgressState state,
         const DownloadProgressMetrics& metrics = {}
     ) const;
     void end_download_progress() const;

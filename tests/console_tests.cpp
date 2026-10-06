@@ -16,6 +16,7 @@ using onedrive::test::fail;
 
 int main() {
     using namespace onedrive::cli;
+    using onedrive::util::ProgressState;
 
     std::ostringstream plain_output;
     std::ostringstream plain_error;
@@ -36,8 +37,8 @@ int main() {
             {.label = "Bytes:", .key = "bytes", .value = "42"},
         }
     );
-    plain.delta_progress(2, 350, false);
-    plain.delta_progress(3, 412, true);
+    plain.delta_progress(2, 350, ProgressState::ongoing);
+    plain.delta_progress(3, 412, ProgressState::completed);
     plain.blocked_item(
         "conflict.txt",
         "local_modification",
@@ -48,39 +49,43 @@ int main() {
         2,
         5,
         10,
-        false,
+        ProgressState::ongoing,
         {
             .bytes_per_second = 2'048,
             .estimated_seconds_remaining = 65,
             .elapsed_milliseconds = 500,
         }
     );
-    plain.download_progress(1, 2, 10, 10, false);
+    plain.download_progress(
+        1, 2, 10, 10, ProgressState::ongoing
+    );
     plain.download_progress(
         2,
         2,
         10,
         10,
-        true,
+        ProgressState::completed,
         {
             .bytes_per_second = 1'024,
             .elapsed_milliseconds = 3'723'000,
         }
     );
-    plain.download_progress(0, 1, 1'536, 3'072, false);
+    plain.download_progress(
+        0, 1, 1'536, 3'072, ProgressState::ongoing
+    );
     plain.download_progress(
         0,
         1,
         1024U * 1024U,
         2U * 1024U * 1024U,
-        false
+        ProgressState::ongoing
     );
     plain.download_progress(
         0,
         1,
         1024ULL * 1024ULL * 1024ULL,
         2ULL * 1024ULL * 1024ULL * 1024ULL,
-        false
+        ProgressState::ongoing
     );
     if (plain_output.str() !=
         "Completed.\nSummary\n  Files: 12\n  Bytes: 42\n"
@@ -134,7 +139,7 @@ int main() {
             {.label = "Files", .key = "files", .value = "12"},
         }
     );
-    json.delta_progress(4, 625, false);
+    json.delta_progress(4, 625, ProgressState::ongoing);
     json.blocked_item(
         "conflict.txt",
         "local_modification",
@@ -145,7 +150,7 @@ int main() {
         1,
         4,
         8,
-        false,
+        ProgressState::ongoing,
         {
             .bytes_per_second = 4,
             .estimated_seconds_remaining = 1,
@@ -157,7 +162,7 @@ int main() {
         1,
         8,
         8,
-        true,
+        ProgressState::completed,
         {
             .bytes_per_second = 8,
             .elapsed_milliseconds = 1'500,
@@ -228,8 +233,10 @@ int main() {
         "Hidden",
         {{.label = "Files", .key = "files", .value = "12"}}
     );
-    quiet.delta_progress(1, 200, false);
-    quiet.download_progress(0, 1, 1, 2, false);
+    quiet.delta_progress(1, 200, ProgressState::ongoing);
+    quiet.download_progress(
+        0, 1, 1, 2, ProgressState::ongoing
+    );
     quiet.blocked_item(
         "conflict.txt",
         "local_modification",

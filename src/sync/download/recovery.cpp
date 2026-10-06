@@ -154,7 +154,10 @@ void recover_pending_downloads(
                         download.temporary_path.string()
                     );
                 }
-                remove_no_symlinks(download.temporary_path, false);
+                remove_no_symlinks(
+                    download.temporary_path,
+                    MissingPathPolicy::report
+                );
                 spdlog::debug(
                     "Removed obsolete recovery temporary file '{}'",
                     download.temporary_path.string()

@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -18,6 +19,47 @@ namespace {
 
 using onedrive::test::TemporaryDirectory;
 using onedrive::test::fail;
+
+struct SqliteCloser {
+    void operator()(sqlite3* database) const noexcept {
+        sqlite3_close(database);
+    }
+};
+
+struct SqliteStatementFinalizer {
+    void operator()(sqlite3_stmt* statement) const noexcept {
+        sqlite3_finalize(statement);
+    }
+};
+
+using TestDatabase = std::unique_ptr<sqlite3, SqliteCloser>;
+using TestStatement =
+    std::unique_ptr<sqlite3_stmt, SqliteStatementFinalizer>;
+
+TestDatabase open_database(const std::filesystem::path& path) {
+    sqlite3* raw_database = nullptr;
+    const auto result =
+        sqlite3_open(path.string().c_str(), &raw_database);
+    TestDatabase database{raw_database};
+    if (result != SQLITE_OK) {
+        return {};
+    }
+    return database;
+}
+
+TestStatement prepare_statement(
+    sqlite3* database,
+    const char* sql
+) {
+    sqlite3_stmt* raw_statement = nullptr;
+    const auto result =
+        sqlite3_prepare_v2(database, sql, -1, &raw_statement, nullptr);
+    TestStatement statement{raw_statement};
+    if (result != SQLITE_OK) {
+        return {};
+    }
+    return statement;
+}
 
 onedrive::account::DriveIdentity identity() {
     return {
@@ -37,14 +79,12 @@ bool execute_schema(
     const std::filesystem::path& path,
     const char* schema
 ) {
-    sqlite3* database = nullptr;
-    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
-        sqlite3_close(database);
+    auto database = open_database(path);
+    if (!database) {
         return false;
     }
     const bool succeeded =
-        sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
-    sqlite3_close(database);
+        sqlite3_exec(database.get(), schema, nullptr, nullptr, nullptr) == SQLITE_OK;
     return succeeded;
 }
 
@@ -87,9 +127,8 @@ bool create_version_three_database(const std::filesystem::path& path) {
 }
 
 bool create_version_four_database(const std::filesystem::path& path) {
-    sqlite3* database = nullptr;
-    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
-        sqlite3_close(database);
+    auto database = open_database(path);
+    if (!database) {
         return false;
     }
     constexpr const char* schema =
@@ -112,8 +151,7 @@ bool create_version_four_database(const std::filesystem::path& path) {
         "PRIMARY KEY (drive_id, remote_id));"
         "PRAGMA user_version = 4;";
     const bool succeeded =
-        sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
-    sqlite3_close(database);
+        sqlite3_exec(database.get(), schema, nullptr, nullptr, nullptr) == SQLITE_OK;
     return succeeded;
 }
 
@@ -121,9 +159,8 @@ bool create_version_five_database(const std::filesystem::path& path) {
     if (!create_version_four_database(path)) {
         return false;
     }
-    sqlite3* database = nullptr;
-    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
-        sqlite3_close(database);
+    auto database = open_database(path);
+    if (!database) {
         return false;
     }
     constexpr const char* schema =
@@ -139,8 +176,7 @@ bool create_version_five_database(const std::filesystem::path& path) {
         "PRIMARY KEY (drive_id, remote_id));"
         "PRAGMA user_version = 5;";
     const bool succeeded =
-        sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
-    sqlite3_close(database);
+        sqlite3_exec(database.get(), schema, nullptr, nullptr, nullptr) == SQLITE_OK;
     return succeeded;
 }
 
@@ -148,9 +184,8 @@ bool create_version_six_database(const std::filesystem::path& path) {
     if (!create_version_four_database(path)) {
         return false;
     }
-    sqlite3* database = nullptr;
-    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
-        sqlite3_close(database);
+    auto database = open_database(path);
+    if (!database) {
         return false;
     }
     constexpr const char* schema =
@@ -171,8 +206,7 @@ bool create_version_six_database(const std::filesystem::path& path) {
         "avatar_content_type TEXT NOT NULL, avatar_bytes BLOB NOT NULL);"
         "PRAGMA user_version = 6;";
     const bool succeeded =
-        sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
-    sqlite3_close(database);
+        sqlite3_exec(database.get(), schema, nullptr, nullptr, nullptr) == SQLITE_OK;
     return succeeded;
 }
 
@@ -180,9 +214,8 @@ bool create_version_seven_database(const std::filesystem::path& path) {
     if (!create_version_six_database(path)) {
         return false;
     }
-    sqlite3* database = nullptr;
-    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
-        sqlite3_close(database);
+    auto database = open_database(path);
+    if (!database) {
         return false;
     }
     constexpr const char* schema =
@@ -192,8 +225,7 @@ bool create_version_seven_database(const std::filesystem::path& path) {
         "last_resolved INTEGER NOT NULL DEFAULT (unixepoch()));"
         "PRAGMA user_version = 7;";
     const bool succeeded =
-        sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
-    sqlite3_close(database);
+        sqlite3_exec(database.get(), schema, nullptr, nullptr, nullptr) == SQLITE_OK;
     return succeeded;
 }
 
@@ -202,9 +234,8 @@ bool create_version_eight_database(const std::filesystem::path& path) {
         return false;
     }
 
-    sqlite3* database = nullptr;
-    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
-        sqlite3_close(database);
+    auto database = open_database(path);
+    if (!database) {
         return false;
     }
     constexpr const char* schema =
@@ -219,8 +250,7 @@ bool create_version_eight_database(const std::filesystem::path& path) {
         "PRIMARY KEY (drive_id, remote_id));"
         "PRAGMA user_version = 8;";
     const bool succeeded =
-        sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
-    sqlite3_close(database);
+        sqlite3_exec(database.get(), schema, nullptr, nullptr, nullptr) == SQLITE_OK;
     return succeeded;
 }
 
@@ -228,9 +258,8 @@ bool create_version_nine_database(const std::filesystem::path& path) {
     if (!create_version_eight_database(path)) {
         return false;
     }
-    sqlite3* database = nullptr;
-    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
-        sqlite3_close(database);
+    auto database = open_database(path);
+    if (!database) {
         return false;
     }
     constexpr const char* schema =
@@ -240,8 +269,7 @@ bool create_version_nine_database(const std::filesystem::path& path) {
         "TEXT NOT NULL DEFAULT '';"
         "PRAGMA user_version = 9;";
     const bool succeeded =
-        sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
-    sqlite3_close(database);
+        sqlite3_exec(database.get(), schema, nullptr, nullptr, nullptr) == SQLITE_OK;
     return succeeded;
 }
 
@@ -249,9 +277,8 @@ bool create_version_ten_database(const std::filesystem::path& path) {
     if (!create_version_nine_database(path)) {
         return false;
     }
-    sqlite3* database = nullptr;
-    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
-        sqlite3_close(database);
+    auto database = open_database(path);
+    if (!database) {
         return false;
     }
     constexpr const char* schema =
@@ -259,8 +286,7 @@ bool create_version_ten_database(const std::filesystem::path& path) {
         "TEXT NOT NULL DEFAULT '';"
         "PRAGMA user_version = 10;";
     const bool succeeded =
-        sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
-    sqlite3_close(database);
+        sqlite3_exec(database.get(), schema, nullptr, nullptr, nullptr) == SQLITE_OK;
     return succeeded;
 }
 
@@ -268,9 +294,8 @@ bool create_version_eleven_database(const std::filesystem::path& path) {
     if (!create_version_ten_database(path)) {
         return false;
     }
-    sqlite3* database = nullptr;
-    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
-        sqlite3_close(database);
+    auto database = open_database(path);
+    if (!database) {
         return false;
     }
     constexpr const char* schema =
@@ -280,8 +305,7 @@ bool create_version_eleven_database(const std::filesystem::path& path) {
         "TEXT NOT NULL DEFAULT '';"
         "PRAGMA user_version = 11;";
     const bool succeeded =
-        sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
-    sqlite3_close(database);
+        sqlite3_exec(database.get(), schema, nullptr, nullptr, nullptr) == SQLITE_OK;
     return succeeded;
 }
 
@@ -289,9 +313,8 @@ bool create_version_twelve_database(const std::filesystem::path& path) {
     if (!create_version_eleven_database(path)) {
         return false;
     }
-    sqlite3* database = nullptr;
-    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
-        sqlite3_close(database);
+    auto database = open_database(path);
+    if (!database) {
         return false;
     }
     constexpr const char* schema =
@@ -299,8 +322,7 @@ bool create_version_twelve_database(const std::filesystem::path& path) {
         "INTEGER NOT NULL DEFAULT 0;"
         "PRAGMA user_version = 12;";
     const bool succeeded =
-        sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
-    sqlite3_close(database);
+        sqlite3_exec(database.get(), schema, nullptr, nullptr, nullptr) == SQLITE_OK;
     return succeeded;
 }
 
@@ -308,9 +330,8 @@ bool create_version_thirteen_database(const std::filesystem::path& path) {
     if (!create_version_twelve_database(path)) {
         return false;
     }
-    sqlite3* database = nullptr;
-    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
-        sqlite3_close(database);
+    auto database = open_database(path);
+    if (!database) {
         return false;
     }
     constexpr const char* schema =
@@ -324,8 +345,7 @@ bool create_version_thirteen_database(const std::filesystem::path& path) {
         "PRIMARY KEY (drive_id, remote_path));"
         "PRAGMA user_version = 13;";
     const bool succeeded =
-        sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
-    sqlite3_close(database);
+        sqlite3_exec(database.get(), schema, nullptr, nullptr, nullptr) == SQLITE_OK;
     return succeeded;
 }
 
@@ -333,9 +353,8 @@ bool create_version_fourteen_database(const std::filesystem::path& path) {
     if (!create_version_thirteen_database(path)) {
         return false;
     }
-    sqlite3* database = nullptr;
-    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
-        sqlite3_close(database);
+    auto database = open_database(path);
+    if (!database) {
         return false;
     }
     constexpr const char* schema =
@@ -352,8 +371,7 @@ bool create_version_fourteen_database(const std::filesystem::path& path) {
         "123, 456, 0);"
         "PRAGMA user_version = 14;";
     const bool succeeded =
-        sqlite3_exec(database, schema, nullptr, nullptr, nullptr) == SQLITE_OK;
-    sqlite3_close(database);
+        sqlite3_exec(database.get(), schema, nullptr, nullptr, nullptr) == SQLITE_OK;
     return succeeded;
 }
 
@@ -361,9 +379,8 @@ bool create_version_fifteen_database(const std::filesystem::path& path) {
     if (!create_version_fourteen_database(path)) {
         return false;
     }
-    sqlite3* database = nullptr;
-    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
-        sqlite3_close(database);
+    auto database = open_database(path);
+    if (!database) {
         return false;
     }
     constexpr const char* migration =
@@ -372,13 +389,12 @@ bool create_version_fifteen_database(const std::filesystem::path& path) {
         "PRAGMA user_version = 15;";
     const bool succeeded =
         sqlite3_exec(
-            database,
+            database.get(),
             migration,
             nullptr,
             nullptr,
             nullptr
         ) == SQLITE_OK;
-    sqlite3_close(database);
     return succeeded;
 }
 
@@ -386,9 +402,8 @@ bool create_version_sixteen_database(const std::filesystem::path& path) {
     if (!create_version_fifteen_database(path)) {
         return false;
     }
-    sqlite3* database = nullptr;
-    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
-        sqlite3_close(database);
+    auto database = open_database(path);
+    if (!database) {
         return false;
     }
     constexpr const char* migration =
@@ -400,13 +415,12 @@ bool create_version_sixteen_database(const std::filesystem::path& path) {
         "PRAGMA user_version = 16;";
     const bool succeeded =
         sqlite3_exec(
-            database,
+            database.get(),
             migration,
             nullptr,
             nullptr,
             nullptr
         ) == SQLITE_OK;
-    sqlite3_close(database);
     return succeeded;
 }
 
@@ -414,9 +428,8 @@ bool create_version_seventeen_database(const std::filesystem::path& path) {
     if (!create_version_sixteen_database(path)) {
         return false;
     }
-    sqlite3* database = nullptr;
-    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
-        sqlite3_close(database);
+    auto database = open_database(path);
+    if (!database) {
         return false;
     }
     constexpr const char* migration =
@@ -429,13 +442,12 @@ bool create_version_seventeen_database(const std::filesystem::path& path) {
         "PRAGMA user_version = 17;";
     const bool succeeded =
         sqlite3_exec(
-            database,
+            database.get(),
             migration,
             nullptr,
             nullptr,
             nullptr
         ) == SQLITE_OK;
-    sqlite3_close(database);
     return succeeded;
 }
 
@@ -537,78 +549,71 @@ bool create_version_twenty_three_database(
 }
 
 bool identity_row_is_valid(const std::filesystem::path& path) {
-    sqlite3* database = nullptr;
-    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
-        sqlite3_close(database);
+    auto database = open_database(path);
+    if (!database) {
         return false;
     }
-    sqlite3_stmt* statement = nullptr;
-    const bool prepared = sqlite3_prepare_v2(
-        database,
+    auto identity_statement = prepare_statement(
+        database.get(),
         "SELECT user_id, user_display_name, drive_id, drive_name, "
         "avatar_content_type, length(avatar_bytes) FROM identity "
-        "WHERE singleton = 1;",
-        -1,
-        &statement,
-        nullptr
-    ) == SQLITE_OK;
+        "WHERE singleton = 1;"
+    );
     const bool valid =
-        prepared && sqlite3_step(statement) == SQLITE_ROW &&
+        identity_statement &&
+        sqlite3_step(identity_statement.get()) == SQLITE_ROW &&
         std::string{
-            reinterpret_cast<const char*>(sqlite3_column_text(statement, 0))
+            reinterpret_cast<const char*>(
+                sqlite3_column_text(identity_statement.get(), 0)
+            )
         } == "user-id" &&
         std::string{
-            reinterpret_cast<const char*>(sqlite3_column_text(statement, 1))
+            reinterpret_cast<const char*>(
+                sqlite3_column_text(identity_statement.get(), 1)
+            )
         } == "Test User" &&
         std::string{
-            reinterpret_cast<const char*>(sqlite3_column_text(statement, 2))
+            reinterpret_cast<const char*>(
+                sqlite3_column_text(identity_statement.get(), 2)
+            )
         } == "canonical-drive-id" &&
         std::string{
-            reinterpret_cast<const char*>(sqlite3_column_text(statement, 3))
+            reinterpret_cast<const char*>(
+                sqlite3_column_text(identity_statement.get(), 3)
+            )
         } == "Test Drive" &&
         std::string{
-            reinterpret_cast<const char*>(sqlite3_column_text(statement, 4))
+            reinterpret_cast<const char*>(
+                sqlite3_column_text(identity_statement.get(), 4)
+            )
         } == "image/jpeg" &&
-        sqlite3_column_int(statement, 5) == 4;
-    sqlite3_finalize(statement);
-    statement = nullptr;
-    const bool mapping_prepared = sqlite3_prepare_v2(
-        database,
+        sqlite3_column_int(identity_statement.get(), 5) == 4;
+    auto mapping_statement = prepare_statement(
+        database.get(),
         "SELECT canonical_drive_id FROM drive_mapping "
-        "WHERE configured_drive_id = 'me';",
-        -1,
-        &statement,
-        nullptr
-    ) == SQLITE_OK;
+        "WHERE configured_drive_id = 'me';"
+    );
     const bool mapping_valid =
-        mapping_prepared && sqlite3_step(statement) == SQLITE_ROW &&
+        mapping_statement &&
+        sqlite3_step(mapping_statement.get()) == SQLITE_ROW &&
         std::string{
-            reinterpret_cast<const char*>(sqlite3_column_text(statement, 0))
+            reinterpret_cast<const char*>(
+                sqlite3_column_text(mapping_statement.get(), 0)
+            )
         } == "canonical-drive-id";
-    sqlite3_finalize(statement);
-    sqlite3_close(database);
     return valid && mapping_valid;
 }
 
 bool schema_version_is(const std::filesystem::path& path, int expected) {
-    sqlite3* database = nullptr;
-    if (sqlite3_open(path.string().c_str(), &database) != SQLITE_OK) {
-        sqlite3_close(database);
+    auto database = open_database(path);
+    if (!database) {
         return false;
     }
-    sqlite3_stmt* statement = nullptr;
-    const bool prepared = sqlite3_prepare_v2(
-        database,
-        "PRAGMA user_version;",
-        -1,
-        &statement,
-        nullptr
-    ) == SQLITE_OK;
+    auto statement =
+        prepare_statement(database.get(), "PRAGMA user_version;");
     const bool valid =
-        prepared && sqlite3_step(statement) == SQLITE_ROW &&
-        sqlite3_column_int(statement, 0) == expected;
-    sqlite3_finalize(statement);
-    sqlite3_close(database);
+        statement && sqlite3_step(statement.get()) == SQLITE_ROW &&
+        sqlite3_column_int(statement.get(), 0) == expected;
     return valid;
 }
 
@@ -1095,7 +1100,8 @@ int main() {
                 },
             },
             .delta_link = "https://graph.example.test/delta-fresh",
-            .replace_drive_items = true,
+            .apply_mode =
+                onedrive::storage::DeltaApplyMode::replace,
         });
         if (database.size() != 4 ||
             database.find("me", "reset-me") ||

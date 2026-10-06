@@ -16,7 +16,7 @@ SyncPlan SyncPlan::build(
     graph::DeltaResult delta,
     const std::string& drive_id,
     const std::filesystem::path& sync_directory,
-    bool replace_drive_items,
+    storage::DeltaApplyMode apply_mode,
     std::string sync_filter_fingerprint,
     std::vector<std::string> snapshot_removals,
     const std::vector<storage::ItemState>& tracked_items,
@@ -28,7 +28,7 @@ SyncPlan SyncPlan::build(
     plan.state_delta_.delta_link = plan.delta_.delta_link;
     plan.state_delta_.sync_filter_fingerprint =
         std::move(sync_filter_fingerprint);
-    plan.state_delta_.replace_drive_items = replace_drive_items;
+    plan.state_delta_.apply_mode = apply_mode;
     plan.state_delta_.removals = std::move(snapshot_removals);
     plan.state_delta_.upload_suppressions =
         std::move(upload_suppressions);

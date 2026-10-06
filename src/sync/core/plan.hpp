@@ -16,7 +16,7 @@ public:
         graph::DeltaResult delta,
         const std::string& drive_id,
         const std::filesystem::path& sync_directory,
-        bool replace_drive_items,
+        storage::DeltaApplyMode apply_mode,
         std::string sync_filter_fingerprint,
         std::vector<std::string> snapshot_removals = {},
         const std::vector<storage::ItemState>& tracked_items = {},

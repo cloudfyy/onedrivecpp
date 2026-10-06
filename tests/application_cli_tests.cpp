@@ -171,7 +171,9 @@ public:
         const onedrive::graph::DeltaProgress& progress
     ) const {
         if (progress) {
-            progress(1, 1, true);
+            progress(
+                1, 1, onedrive::util::ProgressState::completed
+            );
         }
         return {
             .changes = {

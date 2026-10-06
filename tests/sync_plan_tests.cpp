@@ -9,6 +9,7 @@
 
 namespace {
 
+using onedrive::storage::DeltaApplyMode;
 using onedrive::test::fail;
 
 onedrive::graph::RemoteItem item(
@@ -51,7 +52,7 @@ int main() {
         },
         "me",
         "/sync",
-        true,
+        DeltaApplyMode::replace,
         ""
     );
     if (plan.change_count() != 5 || plan.directory_count() != 2 ||
@@ -71,7 +72,8 @@ int main() {
     }
     plan.complete_removal("removed");
     const auto delta = plan.release_state_delta();
-    if (!delta.replace_drive_items || delta.upserts.size() != 3 ||
+    if (delta.apply_mode != onedrive::storage::DeltaApplyMode::replace ||
+        delta.upserts.size() != 3 ||
         delta.removals != std::vector<std::string>{"removed"} ||
         delta.delta_link != "https://graph.example.test/delta") {
         return fail("planned persistent delta was incorrect");
@@ -84,7 +86,7 @@ int main() {
         },
         "me",
         "/sync",
-        false,
+        DeltaApplyMode::merge,
         "",
         {},
         {
@@ -109,7 +111,7 @@ int main() {
         },
         "me",
         "/sync",
-        false,
+        DeltaApplyMode::merge,
         ""
     );
     blocked_removal_plan.block_removal(
@@ -145,7 +147,7 @@ int main() {
         },
         "me",
         "/sync",
-        false,
+        DeltaApplyMode::merge,
         ""
     );
     if (malware_plan.download_count() != 0 ||
@@ -166,7 +168,7 @@ int main() {
             },
             "me",
             "/sync",
-            false,
+            DeltaApplyMode::merge,
             ""
         ));
         return fail("negative remote file size was accepted");

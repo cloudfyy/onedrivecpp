@@ -11,6 +11,7 @@
 
 namespace {
 
+using onedrive::storage::DeltaApplyMode;
 using onedrive::test::fail;
 
 onedrive::graph::RemoteItem item(
@@ -128,7 +129,7 @@ int main() {
         [](std::string_view) {
             return false;
         },
-        true
+        DeltaApplyMode::replace
     );
     if (root_files_filtered.delta.changes.size() != 1 ||
         root_files_filtered.delta.changes[0].id != "root-file" ||
@@ -158,7 +159,7 @@ int main() {
         [](std::string_view) {
             return false;
         },
-        true
+        DeltaApplyMode::replace
     );
     std::vector<std::string> filtered_ids;
     for (const auto& change : filtered.delta.changes) {
@@ -185,7 +186,7 @@ int main() {
         [&](std::string_view id) {
             return tracked.contains(std::string{id});
         },
-        false
+        DeltaApplyMode::merge
     );
     if (!filtered.delta.changes.empty() ||
         filtered.snapshot_removals !=
@@ -215,7 +216,7 @@ int main() {
         [](std::string_view) {
             return false;
         },
-        true
+        DeltaApplyMode::replace
     );
     if (!filtered.delta.changes.empty() || filtered.excluded != 3) {
         return fail("an excluded parent did not override child inclusions");

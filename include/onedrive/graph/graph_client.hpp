@@ -3,6 +3,7 @@
 #include "onedrive/account/account_state.hpp"
 #include "onedrive/util/file_hash.hpp"
 #include "onedrive/http/http_options.hpp"
+#include "onedrive/util/progress.hpp"
 #include "onedrive/util/proxy_service.hpp"
 
 #include <chrono>
@@ -46,7 +47,7 @@ using DownloadCheckpoint =
 using DeltaProgress = std::function<void(
     std::size_t pages,
     std::size_t items,
-    bool completed
+    util::ProgressState state
 )>;
 
 struct RemoteItem {

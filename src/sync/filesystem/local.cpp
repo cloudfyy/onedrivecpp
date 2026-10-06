@@ -234,7 +234,7 @@ std::int64_t modified_ticks(int descriptor) {
 
 bool remove_no_symlinks(
     const std::filesystem::path& path,
-    bool missing_ok
+    MissingPathPolicy missing_path
 ) {
     onedrive::util::UniqueFD parent{
         onedrive::util::open_path_no_symlinks(
@@ -244,7 +244,7 @@ bool remove_no_symlinks(
     };
     if (::unlinkat(parent.get(), path.filename().c_str(), 0) == -1) {
         const int error = errno;
-        if (missing_ok && error == ENOENT) {
+        if (missing_path == MissingPathPolicy::ignore && error == ENOENT) {
             return false;
         }
         throw std::runtime_error(

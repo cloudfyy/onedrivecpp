@@ -1793,7 +1793,7 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
     }
 
     Transaction transaction{database};
-    if (delta.replace_drive_items) {
+    if (delta.apply_mode == DeltaApplyMode::replace) {
         Statement replace_statement{
             database,
             "DELETE FROM item WHERE drive_id = ?1;"
@@ -2180,7 +2180,9 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         delta.upserts.size(),
         delta.removals.size(),
         delta.blocked_upserts.size(),
-        delta.replace_drive_items ? "replaced" : "updated",
+        delta.apply_mode == DeltaApplyMode::replace ?
+            "replaced" :
+            "updated",
         query_count(database, "SELECT COUNT(*) FROM item;")
     );
 }

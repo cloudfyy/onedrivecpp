@@ -183,11 +183,12 @@ void Console::section(
 void Console::delta_progress(
     std::size_t pages,
     std::size_t items,
-    bool completed
+    util::ProgressState state
 ) const {
     if (options_.quiet) {
         return;
     }
+    const bool completed = state == util::ProgressState::completed;
     if (options_.output == OutputMode::json) {
         *output_ << nlohmann::json{
             {"event", "delta_progress"},
@@ -235,12 +236,13 @@ void Console::download_progress(
     std::size_t file_count,
     std::uint64_t downloaded,
     std::uint64_t total,
-    bool completed,
+    util::ProgressState state,
     const DownloadProgressMetrics& metrics
 ) const {
     if (options_.quiet) {
         return;
     }
+    const bool completed = state == util::ProgressState::completed;
     auto percentage =
         total == 0 ?
             (file_count == 0 ?

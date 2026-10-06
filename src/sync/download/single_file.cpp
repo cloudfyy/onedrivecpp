@@ -181,7 +181,9 @@ int download_single_file(
                     1,
                     downloaded,
                     total,
-                    downloaded >= total,
+                    downloaded >= total ?
+                        util::ProgressState::completed :
+                        util::ProgressState::ongoing,
                     {}
                 );
             }
