@@ -1,5 +1,6 @@
 #include "sync/filesystem/local.hpp"
 
+#include "util/unique_file_descriptor.hpp"
 #include "onedrive/util/path_security.hpp"
 #include "onedrive/util/remote_time.hpp"
 #include "onedrive/util/sha256.hpp"
@@ -235,13 +236,14 @@ bool remove_no_symlinks(
     const std::filesystem::path& path,
     bool missing_ok
 ) {
-    const int parent = onedrive::util::open_path_no_symlinks(
-        path.parent_path(),
-        O_RDONLY | O_DIRECTORY
-    );
-    if (::unlinkat(parent, path.filename().c_str(), 0) == -1) {
+    onedrive::util::UniqueFD parent{
+        onedrive::util::open_path_no_symlinks(
+            path.parent_path(),
+            O_RDONLY | O_DIRECTORY
+        )
+    };
+    if (::unlinkat(parent.get(), path.filename().c_str(), 0) == -1) {
         const int error = errno;
-        ::close(parent);
         if (missing_ok && error == ENOENT) {
             return false;
         }
@@ -250,10 +252,10 @@ bool remove_no_symlinks(
             path.string() + "': " + std::strerror(error)
         );
     }
-    if (::close(parent) == -1) {
+    if (const auto error = parent.close(); error) {
         throw std::runtime_error(
             "cannot close local synchronization directory '" +
-            path.parent_path().string() + "': " + std::strerror(errno)
+            path.parent_path().string() + "': " + error.message()
         );
     }
     return true;
@@ -284,20 +286,20 @@ void apply_remote_modified_time(
             .tv_nsec = static_cast<long>(remainder.count()),
         },
     };
-    const int descriptor =
-        onedrive::util::open_path_no_symlinks(path, O_WRONLY);
-    if (::futimens(descriptor, times) == -1) {
+    onedrive::util::UniqueFD descriptor{
+        onedrive::util::open_path_no_symlinks(path, O_WRONLY)
+    };
+    if (::futimens(descriptor.get(), times) == -1) {
         const std::string message = std::strerror(errno);
-        ::close(descriptor);
         throw std::runtime_error(
             "cannot apply remote modification time to '" + path.string() +
             "': " + message
         );
     }
-    if (::close(descriptor) == -1) {
+    if (const auto error = descriptor.close(); error) {
         throw std::runtime_error(
             "cannot close local synchronization file '" + path.string() +
-            "': " + std::strerror(errno)
+            "': " + error.message()
         );
     }
 }
@@ -502,47 +504,48 @@ bool is_temporary_path_for(
 }
 
 void fsync_file(const std::filesystem::path& path) {
-    const int descriptor =
-        onedrive::util::open_path_no_symlinks(path, O_RDONLY);
-    if (::fsync(descriptor) == -1) {
+    onedrive::util::UniqueFD descriptor{
+        onedrive::util::open_path_no_symlinks(path, O_RDONLY)
+    };
+    if (::fsync(descriptor.get()) == -1) {
         const std::string message = std::strerror(errno);
-        ::close(descriptor);
         throw std::runtime_error(
             "cannot flush downloaded file metadata for '" + path.string() +
             "': " + message
         );
     }
-    if (::close(descriptor) == -1) {
+    if (const auto error = descriptor.close(); error) {
         throw std::runtime_error(
             "cannot close downloaded file '" + path.string() + "': " +
-            std::strerror(errno)
+            error.message()
         );
     }
 }
 
 void fsync_directory(const std::filesystem::path& directory) {
-    const int descriptor = ::open(
-        directory.c_str(),
-        O_RDONLY | O_DIRECTORY | O_CLOEXEC
-    );
-    if (descriptor == -1) {
+    onedrive::util::UniqueFD descriptor{
+        ::open(
+            directory.c_str(),
+            O_RDONLY | O_DIRECTORY | O_CLOEXEC
+        )
+    };
+    if (!descriptor) {
         throw std::runtime_error(
             "cannot open download directory '" + directory.string() + "': " +
             std::strerror(errno)
         );
     }
-    if (::fsync(descriptor) == -1) {
+    if (::fsync(descriptor.get()) == -1) {
         const std::string message = std::strerror(errno);
-        ::close(descriptor);
         throw std::runtime_error(
             "cannot flush download directory '" + directory.string() + "': " +
             message
         );
     }
-    if (::close(descriptor) == -1) {
+    if (const auto error = descriptor.close(); error) {
         throw std::runtime_error(
             "cannot close download directory '" + directory.string() + "': " +
-            std::strerror(errno)
+            error.message()
         );
     }
 }

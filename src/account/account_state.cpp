@@ -1,6 +1,7 @@
 #include "onedrive/account/account_state.hpp"
 
 #include "util/atomic_file.hpp"
+#include "util/unique_file_descriptor.hpp"
 #include "onedrive/auth/token_store.hpp"
 #include "onedrive/util/sha256.hpp"
 
@@ -335,37 +336,38 @@ AccountState::find_active_token_directory(
     const std::filesystem::path& state_directory
 ) {
     const auto marker = state_directory / "active_account";
-    const int descriptor =
+    onedrive::util::UniqueFD descriptor{
         ::open(
             marker.c_str(),
             O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK
-        );
-    if (descriptor == -1 && errno == ENOENT) {
+        )
+    };
+    if (!descriptor && errno == ENOENT) {
         return std::nullopt;
     }
-    if (descriptor == -1) {
+    if (!descriptor) {
         throw std::runtime_error(
             "cannot open active Microsoft account marker: " +
             std::string{std::strerror(errno)}
         );
     }
     struct stat marker_status {};
-    if (::fstat(descriptor, &marker_status) == -1 ||
+    if (::fstat(descriptor.get(), &marker_status) == -1 ||
         !S_ISREG(marker_status.st_mode) ||
         marker_status.st_uid != ::geteuid()) {
-        ::close(descriptor);
         throw std::runtime_error(
             "active Microsoft account marker must be a regular file owned by "
             "the current user"
         );
     }
     std::array<char, 256> buffer{};
-    const auto size = ::read(descriptor, buffer.data(), buffer.size());
+    const auto size =
+        ::read(descriptor.get(), buffer.data(), buffer.size());
     const int read_error = errno;
-    if (::close(descriptor) == -1) {
+    if (const auto close_error = descriptor.close(); close_error) {
         throw std::runtime_error(
             "cannot close active Microsoft account marker: " +
-            std::string{std::strerror(errno)}
+            close_error.message()
         );
     }
     if (size <= 0 || size == static_cast<ssize_t>(buffer.size())) {

@@ -178,15 +178,13 @@ void write_file_atomically(
             temporary_name
         );
     }
-    const int descriptor = temporary.release();
-    if (::close(descriptor) == -1) {
-        const int error = errno;
+    if (const auto error = temporary.close(); error) {
         throw_with_cleanup(
             error_message(
                 "close",
                 description,
                 destination,
-                error
+                error.value()
             ),
             directory.get(),
             temporary_name

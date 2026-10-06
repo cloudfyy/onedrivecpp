@@ -1234,12 +1234,14 @@ HttpResult CurlHttpClient::download(
                             S_IRUSR | S_IWUSR |
                                 S_IRGRP | S_IWGRP |
                                 S_IROTH | S_IWOTH;
-    int descriptor = -1;
+    FileDescriptor descriptor;
     try {
-        descriptor = onedrive::util::open_path_no_symlinks(
-            destination,
-            flags,
-            request.download_offset == 0 ? mode : 0
+        descriptor.reset(
+            onedrive::util::open_path_no_symlinks(
+                destination,
+                flags,
+                request.download_offset == 0 ? mode : 0
+            )
         );
     } catch (const std::runtime_error& error) {
         return std::unexpected(HttpError{.message = error.what()});
@@ -1251,7 +1253,7 @@ HttpResult CurlHttpClient::download(
         proxy_,
         proxy_password_,
         no_proxy_,
-        descriptor,
+        descriptor.get(),
         progress,
         data,
         checkpoint,
@@ -1265,13 +1267,13 @@ HttpResult CurlHttpClient::download(
          response->status_code >= 300 || !accepted) &&
         download_state.durable_offset != 0 &&
         ::ftruncate(
-            descriptor,
+            descriptor.get(),
             static_cast<off_t>(download_state.durable_offset)
         ) == -1) {
         truncate_error = std::strerror(errno);
     }
-    if (::close(descriptor) == -1) {
-        close_error = std::strerror(errno);
+    if (const auto error = descriptor.close(); error) {
+        close_error = error.message();
     }
     bool checkpoint_failed = false;
     if (response && response->status_code >= 200 &&

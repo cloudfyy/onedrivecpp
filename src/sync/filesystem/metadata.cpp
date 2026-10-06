@@ -1,5 +1,6 @@
 #include "sync/filesystem/metadata.hpp"
 
+#include "util/unique_file_descriptor.hpp"
 #include "onedrive/util/path_security.hpp"
 #include "sync/filesystem/local.hpp"
 
@@ -24,19 +25,20 @@ bool probe_xattr_support(const std::filesystem::path& root) {
                                   ".onedrive-cpp-xattr-probe-{}",
                                   ::getpid()
                               );
-    const int descriptor = ::open(
-        probe.c_str(),
-        O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
-        S_IRUSR | S_IWUSR
-    );
-    if (descriptor == -1) {
+    onedrive::util::UniqueFD descriptor{
+        ::open(
+            probe.c_str(),
+            O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW,
+            S_IRUSR | S_IWUSR
+        )
+    };
+    if (!descriptor) {
         throw std::runtime_error(
             "cannot create filesystem capability probe in '" + root.string() +
             "': " + std::strerror(errno)
         );
     }
-    if (::close(descriptor) == -1) {
-        const int error = errno;
+    if (const auto close_error = descriptor.close(); close_error) {
         std::error_code cleanup_error;
         std::filesystem::remove(probe, cleanup_error);
         if (cleanup_error) {
@@ -48,7 +50,7 @@ bool probe_xattr_support(const std::filesystem::path& root) {
         }
         throw std::runtime_error(
             "cannot close filesystem capability probe: " +
-            std::string{std::strerror(error)}
+            close_error.message()
         );
     }
 
@@ -202,48 +204,48 @@ void FilesystemMetadata::write_remote_identity(
     if (!use_xattrs_) {
         return;
     }
-    const int descriptor =
-        onedrive::util::open_path_no_symlinks(path, O_RDONLY);
+    onedrive::util::UniqueFD descriptor{
+        onedrive::util::open_path_no_symlinks(path, O_RDONLY)
+    };
     if (::fsetxattr(
-            descriptor,
+            descriptor.get(),
             "user.onedrive.remote_id",
             item.id.data(),
             item.id.size(),
             0
         ) == -1 ||
         ::fsetxattr(
-            descriptor,
+            descriptor.get(),
             "user.onedrive.etag",
             item.etag.data(),
             item.etag.size(),
             0
         ) == -1) {
         const std::string message = std::strerror(errno);
-        ::close(descriptor);
         throw std::runtime_error(
             "cannot write synchronization metadata to '" + path.string() +
             "': " + message
         );
     }
-    const std::string ticks = std::to_string(modified_ticks(descriptor));
+    const std::string ticks =
+        std::to_string(modified_ticks(descriptor.get()));
     if (::fsetxattr(
-            descriptor,
+            descriptor.get(),
             "user.onedrive.local_modified_ticks",
             ticks.data(),
             ticks.size(),
             0
         ) == -1) {
         const std::string message = std::strerror(errno);
-        ::close(descriptor);
         throw std::runtime_error(
             "cannot write synchronization metadata to '" + path.string() +
             "': " + message
         );
     }
-    if (::close(descriptor) == -1) {
+    if (const auto error = descriptor.close(); error) {
         throw std::runtime_error(
             "cannot close synchronization metadata file '" + path.string() +
-            "': " + std::strerror(errno)
+            "': " + error.message()
         );
     }
 }
