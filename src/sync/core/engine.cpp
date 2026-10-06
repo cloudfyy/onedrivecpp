@@ -869,19 +869,35 @@ MoveSummary execute_moves(
     for (std::size_t index = 0; index < moves.size(); ++index) {
         remaining_dependencies[index] = dependencies[index].size();
     }
+    enum class MoveActionKind {
+        direct,
+        stage,
+    };
+    enum class MoveScheduleState {
+        pending,
+        scheduled,
+    };
+    enum class SourceState {
+        occupied,
+        vacated,
+    };
     struct MoveAction {
         std::size_t move_index{0};
-        bool stage{false};
+        MoveActionKind kind{MoveActionKind::direct};
     };
     std::vector<MoveAction> move_actions;
     move_actions.reserve(moves.size() * 2U);
-    std::vector<bool> scheduled(moves.size(), false);
-    std::vector<bool> source_vacated(moves.size(), false);
+    std::vector<MoveScheduleState> scheduled(
+        moves.size(), MoveScheduleState::pending
+    );
+    std::vector<SourceState> source_states(
+        moves.size(), SourceState::occupied
+    );
     const auto vacate_source = [&](std::size_t index) {
-        if (source_vacated[index]) {
+        if (source_states[index] == SourceState::vacated) {
             return;
         }
-        source_vacated[index] = true;
+        source_states[index] = SourceState::vacated;
         for (const auto dependent : dependents[index]) {
             --remaining_dependencies[dependent];
         }
@@ -892,7 +908,7 @@ MoveSummary execute_moves(
             !pending->second.staging_path.empty()) {
             move_actions.push_back({
                 .move_index = index,
-                .stage = true,
+                .kind = MoveActionKind::stage,
             });
             vacate_source(index);
         }
@@ -901,7 +917,8 @@ MoveSummary execute_moves(
     while (scheduled_count < moves.size()) {
         std::optional<std::size_t> ready;
         for (std::size_t index = 0; index < moves.size(); ++index) {
-            if (scheduled[index] || remaining_dependencies[index] != 0) {
+            if (scheduled[index] == MoveScheduleState::scheduled ||
+                remaining_dependencies[index] != 0) {
                 continue;
             }
             if (!ready ||
@@ -917,18 +934,18 @@ MoveSummary execute_moves(
             }
         }
         if (ready) {
-            scheduled[*ready] = true;
+            scheduled[*ready] = MoveScheduleState::scheduled;
             ++scheduled_count;
             move_actions.push_back({
                 .move_index = *ready,
-                .stage = false,
+                .kind = MoveActionKind::direct,
             });
             vacate_source(*ready);
             continue;
         }
 
         std::size_t cursor = 0;
-        while (scheduled[cursor]) {
+        while (scheduled[cursor] == MoveScheduleState::scheduled) {
             ++cursor;
         }
         std::vector<std::optional<std::size_t>> seen(moves.size());
@@ -938,8 +955,10 @@ MoveSummary execute_moves(
             const auto prerequisite = std::ranges::find_if(
                 dependencies[cursor],
                 [&](std::size_t candidate) {
-                    return !scheduled[candidate] &&
-                           !source_vacated[candidate];
+                    return scheduled[candidate] ==
+                               MoveScheduleState::pending &&
+                           source_states[candidate] ==
+                               SourceState::occupied;
                 }
             );
             if (prerequisite == dependencies[cursor].end()) {
@@ -951,7 +970,7 @@ MoveSummary execute_moves(
         }
         move_actions.push_back({
             .move_index = cursor,
-            .stage = true,
+            .kind = MoveActionKind::stage,
         });
         vacate_source(cursor);
     }
@@ -981,7 +1000,7 @@ MoveSummary execute_moves(
         if (summary.blocked.contains(move.item.id)) {
             continue;
         }
-        if (action.stage) {
+        if (action.kind == MoveActionKind::stage) {
             const auto source = remap_source(move.previous.local_path);
             const auto pending_iterator =
                 pending_moves.find(move.item.id);
