@@ -25,7 +25,7 @@ int test_valid() {
         std::ofstream output{path};
         output << "config_version = 2\n"
                << "[sync]\n"
-               << "mount_point = \"\"\n";
+               << "data_mount_point = \"\"\n";
     }
     try {
         static_cast<void>(onedrive::config::Config::load(path));
@@ -34,10 +34,31 @@ int test_valid() {
         return EXIT_FAILURE;
     } catch (const std::runtime_error& error) {
         if (!std::string{error.what()}.contains(
-                "sync.mount_point must not be empty"
+                "sync.data_mount_point must not be empty"
             )) {
             std::filesystem::remove(path);
             std::cerr << "empty sync mount point reported wrong error\n";
+            return EXIT_FAILURE;
+        }
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[sync]\n"
+               << "mount_point = \"/tmp\"\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "removed sync.mount_point key was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains(
+                "unknown TOML configuration key 'sync.mount_point'"
+            )) {
+            std::filesystem::remove(path);
+            std::cerr << "removed sync.mount_point reported wrong error\n";
             return EXIT_FAILURE;
         }
     }

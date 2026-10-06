@@ -318,7 +318,7 @@ void prepare_sync_directory(
     );
     onedrive::util::require_sync_mount(
         config.sync_data_directory,
-        config.sync_mount_point
+        config.sync_data_mount_point
     );
 
     std::error_code error;

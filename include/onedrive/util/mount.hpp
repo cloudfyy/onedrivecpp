@@ -15,7 +15,7 @@ public:
 
 void require_sync_mount(
     const std::filesystem::path& sync_data_directory,
-    const std::optional<std::filesystem::path>& mount_point
+    const std::optional<std::filesystem::path>& data_mount_point
 );
 
 }  // namespace onedrive::util

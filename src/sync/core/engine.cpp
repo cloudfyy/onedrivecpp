@@ -57,7 +57,7 @@ int SyncEngine::synchronize() const {
     try {
         onedrive::util::require_sync_mount(
             config_->sync_data_directory,
-            config_->sync_mount_point
+            config_->sync_data_mount_point
         );
         std::filesystem::path sync_root =
             onedrive::util::normalized_absolute(config_->sync_data_directory);

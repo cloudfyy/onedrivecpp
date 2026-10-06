@@ -41,8 +41,8 @@ data_directory = "/home/USER/OneDrive"
 drive_id = "me"
 permissions = "private"
 local_conflict = "block"
-# 可选；sync.data_directory 所在的已挂载祖先目录
-# mount_point = "/mnt/data"
+# 可选；已挂载的祖先目录，Monitor 每轮同步前也会检查
+# data_mount_point = "/mnt/data"
 # 可选；相对路径以本 TOML 文件所在目录为基准
 # sync_list = "sync_list"
 sync_root_files = false
@@ -94,7 +94,7 @@ settle_delay_milliseconds = 1000
 ```
 
 当 `sync.data_directory` 位于可移动存储、网络文件系统或其他可能掉线的挂载盘时，
-设置 `sync.mount_point`。该路径必须是当前真实挂载的目录，并且是
+设置 `sync.data_mount_point`。该路径必须是当前真实挂载的目录，并且是
 `sync.data_directory` 的祖先。客户端会在启动时检查它，并在每轮完整同步或单文件
 下载前再次检查。如果 Monitor 运行期间挂载盘消失，下一轮同步会在本地扫描、
 pending 操作恢复、下载、上传、远端删除或 Delta 游标更新之前停止。Monitor 会在
@@ -106,7 +106,7 @@ pending 操作恢复、下载、上传、远端删除或 Delta 游标更新之�
 ```toml
 [sync]
 data_directory = "/mnt/data/OneDrive"
-mount_point = "/mnt/data"
+data_mount_point = "/mnt/data"
 ```
 
 `sync.maximum_remote_deletions` 限制一次本地删除计划最多可从 OneDrive 删除

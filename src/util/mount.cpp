@@ -71,21 +71,21 @@ bool is_mount_point(const std::filesystem::path& path) {
 
 void require_sync_mount(
     const std::filesystem::path& sync_data_directory,
-    const std::optional<std::filesystem::path>& mount_point
+    const std::optional<std::filesystem::path>& data_mount_point
 ) {
-    if (!mount_point) {
+    if (!data_mount_point) {
         return;
     }
-    if (mount_point->empty()) {
-        throw std::runtime_error("sync.mount_point must not be empty");
+    if (data_mount_point->empty()) {
+        throw std::runtime_error("sync.data_mount_point must not be empty");
     }
 
-    reject_symlink_components(*mount_point, "sync mount point");
-    const auto mount = normalized_absolute(*mount_point);
+    reject_symlink_components(*data_mount_point, "sync mount point");
+    const auto mount = normalized_absolute(*data_mount_point);
     const auto sync = normalized_absolute(sync_data_directory);
     if (!path_contains(mount, sync)) {
         throw std::runtime_error(
-            "sync.data_directory must be inside sync.mount_point: " +
+            "sync.data_directory must be inside sync.data_mount_point: " +
             mount.string()
         );
     }
@@ -93,12 +93,12 @@ void require_sync_mount(
     if (!std::filesystem::is_directory(mount, error)) {
         if (error) {
             throw SyncMountUnavailableError(
-                "cannot inspect sync.mount_point '" + mount.string() +
+                "cannot inspect sync.data_mount_point '" + mount.string() +
                 "': " + error.message()
             );
         }
         throw SyncMountUnavailableError(
-            "sync.mount_point is not a directory: " + mount.string()
+            "sync.data_mount_point is not a directory: " + mount.string()
         );
     }
     if (!is_mount_point(mount)) {

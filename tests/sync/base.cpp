@@ -11,7 +11,7 @@ int test_dry_run_and_success() {
     FakeItemStore guarded_items;
     FakeMetrics guarded_metrics;
     auto guarded_config = config_for(guarded_root, false);
-    guarded_config.sync_mount_point = temporary.path();
+    guarded_config.sync_data_mount_point = temporary.path();
     std::ostringstream guarded_output;
     std::ostringstream guarded_error;
     const onedrive::cli::Console guarded_console{

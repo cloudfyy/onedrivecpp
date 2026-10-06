@@ -60,9 +60,11 @@ local_conflict = "block"
 # Root for account- and Drive-specific synchronized data directories.
 # Paths may be absolute or relative to the service working directory.
 data_directory = "/home/USER/OneDrive"
-# Optional mounted ancestor of directory. Each synchronization stops before
-# local scanning or recovery when this path is not a current mount point.
-# mount_point = "/mnt/data"
+# Optional mounted ancestor of data_directory. Sync and single-file download
+# stop before local scanning or recovery when this path is not mounted.
+# Monitor checks it at startup and before every synchronization; a runtime
+# mount loss blocks that round while Monitor remains available to retry later.
+# data_mount_point = "/mnt/data"
 drive_id = "me"
 # Optional selective-sync rules. Relative paths resolve from this TOML file.
 # sync_list = "sync_list"

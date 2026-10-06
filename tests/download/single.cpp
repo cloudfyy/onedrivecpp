@@ -27,7 +27,7 @@ int test_single_file_download_coordination() {
     const onedrive::cli::Console console{{}, output, error};
 
     auto unmounted_config = config;
-    unmounted_config.sync_mount_point = temporary.path();
+    unmounted_config.sync_data_mount_point = temporary.path();
     try {
         static_cast<void>(onedrive::sync::plan_single_file_download(
             unmounted_config, "Documents/single.txt", graph, console
