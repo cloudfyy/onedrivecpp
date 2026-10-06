@@ -188,11 +188,39 @@ public:
         const std::string&,
         const std::filesystem::path& source,
         const std::optional<onedrive::graph::UploadSession>& session,
-        const onedrive::graph::UploadCheckpoint& checkpoint
+        const onedrive::graph::UploadCheckpoint& checkpoint,
+        std::stop_token
     ) const {
-        ++upload_count;
-        uploaded_paths.push_back(remote_path);
-        upload_sessions.push_back(session);
+        int upload_number = 0;
+        {
+            const std::scoped_lock lock{upload_mutex};
+            upload_number = ++upload_count;
+            uploaded_paths.push_back(remote_path);
+            upload_sessions.push_back(session);
+        }
+        const int active =
+            active_uploads.fetch_add(1, std::memory_order_relaxed) + 1;
+        int maximum =
+            maximum_concurrent_uploads.load(std::memory_order_relaxed);
+        while (active > maximum &&
+               !maximum_concurrent_uploads.compare_exchange_weak(
+                   maximum,
+                   active,
+                   std::memory_order_relaxed
+               )) {
+        }
+        struct ActiveUploadGuard {
+            std::atomic_int& count;
+            ~ActiveUploadGuard() {
+                count.fetch_sub(1, std::memory_order_relaxed);
+            }
+        } guard{active_uploads};
+        if (upload_delay > std::chrono::milliseconds::zero()) {
+            std::this_thread::sleep_for(upload_delay);
+        }
+        if (fatal_upload_error) {
+            throw std::runtime_error{"simulated fatal upload failure"};
+        }
         if (upload_checkpoint) {
             const auto state = *upload_checkpoint;
             upload_checkpoint.reset();
@@ -215,16 +243,20 @@ public:
             };
         }
         if (before_upload_return) {
-            auto callback = std::move(before_upload_return);
-            before_upload_return = {};
+            std::function<void()> callback;
+            {
+                const std::scoped_lock lock{upload_mutex};
+                callback = std::move(before_upload_return);
+                before_upload_return = {};
+            }
             callback();
         }
         return {
             .id = remote_id.value_or(
-                "uploaded-" + std::to_string(upload_count)
+                "uploaded-" + std::to_string(upload_number)
             ),
             .name = std::filesystem::path{remote_path}.filename().string(),
-            .etag = "uploaded-etag-" + std::to_string(upload_count),
+            .etag = "uploaded-etag-" + std::to_string(upload_number),
             .parent_id = "root-id",
             .remote_path = remote_path,
             .last_modified = "2026-10-04T09:00:00Z",
@@ -317,6 +349,7 @@ public:
     mutable std::optional<onedrive::graph::UploadSession> upload_checkpoint;
     bool reject_saved_cursor{false};
     bool upload_conflict{false};
+    bool fatal_upload_error{false};
     std::string upload_resource_error_path;
     bool directory_conflict{false};
     std::string directory_resource_error_path;
@@ -325,11 +358,13 @@ public:
     bool moved_item_directory{false};
     bool fail_after_upload_checkpoint{false};
     std::chrono::milliseconds download_delay{0};
+    std::chrono::milliseconds upload_delay{0};
     int downloads_started_before_failure{0};
     int checkpoints_before_failure{0};
     std::size_t cancellation_checkpoint{0};
     mutable std::atomic_int download_count{0};
     mutable int upload_count{0};
+    mutable std::mutex upload_mutex;
     mutable int directory_create_count{0};
     mutable std::vector<std::string> uploaded_paths;
     mutable std::vector<std::string> created_directory_paths;
@@ -343,6 +378,8 @@ public:
     mutable std::atomic_int checkpoint_count{0};
     mutable std::atomic_int active_downloads{0};
     mutable std::atomic_int maximum_concurrent_downloads{0};
+    mutable std::atomic_int active_uploads{0};
+    mutable std::atomic_int maximum_concurrent_uploads{0};
     mutable std::atomic_uint64_t last_download_offset{0};
     mutable std::vector<std::optional<std::string>> delta_requests;
 };
@@ -4115,6 +4152,83 @@ int test_local_file_uploads() {
         upload_snapshot_found || !metrics.last_success) {
         return fail(
             "new and modified local files were not uploaded safely"
+        );
+    }
+
+    const auto concurrent_root =
+        temporary.path() / "concurrent-uploads";
+    std::filesystem::create_directories(concurrent_root);
+    for (int index = 0; index < 4; ++index) {
+        std::ofstream{concurrent_root /
+                      ("file-" + std::to_string(index) + ".txt")}
+            << "parallel";
+    }
+    FakeItemStore concurrent_items;
+    concurrent_items.saved_delta_link = "saved";
+    FakeGraphClient concurrent_graph;
+    concurrent_graph.upload_delay = std::chrono::milliseconds{50};
+    FakeMetrics concurrent_metrics;
+    auto concurrent_config = config_for(concurrent_root, false);
+    concurrent_config.upload = true;
+    concurrent_config.upload_concurrency = 2;
+    const auto concurrent_result = onedrive::sync::SyncEngine{
+        concurrent_config,
+        concurrent_graph,
+        concurrent_items,
+        concurrent_metrics
+    }.synchronize();
+    if (concurrent_result != 0 ||
+        concurrent_graph.upload_count != 4 ||
+        concurrent_graph.maximum_concurrent_uploads != 2 ||
+        concurrent_items.size() != 4 ||
+        !concurrent_metrics.last_success) {
+        return fail(std::format(
+            "uploads did not respect the configured concurrency: "
+            "result={}, count={}, maximum={}, items={}, success={}",
+            concurrent_result,
+            concurrent_graph.upload_count,
+            concurrent_graph.maximum_concurrent_uploads.load(),
+            concurrent_items.size(),
+            concurrent_metrics.last_success
+        ));
+    }
+
+    const auto cancelled_root =
+        temporary.path() / "cancelled-concurrent-uploads";
+    std::filesystem::create_directories(cancelled_root);
+    for (int index = 0; index < 6; ++index) {
+        std::ofstream{cancelled_root /
+                      ("file-" + std::to_string(index) + ".txt")}
+            << "cancel";
+    }
+    FakeItemStore cancelled_items;
+    cancelled_items.saved_delta_link = "saved";
+    FakeGraphClient cancelled_graph;
+    cancelled_graph.upload_delay = std::chrono::milliseconds{30};
+    cancelled_graph.fatal_upload_error = true;
+    FakeMetrics cancelled_metrics;
+    auto cancelled_config = config_for(cancelled_root, false);
+    cancelled_config.upload = true;
+    cancelled_config.upload_concurrency = 2;
+    try {
+        static_cast<void>(onedrive::sync::SyncEngine{
+            cancelled_config,
+            cancelled_graph,
+            cancelled_items,
+            cancelled_metrics
+        }.synchronize());
+        return fail("fatal parallel upload failure was ignored");
+    } catch (const std::runtime_error& error) {
+        if (!std::string_view{error.what()}.contains(
+                "simulated fatal upload failure"
+            )) {
+            return fail("parallel upload replaced the fatal error");
+        }
+    }
+    if (cancelled_graph.upload_count > 2 ||
+        cancelled_metrics.last_success) {
+        return fail(
+            "parallel uploads continued taking work after a fatal failure"
         );
     }
 

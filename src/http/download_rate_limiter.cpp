@@ -14,7 +14,7 @@ constexpr std::uint64_t maximum_default_burst_bytes =
 
 }  // namespace
 
-DownloadRateLimiter::DownloadRateLimiter(
+TransferRateLimiter::TransferRateLimiter(
     std::uint64_t bytes_per_second,
     std::uint64_t burst_bytes
 )
@@ -30,13 +30,13 @@ DownloadRateLimiter::DownloadRateLimiter(
         capacity_ > bytes_per_second_ ||
         capacity_ > maximum_default_burst_bytes) {
         throw std::invalid_argument(
-            "download rate limiter requires a positive rate and a burst "
+            "transfer rate limiter requires a positive rate and a burst "
             "no larger than one second of traffic or 64 KiB"
         );
     }
 }
 
-bool DownloadRateLimiter::acquire(
+bool TransferRateLimiter::acquire(
     std::size_t bytes,
     const std::stop_token& stop_token
 ) {
@@ -120,7 +120,7 @@ bool DownloadRateLimiter::acquire(
     return true;
 }
 
-void DownloadRateLimiter::refill(Clock::time_point now) {
+void TransferRateLimiter::refill(Clock::time_point now) {
     if (now <= last_refill_) {
         return;
     }
@@ -137,7 +137,7 @@ void DownloadRateLimiter::refill(Clock::time_point now) {
     last_refill_ = now;
 }
 
-void DownloadRateLimiter::remove_waiter(std::uint64_t ticket) {
+void TransferRateLimiter::remove_waiter(std::uint64_t ticket) {
     const auto waiter =
         std::ranges::find(waiters_, ticket);
 

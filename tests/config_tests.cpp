@@ -50,6 +50,7 @@ int main() {
                << "maximum_total_rate_bytes_per_second = 2097152\n"
                << "validation = \"relaxed\"\n"
                << "[upload]\n"
+               << "concurrency = 3\n"
                << "chunk_size_bytes = 10485760\n"
                << "maximum_rate_bytes_per_second = 3145728\n"
                << "maximum_total_rate_bytes_per_second = 4194304\n"
@@ -109,6 +110,7 @@ int main() {
         config.transfer_transport.low_speed_limit_bytes_per_second != 128 ||
         config.download_maximum_rate_bytes_per_second != 1'048'576 ||
         config.download_maximum_total_rate_bytes_per_second != 2'097'152 ||
+        config.upload_concurrency != 3 ||
         config.upload_chunk_size_bytes != 10'485'760 ||
         config.upload_maximum_rate_bytes_per_second != 3'145'728 ||
         config.upload_maximum_total_rate_bytes_per_second != 4'194'304 ||
@@ -195,6 +197,7 @@ int main() {
         defaults.sync_root_files ||
         defaults.transfer_order !=
             onedrive::config::TransferOrder::default_order ||
+        defaults.upload_concurrency != 1 ||
         defaults.upload_chunk_size_bytes != 10'485'760 ||
         defaults.upload_maximum_rate_bytes_per_second != 0 ||
         defaults.upload_maximum_total_rate_bytes_per_second != 0 ||
@@ -735,6 +738,20 @@ int main() {
         static_cast<void>(onedrive::config::Config::load(path));
         std::filesystem::remove(path);
         std::cerr << "zero download chunk threshold was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error&) {
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[upload]\n"
+               << "concurrency = 0\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "zero upload concurrency was accepted\n";
         return EXIT_FAILURE;
     } catch (const std::runtime_error&) {
     }

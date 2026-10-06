@@ -343,6 +343,7 @@ Config Config::defaults() {
         .download_maximum_rate_bytes_per_second = 0,
         .download_maximum_total_rate_bytes_per_second = 0,
         .upload_chunk_size_bytes = std::uint64_t{10} * 1024U * 1024U,
+        .upload_concurrency = 1,
         .upload_maximum_rate_bytes_per_second = 0,
         .upload_maximum_total_rate_bytes_per_second = 0,
         .download_validation = DownloadValidationMode::strict,
@@ -784,12 +785,27 @@ Config Config::load(const std::filesystem::path& path) {
         validate_keys(
             *upload,
             {
+                "concurrency",
                 "chunk_size_bytes",
                 "maximum_rate_bytes_per_second",
                 "maximum_total_rate_bytes_per_second",
             },
             "upload"
         );
+        if (upload->contains("concurrency")) {
+            const auto concurrency = unsigned_value(
+                *upload,
+                "concurrency",
+                "upload.concurrency"
+            );
+            if (concurrency < 1 || concurrency > 16) {
+                throw std::runtime_error(
+                    "upload.concurrency must be between 1 and 16"
+                );
+            }
+            config.upload_concurrency =
+                static_cast<std::size_t>(concurrency);
+        }
         if (upload->contains("chunk_size_bytes")) {
             const auto chunk_size = unsigned_value(
                 *upload, "chunk_size_bytes", "upload.chunk_size_bytes"

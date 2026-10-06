@@ -73,6 +73,7 @@ struct Config {
     std::uint64_t download_maximum_rate_bytes_per_second{0};
     std::uint64_t download_maximum_total_rate_bytes_per_second{0};
     std::uint64_t upload_chunk_size_bytes{std::uint64_t{10} * 1024U * 1024U};
+    std::size_t upload_concurrency{1};
     std::uint64_t upload_maximum_rate_bytes_per_second{0};
     std::uint64_t upload_maximum_total_rate_bytes_per_second{0};
     DownloadValidationMode download_validation{

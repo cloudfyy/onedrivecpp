@@ -2104,6 +2104,13 @@ int SyncEngine::synchronize() const {
                         ),
                     },
                     {
+                        .label = "upload concurrency:",
+                        .key = "upload_concurrency",
+                        .value = std::to_string(
+                            config_->upload_concurrency
+                        ),
+                    },
+                    {
                         .label = "upload chunk size:",
                         .key = "upload_chunk_size",
                         .value = std::to_string(
@@ -2391,7 +2398,8 @@ int SyncEngine::synchronize() const {
                         .maximum_affected_items =
                             config_->maximum_remote_deletions,
                         .force = config_->force_large_delete,
-                    }
+                    },
+                    config_->upload_concurrency
                 );
                 blocked_count += upload_summary.blocked;
                 console.section(
@@ -2496,7 +2504,8 @@ int SyncEngine::synchronize() const {
                         .maximum_affected_items =
                             config_->maximum_remote_deletions,
                         .force = config_->force_large_delete,
-                    }
+                    },
+                    config_->upload_concurrency
                 );
                 blocked_count += upload_summary.blocked;
             }

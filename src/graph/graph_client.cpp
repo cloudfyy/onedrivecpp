@@ -1149,9 +1149,15 @@ MicrosoftGraphClient::MicrosoftGraphClient(
     if (download_transport.
             maximum_total_receive_speed_bytes_per_second != 0) {
         download_rate_limiter_ =
-            std::make_unique<http::DownloadRateLimiter>(
+            std::make_unique<http::TransferRateLimiter>(
                 download_transport.
                     maximum_total_receive_speed_bytes_per_second
+            );
+    }
+    if (upload_transport.maximum_total_send_speed_bytes_per_second != 0) {
+        upload_rate_limiter_ =
+            std::make_unique<http::TransferRateLimiter>(
+                upload_transport.maximum_total_send_speed_bytes_per_second
             );
     }
 }
@@ -1749,7 +1755,8 @@ RemoteItem MicrosoftGraphClient::upload_file(
     const std::string& expected_etag,
     const std::filesystem::path& source,
     const std::optional<UploadSession>& saved_session,
-    const UploadCheckpoint& checkpoint
+    const UploadCheckpoint& checkpoint,
+    std::stop_token stop_token
 ) const {
     if (remote_id.has_value() != !expected_etag.empty() ||
         expected_etag.find_first_of("\r\n") != std::string::npos) {
@@ -1771,7 +1778,18 @@ RemoteItem MicrosoftGraphClient::upload_file(
     const auto& upload_transport = options_.upload_transport;
     const auto& transfer = upload_transport.transfer;
     const auto maximum_send_speed =
-        effective_upload_rate(upload_transport);
+        upload_transport.maximum_send_speed_bytes_per_second;
+    const http::UploadThrottle upload_throttle =
+        upload_rate_limiter_ ?
+            http::UploadThrottle{
+                [limiter = upload_rate_limiter_.get()](
+                    std::size_t bytes,
+                    const std::stop_token& stop_token
+                ) {
+                    return limiter->acquire(bytes, stop_token);
+                }
+            } :
+            http::UploadThrottle{};
     const auto require_upload_success = [&](const http::HttpResponse& response,
                                             const Json& json) {
         if (!successful_status(response.status_code)) {
@@ -1842,13 +1860,15 @@ RemoteItem MicrosoftGraphClient::upload_file(
                     .http_version = transfer.http_version,
                     .ip_version = transfer.ip_version,
                     .maximum_response_size = std::size_t{1024} * 1024U,
-                    .stop_token = {},
+                    .upload_throttle = upload_throttle,
+                    .stop_token = stop_token,
                 });
             },
             options_,
             options_.maximum_throttle_retries,
             sleep_,
-            "Microsoft Graph file upload"
+            "Microsoft Graph file upload",
+            stop_token
         );
         if (!response) {
             throw std::runtime_error(
@@ -1932,13 +1952,14 @@ RemoteItem MicrosoftGraphClient::upload_file(
                     .http_version = transfer.http_version,
                     .ip_version = transfer.ip_version,
                     .maximum_response_size = std::size_t{1024} * 1024U,
-                    .stop_token = {},
+                    .stop_token = stop_token,
                 });
             },
             options_,
             options_.maximum_throttle_retries,
             sleep_,
-            "Microsoft Graph upload session creation"
+            "Microsoft Graph upload session creation",
+            stop_token
         );
         if (!response) {
             throw std::runtime_error(
@@ -1993,14 +2014,14 @@ RemoteItem MicrosoftGraphClient::upload_file(
                         transfer.low_speed_limit_bytes_per_second,
                     .maximum_response_size =
                         std::size_t{1024} * 1024U,
-                    .stop_token = {},
+                    .stop_token = stop_token,
                 });
             },
             options_,
             options_.maximum_throttle_retries,
             sleep_,
             "Microsoft Graph upload session status",
-            {},
+            stop_token,
             true
         );
         if (!response) {
@@ -2128,14 +2149,15 @@ RemoteItem MicrosoftGraphClient::upload_file(
                     .http_version = transfer.http_version,
                     .ip_version = transfer.ip_version,
                     .maximum_response_size = std::size_t{1024} * 1024U,
-                    .stop_token = {},
+                    .upload_throttle = upload_throttle,
+                    .stop_token = stop_token,
                 });
             },
             options_,
             options_.maximum_throttle_retries,
             sleep_,
             "Microsoft Graph upload session fragment",
-            {},
+            stop_token,
             true
         );
         if (!chunk_response) {

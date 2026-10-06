@@ -550,6 +550,11 @@ Files through 250 MB (250,000,000 bytes) use a simple upload. Larger files use
 an upload session. This option sets its fragment size; the default is 10 MiB.
 The value must be a positive multiple of 320 KiB and less than 60 MiB.
 .TP
+.B upload.concurrency
+Maximum number of independent files uploaded concurrently. The default is 1
+and the accepted range is 1 through 16. Upload-session fragments for one file
+remain sequential, and directories are created before dependent file uploads.
+.TP
 .B upload.maximum_rate_bytes_per_second
 Maximum send rate for each upload request. The default is
 .BR 0 ,
@@ -558,8 +563,8 @@ which disables the per-request limit.
 .B upload.maximum_total_rate_bytes_per_second
 Combined upload send-rate ceiling. The default is
 .BR 0 .
-Uploads currently run sequentially, so the effective rate is the lower non-zero
-upload limit.
+All active uploads share a fair, cancellable token bucket while each request
+also observes the per-upload limit.
 .TP
 .B monitor.poll_interval_seconds
 Maximum quiet interval between Microsoft Graph delta checks. The default is

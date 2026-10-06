@@ -29,7 +29,7 @@ struct DeviceAuthOptions;
 }
 
 namespace onedrive::http {
-class DownloadRateLimiter;
+class TransferRateLimiter;
 class HttpTransport;
 }
 
@@ -190,7 +190,8 @@ struct GraphClientFacade : pro::facade_builder
             const std::string&,
             const std::filesystem::path&,
             const std::optional<UploadSession>&,
-            const UploadCheckpoint&
+            const UploadCheckpoint&,
+            std::stop_token
         ) const
     >
     ::add_convention<
@@ -268,7 +269,8 @@ public:
         const std::string& expected_etag,
         const std::filesystem::path& source,
         const std::optional<UploadSession>& session = std::nullopt,
-        const UploadCheckpoint& checkpoint = {}
+        const UploadCheckpoint& checkpoint = {},
+        std::stop_token stop_token = {}
     ) const {
         return implementation()->upload_file(
             remote_path,
@@ -276,7 +278,8 @@ public:
             expected_etag,
             source,
             session,
-            checkpoint
+            checkpoint,
+            std::move(stop_token)
         );
     }
 
@@ -354,7 +357,8 @@ public:
         const std::string& expected_etag,
         const std::filesystem::path& source,
         const std::optional<UploadSession>& session = std::nullopt,
-        const UploadCheckpoint& checkpoint = {}
+        const UploadCheckpoint& checkpoint = {},
+        std::stop_token stop_token = {}
     ) const;
     void delete_item(
         const std::string& remote_id,
@@ -408,7 +412,8 @@ private:
     std::unique_ptr<auth::TokenStore> token_store_;
     GraphOptions options_;
     std::unique_ptr<auth::DeviceAuthClient> auth_client_;
-    std::unique_ptr<http::DownloadRateLimiter> download_rate_limiter_;
+    std::unique_ptr<http::TransferRateLimiter> download_rate_limiter_;
+    std::unique_ptr<http::TransferRateLimiter> upload_rate_limiter_;
     SleepFunction sleep_;
     mutable std::mutex access_token_mutex_;
     mutable std::string cached_access_token_;

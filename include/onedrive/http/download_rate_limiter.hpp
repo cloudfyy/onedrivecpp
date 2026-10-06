@@ -11,7 +11,7 @@
 namespace onedrive::http {
 
 /**
- * A cancellable, thread-safe token bucket shared by concurrent downloads.
+ * A cancellable, thread-safe token bucket shared by concurrent transfers.
  *
  * The bucket is initialized at full capacity, so a newly constructed limiter
  * may allow one initial burst. Tokens are then replenished continuously at
@@ -20,10 +20,10 @@ namespace onedrive::http {
  * acquisition before the next caller is admitted. This provides fairness
  * between libcurl write callbacks rather than between individual bytes.
  *
- * The class controls aggregate throughput only when all relevant downloads
+ * The class controls aggregate throughput only when all relevant transfers
  * share the same instance.
  */
-class DownloadRateLimiter final {
+class TransferRateLimiter final {
 public:
     /**
      * Constructs a limiter with the requested sustained rate and burst.
@@ -34,7 +34,7 @@ public:
      *
      * @throws std::invalid_argument if the rate or burst is invalid.
      */
-    explicit DownloadRateLimiter(
+    explicit TransferRateLimiter(
         std::uint64_t bytes_per_second,
         std::uint64_t burst_bytes = 0
     );
@@ -71,5 +71,7 @@ private:
     std::deque<std::uint64_t> waiters_;
     std::uint64_t next_ticket_{0};
 };
+
+using DownloadRateLimiter = TransferRateLimiter;
 
 }  // namespace onedrive::http

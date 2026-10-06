@@ -14,15 +14,20 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cerrno>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <format>
+#include <mutex>
 #include <optional>
+#include <stop_token>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -2035,8 +2040,14 @@ UploadSummary upload_local_changes(
     const SyncList* sync_list,
     const cli::Console& console,
     bool dry_run,
-    RemoteDeletionPolicy deletion_policy
+    RemoteDeletionPolicy deletion_policy,
+    std::size_t upload_concurrency
 ) {
+    if (upload_concurrency == 0) {
+        throw std::invalid_argument(
+            "upload concurrency must be greater than zero"
+        );
+    }
     UploadSummary summary;
     auto moves = discover_local_moves(
         sync_root,
@@ -2172,10 +2183,11 @@ UploadSummary upload_local_changes(
             "Deleted remote item '" + deletion.remote_path + "'."
         );
     }
-    for (const auto& upload : uploads) {
-        if (upload.directory) {
-            static_cast<void>(upload_directory(
-                upload,
+    std::size_t first_file = 0;
+    while (first_file < uploads.size() &&
+           uploads[first_file].directory) {
+        if (!upload_directory(
+                uploads[first_file],
                 sync_root,
                 drive_id,
                 graph,
@@ -2183,9 +2195,27 @@ UploadSummary upload_local_changes(
                 metadata,
                 console,
                 summary
-            ));
-            continue;
+            )) {
+            return summary;
         }
+        ++first_file;
+    }
+
+    std::atomic_size_t next_upload{first_file};
+    std::stop_source stop;
+    std::mutex result_mutex;
+    std::exception_ptr first_error;
+    const auto previous_failure_count =
+        [&](std::string_view remote_path) {
+            const auto previous =
+                std::as_const(previous_failure_attempts).find(
+                    std::string{remote_path}
+                );
+            return previous == previous_failure_attempts.end() ?
+                std::uint64_t{0} :
+                previous->second;
+        };
+    const auto upload_file = [&](const UploadCandidate& upload) {
         storage::PendingUpload pending{
             .drive_id = drive_id,
             .remote_path = upload.remote_path,
@@ -2210,7 +2240,7 @@ UploadSummary upload_local_changes(
             const auto baseline =
                 capture_local_file_baseline(upload.path);
             if (!baseline.existed) {
-                continue;
+                return;
             }
             auto snapshot = create_upload_snapshot(upload.path, baseline);
             pending.snapshot_path = snapshot.path();
@@ -2232,7 +2262,8 @@ UploadSummary upload_local_changes(
                 pending.expected_etag,
                 pending.snapshot_path,
                 std::nullopt,
-                checkpoint
+                checkpoint,
+                stop.get_token()
             );
             if (remote.remote_path != upload.remote_path ||
                 remote.size != baseline.size) {
@@ -2262,6 +2293,7 @@ UploadSummary upload_local_changes(
             static_cast<void>(remove_no_symlinks(
                 pending_upload(remote_committed).snapshot_path
             ));
+            const std::scoped_lock lock{result_mutex};
             ++summary.uploaded;
             console.message(
                 cli::MessageKind::information,
@@ -2272,8 +2304,9 @@ UploadSummary upload_local_changes(
             pending.failure_code = error.reason_code();
             pending.failure_message = error.what();
             pending.failure_attempt_count =
-                previous_failure_attempts[upload.remote_path] + 1;
+                previous_failure_count(upload.remote_path) + 1;
             items.save_pending_upload(pending);
+            const std::scoped_lock lock{result_mutex};
             ++summary.blocked;
             console.message(
                 cli::MessageKind::warning,
@@ -2286,6 +2319,7 @@ UploadSummary upload_local_changes(
             pending.failure_message = error.what();
             ++pending.failure_attempt_count;
             items.save_pending_upload(pending);
+            const std::scoped_lock lock{result_mutex};
             ++summary.blocked;
             console.message(
                 cli::MessageKind::warning,
@@ -2298,8 +2332,9 @@ UploadSummary upload_local_changes(
                 local_resource_code(error.code(), "local_read");
             pending.failure_message = error.what();
             pending.failure_attempt_count =
-                previous_failure_attempts[upload.remote_path] + 1;
+                previous_failure_count(upload.remote_path) + 1;
             items.save_pending_upload(pending);
+            const std::scoped_lock lock{result_mutex};
             ++summary.blocked;
             console.message(
                 cli::MessageKind::warning,
@@ -2308,6 +2343,49 @@ UploadSummary upload_local_changes(
                     error.what()
             );
         }
+    };
+    const auto worker = [&] {
+        while (!stop.stop_requested()) {
+            const auto index =
+                next_upload.fetch_add(1, std::memory_order_relaxed);
+            if (index >= uploads.size()) {
+                return;
+            }
+            try {
+                upload_file(uploads[index]);
+            } catch (...) {
+                {
+                    const std::scoped_lock lock{result_mutex};
+                    if (!first_error) {
+                        first_error = std::current_exception();
+                    }
+                }
+                stop.request_stop();
+                return;
+            }
+        }
+    };
+
+    const auto file_count = uploads.size() - first_file;
+    const auto worker_count = std::min(upload_concurrency, file_count);
+    std::vector<std::jthread> workers;
+    workers.reserve(worker_count);
+    try {
+        for (std::size_t index = 0; index < worker_count; ++index) {
+            workers.emplace_back(worker);
+        }
+    } catch (...) {
+        stop.request_stop();
+        for (auto& thread : workers) {
+            thread.join();
+        }
+        throw;
+    }
+    for (auto& thread : workers) {
+        thread.join();
+    }
+    if (first_error) {
+        std::rethrow_exception(first_error);
     }
     return summary;
 }

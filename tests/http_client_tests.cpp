@@ -196,6 +196,7 @@ int main() {
             MSG_NOSIGNAL
         ));
     }};
+    std::size_t throttled_upload_bytes = 0;
     const auto put_response = client.perform({
         .method = onedrive::http::HttpMethod::put,
         .url = "http://127.0.0.1:" + std::to_string(port) + "/content",
@@ -204,6 +205,11 @@ int main() {
         .connect_timeout = std::chrono::seconds{2},
         .operation_timeout = std::chrono::seconds{5},
         .http_version = onedrive::http::HttpVersion::http_1_1,
+        .upload_throttle =
+            [&](std::size_t bytes, const std::stop_token&) {
+                throttled_upload_bytes += bytes;
+                return true;
+            },
     });
     put_server.join();
     if (!server_error.empty()) {
@@ -211,8 +217,118 @@ int main() {
     }
     if (!put_response || put_response->status_code != 200 ||
         !put_request.starts_with("PUT /content HTTP/1.1") ||
-        !put_request.ends_with("upload-body")) {
+        !put_request.ends_with("upload-body") ||
+        throttled_upload_bytes != std::string_view{"upload-body"}.size()) {
         return fail("HTTP PUT request body was not sent correctly");
+    }
+
+    std::string unthrottled_put_request;
+    server_error.clear();
+    std::jthread upload_throttle_error_server{[&] {
+        for (std::size_t request_index = 0; request_index < 3;
+             ++request_index) {
+            Socket connection{
+                ::accept4(listener.get(), nullptr, nullptr, SOCK_CLOEXEC)
+            };
+            if (connection.get() == -1) {
+                server_error =
+                    "cannot accept upload throttle test connection";
+                return;
+            }
+            char buffer[4096];
+            std::string request;
+            while (true) {
+                const auto count =
+                    ::recv(connection.get(), buffer, sizeof(buffer), 0);
+                if (count <= 0) {
+                    break;
+                }
+                request.append(buffer, static_cast<std::size_t>(count));
+                if (request_index == 2 &&
+                    request.contains("plain-upload")) {
+                    break;
+                }
+            }
+            if (request_index != 2) {
+                continue;
+            }
+            unthrottled_put_request = std::move(request);
+            constexpr std::string_view response{
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Length: 2\r\n"
+                "Connection: close\r\n"
+                "\r\n"
+                "OK"
+            };
+            if (::send(
+                    connection.get(),
+                    response.data(),
+                    response.size(),
+                    MSG_NOSIGNAL
+                ) != static_cast<ssize_t>(response.size())) {
+                server_error =
+                    "cannot send unthrottled upload response";
+                return;
+            }
+        }
+    }};
+    const auto cancelled_upload_response = client.perform({
+        .method = onedrive::http::HttpMethod::put,
+        .url = "http://127.0.0.1:" + std::to_string(port) +
+               "/upload-throttle-cancel",
+        .body = "cancelled-upload",
+        .connect_timeout = std::chrono::seconds{2},
+        .operation_timeout = std::chrono::seconds{5},
+        .http_version = onedrive::http::HttpVersion::http_1_1,
+        .upload_throttle =
+            [](std::size_t, const std::stop_token&) {
+                return false;
+            },
+    });
+    const auto failed_upload_response = client.perform({
+        .method = onedrive::http::HttpMethod::put,
+        .url = "http://127.0.0.1:" + std::to_string(port) +
+               "/upload-throttle-failure",
+        .body = "failed-upload",
+        .connect_timeout = std::chrono::seconds{2},
+        .operation_timeout = std::chrono::seconds{5},
+        .http_version = onedrive::http::HttpVersion::http_1_1,
+        .upload_throttle =
+            [](std::size_t, const std::stop_token&) -> bool {
+                throw std::runtime_error{"simulated upload throttle failure"};
+            },
+    });
+    const auto unthrottled_put_response = client.perform({
+        .method = onedrive::http::HttpMethod::put,
+        .url = "http://127.0.0.1:" + std::to_string(port) +
+               "/unthrottled-content",
+        .body = "plain-upload",
+        .connect_timeout = std::chrono::seconds{2},
+        .operation_timeout = std::chrono::seconds{5},
+        .http_version = onedrive::http::HttpVersion::http_1_1,
+    });
+    upload_throttle_error_server.join();
+    if (!server_error.empty()) {
+        return fail(server_error);
+    }
+    if (cancelled_upload_response ||
+        cancelled_upload_response.error().code !=
+            onedrive::http::HttpErrorCode::cancelled) {
+        return fail("upload throttle cancellation was not propagated");
+    }
+    if (failed_upload_response ||
+        !failed_upload_response.error().message.contains(
+            "simulated upload throttle failure"
+        )) {
+        return fail("upload throttle failure was not propagated");
+    }
+    if (!unthrottled_put_response ||
+        unthrottled_put_response->status_code != 200 ||
+        !unthrottled_put_request.starts_with(
+            "PUT /unthrottled-content HTTP/1.1"
+        ) ||
+        !unthrottled_put_request.ends_with("plain-upload")) {
+        return fail("upload throttle state leaked to the next request");
     }
 
     bool unexpected_ipv4_connection = false;

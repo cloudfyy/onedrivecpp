@@ -155,6 +155,64 @@ struct WriteContext {
     std::string data_callback_error;
 };
 
+struct ReadContext {
+    std::string_view body;
+    std::size_t offset{0};
+    const UploadThrottle* upload_throttle{};
+    std::stop_token stop_token;
+    bool throttle_cancelled{false};
+    bool throttle_failed{false};
+    std::string throttle_error;
+};
+
+std::size_t read_request_body(
+    char* destination,
+    std::size_t size,
+    std::size_t count,
+    void* user_data
+) {
+    auto& context = *static_cast<ReadContext*>(user_data);
+    if (size != 0 &&
+        count > std::numeric_limits<std::size_t>::max() / size) {
+        context.throttle_failed = true;
+        context.throttle_error = "upload read buffer size overflow";
+        return CURL_READFUNC_ABORT;
+    }
+    const auto capacity = size * count;
+    const auto remaining = context.body.size() - context.offset;
+    const auto bytes = std::min(capacity, remaining);
+    if (bytes == 0) {
+        return 0;
+    }
+    if (context.upload_throttle != nullptr &&
+        *context.upload_throttle) {
+        try {
+            if (!(*context.upload_throttle)(
+                    bytes,
+                    context.stop_token
+                )) {
+                context.throttle_cancelled = true;
+                return CURL_READFUNC_ABORT;
+            }
+        } catch (const std::exception& error) {
+            context.throttle_failed = true;
+            context.throttle_error = error.what();
+            return CURL_READFUNC_ABORT;
+        } catch (...) {
+            context.throttle_failed = true;
+            context.throttle_error = "unknown error";
+            return CURL_READFUNC_ABORT;
+        }
+    }
+    std::memcpy(
+        destination,
+        context.body.data() + context.offset,
+        bytes
+    );
+    context.offset += bytes;
+    return bytes;
+}
+
 bool make_download_checkpoint(WriteContext& context) {
     if (::fdatasync(context.descriptor) == -1) {
         context.write_failed = true;
@@ -749,6 +807,12 @@ HttpResult perform_request(
         *download_state = local_download_state;
     }
     HeaderContext header_context;
+    ReadContext read_context{
+        .body = request.body,
+        .upload_throttle = &request.upload_throttle,
+        .stop_token = request.stop_token,
+        .throttle_error = {},
+    };
     WriteContext write_context{
         .body = {},
         .maximum_size = request.maximum_response_size,
@@ -940,10 +1004,30 @@ HttpResult perform_request(
     if (result == CURLE_OK && request.method == HttpMethod::delete_) {
         result = set_option(CURLOPT_CUSTOMREQUEST, "DELETE");
     }
-    if (result == CURLE_OK && request.method != HttpMethod::get) {
+    const bool throttle_upload =
+        request.method == HttpMethod::put &&
+        static_cast<bool>(request.upload_throttle);
+    if (result == CURLE_OK && throttle_upload) {
+        result = set_option(CURLOPT_UPLOAD, 1L);
+    }
+    if (result == CURLE_OK && throttle_upload) {
+        result = set_option(CURLOPT_READFUNCTION, &read_request_body);
+    }
+    if (result == CURLE_OK && throttle_upload) {
+        result = set_option(CURLOPT_READDATA, &read_context);
+    }
+    if (result == CURLE_OK && throttle_upload) {
+        result = set_option(
+            CURLOPT_INFILESIZE_LARGE,
+            static_cast<curl_off_t>(request.body.size())
+        );
+    }
+    if (result == CURLE_OK && request.method != HttpMethod::get &&
+        !throttle_upload) {
         result = set_option(CURLOPT_POSTFIELDS, request.body.data());
     }
-    if (result == CURLE_OK && request.method != HttpMethod::get) {
+    if (result == CURLE_OK && request.method != HttpMethod::get &&
+        !throttle_upload) {
         result = set_option(
             CURLOPT_POSTFIELDSIZE_LARGE,
             static_cast<curl_off_t>(request.body.size())
@@ -960,7 +1044,8 @@ HttpResult perform_request(
     log_transfer_diagnostics(handle.get(), request.method, result);
     if (result != CURLE_OK) {
         if (progress_context.cancelled ||
-            write_context.throttle_cancelled) {
+            write_context.throttle_cancelled ||
+            read_context.throttle_cancelled) {
             const bool can_checkpoint_cancelled_data =
                 descriptor != -1 &&
                 download_state->response_validated &&
@@ -1015,6 +1100,12 @@ HttpResult perform_request(
             return std::unexpected(HttpError{
                 .message = "download throttle failed: " +
                            write_context.throttle_error,
+            });
+        }
+        if (read_context.throttle_failed) {
+            return std::unexpected(HttpError{
+                .message = "upload throttle failed: " +
+                           read_context.throttle_error,
             });
         }
         if (write_context.data_callback_failed) {

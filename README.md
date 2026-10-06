@@ -577,6 +577,9 @@ maximum_total_rate_bytes_per_second = 0
 validation = "strict"
 
 [upload]
+# Independent files can upload concurrently; each upload session remains
+# sequential.
+concurrency = 1
 # Files through 250 MB (250,000,000 bytes) use a simple upload. Larger files
 # use an upload session with the fragment size below.
 chunk_size_bytes = 10485760
@@ -891,9 +894,13 @@ toward `transfer.operation_timeout_seconds` and may contribute to libcurl's
 stall detection, so very low rate limits may require a longer operation or
 stall timeout.
 `upload.maximum_rate_bytes_per_second` limits each upload request's send rate
-and defaults to `0`. `upload.maximum_total_rate_bytes_per_second` supplies a
-combined ceiling and also defaults to `0`; because uploads currently run
-sequentially, the effective limit is the lower non-zero value. The default
+and defaults to `0`. `upload.concurrency` controls how many independent files
+may upload concurrently, defaults to `1`, and accepts `1` through `16`.
+Fragments within one Microsoft Graph upload session always remain sequential.
+Directories are created before dependent files enter the worker queue.
+`upload.maximum_total_rate_bytes_per_second` supplies a combined ceiling shared
+by all active uploads and defaults to `0`. It uses the same fair, cancellable
+token-bucket implementation as aggregate download limiting. The default
 `upload.chunk_size_bytes` is 10 MiB and must be a positive multiple of 320 KiB
 below 60 MiB.
 `transfer.http_version` accepts `"auto"`, `"1.1"`, or `"2"`; HTTP/2 is

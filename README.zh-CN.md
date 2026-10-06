@@ -512,6 +512,8 @@ maximum_total_rate_bytes_per_second = 0
 validation = "strict"
 
 [upload]
+# 独立文件可以并发上传；单个 upload session 内的分片仍保持顺序。
+concurrency = 1
 # 不超过 250 MB（250,000,000 字节）的文件使用简单上传；更大的文件使用
 # upload session，下面的配置指定每个分片的大小。
 chunk_size_bytes = 10485760
@@ -772,8 +774,11 @@ HTTP 字节范围请求顺序分片下载，并以该值作为单个分片的最
 低的限速可能需要同时提高操作超时或停滞超时。
 
 `upload.maximum_rate_bytes_per_second` 限制单个上传请求的发送速率，默认值为
-`0`。`upload.maximum_total_rate_bytes_per_second` 提供总发送上限，默认值也为
-`0`；当前上传按顺序执行，因此实际限制为两个非零值中的较小者。
+`0`。`upload.concurrency` 控制可同时上传的独立文件数量，默认值为 `1`，允许
+范围为 `1` 到 `16`。单个 Microsoft Graph upload session 内的分片始终顺序
+上传；目录会在依赖它的文件进入 worker 队列前创建完成。
+`upload.maximum_total_rate_bytes_per_second` 提供所有活动上传共享的总发送上限，
+默认值为 `0`，并复用与总下载限速相同的公平、可取消令牌桶。
 `upload.chunk_size_bytes` 默认为 10 MiB，必须是 320 KiB 的正整数倍且小于
 60 MiB。
 

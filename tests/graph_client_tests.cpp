@@ -841,8 +841,10 @@ int test_upload_sessions() {
             requests[4],
             "Content-Range: bytes 327680-327686/327687"
         ) ||
-        requests[2].maximum_send_speed_bytes_per_second != 700 ||
-        requests[4].maximum_send_speed_bytes_per_second != 700 ||
+        requests[2].maximum_send_speed_bytes_per_second != 900 ||
+        requests[4].maximum_send_speed_bytes_per_second != 900 ||
+        !requests[2].upload_throttle ||
+        !requests[4].upload_throttle ||
         sleeps != std::vector{std::chrono::seconds{0}} ||
         upload_checkpoints.size() != 2 ||
         upload_checkpoints[0].completed_bytes != 0 ||

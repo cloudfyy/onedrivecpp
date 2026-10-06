@@ -45,7 +45,8 @@ struct RemoteDeletionPolicy {
     const SyncList* sync_list,
     const cli::Console& console,
     bool dry_run,
-    RemoteDeletionPolicy deletion_policy
+    RemoteDeletionPolicy deletion_policy,
+    std::size_t upload_concurrency
 );
 void recover_pending_uploads(
     const SafeSyncRoot& sync_root,
