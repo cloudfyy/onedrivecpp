@@ -100,6 +100,28 @@ static_assert(std::is_nothrow_move_constructible_v<JournaledLocalMove>);
 static_assert(std::is_nothrow_move_constructible_v<StagedLocalMove>);
 static_assert(std::is_nothrow_move_constructible_v<InstalledLocalMove>);
 
+template <typename... States>
+[[nodiscard]] bool has_discardable_move_journal(
+    const std::variant<States...>& transaction
+) noexcept {
+    return std::visit(
+        [](const auto& active) {
+            return std::same_as<
+                std::remove_cvref_t<decltype(active)>,
+                JournaledLocalMove>;
+        },
+        transaction
+    );
+}
+
+template <typename... States>
+[[nodiscard]] bool has_discardable_move_journal(
+    const std::optional<std::variant<States...>>& transaction
+) noexcept {
+    return transaction.has_value() &&
+           has_discardable_move_journal(*transaction);
+}
+
 JournaledLocalMove journal_local_move(PreparedLocalMove move) noexcept {
     return util::transition_transaction<LocalMoveJournaledState>(std::move(move)
     );
@@ -1023,6 +1045,14 @@ MoveSummary execute_moves(
             const auto block = [&](std::string code, std::string message) {
                 block_move(move, std::move(code), std::move(message));
             };
+            const auto discard_journal = [&] {
+                if (!has_discardable_move_journal(move_transaction)) {
+                    return false;
+                }
+                items.remove_pending_move(drive_id, move.item.id);
+                pending_moves.erase(move.item.id);
+                return true;
+            };
             try {
                 auto operation =
                     operations.acquire(drive_id, move.previous.remote_id);
@@ -1221,12 +1251,7 @@ MoveSummary execute_moves(
                 auto staging_operation =
                     operations.acquire_destination(staging);
                 if (!safe_root.rename_no_replace(source, staging)) {
-                    if (move_transaction &&
-                        std::holds_alternative<JournaledLocalMove>(
-                            *move_transaction
-                        )) {
-                        items.remove_pending_move(drive_id, move.item.id);
-                        pending_moves.erase(move.item.id);
+                    if (discard_journal()) {
                         move_transaction.reset();
                     }
                     block(
@@ -1267,28 +1292,13 @@ MoveSummary execute_moves(
                         "' at '" + staging.string() + "'."
                 );
             } catch (const detail::CrossDeviceMoveError& error) {
-                if (move_transaction &&
-                    std::holds_alternative<JournaledLocalMove>(*move_transaction
-                    )) {
-                    items.remove_pending_move(drive_id, move.item.id);
-                    pending_moves.erase(move.item.id);
-                }
+                static_cast<void>(discard_journal());
                 block("cross_device_move", error.what());
             } catch (const detail::SafePathConflictError& error) {
-                if (move_transaction &&
-                    std::holds_alternative<JournaledLocalMove>(*move_transaction
-                    )) {
-                    items.remove_pending_move(drive_id, move.item.id);
-                    pending_moves.erase(move.item.id);
-                }
+                static_cast<void>(discard_journal());
                 block("local_path_conflict", error.what());
             } catch (const detail::LocalPathConflictError& error) {
-                if (move_transaction &&
-                    std::holds_alternative<JournaledLocalMove>(*move_transaction
-                    )) {
-                    items.remove_pending_move(drive_id, move.item.id);
-                    pending_moves.erase(move.item.id);
-                }
+                static_cast<void>(discard_journal());
                 block("local_path_conflict", error.what());
             }
             continue;
@@ -1374,6 +1384,13 @@ MoveSummary execute_moves(
         };
         const auto block = [&](std::string code, std::string message) {
             block_move(move, std::move(code), std::move(message));
+        };
+        const auto discard_journal = [&] {
+            if (!has_discardable_move_journal(move_transaction)) {
+                return false;
+            }
+            items.remove_pending_move(drive_id, move.item.id);
+            return true;
         };
         try {
             if (pending != nullptr &&
@@ -1576,10 +1593,7 @@ MoveSummary execute_moves(
                     );
                 }
                 if (!safe_root.rename_no_replace(source, destination)) {
-                    if (std::holds_alternative<JournaledLocalMove>(
-                            move_transaction
-                        )) {
-                        items.remove_pending_move(drive_id, move.item.id);
+                    if (discard_journal()) {
                         move_transaction.emplace<PreparedLocalMove>();
                     }
                     block(
@@ -1630,19 +1644,13 @@ MoveSummary execute_moves(
             state.local_device = identity.device;
             state.local_inode = identity.inode;
         } catch (const detail::CrossDeviceMoveError& error) {
-            if (std::holds_alternative<JournaledLocalMove>(move_transaction)) {
-                items.remove_pending_move(drive_id, move.item.id);
-            }
+            static_cast<void>(discard_journal());
             block("cross_device_move", error.what());
         } catch (const detail::SafePathConflictError& error) {
-            if (std::holds_alternative<JournaledLocalMove>(move_transaction)) {
-                items.remove_pending_move(drive_id, move.item.id);
-            }
+            static_cast<void>(discard_journal());
             block("local_path_conflict", error.what());
         } catch (const detail::LocalPathConflictError& error) {
-            if (std::holds_alternative<JournaledLocalMove>(move_transaction)) {
-                items.remove_pending_move(drive_id, move.item.id);
-            }
+            static_cast<void>(discard_journal());
             block("local_path_conflict", error.what());
         }
     }
