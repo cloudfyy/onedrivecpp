@@ -135,6 +135,8 @@ add_library(onedrive_core
     src/storage/item_database.cpp
     src/storage/item_state.cpp
     src/storage/state_reset.cpp
+    src/storage/integrity.cpp
+    src/storage/migrations.cpp
     src/storage/schema.cpp
     src/storage/downloads.cpp
     src/storage/deletes.cpp
