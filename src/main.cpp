@@ -1,5 +1,5 @@
-#include "onedrive/app/application.hpp"
-#include "onedrive/app/runtime_factory.hpp"
+#include "onedrive/app/app.hpp"
+#include "onedrive/app/factory.hpp"
 
 int main(int argc, char* argv[]) {
     onedrive::app::RuntimeFactory runtime_factory{

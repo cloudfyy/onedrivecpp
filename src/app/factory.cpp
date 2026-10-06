@@ -1,5 +1,5 @@
-#include "onedrive/app/runtime_factory.hpp"
-#include "onedrive/app/runtime_options.hpp"
+#include "onedrive/app/factory.hpp"
+#include "onedrive/app/options.hpp"
 
 #include "onedrive/account/account_state.hpp"
 #include "onedrive/auth/device_auth.hpp"

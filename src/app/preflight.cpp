@@ -1,0 +1,63 @@
+#include "preflight.hpp"
+
+#include "onedrive/account/account_state.hpp"
+#include "checks.hpp"
+#include "lock.hpp"
+
+#include <stdexcept>
+
+namespace onedrive::app::detail {
+
+RuntimePreflight::RuntimePreflight(
+    const config::Config& config,
+    Operation operation
+) {
+    if (operation == Operation::authenticate ||
+        operation == Operation::download ||
+        operation == Operation::synchronize) {
+        validate_authentication_config(config);
+    }
+    if ((operation == Operation::reset_state ||
+         operation == Operation::download ||
+         operation == Operation::synchronize) &&
+        config.drive_id.empty()) {
+        throw std::runtime_error("sync.drive_id must not be empty");
+    }
+
+    secure_state_directory(config.state_directory);
+    lock_descriptor_ = acquire_runtime_lock(config.state_directory);
+
+    validate_private_file(
+        config.state_directory / "active_account",
+        "active account marker",
+        false
+    );
+    const bool authentication_required =
+        operation == Operation::reset_state ||
+        operation == Operation::download ||
+        operation == Operation::synchronize;
+    const auto token_directory =
+        account::AccountState::find_active_token_directory(
+            config.state_directory
+        );
+    if (authentication_required && !token_directory) {
+        throw std::runtime_error(
+            "active Microsoft account is missing; run 'onedrive-cpp auth' "
+            "to initialize the account-based state layout"
+        );
+    }
+    if (token_directory) {
+        validate_private_file(
+            *token_directory / "refresh_token",
+            "refresh token",
+            authentication_required
+        );
+    }
+    if (operation == Operation::download ||
+        operation == Operation::synchronize ||
+        operation == Operation::monitor) {
+        prepare_sync_directory(config, operation);
+    }
+}
+
+}  // namespace onedrive::app::detail

@@ -2,9 +2,13 @@ add_library(onedrive_core
     src/util/atomic_file.cpp
     src/util/mount.cpp
     src/account/account_state.cpp
-    src/app/application.cpp
-    src/app/runtime_preflight.cpp
-    src/app/runtime_factory.cpp
+    src/app/app.cpp
+    src/app/args.cpp
+    src/app/checks.cpp
+    src/app/commands.cpp
+    src/app/lock.cpp
+    src/app/preflight.cpp
+    src/app/factory.cpp
     src/auth/device_auth.cpp
     src/auth/token_store.cpp
     src/cli/console.cpp

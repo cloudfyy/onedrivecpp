@@ -1,4 +1,4 @@
-#include "app/runtime_preflight.hpp"
+#include "app/preflight.hpp"
 
 #include "onedrive/config/config.hpp"
 #include "support/common.hpp"

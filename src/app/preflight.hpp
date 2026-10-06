@@ -2,18 +2,9 @@
 
 #include "onedrive/util/unique_file_descriptor.hpp"
 #include "onedrive/config/config.hpp"
+#include "operation.hpp"
 
 namespace onedrive::app::detail {
-
-enum class Operation {
-    authenticate,
-    logout,
-    diagnose,
-    reset_state,
-    download,
-    monitor,
-    synchronize,
-};
 
 class RuntimePreflight {
 public:

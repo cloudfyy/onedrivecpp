@@ -1,6 +1,6 @@
 #pragma once
 
-#include "onedrive/app/runtime_options.hpp"
+#include "onedrive/app/options.hpp"
 #include "onedrive/config/config.hpp"
 #include "support/common.hpp"
 

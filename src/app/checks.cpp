@@ -1,6 +1,5 @@
-#include "runtime_preflight.hpp"
+#include "checks.hpp"
 
-#include "onedrive/account/account_state.hpp"
 #include "onedrive/util/mount.hpp"
 #include "onedrive/util/path_security.hpp"
 
@@ -11,16 +10,13 @@
 #include <cstring>
 #include <fcntl.h>
 #include <format>
-#include <fstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
 namespace onedrive::app::detail {
-namespace {
 
 constexpr mode_t private_directory_mode = S_IRWXU;
 constexpr mode_t private_file_mode = S_IRUSR | S_IWUSR;
@@ -371,123 +367,6 @@ void validate_authentication_config(const config::Config& config) {
             "authentication requires auth.application_id, auth.tenant_id, an "
             "HTTPS auth.endpoint, and User.Read and offline_access scopes"
         );
-    }
-}
-
-onedrive::util::UniqueFD acquire_runtime_lock(
-    const std::filesystem::path& state_directory
-) {
-    const auto path = state_directory / "onedrive-cpp.lock";
-    onedrive::util::UniqueFD descriptor{
-        ::open(
-            path.c_str(),
-            O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW,
-            private_file_mode
-        )
-    };
-    if (!descriptor) {
-        throw std::runtime_error(
-            "cannot open runtime lock '" + path.string() + "': " +
-            std::strerror(errno)
-        );
-    }
-    struct stat status {};
-    if (::fstat(descriptor.get(), &status) == -1) {
-        const std::string message = std::strerror(errno);
-        throw std::runtime_error(
-            "cannot use runtime lock '" + path.string() + "': " + message
-        );
-    }
-    if (!S_ISREG(status.st_mode) || status.st_uid != ::geteuid() ||
-        status.st_nlink != 1) {
-        throw std::runtime_error(
-            "cannot use runtime lock '" + path.string() +
-            "': unsafe lock file"
-        );
-    }
-    if (::fchmod(descriptor.get(), private_file_mode) == -1) {
-        const std::string message = std::strerror(errno);
-        throw std::runtime_error(
-            "cannot secure runtime lock '" + path.string() + "': " + message
-        );
-    }
-    if (::flock(descriptor.get(), LOCK_EX | LOCK_NB) == -1) {
-        const std::string message = errno == EWOULDBLOCK ?
-            "another onedrive-cpp process is already using this state directory" :
-            std::strerror(errno);
-        throw std::runtime_error(
-            "cannot acquire runtime lock '" + path.string() + "': " + message
-        );
-    }
-
-    const std::string process_id = std::to_string(::getpid()) + "\n";
-    if (::ftruncate(descriptor.get(), 0) == -1 ||
-        ::write(
-            descriptor.get(),
-            process_id.data(),
-            process_id.size()
-        ) !=
-            static_cast<ssize_t>(process_id.size()) ||
-        ::fsync(descriptor.get()) == -1) {
-        const std::string message = std::strerror(errno);
-        throw std::runtime_error(
-            "cannot update runtime lock '" + path.string() + "': " + message
-        );
-    }
-    return descriptor;
-}
-
-}  // namespace
-
-RuntimePreflight::RuntimePreflight(
-    const config::Config& config,
-    Operation operation
-) {
-    if (operation == Operation::authenticate ||
-        operation == Operation::download ||
-        operation == Operation::synchronize) {
-        validate_authentication_config(config);
-    }
-    if ((operation == Operation::reset_state ||
-         operation == Operation::download ||
-         operation == Operation::synchronize) &&
-        config.drive_id.empty()) {
-        throw std::runtime_error("sync.drive_id must not be empty");
-    }
-
-    secure_state_directory(config.state_directory);
-    lock_descriptor_ = acquire_runtime_lock(config.state_directory);
-
-    validate_private_file(
-        config.state_directory / "active_account",
-        "active account marker",
-        false
-    );
-    const bool authentication_required =
-        operation == Operation::reset_state ||
-        operation == Operation::download ||
-        operation == Operation::synchronize;
-    const auto token_directory =
-        account::AccountState::find_active_token_directory(
-            config.state_directory
-        );
-    if (authentication_required && !token_directory) {
-        throw std::runtime_error(
-            "active Microsoft account is missing; run 'onedrive-cpp auth' "
-            "to initialize the account-based state layout"
-        );
-    }
-    if (token_directory) {
-        validate_private_file(
-            *token_directory / "refresh_token",
-            "refresh token",
-            authentication_required
-        );
-    }
-    if (operation == Operation::download ||
-        operation == Operation::synchronize ||
-        operation == Operation::monitor) {
-        prepare_sync_directory(config, operation);
     }
 }
 

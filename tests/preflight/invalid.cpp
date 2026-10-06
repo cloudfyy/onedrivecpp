@@ -48,6 +48,17 @@ int test_invalid() {
     }
     config.drive_id = "me";
 
+    if (!throws_with(
+            [&] {
+                const RuntimePreflight preflight{
+                    config, Operation::reset_state
+                };
+            },
+            "active Microsoft account is missing"
+        )) {
+        return fail("reset without an active account was accepted");
+    }
+
     config.application_id.clear();
     if (!throws_with(
             [&] {
