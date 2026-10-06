@@ -1,5 +1,6 @@
 #include "onedrive/sync/download/single_file.hpp"
 
+#include "onedrive/util/mount.hpp"
 #include "onedrive/util/path_security.hpp"
 #include "sync/download/recovery.hpp"
 #include "sync/download/space.hpp"
@@ -31,6 +32,10 @@ SingleFileTarget resolve_target(
     const std::string& remote_path,
     graph::GraphClient& graph
 ) {
+    onedrive::util::require_sync_mount(
+        config.sync_directory,
+        config.sync_mount_point
+    );
     const auto configured_root =
         onedrive::util::normalized_absolute(config.sync_directory);
     static_cast<void>(detail::local_path_for(configured_root, remote_path));

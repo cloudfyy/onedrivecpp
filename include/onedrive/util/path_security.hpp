@@ -11,6 +11,10 @@ namespace onedrive::util {
 [[nodiscard]] std::filesystem::path normalized_absolute(
     const std::filesystem::path& path
 );
+[[nodiscard]] bool path_contains(
+    const std::filesystem::path& parent,
+    const std::filesystem::path& child
+);
 void reject_symlink_components(
     const std::filesystem::path& path,
     std::string_view description

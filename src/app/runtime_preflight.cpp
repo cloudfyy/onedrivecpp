@@ -1,6 +1,7 @@
 #include "runtime_preflight.hpp"
 
 #include "onedrive/account/account_state.hpp"
+#include "onedrive/util/mount.hpp"
 #include "onedrive/util/path_security.hpp"
 
 #include <spdlog/spdlog.h>
@@ -201,21 +202,6 @@ void validate_private_file(
     }
 }
 
-bool path_contains(
-    const std::filesystem::path& parent,
-    const std::filesystem::path& child
-) {
-    auto parent_part = parent.begin();
-    auto child_part = child.begin();
-    for (; parent_part != parent.end() && child_part != child.end();
-         ++parent_part, ++child_part) {
-        if (*parent_part != *child_part) {
-            return false;
-        }
-    }
-    return parent_part == parent.end();
-}
-
 void validate_distinct_directories(
     const std::filesystem::path& sync_directory,
     const std::filesystem::path& state_directory
@@ -231,7 +217,8 @@ void validate_distinct_directories(
             "sync.directory must not be the filesystem root"
         );
     }
-    if (path_contains(sync, state) || path_contains(state, sync)) {
+    if (onedrive::util::path_contains(sync, state) ||
+        onedrive::util::path_contains(state, sync)) {
         throw std::runtime_error(
             "sync.directory and state.directory must not contain one another"
         );
@@ -328,6 +315,10 @@ void prepare_sync_directory(
     onedrive::util::reject_symlink_components(
         config.sync_directory,
         "sync directory"
+    );
+    onedrive::util::require_sync_mount(
+        config.sync_directory,
+        config.sync_mount_point
     );
 
     std::error_code error;

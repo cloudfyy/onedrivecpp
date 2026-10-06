@@ -1,5 +1,7 @@
 #include "support.hpp"
 
+#include "onedrive/util/mount.hpp"
+
 namespace {
 
 using namespace onedrive::test::preflight;
@@ -163,6 +165,77 @@ int test_invalid() {
             "symbolic link"
         )) {
         return fail("symbolic-link sync directory was accepted");
+    }
+
+    config = config_for(temporary);
+    std::filesystem::create_directories(config.sync_directory);
+    config.sync_mount_point = "/proc";
+    if (!throws_with(
+            [&] {
+                const RuntimePreflight preflight{config, Operation::monitor};
+            },
+            "must be inside sync.mount_point"
+        )) {
+        return fail("sync directory outside its mount point was accepted");
+    }
+
+    config.sync_mount_point = std::filesystem::path{};
+    if (!throws_with(
+            [&] {
+                const RuntimePreflight preflight{config, Operation::monitor};
+            },
+            "sync.mount_point must not be empty"
+        )) {
+        return fail("empty runtime sync mount point was accepted");
+    }
+
+    config.sync_mount_point = temporary.path();
+    if (!throws_with(
+            [&] {
+                const RuntimePreflight preflight{config, Operation::monitor};
+            },
+            "not currently mounted"
+        )) {
+        return fail(
+            "ordinary directory was accepted as a mounted sync disk"
+        );
+    }
+
+    const auto missing_mount = temporary.path() / "missing-mount";
+    config.sync_mount_point = missing_mount;
+    config.sync_directory = missing_mount / "OneDrive";
+    if (!throws_with(
+            [&] {
+                const RuntimePreflight preflight{config, Operation::monitor};
+            },
+            "cannot inspect sync.mount_point"
+        )) {
+        return fail("missing sync mount path was accepted");
+    }
+
+    const auto mount_file = temporary.path() / "mount-file";
+    {
+        std::ofstream output{mount_file};
+        output << "not a mount";
+    }
+    config.sync_mount_point = mount_file;
+    config.sync_directory = mount_file / "OneDrive";
+    if (!throws_with(
+            [&] {
+                onedrive::util::require_sync_mount(
+                    config.sync_directory,
+                    config.sync_mount_point
+                );
+            },
+            "sync.mount_point is not a directory"
+        )) {
+        return fail("regular file was accepted as a sync mount point");
+    }
+
+    config.sync_directory = temporary.path() / "files";
+    config.sync_mount_point = "/";
+    {
+        const RuntimePreflight preflight{config, Operation::monitor};
     }
 
     config.state_directory = temporary.path() / "database-state";

@@ -49,6 +49,8 @@ For example:
 drive_id = "me"
 permissions = "private"
 local_conflict = "block"
+# Optional mounted ancestor of sync.directory
+# mount_point = "/mnt/data"
 # Optional; resolved relative to this TOML file
 # sync_list = "sync_list"
 sync_root_files = false
@@ -98,6 +100,26 @@ maximum_total_rate_bytes_per_second = 0
 [monitor]
 poll_interval_seconds = 300
 settle_delay_milliseconds = 1000
+```
+
+Set `sync.mount_point` when `sync.directory` resides on removable storage, a
+network filesystem, or another mount that may disappear. The configured path
+must be a mounted directory and an ancestor of `sync.directory`. The client
+checks it during startup and again before every full or single-file
+synchronization. If the mount disappears while Monitor is running, the next
+synchronization stops before local scanning, pending-operation recovery,
+downloads, uploads, remote deletions, or Delta cursor updates. Monitor retries
+on a later scheduled synchronization, so normal operation resumes after the
+same path is mounted again.
+
+This option is disabled by default and does not infer a mount from
+`sync.directory`. For the layout `/mnt/data/OneDrive`, where `/mnt/data` is the
+actual mount point, configure:
+
+```toml
+[sync]
+directory = "/mnt/data/OneDrive"
+mount_point = "/mnt/data"
 ```
 
 `sync.maximum_remote_deletions` limits how many tracked items one local

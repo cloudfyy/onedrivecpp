@@ -40,6 +40,8 @@ sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 drive_id = "me"
 permissions = "private"
 local_conflict = "block"
+# 可选；sync.directory 所在的已挂载祖先目录
+# mount_point = "/mnt/data"
 # 可选；相对路径以本 TOML 文件所在目录为基准
 # sync_list = "sync_list"
 sync_root_files = false
@@ -88,6 +90,22 @@ maximum_total_rate_bytes_per_second = 0
 [monitor]
 poll_interval_seconds = 300
 settle_delay_milliseconds = 1000
+```
+
+当 `sync.directory` 位于可移动存储、网络文件系统或其他可能掉线的挂载盘时，
+设置 `sync.mount_point`。该路径必须是当前真实挂载的目录，并且是
+`sync.directory` 的祖先。客户端会在启动时检查它，并在每轮完整同步或单文件
+下载前再次检查。如果 Monitor 运行期间挂载盘消失，下一轮同步会在本地扫描、
+pending 操作恢复、下载、上传、远端删除或 Delta 游标更新之前停止。Monitor 会在
+之后的调度中重试，因此相同路径重新挂载后可以恢复正常工作。
+
+此选项默认关闭，客户端不会根据 `sync.directory` 猜测挂载点。例如
+`/mnt/data/OneDrive` 是同步目录、`/mnt/data` 是实际挂载点时，配置为：
+
+```toml
+[sync]
+directory = "/mnt/data/OneDrive"
+mount_point = "/mnt/data"
 ```
 
 `sync.maximum_remote_deletions` 限制一次本地删除计划最多可从 OneDrive 删除

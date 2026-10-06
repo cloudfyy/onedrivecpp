@@ -1,6 +1,7 @@
 #include "onedrive/sync/core/engine.hpp"
 
 #include "onedrive/cli/console.hpp"
+#include "onedrive/util/mount.hpp"
 #include "onedrive/util/path_security.hpp"
 #include "sync/core/delta_plan.hpp"
 #include "sync/core/downloads.hpp"
@@ -49,11 +50,15 @@ int SyncEngine::synchronize() const {
             std::chrono::steady_clock::now() - started_at
         );
     };
+    cli::Console fallback_console;
+    const auto& console =
+        console_ == nullptr ? fallback_console : *console_;
 
     try {
-        cli::Console fallback_console;
-        const auto& console =
-            console_ == nullptr ? fallback_console : *console_;
+        onedrive::util::require_sync_mount(
+            config_->sync_directory,
+            config_->sync_mount_point
+        );
         std::filesystem::path sync_root =
             onedrive::util::normalized_absolute(config_->sync_directory);
         std::optional<detail::SafeSyncRoot> safe_root;
@@ -643,6 +648,22 @@ int SyncEngine::synchronize() const {
             );
         }
         return blocked_count == 0 ? 0 : 2;
+    } catch (const onedrive::util::SyncMountUnavailableError& error) {
+        record_result(metrics::SyncRunOutcome::failed);
+        const auto elapsed = std::chrono::steady_clock::now() - started_at;
+        spdlog::warn(
+            "Synchronization blocked by unavailable mount after {} "
+            "milliseconds: {}",
+            std::chrono::duration_cast<std::chrono::milliseconds>(elapsed)
+                .count(),
+            error.what()
+        );
+        console.message(
+            cli::MessageKind::error,
+            "sync_mount_unavailable",
+            error.what()
+        );
+        return 1;
     } catch (...) {
         record_result(metrics::SyncRunOutcome::failed);
         const auto elapsed = std::chrono::steady_clock::now() - started_at;

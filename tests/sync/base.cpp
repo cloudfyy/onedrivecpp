@@ -6,6 +6,41 @@ using namespace onedrive::test::sync;
 
 int test_dry_run_and_success() {
     TemporaryDirectory temporary;
+    const auto guarded_root = temporary.path() / "guarded";
+    FakeGraphClient guarded_graph;
+    FakeItemStore guarded_items;
+    FakeMetrics guarded_metrics;
+    auto guarded_config = config_for(guarded_root, false);
+    guarded_config.sync_mount_point = temporary.path();
+    std::ostringstream guarded_output;
+    std::ostringstream guarded_error;
+    const onedrive::cli::Console guarded_console{
+        {
+            .color = onedrive::cli::ColorMode::never,
+            .output = onedrive::cli::OutputMode::json,
+        },
+        guarded_output,
+        guarded_error
+    };
+    if (onedrive::sync::SyncEngine{
+            guarded_config,
+            guarded_graph,
+            guarded_items,
+            guarded_metrics,
+            &guarded_console
+        }
+                .synchronize() == 0 ||
+        !guarded_graph.delta_requests.empty() ||
+        std::filesystem::exists(guarded_root) ||
+        guarded_metrics.last_success ||
+        !guarded_output.str().empty() ||
+        !guarded_error.str().contains(
+            "\"event\":\"sync_mount_unavailable\""
+        ) ||
+        !guarded_error.str().contains("not currently mounted")) {
+        return fail("missing sync mount was not blocked before synchronization");
+    }
+
     const auto dry_root = temporary.path() / "dry";
     FakeGraphClient dry_graph;
     dry_graph.changes = {file("file", "Documents/file.txt", 4)};

@@ -23,6 +23,7 @@ void load_sync_options(Config& config, const toml::table& root, const std::files
                 "sync_root_files",
                 "local_conflict",
                 "maximum_remote_deletions",
+                "mount_point",
                 "upload",
             },
             "sync"
@@ -49,6 +50,19 @@ void load_sync_options(Config& config, const toml::table& root, const std::files
                 "a string"
             )) {
             config.sync_directory = *value;
+        }
+        if (const auto value = optional_value<std::string>(
+                *sync,
+                "mount_point",
+                "sync.mount_point",
+                "a string"
+            )) {
+            if (value->empty()) {
+                throw std::runtime_error(
+                    "sync.mount_point must not be empty"
+                );
+            }
+            config.sync_mount_point = *value;
         }
         if (const auto value = optional_value<std::string>(
                 *sync,

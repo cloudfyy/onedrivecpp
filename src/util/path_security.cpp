@@ -20,6 +20,21 @@ std::filesystem::path normalized_absolute(
     return std::filesystem::absolute(path).lexically_normal();
 }
 
+bool path_contains(
+    const std::filesystem::path& parent,
+    const std::filesystem::path& child
+) {
+    auto parent_part = parent.begin();
+    auto child_part = child.begin();
+    for (; parent_part != parent.end() && child_part != child.end();
+         ++parent_part, ++child_part) {
+        if (*parent_part != *child_part) {
+            return false;
+        }
+    }
+    return parent_part == parent.end();
+}
+
 void reject_symlink_components(
     const std::filesystem::path& path,
     std::string_view description

@@ -1,5 +1,6 @@
 add_library(onedrive_core
     src/util/atomic_file.cpp
+    src/util/mount.cpp
     src/account/account_state.cpp
     src/app/application.cpp
     src/app/runtime_preflight.cpp

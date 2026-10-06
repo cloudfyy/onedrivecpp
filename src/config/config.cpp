@@ -27,6 +27,7 @@ Config Config::defaults() {
 
     return {
         .sync_directory = std::filesystem::path{home} / "OneDrive",
+        .sync_mount_point = std::nullopt,
         .state_directory =
             std::filesystem::path{home} / ".local/state/onedrive-cpp",
         .sync_list = std::nullopt,

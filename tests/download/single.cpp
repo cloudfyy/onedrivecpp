@@ -26,6 +26,21 @@ int test_single_file_download_coordination() {
     std::ostringstream error;
     const onedrive::cli::Console console{{}, output, error};
 
+    auto unmounted_config = config;
+    unmounted_config.sync_mount_point = temporary.path();
+    try {
+        static_cast<void>(onedrive::sync::plan_single_file_download(
+            unmounted_config, "Documents/single.txt", graph, console
+        ));
+        return fail("single-file plan accepted an unmounted sync disk");
+    } catch (const std::runtime_error& exception) {
+        if (!std::string{exception.what()}.contains(
+                "not currently mounted"
+            )) {
+            throw;
+        }
+    }
+
     auto dry_config = config;
     dry_config.dry_run = true;
     if (onedrive::sync::plan_single_file_download(

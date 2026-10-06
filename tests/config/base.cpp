@@ -12,6 +12,7 @@ int test_base() {
         output << "config_version = 2\n"
                << "[sync]\n"
                << "directory = \"/tmp/OneDrive\"\n"
+               << "mount_point = \"/tmp\"\n"
                << "drive_id = \"test-drive\"\n"
                << "sync_list = \"rules/sync_list\"\n"
                << "sync_root_files = true\n"
@@ -73,6 +74,8 @@ int test_base() {
     const auto graph_options = onedrive::app::graph_options(config);
 
     if (config.sync_directory != "/tmp/OneDrive" ||
+        config.sync_mount_point !=
+            std::optional<std::filesystem::path>{"/tmp"} ||
         config.state_directory != "/tmp/onedrive-state" ||
         config.drive_id != "test-drive" ||
         config.sync_list !=
@@ -181,6 +184,7 @@ int test_base() {
         ) ||
         defaults.sync_permissions !=
             onedrive::config::SyncPermissionsMode::private_access ||
+        defaults.sync_mount_point ||
         !defaults.upload ||
         defaults.local_conflict !=
             onedrive::config::LocalConflictPolicy::block ||
