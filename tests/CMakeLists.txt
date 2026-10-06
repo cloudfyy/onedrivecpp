@@ -27,10 +27,26 @@ add_test(
         ${PROJECT_SOURCE_DIR}/packaging/completions/onedrive-cpp.bash
 )
 
-add_onedrive_test(
-    item_database_tests
-    SOURCES tests/item_database_tests.cpp
+add_library(
+    db_test_support STATIC
+    ${PROJECT_SOURCE_DIR}/tests/db/support.cpp
 )
+target_include_directories(
+    db_test_support
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/tests
+        ${PROJECT_SOURCE_DIR}/tests/db
+)
+target_link_libraries(db_test_support PRIVATE onedrive_core)
+
+foreach(DB_TEST IN ITEMS state journal migrate security)
+    add_onedrive_test(
+        db_${DB_TEST}_tests
+        SOURCES tests/db/${DB_TEST}.cpp
+        INCLUDE_DIRS tests tests/db
+        LIBRARIES db_test_support
+    )
+endforeach()
 add_onedrive_test(
     device_auth_tests
     SOURCES tests/device_auth_tests.cpp
