@@ -117,7 +117,12 @@ public:
 private:
     struct Impl;
 
-    void open_on_worker(bool allow_corruption_quarantine);
+    enum class CorruptionRecovery {
+        quarantine_and_rebuild,
+        fail,
+    };
+
+    void open_on_worker(CorruptionRecovery recovery);
     void upsert_on_worker(const ItemState& item);
     void apply_delta_on_worker(ItemDelta delta);
     void save_pending_download_on_worker(const PendingDownload& download);

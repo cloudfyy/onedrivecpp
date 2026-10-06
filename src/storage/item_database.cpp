@@ -1541,10 +1541,12 @@ ItemDatabase::ItemDatabase(
 ItemDatabase::~ItemDatabase() = default;
 
 void ItemDatabase::open() {
-    impl_->invoke([this] { open_on_worker(true); });
+    impl_->invoke([this] {
+        open_on_worker(CorruptionRecovery::quarantine_and_rebuild);
+    });
 }
 
-void ItemDatabase::open_on_worker(bool allow_corruption_quarantine) {
+void ItemDatabase::open_on_worker(CorruptionRecovery recovery) {
     spdlog::debug("Opening synchronization state database");
     if (identity_.user_id.empty() || identity_.user_display_name.empty() ||
         identity_.configured_drive_id.empty() || identity_.drive_id.empty() ||
@@ -1596,7 +1598,7 @@ void ItemDatabase::open_on_worker(bool allow_corruption_quarantine) {
         secure_database_file(database_path.string() + "-shm", false);
     } catch (const DatabaseCorruption& error) {
         impl_->database.reset();
-        if (!allow_corruption_quarantine) {
+        if (recovery == CorruptionRecovery::fail) {
             throw std::runtime_error(error.what());
         }
         const auto quarantine_path = quarantine_corrupt_database(database_path);
@@ -1605,7 +1607,7 @@ void ItemDatabase::open_on_worker(bool allow_corruption_quarantine) {
             "evidence remains at '{}'",
             quarantine_path.string()
         );
-        open_on_worker(false);
+        open_on_worker(CorruptionRecovery::fail);
         return;
     } catch (const std::exception& error) {
         impl_->database.reset();
