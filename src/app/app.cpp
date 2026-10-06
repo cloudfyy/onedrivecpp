@@ -27,27 +27,23 @@ int Application::run(int argc, char* argv[]) {
         return *parsed.exit_code;
     }
     const auto& arguments = parsed.arguments;
-    const cli::Console console{
-        {
-            .color = arguments.color_mode,
-            .output = arguments.output_mode,
-            .quiet = arguments.quiet,
-        }
-    };
-
-    std::optional<logging::Session> logging_session;
     try {
-        logging_session.emplace(
-            logging::Options{
-                .level = arguments.log_level,
-                .file = arguments.log_file.empty() ?
-                            std::nullopt :
-                            std::optional<std::filesystem::path>{
-                                arguments.log_file
-                            },
-            }
-        );
         auto config = config::Config::load(arguments.config_path);
+        const cli::Console console{
+            {
+                .color = arguments.color_mode.value_or(config.console_color),
+                .output = arguments.output_mode,
+                .quiet = arguments.quiet,
+            }
+        };
+        const logging::Session logging_session{
+            {
+                .level = arguments.log_level.value_or(config.logging.level),
+                .file = arguments.log_file ?
+                    std::optional<std::filesystem::path>{*arguments.log_file} :
+                    config.logging.file,
+            }
+        };
         config.dry_run = config.dry_run || arguments.force_dry_run;
         config.force_large_delete = arguments.force_large_delete;
 

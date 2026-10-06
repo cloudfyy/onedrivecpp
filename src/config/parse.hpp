@@ -116,6 +116,11 @@ void load_sync_options(
     const toml::table& root,
     const std::filesystem::path& config_path
 );
+void load_output_options(
+    Config& config,
+    const toml::table& root,
+    const std::filesystem::path& config_path
+);
 void load_proxy_options(
     Config& config,
     const toml::table& root,

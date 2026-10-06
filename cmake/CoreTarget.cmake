@@ -14,6 +14,7 @@ add_library(onedrive_core
     src/cli/console.cpp
     src/config/config.cpp
     src/config/network.cpp
+    src/config/output.cpp
     src/config/parse.cpp
     src/config/sync_options.cpp
     src/graph/graph_client.cpp

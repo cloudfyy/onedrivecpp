@@ -603,6 +603,11 @@ struct CliFixture final {
     CliFixture() {
         std::ofstream config{config_path};
         config << "config_version = 2\n"
+               << "[console]\n"
+               << "color = \"always\"\n"
+               << "[logging]\n"
+               << "level = \"debug\"\n"
+               << "file = \"" << log_path.filename().string() << "\"\n"
                << "[sync]\n"
                << "data_directory = \"" << sync_path.string() << "\"\n"
                << "upload = false\n"

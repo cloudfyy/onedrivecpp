@@ -428,7 +428,9 @@ void load_filesystem_options(Config& config, const toml::table& root) {
             "to graph.throttle.initial_delay_seconds"
         );
     }
-    spdlog::debug("TOML configuration loaded and validated");
+    if (const auto logger = spdlog::default_logger()) {
+        logger->debug("TOML configuration loaded and validated");
+    }
 }
 
 }  // namespace onedrive::config::detail

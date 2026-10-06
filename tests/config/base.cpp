@@ -10,6 +10,11 @@ int test_base() {
     {
         std::ofstream output{path};
         output << "config_version = 2\n"
+               << "[console]\n"
+               << "color = \"always\"\n"
+               << "[logging]\n"
+               << "level = \"debug\"\n"
+               << "file = \"logs/onedrive-cpp.log\"\n"
                << "[sync]\n"
                << "data_directory = \"/tmp/OneDrive\"\n"
                << "data_mount_point = \"/tmp\"\n"
@@ -79,7 +84,13 @@ int test_base() {
     std::filesystem::remove(path);
     const auto graph_options = onedrive::app::graph_options(config);
 
-    if (config.sync_data_directory != "/tmp/OneDrive" ||
+    if (config.console_color != onedrive::cli::ColorMode::always ||
+        config.logging.level != "debug" ||
+        config.logging.file !=
+            std::optional<std::filesystem::path>{
+                path.parent_path() / "logs/onedrive-cpp.log"
+            } ||
+        config.sync_data_directory != "/tmp/OneDrive" ||
         config.sync_data_mount_point !=
             std::optional<std::filesystem::path>{"/tmp"} ||
         config.state_directory != "/tmp/onedrive-state" ||

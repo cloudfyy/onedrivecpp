@@ -26,6 +26,8 @@ Config Config::defaults() {
     }
 
     return {
+        .console_color = cli::ColorMode::automatic,
+        .logging = {},
         .sync_data_directory = std::filesystem::path{home} / "OneDrive",
         .sync_data_mount_point = std::nullopt,
         .state_directory =
@@ -76,11 +78,17 @@ Config Config::defaults() {
 Config Config::load(const std::filesystem::path& path) {
     Config config = defaults();
     if (!std::filesystem::exists(path)) {
-        spdlog::debug("Configuration file not found; using default values");
+        if (const auto logger = spdlog::default_logger()) {
+            logger->debug(
+                "Configuration file not found; using default values"
+            );
+        }
         return config;
     }
 
-    spdlog::debug("Loading configuration file");
+    if (const auto logger = spdlog::default_logger()) {
+        logger->debug("Loading configuration file");
+    }
     toml::table root;
     try {
         root = toml::parse_file(path.string());
@@ -95,6 +103,8 @@ Config Config::load(const std::filesystem::path& path) {
         root,
         {
             "config_version",
+            "console",
+            "logging",
             "sync",
             "proxy",
             "transfer",
@@ -121,6 +131,8 @@ Config Config::load(const std::filesystem::path& path) {
     }
 
     detail::load_sync_options(config, root, path);
+
+    detail::load_output_options(config, root, path);
 
     detail::load_proxy_options(config, root, path);
 

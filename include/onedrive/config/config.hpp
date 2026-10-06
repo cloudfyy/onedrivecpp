@@ -1,6 +1,8 @@
 #pragma once
 
+#include "onedrive/cli/console.hpp"
 #include "onedrive/http/http_options.hpp"
+#include "onedrive/logging/logging.hpp"
 
 #include <chrono>
 #include <cstddef>
@@ -42,6 +44,8 @@ enum class TransferOrder {
 };
 
 struct Config {
+    cli::ColorMode console_color{cli::ColorMode::automatic};
+    logging::Options logging;
     std::filesystem::path sync_data_directory;
     std::optional<std::filesystem::path> sync_data_mount_point;
     std::filesystem::path state_directory;

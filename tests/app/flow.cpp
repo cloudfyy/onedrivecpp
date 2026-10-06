@@ -24,6 +24,7 @@ int test_flow() {
     const auto account_path =
         onedrive::account::AccountState::active_token_directory(state_path);
     if (authentication.exit_code != 0 ||
+        !authentication.standard_output.contains("\x1b[") ||
         !authentication.standard_output.contains("Authentication succeeded") ||
         !authentication.standard_output.contains(
             "WARNING: Authentication requests broad organizational"
@@ -44,13 +45,12 @@ int test_flow() {
             "logout",
             "--config",
             config_path.string(),
-            "--log-level",
-            "debug",
-            "--log-file",
-            log_path.string(),
+            "--color",
+            "never",
         }
     );
     if (logout.exit_code != 0 ||
+        logout.standard_output.contains("\x1b[") ||
         !logout.standard_output.contains("Saved authentication removed") ||
         runtime_factory.token_store_count != 1) {
         return fail("logout did not accept a subcommand configuration path");

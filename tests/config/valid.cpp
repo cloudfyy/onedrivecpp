@@ -10,6 +10,65 @@ int test_valid() {
     {
         std::ofstream output{path};
         output << "config_version = 2\n"
+               << "[console]\n"
+               << "color = \"sometimes\"\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "invalid console color was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains("console.color")) {
+            std::filesystem::remove(path);
+            std::cerr << "invalid console color reported wrong error\n";
+            return EXIT_FAILURE;
+        }
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[logging]\n"
+               << "level = \"verbose\"\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "invalid logging level was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains("logging.level")) {
+            std::filesystem::remove(path);
+            std::cerr << "invalid logging level reported wrong error\n";
+            return EXIT_FAILURE;
+        }
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[logging]\n"
+               << "file = \"\"\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "empty logging file was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains(
+                "logging.file must not be empty"
+            )) {
+            std::filesystem::remove(path);
+            std::cerr << "empty logging file reported wrong error\n";
+            return EXIT_FAILURE;
+        }
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
                << "[sync]\n"
                << "local_conflict = \"overwrite\"\n";
     }

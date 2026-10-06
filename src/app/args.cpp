@@ -83,28 +83,26 @@ ParseResult parse_arguments(int argc, char* argv[]) {
             .add_option(
                 "--log-level",
                 arguments.log_level,
-                "Minimum log level"
+                "Minimum log level (overrides configuration)"
             )
             ->check(CLI::IsMember(
                 {"trace", "debug", "info", "warn", "error", "critical", "off"},
                 CLI::ignore_case
-            ))
-            ->capture_default_str();
+            ));
         command
             .add_option(
                 "--log-file",
                 arguments.log_file,
-                "Also write rotating logs to this file"
+                "Write rotating logs to this file (overrides configuration)"
             )
             ->type_name("PATH");
         command
             .add_option(
                 "--color",
                 arguments.color_mode,
-                "Color output: auto, always, or never"
+                "Color output override: auto, always, or never"
             )
-            ->transform(CLI::CheckedTransformer(color_modes))
-            ->default_str("auto");
+            ->transform(CLI::CheckedTransformer(color_modes));
         command
             .add_option(
                 "--output",

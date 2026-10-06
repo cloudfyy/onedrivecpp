@@ -1,5 +1,16 @@
 config_version = 2
 
+[console]
+# Supported values: "auto", "always", and "never".
+color = "auto"
+
+[logging]
+# Supported values: "trace", "debug", "info", "warn", "error", "critical",
+# and "off".
+level = "info"
+# Optional rotating log file. Relative paths resolve from this TOML file.
+# file = "onedrive-cpp.log"
+
 [auth]
 application_id = ""
 tenant_id = "common"
