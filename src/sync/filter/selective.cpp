@@ -306,34 +306,45 @@ FilteredDelta filter_delta(
     const std::function<bool(std::string_view)>& is_tracked,
     bool replace_drive_items
 ) {
-    std::vector<bool> selected(delta.changes.size(), false);
+    enum class SelectionState {
+        excluded,
+        selected,
+    };
+    std::vector<SelectionState> selection(
+        delta.changes.size(), SelectionState::excluded
+    );
     std::vector<std::string_view> selected_paths;
     selected_paths.reserve(delta.changes.size());
     for (std::size_t index = 0; index < delta.changes.size(); ++index) {
         const auto& item = delta.changes[index];
-        selected[index] =
-            item.deleted || item.root ||
-            sync_list.includes(item.remote_path, item.directory);
-        if (selected[index] && !item.deleted && !item.root) {
+        if (item.deleted || item.root ||
+            sync_list.includes(item.remote_path, item.directory)) {
+            selection[index] = SelectionState::selected;
+        }
+        if (selection[index] == SelectionState::selected &&
+            !item.deleted && !item.root) {
             selected_paths.push_back(item.remote_path);
         }
     }
 
     for (std::size_t index = 0; index < delta.changes.size(); ++index) {
         const auto& item = delta.changes[index];
-        if (selected[index] || !item.directory || item.deleted ||
-            item.root) {
+        if (selection[index] == SelectionState::selected ||
+            !item.directory || item.deleted || item.root) {
             continue;
         }
-        selected[index] = std::ranges::any_of(
-            selected_paths,
-            [&](std::string_view path) {
-                return remote_path_is_descendant(
-                    path,
-                    item.remote_path
-                );
-            }
-        ) && !sync_list.excludes(item.remote_path, true);
+        if (std::ranges::any_of(
+                selected_paths,
+                [&](std::string_view path) {
+                    return remote_path_is_descendant(
+                        path,
+                        item.remote_path
+                    );
+                }
+            ) &&
+            !sync_list.excludes(item.remote_path, true)) {
+            selection[index] = SelectionState::selected;
+        }
     }
 
     FilteredDelta result{
@@ -347,7 +358,7 @@ FilteredDelta filter_delta(
     result.delta.changes.reserve(delta.changes.size());
     for (std::size_t index = 0; index < delta.changes.size(); ++index) {
         auto& item = delta.changes[index];
-        if (selected[index]) {
+        if (selection[index] == SelectionState::selected) {
             result.delta.changes.push_back(std::move(item));
             continue;
         }

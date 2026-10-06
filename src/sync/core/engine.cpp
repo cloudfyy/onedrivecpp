@@ -192,7 +192,13 @@ DownloadBatch download_files(
     std::stop_source stop;
     std::mutex console_mutex;
     std::vector<std::uint64_t> task_downloaded(tasks.size());
-    std::vector<bool> task_completed(tasks.size());
+    enum class DownloadTaskState {
+        active,
+        completed,
+    };
+    std::vector<DownloadTaskState> task_states(
+        tasks.size(), DownloadTaskState::active
+    );
     std::uint64_t downloaded_bytes = 0;
     std::uint64_t total_bytes = 0;
     for (const auto& task : tasks) {
@@ -211,8 +217,9 @@ DownloadBatch download_files(
                 downloaded_bytes += current - task_downloaded[index];
                 task_downloaded[index] = current;
             }
-            if (completed && !task_completed[index]) {
-                task_completed[index] = true;
+            if (completed &&
+                task_states[index] == DownloadTaskState::active) {
+                task_states[index] = DownloadTaskState::completed;
                 ++completed_files;
             }
             const auto byte_percentage =
