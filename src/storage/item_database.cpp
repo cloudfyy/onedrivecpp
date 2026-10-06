@@ -45,6 +45,23 @@ struct SqliteCloser {
     }
 };
 
+struct SqliteStatementFinalizer {
+    void operator()(sqlite3_stmt* statement) const noexcept {
+        sqlite3_finalize(statement);
+    }
+};
+
+struct SqliteFreer {
+    void operator()(char* value) const noexcept {
+        sqlite3_free(value);
+    }
+};
+
+using SqliteHandle = std::unique_ptr<sqlite3, SqliteCloser>;
+using SqliteStatement =
+    std::unique_ptr<sqlite3_stmt, SqliteStatementFinalizer>;
+using SqliteString = std::unique_ptr<char, SqliteFreer>;
+
 class DatabaseCorruption final : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
@@ -207,13 +224,15 @@ class Statement {
 public:
     Statement(gsl::not_null<sqlite3*> database, const char* sql)
         : database_{database} {
+        sqlite3_stmt* statement = nullptr;
         const int result = sqlite3_prepare_v2(
             database_.get(),
             sql,
             -1,
-            &statement_,
+            &statement,
             nullptr
         );
+        statement_.reset(statement);
         if (result != SQLITE_OK) {
             throw std::runtime_error(
                 "cannot prepare SQLite statement: " +
@@ -223,34 +242,39 @@ public:
 
     }
 
-    ~Statement() {
-        sqlite3_finalize(statement_);
-    }
-
     Statement(const Statement&) = delete;
     Statement& operator=(const Statement&) = delete;
     Statement(Statement&&) = delete;
     Statement& operator=(Statement&&) = delete;
 
     [[nodiscard]] sqlite3_stmt* get() const noexcept {
-        return statement_;
+        return statement_.get();
     }
 
 private:
     gsl::not_null<sqlite3*> database_;
-    sqlite3_stmt* statement_{nullptr};
+    SqliteStatement statement_;
 };
 
 void execute(sqlite3* database, const char* sql) {
-    char* error_message = nullptr;
-    const int result = sqlite3_exec(database, sql, nullptr, nullptr, &error_message);
+    char* raw_error_message = nullptr;
+    const int result =
+        sqlite3_exec(
+            database,
+            sql,
+            nullptr,
+            nullptr,
+            &raw_error_message
+        );
+    const SqliteString error_message{raw_error_message};
     if (result == SQLITE_OK) {
         return;
     }
 
     const std::string message =
-        error_message == nullptr ? sqlite3_errmsg(database) : error_message;
-    sqlite3_free(error_message);
+        error_message == nullptr ?
+            sqlite3_errmsg(database) :
+            error_message.get();
     throw std::runtime_error("SQLite operation failed: " + message);
 }
 
@@ -1000,17 +1024,17 @@ quarantine_corrupt_database(const std::filesystem::path& database_path) {
 
 void verify_current_schema(sqlite3* database) {
     sqlite3* reference_handle = nullptr;
-    if (sqlite3_open(":memory:", &reference_handle) != SQLITE_OK) {
+    const int result = sqlite3_open(":memory:", &reference_handle);
+    SqliteHandle reference{reference_handle};
+    if (result != SQLITE_OK) {
         const std::string message =
-            reference_handle == nullptr ?
+            reference == nullptr ?
                 "unknown SQLite error" :
-                sqlite3_errmsg(reference_handle);
-        sqlite3_close(reference_handle);
+                sqlite3_errmsg(reference.get());
         throw std::runtime_error(
             "cannot create reference state database schema: " + message
         );
     }
-    std::unique_ptr<sqlite3, SqliteCloser> reference{reference_handle};
     ensure_current_schema(reference.get());
 
     const auto expected_tables = user_tables(reference.get());
@@ -1422,7 +1446,7 @@ struct ItemDatabase::Impl {
         }
     }
 
-    std::unique_ptr<sqlite3, SqliteCloser> database;
+    SqliteHandle database;
     std::mutex mutex;
     std::condition_variable condition;
     std::deque<std::move_only_function<void()>> commands;
@@ -1481,7 +1505,7 @@ diagnose_state_databases(const std::filesystem::path& state_directory) {
             SQLITE_OPEN_READONLY | SQLITE_OPEN_NOFOLLOW,
             nullptr
         );
-        std::unique_ptr<sqlite3, SqliteCloser> database{handle};
+        SqliteHandle database{handle};
         if (open_result != SQLITE_OK) {
             result.detail = handle == nullptr ? "unknown SQLite open error"
                                               : sqlite3_errmsg(handle);
@@ -1547,15 +1571,17 @@ void ItemDatabase::open_on_worker(bool allow_corruption_quarantine) {
         SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOFOLLOW,
         nullptr
     );
+    SqliteHandle opened_database{database};
     if (result != SQLITE_OK) {
         const std::string message =
-            database == nullptr ? "unknown SQLite error" : sqlite3_errmsg(database);
-        sqlite3_close(database);
+            opened_database == nullptr ?
+                "unknown SQLite error" :
+                sqlite3_errmsg(opened_database.get());
         throw std::runtime_error(
             "cannot open state database '" + database_path.string() + "': " + message
         );
     }
-    impl_->database.reset(database);
+    impl_->database = std::move(opened_database);
 
     try {
         configure_database_connection(database);
