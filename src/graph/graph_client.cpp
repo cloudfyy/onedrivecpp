@@ -757,6 +757,11 @@ bool wait_for_retry(
     return stop_token.stop_requested();
 }
 
+enum class TransportErrorRetry {
+    disabled,
+    enabled,
+};
+
 template <typename Operation>
 http::HttpResult perform_with_retries(
     Operation operation,
@@ -765,7 +770,8 @@ http::HttpResult perform_with_retries(
     const MicrosoftGraphClient::SleepFunction& sleep,
     std::string_view description,
     const std::stop_token& stop_token = {},
-    bool retry_transport_errors = false
+    TransportErrorRetry transport_error_retry =
+        TransportErrorRetry::disabled
 ) {
     std::size_t retries = 0;
     while (true) {
@@ -776,7 +782,7 @@ http::HttpResult perform_with_retries(
         const bool transport_error = !response;
         if (transport_error &&
             (response.error().code != http::HttpErrorCode::transport ||
-             !retry_transport_errors)) {
+             transport_error_retry == TransportErrorRetry::disabled)) {
             return response;
         }
         if (!transport_error &&
@@ -1032,11 +1038,16 @@ std::string item_ctag(const Json& item) {
     return ctag->get<std::string>();
 }
 
+enum class DriveItemKind {
+    file_only,
+    file_or_directory,
+};
+
 RemoteItem parse_drive_item(
     const Json& json,
     std::string_view description,
     bool validate_content,
-    bool allow_directory = false
+    DriveItemKind kind = DriveItemKind::file_only
 ) {
     try {
         RemoteItem item{
@@ -1073,7 +1084,8 @@ RemoteItem parse_drive_item(
         }
         if (item.id.empty() || item.name.empty() || item.etag.empty() ||
             item.remote_path.empty() || item.deleted || item.root ||
-            (item.directory && !allow_directory) || item.size < 0 ||
+            (item.directory && kind == DriveItemKind::file_only) ||
+            item.size < 0 ||
             item.last_modified.empty()) {
             throw std::runtime_error(
                 "Microsoft Graph returned invalid " +
@@ -1525,7 +1537,7 @@ RemoteItem MicrosoftGraphClient::item_by_path(
         json,
         "path lookup",
         !options_.relaxed_download_validation,
-        true
+        DriveItemKind::file_or_directory
     );
 }
 
@@ -1603,7 +1615,7 @@ RemoteItem MicrosoftGraphClient::create_directory(
         json,
         "directory creation response",
         !options_.relaxed_download_validation,
-        true
+        DriveItemKind::file_or_directory
     );
     if (!item.directory) {
         throw std::runtime_error(
@@ -1758,7 +1770,7 @@ RemoteItem MicrosoftGraphClient::move_item(
         json,
         "item move response",
         !options_.relaxed_download_validation,
-        true
+        DriveItemKind::file_or_directory
     );
 }
 
@@ -2035,7 +2047,7 @@ RemoteItem MicrosoftGraphClient::upload_file(
             sleep_,
             "Microsoft Graph upload session status",
             stop_token,
-            true
+            TransportErrorRetry::enabled
         );
         if (!response) {
             throw std::runtime_error(
@@ -2171,7 +2183,7 @@ RemoteItem MicrosoftGraphClient::upload_file(
             sleep_,
             "Microsoft Graph upload session fragment",
             stop_token,
-            true
+            TransportErrorRetry::enabled
         );
         if (!chunk_response) {
             throw std::runtime_error(
@@ -2667,7 +2679,7 @@ void MicrosoftGraphClient::download_file(
                 sleep_,
                 description,
                 stop_token,
-                true
+                TransportErrorRetry::enabled
             );
         };
         auto response = perform_download();
