@@ -93,6 +93,17 @@ resume; expired, missing, and gone saved sessions return to absent before a new
 session is created. Each accepted fragment advances the active state only after
 its checkpoint succeeds, and only an active session can produce a finalized
 remote item.
+Remote change notifications use a separate pure connection state machine from
+the monitor scheduling state machine. The connection reducer owns channel
+acquisition, token refresh, socket connection, lease renewal, bounded
+exponential retry, and shutdown effects. A notification is only an advisory
+wakeup: it never contains authoritative item data and never advances a Delta
+cursor. Connecting or reconnecting schedules a catch-up Delta synchronization,
+and a notification received during synchronization is latched for one
+additional pass. The existing periodic Graph poll remains active as the
+authoritative fallback, so channel discovery or socket failures cannot prevent
+eventual convergence. Network adapters execute reducer effects; they do not
+make state-transition policy.
 
 The directories correspond to the responsibilities of
 `main/config/curlEngine/onedrive/sync/itemdb/monitor` in the reference project:

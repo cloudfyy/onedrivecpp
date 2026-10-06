@@ -1,6 +1,6 @@
 #include "onedrive/monitor/monitor.hpp"
-#include "monitor/state_machine.hpp"
-#include "monitor/termination_signal_mask.hpp"
+#include "monitor/signal.hpp"
+#include "monitor/state.hpp"
 #include "support/common.hpp"
 
 #include <atomic>

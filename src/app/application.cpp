@@ -15,7 +15,7 @@
 #include "onedrive/monitor/monitor.hpp"
 #include "onedrive/storage/item_database.hpp"
 #include "onedrive/storage/item_store.hpp"
-#include "monitor/termination_signal_mask.hpp"
+#include "monitor/signal.hpp"
 #include "onedrive/sync/download/single_file.hpp"
 #include "onedrive/sync/core/engine.hpp"
 #include "onedrive/version.hpp"

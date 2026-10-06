@@ -136,8 +136,31 @@ int test_state_machine() {
         SynchronizationReason::graph_poll) {
         return fail("Graph deadline did not trigger synchronization");
     }
+    transition = transition_monitor(state, RemoteChangeEvent{}, timing);
+    const auto* synchronizing =
+        std::get_if<SynchronizingState>(&transition.state);
+    if (transition.effect != MonitorEffect::none || synchronizing == nullptr ||
+        synchronizing->reason != SynchronizationReason::graph_poll ||
+        !synchronizing->remote_notification_pending) {
+        return fail(
+            "remote notification was not latched during synchronization"
+        );
+    }
+    transition = transition_monitor(
+        std::move(transition.state),
+        SynchronizationCompletedEvent{
+            .status = 0,
+            .completed_at = origin + 65ms,
+        },
+        timing
+    );
+    if (transition.effect != MonitorEffect::synchronize ||
+        std::get<SynchronizingState>(transition.state).reason !=
+            SynchronizationReason::remote_notification) {
+        return fail("latched remote notification did not trigger a catch-up");
+    }
     state = transition_monitor(
-                std::move(state),
+                std::move(transition.state),
                 SynchronizationCompletedEvent{
                     .status = 2,
                     .completed_at = origin + 70ms,
@@ -147,6 +170,12 @@ int test_state_machine() {
                 .state;
     if (std::get<IdleState>(state).graph_deadline != origin + 170ms) {
         return fail("completed synchronization did not reset Graph polling");
+    }
+    transition = transition_monitor(state, RemoteChangeEvent{}, timing);
+    if (transition.effect != MonitorEffect::synchronize ||
+        std::get<SynchronizingState>(transition.state).reason !=
+            SynchronizationReason::remote_notification) {
+        return fail("remote notification did not trigger synchronization");
     }
     ignored = transition_monitor(state, StartEvent{}, timing);
     if (ignored.effect != MonitorEffect::none ||
@@ -208,6 +237,10 @@ int test_state_machine() {
         std::string_view{
             synchronization_reason_name(SynchronizationReason::watch_overflow)
         }
+            .empty() ||
+        std::string_view{synchronization_reason_name(
+                             SynchronizationReason::remote_notification
+                         )}
             .empty() ||
         std::string_view{
             synchronization_reason_name(SynchronizationReason::graph_poll)

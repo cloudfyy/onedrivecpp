@@ -79,6 +79,13 @@ Graph 大文件上传会话也在同步层之外复用此核心。不存在或�
 创建或验证恢复进入 active；已过期、不存在或已失效的保存会话先返回 absent，
 再创建新会话。每个已接受的分片只有在 checkpoint 成功后才推进 active 状态，
 并且只有 active 会话能够生成包含远端条目的 finalized 状态。
+远端变更通知使用独立于 Monitor 调度状态机的纯连接状态机。连接 reducer 负责
+channel 获取、token 刷新、socket 连接、租约续期、有界指数退避和停止 effect。
+通知只是唤醒信号：它不包含权威条目数据，也不会推进 Delta cursor。首次连接或
+重连后必须安排一次 catch-up Delta 同步；同步期间收到通知时会锁存，并在完成后
+再执行一轮。原有 Graph 定时轮询始终作为权威 fallback 保持启用，因此 channel
+发现或 socket 故障不会阻止最终收敛。网络 adapter 只执行 reducer effect，不
+决定状态转移策略。
 
 目录与参考项目中的 `main/config/curlEngine/onedrive/sync/itemdb/monitor`
 职责相对应：
