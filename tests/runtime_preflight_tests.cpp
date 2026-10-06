@@ -178,6 +178,42 @@ int test_unsafe_paths_and_configuration() {
     TemporaryDirectory temporary;
     auto config = config_for(temporary);
 
+    config.state_directory.clear();
+    if (!throws_with(
+            [&] {
+                const RuntimePreflight preflight{config, Operation::logout};
+            },
+            "state.directory must not be empty"
+        )) {
+        return fail("empty state directory was accepted");
+    }
+    config = config_for(temporary);
+
+    config.sync_directory.clear();
+    if (!throws_with(
+            [&] {
+                const RuntimePreflight preflight{config, Operation::monitor};
+            },
+            "sync.directory must not be empty"
+        )) {
+        return fail("empty sync directory was accepted");
+    }
+    config = config_for(temporary);
+
+    config.drive_id.clear();
+    if (!throws_with(
+            [&] {
+                const RuntimePreflight preflight{
+                    config,
+                    Operation::reset_state
+                };
+            },
+            "sync.drive_id must not be empty"
+        )) {
+        return fail("empty drive identifier was accepted");
+    }
+    config.drive_id = "me";
+
     config.application_id.clear();
     if (!throws_with(
             [&] {
@@ -192,6 +228,33 @@ int test_unsafe_paths_and_configuration() {
     }
     config.application_id = "test-application";
 
+    config.azure_tenant_id.clear();
+    if (!throws_with(
+            [&] {
+                const RuntimePreflight preflight{
+                    config,
+                    Operation::authenticate
+                };
+            },
+            "auth.application_id"
+        )) {
+        return fail("empty Azure tenant identifier was accepted");
+    }
+    config.azure_tenant_id = "common";
+
+    config.auth_scope.clear();
+    if (!throws_with(
+            [&] {
+                const RuntimePreflight preflight{
+                    config,
+                    Operation::authenticate
+                };
+            },
+            "auth.application_id"
+        )) {
+        return fail("empty authentication scope was accepted");
+    }
+
     config.auth_scope = "Files.ReadWrite offline_access";
     if (!throws_with(
             [&] {
@@ -204,7 +267,33 @@ int test_unsafe_paths_and_configuration() {
         )) {
         return fail("authentication without User.Read was accepted");
     }
+    config.auth_scope = "User.Read Files.ReadWrite";
+    if (!throws_with(
+            [&] {
+                const RuntimePreflight preflight{
+                    config,
+                    Operation::authenticate
+                };
+            },
+            "offline_access"
+        )) {
+        return fail("authentication without offline_access was accepted");
+    }
     config.auth_scope = "User.Read Files.ReadWrite offline_access";
+
+    config.auth_endpoint = "http://login.example.test";
+    if (!throws_with(
+            [&] {
+                const RuntimePreflight preflight{
+                    config,
+                    Operation::authenticate
+                };
+            },
+            "auth.endpoint"
+        )) {
+        return fail("insecure authentication endpoint was accepted");
+    }
+    config.auth_endpoint = "https://login.example.test";
 
     config.sync_directory = config.state_directory / "files";
     if (!throws_with(

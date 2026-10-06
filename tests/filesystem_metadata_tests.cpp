@@ -132,6 +132,13 @@ int main() {
     if (database.uses_xattrs()) {
         return fail("database mode probed or enabled xattrs");
     }
+    database.write_remote_identity(
+        {
+            .id = "ignored-id",
+            .etag = "ignored-etag",
+        },
+        root / "missing-database-mode-file"
+    );
     try {
         static_cast<void>(detail::FilesystemMetadata::detect(
             FilesystemMetadataMode::automatic,

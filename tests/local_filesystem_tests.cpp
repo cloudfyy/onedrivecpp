@@ -268,6 +268,33 @@ int main() {
     } catch (const std::runtime_error&) {
     }
 
+    const auto removable = root / "removable.txt";
+    {
+        std::ofstream output{removable};
+        output << "data";
+    }
+    if (!detail::remove_no_symlinks(
+            removable,
+            detail::MissingPathPolicy::report
+        ) ||
+        std::filesystem::exists(removable)) {
+        return fail("safe removal did not remove an existing file");
+    }
+    if (detail::remove_no_symlinks(
+            removable,
+            detail::MissingPathPolicy::ignore
+        )) {
+        return fail("ignored missing removal reported a removed file");
+    }
+    try {
+        static_cast<void>(detail::remove_no_symlinks(
+            removable,
+            detail::MissingPathPolicy::report
+        ));
+        return fail("reported missing removal did not fail");
+    } catch (const std::runtime_error&) {
+    }
+
     const auto metadata = detail::FilesystemMetadata::detect(
         onedrive::config::FilesystemMetadataMode::database,
         root

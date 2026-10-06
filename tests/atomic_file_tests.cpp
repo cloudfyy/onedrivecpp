@@ -11,6 +11,16 @@ namespace {
 
 using onedrive::test::fail;
 
+template <typename Action>
+bool throws_with(Action action, const std::string& expected) {
+    try {
+        action();
+    } catch (const std::exception& error) {
+        return std::string{error.what()}.contains(expected);
+    }
+    return false;
+}
+
 }  // namespace
 
 int main() {
@@ -85,6 +95,58 @@ int main() {
     }
     if (std::filesystem::exists(real_parent / "private")) {
         return fail("rejected atomic test file write modified its target");
+    }
+
+    if (!throws_with(
+            [] {
+                onedrive::util::write_file_atomically(
+                    {},
+                    "data",
+                    S_IRUSR | S_IWUSR,
+                    "test file"
+                );
+            },
+            "requires a filename"
+        )) {
+        return fail("atomic write accepted an empty destination");
+    }
+
+    const auto excessive_name =
+        temporary.path() / std::string(256, 'x');
+    if (!throws_with(
+            [&] {
+                onedrive::util::write_file_atomically(
+                    excessive_name,
+                    "data",
+                    S_IRUSR | S_IWUSR,
+                    "test file"
+                );
+            },
+            "cannot create test file"
+        )) {
+        return fail("atomic write accepted an excessive temporary filename");
+    }
+
+    const auto directory_target = temporary.path() / "directory-target";
+    std::filesystem::create_directory(directory_target);
+    if (!throws_with(
+            [&] {
+                onedrive::util::write_file_atomically(
+                    directory_target,
+                    "data",
+                    S_IRUSR | S_IWUSR,
+                    "test file"
+                );
+            },
+            "cannot replace test file"
+        )) {
+        return fail("atomic write replaced a directory with a file");
+    }
+    for (const auto& entry :
+         std::filesystem::directory_iterator{temporary.path()}) {
+        if (entry.path().filename().string().contains(".tmp.")) {
+            return fail("failed atomic write left a temporary file");
+        }
     }
     return EXIT_SUCCESS;
 }
