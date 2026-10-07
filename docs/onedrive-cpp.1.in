@@ -1,4 +1,4 @@
-.TH ONEDRIVE-CPP 1 "6 October 2026" "onedrive-cpp @ONEDRIVE_PACKAGE_VERSION@" "User Commands"
+.TH ONEDRIVE-CPP 1 "7 October 2026" "onedrive-cpp @ONEDRIVE_PACKAGE_VERSION@" "User Commands"
 .SH NAME
 onedrive-cpp \- modern C++ OneDrive synchronization client
 .SH SYNOPSIS

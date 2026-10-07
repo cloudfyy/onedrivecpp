@@ -1,4 +1,4 @@
-.TH ONEDRIVE-CPP 1 "2026年10月6日" "onedrive-cpp @ONEDRIVE_PACKAGE_VERSION@" "用户命令"
+.TH ONEDRIVE-CPP 1 "2026年10月7日" "onedrive-cpp @ONEDRIVE_PACKAGE_VERSION@" "用户命令"
 .SH 名称
 onedrive-cpp \- 现代 C++ OneDrive 同步客户端
 .SH 用法
