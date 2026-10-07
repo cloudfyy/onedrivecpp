@@ -12,6 +12,7 @@
 #include "sync/filesystem/operations.hpp"
 #include "sync/filesystem/metadata.hpp"
 #include "sync/filesystem/safe_sync_root.hpp"
+#include "sync/filesystem/traversal.hpp"
 #include "sync/filter/remote_path.hpp"
 #include "sync/filter/selective.hpp"
 
@@ -166,229 +167,127 @@ std::vector<UploadCandidate> discover_uploads(
         }
     }
     std::vector<UploadCandidate> uploads;
-    std::error_code error;
-    std::filesystem::recursive_directory_iterator iterator{
+    walk_directory_tree(
         sync_root.path(),
-        std::filesystem::directory_options::none,
-        error
-    };
-    if (error) {
-        throw std::runtime_error(
-            "cannot scan synchronization directory for uploads: " +
-            error.message()
-        );
-    }
-    const std::filesystem::recursive_directory_iterator end;
-    while (iterator != end) {
-        const auto path = iterator->path();
-        const auto status = iterator->symlink_status(error);
-        if (error) {
-            throw std::runtime_error(
-                "cannot inspect local upload candidate '" + path.string() +
-                "': " + error.message()
-            );
-        }
-        if (std::filesystem::is_symlink(status)) {
-            ++blocked;
-            console.message(
-                cli::MessageKind::warning,
-                "local_upload_blocked",
-                "Refusing to upload symbolic link '" + path.string() + "'."
-            );
-            iterator.increment(error);
-            if (error) {
-                throw std::runtime_error(
-                    "cannot continue local upload scan: " + error.message()
+        {
+            .open = "cannot scan synchronization directory for uploads",
+            .inspect = "cannot inspect local upload candidate",
+            .advance = "cannot continue local upload scan",
+        },
+        [&](const std::filesystem::directory_entry& entry,
+            const std::filesystem::file_status& status) {
+            const auto path = entry.path();
+            if (std::filesystem::is_symlink(status)) {
+                ++blocked;
+                console.message(
+                    cli::MessageKind::warning,
+                    "local_upload_blocked",
+                    "Refusing to upload symbolic link '" + path.string() + "'."
                 );
+                return TreeWalkAction::continue_walk;
             }
-            continue;
-        }
-        const bool directory = std::filesystem::is_directory(status);
-        const bool regular_file =
-            std::filesystem::is_regular_file(status);
-        if ((!directory && !regular_file) || reserved_local_name(path)) {
-            if (directory) {
-                iterator.disable_recursion_pending();
+            const bool directory = std::filesystem::is_directory(status);
+            const bool regular_file = std::filesystem::is_regular_file(status);
+            if ((!directory && !regular_file) || reserved_local_name(path)) {
+                return TreeWalkAction::skip_subtree;
             }
-            iterator.increment(error);
-            if (error) {
-                throw std::runtime_error(
-                    "cannot continue local upload scan: " + error.message()
-                );
-            }
-            continue;
-        }
-        const auto relative = path.lexically_relative(sync_root.path());
-        const auto remote_path = relative.generic_string();
-        const auto kind = directory ?
-            SyncItemKind::directory :
-            SyncItemKind::file;
-        std::optional<std::uint64_t> file_size;
-        if (regular_file) {
-            file_size = iterator->file_size(error);
-            if (error) {
-                throw std::runtime_error(
-                    "cannot read local upload candidate size '" +
-                    path.string() + "': " + error.message()
-                );
-            }
-        }
-        if (skipped_local_paths.contains(
-                path.lexically_normal().string()
-            )) {
-            if (directory) {
-                iterator.disable_recursion_pending();
-            }
-            iterator.increment(error);
-            if (error) {
-                throw std::runtime_error(
-                    "cannot continue local upload scan: " +
-                    error.message()
-                );
-            }
-            continue;
-        }
-        if (relative.empty() || relative.native().starts_with("..") ||
-            (sync_list != nullptr &&
-             sync_list->excludes(remote_path, kind, file_size))) {
-            if (directory) {
-                iterator.disable_recursion_pending();
-            }
-            iterator.increment(error);
-            if (error) {
-                throw std::runtime_error(
-                    "cannot continue local upload scan: " + error.message()
-                );
-            }
-            continue;
-        }
-        if (sync_list != nullptr &&
-            !sync_list->includes(remote_path, kind, file_size)) {
-            iterator.increment(error);
-            if (error) {
-                throw std::runtime_error(
-                    "cannot continue local upload scan: " + error.message()
-                );
-            }
-            continue;
-        }
-        const auto previous = tracked.find(path.lexically_normal().string());
-        if (const auto failed = resource_blocked_uploads.find(
-                path.lexically_normal().string()
-            );
-            failed != resource_blocked_uploads.end()) {
-            ++blocked;
-            console.message(
-                cli::MessageKind::warning,
-                "local_upload_resource_blocked",
-                "Upload remains deferred for '" + remote_path + "' (" +
-                    failed->second.failure_code + ", attempt " +
-                    std::to_string(
-                        failed->second.failure_attempt_count
-                    ) + "): " + failed->second.failure_message
-            );
-            if (directory) {
-                iterator.disable_recursion_pending();
-            }
-            iterator.increment(error);
-            if (error) {
-                throw std::runtime_error(
-                    "cannot continue local upload scan: " +
-                    error.message()
-                );
-            }
-            continue;
-        }
-        if ((!directory && suppressed_paths.contains(
-                 path.lexically_normal().string()
-             )) ||
-            (directory && suppressed_directories.contains(
-                 path.lexically_normal().string()
-             ))) {
-            iterator.increment(error);
-            if (error) {
-                throw std::runtime_error(
-                    "cannot continue local upload scan: " + error.message()
-                );
-            }
-            continue;
-        }
-        if (blocked_paths.contains(remote_path) ||
-            (previous != tracked.end() &&
-             blocked_ids.contains(previous->second.remote_id))) {
-            if (directory) {
-                iterator.disable_recursion_pending();
-            }
-            iterator.increment(error);
-            if (error) {
-                throw std::runtime_error(
-                    "cannot continue local upload scan: " + error.message()
-                );
-            }
-            continue;
-        }
-        if (directory && previous != tracked.end() &&
-            !previous->second.directory) {
-            ++blocked;
-            console.message(
-                cli::MessageKind::warning,
-                "local_upload_blocked",
-                "Refusing to replace tracked remote file '" +
-                    remote_path + "' with a local directory."
-            );
-            iterator.disable_recursion_pending();
-            iterator.increment(error);
-            if (error) {
-                throw std::runtime_error(
-                    "cannot continue local upload scan: " + error.message()
-                );
-            }
-            continue;
-        }
-        if (previous != tracked.end() && previous->second.directory) {
-            if (directory) {
-                iterator.increment(error);
+            const auto relative = path.lexically_relative(sync_root.path());
+            const auto remote_path = relative.generic_string();
+            const auto kind =
+                directory ? SyncItemKind::directory : SyncItemKind::file;
+            std::optional<std::uint64_t> file_size;
+            if (regular_file) {
+                std::error_code error;
+                file_size = entry.file_size(error);
                 if (error) {
                     throw std::runtime_error(
-                        "cannot continue local upload scan: " +
-                        error.message()
+                        "cannot read local upload candidate size '" +
+                        path.string() + "': " + error.message()
                     );
                 }
-                continue;
             }
-            ++blocked;
-            console.message(
-                cli::MessageKind::warning,
-                "local_upload_blocked",
-                "Refusing to replace tracked remote directory '" +
-                    remote_path + "' with a local file."
-            );
-            iterator.increment(error);
-            if (error) {
-                throw std::runtime_error(
-                    "cannot continue local upload scan: " + error.message()
+            if (skipped_local_paths.contains(path.lexically_normal().string()
+                )) {
+                return TreeWalkAction::skip_subtree;
+            }
+            if (relative.empty() || relative.native().starts_with("..") ||
+                (sync_list != nullptr &&
+                 sync_list->excludes(remote_path, kind, file_size))) {
+                return TreeWalkAction::skip_subtree;
+            }
+            if (sync_list != nullptr &&
+                !sync_list->includes(remote_path, kind, file_size)) {
+                return TreeWalkAction::continue_walk;
+            }
+            const auto previous =
+                tracked.find(path.lexically_normal().string());
+            if (const auto failed = resource_blocked_uploads.find(
+                    path.lexically_normal().string()
                 );
+                failed != resource_blocked_uploads.end()) {
+                ++blocked;
+                console.message(
+                    cli::MessageKind::warning,
+                    "local_upload_resource_blocked",
+                    "Upload remains deferred for '" + remote_path + "' (" +
+                        failed->second.failure_code + ", attempt " +
+                        std::to_string(failed->second.failure_attempt_count) +
+                        "): " + failed->second.failure_message
+                );
+                return directory ? TreeWalkAction::skip_subtree
+                                 : TreeWalkAction::continue_walk;
             }
-            continue;
+            if ((!directory &&
+                 suppressed_paths.contains(path.lexically_normal().string())) ||
+                (directory && suppressed_directories.contains(
+                                  path.lexically_normal().string()
+                              ))) {
+                return TreeWalkAction::continue_walk;
+            }
+            if (blocked_paths.contains(remote_path) ||
+                (previous != tracked.end() &&
+                 blocked_ids.contains(previous->second.remote_id))) {
+                return directory ? TreeWalkAction::skip_subtree
+                                 : TreeWalkAction::continue_walk;
+            }
+            if (directory && previous != tracked.end() &&
+                !previous->second.directory) {
+                ++blocked;
+                console.message(
+                    cli::MessageKind::warning,
+                    "local_upload_blocked",
+                    "Refusing to replace tracked remote file '" + remote_path +
+                        "' with a local directory."
+                );
+                return TreeWalkAction::skip_subtree;
+            }
+            if (previous != tracked.end() && previous->second.directory) {
+                if (directory) {
+                    return TreeWalkAction::continue_walk;
+                }
+                ++blocked;
+                console.message(
+                    cli::MessageKind::warning,
+                    "local_upload_blocked",
+                    "Refusing to replace tracked remote directory '" +
+                        remote_path + "' with a local file."
+                );
+                return TreeWalkAction::continue_walk;
+            }
+            if (directory || previous == tracked.end() ||
+                !local_snapshot_matches(previous->second, path)) {
+                uploads.push_back({
+                    .path = path,
+                    .remote_path = remote_path,
+                    .previous = previous == tracked.end()
+                                    ? std::nullopt
+                                    : std::optional{previous->second},
+                    .directory = directory,
+                });
+            }
+            return TreeWalkAction::continue_walk;
         }
-        if (directory || previous == tracked.end() ||
-            !local_snapshot_matches(previous->second, path)) {
-            uploads.push_back({
-                .path = path,
-                .remote_path = remote_path,
-                .previous = previous == tracked.end() ?
-                    std::nullopt :
-                    std::optional{previous->second},
-                .directory = directory,
-            });
-        }
-        iterator.increment(error);
-        if (error) {
-            throw std::runtime_error(
-                "cannot continue local upload scan: " + error.message()
-            );
-        }
-    }
+    );
     std::ranges::stable_sort(
         uploads,
         [](const UploadCandidate& left, const UploadCandidate& right) {

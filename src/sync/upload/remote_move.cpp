@@ -4,6 +4,7 @@
 #include "util/typestate.hpp"
 #include "sync/filesystem/operations.hpp"
 #include "sync/filesystem/safe_sync_root.hpp"
+#include "sync/filesystem/traversal.hpp"
 #include "sync/filter/remote_path.hpp"
 #include "sync/filter/selective.hpp"
 
@@ -43,42 +44,28 @@ LocalMoveDiscovery discover_local_moves(
     };
     std::unordered_map<std::string, CurrentItem> current;
     std::unordered_set<std::string> ambiguous;
-    std::error_code error;
-    std::filesystem::recursive_directory_iterator iterator{
+    walk_directory_tree(
         sync_root.path(),
-        std::filesystem::directory_options::none,
-        error
-    };
-    if (error) {
-        throw std::runtime_error(
-            "cannot scan synchronization directory for local moves: " +
-            error.message()
-        );
-    }
-    const std::filesystem::recursive_directory_iterator end;
-    while (iterator != end) {
-        const auto path = iterator->path();
-        const auto status = iterator->symlink_status(error);
-        if (error) {
-            throw std::runtime_error(
-                "cannot inspect local move candidate '" + path.string() +
-                "': " + error.message()
-            );
-        }
-        const bool directory = std::filesystem::is_directory(status);
-        const bool regular = std::filesystem::is_regular_file(status);
-        if (std::filesystem::is_symlink(status) ||
-            (!directory && !regular) || reserved_local_name(path)) {
-            if (directory) {
-                iterator.disable_recursion_pending();
+        {
+            .open = "cannot scan synchronization directory for local moves",
+            .inspect = "cannot inspect local move candidate",
+            .advance = "cannot continue local move scan",
+        },
+        [&](const std::filesystem::directory_entry& entry,
+            const std::filesystem::file_status& status) {
+            const auto path = entry.path();
+            const bool directory = std::filesystem::is_directory(status);
+            const bool regular = std::filesystem::is_regular_file(status);
+            if (std::filesystem::is_symlink(status) ||
+                (!directory && !regular) || reserved_local_name(path)) {
+                return TreeWalkAction::skip_subtree;
             }
-        } else {
-            const auto relative =
-                path.lexically_relative(sync_root.path());
+            const auto relative = path.lexically_relative(sync_root.path());
             const auto remote_path = relative.generic_string();
             std::optional<std::uint64_t> size;
             if (regular) {
-                size = iterator->file_size(error);
+                std::error_code error;
+                size = entry.file_size(error);
                 if (error) {
                     throw std::runtime_error(
                         "cannot read local move candidate size '" +
@@ -86,28 +73,19 @@ LocalMoveDiscovery discover_local_moves(
                     );
                 }
             }
-            const auto identity = sync_root.identity(
-                path,
-                filesystem_item_kind(directory)
-            );
-            const auto key = identity_key(
-                identity.device,
-                identity.inode
-            );
-            if (!current.emplace(
-                    key,
-                    CurrentItem{path, remote_path, size, directory}
-                ).second) {
+            const auto identity =
+                sync_root.identity(path, filesystem_item_kind(directory));
+            const auto key = identity_key(identity.device, identity.inode);
+            if (!current
+                     .emplace(
+                         key, CurrentItem{path, remote_path, size, directory}
+                     )
+                     .second) {
                 ambiguous.insert(key);
             }
+            return TreeWalkAction::continue_walk;
         }
-        iterator.increment(error);
-        if (error) {
-            throw std::runtime_error(
-                "cannot continue local move scan: " + error.message()
-            );
-        }
-    }
+    );
 
     const auto tracked = items.drive_items(drive_id);
     std::unordered_set<std::string> tracked_paths;

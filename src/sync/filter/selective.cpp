@@ -1,6 +1,7 @@
 #include "sync/filter/selective.hpp"
 
 #include "util/ascii.hpp"
+#include "sync/filesystem/traversal.hpp"
 #include "onedrive/util/sha256.hpp"
 #include "sync/filter/remote_path.hpp"
 
@@ -170,41 +171,29 @@ discover_nosync_directories(const std::filesystem::path& root) {
     }
 
     std::vector<std::string> directories;
-    std::filesystem::recursive_directory_iterator iterator{
-        root, std::filesystem::directory_options::none, error
-    };
-    if (error) {
-        throw std::runtime_error(
-            "cannot scan synchronization root for .nosync markers: " +
-            error.message()
-        );
-    }
-    const std::filesystem::recursive_directory_iterator end;
-    while (iterator != end) {
-        const auto status = iterator->symlink_status(error);
-        if (error) {
-            throw std::runtime_error(
-                "cannot inspect .nosync candidate '" +
-                iterator->path().string() + "': " + error.message()
-            );
-        }
-        if (std::filesystem::is_directory(status)) {
-            const auto relative =
-                iterator->path().lexically_relative(root).generic_string();
-            if (nosync_marker(iterator->path(), relative)) {
-                directories.push_back(relative);
-                iterator.disable_recursion_pending();
+    walk_directory_tree(
+        root,
+        {
+            .open = "cannot scan synchronization root for .nosync markers",
+            .inspect = "cannot inspect .nosync candidate",
+            .advance = "cannot continue .nosync marker scan",
+        },
+        [&](const std::filesystem::directory_entry& entry,
+            const std::filesystem::file_status& status) {
+            if (std::filesystem::is_directory(status)) {
+                const auto relative =
+                    entry.path().lexically_relative(root).generic_string();
+                if (nosync_marker(entry.path(), relative)) {
+                    directories.push_back(relative);
+                    return TreeWalkAction::skip_subtree;
+                }
             }
-        } else if (std::filesystem::is_symlink(status)) {
-            iterator.disable_recursion_pending();
+            if (std::filesystem::is_symlink(status)) {
+                return TreeWalkAction::skip_subtree;
+            }
+            return TreeWalkAction::continue_walk;
         }
-        iterator.increment(error);
-        if (error) {
-            throw std::runtime_error(
-                "cannot continue .nosync marker scan: " + error.message()
-            );
-        }
-    }
+    );
     std::ranges::sort(directories);
     return directories;
 }
