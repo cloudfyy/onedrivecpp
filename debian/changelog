@@ -1,3 +1,12 @@
+onedrive-cpp (0.10.2-1~ubuntu24.04) noble; urgency=medium
+
+  * Replace the top-level doctor, status, drives, shared, sites, and quota
+    commands with the inspect health, status, drives, shared, sites, and quota
+    command group, including matching TUI titles, completions, tests, and
+    English and Chinese documentation.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Wed, 07 Oct 2026 06:53:37 +0000
+
 onedrive-cpp (0.10.1-1~ubuntu24.04) noble; urgency=medium
 
   * Replace the top-level auth and logout commands with the account login and
