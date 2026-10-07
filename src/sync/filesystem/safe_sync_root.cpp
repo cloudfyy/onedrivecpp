@@ -260,7 +260,7 @@ bool SafeSyncRoot::rename_no_replace(
 
 FilesystemIdentity SafeSyncRoot::identity(
     const std::filesystem::path& path,
-    bool directory
+    FilesystemItemKind kind
 ) const {
     const auto relative = relative_path(path);
     Descriptor parent{open_beneath(
@@ -287,6 +287,7 @@ FilesystemIdentity SafeSyncRoot::identity(
             path.string() + "': " + std::strerror(errno)
         );
     }
+    const bool directory = kind == FilesystemItemKind::directory;
     if (S_ISLNK(status.st_mode) ||
         (directory ? !S_ISDIR(status.st_mode) : !S_ISREG(status.st_mode))) {
         throw SafePathConflictError(
@@ -302,7 +303,7 @@ FilesystemIdentity SafeSyncRoot::identity(
 
 bool SafeSyncRoot::remove(
     const std::filesystem::path& path,
-    bool directory
+    FilesystemItemKind kind
 ) const {
     const auto relative = relative_path(path);
     Descriptor parent{open_beneath(
@@ -333,6 +334,7 @@ bool SafeSyncRoot::remove(
             "': " + std::strerror(errno)
         );
     }
+    const bool directory = kind == FilesystemItemKind::directory;
     if (S_ISLNK(status.st_mode) ||
         (directory ? !S_ISDIR(status.st_mode) : !S_ISREG(status.st_mode))) {
         throw SafePathConflictError(

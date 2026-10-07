@@ -104,7 +104,10 @@ ExecutionSummary execute_plan(
                 permissions
             );
             const auto identity =
-                safe_root.identity(state.local_path, true);
+                safe_root.identity(
+                    state.local_path,
+                    detail::FilesystemItemKind::directory
+                );
             state.local_device = identity.device;
             state.local_inode = identity.inode;
             ++prepared_directory_count;
@@ -215,12 +218,15 @@ ExecutionSummary execute_plan(
                 item.remote_path
             );
             state.local_path = destination;
-            state.local_size = static_cast<std::int64_t>(
+            state.local_size = detail::persisted_file_size(
                 std::filesystem::file_size(destination)
             );
             state.local_modified_ticks = detail::modified_ticks(destination);
             const auto identity =
-                safe_root.identity(destination, false);
+                safe_root.identity(
+                    destination,
+                    detail::FilesystemItemKind::file
+                );
             state.local_device = identity.device;
             state.local_inode = identity.inode;
             ++reused_count;

@@ -286,7 +286,7 @@ HttpResult perform_request(
         .stop_token = request.stop_token,
         .cancelled = false,
         .failed = false,
-        .error = {},
+        .exception = {},
     };
     std::array<char, CURL_ERROR_SIZE> error_buffer{};
     HeaderList headers;
@@ -508,7 +508,7 @@ HttpResult perform_request(
                 return std::unexpected(HttpError{
                     .message =
                         "cancelled download checkpoint callback failed: " +
-                        write_context.failure.detail,
+                        callback_failure_detail(write_context.failure),
                 });
             }
             return std::unexpected(HttpError{
@@ -519,7 +519,13 @@ HttpResult perform_request(
         if (progress_context.failed) {
             return std::unexpected(HttpError{
                 .message = "download progress callback failed: " +
-                           progress_context.error,
+                           callback_failure_detail(CallbackFailure{
+                               .kind =
+                                   CallbackFailureKind::data_callback,
+                               .system_error = 0,
+                               .detail = {},
+                               .exception = progress_context.exception,
+                           }),
             });
         }
         if (header_context.size_exceeded) {
@@ -553,20 +559,20 @@ HttpResult perform_request(
         if (write_context.failure.kind == CallbackFailureKind::throttle) {
             return std::unexpected(HttpError{
                 .message = "download throttle failed: " +
-                           write_context.failure.detail,
+                           callback_failure_detail(write_context.failure),
             });
         }
         if (read_context.failure.kind == CallbackFailureKind::throttle) {
             return std::unexpected(HttpError{
                 .message = "upload throttle failed: " +
-                           read_context.failure.detail,
+                           callback_failure_detail(read_context.failure),
             });
         }
         if (write_context.failure.kind ==
             CallbackFailureKind::data_callback) {
             return std::unexpected(HttpError{
                 .message = "download data callback failed: " +
-                           write_context.failure.detail,
+                           callback_failure_detail(write_context.failure),
             });
         }
         if (const auto error = callback_storage_error(

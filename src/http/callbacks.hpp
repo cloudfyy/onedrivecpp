@@ -38,7 +38,8 @@ enum class CallbackStorage {
 struct CallbackFailure {
     CallbackFailureKind kind{CallbackFailureKind::none};
     int system_error{};
-    std::string detail;
+    std::string_view detail;
+    std::exception_ptr exception;
 };
 
 enum class ResponseAcceptance {
@@ -91,40 +92,45 @@ struct ProgressContext {
     std::stop_token stop_token;
     bool cancelled{false};
     bool failed{false};
-    std::string error;
+    std::exception_ptr exception;
 };
 
 void record_callback_failure(
-    CallbackFailure& failure, std::exception_ptr exception
+    CallbackFailure& failure,
+    std::exception_ptr exception,
+    CallbackFailureKind kind = CallbackFailureKind::internal
 ) noexcept;
+[[nodiscard]] std::string callback_failure_detail(
+    const CallbackFailure& failure
+);
 [[nodiscard]] std::string_view callback_storage_error(
     CallbackFailureKind failure, CallbackStorage storage
 ) noexcept;
-bool make_download_checkpoint(WriteContext& context);
+bool make_download_checkpoint(WriteContext& context) noexcept;
 std::size_t read_request_body(
     char* destination,
     std::size_t size,
     std::size_t count,
     void* user_data
-);
+) noexcept;
 std::size_t write_response(
     char* data,
     std::size_t size,
     std::size_t count,
     void* context
-);
+) noexcept;
 std::size_t write_header(
     char* data,
     std::size_t size,
     std::size_t count,
     void* context
-);
+) noexcept;
 int report_progress(
     void* context,
     curl_off_t download_total,
     curl_off_t downloaded,
     curl_off_t upload_total,
     curl_off_t uploaded
-);
+) noexcept;
 
 }  // namespace onedrive::http::detail

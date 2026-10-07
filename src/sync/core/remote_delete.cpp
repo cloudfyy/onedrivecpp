@@ -129,7 +129,7 @@ std::size_t execute_removals(
                     }
                     const auto identity = safe_root.identity(
                         candidate,
-                        previous.directory
+                        detail::filesystem_item_kind(previous.directory)
                     );
                     if (identity.device ==
                             pending->second.source_device &&
@@ -199,7 +199,7 @@ std::size_t execute_removals(
             try {
                 if (safe_root.remove(
                         local_path,
-                        previous.directory
+                        detail::filesystem_item_kind(previous.directory)
                     )) {
                     ++removed;
                     console.message(

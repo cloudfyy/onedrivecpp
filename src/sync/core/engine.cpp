@@ -33,8 +33,10 @@
 #include <exception>
 #include <filesystem>
 #include <format>
+#include <functional>
 #include <optional>
 #include <stdexcept>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -42,6 +44,14 @@
 
 namespace onedrive::sync {
 namespace {
+
+struct TransparentStringHash {
+    using is_transparent = void;
+
+    [[nodiscard]] std::size_t operator()(std::string_view value) const noexcept {
+        return std::hash<std::string_view>{}(value);
+    }
+};
 
 void report_dry_run_configuration(
     const config::Config& config,
@@ -509,20 +519,25 @@ int SyncEngine::synchronize() {
             );
         }
         {
-            std::unordered_set<std::string> blocked_ids;
-            blocked_ids.reserve(previously_blocked.size());
+            std::unordered_set<
+                std::string,
+                TransparentStringHash,
+                std::equal_to<>
+            > tracked_ids;
+            tracked_ids.reserve(
+                tracked_items.size() + previously_blocked.size()
+            );
+            for (const auto& item : tracked_items) {
+                tracked_ids.insert(item.remote_id);
+            }
             for (const auto& item : previously_blocked) {
-                blocked_ids.insert(item.remote_id);
+                tracked_ids.insert(item.remote_id);
             }
             auto filtered = detail::filter_delta(
                 std::move(delta),
                 sync_filter,
                 [&](std::string_view remote_id) {
-                    return blocked_ids.contains(std::string{remote_id}) ||
-                           items_.find(
-                               config_.drive_id,
-                               std::string{remote_id}
-                           ).has_value();
+                    return tracked_ids.contains(remote_id);
                 },
                 apply_mode
             );
@@ -564,7 +579,7 @@ int SyncEngine::synchronize() {
                     }
                     const auto identity = safe_root->identity(
                         previous->local_path,
-                        false
+                        detail::FilesystemItemKind::file
                     );
                     upload_suppressions.push_back({
                         .drive_id = config_.drive_id,

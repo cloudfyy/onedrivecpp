@@ -578,7 +578,10 @@ int test_local_deletions() {
     selective_config.sync_list = sync_list;
     selective_items.saved_sync_filter_fingerprint =
         onedrive::sync::detail::SyncList::load(
-            sync_list, selective_config.sync_root_files
+            sync_list,
+            onedrive::sync::detail::root_file_policy(
+                selective_config.sync_root_files
+            )
         )
             .fingerprint();
     static_cast<void>(onedrive::sync::SyncEngine{

@@ -86,7 +86,10 @@ LocalMoveDiscovery discover_local_moves(
                     );
                 }
             }
-            const auto identity = sync_root.identity(path, directory);
+            const auto identity = sync_root.identity(
+                path,
+                filesystem_item_kind(directory)
+            );
             const auto key = identity_key(
                 identity.device,
                 identity.inode
@@ -295,7 +298,7 @@ bool local_move_identity_matches(
     try {
         const auto identity = sync_root.identity(
             move.destination_local_path,
-            move.directory
+            filesystem_item_kind(move.directory)
         );
         return identity.device == move.local_device &&
                identity.inode == move.local_inode;

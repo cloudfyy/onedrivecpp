@@ -74,7 +74,7 @@ std::vector<UploadCandidate> discover_uploads(
             if (expected_type) {
                 const auto identity = sync_root.identity(
                     item.local_path,
-                    item.directory
+                    filesystem_item_kind(item.directory)
                 );
                 if (item.local_device != identity.device ||
                     item.local_inode != identity.inode) {
@@ -129,7 +129,7 @@ std::vector<UploadCandidate> discover_uploads(
             std::filesystem::is_regular_file(status)) {
             const auto identity = sync_root.identity(
                 suppression.local_path,
-                false
+                FilesystemItemKind::file
             );
             matches =
                 identity.device == suppression.source_device &&

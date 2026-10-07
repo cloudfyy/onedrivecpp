@@ -13,7 +13,10 @@ int test_safe() {
     auto& space = fixture.space;
     auto& graph = fixture.graph;
     auto& items = fixture.items;
-    if (safe_root.remove(root / "missing.txt", false)) {
+    if (safe_root.remove(
+            root / "missing.txt",
+            onedrive::sync::detail::FilesystemItemKind::file
+        )) {
         return fail("safe removal reported a missing file as removed");
     }
     const auto removable_file = root / "remove.txt";
@@ -21,13 +24,19 @@ int test_safe() {
         std::ofstream output{removable_file, std::ios::binary};
         output << "remove";
     }
-    if (!safe_root.remove(removable_file, false) ||
+    if (!safe_root.remove(
+            removable_file,
+            onedrive::sync::detail::FilesystemItemKind::file
+        ) ||
         std::filesystem::exists(removable_file)) {
         return fail("safe removal did not remove a regular file");
     }
     const auto removable_directory = root / "remove-directory";
     std::filesystem::create_directory(removable_directory);
-    if (!safe_root.remove(removable_directory, true) ||
+    if (!safe_root.remove(
+            removable_directory,
+            onedrive::sync::detail::FilesystemItemKind::directory
+        ) ||
         std::filesystem::exists(removable_directory)) {
         return fail("safe removal did not remove an empty directory");
     }
@@ -38,14 +47,20 @@ int test_safe() {
         output << "local";
     }
     try {
-        static_cast<void>(safe_root.remove(nonempty_directory, true));
+        static_cast<void>(safe_root.remove(
+            nonempty_directory,
+            onedrive::sync::detail::FilesystemItemKind::directory
+        ));
         return fail("safe removal accepted a non-empty directory");
     } catch (const detail::SafePathConflictError&) {
     }
     const auto removal_symlink = root / "remove-link";
     std::filesystem::create_symlink("missing-target", removal_symlink);
     try {
-        static_cast<void>(safe_root.remove(removal_symlink, false));
+        static_cast<void>(safe_root.remove(
+            removal_symlink,
+            onedrive::sync::detail::FilesystemItemKind::file
+        ));
         return fail("safe removal accepted a symbolic link");
     } catch (const detail::SafePathConflictError&) {
     }

@@ -493,11 +493,14 @@ storage::ItemState commit_download(
                 );
             }
             installing.state.local_size =
-                static_cast<std::int64_t>(installing.downloaded_size);
+                persisted_file_size(installing.downloaded_size);
             installing.state.local_modified_ticks =
                 modified_ticks(installing.destination);
             const auto identity =
-                sync_root.identity(installing.destination, false);
+                sync_root.identity(
+                    installing.destination,
+                    FilesystemItemKind::file
+                );
             installing.state.local_device = identity.device;
             installing.state.local_inode = identity.inode;
             items.upsert(installing.state);

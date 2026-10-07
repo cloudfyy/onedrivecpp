@@ -58,8 +58,10 @@ public:
         if (descriptor_ == descriptor) {
             return;
         }
-        static_cast<void>(close());
-        descriptor_ = descriptor;
+        const int previous = std::exchange(descriptor_, descriptor);
+        if (previous != -1) {
+            static_cast<void>(::close(previous));
+        }
     }
 
 private:

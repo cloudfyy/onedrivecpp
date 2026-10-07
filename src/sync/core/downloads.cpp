@@ -127,10 +127,14 @@ DownloadBatch download_files(
             try {
                 auto operation = operations.acquire(
                     task.state.drive_id,
-                    task.item.id
+                    task.item.id,
+                    stop.get_token()
                 );
                 auto destination_operation =
-                    operations.acquire_destination(task.destination);
+                    operations.acquire_destination(
+                        task.destination,
+                        stop.get_token()
+                    );
                 if (!detail::local_file_matches_baseline(
                         task.destination,
                         baseline
@@ -198,6 +202,8 @@ DownloadBatch download_files(
                     expected_size,
                     util::ProgressState::completed
                 );
+            } catch (const detail::ItemOperationCancelledError&) {
+                return;
             } catch (const detail::DownloadSpaceCancelledError&) {
                 return;
             } catch (const graph::DownloadCancelledError&) {

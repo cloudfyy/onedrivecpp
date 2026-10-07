@@ -167,47 +167,31 @@ bool remote_file_content_unchanged(
     }
 }
 
-}  // namespace
+struct LocalMoveCandidate {
+    graph::RemoteItem item;
+    storage::ItemState previous;
+    std::filesystem::path destination;
+};
 
-MoveSummary execute_moves(
-    detail::SyncPlan& plan,
-    const detail::SafeSyncRoot& safe_root,
-    const std::string& drive_id,
-    storage::ItemStore& items,
-    detail::ItemOperationCoordinator& operations,
-    const cli::Console& console,
-    config::SyncPermissionsMode permissions
+enum class MoveActionKind {
+    direct,
+    stage,
+};
+
+struct MoveAction {
+    std::size_t move_index{0};
+    MoveActionKind kind{MoveActionKind::direct};
+};
+
+struct MoveSchedule {
+    std::vector<std::vector<std::size_t>> dependencies;
+    std::vector<MoveAction> actions;
+};
+
+MoveSchedule build_move_schedule(
+    const std::vector<LocalMoveCandidate>& moves,
+    const std::unordered_map<std::string, storage::PendingMove>& pending_moves
 ) {
-    struct Move {
-        graph::RemoteItem item;
-        storage::ItemState previous;
-        std::filesystem::path destination;
-    };
-    std::vector<Move> moves;
-    for (std::size_t index = 0; index < plan.move_count(); ++index) {
-        const auto& item = plan.move(index);
-        if (auto previous = items.find(drive_id, item.id);
-            previous.has_value()) {
-            moves.push_back({
-                .item = item,
-                .previous = std::move(previous).value(),
-                .destination = plan.state_for(item.id).local_path,
-            });
-        }
-    }
-    std::unordered_map<std::string, storage::PendingMove> pending_moves;
-    for (auto pending : items.pending_moves(drive_id)) {
-        pending_moves.emplace(pending.remote_id, std::move(pending));
-    }
-
-    MoveSummary summary;
-    const auto block_move = [&](const Move& move,
-                                std::string code,
-                                std::string message) {
-        plan.block(move.item, std::move(code), std::move(message));
-        summary.blocked.insert(move.item.id);
-        report_blocked(plan.blocked(plan.blocked_count() - 1), console);
-    };
     const auto same_or_descendant = [](
                                         const std::filesystem::path& path,
                                         const std::filesystem::path& directory
@@ -218,16 +202,22 @@ MoveSummary execute_moves(
                 !relative.is_absolute());
     };
 
-    std::vector<std::vector<std::size_t>> dependencies(moves.size());
+    MoveSchedule schedule{
+        .dependencies =
+            std::vector<std::vector<std::size_t>>(moves.size()),
+        .actions = {},
+    };
     std::vector<std::vector<std::size_t>> dependents(moves.size());
     const auto add_dependency = [&](std::size_t move,
                                     std::size_t prerequisite) {
         if (move == prerequisite ||
-            std::ranges::find(dependencies[move], prerequisite) !=
-                dependencies[move].end()) {
+            std::ranges::find(
+                schedule.dependencies[move],
+                prerequisite
+            ) != schedule.dependencies[move].end()) {
             return;
         }
-        dependencies[move].push_back(prerequisite);
+        schedule.dependencies[move].push_back(prerequisite);
         dependents[prerequisite].push_back(move);
     };
     for (std::size_t index = 0; index < moves.size(); ++index) {
@@ -256,12 +246,9 @@ MoveSummary execute_moves(
 
     std::vector<std::size_t> remaining_dependencies(moves.size());
     for (std::size_t index = 0; index < moves.size(); ++index) {
-        remaining_dependencies[index] = dependencies[index].size();
+        remaining_dependencies[index] =
+            schedule.dependencies[index].size();
     }
-    enum class MoveActionKind {
-        direct,
-        stage,
-    };
     enum class MoveScheduleState {
         pending,
         scheduled,
@@ -270,12 +257,7 @@ MoveSummary execute_moves(
         occupied,
         vacated,
     };
-    struct MoveAction {
-        std::size_t move_index{0};
-        MoveActionKind kind{MoveActionKind::direct};
-    };
-    std::vector<MoveAction> move_actions;
-    move_actions.reserve(moves.size() * 2U);
+    schedule.actions.reserve(moves.size() * 2U);
     std::vector<MoveScheduleState> scheduled(
         moves.size(), MoveScheduleState::pending
     );
@@ -295,13 +277,14 @@ MoveSummary execute_moves(
         const auto pending = pending_moves.find(moves[index].item.id);
         if (pending != pending_moves.end() &&
             !pending->second.staging_path.empty()) {
-            move_actions.push_back({
+            schedule.actions.push_back({
                 .move_index = index,
                 .kind = MoveActionKind::stage,
             });
             vacate_source(index);
         }
     }
+
     std::size_t scheduled_count = 0;
     while (scheduled_count < moves.size()) {
         std::optional<std::size_t> ready;
@@ -325,7 +308,7 @@ MoveSummary execute_moves(
         if (ready) {
             scheduled[*ready] = MoveScheduleState::scheduled;
             ++scheduled_count;
-            move_actions.push_back({
+            schedule.actions.push_back({
                 .move_index = *ready,
                 .kind = MoveActionKind::direct,
             });
@@ -342,7 +325,7 @@ MoveSummary execute_moves(
         while (!seen[cursor]) {
             seen[cursor] = step++;
             const auto prerequisite = std::ranges::find_if(
-                dependencies[cursor],
+                schedule.dependencies[cursor],
                 [&](std::size_t candidate) {
                     return scheduled[candidate] ==
                                MoveScheduleState::pending &&
@@ -350,19 +333,60 @@ MoveSummary execute_moves(
                                SourceState::occupied;
                 }
             );
-            if (prerequisite == dependencies[cursor].end()) {
+            if (prerequisite ==
+                schedule.dependencies[cursor].end()) {
                 throw std::logic_error(
                     "move dependency graph cannot identify its cycle"
                 );
             }
             cursor = *prerequisite;
         }
-        move_actions.push_back({
+        schedule.actions.push_back({
             .move_index = cursor,
             .kind = MoveActionKind::stage,
         });
         vacate_source(cursor);
     }
+    return schedule;
+}
+
+}  // namespace
+
+MoveSummary execute_moves(
+    detail::SyncPlan& plan,
+    const detail::SafeSyncRoot& safe_root,
+    const std::string& drive_id,
+    storage::ItemStore& items,
+    detail::ItemOperationCoordinator& operations,
+    const cli::Console& console,
+    config::SyncPermissionsMode permissions
+) {
+    std::vector<LocalMoveCandidate> moves;
+    for (std::size_t index = 0; index < plan.move_count(); ++index) {
+        const auto& item = plan.move(index);
+        if (auto previous = items.find(drive_id, item.id);
+            previous.has_value()) {
+            moves.push_back({
+                .item = item,
+                .previous = std::move(previous).value(),
+                .destination = plan.state_for(item.id).local_path,
+            });
+        }
+    }
+    std::unordered_map<std::string, storage::PendingMove> pending_moves;
+    for (auto pending : items.pending_moves(drive_id)) {
+        pending_moves.emplace(pending.remote_id, std::move(pending));
+    }
+
+    MoveSummary summary;
+    const auto block_move = [&](const LocalMoveCandidate& move,
+                                std::string code,
+                                std::string message) {
+        plan.block(move.item, std::move(code), std::move(message));
+        summary.blocked.insert(move.item.id);
+        report_blocked(plan.blocked(plan.blocked_count() - 1), console);
+    };
+    auto schedule = build_move_schedule(moves, pending_moves);
 
     struct DirectoryMove {
         std::filesystem::path source;
@@ -383,7 +407,7 @@ MoveSummary execute_moves(
         return source;
     };
 
-    for (const auto& action : move_actions) {
+    for (const auto& action : schedule.actions) {
         const auto move_index = action.move_index;
         const auto& move = moves[move_index];
         if (summary.blocked.contains(move.item.id)) {
@@ -451,7 +475,9 @@ MoveSummary execute_moves(
                     }
                     const auto identity = safe_root.identity(
                         path,
-                        move.previous.directory
+                        detail::filesystem_item_kind(
+                            move.previous.directory
+                        )
                     );
                     return identity.device == pending.source_device &&
                            identity.inode == pending.source_inode;
@@ -583,7 +609,9 @@ MoveSummary execute_moves(
                     }
                     const auto identity = safe_root.identity(
                         source,
-                        move.previous.directory
+                        detail::filesystem_item_kind(
+                            move.previous.directory
+                        )
                     );
                     storage::PendingMove pending{
                         .drive_id = drive_id,
@@ -664,14 +692,15 @@ MoveSummary execute_moves(
             continue;
         }
         const auto failed_prerequisite = std::ranges::find_if(
-            dependencies[move_index],
+            schedule.dependencies[move_index],
             [&](std::size_t prerequisite) {
                 return summary.blocked.contains(
                     moves[prerequisite].item.id
                 );
             }
         );
-        if (failed_prerequisite != dependencies[move_index].end()) {
+        if (failed_prerequisite !=
+            schedule.dependencies[move_index].end()) {
             block_move(
                 move,
                 "move_dependency_blocked",
@@ -822,7 +851,7 @@ MoveSummary execute_moves(
                 expected_type(destination_status)) {
                 const auto identity = safe_root.identity(
                     destination,
-                    move.previous.directory
+                    detail::filesystem_item_kind(move.previous.directory)
                 );
                 pending_destination_matches =
                     identity.device == pending->source_device &&
@@ -874,7 +903,9 @@ MoveSummary execute_moves(
                 if (pending != nullptr) {
                     const auto identity = safe_root.identity(
                         destination,
-                        move.previous.directory
+                        detail::filesystem_item_kind(
+                            move.previous.directory
+                        )
                     );
                     if (identity.device != pending->source_device ||
                         identity.inode != pending->source_inode) {
@@ -922,7 +953,7 @@ MoveSummary execute_moves(
                 );
                 const auto source_identity = safe_root.identity(
                     source,
-                    move.previous.directory
+                    detail::filesystem_item_kind(move.previous.directory)
                 );
                 if (pending != nullptr &&
                     (source_identity.device != pending->source_device ||
@@ -984,7 +1015,7 @@ MoveSummary execute_moves(
                 });
             }
             if (!move.previous.directory) {
-                state.local_size = static_cast<std::int64_t>(
+                state.local_size = detail::persisted_file_size(
                     std::filesystem::file_size(destination)
                 );
                 state.local_modified_ticks =
@@ -999,7 +1030,7 @@ MoveSummary execute_moves(
             }
             const auto identity = safe_root.identity(
                 destination,
-                move.previous.directory
+                detail::filesystem_item_kind(move.previous.directory)
             );
             state.local_device = identity.device;
             state.local_inode = identity.inode;

@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <fcntl.h>
 #include <fstream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -41,6 +42,21 @@ bool rejects_path_with(
 
 int main() {
     namespace detail = onedrive::sync::detail;
+
+    if (detail::persisted_file_size(
+            static_cast<std::uintmax_t>(
+                std::numeric_limits<std::int64_t>::max()
+            )
+        ) != std::numeric_limits<std::int64_t>::max()) {
+        return fail("maximum persistent file size was not preserved");
+    }
+    try {
+        static_cast<void>(detail::persisted_file_size(
+            std::numeric_limits<std::uintmax_t>::max()
+        ));
+        return fail("unrepresentable persistent file size was accepted");
+    } catch (const std::runtime_error&) {
+    }
 
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "root";

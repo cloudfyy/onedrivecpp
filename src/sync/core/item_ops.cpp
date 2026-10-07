@@ -81,7 +81,8 @@ void ItemOperationCoordinator::Lease::release() noexcept {
 
 ItemOperationCoordinator::Lease ItemOperationCoordinator::acquire(
     std::string drive_id,
-    std::string remote_id
+    std::string remote_id,
+    std::stop_token stop_token
 ) {
     if (drive_id.empty() || remote_id.empty()) {
         throw std::invalid_argument(
@@ -95,9 +96,13 @@ ItemOperationCoordinator::Lease ItemOperationCoordinator::acquire(
     };
     {
         std::unique_lock lock{mutex_};
-        condition_.wait(lock, [&] {
-            return !active_.contains(key);
-        });
+        if (!condition_.wait(lock, stop_token, [&] {
+                return !active_.contains(key);
+            })) {
+            throw ItemOperationCancelledError{
+                "item operation coordination was cancelled"
+            };
+        }
         active_.insert(key);
     }
     return Lease{*this, std::move(key)};
@@ -105,7 +110,8 @@ ItemOperationCoordinator::Lease ItemOperationCoordinator::acquire(
 
 ItemOperationCoordinator::Lease
 ItemOperationCoordinator::acquire_destination(
-    const std::filesystem::path& destination
+    const std::filesystem::path& destination,
+    std::stop_token stop_token
 ) {
     ItemKey key{
         .scope = ItemKey::Scope::destination,
@@ -114,9 +120,13 @@ ItemOperationCoordinator::acquire_destination(
     };
     {
         std::unique_lock lock{mutex_};
-        condition_.wait(lock, [&] {
-            return !active_.contains(key);
-        });
+        if (!condition_.wait(lock, stop_token, [&] {
+                return !active_.contains(key);
+            })) {
+            throw ItemOperationCancelledError{
+                "destination operation coordination was cancelled"
+            };
+        }
         active_.insert(key);
     }
     return Lease{*this, std::move(key)};

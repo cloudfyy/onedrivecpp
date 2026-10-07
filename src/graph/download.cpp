@@ -359,7 +359,7 @@ void MicrosoftGraphClient::download_file(
         std::uint64_t offset;
     };
     const auto download =
-        [&](const std::function<DownloadAttempt()>& make_attempt,
+        [&]<typename MakeAttempt>(MakeAttempt&& make_attempt,
             const DownloadProgress& chunk_progress,
             std::string_view description,
             const DownloadCheckpoint& chunk_checkpoint = {},

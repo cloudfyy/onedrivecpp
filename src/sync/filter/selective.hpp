@@ -24,6 +24,15 @@ enum class SyncItemKind {
     directory,
 };
 
+enum class RootFilePolicy {
+    exclude,
+    include,
+};
+
+[[nodiscard]] constexpr RootFilePolicy root_file_policy(bool include) noexcept {
+    return include ? RootFilePolicy::include : RootFilePolicy::exclude;
+}
+
 struct SyncFilterPolicy {
     std::optional<std::filesystem::path> rules_path;
     std::filesystem::path sync_root;
@@ -36,7 +45,10 @@ struct SyncFilterPolicy {
 class SyncList {
 public:
     [[nodiscard]] static SyncList
-    load(const std::filesystem::path& path, bool include_root_files = false);
+    load(
+        const std::filesystem::path& path,
+        RootFilePolicy root_files = RootFilePolicy::exclude
+    );
     [[nodiscard]] static SyncList configured(const SyncFilterPolicy& policy);
 
     [[nodiscard]] bool includes(
@@ -112,14 +124,12 @@ struct FilteredDelta {
 class TrackedItemPredicate {
 public:
     template <typename Callable>
-        requires std::predicate<const std::remove_reference_t<Callable>&,
-                                std::string_view>
-    TrackedItemPredicate(Callable&& callable) noexcept
+        requires std::predicate<const Callable&, std::string_view>
+    explicit TrackedItemPredicate(Callable& callable) noexcept
         : object_{std::addressof(callable)},
           invoke_{[](const void* object, std::string_view remote_id) {
               return std::invoke(
-                  *static_cast<
-                      const std::remove_reference_t<Callable>*>(object),
+                  *static_cast<const Callable*>(object),
                   remote_id
               );
           }} {}
@@ -133,11 +143,30 @@ private:
     bool (*invoke_)(const void*, std::string_view);
 };
 
-[[nodiscard]] FilteredDelta filter_delta(
+[[nodiscard]] FilteredDelta filter_delta_impl(
     graph::DeltaResult delta,
     const SyncList& sync_list,
     TrackedItemPredicate is_tracked,
     storage::DeltaApplyMode apply_mode
 );
+
+template <typename Predicate>
+    requires std::predicate<
+        const std::remove_reference_t<Predicate>&,
+        std::string_view
+    >
+[[nodiscard]] FilteredDelta filter_delta(
+    graph::DeltaResult delta,
+    const SyncList& sync_list,
+    Predicate&& is_tracked,
+    storage::DeltaApplyMode apply_mode
+) {
+    return filter_delta_impl(
+        std::move(delta),
+        sync_list,
+        TrackedItemPredicate{is_tracked},
+        apply_mode
+    );
+}
 
 } // namespace onedrive::sync::detail

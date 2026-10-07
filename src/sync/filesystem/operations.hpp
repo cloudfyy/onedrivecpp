@@ -50,6 +50,7 @@ enum class MissingPathPolicy {
     const std::filesystem::path& path
 );
 [[nodiscard]] std::int64_t modified_ticks(int descriptor);
+[[nodiscard]] std::int64_t persisted_file_size(std::uintmax_t size);
 bool remove_no_symlinks(
     const std::filesystem::path& path,
     MissingPathPolicy missing_path = MissingPathPolicy::ignore

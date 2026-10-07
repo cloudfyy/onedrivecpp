@@ -149,7 +149,10 @@ LocalCommittedDirectoryUpload commit_created_directory(
     }
     auto state =
         uploaded_directory_state(remote, pending.local_path, pending.drive_id);
-    const auto identity = sync_root.identity(pending.local_path, true);
+    const auto identity = sync_root.identity(
+        pending.local_path,
+        FilesystemItemKind::directory
+    );
     state.local_device = identity.device;
     state.local_inode = identity.inode;
     items.commit_upload(pending, std::move(state));

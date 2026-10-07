@@ -3,6 +3,7 @@
 #include "support/common.hpp"
 
 #include <cstdlib>
+#include <concepts>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -15,6 +16,19 @@ namespace {
 
 using onedrive::storage::DeltaApplyMode;
 using onedrive::test::fail;
+
+struct AlwaysTracked {
+    bool operator()(std::string_view) const {
+        return true;
+    }
+};
+
+static_assert(std::constructible_from<
+              onedrive::sync::detail::TrackedItemPredicate,
+              AlwaysTracked&>);
+static_assert(!std::constructible_from<
+              onedrive::sync::detail::TrackedItemPredicate,
+              AlwaysTracked>);
 
 onedrive::graph::RemoteItem item(
     std::string id,
@@ -101,7 +115,10 @@ int main() {
     if (empty_rules.includes("anything.txt", file)) {
         return fail("an empty sync list did not exclude everything");
     }
-    const auto root_file_rules = detail::SyncList::load(rules_path, true);
+    const auto root_file_rules = detail::SyncList::load(
+        rules_path,
+        detail::RootFilePolicy::include
+    );
     if (!root_file_rules.includes("root.txt", file) ||
         root_file_rules.includes("Folder/nested.txt", file) ||
         root_file_rules.includes("RootFolder", directory) ||
@@ -109,8 +126,10 @@ int main() {
         return fail("implicit root-file selection semantics were incorrect");
     }
     write_rules(rules_path, "!/blocked.txt\n");
-    const auto excluded_root_file_rules =
-        detail::SyncList::load(rules_path, true);
+    const auto excluded_root_file_rules = detail::SyncList::load(
+        rules_path,
+        detail::RootFilePolicy::include
+    );
     if (excluded_root_file_rules.includes("blocked.txt", file) ||
         !excluded_root_file_rules.includes("included.txt", file)) {
         return fail("root-file exclusion did not override implicit inclusion");

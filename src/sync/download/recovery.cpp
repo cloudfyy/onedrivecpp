@@ -221,11 +221,14 @@ void recover_pending_downloads(
         apply_remote_modified_time(destination, item.last_modified);
         metadata.write_remote_identity(item, destination);
         fsync_file(destination);
-        download.item.local_size = static_cast<std::int64_t>(
+        download.item.local_size = persisted_file_size(
             std::filesystem::file_size(destination)
         );
         download.item.local_modified_ticks = modified_ticks(destination);
-        const auto identity = safe_root.identity(destination, false);
+        const auto identity = safe_root.identity(
+            destination,
+            FilesystemItemKind::file
+        );
         download.item.local_device = identity.device;
         download.item.local_inode = identity.inode;
         items.upsert(download.item);

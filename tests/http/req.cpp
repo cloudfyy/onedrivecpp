@@ -38,6 +38,19 @@ using onedrive::test::http::ScopedUmask;
 } // namespace
 
 int main() {
+    static_assert(noexcept(onedrive::http::detail::read_request_body(
+        nullptr, 0, 0, nullptr
+    )));
+    static_assert(noexcept(onedrive::http::detail::write_response(
+        nullptr, 0, 0, nullptr
+    )));
+    static_assert(noexcept(onedrive::http::detail::write_header(
+        nullptr, 0, 0, nullptr
+    )));
+    static_assert(noexcept(onedrive::http::detail::report_progress(
+        nullptr, 0, 0, 0, 0
+    )));
+
     try {
         static_cast<void>(onedrive::http::detail::curl_proxy_auth(
             static_cast<onedrive::http::ProxyAuth>(-1)
@@ -57,6 +70,44 @@ int main() {
         onedrive::http::detail::CallbackFailureKind::allocation) {
         return fail("callback allocation failure was not preserved");
     }
+    onedrive::http::UploadThrottle failing_throttle{
+        [](std::size_t, const std::stop_token&) -> bool {
+            throw std::bad_alloc{};
+        }
+    };
+    onedrive::http::detail::ReadContext read_context{
+        .body = "body",
+        .upload_throttle = &failing_throttle,
+    };
+    char upload_buffer[4]{};
+    if (onedrive::http::detail::read_request_body(
+            upload_buffer,
+            1,
+            sizeof(upload_buffer),
+            &read_context
+        ) != CURL_READFUNC_ABORT ||
+        read_context.failure.kind !=
+            onedrive::http::detail::CallbackFailureKind::throttle ||
+        !read_context.failure.exception) {
+        return fail("upload callback allocation failure crossed the C boundary");
+    }
+    onedrive::http::DownloadProgress failing_progress{
+        [](std::uint64_t, std::uint64_t) {
+            throw std::bad_alloc{};
+        }
+    };
+    onedrive::http::detail::ProgressContext progress_context{
+        .callback = &failing_progress,
+    };
+    if (onedrive::http::detail::report_progress(
+            &progress_context, 1, 1, 0, 0
+        ) == 0 ||
+        !progress_context.failed ||
+        !progress_context.exception) {
+        return fail(
+            "progress callback allocation failure crossed the C boundary"
+        );
+    }
     try {
         throw 42;
     } catch (...) {
@@ -68,10 +119,26 @@ int main() {
         onedrive::http::detail::CallbackFailureKind::internal) {
         return fail("unknown callback failure was not preserved");
     }
+    if (onedrive::http::detail::callback_failure_detail(callback_failure) !=
+        "unknown error") {
+        return fail("unknown callback exception diagnostic was incorrect");
+    }
+    callback_failure = {
+        .kind = onedrive::http::detail::CallbackFailureKind::throttle,
+        .system_error = 0,
+        .detail = "literal callback detail",
+        .exception = {},
+    };
+    if (onedrive::http::detail::callback_failure_detail(callback_failure) !=
+        "literal callback detail") {
+        return fail("literal callback failure detail was not preserved");
+    }
     callback_failure = {};
     onedrive::http::detail::record_callback_failure(callback_failure, {});
     if (callback_failure.kind !=
-        onedrive::http::detail::CallbackFailureKind::internal) {
+            onedrive::http::detail::CallbackFailureKind::internal ||
+        onedrive::http::detail::callback_failure_detail(callback_failure) !=
+            "unknown error") {
         return fail("missing callback exception was not classified");
     }
     using onedrive::http::detail::CallbackFailureKind;

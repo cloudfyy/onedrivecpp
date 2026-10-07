@@ -4,10 +4,17 @@
 #include <cstddef>
 #include <filesystem>
 #include <mutex>
+#include <stdexcept>
+#include <stop_token>
 #include <string>
 #include <unordered_set>
 
 namespace onedrive::sync::detail {
+
+class ItemOperationCancelledError final : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
 
 class ItemOperationCoordinator final {
     struct ItemKey {
@@ -59,17 +66,19 @@ public:
 
     [[nodiscard]] Lease acquire(
         std::string drive_id,
-        std::string remote_id
+        std::string remote_id,
+        std::stop_token stop_token = {}
     );
     [[nodiscard]] Lease acquire_destination(
-        const std::filesystem::path& destination
+        const std::filesystem::path& destination,
+        std::stop_token stop_token = {}
     );
 
 private:
     void release(const ItemKey& key) noexcept;
 
     std::mutex mutex_;
-    std::condition_variable condition_;
+    std::condition_variable_any condition_;
     std::unordered_set<ItemKey, ItemKeyHash> active_;
 };
 

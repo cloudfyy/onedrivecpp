@@ -22,6 +22,7 @@
 #include <system_error>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <utility>
 
 namespace onedrive::sync::detail {
 namespace {
@@ -230,6 +231,15 @@ std::int64_t modified_ticks(int descriptor) {
         std::filesystem::path{"/proc/self/fd"} /
         std::to_string(descriptor)
     );
+}
+
+std::int64_t persisted_file_size(std::uintmax_t size) {
+    if (!std::in_range<std::int64_t>(size)) {
+        throw std::runtime_error(
+            "local file size exceeds the state database range"
+        );
+    }
+    return static_cast<std::int64_t>(size);
 }
 
 bool remove_no_symlinks(

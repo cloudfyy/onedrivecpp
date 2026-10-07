@@ -25,6 +25,19 @@ struct FilesystemIdentity {
     std::uint64_t inode{0};
 };
 
+enum class FilesystemItemKind {
+    file,
+    directory,
+};
+
+[[nodiscard]] constexpr FilesystemItemKind filesystem_item_kind(
+    bool directory
+) noexcept {
+    return directory ?
+               FilesystemItemKind::directory :
+               FilesystemItemKind::file;
+}
+
 class SafeSyncRoot {
 public:
     explicit SafeSyncRoot(const std::filesystem::path& root);
@@ -61,11 +74,11 @@ public:
     ) const;
     [[nodiscard]] FilesystemIdentity identity(
         const std::filesystem::path& path,
-        bool directory
+        FilesystemItemKind kind
     ) const;
     [[nodiscard]] bool remove(
         const std::filesystem::path& path,
-        bool directory
+        FilesystemItemKind kind
     ) const;
     void fsync_directory(const std::filesystem::path& directory) const;
 

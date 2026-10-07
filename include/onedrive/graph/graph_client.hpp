@@ -122,8 +122,10 @@ struct SiteInfo {
 
 class NotificationChannelError final : public std::runtime_error {
 public:
-    NotificationChannelError(bool unauthorized, std::string message)
-        : std::runtime_error{std::move(message)},
+    NotificationChannelError(
+        bool unauthorized, const std::string& message
+    )
+        : std::runtime_error{message},
           unauthorized_{unauthorized} {}
 
     [[nodiscard]] bool unauthorized() const noexcept {
@@ -156,8 +158,10 @@ public:
 
 class UploadResourceError final : public std::runtime_error {
 public:
-    UploadResourceError(std::string reason_code, std::string message)
-        : std::runtime_error{std::move(message)},
+    UploadResourceError(
+        std::string reason_code, const std::string& message
+    )
+        : std::runtime_error{message},
           reason_code_{std::move(reason_code)} {}
 
     [[nodiscard]] const std::string& reason_code() const noexcept {

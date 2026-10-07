@@ -212,7 +212,10 @@ discover_nosync_directories(const std::filesystem::path& root) {
 } // namespace
 
 SyncList
-SyncList::load(const std::filesystem::path& path, bool include_root_files) {
+SyncList::load(
+    const std::filesystem::path& path,
+    RootFilePolicy root_files
+) {
     std::ifstream input{path};
     if (!input) {
         throw std::runtime_error(
@@ -222,8 +225,8 @@ SyncList::load(const std::filesystem::path& path, bool include_root_files) {
 
     SyncList result;
     std::string canonical{"onedrive-cpp-sync-list-v1\n"};
-    result.include_root_files_ = include_root_files;
-    if (include_root_files) {
+    result.include_root_files_ = root_files == RootFilePolicy::include;
+    if (result.include_root_files_) {
         canonical += "@sync-root-files\n";
     }
     std::string line;
@@ -291,7 +294,10 @@ SyncList::load(const std::filesystem::path& path, bool include_root_files) {
 
 SyncList SyncList::configured(const SyncFilterPolicy& policy) {
     auto result = policy.rules_path ?
-        load(*policy.rules_path, policy.include_root_files) :
+        load(
+            *policy.rules_path,
+            root_file_policy(policy.include_root_files)
+        ) :
         SyncList{};
     const auto rules_fingerprint = result.fingerprint_;
     if (!policy.rules_path) {
@@ -423,7 +429,7 @@ std::size_t SyncList::rule_count() const noexcept {
     return rules_.size();
 }
 
-FilteredDelta filter_delta(
+FilteredDelta filter_delta_impl(
     graph::DeltaResult delta,
     const SyncList& sync_list,
     TrackedItemPredicate is_tracked,

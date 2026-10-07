@@ -502,7 +502,10 @@ FileUploadResult execute_file_upload(
             remote_committed.baseline,
             drive_id
         );
-        const auto identity = sync_root.identity(upload.path, false);
+        const auto identity = sync_root.identity(
+            upload.path,
+            FilesystemItemKind::file
+        );
         state.local_device = identity.device;
         state.local_inode = identity.inode;
         items.commit_upload(
@@ -598,8 +601,10 @@ void recover_pending_uploads(
                 },
                 drive_id
             );
-            const auto identity =
-                sync_root.identity(upload.local_path, false);
+            const auto identity = sync_root.identity(
+                upload.local_path,
+                FilesystemItemKind::file
+            );
             state.local_device = identity.device;
             state.local_inode = identity.inode;
             items.commit_upload(upload, state);
