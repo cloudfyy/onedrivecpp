@@ -255,6 +255,19 @@ OutputMode Console::parse_output_mode(std::string_view value) {
     throw std::invalid_argument{"invalid output mode"};
 }
 
+UiMode Console::parse_ui_mode(std::string_view value) {
+    if (value == "auto") {
+        return UiMode::automatic;
+    }
+    if (value == "console") {
+        return UiMode::console;
+    }
+    if (value == "tui") {
+        return UiMode::tui;
+    }
+    throw std::invalid_argument("invalid UI mode: " + std::string{value});
+}
+
 std::ostream& Console::default_output() {
     return std::cout;
 }

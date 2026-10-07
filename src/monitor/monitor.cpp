@@ -4,6 +4,7 @@
 #include "monitor/notify.hpp"
 #include "monitor/socket.hpp"
 #include "monitor/state.hpp"
+#include "onedrive/util/system_error.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"
 
 #include <array>
@@ -76,20 +77,12 @@ constexpr std::uint32_t watch_mask =
     IN_ATTRIB | IN_CLOSE_WRITE | IN_CREATE | IN_DELETE | IN_DELETE_SELF |
     IN_MOVE_SELF | IN_MOVED_FROM | IN_MOVED_TO | IN_IGNORED | IN_Q_OVERFLOW;
 
-[[noreturn]] void throw_system_error(const std::string& operation) {
-    throw std::system_error{
-        errno,
-        std::generic_category(),
-        operation
-    };
-}
-
 class WatchSet final {
 public:
     explicit WatchSet(const std::filesystem::path& root)
         : descriptor_{::inotify_init1(IN_NONBLOCK | IN_CLOEXEC)} {
         if (descriptor_.get() < 0) {
-            throw_system_error("inotify_init1 failed");
+            util::throw_errno_error("inotify_init1 failed");
         }
         std::error_code error;
         if (!std::filesystem::is_directory(root, error)) {
@@ -115,7 +108,7 @@ public:
             static_cast<void>(path);
             if (::inotify_rm_watch(descriptor_.get(), watch) < 0 &&
                 errno != EINVAL) {
-                throw_system_error(
+                util::throw_errno_error(
                     "cannot remove inotify watch while rebuilding"
                 );
             }
@@ -144,7 +137,7 @@ public:
                 if (errno == EINTR) {
                     continue;
                 }
-                throw_system_error("cannot read inotify events");
+                util::throw_errno_error("cannot read inotify events");
             }
             if (bytes == 0) {
                 throw std::runtime_error("inotify event stream closed");
@@ -347,7 +340,7 @@ int Monitor::run() const {
         )
     };
     if (signal_descriptor.get() < 0) {
-        throw_system_error("signalfd failed");
+        util::throw_errno_error("signalfd failed");
     }
     return run_loop({}, signal_descriptor.get());
 }
@@ -406,7 +399,7 @@ int Monitor::run_loop(
         ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC)
     };
     if (stop_descriptor.get() < 0) {
-        throw_system_error("eventfd failed");
+        util::throw_errno_error("eventfd failed");
     }
     std::stop_callback stop_callback{
         stop_token,
@@ -589,7 +582,7 @@ int Monitor::run_loop(
             if (errno == EINTR) {
                 continue;
             }
-            throw_system_error("monitor poll failed");
+            util::throw_errno_error("monitor poll failed");
         }
         if ((descriptors[2].revents & POLLIN) != 0) {
             signalfd_siginfo signal{};
@@ -610,7 +603,7 @@ int Monitor::run_loop(
                     break;
                 }
                 if (bytes < 0) {
-                    throw_system_error(
+                    util::throw_errno_error(
                         "cannot read monitor termination signal"
                     );
                 }

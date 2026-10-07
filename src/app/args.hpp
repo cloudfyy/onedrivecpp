@@ -19,7 +19,7 @@ struct Arguments {
     std::optional<std::string> log_file;
     std::optional<cli::ColorMode> color_mode;
     cli::OutputMode output_mode{cli::OutputMode::text};
-    cli::UiMode ui_mode{cli::UiMode::automatic};
+    std::optional<cli::UiMode> ui_mode;
     bool quiet{false};
     std::string remote_download_path;
     std::string site_query;

@@ -118,6 +118,47 @@ int test_args() {
         2) {
         return fail("sites command accepted a missing search query");
     }
+
+    CliFixture ui_fixture;
+    if (ui_fixture.authenticate().exit_code != 0) {
+        return fail("UI precedence fixture could not authenticate");
+    }
+    auto configured = onedrive::test::read_file(ui_fixture.config_path);
+    const auto color = configured.find("color = \"always\"\n");
+    if (color == std::string::npos) {
+        return fail("UI precedence fixture console section was missing");
+    }
+    configured.insert(
+        color + std::string{"color = \"always\"\n"}.size(),
+        "ui = \"tui\"\n"
+    );
+    onedrive::test::write_file(ui_fixture.config_path, configured);
+    const auto configured_tui = run_application(
+        ui_fixture.runtime_factory,
+        {
+            "onedrive-cpp",
+            "sync",
+            "--config",
+            ui_fixture.config_path.string(),
+            "--dry-run",
+        }
+    );
+    const auto overridden_tui = run_application(
+        ui_fixture.runtime_factory,
+        {
+            "onedrive-cpp",
+            "sync",
+            "--config",
+            ui_fixture.config_path.string(),
+            "--dry-run",
+            "--ui",
+            "console",
+        }
+    );
+    if (configured_tui.exit_code != 1 ||
+        overridden_tui.exit_code != 0) {
+        return fail("CLI UI mode did not override configured TUI mode");
+    }
     return EXIT_SUCCESS;
 }
 

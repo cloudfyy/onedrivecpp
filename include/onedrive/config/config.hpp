@@ -51,6 +51,7 @@ enum class TransferOrder {
 
 struct Config {
     cli::ColorMode console_color{cli::ColorMode::automatic};
+    cli::UiMode console_ui{cli::UiMode::automatic};
     logging::Options logging;
     std::filesystem::path sync_data_directory;
     std::optional<std::filesystem::path> sync_data_mount_point;

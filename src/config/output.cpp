@@ -14,7 +14,7 @@ void load_output_options(
     const std::filesystem::path& config_path
 ) {
     if (const auto* console = optional_table(root, "console", "console")) {
-        validate_keys(*console, {"color"}, "console");
+        validate_keys(*console, {"color", "ui"}, "console");
         if (const auto value = optional_value<std::string>(
                 *console, "color", "console.color", "a string"
             )) {
@@ -23,6 +23,17 @@ void load_output_options(
             } catch (const std::invalid_argument&) {
                 throw std::runtime_error(
                     "invalid TOML configuration value for 'console.color'"
+                );
+            }
+        }
+        if (const auto value = optional_value<std::string>(
+                *console, "ui", "console.ui", "a string"
+            )) {
+            try {
+                config.console_ui = cli::Console::parse_ui_mode(*value);
+            } catch (const std::invalid_argument&) {
+                throw std::runtime_error(
+                    "invalid TOML configuration value for 'console.ui'"
                 );
             }
         }

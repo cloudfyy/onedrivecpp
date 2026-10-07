@@ -433,12 +433,20 @@ int main() {
         Console::parse_color_mode("always") != ColorMode::always ||
         Console::parse_color_mode("never") != ColorMode::never ||
         Console::parse_output_mode("text") != OutputMode::text ||
-        Console::parse_output_mode("json") != OutputMode::json) {
+        Console::parse_output_mode("json") != OutputMode::json ||
+        Console::parse_ui_mode("auto") != UiMode::automatic ||
+        Console::parse_ui_mode("console") != UiMode::console ||
+        Console::parse_ui_mode("tui") != UiMode::tui) {
         return fail("console option parsing returned the wrong mode");
     }
     try {
         static_cast<void>(Console::parse_color_mode("invalid"));
         return fail("invalid color mode was accepted");
+    } catch (const std::invalid_argument&) {
+    }
+    try {
+        static_cast<void>(Console::parse_ui_mode("invalid"));
+        return fail("invalid UI mode was accepted");
     } catch (const std::invalid_argument&) {
     }
     try {

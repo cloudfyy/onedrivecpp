@@ -1,4 +1,5 @@
 #include "onedrive/util/path_security.hpp"
+#include "onedrive/util/system_error.hpp"
 
 #include <cerrno>
 #include <cstring>
@@ -19,12 +20,11 @@ namespace {
     const std::filesystem::path& path,
     int error
 ) {
-    throw std::system_error{
+    throw_system_error(
         error,
-        std::generic_category(),
         "cannot " + std::string{operation} + " " +
             std::string{description} + " '" + path.string() + "'"
-    };
+    );
 }
 
 struct stat inspect_owned_path(
@@ -159,9 +159,7 @@ UniqueFD open_path_no_symlinks(
         );
     }
     if (descriptor == -1) {
-        throw std::system_error(
-            errno,
-            std::generic_category(),
+        throw_errno_error(
             "cannot safely open path '" + path.string() + "'"
         );
     }

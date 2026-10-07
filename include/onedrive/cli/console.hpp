@@ -72,6 +72,7 @@ public:
 
     [[nodiscard]] static ColorMode parse_color_mode(std::string_view value);
     [[nodiscard]] static OutputMode parse_output_mode(std::string_view value);
+    [[nodiscard]] static UiMode parse_ui_mode(std::string_view value);
 
 private:
     [[nodiscard]] static std::ostream& default_output();

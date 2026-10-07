@@ -43,6 +43,12 @@ OneDrive 或 SharePoint 文档库，请将其设置为实际的 Drive ID；程�
 以下示例展示全部主要配置组：
 
 ```toml
+[console]
+# "auto"、"console" 或 "tui"；作用于 sync，可被 --ui 覆盖
+ui = "auto"
+# "auto"、"always" 或 "never"
+color = "auto"
+
 [sync]
 # 当前账号的默认 OneDrive
 data_directory = "/home/USER/OneDrive"

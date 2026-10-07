@@ -1,5 +1,6 @@
 #include "onedrive/logging/logging.hpp"
 #include "onedrive/util/path_security.hpp"
+#include "onedrive/util/system_error.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"
 
 #include <spdlog/logger.h>
@@ -77,9 +78,8 @@ private:
     const std::filesystem::path& path,
     int error
 ) {
-    throw std::system_error(
+    util::throw_system_error(
         error,
-        std::generic_category(),
         std::string{operation} + " '" + path.string() + "'"
     );
 }

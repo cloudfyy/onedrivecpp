@@ -3,6 +3,8 @@ config_version = 2
 [console]
 # Supported values: "auto", "always", and "never".
 color = "auto"
+# Sync interface: "auto", "console", or "tui".
+ui = "auto"
 
 [logging]
 # Supported values: "trace", "debug", "info", "warn", "error", "critical",

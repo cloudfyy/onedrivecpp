@@ -52,7 +52,7 @@ int Application::run(int argc, char* argv[]) {
                 .color = arguments.color_mode.value_or(config.console_color),
                 .output = arguments.output_mode,
                 .ui = arguments.operation == detail::Operation::synchronize ?
-                    arguments.ui_mode :
+                    arguments.ui_mode.value_or(config.console_ui) :
                     cli::UiMode::console,
                 .quiet = arguments.quiet,
             }

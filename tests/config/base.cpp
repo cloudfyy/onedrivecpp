@@ -12,6 +12,7 @@ int test_base() {
         output << "config_version = 2\n"
                << "[console]\n"
                << "color = \"always\"\n"
+               << "ui = \"console\"\n"
                << "[logging]\n"
                << "level = \"debug\"\n"
                << "file = \"logs/onedrive-cpp.log\"\n"
@@ -88,6 +89,7 @@ int test_base() {
     const auto graph_options = onedrive::app::graph_options(config);
 
     if (config.console_color != onedrive::cli::ColorMode::always ||
+        config.console_ui != onedrive::cli::UiMode::console ||
         config.logging.level != "debug" ||
         config.logging.file !=
             std::optional<std::filesystem::path>{

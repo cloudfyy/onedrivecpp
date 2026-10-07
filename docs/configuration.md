@@ -49,6 +49,12 @@ Drive ID instead; the client then uses `/drives/<drive_id>/root/children`.
 The following example shows every major configuration group:
 
 ```toml
+[console]
+# "auto", "console", or "tui"; applies to sync and can be overridden by --ui.
+ui = "auto"
+# "auto", "always", or "never"
+color = "auto"
+
 [sync]
 # Default OneDrive of the signed-in user
 data_directory = "/home/USER/OneDrive"
