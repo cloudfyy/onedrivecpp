@@ -41,7 +41,7 @@ bool ItemDatabase::reset_on_worker(const std::string& drive_id) {
         database, "DELETE FROM drive_state WHERE drive_id = ?1;"
     };
     bind_text(database, state_statement.get(), 1, drive_id);
-    state_statement.step_done("cannot reset drive delta link");
+    state_statement.execute("cannot reset drive delta link");
     const bool had_delta_link = sqlite3_changes(database) != 0;
     transaction.commit();
 
@@ -78,21 +78,21 @@ ClearedState ItemDatabase::clear_on_worker(const std::string& drive_id) {
     Transaction transaction{database};
     Statement item_statement{database, "DELETE FROM item WHERE drive_id = ?1;"};
     bind_text(database, item_statement.get(), 1, drive_id);
-    item_statement.step_done("cannot clear drive items");
+    item_statement.execute("cannot clear drive items");
     cleared.items = static_cast<std::size_t>(sqlite3_changes(database));
 
     Statement state_statement{
         database, "DELETE FROM drive_state WHERE drive_id = ?1;"
     };
     bind_text(database, state_statement.get(), 1, drive_id);
-    state_statement.step_done("cannot clear drive delta link");
+    state_statement.execute("cannot clear drive delta link");
     cleared.delta_link = sqlite3_changes(database) != 0;
 
     Statement pending_statement{
         database, "DELETE FROM pending_download WHERE drive_id = ?1;"
     };
     bind_text(database, pending_statement.get(), 1, drive_id);
-    pending_statement.step_done("cannot clear pending downloads");
+    pending_statement.execute("cannot clear pending downloads");
     cleared.pending_downloads =
         static_cast<std::size_t>(sqlite3_changes(database));
 
@@ -100,7 +100,7 @@ ClearedState ItemDatabase::clear_on_worker(const std::string& drive_id) {
         database, "DELETE FROM partial_download WHERE drive_id = ?1;"
     };
     bind_text(database, partial_statement.get(), 1, drive_id);
-    partial_statement.step_done("cannot clear partial downloads");
+    partial_statement.execute("cannot clear partial downloads");
     cleared.partial_downloads =
         static_cast<std::size_t>(sqlite3_changes(database));
 
@@ -108,7 +108,7 @@ ClearedState ItemDatabase::clear_on_worker(const std::string& drive_id) {
         database, "DELETE FROM pending_upload WHERE drive_id = ?1;"
     };
     bind_text(database, upload_statement.get(), 1, drive_id);
-    upload_statement.step_done("cannot clear pending uploads");
+    upload_statement.execute("cannot clear pending uploads");
     cleared.pending_uploads =
         static_cast<std::size_t>(sqlite3_changes(database));
 
@@ -116,7 +116,7 @@ ClearedState ItemDatabase::clear_on_worker(const std::string& drive_id) {
         database, "DELETE FROM pending_delete WHERE drive_id = ?1;"
     };
     bind_text(database, delete_statement.get(), 1, drive_id);
-    delete_statement.step_done("cannot clear pending deletions");
+    delete_statement.execute("cannot clear pending deletions");
     cleared.pending_deletes =
         static_cast<std::size_t>(sqlite3_changes(database));
 
@@ -124,7 +124,7 @@ ClearedState ItemDatabase::clear_on_worker(const std::string& drive_id) {
         database, "DELETE FROM pending_remote_move WHERE drive_id = ?1;"
     };
     bind_text(database, remote_move_statement.get(), 1, drive_id);
-    remote_move_statement.step_done("cannot clear pending remote moves");
+    remote_move_statement.execute("cannot clear pending remote moves");
     cleared.pending_remote_moves =
         static_cast<std::size_t>(sqlite3_changes(database));
 
@@ -132,14 +132,14 @@ ClearedState ItemDatabase::clear_on_worker(const std::string& drive_id) {
         database, "DELETE FROM pending_move WHERE drive_id = ?1;"
     };
     bind_text(database, move_statement.get(), 1, drive_id);
-    move_statement.step_done("cannot clear pending moves");
+    move_statement.execute("cannot clear pending moves");
     cleared.pending_moves = static_cast<std::size_t>(sqlite3_changes(database));
 
     Statement suppression_statement{
         database, "DELETE FROM upload_suppression WHERE drive_id = ?1;"
     };
     bind_text(database, suppression_statement.get(), 1, drive_id);
-    suppression_statement.step_done("cannot clear upload suppressions");
+    suppression_statement.execute("cannot clear upload suppressions");
     cleared.upload_suppressions =
         static_cast<std::size_t>(sqlite3_changes(database));
 
@@ -147,7 +147,7 @@ ClearedState ItemDatabase::clear_on_worker(const std::string& drive_id) {
         database, "DELETE FROM blocked_item WHERE drive_id = ?1;"
     };
     bind_text(database, blocked_statement.get(), 1, drive_id);
-    blocked_statement.step_done("cannot clear blocked items");
+    blocked_statement.execute("cannot clear blocked items");
     cleared.blocked_items = static_cast<std::size_t>(sqlite3_changes(database));
     transaction.commit();
 

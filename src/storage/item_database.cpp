@@ -36,7 +36,7 @@ using item_database_detail::bind_integer;
 using item_database_detail::bind_text;
 using item_database_detail::column_text;
 using item_database_detail::configure_writable_database;
-using item_database_detail::execute;
+using item_database_detail::execute_sql;
 using item_database_detail::full_integrity_result;
 using item_database_detail::migrate_schema;
 using item_database_detail::query_count;
@@ -110,8 +110,8 @@ void activate_database_pragmas(
     sqlite3* database,
     DatabaseAccess access
 ) {
-    execute(database, "PRAGMA trusted_schema = OFF;");
-    execute(database, "PRAGMA foreign_keys = ON;");
+    execute_sql(database, "PRAGMA trusted_schema = OFF;");
+    execute_sql(database, "PRAGMA foreign_keys = ON;");
     require_pragma_value(
         database, "PRAGMA trusted_schema;", "0", "trusted schema"
     );
@@ -119,7 +119,7 @@ void activate_database_pragmas(
         database, "PRAGMA foreign_keys;", "1", "foreign-key enforcement"
     );
     if (access == DatabaseAccess::read_only) {
-        execute(database, "PRAGMA query_only = ON;");
+        execute_sql(database, "PRAGMA query_only = ON;");
         require_pragma_value(
             database, "PRAGMA query_only;", "1", "read-only diagnostics"
         );
@@ -468,7 +468,7 @@ void ItemDatabase::open_on_worker(CorruptionRecovery recovery) {
     bind_text(database, identity_upsert.get(), 4, identity_.drive_name);
     bind_text(database, identity_upsert.get(), 5, avatar_content_type);
     bind_blob(database, identity_upsert.get(), 6, avatar_bytes);
-    identity_upsert.step_done("cannot update state database identity");
+    identity_upsert.execute("cannot update state database identity");
     Statement mapping_upsert{
         database,
         "INSERT INTO drive_mapping ("
@@ -485,7 +485,7 @@ void ItemDatabase::open_on_worker(CorruptionRecovery recovery) {
         identity_.configured_drive_id
     );
     bind_text(database, mapping_upsert.get(), 2, identity_.drive_id);
-    mapping_upsert.step_done("cannot update configured Drive ID mapping");
+    mapping_upsert.execute("cannot update configured Drive ID mapping");
 
     const auto item_count =
         query_count(database, "SELECT COUNT(*) FROM item;");

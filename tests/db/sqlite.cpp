@@ -11,7 +11,7 @@ namespace {
 using onedrive::storage::item_database_detail::SqliteHandle;
 using onedrive::storage::item_database_detail::SqliteStatement;
 using onedrive::storage::item_database_detail::Transaction;
-using onedrive::storage::item_database_detail::execute;
+using onedrive::storage::item_database_detail::execute_sql;
 using onedrive::test::fail;
 
 int test_transaction_rolls_back() {
@@ -20,10 +20,10 @@ int test_transaction_rolls_back() {
         return fail("could not open in-memory SQLite database");
     }
     SqliteHandle database{raw_database};
-    execute(database.get(), "CREATE TABLE value (number INTEGER);");
+    execute_sql(database.get(), "CREATE TABLE value (number INTEGER);");
     {
         Transaction transaction{database.get()};
-        execute(database.get(), "INSERT INTO value VALUES (1);");
+        execute_sql(database.get(), "INSERT INTO value VALUES (1);");
     }
 
     sqlite3_stmt* raw_statement = nullptr;
@@ -74,7 +74,7 @@ int test_cleanup_failures_do_not_escape() {
     SqliteHandle database{raw_database};
     {
         Transaction transaction{database.get()};
-        execute(database.get(), "ROLLBACK;");
+        execute_sql(database.get(), "ROLLBACK;");
     }
 
     sqlite3_stmt* raw_statement = nullptr;

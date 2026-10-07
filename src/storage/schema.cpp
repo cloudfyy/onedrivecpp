@@ -11,12 +11,12 @@ namespace onedrive::storage::item_database_detail {
 
 int schema_version(sqlite3* database) {
     Statement statement{database, "PRAGMA user_version;"};
-    statement.step_row("cannot read state database schema version");
+    statement.require_row("cannot read state database schema version");
     return sqlite3_column_int(statement.get(), 0);
 }
 
 void create_item_schema(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "CREATE TABLE IF NOT EXISTS item ("
         "drive_id TEXT NOT NULL,"
@@ -42,7 +42,7 @@ void create_item_schema(sqlite3* database) {
 }
 
 void create_drive_state_schema(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "CREATE TABLE IF NOT EXISTS drive_state ("
         "drive_id TEXT PRIMARY KEY NOT NULL,"
@@ -53,7 +53,7 @@ void create_drive_state_schema(sqlite3* database) {
 }
 
 void create_pending_download_schema(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "CREATE TABLE IF NOT EXISTS pending_download ("
         "drive_id TEXT NOT NULL,"
@@ -77,7 +77,7 @@ void create_pending_download_schema(sqlite3* database) {
 }
 
 void create_blocked_item_schema(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "CREATE TABLE IF NOT EXISTS blocked_item ("
         "drive_id TEXT NOT NULL,"
@@ -104,7 +104,7 @@ void create_blocked_item_schema(sqlite3* database) {
 }
 
 void create_blocked_item_v5_schema(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "CREATE TABLE blocked_item ("
         "drive_id TEXT NOT NULL,"
@@ -127,7 +127,7 @@ void create_blocked_item_v5_schema(sqlite3* database) {
 }
 
 void add_blocked_item_hash_columns(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "ALTER TABLE blocked_item ADD COLUMN content_hash_algorithm "
         "TEXT NOT NULL DEFAULT '';"
@@ -137,7 +137,7 @@ void add_blocked_item_hash_columns(sqlite3* database) {
 }
 
 void add_blocked_item_deleted_column(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "ALTER TABLE blocked_item ADD COLUMN deleted "
         "INTEGER NOT NULL DEFAULT 0;"
@@ -145,7 +145,7 @@ void add_blocked_item_deleted_column(sqlite3* database) {
 }
 
 void add_item_content_hash(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "ALTER TABLE item ADD COLUMN content_hash_algorithm "
         "TEXT NOT NULL DEFAULT '';"
@@ -155,7 +155,7 @@ void add_item_content_hash(sqlite3* database) {
 }
 
 void create_identity_schema(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "CREATE TABLE IF NOT EXISTS identity ("
         "singleton INTEGER PRIMARY KEY NOT NULL CHECK (singleton = 1),"
@@ -170,7 +170,7 @@ void create_identity_schema(sqlite3* database) {
 }
 
 void create_drive_mapping_schema(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "CREATE TABLE IF NOT EXISTS drive_mapping ("
         "configured_drive_id TEXT PRIMARY KEY NOT NULL,"
@@ -181,7 +181,7 @@ void create_drive_mapping_schema(sqlite3* database) {
 }
 
 void create_partial_download_schema(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "CREATE TABLE IF NOT EXISTS partial_download ("
         "drive_id TEXT NOT NULL,"
@@ -204,7 +204,7 @@ void create_partial_download_schema(sqlite3* database) {
 }
 
 void create_partial_download_v8_schema(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "CREATE TABLE IF NOT EXISTS partial_download ("
         "drive_id TEXT NOT NULL,"
@@ -226,7 +226,7 @@ void create_partial_download_v8_schema(sqlite3* database) {
 }
 
 void create_pending_upload_schema(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "CREATE TABLE IF NOT EXISTS pending_upload ("
         "drive_id TEXT NOT NULL,"
@@ -251,7 +251,7 @@ void create_pending_upload_schema(sqlite3* database) {
 }
 
 void create_pending_upload_v13_schema(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "CREATE TABLE pending_upload ("
         "drive_id TEXT NOT NULL,"
@@ -269,7 +269,7 @@ void create_pending_upload_v13_schema(sqlite3* database) {
 }
 
 void create_pending_move_schema(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "CREATE TABLE IF NOT EXISTS pending_move ("
         "drive_id TEXT NOT NULL,"
@@ -286,7 +286,7 @@ void create_pending_move_schema(sqlite3* database) {
 }
 
 void create_pending_delete_schema(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "CREATE TABLE IF NOT EXISTS pending_delete ("
         "drive_id TEXT NOT NULL,"
@@ -301,7 +301,7 @@ void create_pending_delete_schema(sqlite3* database) {
 }
 
 void create_pending_remote_move_schema(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "CREATE TABLE IF NOT EXISTS pending_remote_move ("
         "drive_id TEXT NOT NULL,"
@@ -320,7 +320,7 @@ void create_pending_remote_move_schema(sqlite3* database) {
 }
 
 void create_pending_move_v14_schema(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "CREATE TABLE pending_move ("
         "drive_id TEXT NOT NULL,"
@@ -336,7 +336,7 @@ void create_pending_move_v14_schema(sqlite3* database) {
 }
 
 void create_upload_suppression_schema(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "CREATE TABLE IF NOT EXISTS upload_suppression ("
         "drive_id TEXT NOT NULL,"
@@ -351,7 +351,7 @@ void create_upload_suppression_schema(sqlite3* database) {
 
 void set_schema_version(sqlite3* database, int version) {
     const auto sql = "PRAGMA user_version = " + std::to_string(version) + ";";
-    execute(database, sql.c_str());
+    execute_sql(database, sql.c_str());
 }
 
 void ensure_current_schema(sqlite3* database) {

@@ -86,7 +86,7 @@ void ItemDatabase::upsert_on_worker(const ItemState& item) {
     bind_text(database, statement.get(), 16, hash_value);
     bind_integer(database, statement.get(), 17, item.directory ? 1 : 0);
 
-    statement.step_done("cannot update state database");
+    statement.execute("cannot update state database");
     spdlog::trace(
         "Updated synchronization state for drive '{}', item '{}'",
         item.drive_id,
@@ -112,7 +112,7 @@ ItemDatabase::delta_link_on_worker(const std::string& drive_id) const {
         database, "SELECT delta_link FROM drive_state WHERE drive_id = ?1;"
     };
     bind_text(database, statement.get(), 1, drive_id);
-    if (!statement.next("cannot read drive delta link")) {
+    if (!statement.next_row("cannot read drive delta link")) {
         return std::nullopt;
     }
     return column_text(statement.get(), 0);
@@ -138,7 +138,7 @@ std::optional<std::string> ItemDatabase::sync_filter_fingerprint_on_worker(
         "WHERE drive_id = ?1;"
     };
     bind_text(database, statement.get(), 1, drive_id);
-    if (!statement.next("cannot read sync filter fingerprint")) {
+    if (!statement.next_row("cannot read sync filter fingerprint")) {
         return std::nullopt;
     }
     return column_text(statement.get(), 0);
@@ -169,7 +169,7 @@ std::optional<ItemState> ItemDatabase::find_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     bind_text(database, statement.get(), 2, remote_id);
-    if (!statement.next("cannot read synchronization item")) {
+    if (!statement.next_row("cannot read synchronization item")) {
         return std::nullopt;
     }
     return ItemState{
@@ -223,7 +223,7 @@ ItemDatabase::drive_items_on_worker(const std::string& drive_id) const {
     };
     bind_text(database, statement.get(), 1, drive_id);
     std::vector<ItemState> result;
-    while (statement.next("cannot read synchronization drive items")) {
+    while (statement.next_row("cannot read synchronization drive items")) {
         result.push_back({
             .drive_id = column_text(statement.get(), 0),
             .remote_id = column_text(statement.get(), 1),

@@ -53,7 +53,7 @@ void ItemDatabase::save_pending_delete_on_worker(
     bind_text(database, statement.get(), 4, deletion.remote_path);
     bind_text(database, statement.get(), 5, deletion.local_path.string());
     bind_integer(database, statement.get(), 6, deletion.directory ? 1 : 0);
-    statement.step_done("cannot persist pending deletion");
+    statement.execute("cannot persist pending deletion");
 }
 
 void ItemDatabase::remove_pending_delete(
@@ -77,7 +77,7 @@ void ItemDatabase::remove_pending_delete_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     bind_text(database, statement.get(), 2, remote_id);
-    statement.step_done("cannot remove pending deletion");
+    statement.execute("cannot remove pending deletion");
 }
 
 std::vector<PendingDelete>
@@ -101,7 +101,7 @@ ItemDatabase::pending_deletes_on_worker(const std::string& drive_id) const {
     };
     bind_text(database, statement.get(), 1, drive_id);
     std::vector<PendingDelete> deletions;
-    while (statement.next("cannot read pending deletions")) {
+    while (statement.next_row("cannot read pending deletions")) {
         deletions.push_back({
             .drive_id = column_text(statement.get(), 0),
             .remote_id = column_text(statement.get(), 1),
@@ -133,14 +133,14 @@ void ItemDatabase::commit_delete_on_worker(const PendingDelete& deletion) {
     bind_text(database, remove_items.get(), 1, deletion.drive_id);
     bind_text(database, remove_items.get(), 2, deletion.remote_id);
     bind_text(database, remove_items.get(), 3, deletion.remote_path);
-    remove_items.step_done("cannot remove deleted item state");
+    remove_items.execute("cannot remove deleted item state");
     Statement remove_journal{
         database,
         "DELETE FROM pending_delete WHERE drive_id = ?1 AND remote_id = ?2;"
     };
     bind_text(database, remove_journal.get(), 1, deletion.drive_id);
     bind_text(database, remove_journal.get(), 2, deletion.remote_id);
-    remove_journal.step_done("cannot complete pending deletion journal");
+    remove_journal.execute("cannot complete pending deletion journal");
     if (sqlite3_changes(database) != 1) {
         throw std::runtime_error(
             "cannot complete pending deletion journal: " +

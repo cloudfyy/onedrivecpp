@@ -78,7 +78,7 @@ Transaction::~Transaction() {
     }
 }
 
-void execute(Database database, Sql sql) {
+void execute_sql(Database database, Sql sql) {
     char* raw_error_message = nullptr;
     const int result =
         sqlite3_exec(

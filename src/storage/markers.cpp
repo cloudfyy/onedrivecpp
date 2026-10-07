@@ -42,7 +42,7 @@ ItemDatabase::upload_suppressions_on_worker(const std::string& drive_id) const {
     };
     bind_text(database, statement.get(), 1, drive_id);
     std::vector<UploadSuppression> suppressions;
-    while (statement.next("cannot read upload suppressions")) {
+    while (statement.next_row("cannot read upload suppressions")) {
         const auto device = sqlite3_column_int64(statement.get(), 3);
         const auto inode = sqlite3_column_int64(statement.get(), 4);
         if (device < 0 || inode < 0) {
@@ -88,7 +88,7 @@ void ItemDatabase::remove_upload_suppression_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     bind_text(database, statement.get(), 2, local_path.string());
-    statement.step_done("cannot remove upload suppression");
+    statement.execute("cannot remove upload suppression");
 }
 
 std::vector<BlockedItem>
@@ -114,7 +114,7 @@ ItemDatabase::blocked_items_on_worker(const std::string& drive_id) const {
     };
     bind_text(database, statement.get(), 1, drive_id);
     std::vector<BlockedItem> result;
-    while (statement.next("cannot read blocked synchronization items")) {
+    while (statement.next_row("cannot read blocked synchronization items")) {
         auto content_hash = item_database_detail::parse_file_hash(
             column_text(statement.get(), 14),
             column_text(statement.get(), 15),

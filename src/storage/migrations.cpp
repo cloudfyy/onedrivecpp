@@ -9,7 +9,7 @@
 namespace onedrive::storage::item_database_detail {
 
 void add_sync_filter_fingerprint(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "ALTER TABLE drive_state ADD COLUMN sync_filter_fingerprint "
         "TEXT NOT NULL DEFAULT '';"
@@ -17,7 +17,7 @@ void add_sync_filter_fingerprint(sqlite3* database) {
 }
 
 void add_pending_download_backup(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "ALTER TABLE pending_download ADD COLUMN backup_path "
         "TEXT NOT NULL DEFAULT '';"
@@ -27,7 +27,7 @@ void add_pending_download_backup(sqlite3* database) {
 }
 
 void add_pending_move_staging(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "ALTER TABLE pending_move ADD COLUMN staging_path "
         "TEXT NOT NULL DEFAULT '';"
@@ -35,7 +35,7 @@ void add_pending_move_staging(sqlite3* database) {
 }
 
 void add_pending_upload_session(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "ALTER TABLE pending_upload ADD COLUMN upload_url "
         "TEXT NOT NULL DEFAULT '';"
@@ -47,7 +47,7 @@ void add_pending_upload_session(sqlite3* database) {
 }
 
 void add_pending_upload_directory(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "ALTER TABLE pending_upload ADD COLUMN directory "
         "INTEGER NOT NULL DEFAULT 0;"
@@ -55,7 +55,7 @@ void add_pending_upload_directory(sqlite3* database) {
 }
 
 void add_item_local_identity(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "ALTER TABLE item ADD COLUMN local_device "
         "INTEGER NOT NULL DEFAULT 0;"
@@ -65,7 +65,7 @@ void add_item_local_identity(sqlite3* database) {
 }
 
 void add_content_tags(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "ALTER TABLE item ADD COLUMN ctag TEXT NOT NULL DEFAULT '';"
         "ALTER TABLE pending_download ADD COLUMN ctag "
@@ -76,7 +76,7 @@ void add_content_tags(sqlite3* database) {
 }
 
 void add_pending_upload_failure(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "ALTER TABLE pending_upload ADD COLUMN failure_code "
         "TEXT NOT NULL DEFAULT '';"
@@ -88,14 +88,14 @@ void add_pending_upload_failure(sqlite3* database) {
 }
 
 void add_blocked_item_content_tag(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "ALTER TABLE blocked_item ADD COLUMN ctag TEXT NOT NULL DEFAULT '';"
     );
 }
 
 void migrate_v1_to_v4(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "ALTER TABLE item RENAME TO item_v1;"
         "CREATE TABLE item ("
@@ -143,7 +143,7 @@ void migrate_v1_to_v4(sqlite3* database) {
 }
 
 void migrate_v2_to_v4(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "ALTER TABLE item ADD COLUMN local_size INTEGER NOT NULL DEFAULT 0;"
         "ALTER TABLE item ADD COLUMN local_modified_ticks INTEGER NOT NULL "
@@ -167,7 +167,7 @@ void migrate_v2_to_v4(sqlite3* database) {
 }
 
 void migrate_v3_to_v4(sqlite3* database) {
-    execute(
+    execute_sql(
         database,
         "CREATE TABLE pending_download ("
         "drive_id TEXT NOT NULL,"

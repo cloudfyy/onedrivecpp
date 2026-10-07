@@ -45,6 +45,7 @@ PartialDownload partial_download_from_row(sqlite3_stmt* statement) {
                 .size = sqlite3_column_int64(statement, 9),
                 .local_size = 0,
                 .local_modified_ticks = 0,
+                .content_hash = std::nullopt,
                 .directory = sqlite3_column_int(statement, 10) != 0,
             },
         .temporary_path = column_text(statement, 11),
@@ -120,7 +121,7 @@ void ItemDatabase::save_pending_download_on_worker(
     bind_text(database, statement.get(), 13, download.content_fingerprint);
     bind_text(database, statement.get(), 14, download.backup_path.string());
     bind_text(database, statement.get(), 15, download.backup_fingerprint);
-    statement.step_done("cannot save pending download");
+    statement.execute("cannot save pending download");
     spdlog::debug(
         "Saved pending download journal for '{}'", download.item.remote_path
     );
@@ -147,7 +148,7 @@ void ItemDatabase::remove_pending_download_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     bind_text(database, statement.get(), 2, remote_id);
-    statement.step_done("cannot remove pending download");
+    statement.execute("cannot remove pending download");
     spdlog::debug(
         "Removed pending download journal for drive '{}', item '{}'",
         drive_id,
@@ -178,7 +179,7 @@ ItemDatabase::pending_downloads_on_worker(const std::string& drive_id) const {
     };
     bind_text(database, statement.get(), 1, drive_id);
     std::vector<PendingDownload> downloads;
-    while (statement.next("cannot read pending downloads")) {
+    while (statement.next_row("cannot read pending downloads")) {
         downloads.push_back({
             .item =
                 {
@@ -194,6 +195,7 @@ ItemDatabase::pending_downloads_on_worker(const std::string& drive_id) const {
                     .size = sqlite3_column_int64(statement.get(), 9),
                     .local_size = 0,
                     .local_modified_ticks = 0,
+                    .content_hash = std::nullopt,
                     .directory = sqlite3_column_int(statement.get(), 10) != 0,
                 },
             .temporary_path = column_text(statement.get(), 11),
@@ -269,7 +271,7 @@ void ItemDatabase::save_partial_download_on_worker(
         13,
         static_cast<std::int64_t>(download.completed_bytes)
     );
-    statement.step_done("cannot save partial download");
+    statement.execute("cannot save partial download");
 }
 
 void ItemDatabase::remove_partial_download(
@@ -293,7 +295,7 @@ void ItemDatabase::remove_partial_download_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     bind_text(database, statement.get(), 2, remote_id);
-    statement.step_done("cannot remove partial download");
+    statement.execute("cannot remove partial download");
 }
 
 std::optional<PartialDownload> ItemDatabase::partial_download(
@@ -320,7 +322,7 @@ std::optional<PartialDownload> ItemDatabase::partial_download_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     bind_text(database, statement.get(), 2, remote_id);
-    if (!statement.next("cannot read partial download")) {
+    if (!statement.next_row("cannot read partial download")) {
         return std::nullopt;
     }
     return partial_download_from_row(statement.get());
@@ -348,7 +350,7 @@ ItemDatabase::partial_downloads_on_worker(const std::string& drive_id) const {
     };
     bind_text(database, statement.get(), 1, drive_id);
     std::vector<PartialDownload> downloads;
-    while (statement.next("cannot read partial downloads")) {
+    while (statement.next_row("cannot read partial downloads")) {
         downloads.push_back(partial_download_from_row(statement.get()));
     }
     return downloads;

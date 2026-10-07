@@ -39,7 +39,7 @@ std::vector<std::string> user_tables(sqlite3* database) {
         "ORDER BY name;"
     };
     std::vector<std::string> tables;
-    while (statement.next("cannot inspect state database tables")) {
+    while (statement.next_row("cannot inspect state database tables")) {
         tables.push_back(column_text(statement.get(), 0));
     }
     return tables;
@@ -61,7 +61,7 @@ table_columns(sqlite3* database, const std::string& table) {
     std::vector<ColumnShape> columns;
     const auto operation =
         "cannot inspect columns for state database table '" + table + "'";
-    while (statement.next(operation)) {
+    while (statement.next_row(operation)) {
         columns.push_back({
             .name = column_text(statement.get(), 1),
             .type = column_text(statement.get(), 2),
@@ -89,7 +89,7 @@ table_indexes(sqlite3* database, const std::string& table) {
     std::vector<IndexShape> indexes;
     const auto list_operation =
         "cannot inspect indexes for state database table '" + table + "'";
-    while (list.next(list_operation)) {
+    while (list.next_row(list_operation)) {
         const auto index_name = column_text(list.get(), 1);
         const auto info_sql =
             "PRAGMA index_info(" + quote_identifier(index_name) + ");";
@@ -102,7 +102,7 @@ table_indexes(sqlite3* database, const std::string& table) {
         };
         const auto info_operation =
             "cannot inspect state database index '" + index_name + "'";
-        while (info.next(info_operation)) {
+        while (info.next_row(info_operation)) {
             index.columns.push_back(column_text(info.get(), 2));
         }
         indexes.push_back(std::move(index));
@@ -175,14 +175,14 @@ std::string full_integrity_result(sqlite3* database) {
 }
 
 void configure_writable_database(sqlite3* database) {
-    execute(database, "PRAGMA journal_mode = WAL;");
-    execute(database, "PRAGMA synchronous = FULL;");
-    execute(database, "PRAGMA secure_delete = FAST;");
-    execute(database, "PRAGMA wal_autocheckpoint = 1000;");
+    execute_sql(database, "PRAGMA journal_mode = WAL;");
+    execute_sql(database, "PRAGMA synchronous = FULL;");
+    execute_sql(database, "PRAGMA secure_delete = FAST;");
+    execute_sql(database, "PRAGMA wal_autocheckpoint = 1000;");
     const auto maximum_pages =
         "PRAGMA max_page_count = " + std::to_string(maximum_database_pages) +
         ";";
-    execute(database, maximum_pages.c_str());
+    execute_sql(database, maximum_pages.c_str());
     require_pragma_value(
         database, "PRAGMA journal_mode;", "wal", "WAL journal mode"
     );

@@ -26,7 +26,7 @@ using Database = gsl::not_null<sqlite3*>;
 using PreparedStatement = gsl::not_null<sqlite3_stmt*>;
 using Sql = gsl::not_null<const char*>;
 
-void execute(Database database, Sql sql);
+void execute_sql(Database database, Sql sql);
 
 class Statement {
 public:
@@ -57,7 +57,7 @@ public:
         return sqlite3_step(statement_.get());
     }
 
-    [[nodiscard]] bool next(std::string_view operation) {
+    [[nodiscard]] bool next_row(std::string_view operation) {
         const int result = step();
         if (result == SQLITE_ROW) {
             return true;
@@ -68,19 +68,19 @@ public:
         throw_error(operation);
     }
 
-    void step_done(std::string_view operation) {
+    void execute(std::string_view operation) {
         if (step() != SQLITE_DONE) {
             throw_error(operation);
         }
     }
 
-    void step_row(std::string_view operation) {
+    void require_row(std::string_view operation) {
         if (step() != SQLITE_ROW) {
             throw_error(operation);
         }
     }
 
-    void reset_for_reuse() {
+    void reset() {
         const int reset_result = sqlite3_reset(statement_.get());
         const int clear_result = sqlite3_clear_bindings(statement_.get());
         if (reset_result != SQLITE_OK || clear_result != SQLITE_OK) {
@@ -132,7 +132,7 @@ class Transaction {
 public:
     explicit Transaction(Database database)
         : database_{database} {
-        execute(database_.get(), "BEGIN IMMEDIATE;");
+        execute_sql(database_.get(), "BEGIN IMMEDIATE;");
     }
 
     ~Transaction();
@@ -143,7 +143,7 @@ public:
     Transaction& operator=(Transaction&&) = delete;
 
     void commit() {
-        execute(database_.get(), "COMMIT;");
+        execute_sql(database_.get(), "COMMIT;");
         committed_ = true;
     }
 

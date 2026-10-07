@@ -80,7 +80,7 @@ void ItemDatabase::save_pending_remote_move_on_worker(
         static_cast<std::int64_t>(move.local_inode)
     );
     bind_integer(database, statement.get(), 10, move.directory ? 1 : 0);
-    statement.step_done("cannot persist pending remote move");
+    statement.execute("cannot persist pending remote move");
 }
 
 void ItemDatabase::remove_pending_remote_move(
@@ -105,7 +105,7 @@ void ItemDatabase::remove_pending_remote_move_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     bind_text(database, statement.get(), 2, remote_id);
-    statement.step_done("cannot remove pending remote move");
+    statement.execute("cannot remove pending remote move");
 }
 
 std::vector<PendingRemoteMove>
@@ -131,7 +131,7 @@ std::vector<PendingRemoteMove> ItemDatabase::pending_remote_moves_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     std::vector<PendingRemoteMove> moves;
-    while (statement.next("cannot read pending remote moves")) {
+    while (statement.next_row("cannot read pending remote moves")) {
         moves.push_back({
             .drive_id = column_text(statement.get(), 0),
             .remote_id = column_text(statement.get(), 1),
@@ -196,7 +196,7 @@ void ItemDatabase::commit_remote_move_on_worker(
         );
         bind_text(database, descendants.get(), 5, move.drive_id);
         bind_text(database, descendants.get(), 6, move.remote_id);
-        descendants.step_done("cannot remap moved directory descendants");
+        descendants.execute("cannot remap moved directory descendants");
     }
     Statement journal{
         database,
@@ -205,7 +205,7 @@ void ItemDatabase::commit_remote_move_on_worker(
     };
     bind_text(database, journal.get(), 1, move.drive_id);
     bind_text(database, journal.get(), 2, move.remote_id);
-    journal.step_done("cannot complete pending remote move journal");
+    journal.execute("cannot complete pending remote move journal");
     if (sqlite3_changes(database) != 1) {
         throw std::runtime_error(
             "cannot complete pending remote move journal: " +

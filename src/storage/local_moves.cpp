@@ -78,7 +78,7 @@ void ItemDatabase::save_pending_move_on_worker(const PendingMove& move) {
         static_cast<std::int64_t>(move.source_inode)
     );
     bind_integer(database, statement.get(), 8, move.directory ? 1 : 0);
-    statement.step_done("cannot persist pending move");
+    statement.execute("cannot persist pending move");
 }
 
 void ItemDatabase::remove_pending_move(
@@ -102,7 +102,7 @@ void ItemDatabase::remove_pending_move_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     bind_text(database, statement.get(), 2, remote_id);
-    statement.step_done("cannot remove pending move");
+    statement.execute("cannot remove pending move");
 }
 
 std::vector<PendingMove>
@@ -127,7 +127,7 @@ ItemDatabase::pending_moves_on_worker(const std::string& drive_id) const {
     };
     bind_text(database, statement.get(), 1, drive_id);
     std::vector<PendingMove> moves;
-    while (statement.next("cannot read pending moves")) {
+    while (statement.next_row("cannot read pending moves")) {
         const auto device = sqlite3_column_int64(statement.get(), 5);
         const auto inode = sqlite3_column_int64(statement.get(), 6);
         if (device < 0 || inode < 0) {

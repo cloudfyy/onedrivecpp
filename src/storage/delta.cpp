@@ -45,12 +45,12 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
             database, "DELETE FROM item WHERE drive_id = ?1;"
         };
         bind_text(database, replace_statement.get(), 1, delta.drive_id);
-        replace_statement.step_done("cannot replace drive items");
+        replace_statement.execute("cannot replace drive items");
         Statement replace_blocked_statement{
             database, "DELETE FROM blocked_item WHERE drive_id = ?1;"
         };
         bind_text(database, replace_blocked_statement.get(), 1, delta.drive_id);
-        replace_blocked_statement.step_done(
+        replace_blocked_statement.execute(
             "cannot replace blocked drive items"
         );
     }
@@ -118,8 +118,8 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         bind_integer(
             database, upsert_statement.get(), 17, item.directory ? 1 : 0
         );
-        upsert_statement.step_done("cannot apply delta item");
-        upsert_statement.reset_for_reuse();
+        upsert_statement.execute("cannot apply delta item");
+        upsert_statement.reset();
     }
 
     Statement complete_move_statement{
@@ -129,18 +129,18 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
     for (const auto& item : delta.upserts) {
         bind_text(database, complete_move_statement.get(), 1, delta.drive_id);
         bind_text(database, complete_move_statement.get(), 2, item.remote_id);
-        complete_move_statement.step_done(
+        complete_move_statement.execute(
             "cannot complete pending move journal"
         );
-        complete_move_statement.reset_for_reuse();
+        complete_move_statement.reset();
     }
     for (const auto& remote_id : delta.removals) {
         bind_text(database, complete_move_statement.get(), 1, delta.drive_id);
         bind_text(database, complete_move_statement.get(), 2, remote_id);
-        complete_move_statement.step_done(
+        complete_move_statement.execute(
             "cannot discard removed pending move journal"
         );
-        complete_move_statement.reset_for_reuse();
+        complete_move_statement.reset();
     }
 
     Statement delete_statement{
@@ -154,8 +154,8 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         }
         bind_text(database, delete_statement.get(), 1, delta.drive_id);
         bind_text(database, delete_statement.get(), 2, remote_id);
-        delete_statement.step_done("cannot remove delta item");
-        delete_statement.reset_for_reuse();
+        delete_statement.execute("cannot remove delta item");
+        delete_statement.reset();
     }
 
     Statement delete_partial_statement{
@@ -171,8 +171,8 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         }
         bind_text(database, delete_partial_statement.get(), 1, delta.drive_id);
         bind_text(database, delete_partial_statement.get(), 2, remote_id);
-        delete_partial_statement.step_done("cannot remove partial download");
-        delete_partial_statement.reset_for_reuse();
+        delete_partial_statement.execute("cannot remove partial download");
+        delete_partial_statement.reset();
     }
 
     Statement suppression_statement{
@@ -224,8 +224,8 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
             5,
             static_cast<std::int64_t>(suppression.source_inode)
         );
-        suppression_statement.step_done("cannot persist upload suppression");
-        suppression_statement.reset_for_reuse();
+        suppression_statement.execute("cannot persist upload suppression");
+        suppression_statement.reset();
     }
 
     Statement delete_blocked_statement{
@@ -240,8 +240,8 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         }
         bind_text(database, delete_blocked_statement.get(), 1, delta.drive_id);
         bind_text(database, delete_blocked_statement.get(), 2, remote_id);
-        delete_blocked_statement.step_done("cannot remove blocked item");
-        delete_blocked_statement.reset_for_reuse();
+        delete_blocked_statement.execute("cannot remove blocked item");
+        delete_blocked_statement.reset();
     }
 
     Statement upsert_blocked_statement{
@@ -315,8 +315,8 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         }
         bind_text(database, upsert_blocked_statement.get(), 14, hash_algorithm);
         bind_text(database, upsert_blocked_statement.get(), 15, hash_value);
-        upsert_blocked_statement.step_done("cannot persist blocked item");
-        upsert_blocked_statement.reset_for_reuse();
+        upsert_blocked_statement.execute("cannot persist blocked item");
+        upsert_blocked_statement.reset();
     }
 
     Statement state_statement{
@@ -333,7 +333,7 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
     bind_text(
         database, state_statement.get(), 3, delta.sync_filter_fingerprint
     );
-    state_statement.step_done("cannot update delta link");
+    state_statement.execute("cannot update delta link");
     transaction.commit();
 
     spdlog::debug(

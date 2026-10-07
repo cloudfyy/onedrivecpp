@@ -82,7 +82,7 @@ StateSummary read_state_summary(
         "WHERE drive_id = ?1;"
     };
     bind_text(database.get(), statement.get(), 1, drive_id);
-    if (statement.next("cannot read synchronization drive state")) {
+    if (statement.next_row("cannot read synchronization drive state")) {
         summary.delta_cursor = !column_text(statement.get(), 0).empty();
         summary.sync_filter_fingerprint = column_text(statement.get(), 1);
     }

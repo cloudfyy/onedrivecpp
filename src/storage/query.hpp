@@ -23,7 +23,7 @@ inline std::size_t query_count(
     if (value) {
         bind_text(database, statement.get(), 1, *value);
     }
-    statement.step_row("cannot count synchronization state rows");
+    statement.require_row("cannot count synchronization state rows");
     const auto count = sqlite3_column_int64(statement.get(), 0);
     if (count < 0 || static_cast<std::uintmax_t>(count) >
                          std::numeric_limits<std::size_t>::max()) {

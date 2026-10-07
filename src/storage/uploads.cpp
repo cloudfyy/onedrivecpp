@@ -107,7 +107,7 @@ void ItemDatabase::save_pending_upload_on_worker(const PendingUpload& upload) {
         static_cast<std::int64_t>(upload.failure_attempt_count)
     );
     bind_integer(database, statement.get(), 16, upload.directory ? 1 : 0);
-    statement.step_done("cannot persist pending upload");
+    statement.execute("cannot persist pending upload");
 }
 
 void ItemDatabase::remove_pending_upload(
@@ -136,7 +136,7 @@ void ItemDatabase::remove_pending_upload_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     bind_text(database, statement.get(), 2, remote_path);
-    statement.step_done("cannot remove pending upload");
+    statement.execute("cannot remove pending upload");
 }
 
 std::vector<PendingUpload>
@@ -163,7 +163,7 @@ ItemDatabase::pending_uploads_on_worker(const std::string& drive_id) const {
     };
     bind_text(database, statement.get(), 1, drive_id);
     std::vector<PendingUpload> uploads;
-    while (statement.next("cannot read pending uploads")) {
+    while (statement.next_row("cannot read pending uploads")) {
         auto remote_id = column_text(statement.get(), 7);
         uploads.push_back({
             .drive_id = column_text(statement.get(), 0),
@@ -220,7 +220,7 @@ void ItemDatabase::commit_upload_on_worker(
     };
     bind_text(database, statement.get(), 1, upload.drive_id);
     bind_text(database, statement.get(), 2, upload.remote_path);
-    statement.step_done("cannot complete pending upload journal");
+    statement.execute("cannot complete pending upload journal");
     if (sqlite3_changes(database) != 1) {
         throw std::runtime_error(
             "cannot complete pending upload journal: " +
