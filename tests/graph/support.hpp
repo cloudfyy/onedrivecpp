@@ -7,6 +7,8 @@
 #include "support/common.hpp"
 #include "onedrive/http/http_client.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
@@ -24,6 +26,80 @@
 #include <vector>
 
 namespace onedrive::test::graph {
+
+inline onedrive::http::HttpResponse json_response(
+    long status_code,
+    std::string body,
+    std::vector<onedrive::http::HttpHeader> headers = {}
+) {
+    return {
+        .status_code = status_code,
+        .headers = std::move(headers),
+        .body = std::move(body),
+    };
+}
+
+inline onedrive::http::HttpResponse token_response(
+    std::string access_token = "access-secret",
+    std::optional<std::string> refresh_token = std::nullopt
+) {
+    nlohmann::json document{
+        {"token_type", "Bearer"},
+        {"expires_in", 3600},
+        {"access_token", std::move(access_token)},
+    };
+    if (refresh_token) {
+        document["refresh_token"] = std::move(*refresh_token);
+    }
+    return json_response(200, document.dump());
+}
+
+inline onedrive::http::HttpResponse graph_error_response(
+    long status_code,
+    std::string code,
+    std::string message,
+    std::vector<onedrive::http::HttpHeader> headers = {}
+) {
+    return json_response(
+        status_code,
+        nlohmann::json{
+            {"error", {
+                {"code", std::move(code)},
+                {"message", std::move(message)},
+            }},
+        }.dump(),
+        std::move(headers)
+    );
+}
+
+inline onedrive::http::HttpResponse graph_page(
+    std::string values_json,
+    std::optional<std::string> next_link = std::nullopt,
+    std::optional<std::string> delta_link = std::nullopt
+) {
+    nlohmann::json document{
+        {"value", nlohmann::json::parse(values_json)},
+    };
+    if (next_link) {
+        document["@odata.nextLink"] = std::move(*next_link);
+    }
+    if (delta_link) {
+        document["@odata.deltaLink"] = std::move(*delta_link);
+    }
+    return json_response(200, document.dump());
+}
+
+inline onedrive::http::HttpResponse redirect_response(
+    std::string location,
+    long status_code = 302
+) {
+    return {
+        .status_code = status_code,
+        .headers = {
+            {.name = "Location", .value = std::move(location)},
+        },
+    };
+}
 
 inline const std::filesystem::path& test_directory() {
     static const onedrive::test::TemporaryDirectory temporary;

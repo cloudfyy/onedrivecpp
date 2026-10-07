@@ -9,29 +9,13 @@ int test_simple_file_uploads() {
         R"json({"id":"file-id","name":"new #1.txt","eTag":"new-etag","size":7,"fileSystemInfo":{"lastModifiedDateTime":"2026-10-04T09:00:00Z"},"parentReference":{"id":"folder-id","path":"/drive/root:/Folder A"},"file":{}})json";
     auto transport = std::make_unique<
         FakeTransport>(std::deque<onedrive::http::HttpResult>{
-        onedrive::http::HttpResponse{
-            .status_code = 200,
-            .body = R"({"token_type":"Bearer","expires_in":3600,)"
-                    R"("access_token":"access-secret",)"
-                    R"("refresh_token":"existing-refresh"})",
-        },
-        onedrive::http::HttpResponse{
-            .status_code = 201,
-            .body = uploaded_json,
-        },
-        onedrive::http::HttpResponse{
-            .status_code = 200,
-            .body = uploaded_json,
-        },
-        onedrive::http::HttpResponse{
-            .status_code = 409,
-            .body = R"json({"error":{"message":"name already exists"}})json",
-        },
-        onedrive::http::HttpResponse{
-            .status_code = 403,
-            .body =
-                R"json({"error":{"code":"quotaLimitReached","message":"OneDrive quota exceeded"}})json",
-        },
+        token_response("access-secret", "existing-refresh"),
+        json_response(201, uploaded_json),
+        json_response(200, uploaded_json),
+        graph_error_response(409, "", "name already exists"),
+        graph_error_response(
+            403, "quotaLimitReached", "OneDrive quota exceeded"
+        ),
     });
     auto* transport_pointer = transport.get();
     onedrive::graph::MicrosoftGraphClient client{

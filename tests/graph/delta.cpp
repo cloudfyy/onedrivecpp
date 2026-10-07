@@ -7,15 +7,8 @@ using namespace onedrive::test::graph;
 int test_untrusted_pagination_url() {
     auto transport =
         std::make_unique<FakeTransport>(std::deque<onedrive::http::HttpResult>{
-            onedrive::http::HttpResponse{
-                .status_code = 200,
-                .body = R"({"expires_in":3600,"access_token":"access-secret"})",
-            },
-            onedrive::http::HttpResponse{
-                .status_code = 200,
-                .body = R"({"value":[],"@odata.nextLink":)"
-                        R"("https://attacker.example/collect"})",
-            },
+            token_response(),
+            graph_page("[]", "https://attacker.example/collect"),
         });
     auto* transport_pointer = transport.get();
     onedrive::graph::MicrosoftGraphClient client{
@@ -277,16 +270,12 @@ int test_delta_resume_and_url_validation() {
     };
     auto transport =
         std::make_unique<FakeTransport>(std::deque<onedrive::http::HttpResult>{
-            onedrive::http::HttpResponse{
-                .status_code = 200,
-                .body = R"({"expires_in":3600,"access_token":"access-secret"})",
-            },
-            onedrive::http::HttpResponse{
-                .status_code = 200,
-                .body =
-                    R"({"value":[],"@odata.deltaLink":)"
-                    R"("https://graph.example.test/v1.0/delta?token=next"})",
-            },
+            token_response(),
+            graph_page(
+                "[]",
+                std::nullopt,
+                "https://graph.example.test/v1.0/delta?token=next"
+            ),
         });
     auto* transport_pointer = transport.get();
     onedrive::graph::MicrosoftGraphClient client{

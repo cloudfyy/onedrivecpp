@@ -7,11 +7,7 @@ using namespace onedrive::test::graph;
 std::unique_ptr<onedrive::graph::MicrosoftGraphClient>
 make_client(std::deque<onedrive::http::HttpResult> responses) {
     responses.push_front(
-        onedrive::http::HttpResponse{
-            .status_code = 200,
-            .body = R"({"token_type":"Bearer","expires_in":3600,)"
-                    R"("access_token":"access-secret"})",
-        }
+        token_response()
     );
     return std::make_unique<onedrive::graph::MicrosoftGraphClient>(
         wrap_transport(std::make_unique<FakeTransport>(std::move(responses))),

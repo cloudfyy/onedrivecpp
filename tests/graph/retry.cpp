@@ -31,15 +31,10 @@ int test_missing_authentication() {
 int test_invalid_file_hash() {
     auto transport = std::make_unique<
         FakeTransport>(std::deque<onedrive::http::HttpResult>{
-        onedrive::http::HttpResponse{
-            .status_code = 200,
-            .body = R"({"expires_in":3600,"access_token":"access-secret"})",
-        },
-        onedrive::http::HttpResponse{
-            .status_code = 200,
-            .body =
-                R"json({"value":[{"id":"file-id","name":"bad.txt","eTag":"etag","file":{"hashes":{"quickXorHash":"not-base64"}}}]})json",
-        },
+        token_response(),
+        graph_page(
+            R"json([{"id":"file-id","name":"bad.txt","eTag":"etag","file":{"hashes":{"quickXorHash":"not-base64"}}}])json"
+        ),
     });
     onedrive::graph::MicrosoftGraphClient client{
         wrap_transport(std::move(transport)),
@@ -61,15 +56,10 @@ int test_invalid_file_hash() {
 int test_graph_error() {
     auto transport =
         std::make_unique<FakeTransport>(std::deque<onedrive::http::HttpResult>{
-            onedrive::http::HttpResponse{
-                .status_code = 200,
-                .body = R"({"expires_in":3600,"access_token":"access-secret"})",
-            },
-            onedrive::http::HttpResponse{
-                .status_code = 403,
-                .body = R"({"error":{"code":"accessDenied",)"
-                        R"("message":"The caller is not permitted"}})",
-            },
+            token_response(),
+            graph_error_response(
+                403, "accessDenied", "The caller is not permitted"
+            ),
         });
     onedrive::graph::MicrosoftGraphClient client{
         wrap_transport(std::move(transport)),
@@ -92,20 +82,14 @@ int test_graph_error() {
 int test_throttling_retry_after() {
     auto transport =
         std::make_unique<FakeTransport>(std::deque<onedrive::http::HttpResult>{
-            onedrive::http::HttpResponse{
-                .status_code = 200,
-                .body = R"({"expires_in":3600,"access_token":"access-secret"})",
-            },
-            onedrive::http::HttpResponse{
-                .status_code = 429,
-                .headers = {{"Retry-After", "3"}},
-                .body = R"({"error":{"code":"activityLimitReached",)"
-                        R"("message":"Rate limit exceeded"}})",
-            },
-            onedrive::http::HttpResponse{
-                .status_code = 200,
-                .body = R"({"value":[]})",
-            },
+            token_response(),
+            graph_error_response(
+                429,
+                "activityLimitReached",
+                "Rate limit exceeded",
+                {{"Retry-After", "3"}}
+            ),
+            graph_page("[]"),
         });
     auto* transport_pointer = transport.get();
     std::vector<std::chrono::seconds> sleeps;
@@ -131,23 +115,15 @@ int test_throttling_retry_after() {
 int test_throttling_fallback_and_limit() {
     auto transport =
         std::make_unique<FakeTransport>(std::deque<onedrive::http::HttpResult>{
-            onedrive::http::HttpResponse{
-                .status_code = 200,
-                .body = R"({"expires_in":3600,"access_token":"access-secret"})",
-            },
-            onedrive::http::HttpResponse{
-                .status_code = 429,
-                .body = R"({"error":{"message":"Rate limit exceeded"}})",
-            },
-            onedrive::http::HttpResponse{
-                .status_code = 429,
-                .headers = {{"retry-after", "invalid"}},
-                .body = R"({"error":{"message":"Rate limit exceeded"}})",
-            },
-            onedrive::http::HttpResponse{
-                .status_code = 429,
-                .body = R"({"error":{"message":"Rate limit exceeded"}})",
-            },
+            token_response(),
+            graph_error_response(429, "", "Rate limit exceeded"),
+            graph_error_response(
+                429,
+                "",
+                "Rate limit exceeded",
+                {{"retry-after", "invalid"}}
+            ),
+            graph_error_response(429, "", "Rate limit exceeded"),
         });
     std::vector<std::chrono::seconds> sleeps;
     onedrive::graph::MicrosoftGraphClient client{

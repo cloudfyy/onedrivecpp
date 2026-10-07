@@ -54,29 +54,9 @@ int test_invalid_download_transport_options() {
 int test_file_download_redirect() {
     auto transport =
         std::make_unique<FakeTransport>(std::deque<onedrive::http::HttpResult>{
-            onedrive::http::HttpResponse{
-                .status_code = 200,
-                .body = R"({"expires_in":3600,"access_token":"access-secret"})",
-            },
-            onedrive::http::HttpResponse{
-                .status_code = 302,
-                .headers =
-                    {
-                        {
-                            .name = "Location",
-                            .value = "https://download.example.test/content",
-                        },
-                    },
-            },
-            onedrive::http::HttpResponse{
-                .status_code = 302,
-                .headers = {
-                    {
-                        .name = "Location",
-                        .value = "https://download.example.test/empty",
-                    },
-                },
-            },
+            token_response(),
+            redirect_response("https://download.example.test/content"),
+            redirect_response("https://download.example.test/empty"),
         });
     auto* transport_pointer = transport.get();
     const auto destination = test_directory() / "download";
@@ -254,30 +234,11 @@ int test_changed_file_download_is_not_retried() {
 int test_relaxed_file_download_ignores_remote_size() {
     auto transport =
         std::make_unique<FakeTransport>(std::deque<onedrive::http::HttpResult>{
-            onedrive::http::HttpResponse{
-                .status_code = 200,
-                .body = R"({"expires_in":3600,"access_token":"access-secret"})",
-            },
-            onedrive::http::HttpResponse{
-                .status_code = 302,
-                .headers =
-                    {
-                        {
-                            .name = "Location",
-                            .value = "https://download.example.test/protected",
-                        },
-                    },
-            },
-            onedrive::http::HttpResponse{
-                .status_code = 302,
-                .headers = {
-                    {
-                        .name = "Location",
-                        .value =
-                            "https://download.example.test/protected-empty",
-                    },
-                },
-            },
+            token_response(),
+            redirect_response("https://download.example.test/protected"),
+            redirect_response(
+                "https://download.example.test/protected-empty"
+            ),
         });
     auto* transport_pointer = transport.get();
     const auto destination = test_directory() / "relaxed-download";
@@ -1002,19 +963,8 @@ int test_invalid_chunk_responses_are_rejected() {
         std::filesystem::remove(destination, ignored);
         auto transport = std::make_unique<
             FakeTransport>(std::deque<onedrive::http::HttpResult>{
-            HttpResponse{
-                .status_code = 200,
-                .body = R"({"expires_in":3600,"access_token":"access-secret"})",
-            },
-            HttpResponse{
-                .status_code = 302,
-                .headers = {
-                    {
-                        .name = "Location",
-                        .value = "https://download.example.test/content",
-                    },
-                },
-            },
+            token_response(),
+            redirect_response("https://download.example.test/content"),
         });
         auto* transport_pointer = transport.get();
         transport->download_responses.push_back(std::move(response));
@@ -1055,19 +1005,8 @@ int test_invalid_chunk_responses_are_rejected() {
     std::filesystem::remove(destination, ignored);
     auto transport =
         std::make_unique<FakeTransport>(std::deque<onedrive::http::HttpResult>{
-            HttpResponse{
-                .status_code = 200,
-                .body = R"({"expires_in":3600,"access_token":"access-secret"})",
-            },
-            HttpResponse{
-                .status_code = 302,
-                .headers = {
-                    {
-                        .name = "Location",
-                        .value = "https://download.example.test/content",
-                    },
-                },
-            },
+            token_response(),
+            redirect_response("https://download.example.test/content"),
         });
     auto* transport_pointer = transport.get();
     transport->download_responses = {
