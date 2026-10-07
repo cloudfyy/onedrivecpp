@@ -145,6 +145,21 @@ int test_refresh_and_token_store() {
     } catch (const std::runtime_error&) {
     }
     std::filesystem::permissions(store.path(), expected);
+    constexpr std::size_t maximum_refresh_token_size =
+        std::size_t{64} * 1024U;
+    onedrive::test::write_file(
+        store.path(),
+        std::string(maximum_refresh_token_size + 1U, 'x')
+    );
+    try {
+        static_cast<void>(store.load_refresh_token());
+        return fail("oversized refresh token file was accepted");
+    } catch (const std::runtime_error& error) {
+        if (!std::string_view{error.what()}.contains("64 KiB")) {
+            return fail("oversized refresh token reported the wrong error");
+        }
+    }
+    store.save_refresh_token("rotated-refresh");
     if (!store.remove_refresh_token() || store.load_refresh_token()) {
         return fail("refresh token was not removed");
     }
