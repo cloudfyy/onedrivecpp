@@ -37,14 +37,14 @@ onedrive-cpp \- 现代 C++ OneDrive 同步客户端
 .B onedrive-cpp state clear
 .RI [ 选项 ]
 .PP
-.B onedrive-cpp download
+.B onedrive-cpp transfer download
 .RI [ 选项 ]
 .I 远端路径
 .PP
-.B onedrive-cpp sync
+.B onedrive-cpp transfer sync
 .RI [ 选项 ]
 .PP
-.B onedrive-cpp monitor
+.B onedrive-cpp transfer watch
 .RI [ 选项 ]
 .SH 描述
 .B onedrive-cpp
@@ -107,7 +107,7 @@ fingerprint、状态数据库可用性和 WebSocket 配置。已有 SQLite 状�
 重置当前 Drive 保存的 Delta 游标。认证、配置、本地文件、item 快照、
 pending-download、partial-download、pending-upload、pending-move、选择性保留
 对象的上传抑制、blocked item 和其他 Drive 状态均会保留。下一次
-.B sync
+.B transfer sync
 先恢复未完成操作，再执行完整的初始 Delta 查询；完整远端清单会替换旧远端元数据。
 .TP
 .B state clear
@@ -126,7 +126,7 @@ WAL/SHM sidecar 会被隔离为
 .IR items.sqlite3.corrupt\-<时间戳> ，
 然后创建可重建的新数据库。本地文件不会被删除。
 .TP
-.B download
+.B transfer download
 下载由 Drive 相对
 .I 远端路径
 标识的一个文件。不安全路径会在发送 Graph 请求前被拒绝。该命令复用正常同步的
@@ -137,7 +137,7 @@ eTag 前置条件、HTTPS 重定向、Range 传输、持久 checkpoint、完整�
 时只显示解析后的远端路径、本地目标和预期大小，不创建 item 数据库，也不修改
 下载文件。
 .TP
-.B sync
+.B transfer sync
 刷新 OAuth access token，并通过 Microsoft Graph Delta API 获取递归 Drive
 变化。非 dry-run 的成功查询会在应用远端变化后扫描本地变化并上传，最后原子
 提交远端元数据和 Delta 游标。本地新增或修改文件、目录、删除、移动和重命名
@@ -177,7 +177,7 @@ blocked item，不执行跨挂载点复制后删除。
 .B \-\-dry\-run
 只显示同步计划，不创建文件、不修改远端，也不更新同步状态。
 .TP
-.B monitor
+.B transfer watch
 执行一次初始同步，然后通过 inotify 递归监控本地 Drive 树，并定期轮询
 Microsoft Graph。本地事件突发会先合并再同步。SIGINT 和 SIGTERM 会唤醒等待，
 并在活动同步完成后干净退出。
@@ -195,11 +195,11 @@ Microsoft Graph。本地事件突发会先合并再同步。SIGINT 和 SIGTERM �
 .TP
 .B \-\-force\-large\-delete
 与
-.B sync
+.B transfer sync
 一起使用，允许本次执行超过
 .B sync.maximum_remote_deletions
 限制。该开关不能用于
-.B monitor
+.B transfer watch
 也不能持久化到配置文件。
 .TP
 .BI \-\-config " 路径"
@@ -257,7 +257,7 @@ trace 会记录协商协议、新建连接数及 DNS、TCP、TLS、服务端等�
 .TP
 .BI \-\-ui " 模式"
 选择
-.B sync
+.B transfer sync
 界面，可用值为
 .BR auto 、
 .BR console
@@ -286,9 +286,9 @@ trace 会记录协商协议、新建连接数及 DNS、TCP、TLS、服务端等�
 .TP
 .B \-\-dry\-run
 对于
-.B download
+.B transfer download
 ，只解析并显示单文件计划，不创建 item 数据库或修改本地文件。对于
-.B sync
+.B transfer sync
 ，显示有效同步输入，不修改本地文件、远端文件或同步状态。
 .SH 配置
 配置文件使用 TOML，且必须声明
@@ -298,7 +298,7 @@ trace 会记录协商协议、新建连接数及 DNS、TCP、TLS、服务端等�
 key 移到
 .B transfer
 和
-.B download
+.B transfer download
 表。
 .PP
 命令运行前会把状态目录限制为 0700，并在其中持有独占
@@ -362,7 +362,7 @@ Microsoft Graph Drive 标识；默认
 完整路径段递归匹配。过滤在 Graph Delta 元数据返回后执行。规则指纹与 Delta
 游标原子保存；规则变化会触发完整远端查询。后来被排除的现有本地文件不会删除。
 显式
-.B download
+.B transfer download
 不受该设置限制。
 .TP
 .B sync.nosync_enabled
@@ -746,19 +746,19 @@ OAuth token、设备代码、Authorization header 和密码不得写入日志。
 查看同步输入：
 .PP
 .RS
-.B onedrive-cpp sync \-\-dry\-run \-\-log\-level debug
+.B onedrive-cpp transfer sync \-\-dry\-run \-\-log\-level debug
 .RE
 .PP
 下载一个远端文件：
 .PP
 .RS
-.B onedrive-cpp download Documents/report.pdf
+.B onedrive-cpp transfer download Documents/report.pdf
 .RE
 .PP
 使用轮转日志运行 monitor：
 .PP
 .RS
-.B onedrive-cpp monitor \-\-log\-file ~/.local/state/onedrive-cpp/onedrive-cpp.log
+.B onedrive-cpp transfer watch \-\-log\-file ~/.local/state/onedrive-cpp/onedrive-cpp.log
 .RE
 .SH 安全
 状态目录和 refresh token 应按账号凭据保护。不要在日志或问题报告中公开 token、

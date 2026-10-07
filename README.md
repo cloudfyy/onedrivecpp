@@ -121,7 +121,7 @@ The executable is generated at `build/release/onedrive-cpp`. Verify it with:
 
 ```bash
 ./build/release/onedrive-cpp --version
-./build/release/onedrive-cpp sync --dry-run
+./build/release/onedrive-cpp transfer sync --dry-run
 ./build/release/onedrive-cpp --help
 ```
 
@@ -135,7 +135,7 @@ rm -rf build/release
 cmake --preset release
 cmake --build --preset release
 ctest --preset release
-./build/release/onedrive-cpp sync --dry-run
+./build/release/onedrive-cpp transfer sync --dry-run
 ```
 
 Ninja builds in parallel automatically. To set an explicit job count:

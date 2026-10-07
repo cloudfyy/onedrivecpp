@@ -12,8 +12,7 @@ int test_args() {
     if (help.exit_code != 0 || !help.standard_output.contains("account") ||
         !help.standard_output.contains("inspect") ||
         !help.standard_output.contains("state") ||
-        !help.standard_output.contains("download") ||
-        !help.standard_output.contains("sync") ||
+        !help.standard_output.contains("transfer") ||
         !help.standard_output.contains("onedrive-cpp [OPTIONS] SUBCOMMAND") ||
         help.standard_output.contains("build/release/onedrive-cpp")) {
         return fail("no-argument invocation did not show command help");
@@ -25,8 +24,18 @@ int test_args() {
         !version.standard_output.starts_with("onedrive-cpp ")) {
         return fail("--version did not print the application version");
     }
-    const auto sync_help =
-        run_application(runtime_factory, {"onedrive-cpp", "sync", "--help"});
+    const auto transfer_help = run_application(
+        runtime_factory, {"onedrive-cpp", "transfer", "--help"}
+    );
+    if (transfer_help.exit_code != 0 ||
+        !transfer_help.standard_output.contains("sync") ||
+        !transfer_help.standard_output.contains("download") ||
+        !transfer_help.standard_output.contains("watch")) {
+        return fail("transfer help did not list its transfer actions");
+    }
+    const auto sync_help = run_application(
+        runtime_factory, {"onedrive-cpp", "transfer", "sync", "--help"}
+    );
     if (sync_help.exit_code != 0 ||
         !sync_help.standard_output.contains("--force-large-delete") ||
         !sync_help.standard_output.contains("--ui") ||
@@ -48,15 +57,17 @@ int test_args() {
         !login_help.standard_output.contains("--theme")) {
         return fail("account login help did not document TUI options");
     }
-    const auto monitor_help =
-        run_application(runtime_factory, {"onedrive-cpp", "monitor", "--help"});
-    if (monitor_help.exit_code != 0 ||
-        !monitor_help.standard_output.contains("--ui") ||
-        !monitor_help.standard_output.contains("--theme")) {
-        return fail("monitor help did not document TUI options");
+    const auto watch_help = run_application(
+        runtime_factory, {"onedrive-cpp", "transfer", "watch", "--help"}
+    );
+    if (watch_help.exit_code != 0 ||
+        !watch_help.standard_output.contains("--ui") ||
+        !watch_help.standard_output.contains("--theme")) {
+        return fail("transfer watch help did not document TUI options");
     }
     const auto download_help = run_application(
-        runtime_factory, {"onedrive-cpp", "download", "--help"}
+        runtime_factory,
+        {"onedrive-cpp", "transfer", "download", "--help"}
     );
     if (download_help.exit_code != 0 ||
         !download_help.standard_output.contains("--ui") ||
@@ -140,10 +151,18 @@ int test_args() {
         );
     }
     if (run_application(
-            runtime_factory, {"onedrive-cpp", "monitor", "--force-large-delete"}
+            runtime_factory,
+            {
+                "onedrive-cpp",
+                "transfer",
+                "watch",
+                "--force-large-delete",
+            }
         )
             .exit_code != 2) {
-        return fail("monitor accepted the one-shot large-delete override");
+        return fail(
+            "transfer watch accepted the one-shot large-delete override"
+        );
     }
     if (run_application(
             runtime_factory,
@@ -167,13 +186,15 @@ int test_args() {
         return fail("invalid output mode did not return usage exit code 2");
     }
     if (run_application(
-            runtime_factory, {"onedrive-cpp", "sync", "--ui", "graphical"}
+            runtime_factory,
+            {"onedrive-cpp", "transfer", "sync", "--ui", "graphical"}
         )
             .exit_code != 2) {
         return fail("invalid UI mode did not return usage exit code 2");
     }
     if (run_application(
-            runtime_factory, {"onedrive-cpp", "sync", "--theme", "rainbow"}
+            runtime_factory,
+            {"onedrive-cpp", "transfer", "sync", "--theme", "rainbow"}
         )
             .exit_code != 2) {
         return fail("invalid TUI theme did not return usage exit code 2");
@@ -206,9 +227,15 @@ int test_args() {
             .exit_code != 2) {
         return fail("removed reset-state command was still accepted");
     }
-    if (run_application(runtime_factory, {"onedrive-cpp", "download"})
+    if (run_application(runtime_factory, {"onedrive-cpp", "transfer"})
             .exit_code != 2) {
-        return fail("download command accepted a missing remote path");
+        return fail("transfer command accepted a missing action");
+    }
+    if (run_application(
+            runtime_factory, {"onedrive-cpp", "transfer", "download"}
+        )
+            .exit_code != 2) {
+        return fail("transfer download accepted a missing remote path");
     }
     if (run_application(
             runtime_factory, {"onedrive-cpp", "inspect", "sites"}
@@ -223,6 +250,14 @@ int test_args() {
             )
                 .exit_code != 2) {
             return fail("removed inspection command was still accepted");
+        }
+    }
+    for (const std::string_view command : {"sync", "download", "monitor"}) {
+        if (run_application(
+                runtime_factory, {"onedrive-cpp", std::string{command}}
+            )
+                .exit_code != 2) {
+            return fail("removed transfer command was still accepted");
         }
     }
 
@@ -243,6 +278,7 @@ int test_args() {
         ui_fixture.runtime_factory,
         {
             "onedrive-cpp",
+            "transfer",
             "sync",
             "--config",
             ui_fixture.config_path.string(),
@@ -253,6 +289,7 @@ int test_args() {
         ui_fixture.runtime_factory,
         {
             "onedrive-cpp",
+            "transfer",
             "sync",
             "--config",
             ui_fixture.config_path.string(),
@@ -265,6 +302,7 @@ int test_args() {
         ui_fixture.runtime_factory,
         {
             "onedrive-cpp",
+            "transfer",
             "download",
             "Documents/file.txt",
             "--config",

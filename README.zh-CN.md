@@ -108,7 +108,7 @@ ctest --preset release
 
 ```bash
 ./build/release/onedrive-cpp --version
-./build/release/onedrive-cpp sync --dry-run
+./build/release/onedrive-cpp transfer sync --dry-run
 ./build/release/onedrive-cpp --help
 ```
 
@@ -121,7 +121,7 @@ rm -rf build/release
 cmake --preset release
 cmake --build --preset release
 ctest --preset release
-./build/release/onedrive-cpp sync --dry-run
+./build/release/onedrive-cpp transfer sync --dry-run
 ```
 
 Ninja 默认自动并行编译。如需明确指定并行任务数：

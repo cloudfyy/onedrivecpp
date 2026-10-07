@@ -386,6 +386,7 @@ int test_flow() {
         runtime_factory,
         {
             "onedrive-cpp",
+            "transfer",
             "sync",
             "--config",
             config_path.string(),
@@ -459,6 +460,7 @@ int test_flow() {
         runtime_factory,
         {
             "onedrive-cpp",
+            "transfer",
             "download",
             single_remote_path,
             "--config",
@@ -478,6 +480,7 @@ int test_flow() {
         runtime_factory,
         {
             "onedrive-cpp",
+            "transfer",
             "download",
             single_remote_path,
             "--config",
@@ -505,6 +508,7 @@ int test_flow() {
         runtime_factory,
         {
             "onedrive-cpp",
+            "transfer",
             "sync",
             "--config",
             config_path.string(),
@@ -574,6 +578,7 @@ int test_flow() {
         runtime_factory,
         {
             "onedrive-cpp",
+            "transfer",
             "sync",
             "--config",
             config_path.string(),
@@ -607,6 +612,7 @@ int test_flow() {
         runtime_factory,
         {
             "onedrive-cpp",
+            "transfer",
             "sync",
             "--config",
             config_path.string(),
@@ -623,7 +629,8 @@ int test_flow() {
         runtime_factory,
         {
             "onedrive-cpp",
-            "monitor",
+            "transfer",
+            "watch",
             "--config",
             config_path.string(),
         }

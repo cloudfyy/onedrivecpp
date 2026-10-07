@@ -99,13 +99,16 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         "clear",
         "Clear all saved synchronization state for the configured drive"
     );
-    auto* sync =
-        application.add_subcommand("sync", "Synchronize OneDrive files");
-    auto* download = application.add_subcommand(
+    auto* transfer =
+        application.add_subcommand("transfer", "Transfer OneDrive files");
+    transfer->require_subcommand(1);
+    auto* transfer_sync =
+        transfer->add_subcommand("sync", "Synchronize OneDrive files");
+    auto* transfer_download = transfer->add_subcommand(
         "download", "Download one remote file by its Drive-relative path"
     );
-    auto* monitor = application.add_subcommand(
-        "monitor", "Monitor for synchronization changes"
+    auto* transfer_watch = transfer->add_subcommand(
+        "watch", "Watch for synchronization changes"
     );
     const std::array command_operations{
         std::pair{account_login, Operation::authenticate},
@@ -118,9 +121,9 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         std::pair{inspect_status, Operation::status},
         std::pair{reset_cursor, Operation::reset_cursor},
         std::pair{clear_state, Operation::clear_state},
-        std::pair{sync, Operation::synchronize},
-        std::pair{download, Operation::download},
-        std::pair{monitor, Operation::monitor},
+        std::pair{transfer_sync, Operation::synchronize},
+        std::pair{transfer_download, Operation::download},
+        std::pair{transfer_watch, Operation::monitor},
     };
 
     const auto add_common_options = [&](CLI::App& command) {
@@ -184,12 +187,12 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         arguments.assume_yes,
         "Confirm the state clear without an interactive prompt"
     );
-    sync->add_flag(
+    transfer_sync->add_flag(
         "--dry-run",
         arguments.force_dry_run,
         "Show synchronization inputs without changing remote files"
     );
-    sync->add_flag(
+    transfer_sync->add_flag(
         "--force-large-delete",
         arguments.force_large_delete,
         "Allow this sync to exceed the configured remote deletion limit"
@@ -213,14 +216,14 @@ ParseResult parse_arguments(int argc, char* argv[]) {
             ->transform(CLI::CheckedTransformer(tui_themes))
             ->default_str("hacker");
     }
-    download
+    transfer_download
         ->add_option(
             "REMOTE_PATH",
             arguments.remote_download_path,
             "Drive-relative path of the remote file"
         )
         ->required();
-    download->add_flag(
+    transfer_download->add_flag(
         "--dry-run",
         arguments.force_dry_run,
         "Show the single-file download plan without changing local state"
@@ -254,8 +257,8 @@ ParseResult parse_arguments(int argc, char* argv[]) {
                           : *inspect_status ? Operation::status
                           : *reset_cursor   ? Operation::reset_cursor
                           : *clear_state    ? Operation::clear_state
-                          : *download       ? Operation::download
-                          : *monitor        ? Operation::monitor
+                          : *transfer_download ? Operation::download
+                          : *transfer_watch ? Operation::monitor
                                                : Operation::synchronize;
     return result;
 }

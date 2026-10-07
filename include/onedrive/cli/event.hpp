@@ -41,7 +41,7 @@ enum class TuiView {
     status,
     sync,
     download,
-    monitor,
+    watch,
 };
 
 enum class MessageKind {

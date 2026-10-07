@@ -169,7 +169,7 @@ whether a normal run would be blocked. After reviewing the local filesystem,
 an intentional one-shot batch can be approved with:
 
 ```bash
-onedrive-cpp sync --force-large-delete
+onedrive-cpp transfer sync --force-large-delete
 ```
 
 The override applies only to that invocation and cannot be persisted in the
@@ -178,7 +178,7 @@ limit, so restarting the process cannot bypass the safeguard.
 
 ## Monitor scheduling and notifications
 
-`monitor` performs an initial synchronization, acquires a Microsoft Graph
+`transfer watch` performs an initial synchronization, acquires a Microsoft Graph
 Socket.IO channel, and then remains idle until a remote WebSocket notification,
 an inotify local-change event, or the Graph polling interval expires.
 Local event bursts are coalesced for `monitor.settle_delay_milliseconds`.

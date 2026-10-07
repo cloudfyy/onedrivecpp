@@ -320,7 +320,7 @@ int test_tui_dashboard() {
         {
             .color = ColorMode::never,
             .ui = UiMode::tui,
-            .view = TuiView::monitor,
+            .view = TuiView::watch,
         },
         monitor_output,
         error,
@@ -333,7 +333,7 @@ int test_tui_dashboard() {
         .text = "Monitoring local and Microsoft Graph changes for: /sync",
     });
     monitor_backend.reset();
-    if (!monitor_output.str().contains("ONEDRIVE // MONITOR  v") ||
+    if (!monitor_output.str().contains("ONEDRIVE // WATCH  v") ||
         !monitor_output.str().contains("q / Esc  EXIT") ||
         !monitor_output.str().contains(
             "Watching for local and cloud changes in: /sync"

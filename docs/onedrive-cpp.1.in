@@ -37,14 +37,14 @@ onedrive-cpp \- modern C++ OneDrive synchronization client
 .B onedrive-cpp state clear
 .RI [ options ]
 .PP
-.B onedrive-cpp download
+.B onedrive-cpp transfer download
 .RI [ options ]
 .I REMOTE_PATH
 .PP
-.B onedrive-cpp sync
+.B onedrive-cpp transfer sync
 .RI [ options ]
 .PP
-.B onedrive-cpp monitor
+.B onedrive-cpp transfer watch
 .RI [ options ]
 .SH DESCRIPTION
 .B onedrive-cpp
@@ -119,7 +119,7 @@ Reset the saved delta link for the configured drive. This preserves
 authentication, configuration, local files, item snapshots, pending-download,
 partial-download, pending-upload, pending-move recovery records, selectively
 retained upload suppressions, blocked-item records, and state for other drives. The next
-.B sync
+.B transfer sync
 recovers pending downloads and performs a full initial delta query for the
 configured drive. The complete remote inventory replaces old item metadata;
 items that still conflict are recorded as blocked.
@@ -144,7 +144,7 @@ with its WAL/SHM sidecars before a reconstructible database is created.
 Local files remain untouched, but the next sync may report local modification
 conflicts without the old snapshots.
 .TP
-.B download
+.B transfer download
 Download one file identified by a Drive-relative
 .IR REMOTE_PATH .
 Unsafe path components are rejected before a Graph request. The command reuses
@@ -157,7 +157,7 @@ without advancing the Drive delta link. With
 display the resolved remote path, local destination, and expected size without
 creating the item database or changing downloaded files.
 .TP
-.B sync
+.B transfer sync
 Refresh the OAuth access token and retrieve recursive drive changes using the
 Microsoft Graph delta API. Successful non-dry-run queries atomically persist
 remote metadata and the final delta link after applying remote changes and
@@ -229,7 +229,7 @@ Use
 to display the download plan without creating files or updating synchronization
 state.
 .TP
-.B monitor
+.B transfer watch
 Run an initial synchronization, then monitor the local Drive tree recursively
 with inotify and poll Microsoft Graph periodically. Local event bursts are
 coalesced before synchronization. SIGINT and SIGTERM stop the monitor cleanly
@@ -253,7 +253,7 @@ With
 allow this invocation to exceed
 .BR sync.maximum_remote_deletions .
 The override is not available to
-.B monitor
+.B transfer watch
 and cannot be persisted in the configuration file.
 .TP
 .BI \-\-config " PATH"
@@ -321,7 +321,7 @@ and errors. Diagnostic logging remains controlled separately by
 .TP
 .BI \-\-ui " MODE"
 Select the
-.B sync
+.B transfer sync
 interface:
 .BR auto ,
 .BR console ,
@@ -354,7 +354,7 @@ For
 .BR download ,
 resolve and display the single-file plan without creating the item database or
 changing downloaded files. For
-.B sync
+.B transfer sync
 , display the effective synchronization inputs without modifying remote files.
 .SH CONFIGURATION
 The configuration file uses TOML and must declare
@@ -366,7 +366,7 @@ Version 1 configuration files must move the former
 keys into the
 .B transfer
 and
-.B download
+.B transfer download
 tables.
 .PP
 Before a command runs, the state directory is restricted to mode 0700 and an
@@ -415,7 +415,7 @@ files are adopted without a backup or inode replacement. A backup retains local
 permission bits, is not uploaded, and requires additional disk space equal to
 the local file. Backup failure leaves the destination unchanged. This setting
 applies to normal synchronization and the
-.B download
+.B transfer download
 command. If upload recovery discovers a simultaneous remote change, it
 discards only the stale upload snapshot and journal, then reconciles the
 remote delta through this same policy. Directory and remote-deletion conflicts
@@ -451,7 +451,7 @@ Filtering occurs after Graph Delta metadata is fetched. A fingerprint of the
 effective rules is stored atomically with the Delta cursor; changing or
 removing the rules automatically triggers a full remote-state query. Existing
 local files that become excluded are not deleted. The explicit
-.B download
+.B transfer download
 command is not filtered by this setting.
 .TP
 .B sync.nosync_enabled
@@ -939,19 +939,19 @@ Authorize a Microsoft account:
 Inspect synchronization inputs:
 .PP
 .RS
-.B onedrive-cpp sync \-\-dry\-run \-\-log\-level debug
+.B onedrive-cpp transfer sync \-\-dry\-run \-\-log\-level debug
 .RE
 .PP
 Download one remote file:
 .PP
 .RS
-.B onedrive-cpp download Documents/report.pdf
+.B onedrive-cpp transfer download Documents/report.pdf
 .RE
 .PP
 Run the monitor with a rotating log file:
 .PP
 .RS
-.B onedrive-cpp monitor \-\-log\-file ~/.local/state/onedrive-cpp/onedrive-cpp.log
+.B onedrive-cpp transfer watch \-\-log\-file ~/.local/state/onedrive-cpp/onedrive-cpp.log
 .RE
 .SH SECURITY
 Protect the state directory and refresh token as account credentials. Do not

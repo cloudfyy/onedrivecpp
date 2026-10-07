@@ -15,17 +15,17 @@ journalctl --user -u onedrive-cpp.service -f
 Every subcommand accepts diagnostic logging and user-output options:
 
 ```bash
-onedrive-cpp sync --dry-run --log-level debug
-onedrive-cpp monitor --log-file ~/.local/state/onedrive-cpp/onedrive-cpp.log
-onedrive-cpp sync --dry-run --color always
-onedrive-cpp sync --ui tui
-onedrive-cpp sync --theme ocean
+onedrive-cpp transfer sync --dry-run --log-level debug
+onedrive-cpp transfer watch --log-file ~/.local/state/onedrive-cpp/onedrive-cpp.log
+onedrive-cpp transfer sync --dry-run --color always
+onedrive-cpp transfer sync --ui tui
+onedrive-cpp transfer sync --theme ocean
 onedrive-cpp account login --ui tui
 onedrive-cpp inspect health --ui tui
 onedrive-cpp inspect status --ui tui
-onedrive-cpp download Documents/report.pdf --ui tui
-onedrive-cpp sync --dry-run --output json
-onedrive-cpp sync --dry-run --quiet
+onedrive-cpp transfer download Documents/report.pdf --ui tui
+onedrive-cpp transfer sync --dry-run --output json
+onedrive-cpp transfer sync --dry-run --quiet
 onedrive-cpp inspect drives --output json
 onedrive-cpp inspect shared
 onedrive-cpp inspect sites Engineering
@@ -52,7 +52,7 @@ in this mode. `--quiet` suppresses informational and success output while
 retaining warnings and errors. Diagnostic logs remain on standard error, while
 command results are written to standard output.
 
-`account login`, `inspect health`, `inspect status`, `sync`, `download`, and `monitor` use `console.ui` from the configuration,
+`account login`, `inspect health`, `inspect status`, `transfer sync`, `transfer download`, and `transfer watch` use `console.ui` from the configuration,
 which defaults to `auto`; an explicit `--ui` overrides it for one invocation.
 Auto mode opens the FTXUI status dashboard only when standard input and output are terminals,
 `TERM` supports terminal controls, and the terminal is at least 60 columns by
@@ -60,7 +60,7 @@ Auto mode opens the FTXUI status dashboard only when standard input and output a
 undersized terminals automatically use the normal console. Use
 `--ui=console` to disable the dashboard. `--ui=tui` requires the dashboard and
 reports a clear error instead of falling back when the terminal cannot support
-it. In the monitor dashboard, press `q`, `Q`, or `Esc` to stop cleanly.
+it. In the watch dashboard, press `q`, `Q`, or `Esc` to stop cleanly.
 
 The dashboard enters the terminal's alternate full-screen buffer immediately,
 shows the client version, and restores the original screen on exit. The
@@ -109,8 +109,8 @@ Then use Tab completion for commands and values:
 
 ```bash
 build/release/onedrive-cpp <Tab>
-build/release/onedrive-cpp sync --<Tab>
-build/release/onedrive-cpp sync --log-level <Tab>
+build/release/onedrive-cpp transfer sync --<Tab>
+build/release/onedrive-cpp transfer sync --log-level <Tab>
 ```
 
 The installed definitions are placed in

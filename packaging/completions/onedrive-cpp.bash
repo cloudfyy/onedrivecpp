@@ -1,6 +1,6 @@
 _onedrive_cpp_completion()
 {
-    local current previous command="" account_action="" inspect_action="" state_action="" word
+    local current previous command="" account_action="" inspect_action="" state_action="" transfer_action="" word
     COMPREPLY=()
     current="${COMP_WORDS[COMP_CWORD]}"
     previous="${COMP_WORDS[COMP_CWORD-1]}"
@@ -41,7 +41,7 @@ _onedrive_cpp_completion()
 
     for word in "${COMP_WORDS[@]:1:COMP_CWORD-1}"; do
         case "$word" in
-            account|inspect|state|download|sync|monitor)
+            account|inspect|state|transfer)
                 if [[ -z "$command" ]]; then
                     command="$word"
                 fi
@@ -61,12 +61,17 @@ _onedrive_cpp_completion()
                     state_action="$word"
                 fi
                 ;;
+            sync|download|watch)
+                if [[ "$command" == "transfer" ]]; then
+                    transfer_action="$word"
+                fi
+                ;;
         esac
     done
 
     if [[ -z "$command" ]]; then
         mapfile -t COMPREPLY < <(compgen -W \
-            "account inspect state download sync monitor --help --version" \
+            "account inspect state transfer --help --version" \
             -- "$current")
         return
     fi
@@ -98,18 +103,6 @@ _onedrive_cpp_completion()
                     )
                     ;;
             esac
-            ;;
-        download)
-            mapfile -t COMPREPLY < <(compgen -W \
-                "$common_options --ui --theme --dry-run" -- "$current")
-            ;;
-        sync)
-            mapfile -t COMPREPLY < <(compgen -W \
-                "$common_options --ui --theme --dry-run --force-large-delete" -- "$current")
-            ;;
-        monitor)
-            mapfile -t COMPREPLY < <(compgen -W \
-                "$common_options --ui --theme" -- "$current")
             ;;
         state)
             case "$state_action" in
@@ -143,6 +136,27 @@ _onedrive_cpp_completion()
                 *)
                     mapfile -t COMPREPLY < <(
                         compgen -W "health status drives shared sites quota --help" -- "$current"
+                    )
+                    ;;
+            esac
+            ;;
+        transfer)
+            case "$transfer_action" in
+                sync)
+                    mapfile -t COMPREPLY < <(compgen -W \
+                        "$common_options --ui --theme --dry-run --force-large-delete" -- "$current")
+                    ;;
+                download)
+                    mapfile -t COMPREPLY < <(compgen -W \
+                        "$common_options --ui --theme --dry-run" -- "$current")
+                    ;;
+                watch)
+                    mapfile -t COMPREPLY < <(compgen -W \
+                        "$common_options --ui --theme" -- "$current")
+                    ;;
+                *)
+                    mapfile -t COMPREPLY < <(
+                        compgen -W "sync download watch --help" -- "$current"
                     )
                     ;;
             esac

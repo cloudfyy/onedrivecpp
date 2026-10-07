@@ -14,7 +14,7 @@ onedrive-cpp state reset-cursor
 This preserves authentication tokens, configuration, local files, item
 snapshots, pending-download, pending-upload, and pending-move recovery records,
 selectively retained upload suppressions, and state for other drives. The next
-`sync` recovers pending operations first, then performs a full initial Delta
+`transfer sync` recovers pending operations first, then performs a full initial Delta
 query. Existing snapshots are used to detect local modifications safely;
 blocked-item records are preserved for diagnosis, and the complete remote
 inventory replaces the configured Drive's old item metadata.
@@ -89,7 +89,7 @@ The command returns nonzero when any database is unhealthy and supports
 Download one file without running a full Drive Delta synchronization:
 
 ```bash
-onedrive-cpp download "Documents/report.pdf"
+onedrive-cpp transfer download "Documents/report.pdf"
 ```
 
 The argument is a Drive-relative file path. Absolute paths, empty components,
@@ -106,12 +106,12 @@ and expected size without creating the item database or changing downloaded
 files:
 
 ```bash
-onedrive-cpp download "Documents/report.pdf" --dry-run
+onedrive-cpp transfer download "Documents/report.pdf" --dry-run
 ```
 
 ## Delta synchronization and atomic application
 
-The `sync` command refreshes the OAuth access token, securely persists a
+The `transfer sync` command refreshes the OAuth access token, securely persists a
 rotated refresh token when Microsoft returns one, and obtains the configured
 drive's recursive file tree through paginated Microsoft Graph delta requests.
 The first successful query atomically writes remote metadata and the final
@@ -150,7 +150,7 @@ blocked item. Invalid remote paths, symbolic links, local path-type conflicts,
 files marked with the Microsoft Graph `malware` facet, and descendants of
 blocked directories are also persisted as blocked items. Malware-marked files
 are never downloaded or allowed to replace existing local data. Independent
-files continue, and `sync` exits with status 2 after safely advancing the
+files continue, and `transfer sync` exits with status 2 after safely advancing the
 cursor. Blocked items are retried on every later incremental sync; a successful
 retry or remote deletion clears the record.
 Authentication, Graph, database, root-permission, disk-capacity, and download

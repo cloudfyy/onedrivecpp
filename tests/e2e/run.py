@@ -11,9 +11,16 @@ from .base import E2EError
 from .util import client_environment, wait_until
 
 
-def sync_arguments(config: Path, log_file: Path) -> list[str]:
+def transfer_arguments(
+    action: str,
+    config: Path,
+    log_file: Path,
+    *positional: str,
+) -> list[str]:
     return [
-        "sync",
+        "transfer",
+        action,
+        *positional,
         "--config",
         str(config),
         "--color",
@@ -27,10 +34,12 @@ def sync_arguments(config: Path, log_file: Path) -> list[str]:
     ]
 
 
+def sync_arguments(config: Path, log_file: Path) -> list[str]:
+    return transfer_arguments("sync", config, log_file)
+
+
 def monitor_arguments(config: Path, log_file: Path) -> list[str]:
-    arguments = sync_arguments(config, log_file)
-    arguments[0] = "monitor"
-    return arguments
+    return transfer_arguments("watch", config, log_file)
 
 def run_client(
     client: Path,
@@ -245,20 +254,9 @@ def run_single_download(
 ) -> subprocess.CompletedProcess[str]:
     return run_client(
         client,
-        [
-            "download",
-            remote_path.as_posix(),
-            "--config",
-            str(config),
-            "--color",
-            "never",
-            "--output",
-            "json",
-            "--log-level",
-            "trace",
-            "--log-file",
-            str(log_file),
-        ],
+        transfer_arguments(
+            "download", config, log_file, remote_path.as_posix()
+        ),
         home,
         timeout=600,
     )

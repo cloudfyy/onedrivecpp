@@ -13,7 +13,7 @@ onedrive-cpp state reset-cursor
 
 该命令会保留认证 token、配置、同步目录中的本地文件、item 快照、pending
 download、pending upload 和 pending move 恢复记录、对选择性保留副本的上传
-抑制、blocked item，以及其他 Drive 的状态。下一次 `sync` 会先恢复 pending
+抑制、blocked item，以及其他 Drive 的状态。下一次 `transfer sync` 会先恢复 pending
 操作，再执行完整的初始 Delta 查询。同步期间，程序仍会使用旧快照安全判断本地
 文件是否经过修改，并用完整的远端清单替换当前 Drive 的旧 item 元数据。
 
@@ -63,7 +63,7 @@ onedrive-cpp inspect health
 无需执行整个 Drive Delta 同步即可下载单个文件：
 
 ```bash
-onedrive-cpp download "Documents/report.pdf"
+onedrive-cpp transfer download "Documents/report.pdf"
 ```
 
 参数是相对于 Drive 的文件路径。发出 Graph 请求前，程序会拒绝绝对路径、空
@@ -77,12 +77,12 @@ checkpoint 恢复、完整性校验、磁盘空间预留、本地修改保护和
 创建 item 数据库或修改下载文件：
 
 ```bash
-onedrive-cpp download "Documents/report.pdf" --dry-run
+onedrive-cpp transfer download "Documents/report.pdf" --dry-run
 ```
 
 ## Delta 同步与原子应用
 
-`sync` 命令会刷新 OAuth access token。Microsoft 返回轮换后的 refresh token
+`transfer sync` 命令会刷新 OAuth access token。Microsoft 返回轮换后的 refresh token
 时，程序会将其安全持久化。随后，命令通过分页的 Microsoft Graph Delta 请求
 获取配置 Drive 中的递归文件树。首次查询成功后，程序会将远端元数据和最终的
 `deltaLink` 原子写入所选账号与 Drive 的 `items.sqlite3`。后续运行会复用该
@@ -114,7 +114,7 @@ onedrive-cpp download "Documents/report.pdf" --dry-run
 非法远端路径、符号链接、本地路径类型冲突、带有 Microsoft Graph `malware`
 facet 的文件，以及被阻塞目录的子项，也会持久化为 blocked item。程序不会下载
 被标记为恶意的文件，也不会让它替换现有本地数据。其他独立文件会继续同步；
-游标安全推进后，`sync` 返回状态码 2。此后的每次增量同步都会自动重试 blocked
+游标安全推进后，`transfer sync` 返回状态码 2。此后的每次增量同步都会自动重试 blocked
 item；操作成功或远端项目删除后，记录会被清除。认证、Graph、数据库、同步根
 目录权限、整体磁盘容量和下载传输错误仍属于致命错误。
 

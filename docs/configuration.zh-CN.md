@@ -156,7 +156,7 @@ data_mount_point = "/mnt/data"
 符合预期后，可以执行一次性强制操作：
 
 ```bash
-onedrive-cpp sync --force-large-delete
+onedrive-cpp transfer sync --force-large-delete
 ```
 
 该开关只作用于本次命令，不能写入配置文件。pending-delete 崩溃恢复也使用同一
@@ -164,7 +164,7 @@ onedrive-cpp sync --force-large-delete
 
 ## Monitor 调度与通知
 
-`monitor` 启动后，先执行一轮完整同步并获取 Microsoft Graph Socket.IO
+`transfer watch` 启动后，先执行一轮完整同步并获取 Microsoft Graph Socket.IO
 channel，然后进入休眠。收到远端 WebSocket 通知、inotify 报告完整的本地变化，
 或 Graph 轮询周期到期时，它会被唤醒。本地事件突发会按照
 `monitor.settle_delay_milliseconds` 合并。即使没有本地活动，当通知 channel

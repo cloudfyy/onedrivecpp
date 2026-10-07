@@ -296,8 +296,8 @@ private:
                     return "STATUS";
                 case TuiView::download:
                     return "DOWNLOAD";
-                case TuiView::monitor:
-                    return "MONITOR";
+                case TuiView::watch:
+                    return "WATCH";
                 case TuiView::sync:
                     return "SYNC";
             }
@@ -431,7 +431,7 @@ private:
                 ));
             }
         }
-        if (view_ == TuiView::monitor) {
+        if (view_ == TuiView::watch) {
             content.push_back(separator());
             content.push_back(with_color(
                 text(" q / Esc  EXIT "),
