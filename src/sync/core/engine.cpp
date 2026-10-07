@@ -475,10 +475,16 @@ int SyncEngine::synchronize() {
                 storage::DeltaApplyMode::merge :
                 storage::DeltaApplyMode::replace;
         graph::DeltaResult delta;
+        std::size_t delta_pages = 0;
+        std::size_t delta_scanned_items = 0;
         const auto delta_progress =
-            [&console](std::size_t pages,
-                       std::size_t items,
-                       util::ProgressState state) {
+            [&console, &delta_pages, &delta_scanned_items](
+                std::size_t pages,
+                std::size_t items,
+                util::ProgressState state
+            ) {
+                delta_pages = pages;
+                delta_scanned_items = items;
                 console.delta_progress(pages, items, state);
             };
         try {
@@ -497,6 +503,21 @@ int SyncEngine::synchronize() {
             delta = graph_.list_delta(std::nullopt, delta_progress);
             apply_mode = storage::DeltaApplyMode::replace;
         }
+        cli::DeltaSummary delta_summary{
+            .pages = delta_pages,
+            .scanned_items = delta_scanned_items,
+            .unique_changes = delta.changes.size(),
+        };
+        for (const auto& change : delta.changes) {
+            if (change.deleted) {
+                ++delta_summary.deletions;
+            } else if (change.directory) {
+                ++delta_summary.directories;
+            } else {
+                ++delta_summary.files;
+            }
+        }
+        console.delta_summary(delta_summary);
         const auto tracked_items =
             items_.drive_items(config_.drive_id);
         std::vector<storage::UploadSuppression> upload_suppressions;

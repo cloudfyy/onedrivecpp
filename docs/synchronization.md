@@ -19,11 +19,14 @@ query. Existing snapshots are used to detect local modifications safely;
 blocked-item records are preserved for diagnosis, and the complete remote
 inventory replaces the configured Drive's old item metadata.
 
-During a Delta query, text output and logs report each completed page and the
-cumulative number of scanned items. JSON output emits a `delta_progress` event
-with `pages`, `items`, and `completed` fields. Microsoft Graph does not provide
-the total number of Delta items in advance, so an accurate percentage is not
-available. `--quiet` suppresses console progress but not configured log output.
+During a Delta query, text output prints one dot for each completed page, then
+summarizes the page count, scanned items, unique changes, files, folders,
+deletions, and average items per page. JSON output emits `delta_progress`
+events with `pages`, `items`, and `completed` fields, followed by a
+`delta_summary` event with the final breakdown. Microsoft Graph does not
+provide the total number of Delta items in advance, so an accurate percentage
+is not available. Per-page details remain available in debug logs. `--quiet`
+suppresses console progress but not configured log output.
 
 Before creating directories or downloading files, synchronization validates
 every remote path. Empty, absolute, dot-segment, NUL-containing, control-byte,

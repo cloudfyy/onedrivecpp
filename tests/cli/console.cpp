@@ -39,6 +39,14 @@ int main() {
     );
     plain.delta_progress(2, 350, ProgressState::ongoing);
     plain.delta_progress(3, 412, ProgressState::completed);
+    plain.delta_summary({
+        .pages = 3,
+        .scanned_items = 412,
+        .unique_changes = 400,
+        .files = 300,
+        .directories = 90,
+        .deletions = 10,
+    });
     plain.blocked_item(
         "conflict.txt",
         "local_modification",
@@ -89,8 +97,10 @@ int main() {
     );
     if (plain_output.str() !=
         "Completed.\nSummary\n  Files: 12\n  Bytes: 42\n"
-        "Microsoft Graph delta: 2 pages, 350 items scanned (continuing)\n"
-        "Microsoft Graph delta: 3 pages, 412 items scanned (complete)\n"
+        "Microsoft Graph delta: ...\n"
+        "Microsoft Graph delta complete: 3 pages, 412 items scanned, 400 "
+        "unique changes (300 files, 90 folders, 10 deletions), 137.3 "
+        "items/page\n"
         "DL: 1/2 files, 50% (5 B/10 B), 2.0 KiB/s, ETA 00:01:05\n"
         "DL: 1/2 files, 99% (10 B/10 B)\n"
         "Done: 2/2 files, 100% (10 B/10 B), 1.0 KiB/s, "
@@ -140,6 +150,14 @@ int main() {
         }
     );
     json.delta_progress(4, 625, ProgressState::ongoing);
+    json.delta_summary({
+        .pages = 4,
+        .scanned_items = 625,
+        .unique_changes = 600,
+        .files = 500,
+        .directories = 90,
+        .deletions = 10,
+    });
     json.blocked_item(
         "conflict.txt",
         "local_modification",
@@ -177,6 +195,8 @@ int main() {
     std::getline(json_lines, line);
     const auto delta_progress = nlohmann::json::parse(line);
     std::getline(json_lines, line);
+    const auto delta_summary = nlohmann::json::parse(line);
+    std::getline(json_lines, line);
     const auto download_progress = nlohmann::json::parse(line);
     std::getline(json_lines, line);
     const auto completed_download_progress =
@@ -190,6 +210,13 @@ int main() {
         delta_progress.at("pages") != 4 ||
         delta_progress.at("items") != 625 ||
         delta_progress.at("completed") != false ||
+        delta_summary.at("event") != "delta_summary" ||
+        delta_summary.at("pages") != 4 ||
+        delta_summary.at("scanned_items") != 625 ||
+        delta_summary.at("unique_changes") != 600 ||
+        delta_summary.at("files") != 500 ||
+        delta_summary.at("directories") != 90 ||
+        delta_summary.at("deletions") != 10 ||
         download_progress.at("event") != "download_progress" ||
         download_progress.at("completed_files") != 0 ||
         download_progress.at("downloaded_bytes") != 4 ||
@@ -234,6 +261,10 @@ int main() {
         {{.label = "Files", .key = "files", .value = "12"}}
     );
     quiet.delta_progress(1, 200, ProgressState::ongoing);
+    quiet.delta_summary({
+        .pages = 1,
+        .scanned_items = 200,
+    });
     quiet.download_progress(
         0, 1, 1, 2, ProgressState::ongoing
     );

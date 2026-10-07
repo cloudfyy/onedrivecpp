@@ -50,6 +50,15 @@ struct DownloadProgressMetrics {
     std::uint64_t elapsed_milliseconds{0};
 };
 
+struct DeltaSummary {
+    std::size_t pages{0};
+    std::size_t scanned_items{0};
+    std::size_t unique_changes{0};
+    std::size_t files{0};
+    std::size_t directories{0};
+    std::size_t deletions{0};
+};
+
 [[nodiscard]] unsigned download_progress_percentage(
     std::size_t completed_files,
     std::size_t file_count,
@@ -81,6 +90,7 @@ public:
         std::size_t items,
         util::ProgressState state
     ) const;
+    void delta_summary(const DeltaSummary& summary) const;
     void blocked_item(
         std::string_view path,
         std::string_view reason_code,
@@ -114,6 +124,8 @@ private:
     gsl::not_null<std::ostream*> error_;
     bool styled_{false};
     bool interactive_{false};
+    mutable std::size_t delta_progress_pages_{0};
+    mutable bool delta_progress_active_{false};
     mutable bool download_progress_active_{false};
 };
 

@@ -198,14 +198,55 @@ void Console::delta_progress(
         }.dump() << '\n';
         return;
     }
-    *output_ << fmt::format(
-        "Microsoft Graph delta: {} page{}, {} item{} scanned ({})\n",
-        pages,
-        pages == 1 ? "" : "s",
-        items,
-        items == 1 ? "" : "s",
-        completed ? "complete" : "continuing"
-    );
+    if (!delta_progress_active_) {
+        *output_ << "Microsoft Graph delta: ";
+        delta_progress_active_ = true;
+        delta_progress_pages_ = 0;
+    }
+    if (pages > delta_progress_pages_) {
+        *output_ << std::string(pages - delta_progress_pages_, '.')
+                 << std::flush;
+        delta_progress_pages_ = pages;
+    }
+}
+
+void Console::delta_summary(const DeltaSummary& summary) const {
+    if (options_.quiet) {
+        return;
+    }
+    if (options_.output == OutputMode::json) {
+        *output_ << nlohmann::json{
+            {"event", "delta_summary"},
+            {"pages", summary.pages},
+            {"scanned_items", summary.scanned_items},
+            {"unique_changes", summary.unique_changes},
+            {"files", summary.files},
+            {"directories", summary.directories},
+            {"deletions", summary.deletions},
+        }.dump() << '\n';
+        return;
+    }
+    const auto items_per_page =
+        summary.pages == 0 ?
+            0.0 :
+            static_cast<double>(summary.scanned_items) /
+                static_cast<double>(summary.pages);
+    *output_ << (delta_progress_active_ ? "\n" : "")
+             << fmt::format(
+                    "Microsoft Graph delta complete: {} page{}, {} items "
+                    "scanned, {} unique changes ({} files, {} folders, {} "
+                    "deletions), {:.1f} items/page\n",
+                    summary.pages,
+                    summary.pages == 1 ? "" : "s",
+                    summary.scanned_items,
+                    summary.unique_changes,
+                    summary.files,
+                    summary.directories,
+                    summary.deletions,
+                    items_per_page
+                );
+    delta_progress_pages_ = 0;
+    delta_progress_active_ = false;
 }
 
 void Console::blocked_item(
