@@ -20,6 +20,7 @@ struct Arguments {
     std::optional<cli::ColorMode> color_mode;
     cli::OutputMode output_mode{cli::OutputMode::text};
     std::optional<cli::UiMode> ui_mode;
+    std::optional<cli::TuiTheme> tui_theme;
     bool quiet{false};
     std::string remote_download_path;
     std::string site_query;

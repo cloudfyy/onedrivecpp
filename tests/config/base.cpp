@@ -13,6 +13,7 @@ int test_base() {
                << "[console]\n"
                << "color = \"always\"\n"
                << "ui = \"console\"\n"
+               << "theme = \"synthwave\"\n"
                << "[logging]\n"
                << "level = \"debug\"\n"
                << "file = \"logs/onedrive-cpp.log\"\n"
@@ -90,6 +91,7 @@ int test_base() {
 
     if (config.console_color != onedrive::cli::ColorMode::always ||
         config.console_ui != onedrive::cli::UiMode::console ||
+        config.console_theme != onedrive::cli::TuiTheme::synthwave ||
         config.logging.level != "debug" ||
         config.logging.file !=
             std::optional<std::filesystem::path>{

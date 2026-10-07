@@ -468,7 +468,7 @@ int SyncEngine::synchronize() {
         console.message(
             cli::MessageKind::information,
             "delta_query_started",
-            "Fetching Microsoft Graph changes..."
+            "Checking the cloud for changes..."
         );
         auto apply_mode =
             query_delta_link.has_value() ?
@@ -497,8 +497,7 @@ int SyncEngine::synchronize() {
             console.message(
                 cli::MessageKind::warning,
                 "delta_cursor_invalid",
-                "The saved Microsoft Graph cursor is no longer valid; "
-                "fetching the full remote state..."
+                "The saved cloud history has expired; rebuilding it..."
             );
             delta = graph_.list_delta(std::nullopt, delta_progress);
             apply_mode = storage::DeltaApplyMode::replace;

@@ -33,8 +33,17 @@ int test_args() {
         run_application(runtime_factory, {"onedrive-cpp", "sync", "--help"});
     if (sync_help.exit_code != 0 ||
         !sync_help.standard_output.contains("--force-large-delete") ||
-        !sync_help.standard_output.contains("--ui")) {
+        !sync_help.standard_output.contains("--ui") ||
+        !sync_help.standard_output.contains("--theme")) {
         return fail("sync help did not document sync-specific options");
+    }
+    const auto monitor_help = run_application(
+        runtime_factory, {"onedrive-cpp", "monitor", "--help"}
+    );
+    if (monitor_help.exit_code != 0 ||
+        !monitor_help.standard_output.contains("--ui") ||
+        !monitor_help.standard_output.contains("--theme")) {
+        return fail("monitor help did not document TUI options");
     }
     const auto doctor_help =
         run_application(runtime_factory, {"onedrive-cpp", "doctor", "--help"});
@@ -99,10 +108,10 @@ int test_args() {
         return fail("invalid UI mode did not return usage exit code 2");
     }
     if (run_application(
-            runtime_factory, {"onedrive-cpp", "monitor", "--ui", "tui"}
+            runtime_factory, {"onedrive-cpp", "sync", "--theme", "rainbow"}
         )
             .exit_code != 2) {
-        return fail("monitor accepted the sync-only UI option");
+        return fail("invalid TUI theme did not return usage exit code 2");
     }
     if (run_application(
             runtime_factory, {"onedrive-cpp", "reset-state", "--yes"}

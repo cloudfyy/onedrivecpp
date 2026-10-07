@@ -31,6 +31,12 @@ _onedrive_cpp_completion()
             )
             return
             ;;
+        --theme)
+            mapfile -t COMPREPLY < <(
+                compgen -W "hacker ocean amber synthwave" -- "$current"
+            )
+            return
+            ;;
     esac
 
     for word in "${COMP_WORDS[@]:1:COMP_CWORD-1}"; do
@@ -65,13 +71,17 @@ _onedrive_cpp_completion()
             ;;
         sync)
             mapfile -t COMPREPLY < <(compgen -W \
-                "$common_options --ui --dry-run --force-large-delete" -- "$current")
+                "$common_options --ui --theme --dry-run --force-large-delete" -- "$current")
+            ;;
+        monitor)
+            mapfile -t COMPREPLY < <(compgen -W \
+                "$common_options --ui --theme" -- "$current")
             ;;
         reset-state)
             mapfile -t COMPREPLY < <(compgen -W \
                 "$common_options --clear-all --yes" -- "$current")
             ;;
-        auth|logout|doctor|drives|shared|sites|quota|status|monitor)
+        auth|logout|doctor|drives|shared|sites|quota|status)
             mapfile -t COMPREPLY < <(
                 compgen -W "$common_options" -- "$current"
             )

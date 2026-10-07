@@ -2,6 +2,7 @@
 #include "cli/format.hpp"
 
 #include "onedrive/cli/console.hpp"
+#include "onedrive/version.hpp"
 
 #include <fmt/format.h>
 #include <ftxui/dom/elements.hpp>
@@ -10,7 +11,9 @@
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -21,18 +24,64 @@ using namespace ftxui;
 
 constexpr std::size_t maximum_messages = 6;
 
-Color color_for(MessageKind kind) {
-    switch (kind) {
-        case MessageKind::information:
-            return Color::Cyan;
-        case MessageKind::success:
-            return Color::Green;
-        case MessageKind::warning:
-            return Color::Yellow;
-        case MessageKind::error:
-            return Color::Red;
+struct ThemePalette {
+    Color primary;
+    Color accent;
+    Color success;
+    Color warning;
+    Color error;
+};
+
+ThemePalette palette_for(TuiTheme theme) {
+    switch (theme) {
+        case TuiTheme::hacker:
+            return {
+                .primary = Color::GreenLight,
+                .accent = Color::Green,
+                .success = Color::GreenLight,
+                .warning = Color::YellowLight,
+                .error = Color::RedLight,
+            };
+        case TuiTheme::ocean:
+            return {
+                .primary = Color::CyanLight,
+                .accent = Color::BlueLight,
+                .success = Color::GreenLight,
+                .warning = Color::YellowLight,
+                .error = Color::RedLight,
+            };
+        case TuiTheme::amber:
+            return {
+                .primary = Color::YellowLight,
+                .accent = Color::Yellow,
+                .success = Color::GreenLight,
+                .warning = Color::YellowLight,
+                .error = Color::RedLight,
+            };
+        case TuiTheme::synthwave:
+            return {
+                .primary = Color::MagentaLight,
+                .accent = Color::CyanLight,
+                .success = Color::GreenLight,
+                .warning = Color::YellowLight,
+                .error = Color::RedLight,
+            };
     }
-    return Color::Default;
+    return palette_for(TuiTheme::hacker);
+}
+
+std::string_view theme_name(TuiTheme theme) {
+    switch (theme) {
+        case TuiTheme::hacker:
+            return "HACKER";
+        case TuiTheme::ocean:
+            return "OCEAN";
+        case TuiTheme::amber:
+            return "AMBER";
+        case TuiTheme::synthwave:
+            return "SYNTHWAVE";
+    }
+    return "HACKER";
 }
 
 class FtxuiConsoleBackend final : public ConsoleBackend {
@@ -41,20 +90,31 @@ public:
         ConsoleOptions options,
         std::ostream& output,
         std::ostream&,
-        std::size_t columns
+        std::size_t columns,
+        std::size_t rows
     )
         : output_{output},
           columns_{columns},
+          rows_{rows},
+          theme_{options.theme},
+          view_{options.view},
+          palette_{palette_for(theme_)},
           styled_{
               options.color != ColorMode::never &&
               (options.color == ColorMode::always ||
                std::getenv("NO_COLOR") == nullptr)
-          } {}
+          } {
+        enter_fullscreen();
+        try {
+            render();
+        } catch (...) {
+            leave_fullscreen();
+            throw;
+        }
+    }
 
     ~FtxuiConsoleBackend() override {
-        if (rendered_lines_ != 0) {
-            output_ << "\033[?25h" << std::flush;
-        }
+        leave_fullscreen();
     }
 
     void emit(const ConsoleEvent& event) override {
@@ -66,8 +126,8 @@ public:
     }
 
     bool confirm(const ConfirmationRequest& request) override {
-        clear();
-        output_ << "\033[?25h" << request.prompt << std::flush;
+        output_ << "\033[2J\033[H\033[?25h"
+                << request.prompt << std::flush;
         std::string confirmation;
         const bool matched =
             static_cast<bool>(std::getline(std::cin, confirmation)) &&
@@ -102,7 +162,25 @@ private:
             std::move(element);
     }
 
+    Color color_for(MessageKind kind) const {
+        switch (kind) {
+            case MessageKind::information:
+                return palette_.accent;
+            case MessageKind::success:
+                return palette_.success;
+            case MessageKind::warning:
+                return palette_.warning;
+            case MessageKind::error:
+                return palette_.error;
+        }
+        return palette_.primary;
+    }
+
     void update(const MessageEvent& event) {
+        if (event.event == "log" &&
+            event.kind == MessageKind::information) {
+            return;
+        }
         messages_.push_back({event.kind, event.text});
         if (messages_.size() > maximum_messages) {
             messages_.erase(messages_.begin());
@@ -115,14 +193,12 @@ private:
     }
 
     void update(const DeltaProgressEvent& event) {
-        delta_pages_ = event.pages;
         delta_items_ = event.items;
         delta_complete_ =
             event.state == util::ProgressState::completed;
     }
 
     void update(const DeltaSummaryEvent& event) {
-        delta_pages_ = event.summary.pages;
         delta_items_ = event.summary.scanned_items;
         delta_changes_ = event.summary.unique_changes;
         delta_complete_ = true;
@@ -141,60 +217,80 @@ private:
         download_.reset();
     }
 
+    Element header() const {
+        return hbox({
+            with_color(
+                emphasized(text(fmt::format(
+                    " ONEDRIVE // {}  v{} ",
+                    view_ == TuiView::monitor ? "MONITOR" : "SYNC",
+                    build_info::version
+                ))),
+                palette_.primary
+            ),
+            filler(),
+            with_color(
+                text(fmt::format(" {} ", theme_name(theme_))),
+                palette_.accent
+            ),
+        });
+    }
+
+    Element cloud_status() const {
+        auto status = fmt::format(
+            "CLOUD CHECK  {} items checked", delta_items_
+        );
+        if (delta_complete_) {
+            status += fmt::format(
+                "  //  {} changes found", delta_changes_
+            );
+        }
+        return with_color(
+            text(std::move(status)),
+            delta_complete_ ? palette_.success : palette_.accent
+        );
+    }
+
+    Element download_status() const {
+        const auto percentage = download_progress_percentage(
+            download_->completed_files,
+            download_->file_count,
+            download_->downloaded,
+            download_->total,
+            download_->state
+        );
+        auto progress = gauge(
+            static_cast<float>(percentage) / 100.0F
+        );
+        progress = with_color(std::move(progress), palette_.primary);
+        return vbox({
+            emphasized(text(fmt::format(
+                "DOWNLOADS  {}/{} files",
+                download_->completed_files,
+                download_->file_count
+            ))),
+            std::move(progress),
+            text(fmt::format(
+                "{}%  {} / {}  {}/s",
+                percentage,
+                format_bytes(download_->downloaded),
+                format_bytes(download_->total),
+                format_bytes(download_->metrics.bytes_per_second)
+            )),
+        }) | border;
+    }
+
     Element dashboard() const {
         Elements content{
-            with_color(
-                emphasized(text("onedrive-cpp sync")), Color::Blue
-            ),
+            header(),
             separator(),
         };
 
-        if (delta_pages_ != 0 || delta_items_ != 0) {
-            auto delta = fmt::format(
-                "Microsoft Graph: {} page{}, {} items",
-                delta_pages_,
-                delta_pages_ == 1 ? "" : "s",
-                delta_items_
-            );
-            if (delta_complete_) {
-                delta += fmt::format(
-                    ", {} unique changes", delta_changes_
-                );
-            }
-            content.push_back(with_color(
-                text(std::move(delta)),
-                delta_complete_ ? Color::Green : Color::Cyan
-            ));
+        if (delta_items_ != 0) {
+            content.push_back(cloud_status());
         }
-
         if (download_) {
-            const auto percentage = download_progress_percentage(
-                download_->completed_files,
-                download_->file_count,
-                download_->downloaded,
-                download_->total,
-                download_->state
-            );
-            auto progress =
-                gauge(static_cast<float>(percentage) / 100.0F);
-            progress = with_color(std::move(progress), Color::Blue);
-            content.push_back(vbox({
-                text(fmt::format(
-                    "Downloads: {}/{} files",
-                    download_->completed_files,
-                    download_->file_count
-                )),
-                std::move(progress),
-                text(fmt::format(
-                    "{}%  {} / {}  {}/s",
-                    percentage,
-                    format_bytes(download_->downloaded),
-                    format_bytes(download_->total),
-                    format_bytes(download_->metrics.bytes_per_second)
-                )),
-            }) | border);
+            content.push_back(download_status());
         }
-
         if (!section_title_.empty()) {
             Elements fields{
                 emphasized(text(section_title_)),
@@ -206,17 +302,23 @@ private:
             }
             content.push_back(vbox(std::move(fields)) | border);
         }
-
         if (blocked_items_ != 0) {
             content.push_back(with_color(
                 text(fmt::format(
-                    "Blocked: {}  {}", blocked_items_, last_blocked_
+                    "NEEDS ATTENTION  {}  //  {}",
+                    blocked_items_,
+                    last_blocked_
                 )),
-                Color::Yellow
+                palette_.warning
             ));
         }
 
+        content.push_back(filler());
         if (!messages_.empty()) {
+            content.push_back(with_color(
+                emphasized(text("ACTIVITY")),
+                palette_.primary
+            ));
             content.push_back(separator());
             for (const auto& message : messages_) {
                 content.push_back(with_color(
@@ -224,38 +326,51 @@ private:
                 ));
             }
         }
+        if (view_ == TuiView::monitor) {
+            content.push_back(separator());
+            content.push_back(with_color(
+                text(" q / Esc  EXIT "),
+                palette_.accent
+            ));
+        }
         return vbox(std::move(content)) | border;
     }
 
-    void clear() {
-        if (rendered_lines_ == 0) {
+    void enter_fullscreen() {
+        fullscreen_active_ = true;
+        output_ << "\033[?1049h\033[2J\033[H\033[?25l";
+    }
+
+    void leave_fullscreen() noexcept {
+        if (!fullscreen_active_) {
             return;
         }
-        output_ << fmt::format("\033[{}F\033[J", rendered_lines_);
-        rendered_lines_ = 0;
+        output_ << "\033[?25h\033[?1049l" << std::flush;
+        fullscreen_active_ = false;
     }
 
     void render() {
-        clear();
         auto document = dashboard();
         auto screen = Screen::Create(
             Dimension::Fixed(static_cast<int>(columns_)),
-            Dimension::Fit(document)
+            Dimension::Fixed(static_cast<int>(rows_))
         );
         Render(screen, document);
-        output_ << "\033[?25l" << screen.ToString() << '\n'
+        output_ << "\033[H\033[?25l" << screen.ToString()
                 << std::flush;
-        rendered_lines_ = static_cast<std::size_t>(screen.dimy());
     }
 
     std::ostream& output_;
     std::size_t columns_;
+    std::size_t rows_;
+    TuiTheme theme_;
+    TuiView view_;
+    ThemePalette palette_;
     bool styled_;
-    std::size_t rendered_lines_{0};
+    bool fullscreen_active_{false};
     std::vector<DashboardMessage> messages_;
     std::string section_title_;
     std::vector<Field> section_fields_;
-    std::size_t delta_pages_{0};
     std::size_t delta_items_{0};
     std::size_t delta_changes_{0};
     bool delta_complete_{false};
@@ -270,10 +385,11 @@ std::unique_ptr<ConsoleBackend> make_ftxui_console_backend(
     ConsoleOptions options,
     std::ostream& output,
     std::ostream& error,
-    std::size_t columns
+    std::size_t columns,
+    std::size_t rows
 ) {
     return std::make_unique<FtxuiConsoleBackend>(
-        options, output, error, columns
+        options, output, error, columns, rows
     );
 }
 

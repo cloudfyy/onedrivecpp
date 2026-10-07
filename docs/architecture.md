@@ -75,11 +75,17 @@ independently, while confirmations use a separate typed request.
 
 This boundary preserves JSON, redirected text, quiet mode, and interactive
 terminal behavior without coupling business code to a specific renderer. The
-sync-only FTXUI dashboard aggregates Delta, download, summary, blocked-item,
-and recent-message state. A centralized capability probe selects it only for
-a suitable terminal; redirected, JSON, quiet, `TERM=dumb`, and undersized
-sessions retain the text backend. Synchronization code never calls terminal
-widgets directly.
+sync and monitor FTXUI dashboard aggregates cloud checks, download, summary, blocked-item,
+and recent-message state. It enters an alternate full-screen buffer, renders
+the build version and a selectable theme, and translates transport-oriented
+events into user-facing cloud activity. A centralized capability probe selects
+it only for a suitable terminal; redirected, JSON, quiet, `TERM=dumb`, and
+undersized sessions retain the text backend. Synchronization code never calls
+terminal widgets directly.
+Monitor adds stdin to its existing poll loop only while the TUI is active.
+`q`, `Q`, and Escape produce the same stop transition as signals and stop
+tokens, so socket shutdown, terminal restoration, and state cleanup share one
+path.
 
 ## Transaction state machines
 

@@ -270,7 +270,7 @@ int show_status(
                 .value = state.database_present ? "available" : "absent",
             },
             {
-                .label = "WebSocket:",
+                .label = "Live updates:",
                 .key = "websocket_enabled",
                 .value =
                     config.monitor_websocket_enabled ? "enabled" : "disabled",

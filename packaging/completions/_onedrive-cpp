@@ -12,7 +12,7 @@ _onedrive_cpp()
         '*::argument:->command_options'
 
     case "${line[1]}" in
-        auth|logout|doctor|drives|shared|quota|status|monitor)
+        auth|logout|doctor|drives|shared|quota|status)
             _arguments \
                 '(-h --help)'{-h,--help}'[show command help]' \
                 '--config[path to configuration file]:configuration file:_files' \
@@ -20,6 +20,18 @@ _onedrive_cpp()
                 '--log-file[write rotating logs to file]:log file:_files' \
                 '--color[color output mode]:mode:(auto always never)' \
                 '--output[output format]:format:(text json)' \
+                '--quiet[suppress informational and success output]'
+            ;;
+        monitor)
+            _arguments \
+                '(-h --help)'{-h,--help}'[show command help]' \
+                '--config[path to configuration file]:configuration file:_files' \
+                '--log-level[minimum log level]:level:(trace debug info warn error critical off)' \
+                '--log-file[write rotating logs to file]:log file:_files' \
+                '--color[color output mode]:mode:(auto always never)' \
+                '--output[output format]:format:(text json)' \
+                '--ui[monitor interface]:mode:(auto console tui)' \
+                '--theme[TUI color theme]:theme:(hacker ocean amber synthwave)' \
                 '--quiet[suppress informational and success output]'
             ;;
         sites)
@@ -42,6 +54,7 @@ _onedrive_cpp()
                 '--color[color output mode]:mode:(auto always never)' \
                 '--output[output format]:format:(text json)' \
                 '--ui[sync interface]:mode:(auto console tui)' \
+                '--theme[TUI color theme]:theme:(hacker ocean amber synthwave)' \
                 '--quiet[suppress informational and success output]' \
                 '--dry-run[show synchronization plan without changing files]' \
                 '--force-large-delete[allow this sync to exceed the remote deletion limit]'

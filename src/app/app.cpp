@@ -51,9 +51,16 @@ int Application::run(int argc, char* argv[]) {
             {
                 .color = arguments.color_mode.value_or(config.console_color),
                 .output = arguments.output_mode,
-                .ui = arguments.operation == detail::Operation::synchronize ?
-                    arguments.ui_mode.value_or(config.console_ui) :
-                    cli::UiMode::console,
+                .ui =
+                    arguments.operation == detail::Operation::synchronize ||
+                            arguments.operation == detail::Operation::monitor ?
+                        arguments.ui_mode.value_or(config.console_ui) :
+                        cli::UiMode::console,
+                .theme =
+                    arguments.tui_theme.value_or(config.console_theme),
+                .view = arguments.operation == detail::Operation::monitor ?
+                    cli::TuiView::monitor :
+                    cli::TuiView::sync,
                 .quiet = arguments.quiet,
             }
         };

@@ -21,7 +21,8 @@ namespace onedrive::cli::detail {
     ConsoleOptions options,
     std::ostream& output,
     std::ostream& error,
-    std::size_t columns
+    std::size_t columns,
+    std::size_t rows
 );
 
 }  // namespace onedrive::cli::detail

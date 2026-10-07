@@ -127,10 +127,9 @@ int main() {
     );
     if (plain_output.str() !=
         "Completed.\nSummary\n  Files: 12\n  Bytes: 42\n"
-        "Microsoft Graph delta: ...\n"
-        "Microsoft Graph delta complete: 3 pages, 412 items scanned, 400 "
-        "unique changes (300 files, 90 folders, 10 deletions), 137.3 "
-        "items/page\n"
+        "Cloud check: ...\n"
+        "Cloud check complete: 3 batches, 412 items checked, 400 changes "
+        "(300 files, 90 folders, 10 deletions), 137.3 items/batch\n"
         "DL: 1/2 files, 50% (5 B/10 B), 2.0 KiB/s, ETA 00:01:05\n"
         "DL: 1/2 files, 99% (10 B/10 B)\n"
         "Done: 2/2 files, 100% (10 B/10 B), 1.0 KiB/s, "
@@ -436,12 +435,21 @@ int main() {
         Console::parse_output_mode("json") != OutputMode::json ||
         Console::parse_ui_mode("auto") != UiMode::automatic ||
         Console::parse_ui_mode("console") != UiMode::console ||
-        Console::parse_ui_mode("tui") != UiMode::tui) {
+        Console::parse_ui_mode("tui") != UiMode::tui ||
+        Console::parse_tui_theme("hacker") != TuiTheme::hacker ||
+        Console::parse_tui_theme("ocean") != TuiTheme::ocean ||
+        Console::parse_tui_theme("amber") != TuiTheme::amber ||
+        Console::parse_tui_theme("synthwave") != TuiTheme::synthwave) {
         return fail("console option parsing returned the wrong mode");
     }
     try {
         static_cast<void>(Console::parse_color_mode("invalid"));
         return fail("invalid color mode was accepted");
+    } catch (const std::invalid_argument&) {
+    }
+    try {
+        static_cast<void>(Console::parse_tui_theme("invalid"));
+        return fail("invalid TUI theme was accepted");
     } catch (const std::invalid_argument&) {
     }
     try {

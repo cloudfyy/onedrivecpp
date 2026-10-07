@@ -19,6 +19,7 @@ onedrive-cpp sync --dry-run --log-level debug
 onedrive-cpp monitor --log-file ~/.local/state/onedrive-cpp/onedrive-cpp.log
 onedrive-cpp sync --dry-run --color always
 onedrive-cpp sync --ui tui
+onedrive-cpp sync --theme ocean
 onedrive-cpp sync --dry-run --output json
 onedrive-cpp sync --dry-run --quiet
 onedrive-cpp drives --output json
@@ -47,14 +48,22 @@ in this mode. `--quiet` suppresses informational and success output while
 retaining warnings and errors. Diagnostic logs remain on standard error, while
 command results are written to standard output.
 
-`sync` uses `console.ui` from the configuration, which defaults to `auto`; an
-explicit `--ui` overrides it for one invocation. Auto mode opens the FTXUI
-status dashboard only when standard input and output are terminals, `TERM`
-supports terminal controls, and the terminal is at least 60 columns by 12
-rows. Redirected output, pipes, JSON, quiet mode, `TERM=dumb`, and undersized
-terminals automatically use the normal console. Use `--ui=console` to disable
-the dashboard. `--ui=tui` requires the dashboard and reports a clear error
-instead of falling back when the terminal cannot support it.
+`sync` and `monitor` use `console.ui` from the configuration, which defaults to
+`auto`; an explicit `--ui` overrides it for one invocation. Auto mode opens the
+FTXUI status dashboard only when standard input and output are terminals,
+`TERM` supports terminal controls, and the terminal is at least 60 columns by
+12 rows. Redirected output, pipes, JSON, quiet mode, `TERM=dumb`, and
+undersized terminals automatically use the normal console. Use
+`--ui=console` to disable the dashboard. `--ui=tui` requires the dashboard and
+reports a clear error instead of falling back when the terminal cannot support
+it. In the monitor dashboard, press `q`, `Q`, or `Esc` to stop cleanly.
+
+The dashboard enters the terminal's alternate full-screen buffer immediately,
+shows the client version, and restores the original screen on exit. Its
+user-facing status uses cloud and file terminology rather than API names.
+`console.theme` selects `hacker` (the green default), `ocean`, `amber`, or
+`synthwave`; `--theme` overrides it for one run. `--color=never` and
+`NO_COLOR` keep the selected layout but suppress theme colors.
 
 ## Read-only account and synchronization information
 

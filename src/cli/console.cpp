@@ -49,7 +49,11 @@ std::unique_ptr<ConsoleBackend> make_backend(
     }
     if (detail::supports_tui(capabilities)) {
         return detail::make_ftxui_console_backend(
-            options, output, error, capabilities.columns
+            options,
+            output,
+            error,
+            capabilities.columns,
+            capabilities.rows
         );
     }
     if (options.ui == UiMode::tui) {
@@ -266,6 +270,22 @@ UiMode Console::parse_ui_mode(std::string_view value) {
         return UiMode::tui;
     }
     throw std::invalid_argument("invalid UI mode: " + std::string{value});
+}
+
+TuiTheme Console::parse_tui_theme(std::string_view value) {
+    if (value == "hacker") {
+        return TuiTheme::hacker;
+    }
+    if (value == "ocean") {
+        return TuiTheme::ocean;
+    }
+    if (value == "amber") {
+        return TuiTheme::amber;
+    }
+    if (value == "synthwave") {
+        return TuiTheme::synthwave;
+    }
+    throw std::invalid_argument("invalid TUI theme: " + std::string{value});
 }
 
 std::ostream& Console::default_output() {

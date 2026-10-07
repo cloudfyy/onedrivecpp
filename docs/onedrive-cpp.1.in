@@ -339,6 +339,22 @@ The default
 mode falls back to the normal console when a TUI is unavailable.
 .B tui
 instead reports an error when terminal requirements are not met.
+For the monitor dashboard,
+.BR q ,
+.BR Q ,
+and Escape request a clean shutdown.
+.TP
+.BI \-\-theme " THEME"
+Select the TUI color theme:
+.BR hacker ,
+.BR ocean ,
+.BR amber ,
+or
+.BR synthwave .
+The default hacker theme uses a bright green terminal palette. This option
+overrides
+.B console.theme
+for one run. Color-disabled output retains the layout without theme colors.
 .TP
 .B \-\-dry\-run
 For

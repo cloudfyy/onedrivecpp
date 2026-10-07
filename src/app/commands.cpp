@@ -218,7 +218,8 @@ int execute_command(
                     cli::MessageKind::warning,
                     "full_state_clear_warning",
                     "WARNING: This will remove all saved item snapshots, the "
-                    "Delta cursor, and pending-download recovery records for "
+                    "cloud change history, and pending-download recovery "
+                    "records for "
                     "drive " + display_drive + "."
                 );
                 console.message(
@@ -343,7 +344,7 @@ int execute_command(
             console.message(
                 cli::MessageKind::information,
                 "initial_delta_scheduled",
-                "The next sync will perform a full Microsoft Graph delta query."
+                "The next sync will perform a full cloud check."
             );
             return 0;
         }
@@ -398,7 +399,7 @@ int execute_command(
             console.message(
                 cli::MessageKind::success,
                 "monitor_ready",
-                "Monitoring local and Microsoft Graph changes for: " +
+                "Watching for local and cloud changes in: " +
                     config.sync_data_directory.string()
             );
             console.message(
@@ -406,24 +407,23 @@ int execute_command(
                 "monitor_status",
                 config.monitor_websocket_enabled ?
                     std::format(
-                        "Local changes settle for {} milliseconds; remote "
-                        "WebSocket notifications trigger Delta "
-                        "synchronization, with Graph polling every {} seconds "
-                        "as fallback.",
+                        "Local changes wait {} milliseconds to settle; live "
+                        "cloud updates are enabled, with a safety check every "
+                        "{} seconds.",
                         config.monitor_settle_delay.count(),
                         config.monitor_poll_interval.count()
                     ) :
                     std::format(
-                        "Local changes settle for {} milliseconds; remote "
-                        "WebSocket notifications are disabled, and Graph is "
-                        "polled every {} seconds.",
+                        "Local changes wait {} milliseconds to settle; live "
+                        "cloud updates are disabled, so changes are checked "
+                        "every {} seconds.",
                         config.monitor_settle_delay.count(),
                         config.monitor_poll_interval.count()
                     )
             );
             return runtime_factory
                 .create_monitor(config, std::move(synchronize), *graph)
-                ->run();
+                ->run(console.ui_mode() == cli::UiMode::tui);
         }
         return synchronize();
 }

@@ -42,7 +42,7 @@ struct NotificationCallbacks {
 PRO_DEF_MEM_DISPATCH(MonitorRunDispatch, run);
 
 struct FileMonitorFacade : pro::facade_builder
-    ::add_convention<MonitorRunDispatch, int() const>
+    ::add_convention<MonitorRunDispatch, int() const, int(bool) const>
     ::build {};
 
 class FileMonitor : private onedrive::util::ProxyService<FileMonitorFacade> {
@@ -53,6 +53,9 @@ public:
 
     [[nodiscard]] int run() const {
         return implementation()->run();
+    }
+    [[nodiscard]] int run(bool keyboard_exit) const {
+        return implementation()->run(keyboard_exit);
     }
 };
 
@@ -66,12 +69,14 @@ public:
         NotificationCallbacks notifications = {}
     );
     [[nodiscard]] int run() const;
+    [[nodiscard]] int run(bool keyboard_exit) const;
     [[nodiscard]] int run(const std::stop_token& stop_token) const;
 
 private:
     [[nodiscard]] int run_loop(
         const std::stop_token& stop_token,
-        int signal_descriptor
+        int signal_descriptor,
+        bool keyboard_exit
     ) const;
 
     std::filesystem::path root_;

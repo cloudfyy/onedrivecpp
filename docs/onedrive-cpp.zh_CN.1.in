@@ -276,6 +276,21 @@ trace 会记录协商协议、新建连接数及 DNS、TCP、TLS、服务端等�
 在 TUI 不可用时切回普通 Console；
 .B tui
 则在终端条件不满足时明确报错。
+在 monitor 面板中，
+.BR q 、
+.B Q
+和 Escape 会请求安全退出。
+.TP
+.BI \-\-theme " 主题"
+选择 TUI 配色：
+.BR hacker 、
+.BR ocean 、
+.BR amber
+或
+.BR synthwave 。
+默认的 hacker 使用荧光绿色终端风格。该选项仅在本次运行中覆盖
+.BR console.theme ；
+禁用颜色时仍保留布局。
 .TP
 .B \-\-dry\-run
 对于

@@ -40,6 +40,7 @@ add_library(onedrive_core
     src/logging/logging.cpp
     src/metrics/metrics.cpp
     src/monitor/monitor.cpp
+    src/monitor/input.cpp
     src/monitor/socket.cpp
     src/util/path_security.cpp
     src/util/remote_time.cpp

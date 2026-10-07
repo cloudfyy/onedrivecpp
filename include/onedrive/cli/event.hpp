@@ -28,6 +28,18 @@ enum class UiMode {
     tui,
 };
 
+enum class TuiTheme {
+    hacker,
+    ocean,
+    amber,
+    synthwave,
+};
+
+enum class TuiView {
+    sync,
+    monitor,
+};
+
 enum class MessageKind {
     information,
     success,
@@ -39,6 +51,8 @@ struct ConsoleOptions {
     ColorMode color{ColorMode::automatic};
     OutputMode output{OutputMode::text};
     UiMode ui{UiMode::console};
+    TuiTheme theme{TuiTheme::hacker};
+    TuiView view{TuiView::sync};
     bool quiet{false};
 };
 

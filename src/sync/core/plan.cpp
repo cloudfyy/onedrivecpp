@@ -48,7 +48,7 @@ SyncPlan SyncPlan::build(
             plan.block(
                 item,
                 "malware_detected",
-                "Microsoft Graph marked the remote file as malware"
+                "The cloud service marked the remote file as malware"
             );
             continue;
         }

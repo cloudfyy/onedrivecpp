@@ -38,6 +38,12 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         {"console", cli::UiMode::console},
         {"tui", cli::UiMode::tui},
     };
+    const std::map<std::string, cli::TuiTheme> tui_themes{
+        {"hacker", cli::TuiTheme::hacker},
+        {"ocean", cli::TuiTheme::ocean},
+        {"amber", cli::TuiTheme::amber},
+        {"synthwave", cli::TuiTheme::synthwave},
+    };
 
     CLI::App application{
         "A modern C++ OneDrive synchronization client",
@@ -83,7 +89,7 @@ ParseResult parse_arguments(int argc, char* argv[]) {
     );
     auto* reset = application.add_subcommand(
         "reset-state",
-        "Reset the Microsoft Graph delta cursor for the configured drive"
+        "Reset saved cloud change history for the configured drive"
     );
     auto* sync =
         application.add_subcommand("sync", "Synchronize OneDrive files");
@@ -180,14 +186,22 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         arguments.force_large_delete,
         "Allow this sync to exceed the configured remote deletion limit"
     );
-    sync
-        ->add_option(
+    for (auto* command : {sync, monitor}) {
+        command->add_option(
             "--ui",
             arguments.ui_mode,
-            "Sync interface: auto, console, or tui"
+            "Interface: auto, console, or tui"
         )
-        ->transform(CLI::CheckedTransformer(ui_modes))
-        ->default_str("auto");
+            ->transform(CLI::CheckedTransformer(ui_modes))
+            ->default_str("auto");
+        command->add_option(
+            "--theme",
+            arguments.tui_theme,
+            "TUI theme: hacker, ocean, amber, or synthwave"
+        )
+            ->transform(CLI::CheckedTransformer(tui_themes))
+            ->default_str("hacker");
+    }
     download
         ->add_option(
             "REMOTE_PATH",

@@ -531,6 +531,9 @@ public:
         static_cast<void>(synchronize_());
         return 0;
     }
+    [[nodiscard]] int run(bool) const {
+        return run();
+    }
 
 private:
     int& run_count_;

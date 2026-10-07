@@ -135,6 +135,25 @@ int test_valid() {
     {
         std::ofstream output{path};
         output << "config_version = 2\n"
+               << "[console]\n"
+               << "theme = \"rainbow\"\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "invalid console theme was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains("console.theme")) {
+            std::filesystem::remove(path);
+            std::cerr << "invalid console theme reported wrong error\n";
+            return EXIT_FAILURE;
+        }
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
                << "[logging]\n"
                << "level = \"verbose\"\n";
     }

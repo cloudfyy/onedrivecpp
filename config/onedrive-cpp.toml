@@ -3,8 +3,10 @@ config_version = 2
 [console]
 # Supported values: "auto", "always", and "never".
 color = "auto"
-# Sync interface: "auto", "console", or "tui".
+# Sync and monitor interface: "auto", "console", or "tui".
 ui = "auto"
+# TUI colors: "hacker", "ocean", "amber", or "synthwave".
+theme = "hacker"
 
 [logging]
 # Supported values: "trace", "debug", "info", "warn", "error", "critical",

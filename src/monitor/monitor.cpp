@@ -1,6 +1,7 @@
 #include "onedrive/monitor/monitor.hpp"
 
 #include "monitor/signal.hpp"
+#include "monitor/input.hpp"
 #include "monitor/notify.hpp"
 #include "monitor/socket.hpp"
 #include "monitor/state.hpp"
@@ -331,6 +332,10 @@ Monitor::Monitor(
 }
 
 int Monitor::run() const {
+    return run(false);
+}
+
+int Monitor::run(bool keyboard_exit) const {
     detail::TerminationSignalMask signal_mask;
     onedrive::util::UniqueFD signal_descriptor{
         ::signalfd(
@@ -342,16 +347,17 @@ int Monitor::run() const {
     if (signal_descriptor.get() < 0) {
         util::throw_errno_error("signalfd failed");
     }
-    return run_loop({}, signal_descriptor.get());
+    return run_loop({}, signal_descriptor.get(), keyboard_exit);
 }
 
 int Monitor::run(const std::stop_token& stop_token) const {
-    return run_loop(stop_token, -1);
+    return run_loop(stop_token, -1, false);
 }
 
 int Monitor::run_loop(
     const std::stop_token& stop_token,
-    int signal_descriptor
+    int signal_descriptor,
+    bool keyboard_exit
 ) const {
     const detail::MonitorTiming timing{
         .poll_interval = poll_interval_,
@@ -530,9 +536,25 @@ int Monitor::run_loop(
             std::chrono::steady_clock::now()
         });
     }
+    detail::KeyboardInput keyboard{
+        keyboard_exit ? STDIN_FILENO : -1,
+        keyboard_exit
+    };
+    const auto shutdown = [&] {
+        spdlog::info("Monitor shutdown requested");
+        state = detail::transition_monitor(
+            std::move(state),
+            detail::StopRequestedEvent{},
+            timing
+        ).state;
+        if (notification_socket) {
+            advance_notification(detail::NotificationStopEvent{});
+        }
+        return 0;
+    };
 
     while (true) {
-        std::array<pollfd, 4> descriptors{{
+        std::array<pollfd, 5> descriptors{{
             {
                 .fd = watches.descriptor(),
                 .events = POLLIN,
@@ -556,6 +578,13 @@ int Monitor::run_loop(
                           -1,
                 .events = static_cast<short>(
                     notification_socket ? POLLIN : 0
+                ),
+                .revents = 0,
+            },
+            {
+                .fd = keyboard.descriptor(),
+                .events = static_cast<short>(
+                    keyboard.descriptor() >= 0 ? POLLIN : 0
                 ),
                 .revents = 0,
             },
@@ -611,29 +640,20 @@ int Monitor::run_loop(
                     "truncated monitor termination signal"
                 );
             }
-            spdlog::info("Monitor shutdown requested");
-            state = detail::transition_monitor(
-                std::move(state),
-                detail::StopRequestedEvent{},
-                timing
-            ).state;
-            if (notification_socket) {
-                advance_notification(detail::NotificationStopEvent{});
-            }
-            return 0;
+            return shutdown();
         }
         if ((descriptors[1].revents & POLLIN) != 0 ||
             stop_token.stop_requested()) {
-            spdlog::info("Monitor shutdown requested");
-            state = detail::transition_monitor(
-                std::move(state),
-                detail::StopRequestedEvent{},
-                timing
-            ).state;
-            if (notification_socket) {
-                advance_notification(detail::NotificationStopEvent{});
+            return shutdown();
+        }
+        if ((descriptors[4].revents &
+             (POLLERR | POLLHUP | POLLNVAL)) != 0) {
+            return shutdown();
+        }
+        if ((descriptors[4].revents & POLLIN) != 0) {
+            if (keyboard.exit_requested()) {
+                return shutdown();
             }
-            return 0;
         }
         if ((descriptors[0].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
             throw std::runtime_error("inotify descriptor became unavailable");

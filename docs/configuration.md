@@ -50,8 +50,10 @@ The following example shows every major configuration group:
 
 ```toml
 [console]
-# "auto", "console", or "tui"; applies to sync and can be overridden by --ui.
+# "auto", "console", or "tui"; applies to sync and monitor; --ui overrides it.
 ui = "auto"
+# "hacker", "ocean", "amber", or "synthwave"; overridden by --theme.
+theme = "hacker"
 # "auto", "always", or "never"
 color = "auto"
 
