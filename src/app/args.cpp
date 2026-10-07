@@ -4,9 +4,11 @@
 
 #include <CLI/CLI.hpp>
 
+#include <array>
 #include <cstdlib>
 #include <iostream>
 #include <map>
+#include <utility>
 
 namespace onedrive::app::detail {
 namespace {
@@ -97,6 +99,21 @@ ParseResult parse_arguments(int argc, char* argv[]) {
     auto* monitor = application.add_subcommand(
         "monitor", "Monitor for synchronization changes"
     );
+    const std::array command_operations{
+        std::pair{auth, Operation::authenticate},
+        std::pair{logout, Operation::logout},
+        std::pair{doctor, Operation::diagnose},
+        std::pair{drives, Operation::drives},
+        std::pair{shared, Operation::shared},
+        std::pair{sites, Operation::sites},
+        std::pair{quota, Operation::quota},
+        std::pair{status, Operation::status},
+        std::pair{reset_cursor, Operation::reset_cursor},
+        std::pair{clear_state, Operation::clear_state},
+        std::pair{sync, Operation::synchronize},
+        std::pair{download, Operation::download},
+        std::pair{monitor, Operation::monitor},
+    };
 
     const auto add_common_options = [&](CLI::App& command) {
         command
@@ -150,21 +167,8 @@ ParseResult parse_arguments(int argc, char* argv[]) {
             "Suppress informational and success output"
         );
     };
-    for (auto* command : {
-             auth,
-             logout,
-             doctor,
-             drives,
-             shared,
-             sites,
-             quota,
-             status,
-             reset_cursor,
-             clear_state,
-             sync,
-             download,
-             monitor,
-         }) {
+    for (const auto& [command, operation] : command_operations) {
+        static_cast<void>(operation);
         add_common_options(*command);
     }
     clear_state->add_flag(
@@ -182,7 +186,10 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         arguments.force_large_delete,
         "Allow this sync to exceed the configured remote deletion limit"
     );
-    for (auto* command : {auth, doctor, status, sync, download, monitor}) {
+    for (const auto& [command, operation] : command_operations) {
+        if (!operation_capabilities(operation).supports_tui) {
+            continue;
+        }
         command
             ->add_option(
                 "--ui", arguments.ui_mode, "Interface: auto, console, or tui"

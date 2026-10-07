@@ -18,4 +18,74 @@ enum class Operation {
     synchronize,
 };
 
+struct OperationCapabilities {
+    bool supports_tui{false};
+    bool validates_authentication_config{false};
+    bool requires_drive_id{false};
+    bool requires_authentication{false};
+    bool requires_sync_directory{false};
+};
+
+constexpr OperationCapabilities operation_capabilities(
+    Operation operation
+) noexcept {
+    switch (operation) {
+        case Operation::authenticate:
+            return {
+                .supports_tui = true,
+                .validates_authentication_config = true,
+            };
+        case Operation::logout:
+            return {};
+        case Operation::diagnose:
+            return {.supports_tui = true};
+        case Operation::drives:
+            return {
+                .validates_authentication_config = true,
+                .requires_authentication = true,
+            };
+        case Operation::shared:
+            return {
+                .validates_authentication_config = true,
+                .requires_drive_id = true,
+                .requires_authentication = true,
+            };
+        case Operation::sites:
+            return {
+                .validates_authentication_config = true,
+                .requires_authentication = true,
+            };
+        case Operation::quota:
+            return {
+                .validates_authentication_config = true,
+                .requires_drive_id = true,
+                .requires_authentication = true,
+            };
+        case Operation::status:
+            return {
+                .supports_tui = true,
+                .validates_authentication_config = true,
+                .requires_drive_id = true,
+                .requires_authentication = true,
+            };
+        case Operation::reset_cursor:
+        case Operation::clear_state:
+            return {
+                .requires_drive_id = true,
+                .requires_authentication = true,
+            };
+        case Operation::download:
+        case Operation::monitor:
+        case Operation::synchronize:
+            return {
+                .supports_tui = true,
+                .validates_authentication_config = true,
+                .requires_drive_id = true,
+                .requires_authentication = true,
+                .requires_sync_directory = true,
+            };
+    }
+    return {};
+}
+
 } // namespace onedrive::app::detail

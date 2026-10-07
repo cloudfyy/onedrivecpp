@@ -11,20 +11,11 @@ namespace onedrive::app::detail {
 RuntimePreflight::RuntimePreflight(
     const config::Config& config, Operation operation
 ) {
-    if (operation == Operation::authenticate ||
-        operation == Operation::drives || operation == Operation::shared ||
-        operation == Operation::sites || operation == Operation::quota ||
-        operation == Operation::status || operation == Operation::download ||
-        operation == Operation::synchronize) {
+    const auto capabilities = operation_capabilities(operation);
+    if (capabilities.validates_authentication_config) {
         validate_authentication_config(config);
     }
-    if ((operation == Operation::shared || operation == Operation::quota ||
-         operation == Operation::status ||
-         operation == Operation::reset_cursor ||
-         operation == Operation::clear_state ||
-         operation == Operation::download ||
-         operation == Operation::synchronize) &&
-        config.drive_id.empty()) {
+    if (capabilities.requires_drive_id && config.drive_id.empty()) {
         throw std::runtime_error("sync.drive_id must not be empty");
     }
     if (operation == Operation::sites &&
@@ -44,18 +35,11 @@ RuntimePreflight::RuntimePreflight(
         "active account marker",
         false
     );
-    const bool authentication_required =
-        operation == Operation::drives || operation == Operation::shared ||
-        operation == Operation::sites || operation == Operation::quota ||
-        operation == Operation::status ||
-        operation == Operation::reset_cursor ||
-        operation == Operation::clear_state ||
-        operation == Operation::download || operation == Operation::synchronize;
     const auto token_directory =
         account::AccountState::find_active_token_directory(
             config.state_directory
         );
-    if (authentication_required && !token_directory) {
+    if (capabilities.requires_authentication && !token_directory) {
         throw std::runtime_error(
             "active Microsoft account is missing; run 'onedrive-cpp auth' "
             "to initialize the account-based state layout"
@@ -65,12 +49,10 @@ RuntimePreflight::RuntimePreflight(
         validate_private_file(
             *token_directory / "refresh_token",
             "refresh token",
-            authentication_required
+            capabilities.requires_authentication
         );
     }
-    if (operation == Operation::download ||
-        operation == Operation::synchronize ||
-        operation == Operation::monitor) {
+    if (capabilities.requires_sync_directory) {
         prepare_sync_directory(config, operation);
     }
 }

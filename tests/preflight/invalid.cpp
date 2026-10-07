@@ -24,6 +24,42 @@ int test_invalid() {
     }
     config = config_for(temporary);
 
+    config.application_id.clear();
+    if (!throws_with(
+            [&] {
+                const RuntimePreflight preflight{config, Operation::monitor};
+            },
+            "auth.application_id"
+        )) {
+        return fail("monitor accepted invalid authentication configuration");
+    }
+    config = config_for(temporary);
+
+    config.drive_id.clear();
+    if (!throws_with(
+            [&] {
+                const RuntimePreflight preflight{config, Operation::monitor};
+            },
+            "sync.drive_id must not be empty"
+        )) {
+        return fail("monitor accepted an empty drive identifier");
+    }
+    config = config_for(temporary);
+
+    if (!throws_with(
+            [&] {
+                const RuntimePreflight preflight{config, Operation::monitor};
+            },
+            "active Microsoft account is missing"
+        )) {
+        return fail("monitor accepted a missing active account");
+    }
+    static_cast<void>(write_token(
+        config.state_directory,
+        std::filesystem::perms::owner_read |
+            std::filesystem::perms::owner_write
+    ));
+
     config.sync_data_directory.clear();
     if (!throws_with(
             [&] {
@@ -57,6 +93,8 @@ int test_invalid() {
 
     if (!throws_with(
             [&] {
+                config.state_directory =
+                    temporary.path() / "missing-account-state";
                 const RuntimePreflight preflight{
                     config, Operation::clear_state
                 };
@@ -66,6 +104,7 @@ int test_invalid() {
         return fail("reset without an active account was accepted");
     }
 
+    config = config_for(temporary);
     config.application_id.clear();
     if (!throws_with(
             [&] {

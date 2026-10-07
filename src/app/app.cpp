@@ -32,15 +32,6 @@ cli::MessageKind message_kind(logging::Severity severity) noexcept {
     return cli::MessageKind::information;
 }
 
-bool supports_tui(detail::Operation operation) noexcept {
-    return operation == detail::Operation::authenticate ||
-        operation == detail::Operation::diagnose ||
-        operation == detail::Operation::status ||
-        operation == detail::Operation::synchronize ||
-        operation == detail::Operation::download ||
-        operation == detail::Operation::monitor;
-}
-
 cli::TuiView tui_view(detail::Operation operation) noexcept {
     switch (operation) {
         case detail::Operation::authenticate:
@@ -77,7 +68,8 @@ int Application::run(int argc, char* argv[]) {
             {
                 .color = arguments.color_mode.value_or(config.console_color),
                 .output = arguments.output_mode,
-                .ui = supports_tui(arguments.operation) ?
+                .ui = detail::operation_capabilities(arguments.operation)
+                              .supports_tui ?
                     arguments.ui_mode.value_or(config.console_ui) :
                     cli::UiMode::console,
                 .theme =
