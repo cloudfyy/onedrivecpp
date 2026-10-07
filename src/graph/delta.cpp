@@ -112,17 +112,13 @@ DeltaResult MicrosoftGraphClient::list_delta(
         }
 
         const auto json = parse_graph_json(*response, "delta");
-        if (!successful_status(response->status_code)) {
-            if (delta_link && response->status_code == 410) {
-                throw DeltaCursorInvalidError(
-                    "Microsoft Graph rejected the saved delta cursor: " +
-                    graph_error_message(json, response->status_code)
-                );
-            }
-            throw std::runtime_error(
+        if (delta_link && response->status_code == 410) {
+            throw DeltaCursorInvalidError(
+                "Microsoft Graph rejected the saved delta cursor: " +
                 graph_error_message(json, response->status_code)
             );
         }
+        require_successful_graph_response(json, response->status_code);
 
         try {
             const auto& values =

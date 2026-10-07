@@ -28,6 +28,11 @@ using Json = nlohmann::json;
 [[nodiscard]] std::string normalized_endpoint(std::string endpoint);
 [[nodiscard]] std::string graph_drive_prefix(const GraphOptions& options);
 [[nodiscard]] bool successful_status(long status_code) noexcept;
+void require_successful_graph_response(
+    const Json& response,
+    long status_code,
+    std::string_view description = {}
+);
 [[nodiscard]] std::uint64_t effective_upload_rate(
     const http::UploadTransportOptions& options
 );

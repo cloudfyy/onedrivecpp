@@ -169,11 +169,8 @@ http::HttpResponse MicrosoftGraphClient::graph_get(
     if (!client_detail::successful_status(response->status_code)) {
         const auto document =
             client_detail::parse_graph_json(*response, description);
-        throw std::runtime_error(
-            client_detail::graph_error_message(
-                document,
-                response->status_code
-            )
+        client_detail::require_successful_graph_response(
+            document, response->status_code
         );
     }
     return *std::move(response);
@@ -213,12 +210,11 @@ account::DriveIdentity fetch_drive_identity(
             );
         }
         const auto json = parse_graph_json(*response, name);
-        if (!successful_status(response->status_code)) {
-            throw std::runtime_error(
-                "Microsoft Graph " + std::string{name} + " query failed: " +
-                graph_error_message(json, response->status_code)
-            );
-        }
+        client_detail::require_successful_graph_response(
+            json,
+            response->status_code,
+            "Microsoft Graph " + std::string{name} + " query failed"
+        );
         return json;
     };
 

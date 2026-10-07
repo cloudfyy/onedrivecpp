@@ -212,11 +212,7 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
         }
 
         const auto json = parse_graph_json(*response);
-        if (!successful_status(response->status_code)) {
-            throw std::runtime_error(
-                graph_error_message(json, response->status_code)
-            );
-        }
+        require_successful_graph_response(json, response->status_code);
 
         try {
             const auto& values =
@@ -307,11 +303,7 @@ RemoteItem MicrosoftGraphClient::item_by_path(
     }
 
     const auto json = parse_graph_json(*response, "path lookup");
-    if (!successful_status(response->status_code)) {
-        throw std::runtime_error(
-            graph_error_message(json, response->status_code)
-        );
-    }
+    require_successful_graph_response(json, response->status_code);
 
     return parse_drive_item(
         json,
@@ -469,9 +461,7 @@ void MicrosoftGraphClient::delete_item(
             graph_error_message(json, response->status_code)
         );
     }
-    throw std::runtime_error(
-        graph_error_message(json, response->status_code)
-    );
+    require_successful_graph_response(json, response->status_code);
 }
 
 RemoteItem MicrosoftGraphClient::move_item(
@@ -545,11 +535,7 @@ RemoteItem MicrosoftGraphClient::move_item(
             graph_error_message(json, response->status_code)
         );
     }
-    if (!successful_status(response->status_code)) {
-        throw std::runtime_error(
-            graph_error_message(json, response->status_code)
-        );
-    }
+    require_successful_graph_response(json, response->status_code);
     return parse_drive_item(
         json,
         "item move response",

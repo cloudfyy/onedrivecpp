@@ -113,6 +113,22 @@ bool successful_status(long status_code) noexcept {
     return status_code >= 200 && status_code < 300;
 }
 
+void require_successful_graph_response(
+    const Json& response,
+    long status_code,
+    std::string_view description
+) {
+    if (successful_status(status_code)) {
+        return;
+    }
+    const auto message = graph_error_message(response, status_code);
+    throw std::runtime_error(
+        description.empty() ?
+            message :
+            std::string{description} + ": " + message
+    );
+}
+
 std::uint64_t effective_upload_rate(
     const http::UploadTransportOptions& options
 ) {

@@ -595,6 +595,33 @@ int test_drive_identity_and_profile_photo() {
             return fail("invalid Graph JSON lost its request context");
         }
     }
+    FakeTransport denied_identity{std::deque<onedrive::http::HttpResult>{
+        onedrive::http::HttpResponse{
+            .status_code = 403,
+            .body =
+                R"json({"error":{"code":"accessDenied","message":"denied"}})json",
+        },
+    }};
+    onedrive::http::HttpTransport denied_identity_proxy{
+        onedrive::util::borrowed_proxy, denied_identity
+    };
+    try {
+        static_cast<void>(onedrive::graph::fetch_drive_identity(
+            denied_identity_proxy,
+            "access-token",
+            {
+                .drive_id = "me",
+                .endpoint = "https://graph.example.test/v1.0",
+            }
+        ));
+        return fail("denied Graph identity query was accepted");
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains(
+                "Microsoft Graph user identity query failed: denied"
+            )) {
+            return fail("Graph identity error lost its request context");
+        }
+    }
     return EXIT_SUCCESS;
 }
 
