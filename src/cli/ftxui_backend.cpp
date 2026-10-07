@@ -290,6 +290,8 @@ private:
             switch (view_) {
                 case TuiView::auth:
                     return "AUTH";
+                case TuiView::doctor:
+                    return "DOCTOR";
                 case TuiView::download:
                     return "DOWNLOAD";
                 case TuiView::monitor:

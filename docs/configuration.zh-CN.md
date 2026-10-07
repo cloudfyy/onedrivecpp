@@ -44,7 +44,7 @@ OneDrive 或 SharePoint 文档库，请将其设置为实际的 Drive ID；程�
 
 ```toml
 [console]
-# "auto"、"console" 或 "tui"；作用于 auth、sync、download 和 monitor
+# "auto"、"console" 或 "tui"；作用于 auth、doctor、sync、download 和 monitor
 ui = "auto"
 # "hacker"、"ocean"、"amber" 或 "synthwave"；可被 --theme 覆盖
 theme = "hacker"

@@ -34,6 +34,7 @@ cli::MessageKind message_kind(logging::Severity severity) noexcept {
 
 bool supports_tui(detail::Operation operation) noexcept {
     return operation == detail::Operation::authenticate ||
+        operation == detail::Operation::diagnose ||
         operation == detail::Operation::synchronize ||
         operation == detail::Operation::download ||
         operation == detail::Operation::monitor;
@@ -43,6 +44,8 @@ cli::TuiView tui_view(detail::Operation operation) noexcept {
     switch (operation) {
         case detail::Operation::authenticate:
             return cli::TuiView::auth;
+        case detail::Operation::diagnose:
+            return cli::TuiView::doctor;
         case detail::Operation::download:
             return cli::TuiView::download;
         case detail::Operation::monitor:

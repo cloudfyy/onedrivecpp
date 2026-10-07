@@ -199,6 +199,31 @@ int test_tui_dashboard() {
         return fail("auth TUI did not render authorization status");
     }
 
+    std::ostringstream doctor_output;
+    auto doctor_backend = detail::make_ftxui_console_backend(
+        {
+            .color = ColorMode::never,
+            .ui = UiMode::tui,
+            .view = TuiView::doctor,
+        },
+        doctor_output,
+        error,
+        80,
+        20
+    );
+    doctor_backend->emit(SectionEvent{
+        .event = "database_integrity",
+        .title = "Synchronization state database:",
+        .fields = {
+            {.label = "status:", .key = "status", .value = "healthy"},
+        },
+    });
+    doctor_backend.reset();
+    if (!doctor_output.str().contains("ONEDRIVE // DOCTOR  v") ||
+        !doctor_output.str().contains("status: healthy")) {
+        return fail("doctor TUI did not render diagnostic status");
+    }
+
     std::ostringstream unstyled_output;
     auto unstyled_backend = detail::make_ftxui_console_backend(
         {

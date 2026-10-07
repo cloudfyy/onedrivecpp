@@ -65,7 +65,9 @@ int test_args() {
     if (doctor_help.exit_code != 0 ||
         !doctor_help.standard_output.contains(
             "Run local synchronization-state diagnostics"
-        )) {
+        ) ||
+        !doctor_help.standard_output.contains("--ui") ||
+        !doctor_help.standard_output.contains("--theme")) {
         return fail("doctor help was not available");
     }
     const auto status_help =

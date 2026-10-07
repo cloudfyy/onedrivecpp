@@ -12,7 +12,7 @@ _onedrive_cpp()
         '*::argument:->command_options'
 
     case "${line[1]}" in
-        logout|doctor|drives|shared|quota|status)
+        logout|drives|shared|quota|status)
             _arguments \
                 '(-h --help)'{-h,--help}'[show command help]' \
                 '--config[path to configuration file]:configuration file:_files' \
@@ -31,6 +31,18 @@ _onedrive_cpp()
                 '--color[color output mode]:mode:(auto always never)' \
                 '--output[output format]:format:(text json)' \
                 '--ui[authentication interface]:mode:(auto console tui)' \
+                '--theme[TUI color theme]:theme:(hacker ocean amber synthwave)' \
+                '--quiet[suppress informational and success output]'
+            ;;
+        doctor)
+            _arguments \
+                '(-h --help)'{-h,--help}'[show command help]' \
+                '--config[path to configuration file]:configuration file:_files' \
+                '--log-level[minimum log level]:level:(trace debug info warn error critical off)' \
+                '--log-file[write rotating logs to file]:log file:_files' \
+                '--color[color output mode]:mode:(auto always never)' \
+                '--output[output format]:format:(text json)' \
+                '--ui[diagnostic interface]:mode:(auto console tui)' \
                 '--theme[TUI color theme]:theme:(hacker ocean amber synthwave)' \
                 '--quiet[suppress informational and success output]'
             ;;
