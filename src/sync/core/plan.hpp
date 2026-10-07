@@ -23,33 +23,24 @@ public:
         std::vector<storage::UploadSuppression> upload_suppressions = {}
     );
 
-    [[nodiscard]] const graph::RemoteItem& directory(
-        std::size_t index
-    ) const;
-    [[nodiscard]] const graph::RemoteItem& download(
-        std::size_t index
-    ) const;
-    [[nodiscard]] const graph::RemoteItem& removal(
-        std::size_t index
-    ) const;
+    [[nodiscard]] const graph::RemoteItem& directory(std::size_t index) const;
+    [[nodiscard]] const graph::RemoteItem& download(std::size_t index) const;
+    [[nodiscard]] const graph::RemoteItem& removal(std::size_t index) const;
     [[nodiscard]] const graph::RemoteItem& move(std::size_t index) const;
-    [[nodiscard]] storage::ItemState& state_for(
-        const std::string& remote_id
-    );
+    [[nodiscard]] storage::ItemState& state_for(const std::string& remote_id);
     void block(
         const graph::RemoteItem& item,
         std::string reason_code,
         std::string reason_message
     );
     void complete_removal(const std::string& remote_id);
+    void remove_partial_download(const std::string& remote_id);
     void block_removal(
         const storage::ItemState& item,
         std::string reason_code,
         std::string reason_message
     );
-    [[nodiscard]] const storage::BlockedItem& blocked(
-        std::size_t index
-    ) const;
+    [[nodiscard]] const storage::BlockedItem& blocked(std::size_t index) const;
     [[nodiscard]] storage::ItemDelta release_state_delta();
 
     [[nodiscard]] std::size_t change_count() const noexcept;
@@ -70,4 +61,4 @@ private:
     std::uintmax_t download_bytes_{0};
 };
 
-}  // namespace onedrive::sync::detail
+} // namespace onedrive::sync::detail

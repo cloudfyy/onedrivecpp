@@ -237,6 +237,17 @@ public:
                      };
     }
 
+    [[nodiscard]] std::vector<onedrive::storage::PartialDownload>
+    partial_downloads(const std::string&) const {
+        std::vector<onedrive::storage::PartialDownload> result;
+        result.reserve(partials.size());
+        for (const auto& [remote_id, download] : partials) {
+            static_cast<void>(remote_id);
+            result.push_back(download);
+        }
+        return result;
+    }
+
     void save_pending_upload(onedrive::storage::PendingUpload) {
     }
     void remove_pending_upload(const std::string&, const std::string&) {

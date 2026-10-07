@@ -237,6 +237,9 @@ the checkpoint metadata and the same-directory regular file still match;
 uncheckpointed trailing bytes are truncated, while stale or changed remote
 versions restart from byte zero. The completed download moves from partial
 state to the existing pending-install journal before replacement.
+When Delta reports that a partially downloaded item was deleted, or a full
+refresh no longer contains it, the checkpoint and temporary file are removed
+after the new Delta state commits successfully.
 
 Download progress is aggregated across concurrent transfers. Text output shows
 completed and total file counts, overall byte percentage, and transferred size

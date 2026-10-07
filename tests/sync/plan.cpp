@@ -12,11 +12,8 @@ namespace {
 using onedrive::storage::DeltaApplyMode;
 using onedrive::test::fail;
 
-onedrive::graph::RemoteItem item(
-    std::string id,
-    std::string path,
-    bool directory = false
-) {
+onedrive::graph::RemoteItem
+item(std::string id, std::string path, bool directory = false) {
     return {
         .id = std::move(id),
         .name = std::filesystem::path{path}.filename().string(),
@@ -30,7 +27,7 @@ onedrive::graph::RemoteItem item(
     };
 }
 
-}  // namespace
+} // namespace
 
 int main() {
     namespace detail = onedrive::sync::detail;
@@ -41,13 +38,14 @@ int main() {
     removed.deleted = true;
     auto plan = detail::SyncPlan::build(
         {
-            .changes = {
-                root,
-                item("deep", "a/b", true),
-                item("shallow", "a", true),
-                item("file", "a/file.txt"),
-                removed,
-            },
+            .changes =
+                {
+                    root,
+                    item("deep", "a/b", true),
+                    item("shallow", "a", true),
+                    item("file", "a/file.txt"),
+                    removed,
+                },
             .delta_link = "https://graph.example.test/delta",
         },
         "me",
@@ -57,10 +55,8 @@ int main() {
     );
     if (plan.change_count() != 5 || plan.directory_count() != 2 ||
         plan.download_count() != 1 || plan.removal_count() != 1 ||
-        plan.download_bytes() != 4 ||
-        plan.directory(0).id != "shallow" ||
-        plan.directory(1).id != "deep" ||
-        plan.download(0).id != "file") {
+        plan.download_bytes() != 4 || plan.directory(0).id != "shallow" ||
+        plan.directory(1).id != "deep" || plan.download(0).id != "file") {
         return fail("delta result was not converted into the expected plan");
     }
     if (plan.removal(0).id != "removed") {
@@ -71,10 +67,13 @@ int main() {
         return fail("planned item state was incorrect");
     }
     plan.complete_removal("removed");
+    plan.remove_partial_download("partial");
     const auto delta = plan.release_state_delta();
     if (delta.apply_mode != onedrive::storage::DeltaApplyMode::replace ||
         delta.upserts.size() != 3 ||
         delta.removals != std::vector<std::string>{"removed"} ||
+        delta.partial_download_removals !=
+            std::vector<std::string>{"partial"} ||
         delta.delta_link != "https://graph.example.test/delta") {
         return fail("planned persistent delta was incorrect");
     }
@@ -99,8 +98,7 @@ int main() {
             },
         }
     );
-    if (move_plan.move_count() != 1 ||
-        move_plan.move(0).id != "moved") {
+    if (move_plan.move_count() != 1 || move_plan.move(0).id != "moved") {
         return fail("remote path change was not planned as a local move");
     }
 

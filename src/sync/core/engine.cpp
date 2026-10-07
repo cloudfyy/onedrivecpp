@@ -48,10 +48,73 @@ namespace {
 struct TransparentStringHash {
     using is_transparent = void;
 
-    [[nodiscard]] std::size_t operator()(std::string_view value) const noexcept {
+    [[nodiscard]] std::size_t operator()(std::string_view value
+    ) const noexcept {
         return std::hash<std::string_view>{}(value);
     }
 };
+
+std::vector<storage::PartialDownload> orphaned_partial_downloads(
+    const graph::DeltaResult& delta,
+    storage::DeltaApplyMode apply_mode,
+    std::vector<storage::PartialDownload> partials
+) {
+    std::unordered_set<std::string, TransparentStringHash, std::equal_to<>>
+        item_ids;
+    item_ids.reserve(delta.changes.size() + partials.size());
+    if (apply_mode == storage::DeltaApplyMode::replace) {
+        for (const auto& item : delta.changes) {
+            if (!item.deleted) {
+                item_ids.insert(item.id);
+            }
+        }
+        std::erase_if(partials, [&item_ids](const auto& partial) {
+            return item_ids.contains(partial.item.remote_id);
+        });
+        return partials;
+    }
+
+    for (const auto& item : delta.changes) {
+        if (item.deleted) {
+            item_ids.insert(item.id);
+        }
+    }
+    bool expanded = true;
+    while (expanded) {
+        expanded = false;
+        for (const auto& partial : partials) {
+            if (item_ids.contains(partial.item.parent_id)) {
+                if (item_ids.insert(partial.item.remote_id).second) {
+                    expanded = true;
+                }
+            }
+        }
+    }
+    std::erase_if(partials, [&item_ids](const auto& partial) {
+        return !item_ids.contains(partial.item.remote_id);
+    });
+    return partials;
+}
+
+void discard_orphaned_partial_files(
+    const std::vector<storage::PartialDownload>& partials
+) noexcept {
+    for (const auto& partial : partials) {
+        try {
+            detail::remove_no_symlinks(partial.temporary_path);
+            spdlog::info(
+                "Removed partial download for deleted remote item '{}'",
+                partial.item.remote_path
+            );
+        } catch (const std::exception& error) {
+            spdlog::warn(
+                "Could not remove orphaned partial download '{}': {}",
+                partial.temporary_path.string(),
+                error.what()
+            );
+        }
+    }
+}
 
 void report_dry_run_configuration(
     const config::Config& config,
@@ -80,8 +143,7 @@ void report_dry_run_configuration(
             {
                 .label = "throttle retries:",
                 .key = "throttle_retries",
-                .value =
-                    std::to_string(config.graph_maximum_throttle_retries),
+                .value = std::to_string(config.graph_maximum_throttle_retries),
             },
             {
                 .label = "throttle delay:",
@@ -100,9 +162,9 @@ void report_dry_run_configuration(
             {
                 .label = "per-download rate:",
                 .key = "download_rate_limit",
-                .value = std::to_string(
-                    config.download_maximum_rate_bytes_per_second
-                ),
+                .value =
+                    std::to_string(config.download_maximum_rate_bytes_per_second
+                    ),
             },
             {
                 .label = "total download rate:",
@@ -124,9 +186,8 @@ void report_dry_run_configuration(
             {
                 .label = "per-upload rate:",
                 .key = "upload_rate_limit",
-                .value = std::to_string(
-                    config.upload_maximum_rate_bytes_per_second
-                ),
+                .value =
+                    std::to_string(config.upload_maximum_rate_bytes_per_second),
             },
             {
                 .label = "total upload rate:",
@@ -294,9 +355,9 @@ void report_completion(
         );
         return;
     }
-    const std::string_view message = preview ?
-        "Synchronization dry run completed" :
-        "Synchronization state update completed";
+    const std::string_view message =
+        preview ? "Synchronization dry run completed"
+                : "Synchronization state update completed";
     spdlog::info("{} in {} milliseconds", message, elapsed.count());
     console.message(
         cli::MessageKind::success,
@@ -309,28 +370,23 @@ void report_completion(
 
 int SyncEngine::synchronize() {
     const auto started_at = std::chrono::steady_clock::now();
-    const auto record_result =
-        [this, started_at](metrics::SyncRunOutcome outcome) {
+    const auto record_result = [this,
+                                started_at](metrics::SyncRunOutcome outcome) {
         metrics_.record_sync_run(
-            outcome,
-            std::chrono::steady_clock::now() - started_at
+            outcome, std::chrono::steady_clock::now() - started_at
         );
     };
     cli::Console fallback_console;
-    const auto& console =
-        console_ == nullptr ? fallback_console : *console_;
+    const auto& console = console_ == nullptr ? fallback_console : *console_;
     const auto capabilities = capabilities_for(
         config_.sync_mode,
         config_.delete_policy,
-        config_.dry_run ?
-            ExecutionMode::preview :
-            ExecutionMode::apply
+        config_.dry_run ? ExecutionMode::preview : ExecutionMode::apply
     );
 
     try {
         onedrive::util::require_sync_mount(
-            config_.sync_data_directory,
-            config_.sync_data_mount_point
+            config_.sync_data_directory, config_.sync_data_mount_point
         );
         std::filesystem::path sync_root =
             onedrive::util::normalized_absolute(config_.sync_data_directory);
@@ -349,21 +405,19 @@ int SyncEngine::synchronize() {
                 safe_root.emplace(sync_root);
                 metadata.emplace(
                     detail::FilesystemMetadata::from_detected_support(
-                        config_.filesystem_metadata,
-                        false
+                        config_.filesystem_metadata, false
                     )
                 );
             }
         } else {
-            sync_root = detail::prepare_sync_root(
-                sync_root,
-                config_.sync_permissions
-            );
+            sync_root =
+                detail::prepare_sync_root(sync_root, config_.sync_permissions);
             safe_root.emplace(sync_root);
-            metadata.emplace(detail::FilesystemMetadata::detect(
-                config_.filesystem_metadata,
-                sync_root
-            ));
+            metadata.emplace(
+                detail::FilesystemMetadata::detect(
+                    config_.filesystem_metadata, sync_root
+                )
+            );
             if (capabilities.downloads()) {
                 detail::recover_pending_downloads(
                     items_,
@@ -375,11 +429,7 @@ int SyncEngine::synchronize() {
             }
             if (capabilities.uploads()) {
                 detail::recover_pending_remote_moves(
-                    *safe_root,
-                    config_.drive_id,
-                    graph_,
-                    items_,
-                    console
+                    *safe_root, config_.drive_id, graph_, items_, console
                 );
                 if (capabilities.removes_remote_items()) {
                     detail::recover_pending_deletes(
@@ -413,8 +463,7 @@ int SyncEngine::synchronize() {
             .dotfiles = config_.dotfiles,
             .maximum_file_size_bytes = config_.maximum_file_size_bytes,
         });
-        const std::string sync_filter_fingerprint =
-            sync_filter.fingerprint();
+        const std::string sync_filter_fingerprint = sync_filter.fingerprint();
         const auto previous_delta_link = items_.delta_link(config_.drive_id);
         const auto previous_sync_filter_fingerprint =
             items_.sync_filter_fingerprint(config_.drive_id);
@@ -422,9 +471,9 @@ int SyncEngine::synchronize() {
             previous_delta_link.has_value() &&
             previous_sync_filter_fingerprint.value_or("") !=
                 sync_filter_fingerprint;
-        const auto query_delta_link = sync_filter_changed ?
-            std::optional<std::string>{} :
-            previous_delta_link;
+        const auto query_delta_link = sync_filter_changed
+                                          ? std::optional<std::string>{}
+                                          : previous_delta_link;
         if (sync_filter_changed) {
             spdlog::info(
                 "Selective synchronization rules changed; fetching the full "
@@ -451,12 +500,11 @@ int SyncEngine::synchronize() {
             "Synchronization filters: .nosync {}, dotfiles {}, maximum file "
             "size {}",
             config_.nosync_enabled ? "enabled" : "disabled",
-            config_.dotfiles == config::DotfilePolicy::exclude ?
-                "excluded" :
-                "included",
-            config_.maximum_file_size_bytes == 0 ?
-                std::string{"unlimited"} :
-                std::to_string(config_.maximum_file_size_bytes) + " bytes"
+            config_.dotfiles == config::DotfilePolicy::exclude ? "excluded"
+                                                               : "included",
+            config_.maximum_file_size_bytes == 0
+                ? std::string{"unlimited"}
+                : std::to_string(config_.maximum_file_size_bytes) + " bytes"
         );
         spdlog::debug(
             "Preparing Microsoft Graph delta query for drive '{}': {} tracked "
@@ -470,18 +518,15 @@ int SyncEngine::synchronize() {
             "delta_query_started",
             "Fetching Microsoft Graph changes..."
         );
-        auto apply_mode =
-            query_delta_link.has_value() ?
-                storage::DeltaApplyMode::merge :
-                storage::DeltaApplyMode::replace;
+        auto apply_mode = query_delta_link.has_value()
+                              ? storage::DeltaApplyMode::merge
+                              : storage::DeltaApplyMode::replace;
         graph::DeltaResult delta;
         std::size_t delta_pages = 0;
         std::size_t delta_scanned_items = 0;
         const auto delta_progress =
             [&console, &delta_pages, &delta_scanned_items](
-                std::size_t pages,
-                std::size_t items,
-                util::ProgressState state
+                std::size_t pages, std::size_t items, util::ProgressState state
             ) {
                 delta_pages = pages;
                 delta_scanned_items = items;
@@ -518,19 +563,17 @@ int SyncEngine::synchronize() {
             }
         }
         console.delta_summary(delta_summary);
-        const auto tracked_items =
-            items_.drive_items(config_.drive_id);
+        const auto tracked_items = items_.drive_items(config_.drive_id);
         std::vector<storage::UploadSuppression> upload_suppressions;
         if (apply_mode == storage::DeltaApplyMode::replace) {
-            engine_detail::add_full_refresh_deletions(
-                delta,
-                tracked_items
-            );
+            engine_detail::add_full_refresh_deletions(delta, tracked_items);
         }
         engine_detail::add_deleted_descendants(delta, tracked_items);
         engine_detail::add_moved_descendants(delta, tracked_items);
-        const auto previously_blocked =
-            items_.blocked_items(config_.drive_id);
+        auto orphaned_partials = orphaned_partial_downloads(
+            delta, apply_mode, items_.partial_downloads(config_.drive_id)
+        );
+        const auto previously_blocked = items_.blocked_items(config_.drive_id);
         if (apply_mode == storage::DeltaApplyMode::merge &&
             !previously_blocked.empty()) {
             engine_detail::add_blocked_retries(delta, previously_blocked);
@@ -543,8 +586,8 @@ int SyncEngine::synchronize() {
             std::unordered_set<
                 std::string,
                 TransparentStringHash,
-                std::equal_to<>
-            > tracked_ids;
+                std::equal_to<>>
+                tracked_ids;
             tracked_ids.reserve(
                 tracked_items.size() + previously_blocked.size()
             );
@@ -568,12 +611,9 @@ int SyncEngine::synchronize() {
             );
             snapshot_removals = std::move(filtered.snapshot_removals);
             if (safe_root) {
-                for (const auto& remote_id :
-                     filtered.retained_remote_ids) {
+                for (const auto& remote_id : filtered.retained_remote_ids) {
                     const auto previous = std::ranges::find(
-                        tracked_items,
-                        remote_id,
-                        &storage::ItemState::remote_id
+                        tracked_items, remote_id, &storage::ItemState::remote_id
                     );
                     if (previous == tracked_items.end() ||
                         previous->directory) {
@@ -581,26 +621,23 @@ int SyncEngine::synchronize() {
                     }
                     std::error_code error;
                     const auto status = std::filesystem::symlink_status(
-                        previous->local_path,
-                        error
+                        previous->local_path, error
                     );
-                    if (error ==
-                        std::errc::no_such_file_or_directory) {
+                    if (error == std::errc::no_such_file_or_directory) {
                         continue;
                     }
                     if (error) {
                         throw std::runtime_error(
                             "cannot inspect selectively retained local file '" +
-                            previous->local_path.string() + "': " +
-                            error.message()
+                            previous->local_path.string() +
+                            "': " + error.message()
                         );
                     }
                     if (!std::filesystem::is_regular_file(status)) {
                         continue;
                     }
                     const auto identity = safe_root->identity(
-                        previous->local_path,
-                        detail::FilesystemItemKind::file
+                        previous->local_path, detail::FilesystemItemKind::file
                     );
                     upload_suppressions.push_back({
                         .drive_id = config_.drive_id,
@@ -623,6 +660,9 @@ int SyncEngine::synchronize() {
             tracked_items,
             std::move(upload_suppressions)
         );
+        for (const auto& partial : orphaned_partials) {
+            plan.remove_partial_download(partial.item.remote_id);
+        }
         engine_detail::report_plan(
             plan, config_.drive_id, console, capabilities
         );
@@ -675,11 +715,11 @@ int SyncEngine::synchronize() {
                 config_.sync_permissions
             );
             spdlog::debug(
-                "Persisting remote delta for drive '{}'",
-                config_.drive_id
+                "Persisting remote delta for drive '{}'", config_.drive_id
             );
             blocked_count = plan.blocked_count();
             items_.apply_delta(plan.release_state_delta());
+            discard_orphaned_partial_files(orphaned_partials);
             if (capabilities.uploads()) {
                 upload_summary = detail::upload_local_changes(
                     *safe_root,
@@ -720,9 +760,7 @@ int SyncEngine::synchronize() {
             error.what()
         );
         console.message(
-            cli::MessageKind::error,
-            "sync_mount_unavailable",
-            error.what()
+            cli::MessageKind::error, "sync_mount_unavailable", error.what()
         );
         return 1;
     } catch (...) {
@@ -730,10 +768,11 @@ int SyncEngine::synchronize() {
         const auto elapsed = std::chrono::steady_clock::now() - started_at;
         spdlog::warn(
             "Synchronization failed after {} milliseconds",
-            std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count()
+            std::chrono::duration_cast<std::chrono::milliseconds>(elapsed)
+                .count()
         );
         throw;
     }
 }
 
-}  // namespace onedrive::sync
+} // namespace onedrive::sync

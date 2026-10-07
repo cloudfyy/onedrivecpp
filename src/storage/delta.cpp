@@ -13,12 +13,12 @@
 
 namespace onedrive::storage {
 
-using item_database_detail::Statement;
-using item_database_detail::Transaction;
 using item_database_detail::bind_integer;
 using item_database_detail::bind_text;
 using item_database_detail::column_text;
 using item_database_detail::query_count;
+using item_database_detail::Statement;
+using item_database_detail::Transaction;
 
 void ItemDatabase::apply_delta(ItemDelta delta) {
     impl_->invoke([this, delta = std::move(delta)]() mutable {
@@ -32,14 +32,15 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         throw std::runtime_error("state database is not open");
     }
     if (delta.drive_id.empty() || delta.delta_link.empty()) {
-        throw std::invalid_argument("delta state requires a drive ID and delta link");
+        throw std::invalid_argument(
+            "delta state requires a drive ID and delta link"
+        );
     }
 
     Transaction transaction{database};
     if (delta.apply_mode == DeltaApplyMode::replace) {
         Statement replace_statement{
-            database,
-            "DELETE FROM item WHERE drive_id = ?1;"
+            database, "DELETE FROM item WHERE drive_id = ?1;"
         };
         bind_text(database, replace_statement.get(), 1, delta.drive_id);
         if (sqlite3_step(replace_statement.get()) != SQLITE_DONE) {
@@ -49,15 +50,9 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
             );
         }
         Statement replace_blocked_statement{
-            database,
-            "DELETE FROM blocked_item WHERE drive_id = ?1;"
+            database, "DELETE FROM blocked_item WHERE drive_id = ?1;"
         };
-        bind_text(
-            database,
-            replace_blocked_statement.get(),
-            1,
-            delta.drive_id
-        );
+        bind_text(database, replace_blocked_statement.get(), 1, delta.drive_id);
         if (sqlite3_step(replace_blocked_statement.get()) != SQLITE_DONE) {
             throw std::runtime_error(
                 "cannot replace blocked drive items: " +
@@ -87,7 +82,9 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
     };
     for (auto& item : delta.upserts) {
         if (item.remote_id.empty()) {
-            throw std::invalid_argument("cannot persist a delta item without an ID");
+            throw std::invalid_argument(
+                "cannot persist a delta item without an ID"
+            );
         }
         item.drive_id = delta.drive_id;
         const std::string local_path = item.local_path.string();
@@ -103,10 +100,7 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         bind_integer(database, upsert_statement.get(), 10, item.size);
         bind_integer(database, upsert_statement.get(), 11, item.local_size);
         bind_integer(
-            database,
-            upsert_statement.get(),
-            12,
-            item.local_modified_ticks
+            database, upsert_statement.get(), 12, item.local_modified_ticks
         );
         bind_integer(
             database,
@@ -121,10 +115,7 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
             static_cast<std::int64_t>(item.local_inode)
         );
         bind_integer(
-            database,
-            upsert_statement.get(),
-            15,
-            item.directory ? 1 : 0
+            database, upsert_statement.get(), 15, item.directory ? 1 : 0
         );
         if (sqlite3_step(upsert_statement.get()) != SQLITE_DONE) {
             throw std::runtime_error(
@@ -141,18 +132,8 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         "DELETE FROM pending_move WHERE drive_id = ?1 AND remote_id = ?2;"
     };
     for (const auto& item : delta.upserts) {
-        bind_text(
-            database,
-            complete_move_statement.get(),
-            1,
-            delta.drive_id
-        );
-        bind_text(
-            database,
-            complete_move_statement.get(),
-            2,
-            item.remote_id
-        );
+        bind_text(database, complete_move_statement.get(), 1, delta.drive_id);
+        bind_text(database, complete_move_statement.get(), 2, item.remote_id);
         if (sqlite3_step(complete_move_statement.get()) != SQLITE_DONE) {
             throw std::runtime_error(
                 "cannot complete pending move journal: " +
@@ -163,18 +144,8 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         sqlite3_clear_bindings(complete_move_statement.get());
     }
     for (const auto& remote_id : delta.removals) {
-        bind_text(
-            database,
-            complete_move_statement.get(),
-            1,
-            delta.drive_id
-        );
-        bind_text(
-            database,
-            complete_move_statement.get(),
-            2,
-            remote_id
-        );
+        bind_text(database, complete_move_statement.get(), 1, delta.drive_id);
+        bind_text(database, complete_move_statement.get(), 2, remote_id);
         if (sqlite3_step(complete_move_statement.get()) != SQLITE_DONE) {
             throw std::runtime_error(
                 "cannot discard removed pending move journal: " +
@@ -186,12 +157,13 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
     }
 
     Statement delete_statement{
-        database,
-        "DELETE FROM item WHERE drive_id = ?1 AND remote_id = ?2;"
+        database, "DELETE FROM item WHERE drive_id = ?1 AND remote_id = ?2;"
     };
     for (const auto& remote_id : delta.removals) {
         if (remote_id.empty()) {
-            throw std::invalid_argument("cannot remove a delta item without an ID");
+            throw std::invalid_argument(
+                "cannot remove a delta item without an ID"
+            );
         }
         bind_text(database, delete_statement.get(), 1, delta.drive_id);
         bind_text(database, delete_statement.get(), 2, remote_id);
@@ -205,6 +177,29 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         sqlite3_clear_bindings(delete_statement.get());
     }
 
+    Statement delete_partial_statement{
+        database,
+        "DELETE FROM partial_download "
+        "WHERE drive_id = ?1 AND remote_id = ?2;"
+    };
+    for (const auto& remote_id : delta.partial_download_removals) {
+        if (remote_id.empty()) {
+            throw std::invalid_argument(
+                "cannot remove a partial download without an ID"
+            );
+        }
+        bind_text(database, delete_partial_statement.get(), 1, delta.drive_id);
+        bind_text(database, delete_partial_statement.get(), 2, remote_id);
+        if (sqlite3_step(delete_partial_statement.get()) != SQLITE_DONE) {
+            throw std::runtime_error(
+                "cannot remove partial download: " +
+                std::string{sqlite3_errmsg(database)}
+            );
+        }
+        sqlite3_reset(delete_partial_statement.get());
+        sqlite3_clear_bindings(delete_partial_statement.get());
+    }
+
     Statement suppression_statement{
         database,
         "INSERT INTO upload_suppression ("
@@ -216,8 +211,7 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         "source_inode = excluded.source_inode;"
     };
     for (auto& suppression : delta.upload_suppressions) {
-        if (suppression.remote_id.empty() ||
-            suppression.local_path.empty() ||
+        if (suppression.remote_id.empty() || suppression.local_path.empty() ||
             suppression.source_device >
                 static_cast<std::uint64_t>(
                     std::numeric_limits<std::int64_t>::max()
@@ -232,16 +226,10 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         }
         suppression.drive_id = delta.drive_id;
         bind_text(
-            database,
-            suppression_statement.get(),
-            1,
-            suppression.drive_id
+            database, suppression_statement.get(), 1, suppression.drive_id
         );
         bind_text(
-            database,
-            suppression_statement.get(),
-            2,
-            suppression.remote_id
+            database, suppression_statement.get(), 2, suppression.remote_id
         );
         bind_text(
             database,
@@ -329,45 +317,32 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         bind_text(database, upsert_blocked_statement.get(), 4, item.name);
         bind_text(database, upsert_blocked_statement.get(), 5, item.etag);
         bind_text(database, upsert_blocked_statement.get(), 6, item.ctag);
-        bind_text(database, upsert_blocked_statement.get(), 7, item.remote_path);
         bind_text(
-            database,
-            upsert_blocked_statement.get(),
-            8,
-            item.last_modified
+            database, upsert_blocked_statement.get(), 7, item.remote_path
+        );
+        bind_text(
+            database, upsert_blocked_statement.get(), 8, item.last_modified
         );
         bind_integer(database, upsert_blocked_statement.get(), 9, item.size);
         bind_integer(
-            database,
-            upsert_blocked_statement.get(),
-            10,
-            item.directory ? 1 : 0
+            database, upsert_blocked_statement.get(), 10, item.directory ? 1 : 0
         );
         bind_integer(
-            database,
-            upsert_blocked_statement.get(),
-            11,
-            item.deleted ? 1 : 0
+            database, upsert_blocked_statement.get(), 11, item.deleted ? 1 : 0
         );
         bind_text(
-            database,
-            upsert_blocked_statement.get(),
-            12,
-            item.reason_code
+            database, upsert_blocked_statement.get(), 12, item.reason_code
         );
         bind_text(
-            database,
-            upsert_blocked_statement.get(),
-            13,
-            item.reason_message
+            database, upsert_blocked_statement.get(), 13, item.reason_message
         );
         std::string hash_algorithm;
         std::string hash_value;
         if (item.content_hash.has_value()) {
             hash_algorithm =
-                item.content_hash->algorithm == util::FileHashAlgorithm::sha256 ?
-                    "sha256" :
-                    "quick_xor";
+                item.content_hash->algorithm == util::FileHashAlgorithm::sha256
+                    ? "sha256"
+                    : "quick_xor";
             hash_value = item.content_hash->value;
             if (hash_value.empty()) {
                 throw std::invalid_argument(
@@ -375,12 +350,7 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
                 );
             }
         }
-        bind_text(
-            database,
-            upsert_blocked_statement.get(),
-            14,
-            hash_algorithm
-        );
+        bind_text(database, upsert_blocked_statement.get(), 14, hash_algorithm);
         bind_text(database, upsert_blocked_statement.get(), 15, hash_value);
         if (sqlite3_step(upsert_blocked_statement.get()) != SQLITE_DONE) {
             throw std::runtime_error(
@@ -404,10 +374,7 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
     bind_text(database, state_statement.get(), 1, delta.drive_id);
     bind_text(database, state_statement.get(), 2, delta.delta_link);
     bind_text(
-        database,
-        state_statement.get(),
-        3,
-        delta.sync_filter_fingerprint
+        database, state_statement.get(), 3, delta.sync_filter_fingerprint
     );
     if (sqlite3_step(state_statement.get()) != SQLITE_DONE) {
         throw std::runtime_error(
@@ -423,11 +390,9 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         delta.upserts.size(),
         delta.removals.size(),
         delta.blocked_upserts.size(),
-        delta.apply_mode == DeltaApplyMode::replace ?
-            "replaced" :
-            "updated",
+        delta.apply_mode == DeltaApplyMode::replace ? "replaced" : "updated",
         query_count(database, "SELECT COUNT(*) FROM item;")
     );
 }
 
-}  // namespace onedrive::storage
+} // namespace onedrive::storage

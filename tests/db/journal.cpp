@@ -367,6 +367,71 @@ int main() {
             );
         }
 
+        database.save_partial_download({
+            .item =
+                {
+                    .drive_id = "cleanup-drive",
+                    .remote_id = "remove-partial",
+                    .name = "remove-partial.txt",
+                    .etag = "remove-etag",
+                    .remote_path = "remove-partial.txt",
+                    .local_path =
+                        temporary_directory.path() / "remove-partial.txt",
+                    .size = 4,
+                },
+            .temporary_path =
+                temporary_directory.path() / ".remove-partial.tmp",
+            .completed_bytes = 2,
+        });
+        database.save_partial_download({
+            .item =
+                {
+                    .drive_id = "cleanup-drive",
+                    .remote_id = "keep-partial",
+                    .name = "keep-partial.txt",
+                    .etag = "keep-etag",
+                    .remote_path = "keep-partial.txt",
+                    .local_path =
+                        temporary_directory.path() / "keep-partial.txt",
+                    .size = 4,
+                },
+            .temporary_path = temporary_directory.path() / ".keep-partial.tmp",
+            .completed_bytes = 2,
+        });
+        const auto cleanup_partials =
+            database.partial_downloads("cleanup-drive");
+        if (cleanup_partials.size() != 2 ||
+            cleanup_partials[0].item.remote_id != "keep-partial" ||
+            cleanup_partials[1].item.remote_id != "remove-partial") {
+            return fail("partial download listing was not ordered by path");
+        }
+        database.apply_delta({
+            .drive_id = "cleanup-drive",
+            .partial_download_removals = {"remove-partial"},
+            .delta_link = "https://graph.example.test/delta-cleanup",
+        });
+        if (database.partial_download("cleanup-drive", "remove-partial") ||
+            !database.partial_download("cleanup-drive", "keep-partial") ||
+            database.partial_downloads("cleanup-drive").size() != 1) {
+            return fail("delta did not remove only the selected partial");
+        }
+        try {
+            database.apply_delta({
+                .drive_id = "cleanup-drive",
+                .partial_download_removals = {""},
+                .delta_link = "https://graph.example.test/delta-invalid",
+            });
+            return fail("empty partial removal ID was accepted");
+        } catch (const std::invalid_argument&) {
+        }
+        if (!database.partial_download("cleanup-drive", "keep-partial") ||
+            database.delta_link("cleanup-drive") !=
+                std::optional<std::string>{
+                    "https://graph.example.test/delta-cleanup"
+                }) {
+            return fail("invalid partial removal was not rolled back");
+        }
+
         const auto cleared = database.clear("me");
         if (cleared.items != 1 || cleared.pending_downloads != 1 ||
             cleared.partial_downloads != 1 || cleared.pending_moves != 1 ||

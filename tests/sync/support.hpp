@@ -402,6 +402,9 @@ public:
         for (const auto& remote_id : delta.removals) {
             items.erase(remote_id);
         }
+        for (const auto& remote_id : delta.partial_download_removals) {
+            partials.erase(remote_id);
+        }
         for (const auto& item : delta.upserts) {
             pending_moves_by_id.erase(item.remote_id);
             items.insert_or_assign(item.remote_id, item);
@@ -476,6 +479,18 @@ public:
                    : std::optional<onedrive::storage::PartialDownload>{
                          iterator->second
                      };
+    }
+
+    [[nodiscard]] std::vector<onedrive::storage::PartialDownload>
+    partial_downloads(const std::string&) const {
+        const std::scoped_lock lock{mutex};
+        std::vector<onedrive::storage::PartialDownload> result;
+        result.reserve(partials.size());
+        for (const auto& [remote_id, download] : partials) {
+            static_cast<void>(remote_id);
+            result.push_back(download);
+        }
+        return result;
     }
 
     void save_pending_upload(onedrive::storage::PendingUpload upload) {

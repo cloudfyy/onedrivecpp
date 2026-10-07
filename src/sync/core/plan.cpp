@@ -30,8 +30,7 @@ SyncPlan SyncPlan::build(
         std::move(sync_filter_fingerprint);
     plan.state_delta_.apply_mode = apply_mode;
     plan.state_delta_.removals = std::move(snapshot_removals);
-    plan.state_delta_.upload_suppressions =
-        std::move(upload_suppressions);
+    plan.state_delta_.upload_suppressions = std::move(upload_suppressions);
 
     for (std::size_t index = 0; index < plan.delta_.changes.size(); ++index) {
         const auto& item = plan.delta_.changes[index];
@@ -68,9 +67,7 @@ SyncPlan SyncPlan::build(
         }
         plan.state_delta_.blocked_removals.push_back(item.id);
         const auto previous = std::ranges::find(
-            tracked_items,
-            item.id,
-            &storage::ItemState::remote_id
+            tracked_items, item.id, &storage::ItemState::remote_id
         );
         if (previous != tracked_items.end() &&
             previous->remote_path != item.remote_path) {
@@ -79,10 +76,9 @@ SyncPlan SyncPlan::build(
         if (item.directory) {
             plan.directories_.push_back(index);
         } else {
-            if (item.size < 0 ||
-                static_cast<std::uint64_t>(item.size) >
-                    std::numeric_limits<std::uintmax_t>::max() -
-                        plan.download_bytes_) {
+            if (item.size < 0 || static_cast<std::uint64_t>(item.size) >
+                                     std::numeric_limits<std::uintmax_t>::max(
+                                     ) - plan.download_bytes_) {
                 throw std::runtime_error(
                     "remote download size exceeds the supported range"
                 );
@@ -94,16 +90,9 @@ SyncPlan SyncPlan::build(
             item_state_for(drive_id, item, std::move(local_path))
         );
     }
-    std::ranges::sort(
-        plan.directories_,
-        {},
-        [&plan](std::size_t index) {
-            return std::ranges::count(
-                plan.delta_.changes[index].remote_path,
-                '/'
-            );
-        }
-    );
+    std::ranges::sort(plan.directories_, {}, [&plan](std::size_t index) {
+        return std::ranges::count(plan.delta_.changes[index].remote_path, '/');
+    });
     return plan;
 }
 
@@ -125,9 +114,7 @@ const graph::RemoteItem& SyncPlan::move(std::size_t index) const {
 
 storage::ItemState& SyncPlan::state_for(const std::string& remote_id) {
     const auto iterator = std::ranges::find(
-        state_delta_.upserts,
-        remote_id,
-        &storage::ItemState::remote_id
+        state_delta_.upserts, remote_id, &storage::ItemState::remote_id
     );
     if (iterator == state_delta_.upserts.end()) {
         throw std::logic_error(
@@ -150,9 +137,7 @@ void SyncPlan::block(
     );
     std::erase(state_delta_.blocked_removals, item.id);
     const auto existing = std::ranges::find(
-        state_delta_.blocked_upserts,
-        item.id,
-        &storage::BlockedItem::remote_id
+        state_delta_.blocked_upserts, item.id, &storage::BlockedItem::remote_id
     );
     storage::BlockedItem blocked{
         .drive_id = state_delta_.drive_id,
@@ -179,6 +164,10 @@ void SyncPlan::block(
 void SyncPlan::complete_removal(const std::string& remote_id) {
     state_delta_.removals.push_back(remote_id);
     state_delta_.blocked_removals.push_back(remote_id);
+}
+
+void SyncPlan::remove_partial_download(const std::string& remote_id) {
+    state_delta_.partial_download_removals.push_back(remote_id);
 }
 
 void SyncPlan::block_removal(
@@ -241,4 +230,4 @@ std::uintmax_t SyncPlan::download_bytes() const noexcept {
     return download_bytes_;
 }
 
-}  // namespace onedrive::sync::detail
+} // namespace onedrive::sync::detail

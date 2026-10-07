@@ -400,6 +400,11 @@ public:
         return std::nullopt;
     }
 
+    [[nodiscard]] std::vector<onedrive::storage::PartialDownload>
+    partial_downloads(const std::string&) const {
+        return {};
+    }
+
     void save_pending_upload(onedrive::storage::PendingUpload) {
     }
     void remove_pending_upload(const std::string&, const std::string&) {
@@ -715,8 +720,7 @@ struct CliFixture final {
 
     CliFixture() {
         std::filesystem::permissions(
-            temporary_directory.path(),
-            std::filesystem::perms::owner_all
+            temporary_directory.path(), std::filesystem::perms::owner_all
         );
         std::ofstream config{config_path};
         config << "config_version = 2\n"
