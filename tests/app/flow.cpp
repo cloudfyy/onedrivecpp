@@ -262,7 +262,7 @@ int test_flow() {
             "were preserved"
         ) ||
         !reset_state.standard_output.contains(
-            "next sync will perform a full cloud check"
+            "next sync will perform a full Microsoft Graph delta query"
         ) ||
         runtime_factory.item_store_count != 1 ||
         runtime_factory.item_store_open_count != 1 ||
@@ -389,8 +389,8 @@ int test_flow() {
     if (dry_run.exit_code != 0 ||
         !dry_run.standard_output.contains("Dry run configuration") ||
         !dry_run.standard_output.contains(
-            "Cloud storage has 1 changes (1 new or updated, 0 removed, 0 "
-            "moved, 0 need attention)"
+            "Remote delta contains 1 changes (1 upserts, 0 removals, 0 moves, "
+            "0 blocked)"
         ) ||
         !dry_run.standard_output.contains("throttle retries:     6") ||
         !dry_run.standard_output.contains(
@@ -502,8 +502,8 @@ int test_flow() {
     );
     if (trace_sync.exit_code != 0 ||
         !trace_sync.standard_output.contains(
-            "Cloud storage has 1 changes (1 new or updated, 0 removed, 0 "
-            "moved, 0 need attention)"
+            "Remote delta contains 1 changes (1 upserts, 0 removals, 0 moves, "
+            "0 blocked)"
         ) ||
         runtime_factory.item_store_apply_delta_count != 1) {
         return fail("sync trace command did not apply the remote delta");
@@ -588,9 +588,9 @@ int test_flow() {
             "\"event\":\"delta_summary\""
         ) ||
         !json_dry_run.standard_output.contains(
-            "\"message\":\"Checking the cloud for changes...\""
+            "\"message\":\"Fetching Microsoft Graph changes...\""
         ) ||
-        json_dry_run.standard_output.contains("Microsoft Graph") ||
+        !json_dry_run.standard_output.contains("Microsoft Graph") ||
         json_dry_run.standard_output.contains("\033[")) {
         return fail("JSON output was not emitted as unstyled JSON Lines");
     }
@@ -624,7 +624,7 @@ int test_flow() {
         runtime_factory.monitor_run_count != 1 ||
         runtime_factory.monitor_sync_count != 1 ||
         !monitor.standard_output.contains(
-            "Watching for local and cloud changes"
+            "Monitoring local and Microsoft Graph changes"
         ) ||
         monitor.standard_output.contains("scaffold")) {
         return fail(

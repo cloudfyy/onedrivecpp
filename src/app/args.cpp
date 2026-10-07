@@ -89,7 +89,7 @@ ParseResult parse_arguments(int argc, char* argv[]) {
     );
     auto* reset = application.add_subcommand(
         "reset-state",
-        "Reset saved cloud change history for the configured drive"
+        "Reset the Microsoft Graph delta cursor for the configured drive"
     );
     auto* sync =
         application.add_subcommand("sync", "Synchronize OneDrive files");

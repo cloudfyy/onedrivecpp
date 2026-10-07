@@ -126,7 +126,7 @@ private:
             return;
         }
         if (!delta_progress_active_) {
-            output_ << "Cloud check: ";
+            output_ << "Microsoft Graph delta: ";
             delta_progress_active_ = true;
             delta_progress_pages_ = 0;
         }
@@ -150,11 +150,11 @@ private:
                     static_cast<double>(summary.pages);
         output_ << (delta_progress_active_ ? "\n" : "")
                 << fmt::format(
-                       "Cloud check complete: {} batch{}, {} items checked, "
-                       "{} changes ({} files, {} folders, {} deletions), "
-                       "{:.1f} items/batch\n",
+                       "Microsoft Graph delta complete: {} page{}, {} items "
+                       "scanned, {} unique changes ({} files, {} folders, {} "
+                       "deletions), {:.1f} items/page\n",
                        summary.pages,
-                       summary.pages == 1 ? "" : "es",
+                       summary.pages == 1 ? "" : "s",
                        summary.scanned_items,
                        summary.unique_changes,
                        summary.files,

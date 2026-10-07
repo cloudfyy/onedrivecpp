@@ -31,8 +31,8 @@ void report_plan(
         cli::MessageKind::information,
         "remote_delta",
         std::format(
-            "Cloud storage has {} changes ({} new or updated, {} removed, {} "
-            "moved, {} need attention).",
+            "Remote delta contains {} changes ({} upserts, {} removals, {} "
+            "moves, {} blocked).",
             plan.change_count(),
             upsert_count,
             removal_count,

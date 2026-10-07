@@ -29,7 +29,7 @@ int test_tui_dashboard() {
 
     if (!output.str().contains("\033[?1049h") ||
         !output.str().contains("ONEDRIVE // SYNC  v") ||
-        !output.str().contains("HACKER")) {
+        output.str().contains("HACKER")) {
         return fail("FTXUI did not enter the full-screen dashboard");
     }
     {
@@ -37,7 +37,7 @@ int test_tui_dashboard() {
         console.message(
             MessageKind::information,
             "delta_query_started",
-            "Checking the cloud for changes..."
+            "Starting Microsoft Graph delta query"
         );
         console.message(
             MessageKind::information,
@@ -61,6 +61,13 @@ int test_tui_dashboard() {
             ProgressState::ongoing,
             {.bytes_per_second = 128}
         );
+        console.end_download_progress();
+        const auto after_end = output.str();
+        const auto frame_after_end =
+            after_end.substr(after_end.rfind("\033[H"));
+        if (!frame_after_end.contains("DOWNLOADS  1/4 files")) {
+            return fail("FTXUI removed completed download progress");
+        }
         console.section(
             "summary",
             "Sync summary",
@@ -75,23 +82,35 @@ int test_tui_dashboard() {
         console.message(
             MessageKind::warning,
             "cloud_warning",
-            "Cloud storage needs attention"
+            "Microsoft Graph Delta needs attention"
         );
+        console.download_progress(
+            2,
+            4,
+            768,
+            1'024,
+            ProgressState::ongoing,
+            {.bytes_per_second = 256}
+        );
+        console.end_download_progress();
 
         const auto rendered = output.str();
-        if (rendered.contains("Microsoft Graph") ||
+        const auto final_frame = rendered.substr(rendered.rfind("\033[H"));
+        if (final_frame.contains("Microsoft Graph") ||
             !rendered.contains("CLOUD CHECK  350 items checked") ||
             !rendered.contains("340 changes found") ||
-            !rendered.contains("DOWNLOADS  1/4 files") ||
-            !rendered.contains("50%") ||
-            !rendered.contains("512 B / 1.0 KiB") ||
+            !final_frame.contains("DOWNLOADS  2/4 files") ||
+            !final_frame.contains("75%") ||
+            !final_frame.contains("768 B / 1.0 KiB") ||
             !rendered.contains("Sync summary") ||
             !rendered.contains("Files: 4") ||
             !rendered.contains("NEEDS ATTENTION  1") ||
             !rendered.contains("conflict.txt") ||
-            !rendered.contains("Sync completed") ||
+            !rendered.contains("Sync complete.") ||
             !rendered.contains("Checking the cloud for changes") ||
-            !rendered.contains("Cloud storage needs attention") ||
+            !rendered.contains(
+                "cloud service cloud check needs attention"
+            ) ||
             !error.str().empty()) {
             return fail("FTXUI dashboard did not render friendly state");
         }
@@ -103,7 +122,6 @@ int test_tui_dashboard() {
         if (!confirmed) {
             return fail("FTXUI confirmation did not accept expected input");
         }
-        console.end_download_progress();
     }
     if (!output.str().contains("\033[?1049l")) {
         return fail("FTXUI did not restore the original terminal screen");
@@ -158,7 +176,8 @@ int test_tui_dashboard() {
             20
         );
         themed_backend.reset();
-        if (!themed_output.str().contains(theme.name)) {
+        if (themed_output.str().contains(theme.name) ||
+            !themed_output.str().contains("ONEDRIVE // SYNC")) {
             return fail("FTXUI theme was not rendered");
         }
     }
@@ -178,13 +197,13 @@ int test_tui_dashboard() {
     monitor_backend->emit(MessageEvent{
         .kind = MessageKind::success,
         .event = "monitor_ready",
-        .text = "Watching for local and cloud changes.",
+        .text = "Monitoring local and Microsoft Graph changes for: /sync",
     });
     monitor_backend.reset();
     if (!monitor_output.str().contains("ONEDRIVE // MONITOR  v") ||
         !monitor_output.str().contains("q / Esc  EXIT") ||
         !monitor_output.str().contains(
-            "Watching for local and cloud changes."
+            "Watching for local and cloud changes in: /sync"
         ) ||
         monitor_output.str().contains("Microsoft Graph")) {
         return fail("monitor TUI did not render keyboard exit guidance");

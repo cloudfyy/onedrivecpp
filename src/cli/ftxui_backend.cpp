@@ -70,18 +70,83 @@ ThemePalette palette_for(TuiTheme theme) {
     return palette_for(TuiTheme::hacker);
 }
 
-std::string_view theme_name(TuiTheme theme) {
-    switch (theme) {
-        case TuiTheme::hacker:
-            return "HACKER";
-        case TuiTheme::ocean:
-            return "OCEAN";
-        case TuiTheme::amber:
-            return "AMBER";
-        case TuiTheme::synthwave:
-            return "SYNTHWAVE";
+void replace_all(
+    std::string& text,
+    std::string_view search,
+    std::string_view replacement
+) {
+    std::size_t position = 0;
+    while ((position = text.find(search, position)) != std::string::npos) {
+        text.replace(position, search.size(), replacement);
+        position += replacement.size();
     }
-    return "HACKER";
+}
+
+std::string friendly_text(std::string text) {
+    replace_all(text, "Microsoft Graph", "cloud service");
+    replace_all(text, "Graph", "cloud service");
+    replace_all(text, "WebSocket", "live cloud updates");
+    replace_all(text, "Delta", "cloud check");
+    replace_all(text, "delta", "cloud check");
+    return text;
+}
+
+std::optional<std::string> friendly_message(
+    const MessageEvent& event
+) {
+    if (event.event == "log" &&
+        event.kind == MessageKind::information) {
+        return std::nullopt;
+    }
+    if (event.event == "delta_query_started") {
+        return "Checking the cloud for changes...";
+    }
+    if (event.event == "delta_cursor_invalid") {
+        return "Refreshing cloud history...";
+    }
+    if (event.event == "sync_completed") {
+        return "Sync complete.";
+    }
+    if (event.event == "sync_completed_with_issues") {
+        return "Sync finished with items needing attention.";
+    }
+    if (event.event == "initial_delta_scheduled") {
+        return "The next sync will perform a full cloud check.";
+    }
+
+    auto text = event.text;
+    replace_all(
+        text,
+        "Local changes settle for ",
+        "Local changes wait "
+    );
+    replace_all(
+        text,
+        " milliseconds; remote WebSocket notifications trigger Delta "
+        "synchronization, with Graph polling every ",
+        " milliseconds to settle; live cloud updates are enabled, with a "
+        "safety check every "
+    );
+    replace_all(
+        text,
+        " milliseconds; remote WebSocket notifications are disabled, and "
+        "Graph is polled every ",
+        " milliseconds to settle; live cloud updates are disabled, so "
+        "changes are checked every "
+    );
+    replace_all(text, " seconds as fallback.", " seconds.");
+    replace_all(
+        text,
+        "Monitoring local and Microsoft Graph changes for:",
+        "Watching for local and cloud changes in:"
+    );
+    replace_all(text, "Remote delta contains", "Cloud storage has");
+    replace_all(text, " upserts", " new or updated");
+    replace_all(text, " removals", " removed");
+    replace_all(text, " moves", " moved");
+    replace_all(text, " blocked", " need attention");
+    replace_all(text, "the Delta cursor", "cloud change history");
+    return friendly_text(std::move(text));
 }
 
 class FtxuiConsoleBackend final : public ConsoleBackend {
@@ -177,19 +242,22 @@ private:
     }
 
     void update(const MessageEvent& event) {
-        if (event.event == "log" &&
-            event.kind == MessageKind::information) {
+        auto message = friendly_message(event);
+        if (!message) {
             return;
         }
-        messages_.push_back({event.kind, event.text});
+        messages_.push_back({event.kind, std::move(*message)});
         if (messages_.size() > maximum_messages) {
             messages_.erase(messages_.begin());
         }
     }
 
     void update(const SectionEvent& event) {
-        section_title_ = event.title;
+        section_title_ = friendly_text(event.title);
         section_fields_ = event.fields;
+        for (auto& field : section_fields_) {
+            field.label = friendly_text(std::move(field.label));
+        }
     }
 
     void update(const DeltaProgressEvent& event) {
@@ -206,16 +274,15 @@ private:
 
     void update(const BlockedItemEvent& event) {
         ++blocked_items_;
-        last_blocked_ = event.path + ": " + event.reason_message;
+        last_blocked_ =
+            event.path + ": " + friendly_text(event.reason_message);
     }
 
     void update(const DownloadProgressEvent& event) {
         download_ = event;
     }
 
-    void update(const EndDownloadProgressEvent&) {
-        download_.reset();
-    }
+    void update(const EndDownloadProgressEvent&) {}
 
     Element header() const {
         return hbox({
@@ -228,10 +295,6 @@ private:
                 palette_.primary
             ),
             filler(),
-            with_color(
-                text(fmt::format(" {} ", theme_name(theme_))),
-                palette_.accent
-            ),
         });
     }
 

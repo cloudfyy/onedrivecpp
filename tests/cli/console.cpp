@@ -127,9 +127,10 @@ int main() {
     );
     if (plain_output.str() !=
         "Completed.\nSummary\n  Files: 12\n  Bytes: 42\n"
-        "Cloud check: ...\n"
-        "Cloud check complete: 3 batches, 412 items checked, 400 changes "
-        "(300 files, 90 folders, 10 deletions), 137.3 items/batch\n"
+        "Microsoft Graph delta: ...\n"
+        "Microsoft Graph delta complete: 3 pages, 412 items scanned, 400 "
+        "unique changes (300 files, 90 folders, 10 deletions), 137.3 "
+        "items/page\n"
         "DL: 1/2 files, 50% (5 B/10 B), 2.0 KiB/s, ETA 00:01:05\n"
         "DL: 1/2 files, 99% (10 B/10 B)\n"
         "Done: 2/2 files, 100% (10 B/10 B), 1.0 KiB/s, "
