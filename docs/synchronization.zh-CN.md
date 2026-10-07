@@ -1,6 +1,9 @@
 # 同步与恢复
 
-[English](synchronization.md) | 简体中文
+[English](synchronization.md) | 简体中文 |
+[文档中心](README.zh-CN.md)
+
+## 状态重置与 Delta 重建
 
 使用以下命令重置当前配置 Drive 保存的 `deltaLink`：
 
@@ -28,6 +31,8 @@ onedrive-cpp reset-state --clear-all
 `reset-state --clear-all --yes` 显式承担该风险；未指定 `--clear-all` 时
 `--yes` 会被拒绝。
 
+## 数据库完整性与修复
+
 客户端会在启动时和 migration 完成后对每个 Drive 数据库执行 SQLite
 `quick_check`，并验证所有业务表、列类型、`NOT NULL` 约束和主键索引是否与当前
 程序生成的 schema 一致。确认损坏的数据库及其 WAL/SHM sidecar 会在原目录隔离
@@ -49,6 +54,8 @@ onedrive-cpp doctor
 
 任何数据库不健康时命令返回非零；可配合 `--output json` 输出结构化诊断。
 
+## 单文件下载
+
 无需执行整个 Drive Delta 同步即可下载单个文件：
 
 ```bash
@@ -68,6 +75,8 @@ eTag 前置条件、HTTPS 重定向策略、Range 分片、durable checkpoint �
 onedrive-cpp download "Documents/report.pdf" --dry-run
 ```
 
+## Delta 同步与原子应用
+
 `sync` 命令会刷新 OAuth access token，在 Microsoft 返回轮换后的 refresh
 token 时安全持久化，并通过分页的 Microsoft Graph Delta 请求获取配置 Drive
 中的递归文件树。首次成功查询会把远端元数据和最终 `deltaLink` 原子写入所选
@@ -83,6 +92,8 @@ token 时安全持久化，并通过分页的 Microsoft Graph Delta 请求获取
 同一 SQLite 事务中可靠记录为 blocked 后，程序才推进 `deltaLink`。系统性失败
 时，已完成文件的本地快照会支持安全重试。
 
+## 并发与冲突保护
+
 每个下载从准备阶段到最终 ItemStore 更新都会持有按 `(drive_id, remote_id)`
 索引的 operation-coordinator 租约。同一远端条目的操作会串行执行，不同条目和
 Drive 仍保持并行。上传、删除和远端移动路径也获取同一租约，防止一个条目的
@@ -96,6 +107,8 @@ Drive 仍保持并行。上传、删除和远端移动路径也获取同一租�
 也不能替换已有本地数据。其他独立文件继续同步；游标安全推进后 `sync` 返回状态码
 2。后续每次增量同步都会自动重试 blocked item，成功或远端删除后清除记录。认证、
 Graph、数据库、同步根目录权限、整体磁盘容量和下载传输错误仍然是致命错误。
+
+## 移动与删除
 
 Delta 项目保留相同远端 ID 但路径变化时，客户端会在不覆盖已有目标的前提下，
 在本地执行重命名或移动。Graph 只报告目录本身时，也会重新映射所有已跟踪后代。
@@ -116,6 +129,8 @@ journal，项目状态、Delta 游标和 journal 清理在同一事务中提交�
 同步仍会重试。完整 Delta 刷新会用 Graph 完整清单与旧快照对账，因此重置或失效
 游标不会漏掉远端删除。仅因 `sync_list` 排除的项目会移除同步快照并保留本地
 文件，同时用持久 filesystem identity 抑制该保留对象从旧路径重新上传。
+
+## 完整性、Journal 与断点恢复
 
 Microsoft Graph 提供文件内容哈希时，程序会在临时文件进入待安装 journal 前
 进行校验：优先使用 SHA-256，否则校验 OneDrive/SharePoint QuickXorHash。
@@ -182,6 +197,8 @@ metadata = "auto"
   的文件系统。
 
 能力判断基于目标同步目录中的实际读写探测，而不是文件系统名称白名单。
+
+## 重试策略与长驻服务
 
 Microsoft Graph 分页请求、下载重定向、文件下载和 Range 分片请求会重试 HTTP
 408、429、502、503 和 504 响应。客户端会遵循数值形式的 `Retry-After`

@@ -1,6 +1,9 @@
 # Architecture
 
-English | [简体中文](architecture.zh-CN.md)
+English | [简体中文](architecture.zh-CN.md) |
+[Documentation index](README.md)
+
+## System overview
 
 ```mermaid
 flowchart TB
@@ -46,6 +49,8 @@ flowchart TB
     db_thread --> sqlite[("SQLite snapshots, cursors,<br/>journals, blocked items")]
 ```
 
+## Dependency and storage boundaries
+
 The application uses constructor injection and explicit port interfaces rather
 than a service locator. `main` is the only composition root. The production
 runtime factory creates the libcurl, file-token, SQLite, monitor, Graph, and
@@ -59,6 +64,8 @@ monitor, and upload workers are queued and completed synchronously, so
 one thread owns the SQLite connection and transaction order while errors are
 returned to the caller. SQLite is the authoritative state source; the adapter
 does not maintain duplicate mutable item caches.
+## Transaction state machines
+
 Download and upload transactions reuse a small template typestate core that
 isolates state families and moves their payloads between legal phases. Download
 uses content-verified and recovery-journaled phases; upload uses snapshot
@@ -93,6 +100,8 @@ resume; expired, missing, and gone saved sessions return to absent before a new
 session is created. Each accepted fragment advances the active state only after
 its checkpoint succeeds, and only an active session can produce a finalized
 remote item.
+## Notification architecture
+
 Remote change notifications use a separate pure connection state machine from
 the monitor scheduling state machine. The connection reducer owns channel
 acquisition, token refresh, socket connection, lease renewal, bounded
@@ -106,6 +115,8 @@ eventual convergence. Network adapters execute reducer effects; they do not
 make state-transition policy. The production adapter acquires the channel
 through Graph and runs Engine.IO 4 / Socket.IO framing over libcurl's
 WebSocket-only transport, including heartbeat handling and eventfd wakeups.
+
+## Source tree
 
 The directories correspond to the responsibilities of
 `main/config/curlEngine/onedrive/sync/itemdb/monitor` in the reference project:

@@ -1,6 +1,9 @@
 # Development and testing
 
-English | [简体中文](development.zh-CN.md)
+English | [简体中文](development.zh-CN.md) |
+[Documentation index](README.md)
+
+## Live Graph end-to-end tests
 
 The `e2e` preset is disabled from normal builds and requires a dedicated test
 account or Drive whose remote root contains a stable fixture. The external
@@ -35,6 +38,8 @@ live fixture. It also enables `sync_root_files`, verifies that the selection
 fingerprint forces a full Graph query, and confirms the existing rule-selected
 fixture is not rewritten.
 
+### Configure and run
+
 ```bash
 export ONEDRIVE_E2E_CONFIG=/absolute/path/to/dedicated-e2e.toml
 export ONEDRIVE_E2E_EXPECTED_PATH=fixture/small.bin
@@ -51,6 +56,8 @@ The stable `graph_sync_e2e.py` entry point delegates to the Python modules in
 `tests/e2e/`, which separate live Graph scenarios, system-boundary scenarios,
 process orchestration, state fixtures, and runner self-tests.
 
+### Test data and artifact safety
+
 The dedicated Drive must grant file write access and should contain only
 disposable test data even though the runner's generated `sync_list` materializes
 only the expected and temporary fixtures. Allow enough local free space for
@@ -61,6 +68,8 @@ failure. These diagnostics may contain remote file metadata and must be handled
 as sensitive data. Configuration, copied tokens, SQLite state, and downloaded
 content are always removed. Never point the E2E runner at a daily-use state or
 Drive.
+
+### System-boundary scenarios
 
 The live runner also exercises system boundaries with the real executable:
 connections dropped by a local proxy and subsequent recovery, deterministic

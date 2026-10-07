@@ -1,6 +1,7 @@
 # License, legal, and branding
 
-English | [简体中文](project.zh-CN.md)
+English | [简体中文](project.zh-CN.md) |
+[Documentation index](README.md)
 
 ## License
 

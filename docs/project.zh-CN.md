@@ -1,6 +1,7 @@
 # 许可证、法律与品牌
 
-[English](project.md) | 简体中文
+[English](project.md) | 简体中文 |
+[文档中心](README.zh-CN.md)
 
 ## 许可证
 

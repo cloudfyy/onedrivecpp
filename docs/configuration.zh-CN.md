@@ -1,6 +1,9 @@
 # 配置
 
-[English](configuration.md) | 简体中文
+[English](configuration.md) | 简体中文 |
+[文档中心](README.zh-CN.md)
+
+## 配置文件与安全边界
 
 默认优先读取 `~/.config/onedrive-cpp/config.toml`；文件不存在时使用内置默认值。
 系统示例位于 `/etc/onedrive-cpp/onedrive-cpp.toml`。首次使用可执行：
@@ -32,7 +35,11 @@ sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 默认 OneDrive，程序使用 Microsoft Graph 路径 `/me/drive/root/children`
 列出其根目录。若要访问账号有权使用的其他 OneDrive 或 SharePoint 文档库，
 可将其设置为实际的 Drive ID；程序将改用
-`/drives/<drive_id>/root/children`。例如：
+`/drives/<drive_id>/root/children`。
+
+## 配置参考示例
+
+以下示例展示全部主要配置组：
 
 ```toml
 [sync]
@@ -106,6 +113,8 @@ poll_interval_seconds = 300
 settle_delay_milliseconds = 1000
 ```
 
+## 存储与挂载安全
+
 当 `sync.data_directory` 位于可移动存储、网络文件系统或其他可能掉线的挂载盘时，
 设置 `sync.data_mount_point`。该路径必须是当前真实挂载的目录，并且是
 `sync.data_directory` 的祖先。客户端会在启动时检查它，并在每轮完整同步或单文件
@@ -121,6 +130,8 @@ pending 操作恢复、下载、上传、远端删除或 Delta 游标更新之�
 data_directory = "/mnt/data/OneDrive"
 data_mount_point = "/mnt/data"
 ```
+
+## 大批量删除保护
 
 `sync.maximum_remote_deletions` 限制一次本地删除计划最多可从 OneDrive 删除
 多少个已跟踪项目，默认值为 `1000`；设为 `0` 时，除非显式强制，否则任何远端
@@ -139,6 +150,8 @@ onedrive-cpp sync --force-large-delete
 
 该开关只作用于本次命令，不能写入配置文件。pending-delete 崩溃恢复也使用同一
 限制，因此重启进程不能绕过保护。
+
+## Monitor 调度与通知
 
 `monitor` 启动时先执行一轮完整同步并获取 Microsoft Graph Socket.IO channel，
 随后休眠，直到收到远端 WebSocket 通知、inotify 报告已完成的本地变化，或者
@@ -159,6 +172,8 @@ settling、synchronizing 和 stopped。本地事件突发会重置 settle deadli
 溢出会升级待处理原因，并且待完成的本地 settle 优先于已到期的 Graph poll。
 系统 I/O 和 `SyncEngine` 保持在纯状态 reducer 之外，因此调度器只约束事件顺序，
 不会复制同步策略。
+
+## 选择与过滤
 
 `sync.sync_list` 用于启用客户端选择性同步。它指向一个独立的 UTF-8 规则文件；
 相对路径以 TOML 配置文件所在目录为基准解析。未配置时，所有远端项目都可以参与
@@ -221,6 +236,8 @@ Drive 根目录中的普通文件。根目录下的目录及其后代仍然必�
 正常的本地冲突保护。显式 `download REMOTE_PATH` 命令不受这些自动同步过滤器
 限制。
 
+## 冲突处理
+
 `sync.local_conflict` 控制同时发生的本地和远端文件变化。默认值
 `"block"` 保持原有行为：普通同步把项目记录为 `local_modification`，显式单文件
 下载则在开始传输前停止。设置为 `"backup"` 后，程序会先把稳定的本地内容复制到
@@ -239,6 +256,8 @@ inode，而是直接采用现有文件。创建备份需要额外占用约等于
 下载文件。cTag 缺失或发生变化时会保守地退回 eTag 判定并下载远端内容。目录判定
 不依赖 cTag，因为 SharePoint 和 OneDrive for Business 可能不返回目录 cTag，或
 不能一致地反映后代变化。
+
+## 同步模式与删除策略
 
 `sync.mode` 默认为 `bidirectional`，会下载远端变化并上传符合相同 sync-list
 规则的本地变化。`upload_only` 仍会获取并保存 Graph Delta 基线，但不会下载、
@@ -266,6 +285,8 @@ selective sync 规则且尚未跟踪的本地目录会在其文件上传前按
 父目录优先顺序创建到远端。目录创建使用“冲突即失败”和相同的持久 journal：
 Graph 明确返回冲突时会移除 journal 并阻止操作；发生结果不明确的中断后，恢复
 流程会重试请求，并且只有同一路径的远端项目确实是目录时才采用它。
+## 上传、移动与远端修改
+
 250 MB 以内使用简单上传，更大的文件使用 Microsoft Graph upload
 session 连续分片，并且只推进到 Graph 通过 `nextExpectedRanges` 精确确认的偏移。
 默认分片大小为 10 MiB；非末尾分片必须是 320 KiB 的整数倍，并低于 Graph 的
@@ -311,6 +332,8 @@ SQLite 中所有已跟踪后代的路径。远端内容指纹匹配的文件会�
 路径及源对象的 device/inode 身份。移动后的 item 与 Delta 游标提交会在同一事务
 中删除 journal。中断恢复会在原路径、staging 路径和最终目标中查找完全匹配的
 filesystem identity；`reset-state` 保留这些记录，`--clear-all` 会删除它们。
+
+## 云端入口与代理
 
 `graph.endpoint` 用于选择 Microsoft Graph 云端点，默认使用全球服务，并不与
 某个具体 SharePoint 主机名绑定。访问由世纪互联运营的 Microsoft 365 中国区
@@ -373,6 +396,8 @@ ca_file = "/etc/ssl/certs/company-proxy-ca.pem"
 拒绝。相对路径同样以 TOML 文件所在目录为基准。代理证书及主机名校验始终开启，
 配置中不能将其禁用。不要把代理凭据写入 `proxy.url`，因为配置内容或错误诊断
 可能暴露 URL。
+
+## 传输行为与限制
 
 `download.concurrency` 控制可同时下载的文件数量，默认值为 `4`，允许范围为
 `1` 到 `16`。指向同一规范化本地路径的下载始终会串行执行，包括常见的仅
@@ -444,6 +469,8 @@ HEIC 文件实际下载的字节可能与 Graph 元数据不同；`"relaxed"` �
 实际传输进度动态预留，而不是信任 Graph 的大小元数据；无法安全扩充预留时会
 中止传输。由于 Graph 无法在下载前可靠识别 AIP 文件，宽松模式会作用于所有
 下载，并会降低完整性保证。
+
+## 权限与存储布局
 
 `permissions` 默认为 `"private"`。新同步文件使用 `0600` 创建，同步根目录和
 新目录会设置为 `0700`，防止本机其他用户读取同步内容。只有确实需要通过 Unix

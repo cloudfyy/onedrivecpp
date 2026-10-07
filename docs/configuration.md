@@ -1,6 +1,9 @@
 # Configuration
 
-English | [简体中文](configuration.zh-CN.md)
+English | [简体中文](configuration.zh-CN.md) |
+[Documentation index](README.md)
+
+## Configuration file and safety
 
 By default, the application first reads `~/.config/onedrive-cpp/config.toml`. If
 that file does not exist, built-in defaults are used. A system-wide example is
@@ -41,7 +44,9 @@ sequentially without allowing concurrent downloads to overcommit the disk.
 the Microsoft Graph path `/me/drive/root/children`. To access another OneDrive
 or a SharePoint document library available to the account, set the actual
 Drive ID instead; the client then uses `/drives/<drive_id>/root/children`.
-For example:
+## Reference configuration
+
+The following example shows every major configuration group:
 
 ```toml
 [sync]
@@ -116,6 +121,8 @@ poll_interval_seconds = 300
 settle_delay_milliseconds = 1000
 ```
 
+## Storage and mount safety
+
 Set `sync.data_mount_point` when `sync.data_directory` resides on removable
 storage, a network filesystem, or another mount that may disappear. The
 configured path must be a mounted directory and an ancestor of
@@ -136,6 +143,8 @@ actual mount point, configure:
 data_directory = "/mnt/data/OneDrive"
 data_mount_point = "/mnt/data"
 ```
+
+## Large-delete protection
 
 `sync.maximum_remote_deletions` limits how many tracked items one local
 deletion plan may remove from OneDrive. The default is `1000`; `0` blocks every
@@ -158,6 +167,8 @@ onedrive-cpp sync --force-large-delete
 The override applies only to that invocation and cannot be persisted in the
 configuration file. Existing pending-delete recovery is protected by the same
 limit, so restarting the process cannot bypass the safeguard.
+
+## Monitor scheduling and notifications
 
 `monitor` performs an initial synchronization, acquires a Microsoft Graph
 Socket.IO channel, and then remains idle until a remote WebSocket notification,
@@ -184,6 +195,8 @@ reset the settle deadline, queue overflow upgrades the pending reason, and a
 pending local settle remains ahead of an expired Graph poll. System I/O and
 `SyncEngine` stay outside the state reducer, so the scheduler constrains event
 ordering without duplicating synchronization policy.
+
+## Selection and filtering
 
 `sync.sync_list` enables client-side selective synchronization. It names a
 separate UTF-8 rule file; relative paths are resolved from the directory
@@ -265,6 +278,8 @@ later becomes eligible again, normal local-conflict protection still applies.
 The explicit `download REMOTE_PATH` command remains outside these automatic
 synchronization filters.
 
+## Conflict handling
+
 `sync.local_conflict` controls simultaneous local and remote file changes.
 The default, `"block"`, preserves the existing behavior: synchronization
 records the item as `local_modification`, and explicit single-file download
@@ -290,6 +305,8 @@ metadata without downloading the file again. A missing or changed cTag falls
 back to the conservative eTag behavior and downloads the remote content.
 Folder decisions do not rely on cTag because SharePoint and OneDrive for
 Business may omit it or report descendant changes inconsistently.
+
+## Synchronization modes and deletion policies
 
 `sync.mode` defaults to `bidirectional`, which downloads remote changes and
 uploads local changes selected by the same sync-list rules. `upload_only`
@@ -327,6 +344,8 @@ and the same durable journal. A definite Graph conflict removes the journal
 and blocks the operation; after an ambiguous interruption, recovery retries
 the request and adopts an existing item only when it is a directory at the
 exact expected path.
+## Uploads, moves, and remote mutations
+
 Files through 250 MB use a simple upload. Larger files use a Microsoft Graph
 upload session with contiguous fragments and advance only to the exact
 `nextExpectedRanges` offset confirmed by Graph. The default fragment size is
@@ -366,6 +385,8 @@ remote ID and local filesystem identity both match. The destination parent
 may be newly created locally: synchronization creates each missing remote
 parent from shallowest to deepest before issuing the conditional move. Parent
 creation and the move retain their separate durable journals.
+
+## Cloud endpoints and proxy
 
 `graph.endpoint` selects the Microsoft Graph cloud endpoint and defaults to
 the global service. It is not tied to a specific SharePoint host. For a
@@ -437,6 +458,8 @@ rejected for other proxy schemes. Relative paths resolve from the TOML file's
 directory. Proxy certificate and host verification remain enabled and cannot
 be disabled by configuration. Keep credentials out of `proxy.url` because
 configuration or error diagnostics may expose URLs.
+
+## Transfer behavior and limits
 
 `download.concurrency` controls how many files can be downloaded at the same
 time. It defaults to `4` and accepts values from `1` through `16`. Downloads
@@ -536,6 +559,8 @@ from actual transfer progress rather than untrusted Graph size metadata, and
 the transfer is aborted if the reservation cannot grow safely. Because Graph
 cannot reliably identify AIP-protected files in advance, relaxed mode applies
 to all downloads and weakens integrity guarantees.
+
+## Permissions and storage layout
 
 `permissions` defaults to `"private"`. New synchronized files are created as
 `0600`, and the synchronization root and new directories are secured as

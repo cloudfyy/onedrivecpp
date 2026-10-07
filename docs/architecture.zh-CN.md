@@ -1,6 +1,9 @@
 # 架构
 
-[English](architecture.md) | 简体中文
+[English](architecture.md) | 简体中文 |
+[文档中心](README.zh-CN.md)
+
+## 系统总览
 
 ```mermaid
 flowchart TB
@@ -46,6 +49,8 @@ flowchart TB
     db_thread --> sqlite[("SQLite 快照、游标、<br/>journal 与 blocked item")]
 ```
 
+## 依赖与存储边界
+
 应用使用构造器注入和明确的端口接口，不使用 Service Locator。`main` 是唯一的
 composition root。生产 runtime factory 在配置加载后创建 libcurl、文件 token、
 SQLite、monitor、Graph 和 metrics 适配器；测试则注入内存 fake。这样业务编排
@@ -55,6 +60,8 @@ SQLite、monitor、Graph 和 metrics 适配器；测试则注入内存 fake。�
 SQLite ItemStore 拥有专用数据库线程。下载、监控和上传工作线程发起的调用
 都会排队并同步等待完成，因此 SQLite 连接和事务顺序始终由一个线程负责，错误
 则返回给调用方。SQLite 是状态的权威来源，适配器不再维护重复的可变条目缓存。
+## 事务状态机
+
 下载和上传事务复用一个小型模板 Typestate 核心，用于隔离状态族并在合法阶段间
 移动 payload。下载包含内容已验证和恢复 journal 已持久化阶段；上传包含快照已
 准备、journal 已持久化和远端已提交阶段，并且只有 journaled 上传可以持久化
@@ -79,6 +86,8 @@ Graph 大文件上传会话也在同步层之外复用此核心。不存在或�
 创建或验证恢复进入 active；已过期、不存在或已失效的保存会话先返回 absent，
 再创建新会话。每个已接受的分片只有在 checkpoint 成功后才推进 active 状态，
 并且只有 active 会话能够生成包含远端条目的 finalized 状态。
+## 通知架构
+
 远端变更通知使用独立于 Monitor 调度状态机的纯连接状态机。连接 reducer 负责
 channel 获取、token 刷新、socket 连接、租约续期、有界指数退避和停止 effect。
 通知只是唤醒信号：它不包含权威条目数据，也不会推进 Delta cursor。首次连接或
@@ -88,6 +97,8 @@ channel 获取、token 刷新、socket 连接、租约续期、有界指数退�
 决定状态转移策略。生产 adapter 通过 Graph 获取 channel，并在 libcurl 的纯
 WebSocket transport 上执行 Engine.IO 4 / Socket.IO framing、心跳处理和 eventfd
 唤醒。
+
+## 源码目录
 
 目录与参考项目中的 `main/config/curlEngine/onedrive/sync/itemdb/monitor`
 职责相对应：

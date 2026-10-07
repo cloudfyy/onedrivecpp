@@ -1,6 +1,9 @@
 # Usage and command output
 
-English | [简体中文](usage.zh-CN.md)
+English | [简体中文](usage.zh-CN.md) |
+[Documentation index](README.md)
+
+## Output, logging, and automation
 
 Runtime diagnostics are written to standard error with `info` severity by
 default. systemd captures that stream automatically:

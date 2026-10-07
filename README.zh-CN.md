@@ -23,15 +23,17 @@
 - dry-run、结构化 JSON 输出、轮转日志、代理、Shell 自动补全、手册页、加固的
   systemd 用户服务和 Debian 打包。
 
-详细文档：
+## 文档
 
-- [架构](docs/architecture.zh-CN.md)
-- [使用与命令输出](docs/usage.zh-CN.md)
-- [配置](docs/configuration.zh-CN.md)
-- [Microsoft 认证](docs/authentication.zh-CN.md)
-- [同步与恢复](docs/synchronization.zh-CN.md)
-- [开发与测试](docs/development.zh-CN.md)
-- [许可证、法律与品牌](docs/project.zh-CN.md)
+[文档中心](docs/README.zh-CN.md)把手册组织为三个章节：
+
+1. **开始使用：**[认证](docs/authentication.zh-CN.md)、
+   [配置](docs/configuration.zh-CN.md)和[命令使用](docs/usage.zh-CN.md)。
+2. **同步与运维：**[同步与恢复](docs/synchronization.zh-CN.md)、选择规则、
+   冲突策略、Monitor、诊断和数据库修复。
+3. **设计与开发：**[架构](docs/architecture.zh-CN.md)、
+   [开发与测试](docs/development.zh-CN.md)以及
+   [许可证和项目信息](docs/project.zh-CN.md)。
 
 ## 环境要求
 
@@ -164,7 +166,7 @@ cpack --config build/release/CPackConfig.cmake -G DEB
 `VERSION_ID`，因此 Ubuntu 24.04 amd64 构建命名为：
 
 ```text
-onedrive-cpp_0.8.7-1~ubuntu24.04_amd64.deb
+onedrive-cpp_<version>-1~ubuntu24.04_amd64.deb
 ```
 
 在跨发行版构建环境中，可在配置时显式覆盖检测结果：
@@ -201,7 +203,7 @@ dpkg-buildpackage --build=binary --no-sign
 ```
 
 Debian changelog 保存原生构建发行版后缀。将来增加 Ubuntu 26.04 支持时，应在
-Ubuntu 26.04 环境中使用 `0.8.7-1~ubuntu26.04` changelog 版本构建。
+Ubuntu 26.04 环境中使用 对应的 `-1~ubuntu26.04` changelog 版本构建。
 
 安装并检查：
 

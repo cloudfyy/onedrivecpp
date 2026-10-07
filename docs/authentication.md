@@ -1,6 +1,7 @@
 # Microsoft authentication
 
-English | [简体中文](authentication.zh-CN.md)
+English | [简体中文](authentication.zh-CN.md) |
+[Documentation index](README.md)
 
 The client uses the OAuth 2.0 Device Authorization Grant. You must register
 your own public client application in Microsoft Entra; do not create a client

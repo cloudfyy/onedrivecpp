@@ -1,6 +1,9 @@
 # 使用与命令输出
 
-[English](usage.md) | 简体中文
+[English](usage.md) | 简体中文 |
+[文档中心](README.zh-CN.md)
+
+## 输出、日志与自动化
 
 运行诊断默认以 `info` 级别写入标准错误。systemd 会自动收集该输出：
 

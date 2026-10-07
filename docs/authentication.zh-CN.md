@@ -1,6 +1,7 @@
 # Microsoft 认证
 
-[English](authentication.md) | 简体中文
+[English](authentication.md) | 简体中文 |
+[文档中心](README.zh-CN.md)
 
 客户端使用 OAuth 2.0 设备授权流程。必须在 Microsoft Entra 中注册自己的公共
 客户端应用；不要创建客户端密钥。

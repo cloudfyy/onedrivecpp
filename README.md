@@ -30,15 +30,20 @@ copy the reference project's D implementation.
   completion, a manual page, a hardened systemd user service, and Debian
   packaging.
 
-Detailed documentation:
+## Documentation
 
-- [Architecture](docs/architecture.md)
-- [Usage and command output](docs/usage.md)
-- [Configuration](docs/configuration.md)
-- [Microsoft authentication](docs/authentication.md)
-- [Synchronization and recovery](docs/synchronization.md)
-- [Development and testing](docs/development.md)
-- [License, legal, and branding](docs/project.md)
+The [documentation guide](docs/README.md) organizes the manuals into three
+chapters:
+
+1. **Getting started:** [authentication](docs/authentication.md),
+   [configuration](docs/configuration.md), and
+   [command usage](docs/usage.md).
+2. **Synchronization operations:**
+   [synchronization and recovery](docs/synchronization.md), selection rules,
+   conflict policies, monitoring, diagnostics, and database repair.
+3. **Design and development:** [architecture](docs/architecture.md),
+   [development and testing](docs/development.md), and
+   [license and project information](docs/project.md).
 
 ## Requirements
 
@@ -181,7 +186,7 @@ The generated package is placed in the current directory. CMake reads
 is named:
 
 ```text
-onedrive-cpp_0.8.7-1~ubuntu24.04_amd64.deb
+onedrive-cpp_<version>-1~ubuntu24.04_amd64.deb
 ```
 
 For a cross-distribution build environment, override the detected suffix
@@ -221,7 +226,7 @@ for example:
 
 The Debian changelog carries the native build distribution suffix. When
 adding Ubuntu 26.04 support, build from an Ubuntu 26.04 environment with a
-`0.8.7-1~ubuntu26.04` changelog version.
+the corresponding `-1~ubuntu26.04` changelog version.
 
 Install and verify the package:
 

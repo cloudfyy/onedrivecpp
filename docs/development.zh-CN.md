@@ -1,6 +1,9 @@
 # 开发与测试
 
-[English](development.md) | 简体中文
+[English](development.md) | 简体中文 |
+[文档中心](README.zh-CN.md)
+
+## 真实 Graph 端到端测试
 
 普通构建不会启用 `e2e` preset。该测试需要专用测试账号或 Drive，并在远端根目录
 预置内容稳定的 fixture。仓库外配置必须已完成认证，且绝不能提交到仓库。runner
@@ -24,6 +27,8 @@ Graph 子树，把一个文件和一个目录跨远端父目录移动并重命�
 不变。它还会启用 `sync_root_files`，验证选择摘要变化会触发完整 Graph 查询，
 并确认已有规则选中的 fixture 不会被重写。
 
+### 配置与运行
+
 ```bash
 export ONEDRIVE_E2E_CONFIG=/absolute/path/to/dedicated-e2e.toml
 export ONEDRIVE_E2E_EXPECTED_PATH=fixture/small.bin
@@ -39,12 +44,16 @@ ctest --preset e2e -R graph_sync_e2e
 稳定入口 `graph_sync_e2e.py` 会委托给 `tests/e2e/` 中的 Python 模块；真实
 Graph 场景、系统边界场景、进程编排、状态 fixture 和 runner 自测分别维护。
 
+### 测试数据与产物安全
+
 专用 Drive 必须授予文件写权限，并且只应包含可丢弃的测试数据；runner 生成的
 `sync_list` 只会落地预期 fixture 和临时 fixture。应预留足够的本地空间同时保存
 大文件源和稳定上传快照，并确保测试账号有足够配额保存远端副本。设置
 `ONEDRIVE_E2E_ARTIFACT_DIR` 后，失败时会保留命令输出和客户端日志；
 这些诊断信息可能包含远端文件元数据，应按敏感数据保管。临时配置、复制的 token、
 SQLite 状态及下载内容始终会删除。不要让 E2E runner 使用日常状态目录或日常 Drive。
+
+### 系统边界场景
 
 live runner 还会使用真实可执行文件验证系统边界：本地代理主动断开连接及恢复、
 确定性的本地上传存储耗尽及恢复、不可读上传源，以及可续传上传期间的
