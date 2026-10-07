@@ -271,10 +271,10 @@ def reset_copied_state(
     return run_client(
         client,
         [
-            "reset-state",
+            "state",
+            "clear",
             "--config",
             str(config),
-            "--clear-all",
             "--yes",
             "--color",
             "never",
@@ -294,7 +294,8 @@ def reset_delta_cursor(
     return run_client(
         client,
         [
-            "reset-state",
+            "state",
+            "reset-cursor",
             "--config",
             str(config),
             "--color",

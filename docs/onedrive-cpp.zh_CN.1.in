@@ -31,7 +31,10 @@ onedrive-cpp \- 现代 C++ OneDrive 同步客户端
 .B onedrive-cpp status
 .RI [ 选项 ]
 .PP
-.B onedrive-cpp reset-state
+.B onedrive-cpp state reset-cursor
+.RI [ 选项 ]
+.PP
+.B onedrive-cpp state clear
 .RI [ 选项 ]
 .PP
 .B onedrive-cpp download
@@ -100,23 +103,20 @@ tracked/blocked 数量、pending journal、Delta cursor、selective-sync
 fingerprint、状态数据库可用性和 WebSocket 配置。已有 SQLite 状态以只读方式
 打开；该命令不会创建或迁移数据库。
 .TP
-.B reset-state
+.B state reset-cursor
 重置当前 Drive 保存的 Delta 游标。认证、配置、本地文件、item 快照、
 pending-download、partial-download、pending-upload、pending-move、选择性保留
 对象的上传抑制、blocked item 和其他 Drive 状态均会保留。下一次
 .B sync
 先恢复未完成操作，再执行完整的初始 Delta 查询；完整远端清单会替换旧远端元数据。
-.PP
-指定
-.B \-\-clear\-all
-后，会清除当前 Drive 的 item 快照、Delta 游标、pending-download、
+.TP
+.B state clear
+会清除当前 Drive 的 item 快照、Delta 游标、pending-download、
 partial-download、pending-upload、pending-move、上传抑制和 blocked item。
 命令要求交互确认配置的 Drive 引用。本地文件和其他 Drive 不受影响，但缺少旧
-快照时，下一次同步可能报告本地修改冲突。自动化场景必须同时指定
+快照时，下一次同步可能报告本地修改冲突。自动化场景可指定
 .BR \-\-yes ；
-未指定
-.B \-\-clear\-all
-时不能使用该选项。
+以跳过交互确认。
 .PP
 每个 Drive 数据库在启动及迁移后必须通过 SQLite
 .B quick_check
@@ -189,17 +189,9 @@ Microsoft Graph。本地事件突发会先合并再同步。SIGINT 和 SIGTERM �
 .B \-\-version
 显示应用版本并退出。
 .TP
-.B \-\-clear\-all
-与
-.B reset-state
-一起使用，经确认后删除当前 Drive 的全部同步状态。
-.TP
 .B \-\-yes
 非交互确认
-.BR "reset-state \-\-clear\-all" 。
-没有
-.B \-\-clear\-all
-时该选项无效。
+.BR "state clear" 。
 .TP
 .B \-\-force\-large\-delete
 与

@@ -8,7 +8,7 @@
 使用以下命令重置当前配置 Drive 保存的 `deltaLink`：
 
 ```bash
-onedrive-cpp reset-state
+onedrive-cpp state reset-cursor
 ```
 
 该命令会保留认证 token、配置、同步目录中的本地文件、item 快照、pending
@@ -20,7 +20,7 @@ download、pending upload 和 pending move 恢复记录、对选择性保留副�
 如果需要丢弃当前配置 Drive 的全部同步状态，必须显式使用危险模式：
 
 ```bash
-onedrive-cpp reset-state --clear-all
+onedrive-cpp state clear
 ```
 
 命令会要求准确输入当前配置的 Drive 引用（例如 `me`）。确认后，程序才会删除
@@ -30,8 +30,7 @@ pending move 恢复记录、对选择性保留副本的上传抑制，以及 blo
 的状态不会改变。
 
 由于本地快照已被清除，下一次同步可能报告本地修改冲突。自动化场景必须使用
-`reset-state --clear-all --yes` 显式承担该风险；未指定 `--clear-all` 时
-`--yes` 会被拒绝。
+`state clear --yes` 显式承担该风险；`--yes` 只适用于 `state clear`。
 
 ## 数据库完整性与修复
 

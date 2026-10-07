@@ -8,7 +8,7 @@ _onedrive_cpp()
     _arguments -C \
         '(-h --help)'{-h,--help}'[show command help]' \
         '--version[show version information]' \
-        '1:command:(auth logout doctor drives shared sites quota status reset-state download sync monitor)' \
+        '1:command:(auth logout doctor drives shared sites quota status state download sync monitor)' \
         '*::argument:->command_options'
 
     case "${line[1]}" in
@@ -109,17 +109,34 @@ _onedrive_cpp()
                 '--dry-run[show download plan without changing local state]' \
                 '1:remote Drive-relative path:'
             ;;
-        reset-state)
-            _arguments \
-                '(-h --help)'{-h,--help}'[show command help]' \
-                '--config[path to configuration file]:configuration file:_files' \
-                '--log-level[minimum log level]:level:(trace debug info warn error critical off)' \
-                '--log-file[write rotating logs to file]:log file:_files' \
-                '--color[color output mode]:mode:(auto always never)' \
-                '--output[output format]:format:(text json)' \
-                '--quiet[suppress informational and success output]' \
-                '--clear-all[clear all state for the configured drive]' \
-                '--yes[confirm --clear-all without an interactive prompt]'
+        state)
+            case "${line[2]}" in
+                reset-cursor)
+                    _arguments \
+                        '(-h --help)'{-h,--help}'[show command help]' \
+                        '--config[path to configuration file]:configuration file:_files' \
+                        '--log-level[minimum log level]:level:(trace debug info warn error critical off)' \
+                        '--log-file[write rotating logs to file]:log file:_files' \
+                        '--color[color output mode]:mode:(auto always never)' \
+                        '--output[output format]:format:(text json)' \
+                        '--quiet[suppress informational and success output]'
+                    ;;
+                clear)
+                    _arguments \
+                        '(-h --help)'{-h,--help}'[show command help]' \
+                        '--config[path to configuration file]:configuration file:_files' \
+                        '--log-level[minimum log level]:level:(trace debug info warn error critical off)' \
+                        '--log-file[write rotating logs to file]:log file:_files' \
+                        '--color[color output mode]:mode:(auto always never)' \
+                        '--output[output format]:format:(text json)' \
+                        '--quiet[suppress informational and success output]' \
+                        '--yes[confirm state clear without an interactive prompt]'
+                    ;;
+                *)
+                    _arguments \
+                        '1:state action:(reset-cursor clear)'
+                    ;;
+            esac
             ;;
     esac
 }

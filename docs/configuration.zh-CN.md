@@ -350,7 +350,7 @@ SQLite 中所有已跟踪后代的路径。远端内容指纹匹配的文件会�
 执行原子移动前，schema v16 SQLite 状态会记录源路径、目标路径、可选 staging
 路径及源对象的 device/inode 身份。移动后的 item 与 Delta 游标提交会在同一事务
 中删除 journal。中断恢复会在原路径、staging 路径和最终目标中查找完全匹配的
-filesystem identity；`reset-state` 保留这些记录，`--clear-all` 会删除它们。
+filesystem identity；`state reset-cursor` 保留这些记录，`state clear` 会删除它们。
 
 ## 云端入口与代理
 

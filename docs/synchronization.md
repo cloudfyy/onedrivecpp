@@ -8,7 +8,7 @@ English | [简体中文](synchronization.zh-CN.md) |
 Reset the saved `deltaLink` for the configured drive with:
 
 ```bash
-onedrive-cpp reset-state
+onedrive-cpp state reset-cursor
 ```
 
 This preserves authentication tokens, configuration, local files, item
@@ -41,7 +41,7 @@ To discard all saved synchronization state for the configured Drive, use the
 explicitly destructive mode:
 
 ```bash
-onedrive-cpp reset-state --clear-all
+onedrive-cpp state clear
 ```
 
 The command requires the configured Drive reference (for example, `me`) to be
@@ -52,7 +52,7 @@ available, it requires the raw Drive ID instead. Local files and other Drives
 remain untouched. Because local
 snapshots are no longer available, the next sync may report local modification
 conflicts. Automation must acknowledge this risk explicitly with
-`reset-state --clear-all --yes`; `--yes` is rejected without `--clear-all`.
+`state clear --yes`; `--yes` is accepted only by `state clear`.
 
 ## Database integrity and repair
 
@@ -179,8 +179,8 @@ Before an atomic move, schema-v16 SQLite state records the source and
 destination paths, optional staging path, and source device/inode identity.
 The journal is removed in the same transaction that commits the moved item and
 Delta cursor. After an interruption, recovery locates the recorded identity at
-the original, staging, or destination path; `reset-state` preserves these
-records and `--clear-all` removes them.
+the original, staging, or destination path; `state reset-cursor` preserves
+these records and `state clear` removes them.
 
 Remote deletion records remove a regular local file only while its size and
 modification time still match the trusted synchronized snapshot. Missing local

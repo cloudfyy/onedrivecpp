@@ -11,10 +11,11 @@ enum class Operation {
     sites,
     quota,
     status,
-    reset_state,
+    reset_cursor,
+    clear_state,
     download,
     monitor,
     synchronize,
 };
 
-}  // namespace onedrive::app::detail
+} // namespace onedrive::app::detail

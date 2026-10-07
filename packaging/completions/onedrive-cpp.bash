@@ -1,6 +1,6 @@
 _onedrive_cpp_completion()
 {
-    local current previous command="" word
+    local current previous command="" state_action="" word
     COMPREPLY=()
     current="${COMP_WORDS[COMP_CWORD]}"
     previous="${COMP_WORDS[COMP_CWORD-1]}"
@@ -41,16 +41,22 @@ _onedrive_cpp_completion()
 
     for word in "${COMP_WORDS[@]:1:COMP_CWORD-1}"; do
         case "$word" in
-            auth|logout|doctor|drives|shared|sites|quota|status|reset-state|download|sync|monitor)
-                command="$word"
-                break
+            auth|logout|doctor|drives|shared|sites|quota|status|state|download|sync|monitor)
+                if [[ -z "$command" ]]; then
+                    command="$word"
+                fi
+                ;;
+            reset-cursor|clear)
+                if [[ "$command" == "state" ]]; then
+                    state_action="$word"
+                fi
                 ;;
         esac
     done
 
     if [[ -z "$command" ]]; then
         mapfile -t COMPREPLY < <(compgen -W \
-            "auth logout doctor drives shared sites quota status reset-state download sync monitor --help --version" \
+            "auth logout doctor drives shared sites quota status state download sync monitor --help --version" \
             -- "$current")
         return
     fi
@@ -89,9 +95,23 @@ _onedrive_cpp_completion()
             mapfile -t COMPREPLY < <(compgen -W \
                 "$common_options --ui --theme" -- "$current")
             ;;
-        reset-state)
-            mapfile -t COMPREPLY < <(compgen -W \
-                "$common_options --clear-all --yes" -- "$current")
+        state)
+            case "$state_action" in
+                reset-cursor)
+                    mapfile -t COMPREPLY < <(
+                        compgen -W "$common_options" -- "$current"
+                    )
+                    ;;
+                clear)
+                    mapfile -t COMPREPLY < <(compgen -W \
+                        "$common_options --yes" -- "$current")
+                    ;;
+                *)
+                    mapfile -t COMPREPLY < <(
+                        compgen -W "reset-cursor clear --help" -- "$current"
+                    )
+                    ;;
+            esac
             ;;
         logout|drives|shared|sites|quota)
             mapfile -t COMPREPLY < <(

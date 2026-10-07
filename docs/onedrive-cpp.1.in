@@ -31,7 +31,10 @@ onedrive-cpp \- modern C++ OneDrive synchronization client
 .B onedrive-cpp status
 .RI [ options ]
 .PP
-.B onedrive-cpp reset-state
+.B onedrive-cpp state reset-cursor
+.RI [ options ]
+.PP
+.B onedrive-cpp state clear
 .RI [ options ]
 .PP
 .B onedrive-cpp download
@@ -111,7 +114,7 @@ counts, pending journals, Delta cursor, selective-sync fingerprint, state
 database availability, and WebSocket configuration. Existing SQLite state is
 opened read-only and is never created or migrated by this command.
 .TP
-.B reset-state
+.B state reset-cursor
 Reset the saved delta link for the configured drive. This preserves
 authentication, configuration, local files, item snapshots, pending-download,
 partial-download, pending-upload, pending-move recovery records, selectively
@@ -120,18 +123,15 @@ retained upload suppressions, blocked-item records, and state for other drives. 
 recovers pending downloads and performs a full initial delta query for the
 configured drive. The complete remote inventory replaces old item metadata;
 items that still conflict are recorded as blocked.
-.PP
-With
-.BR \-\-clear\-all ,
+.TP
+.B state clear
 remove item snapshots, the delta link, pending-download, partial-download,
 pending-upload, and pending-move recovery records, selectively retained upload
 suppressions, and blocked items for the configured drive. The command requires the configured
 drive ID as interactive confirmation. Local files and other drives remain
 untouched, but the next sync may report local modification conflicts. For automation,
 .B \-\-yes
-explicitly confirms
-.BR \-\-clear\-all ;
-it is rejected without that option.
+skips the interactive confirmation.
 .PP
 At startup and after migration, each Drive database must pass SQLite
 .B quick_check
@@ -242,17 +242,10 @@ Display help for the application or selected subcommand and exit.
 .B \-\-version
 Display the application version and exit.
 .TP
-.B \-\-clear\-all
-With
-.BR reset-state ,
-remove all saved synchronization state for the configured drive after
-confirmation.
-.TP
 .B \-\-yes
-Confirm
-.B reset-state \-\-clear\-all
-without an interactive prompt. This option is invalid without
-.BR \-\-clear\-all .
+With
+.BR "state clear" ,
+confirm the destructive state clear without an interactive prompt.
 .TP
 .B \-\-force\-large\-delete
 With

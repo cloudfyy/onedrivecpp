@@ -9,23 +9,19 @@
 namespace onedrive::app::detail {
 
 RuntimePreflight::RuntimePreflight(
-    const config::Config& config,
-    Operation operation
+    const config::Config& config, Operation operation
 ) {
     if (operation == Operation::authenticate ||
-        operation == Operation::drives ||
-        operation == Operation::shared ||
-        operation == Operation::sites ||
-        operation == Operation::quota ||
-        operation == Operation::status ||
-        operation == Operation::download ||
+        operation == Operation::drives || operation == Operation::shared ||
+        operation == Operation::sites || operation == Operation::quota ||
+        operation == Operation::status || operation == Operation::download ||
         operation == Operation::synchronize) {
         validate_authentication_config(config);
     }
-    if ((operation == Operation::shared ||
-         operation == Operation::quota ||
+    if ((operation == Operation::shared || operation == Operation::quota ||
          operation == Operation::status ||
-         operation == Operation::reset_state ||
+         operation == Operation::reset_cursor ||
+         operation == Operation::clear_state ||
          operation == Operation::download ||
          operation == Operation::synchronize) &&
         config.drive_id.empty()) {
@@ -49,14 +45,12 @@ RuntimePreflight::RuntimePreflight(
         false
     );
     const bool authentication_required =
-        operation == Operation::drives ||
-        operation == Operation::shared ||
-        operation == Operation::sites ||
-        operation == Operation::quota ||
+        operation == Operation::drives || operation == Operation::shared ||
+        operation == Operation::sites || operation == Operation::quota ||
         operation == Operation::status ||
-        operation == Operation::reset_state ||
-        operation == Operation::download ||
-        operation == Operation::synchronize;
+        operation == Operation::reset_cursor ||
+        operation == Operation::clear_state ||
+        operation == Operation::download || operation == Operation::synchronize;
     const auto token_directory =
         account::AccountState::find_active_token_directory(
             config.state_directory
@@ -81,4 +75,4 @@ RuntimePreflight::RuntimePreflight(
     }
 }
 
-}  // namespace onedrive::app::detail
+} // namespace onedrive::app::detail

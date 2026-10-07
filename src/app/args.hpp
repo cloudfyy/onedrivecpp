@@ -13,7 +13,6 @@ struct Arguments {
     std::filesystem::path config_path;
     bool force_dry_run{false};
     bool force_large_delete{false};
-    bool clear_all_state{false};
     bool assume_yes{false};
     std::optional<std::string> log_level;
     std::optional<std::string> log_file;
@@ -34,4 +33,4 @@ struct ParseResult {
 
 [[nodiscard]] ParseResult parse_arguments(int argc, char* argv[]);
 
-}  // namespace onedrive::app::detail
+} // namespace onedrive::app::detail

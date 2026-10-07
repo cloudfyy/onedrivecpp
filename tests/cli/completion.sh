@@ -30,7 +30,7 @@ assert_contains shared "${COMPREPLY[@]}"
 assert_contains sites "${COMPREPLY[@]}"
 assert_contains quota "${COMPREPLY[@]}"
 assert_contains status "${COMPREPLY[@]}"
-assert_contains reset-state "${COMPREPLY[@]}"
+assert_contains state "${COMPREPLY[@]}"
 assert_contains --version "${COMPREPLY[@]}"
 
 COMP_WORDS=(onedrive-cpp sync --)
@@ -65,11 +65,21 @@ _onedrive_cpp_completion
 assert_contains --dry-run "${COMPREPLY[@]}"
 assert_contains --config "${COMPREPLY[@]}"
 
-COMP_WORDS=(onedrive-cpp reset-state --)
+COMP_WORDS=(onedrive-cpp state "")
 COMP_CWORD=2
 _onedrive_cpp_completion
-assert_contains --clear-all "${COMPREPLY[@]}"
+assert_contains reset-cursor "${COMPREPLY[@]}"
+assert_contains clear "${COMPREPLY[@]}"
+
+COMP_WORDS=(onedrive-cpp state clear --)
+COMP_CWORD=3
+_onedrive_cpp_completion
 assert_contains --yes "${COMPREPLY[@]}"
+
+COMP_WORDS=(onedrive-cpp state reset-cursor --)
+COMP_CWORD=3
+_onedrive_cpp_completion
+assert_contains --config "${COMPREPLY[@]}"
 
 COMP_WORDS=(onedrive-cpp sync --log-level d)
 COMP_CWORD=3

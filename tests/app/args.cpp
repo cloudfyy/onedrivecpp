@@ -15,7 +15,7 @@ int test_args() {
         !help.standard_output.contains("sites") ||
         !help.standard_output.contains("quota") ||
         !help.standard_output.contains("status") ||
-        !help.standard_output.contains("reset-state") ||
+        !help.standard_output.contains("state") ||
         !help.standard_output.contains("download") ||
         !help.standard_output.contains("sync") ||
         !help.standard_output.contains("onedrive-cpp [OPTIONS] SUBCOMMAND") ||
@@ -44,9 +44,8 @@ int test_args() {
         !auth_help.standard_output.contains("--theme")) {
         return fail("auth help did not document TUI options");
     }
-    const auto monitor_help = run_application(
-        runtime_factory, {"onedrive-cpp", "monitor", "--help"}
-    );
+    const auto monitor_help =
+        run_application(runtime_factory, {"onedrive-cpp", "monitor", "--help"});
     if (monitor_help.exit_code != 0 ||
         !monitor_help.standard_output.contains("--ui") ||
         !monitor_help.standard_output.contains("--theme")) {
@@ -79,6 +78,28 @@ int test_args() {
         !status_help.standard_output.contains("--ui") ||
         !status_help.standard_output.contains("--theme")) {
         return fail("status help was not available");
+    }
+    const auto state_help =
+        run_application(runtime_factory, {"onedrive-cpp", "state", "--help"});
+    if (state_help.exit_code != 0 ||
+        !state_help.standard_output.contains("reset-cursor") ||
+        !state_help.standard_output.contains("clear")) {
+        return fail("state help did not list its maintenance actions");
+    }
+    const auto reset_cursor_help = run_application(
+        runtime_factory, {"onedrive-cpp", "state", "reset-cursor", "--help"}
+    );
+    if (reset_cursor_help.exit_code != 0 ||
+        reset_cursor_help.standard_output.contains("--yes")) {
+        return fail("state reset-cursor help exposed clear-only options");
+    }
+    const auto clear_state_help = run_application(
+        runtime_factory, {"onedrive-cpp", "state", "clear", "--help"}
+    );
+    if (clear_state_help.exit_code != 0 ||
+        !clear_state_help.standard_output.contains("--yes") ||
+        clear_state_help.standard_output.contains("--clear-all")) {
+        return fail("state clear help did not document its confirmation");
     }
 
     if (run_application(runtime_factory, {"onedrive-cpp", "unknown"})
@@ -132,11 +153,19 @@ int test_args() {
             .exit_code != 2) {
         return fail("invalid TUI theme did not return usage exit code 2");
     }
+    if (run_application(runtime_factory, {"onedrive-cpp", "state"}).exit_code !=
+        2) {
+        return fail("state command accepted a missing action");
+    }
     if (run_application(
-            runtime_factory, {"onedrive-cpp", "reset-state", "--yes"}
+            runtime_factory, {"onedrive-cpp", "state", "reset-cursor", "--yes"}
         )
             .exit_code != 2) {
-        return fail("--yes was accepted without --clear-all");
+        return fail("state reset-cursor accepted the clear confirmation flag");
+    }
+    if (run_application(runtime_factory, {"onedrive-cpp", "reset-state"})
+            .exit_code != 2) {
+        return fail("removed reset-state command was still accepted");
     }
     if (run_application(runtime_factory, {"onedrive-cpp", "download"})
             .exit_code != 2) {
@@ -157,8 +186,7 @@ int test_args() {
         return fail("UI precedence fixture console section was missing");
     }
     configured.insert(
-        color + std::string{"color = \"always\"\n"}.size(),
-        "ui = \"tui\"\n"
+        color + std::string{"color = \"always\"\n"}.size(), "ui = \"tui\"\n"
     );
     onedrive::test::write_file(ui_fixture.config_path, configured);
     const auto configured_tui = run_application(
@@ -194,8 +222,7 @@ int test_args() {
             "--dry-run",
         }
     );
-    if (configured_tui.exit_code != 1 ||
-        overridden_tui.exit_code != 0 ||
+    if (configured_tui.exit_code != 1 || overridden_tui.exit_code != 0 ||
         download_tui.exit_code != 1) {
         return fail("CLI UI mode did not override configured TUI mode");
     }

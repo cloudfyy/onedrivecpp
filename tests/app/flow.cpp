@@ -244,7 +244,8 @@ int test_flow() {
         runtime_factory,
         {
             "onedrive-cpp",
-            "reset-state",
+            "state",
+            "reset-cursor",
             "--config",
             config_path.string(),
             "--log-file",
@@ -270,7 +271,7 @@ int test_flow() {
         runtime_factory.reset_drive_id != "drive-id" ||
         runtime_factory.graph_client_count != 1 ||
         runtime_factory.metrics_count != 0) {
-        return fail("reset-state command was not dispatched to the item store");
+        return fail("state reset-cursor was not dispatched to the item store");
     }
     {
         std::ifstream log{log_path};
@@ -286,7 +287,9 @@ int test_flow() {
                 "suppressions, and blocked items preserved; next sync will "
                 "use an initial delta query"
             )) {
-            return fail("reset-state completion was not written to the log");
+            return fail(
+                "state reset-cursor completion was not written to the log"
+            );
         }
     }
 
@@ -294,8 +297,8 @@ int test_flow() {
         runtime_factory,
         {
             "onedrive-cpp",
-            "reset-state",
-            "--clear-all",
+            "state",
+            "clear",
             "--config",
             config_path.string(),
         },
@@ -315,8 +318,8 @@ int test_flow() {
         runtime_factory,
         {
             "onedrive-cpp",
-            "reset-state",
-            "--clear-all",
+            "state",
+            "clear",
             "--config",
             config_path.string(),
             "--log-file",
@@ -351,8 +354,8 @@ int test_flow() {
         runtime_factory,
         {
             "onedrive-cpp",
-            "reset-state",
-            "--clear-all",
+            "state",
+            "clear",
             "--yes",
             "--config",
             config_path.string(),
@@ -525,15 +528,12 @@ int test_flow() {
             std::istreambuf_iterator<char>{log},
             std::istreambuf_iterator<char>{}
         };
-        const auto queued = contents.find(
-            "Queued 'notes.txt' for download (42 bytes)"
-        );
-        const auto executing = contents.find(
-            "Executing 1 downloads with concurrency"
-        );
-        const auto downloading = contents.find(
-            "Downloading 'notes.txt' (42 bytes)"
-        );
+        const auto queued =
+            contents.find("Queued 'notes.txt' for download (42 bytes)");
+        const auto executing =
+            contents.find("Executing 1 downloads with concurrency");
+        const auto downloading =
+            contents.find("Downloading 'notes.txt' (42 bytes)");
         if (!contents.contains(
                 "Remote delta prepared for drive 'drive-id': 1 upserts, 0 "
                 "removals"
@@ -541,8 +541,7 @@ int test_flow() {
             !contents.contains(
                 "Persisting remote delta for drive 'drive-id'"
             ) ||
-            queued == std::string::npos ||
-            executing == std::string::npos ||
+            queued == std::string::npos || executing == std::string::npos ||
             downloading == std::string::npos ||
             !(queued < executing && executing < downloading) ||
             !contents.contains("Atomically installed 'notes.txt' (42 bytes)") ||
@@ -584,9 +583,7 @@ int test_flow() {
         !json_dry_run.standard_output.contains(
             "\"event\":\"sync_completed\""
         ) ||
-        !json_dry_run.standard_output.contains(
-            "\"event\":\"delta_summary\""
-        ) ||
+        !json_dry_run.standard_output.contains("\"event\":\"delta_summary\"") ||
         !json_dry_run.standard_output.contains(
             "\"message\":\"Fetching Microsoft Graph changes...\""
         ) ||

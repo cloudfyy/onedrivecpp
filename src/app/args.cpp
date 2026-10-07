@@ -18,7 +18,7 @@ std::filesystem::path default_config_path() {
     return "/etc/onedrive-cpp/onedrive-cpp.toml";
 }
 
-}  // namespace
+} // namespace
 
 ParseResult parse_arguments(int argc, char* argv[]) {
     ParseResult result;
@@ -46,60 +46,56 @@ ParseResult parse_arguments(int argc, char* argv[]) {
     };
 
     CLI::App application{
-        "A modern C++ OneDrive synchronization client",
-        "onedrive-cpp"
+        "A modern C++ OneDrive synchronization client", "onedrive-cpp"
     };
     application.set_version_flag(
-        "--version",
-        std::string{"onedrive-cpp "} + build_info::version
+        "--version", std::string{"onedrive-cpp "} + build_info::version
     );
     application.require_subcommand(1);
 
     auto* auth = application.add_subcommand(
-        "auth",
-        "Authorize with Microsoft using the device code flow"
+        "auth", "Authorize with Microsoft using the device code flow"
     );
     auto* logout = application.add_subcommand(
-        "logout",
-        "Remove the locally stored refresh token"
+        "logout", "Remove the locally stored refresh token"
     );
     auto* doctor = application.add_subcommand(
-        "doctor",
-        "Run local synchronization-state diagnostics"
+        "doctor", "Run local synchronization-state diagnostics"
     );
     auto* drives = application.add_subcommand(
-        "drives",
-        "List OneDrive drives available to the active account"
+        "drives", "List OneDrive drives available to the active account"
     );
     auto* shared = application.add_subcommand(
-        "shared",
-        "List items shared with the account and OneDrive shortcuts"
+        "shared", "List items shared with the account and OneDrive shortcuts"
     );
     auto* sites = application.add_subcommand(
-        "sites",
-        "Find SharePoint sites and their document libraries"
+        "sites", "Find SharePoint sites and their document libraries"
     );
     auto* quota = application.add_subcommand(
-        "quota",
-        "Show storage quota for the configured drive"
+        "quota", "Show storage quota for the configured drive"
     );
     auto* status = application.add_subcommand(
-        "status",
-        "Show read-only synchronization status"
+        "status", "Show read-only synchronization status"
     );
-    auto* reset = application.add_subcommand(
-        "reset-state",
-        "Reset the Microsoft Graph delta cursor for the configured drive"
+    auto* state = application.add_subcommand(
+        "state", "Maintain saved synchronization state"
+    );
+    state->require_subcommand(1);
+    auto* reset_cursor = state->add_subcommand(
+        "reset-cursor",
+        "Reset the cloud change cursor while preserving item state"
+    );
+    auto* clear_state = state->add_subcommand(
+        "clear",
+        "Clear all saved synchronization state for the configured drive"
     );
     auto* sync =
         application.add_subcommand("sync", "Synchronize OneDrive files");
     auto* download = application.add_subcommand(
-        "download",
-        "Download one remote file by its Drive-relative path"
+        "download", "Download one remote file by its Drive-relative path"
     );
     auto* monitor = application.add_subcommand(
-        "monitor",
-        "Monitor for synchronization changes"
+        "monitor", "Monitor for synchronization changes"
     );
 
     const auto add_common_options = [&](CLI::App& command) {
@@ -116,10 +112,18 @@ ParseResult parse_arguments(int argc, char* argv[]) {
                 arguments.log_level,
                 "Minimum log level (overrides configuration)"
             )
-            ->check(CLI::IsMember(
-                {"trace", "debug", "info", "warn", "error", "critical", "off"},
-                CLI::ignore_case
-            ));
+            ->check(
+                CLI::IsMember(
+                    {"trace",
+                     "debug",
+                     "info",
+                     "warn",
+                     "error",
+                     "critical",
+                     "off"},
+                    CLI::ignore_case
+                )
+            );
         command
             .add_option(
                 "--log-file",
@@ -136,9 +140,7 @@ ParseResult parse_arguments(int argc, char* argv[]) {
             ->transform(CLI::CheckedTransformer(color_modes));
         command
             .add_option(
-                "--output",
-                arguments.output_mode,
-                "Output format: text or json"
+                "--output", arguments.output_mode, "Output format: text or json"
             )
             ->transform(CLI::CheckedTransformer(output_modes))
             ->default_str("text");
@@ -157,25 +159,19 @@ ParseResult parse_arguments(int argc, char* argv[]) {
              sites,
              quota,
              status,
-             reset,
+             reset_cursor,
+             clear_state,
              sync,
              download,
              monitor,
          }) {
         add_common_options(*command);
     }
-    auto* clear_all = reset->add_flag(
-        "--clear-all",
-        arguments.clear_all_state,
-        "Clear all saved synchronization state for the configured drive"
+    clear_state->add_flag(
+        "--yes",
+        arguments.assume_yes,
+        "Confirm the state clear without an interactive prompt"
     );
-    reset
-        ->add_flag(
-            "--yes",
-            arguments.assume_yes,
-            "Confirm --clear-all without an interactive prompt"
-        )
-        ->needs(clear_all);
     sync->add_flag(
         "--dry-run",
         arguments.force_dry_run,
@@ -187,18 +183,18 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         "Allow this sync to exceed the configured remote deletion limit"
     );
     for (auto* command : {auth, doctor, status, sync, download, monitor}) {
-        command->add_option(
-            "--ui",
-            arguments.ui_mode,
-            "Interface: auto, console, or tui"
-        )
+        command
+            ->add_option(
+                "--ui", arguments.ui_mode, "Interface: auto, console, or tui"
+            )
             ->transform(CLI::CheckedTransformer(ui_modes))
             ->default_str("auto");
-        command->add_option(
-            "--theme",
-            arguments.tui_theme,
-            "TUI theme: hacker, ocean, amber, or synthwave"
-        )
+        command
+            ->add_option(
+                "--theme",
+                arguments.tui_theme,
+                "TUI theme: hacker, ocean, amber, or synthwave"
+            )
             ->transform(CLI::CheckedTransformer(tui_themes))
             ->default_str("hacker");
     }
@@ -216,9 +212,7 @@ ParseResult parse_arguments(int argc, char* argv[]) {
     );
     sites
         ->add_option(
-            "QUERY",
-            arguments.site_query,
-            "SharePoint site search query"
+            "QUERY", arguments.site_query, "SharePoint site search query"
         )
         ->required();
 
@@ -235,20 +229,20 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         return result;
     }
 
-    arguments.operation =
-        *auth       ? Operation::authenticate :
-        *logout     ? Operation::logout :
-        *doctor     ? Operation::diagnose :
-        *drives     ? Operation::drives :
-        *shared     ? Operation::shared :
-        *sites      ? Operation::sites :
-        *quota      ? Operation::quota :
-        *status     ? Operation::status :
-        *reset      ? Operation::reset_state :
-        *download   ? Operation::download :
-        *monitor    ? Operation::monitor :
-                      Operation::synchronize;
+    arguments.operation = *auth           ? Operation::authenticate
+                          : *logout       ? Operation::logout
+                          : *doctor       ? Operation::diagnose
+                          : *drives       ? Operation::drives
+                          : *shared       ? Operation::shared
+                          : *sites        ? Operation::sites
+                          : *quota        ? Operation::quota
+                          : *status       ? Operation::status
+                          : *reset_cursor ? Operation::reset_cursor
+                          : *clear_state  ? Operation::clear_state
+                          : *download     ? Operation::download
+                          : *monitor      ? Operation::monitor
+                                          : Operation::synchronize;
     return result;
 }
 
-}  // namespace onedrive::app::detail
+} // namespace onedrive::app::detail

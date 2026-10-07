@@ -39,7 +39,7 @@ int test_invalid() {
     if (!throws_with(
             [&] {
                 const RuntimePreflight preflight{
-                    config, Operation::reset_state
+                    config, Operation::reset_cursor
                 };
             },
             "sync.drive_id must not be empty"
@@ -49,9 +49,7 @@ int test_invalid() {
     config.drive_id = "me";
 
     if (!throws_with(
-            [&] {
-                const RuntimePreflight preflight{config, Operation::sites};
-            },
+            [&] { const RuntimePreflight preflight{config, Operation::sites}; },
             "Sites.Read.All or Sites.ReadWrite.All"
         )) {
         return fail("site discovery without a site scope was accepted");
@@ -60,7 +58,7 @@ int test_invalid() {
     if (!throws_with(
             [&] {
                 const RuntimePreflight preflight{
-                    config, Operation::reset_state
+                    config, Operation::clear_state
                 };
             },
             "active Microsoft account is missing"
@@ -216,9 +214,7 @@ int test_invalid() {
             },
             "not currently mounted"
         )) {
-        return fail(
-            "ordinary directory was accepted as a mounted sync disk"
-        );
+        return fail("ordinary directory was accepted as a mounted sync disk");
     }
 
     const auto missing_mount = temporary.path() / "missing-mount";
@@ -243,8 +239,7 @@ int test_invalid() {
     if (!throws_with(
             [&] {
                 onedrive::util::require_sync_mount(
-                    config.sync_data_directory,
-                    config.sync_data_mount_point
+                    config.sync_data_directory, config.sync_data_mount_point
                 );
             },
             "sync.data_mount_point is not a directory"
