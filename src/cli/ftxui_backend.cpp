@@ -325,20 +325,44 @@ private:
             static_cast<float>(percentage) / 100.0F
         );
         progress = with_color(std::move(progress), palette_.primary);
+        auto details = fmt::format(
+            "{}%  {} / {}  {}/s",
+            percentage,
+            format_bytes(download_->downloaded),
+            format_bytes(download_->total),
+            format_bytes(download_->metrics.bytes_per_second)
+        );
+        if (download_->state == util::ProgressState::completed) {
+            details += fmt::format(
+                "  elapsed {}",
+                download_->metrics.elapsed_milliseconds < 1000 ?
+                    "<1s" :
+                    format_duration(
+                        download_->metrics.elapsed_milliseconds / 1000
+                    )
+            );
+        } else {
+            details += fmt::format(
+                "  ETA {}",
+                download_->metrics.estimated_seconds_remaining.has_value() ?
+                    format_duration(
+                        *download_->metrics.estimated_seconds_remaining
+                    ) :
+                    "calculating..."
+            );
+        }
         return vbox({
             emphasized(text(fmt::format(
                 "DOWNLOADS  {}/{} files",
                 download_->completed_files,
                 download_->file_count
             ))),
-            std::move(progress),
-            text(fmt::format(
-                "{}%  {} / {}  {}/s",
-                percentage,
-                format_bytes(download_->downloaded),
-                format_bytes(download_->total),
-                format_bytes(download_->metrics.bytes_per_second)
-            )),
+            hbox({
+                text("["),
+                std::move(progress) | flex,
+                text("]"),
+            }),
+            text(std::move(details)),
         }) | border;
     }
 

@@ -65,7 +65,9 @@ int test_tui_dashboard() {
         const auto after_end = output.str();
         const auto frame_after_end =
             after_end.substr(after_end.rfind("\033[H"));
-        if (!frame_after_end.contains("DOWNLOADS  1/4 files")) {
+        if (!frame_after_end.contains("DOWNLOADS  1/4 files") ||
+            !frame_after_end.contains("ETA calculating...") ||
+            !frame_after_end.contains("[")) {
             return fail("FTXUI removed completed download progress");
         }
         console.section(
@@ -90,7 +92,10 @@ int test_tui_dashboard() {
             768,
             1'024,
             ProgressState::ongoing,
-            {.bytes_per_second = 256}
+            {
+                .bytes_per_second = 256,
+                .estimated_seconds_remaining = 65,
+            }
         );
         console.end_download_progress();
 
@@ -102,6 +107,7 @@ int test_tui_dashboard() {
             !final_frame.contains("DOWNLOADS  2/4 files") ||
             !final_frame.contains("75%") ||
             !final_frame.contains("768 B / 1.0 KiB") ||
+            !final_frame.contains("ETA 00:01:05") ||
             !rendered.contains("Sync summary") ||
             !rendered.contains("Files: 4") ||
             !rendered.contains("NEEDS ATTENTION  1") ||
@@ -113,6 +119,25 @@ int test_tui_dashboard() {
             ) ||
             !error.str().empty()) {
             return fail("FTXUI dashboard did not render friendly state");
+        }
+        console.download_progress(
+            4,
+            4,
+            1'024,
+            1'024,
+            ProgressState::completed,
+            {
+                .bytes_per_second = 256,
+                .elapsed_milliseconds = 1'500,
+            }
+        );
+        const auto completed_output = output.str();
+        const auto completed_frame =
+            completed_output.substr(completed_output.rfind("\033[H"));
+        if (!completed_frame.contains("DOWNLOADS  4/4 files") ||
+            !completed_frame.contains("elapsed 00:00:01") ||
+            completed_frame.contains("ETA ")) {
+            return fail("FTXUI did not render completed download timing");
         }
         std::istringstream confirmation{"yes\n"};
         auto* original_input = std::cin.rdbuf(confirmation.rdbuf());
