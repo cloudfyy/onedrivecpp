@@ -349,6 +349,14 @@ void create_upload_suppression_schema(sqlite3* database) {
     );
 }
 
+void create_item_remote_path_index(sqlite3* database) {
+    execute_sql(
+        database,
+        "CREATE INDEX IF NOT EXISTS item_drive_remote_path "
+        "ON item(drive_id, remote_path);"
+    );
+}
+
 void set_schema_version(sqlite3* database, int version) {
     const auto sql = "PRAGMA user_version = " + std::to_string(version) + ";";
     execute_sql(database, sql.c_str());
@@ -367,6 +375,7 @@ void ensure_current_schema(sqlite3* database) {
     create_pending_remote_move_schema(database);
     create_pending_move_schema(database);
     create_upload_suppression_schema(database);
+    create_item_remote_path_index(database);
     set_schema_version(database, current_schema_version);
 }
 

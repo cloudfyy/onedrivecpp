@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <compare>
 #include <filesystem>
@@ -49,10 +50,21 @@ struct ColumnShape {
     std::string name;
     std::string type;
     int not_null;
+    std::string default_value;
     int primary_key_position;
 
     auto operator<=>(const ColumnShape&) const = default;
 };
+
+bool column_is_compatible(
+    const ColumnShape& actual, const ColumnShape& expected
+) {
+    return actual.name == expected.name && actual.type == expected.type &&
+           actual.not_null == expected.not_null &&
+           (expected.default_value.empty() ||
+            actual.default_value == expected.default_value) &&
+           actual.primary_key_position == expected.primary_key_position;
+}
 
 std::vector<ColumnShape>
 table_columns(sqlite3* database, const std::string& table) {
@@ -66,6 +78,7 @@ table_columns(sqlite3* database, const std::string& table) {
             .name = column_text(statement.get(), 1),
             .type = column_text(statement.get(), 2),
             .not_null = sqlite3_column_int(statement.get(), 3),
+            .default_value = column_text(statement.get(), 4),
             .primary_key_position = sqlite3_column_int(statement.get(), 5),
         });
     }
@@ -73,8 +86,19 @@ table_columns(sqlite3* database, const std::string& table) {
     return columns;
 }
 
+struct IndexColumnShape {
+    std::string name;
+    int expression;
+    int descending;
+    std::string collation;
+    int key;
+
+    auto operator<=>(const IndexColumnShape&) const = default;
+};
+
 struct IndexShape {
-    std::vector<std::string> columns;
+    std::string name;
+    std::vector<IndexColumnShape> columns;
     int unique;
     std::string origin;
     int partial;
@@ -92,9 +116,10 @@ table_indexes(sqlite3* database, const std::string& table) {
     while (list.next_row(list_operation)) {
         const auto index_name = column_text(list.get(), 1);
         const auto info_sql =
-            "PRAGMA index_info(" + quote_identifier(index_name) + ");";
+            "PRAGMA index_xinfo(" + quote_identifier(index_name) + ");";
         Statement info{database, info_sql.c_str()};
         IndexShape index{
+            .name = index_name,
             .columns = {},
             .unique = sqlite3_column_int(list.get(), 2),
             .origin = column_text(list.get(), 3),
@@ -103,12 +128,176 @@ table_indexes(sqlite3* database, const std::string& table) {
         const auto info_operation =
             "cannot inspect state database index '" + index_name + "'";
         while (info.next_row(info_operation)) {
-            index.columns.push_back(column_text(info.get(), 2));
+            const int column_id = sqlite3_column_int(info.get(), 1);
+            index.columns.push_back({
+                .name = column_text(info.get(), 2),
+                .expression = column_id == -2,
+                .descending = sqlite3_column_int(info.get(), 3),
+                .collation = column_text(info.get(), 4),
+                .key = sqlite3_column_int(info.get(), 5),
+            });
         }
         indexes.push_back(std::move(index));
     }
     std::ranges::sort(indexes);
     return indexes;
+}
+
+std::string table_definition(sqlite3* database, const std::string& table) {
+    Statement statement{
+        database,
+        "SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = ?1;"
+    };
+    bind_text(database, statement.get(), 1, table);
+    statement.require_row(
+        "cannot inspect definition for state database table '" + table + "'"
+    );
+    return column_text(statement.get(), 0);
+}
+
+bool is_identifier_character(char character) {
+    const auto value = static_cast<unsigned char>(character);
+    return std::isalnum(value) != 0 || character == '_';
+}
+
+bool starts_with_keyword(
+    std::string_view sql, std::size_t position, std::string_view keyword
+) {
+    if (position + keyword.size() > sql.size() ||
+        (position > 0 && is_identifier_character(sql[position - 1])) ||
+        (position + keyword.size() < sql.size() &&
+         is_identifier_character(sql[position + keyword.size()]))) {
+        return false;
+    }
+    for (std::size_t offset = 0; offset < keyword.size(); ++offset) {
+        const auto character =
+            static_cast<unsigned char>(sql[position + offset]);
+        if (std::tolower(character) != keyword[offset]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+std::size_t skip_quoted_sql(std::string_view sql, std::size_t position) {
+    const char quote = sql[position];
+    const char closing = quote == '[' ? ']' : quote;
+    ++position;
+    while (position < sql.size()) {
+        if (sql[position] != closing) {
+            ++position;
+            continue;
+        }
+        if (closing != ']' && position + 1 < sql.size() &&
+            sql[position + 1] == closing) {
+            position += 2;
+            continue;
+        }
+        return position + 1;
+    }
+    return sql.size();
+}
+
+std::string normalize_sql_expression(std::string_view expression) {
+    std::string normalized;
+    for (std::size_t position = 0; position < expression.size();) {
+        const char character = expression[position];
+        if (character == '\'' || character == '"' || character == '`' ||
+            character == '[') {
+            const auto end = skip_quoted_sql(expression, position);
+            normalized.append(expression.substr(position, end - position));
+            position = end;
+            continue;
+        }
+        const auto value = static_cast<unsigned char>(character);
+        if (std::isspace(value) == 0) {
+            normalized.push_back(
+                static_cast<char>(std::tolower(value))
+            );
+        }
+        ++position;
+    }
+    return normalized;
+}
+
+std::vector<std::string>
+table_check_constraints(sqlite3* database, const std::string& table) {
+    const auto definition = table_definition(database, table);
+    std::vector<std::string> constraints;
+    for (std::size_t position = 0; position < definition.size();) {
+        const char character = definition[position];
+        if (character == '\'' || character == '"' || character == '`' ||
+            character == '[') {
+            position = skip_quoted_sql(definition, position);
+            continue;
+        }
+        if (!starts_with_keyword(definition, position, "check")) {
+            ++position;
+            continue;
+        }
+
+        position += std::string_view{"check"}.size();
+        while (position < definition.size() &&
+               std::isspace(
+                   static_cast<unsigned char>(definition[position])
+               ) != 0) {
+            ++position;
+        }
+        if (position == definition.size() || definition[position] != '(') {
+            continue;
+        }
+
+        const auto expression_start = position;
+        int depth = 0;
+        while (position < definition.size()) {
+            const char current = definition[position];
+            if (current == '\'' || current == '"' || current == '`' ||
+                current == '[') {
+                position = skip_quoted_sql(definition, position);
+                continue;
+            }
+            if (current == '(') {
+                ++depth;
+            } else if (current == ')' && --depth == 0) {
+                ++position;
+                constraints.push_back(normalize_sql_expression(
+                    std::string_view{definition}.substr(
+                        expression_start, position - expression_start
+                    )
+                ));
+                break;
+            }
+            ++position;
+        }
+    }
+    std::ranges::sort(constraints);
+    return constraints;
+}
+
+struct SchemaObjectShape {
+    std::string type;
+    std::string name;
+    std::string table;
+
+    auto operator<=>(const SchemaObjectShape&) const = default;
+};
+
+std::vector<SchemaObjectShape> user_schema_objects(sqlite3* database) {
+    Statement statement{
+        database,
+        "SELECT type, name, tbl_name FROM sqlite_schema "
+        "WHERE type IN ('view', 'trigger') AND name NOT LIKE 'sqlite_%' "
+        "ORDER BY type, name;"
+    };
+    std::vector<SchemaObjectShape> objects;
+    while (statement.next_row("cannot inspect state database schema objects")) {
+        objects.push_back({
+            .type = column_text(statement.get(), 0),
+            .name = column_text(statement.get(), 1),
+            .table = column_text(statement.get(), 2),
+        });
+    }
+    return objects;
 }
 
 void verify_database_integrity(sqlite3* database) {
@@ -260,6 +449,12 @@ void verify_current_schema(sqlite3* database) {
     }
     ensure_current_schema(reference.get());
 
+    if (user_schema_objects(database) != user_schema_objects(reference.get())) {
+        throw std::runtime_error(
+            "state database schema contains incompatible views or triggers"
+        );
+    }
+
     const auto expected_tables = user_tables(reference.get());
     const auto actual_tables = user_tables(database);
     for (const auto& expected : expected_tables) {
@@ -291,7 +486,7 @@ void verify_current_schema(sqlite3* database) {
                     expected.name + "'"
                 );
             }
-            if (*actual != expected) {
+            if (!column_is_compatible(*actual, expected)) {
                 throw std::runtime_error(
                     "state database table '" + table + "' column '" +
                     expected.name + "' has an incompatible definition"
@@ -313,6 +508,13 @@ void verify_current_schema(sqlite3* database) {
             throw std::runtime_error(
                 "state database table '" + table +
                 "' has incompatible primary key or index definitions"
+            );
+        }
+        if (table_check_constraints(database, table) !=
+            table_check_constraints(reference.get(), table)) {
+            throw std::runtime_error(
+                "state database table '" + table +
+                "' has incompatible CHECK constraints"
             );
         }
     }

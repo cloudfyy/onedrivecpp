@@ -218,6 +218,7 @@ constexpr std::array schema_migrations{
     SchemaMigration{22, 23, add_pending_upload_failure},
     SchemaMigration{23, 24, add_blocked_item_content_tag},
     SchemaMigration{24, 25, add_item_content_hash},
+    SchemaMigration{25, 26, create_item_remote_path_index},
 };
 
 consteval bool schema_migration_chain_is_complete() {
@@ -249,7 +250,9 @@ void migrate_schema(sqlite3* database) {
                 "unversioned state database contains existing tables"
             );
         }
+        Transaction transaction{database};
         ensure_current_schema(database);
+        transaction.commit();
         return;
     }
     if (version < 0 || version > current_schema_version) {

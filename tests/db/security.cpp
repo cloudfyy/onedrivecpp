@@ -124,6 +124,77 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    const auto wrong_default_directory =
+        temporary_directory.path() / "schema-wrong-default";
+    if (!create_current_database(wrong_default_directory) ||
+        !execute_schema(
+            wrong_default_directory / "items.sqlite3",
+            "DROP TABLE drive_state;"
+            "CREATE TABLE drive_state ("
+            "drive_id TEXT PRIMARY KEY NOT NULL, delta_link TEXT NOT NULL, "
+            "sync_filter_fingerprint TEXT NOT NULL DEFAULT 'wrong');"
+        ) ||
+        assert_rejected(
+            wrong_default_directory,
+            "column 'sync_filter_fingerprint' has an incompatible definition",
+            "database with an incorrect column default"
+        ) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+
+    const auto missing_check_directory =
+        temporary_directory.path() / "schema-missing-check";
+    if (!create_current_database(missing_check_directory) ||
+        !execute_schema(
+            missing_check_directory / "items.sqlite3",
+            "DROP TABLE identity;"
+            "CREATE TABLE identity ("
+            "singleton INTEGER PRIMARY KEY NOT NULL, user_id TEXT NOT NULL, "
+            "user_display_name TEXT NOT NULL, drive_id TEXT NOT NULL, "
+            "drive_name TEXT NOT NULL, avatar_content_type TEXT NOT NULL, "
+            "avatar_bytes BLOB NOT NULL);"
+        ) ||
+        assert_rejected(
+            missing_check_directory,
+            "incompatible CHECK constraints",
+            "database with a missing CHECK constraint"
+        ) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+
+    const auto unexpected_trigger_directory =
+        temporary_directory.path() / "schema-unexpected-trigger";
+    if (!create_current_database(unexpected_trigger_directory) ||
+        !execute_schema(
+            unexpected_trigger_directory / "items.sqlite3",
+            "CREATE TRIGGER unexpected_item_insert AFTER INSERT ON item "
+            "BEGIN DELETE FROM item WHERE drive_id = NEW.drive_id; END;"
+        ) ||
+        assert_rejected(
+            unexpected_trigger_directory,
+            "incompatible views or triggers",
+            "database with an unexpected trigger"
+        ) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+
+    const auto wrong_index_directory =
+        temporary_directory.path() / "schema-wrong-index";
+    if (!create_current_database(wrong_index_directory) ||
+        !execute_schema(
+            wrong_index_directory / "items.sqlite3",
+            "DROP INDEX item_drive_remote_path;"
+            "CREATE INDEX item_drive_remote_path "
+            "ON item(drive_id, remote_path COLLATE NOCASE DESC);"
+        ) ||
+        assert_rejected(
+            wrong_index_directory,
+            "incompatible primary key or index definitions",
+            "database with an incompatible index definition"
+        ) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+
     const auto wrong_primary_key_directory =
         temporary_directory.path() / "schema-wrong-primary-key";
     if (!create_current_database(wrong_primary_key_directory) ||
@@ -149,11 +220,11 @@ int main() {
     if (!create_current_database(future_version_directory) ||
         !execute_schema(
             future_version_directory / "items.sqlite3",
-            "PRAGMA user_version = 26;"
+            "PRAGMA user_version = 27;"
         ) ||
         assert_rejected(
             future_version_directory,
-            "unsupported state database schema version 26",
+            "unsupported state database schema version 27",
             "database with a future schema version"
         ) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
