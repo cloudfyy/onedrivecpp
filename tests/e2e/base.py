@@ -72,12 +72,21 @@ def rewrite_config(
     monitor_settle_delay_milliseconds: int | None = None,
     upload_maximum_rate_bytes_per_second: int | None = None,
 ) -> str:
+    mount_point = sync_data_directory.resolve()
+    while not os.path.ismount(mount_point):
+        parent = mount_point.parent
+        if parent == mount_point:
+            raise E2EError(
+                f"cannot determine mount point for {sync_data_directory}"
+            )
+        mount_point = parent
     replacements = {
         ("sync", "data_directory"): json.dumps(str(sync_data_directory)),
+        ("sync", "data_mount_point"): json.dumps(str(mount_point)),
         ("sync", "dry_run"): json.dumps(dry_run),
         ("state", "directory"): json.dumps(str(state_directory)),
     }
-    insert_missing: set[tuple[str, str]] = set()
+    insert_missing: set[tuple[str, str]] = {("sync", "data_mount_point")}
     if sync_list is not None:
         replacements[("sync", "sync_list")] = json.dumps(str(sync_list))
         insert_missing.add(("sync", "sync_list"))

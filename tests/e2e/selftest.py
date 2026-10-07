@@ -67,6 +67,7 @@ directory = "/old/state"
     parsed = tomllib.loads(rewritten)
     if (
         parsed["sync"]["data_directory"] != "/new/sync"
+        or parsed["sync"]["data_mount_point"] != "/"
         or parsed["sync"]["dry_run"] is not True
         or parsed["sync"]["sync_list"] != "/new/sync_list"
         or parsed["sync"]["local_conflict"] != "backup"
