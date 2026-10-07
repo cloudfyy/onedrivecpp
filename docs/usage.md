@@ -21,16 +21,16 @@ onedrive-cpp sync --dry-run --color always
 onedrive-cpp sync --ui tui
 onedrive-cpp sync --theme ocean
 onedrive-cpp account login --ui tui
-onedrive-cpp doctor --ui tui
-onedrive-cpp status --ui tui
+onedrive-cpp inspect health --ui tui
+onedrive-cpp inspect status --ui tui
 onedrive-cpp download Documents/report.pdf --ui tui
 onedrive-cpp sync --dry-run --output json
 onedrive-cpp sync --dry-run --quiet
-onedrive-cpp drives --output json
-onedrive-cpp shared
-onedrive-cpp sites Engineering
-onedrive-cpp quota
-onedrive-cpp status
+onedrive-cpp inspect drives --output json
+onedrive-cpp inspect shared
+onedrive-cpp inspect sites Engineering
+onedrive-cpp inspect quota
+onedrive-cpp inspect status
 ```
 
 Supported levels are `trace`, `debug`, `info`, `warn`, `error`, `critical`,
@@ -52,7 +52,7 @@ in this mode. `--quiet` suppresses informational and success output while
 retaining warnings and errors. Diagnostic logs remain on standard error, while
 command results are written to standard output.
 
-`account login`, `doctor`, `status`, `sync`, `download`, and `monitor` use `console.ui` from the configuration,
+`account login`, `inspect health`, `inspect status`, `sync`, `download`, and `monitor` use `console.ui` from the configuration,
 which defaults to `auto`; an explicit `--ui` overrides it for one invocation.
 Auto mode opens the FTXUI status dashboard only when standard input and output are terminals,
 `TERM` supports terminal controls, and the terminal is at least 60 columns by
@@ -75,21 +75,21 @@ and file terminology rather than API names.
 
 ## Read-only account and synchronization information
 
-`drives` lists OneDrive drives available to the active Microsoft account and
-marks the configured drive. `shared` lists items returned by `sharedWithMe` and
+`inspect drives` lists OneDrive drives available to the active Microsoft account and
+marks the configured drive. `inspect shared` lists items returned by `sharedWithMe` and
 shortcuts added to the configured OneDrive, including the target Drive and
-item IDs needed for configuration. `sites QUERY` searches accessible
+item IDs needed for configuration. `inspect sites QUERY` searches accessible
 SharePoint sites and lists each site's document-library Drives. Site discovery
 requires `Sites.Read.All` or `Sites.ReadWrite.All`; change scopes and run
 `onedrive-cpp account login` again before using it.
 
-`quota` reports total, used, remaining, deleted, and quota-state values for the
-configured drive. `status` combines the active account and canonical Drive
+`inspect quota` reports total, used, remaining, deleted, and quota-state values for the
+configured drive. `inspect status` combines the active account and canonical Drive
 identity with local read-only state: sync mode, delete policy, last recorded
 synchronization result, tracked and blocked item counts, pending journals,
 Delta cursor, selective-sync fingerprint, and WebSocket configuration.
 
-These commands do not synchronize files or modify remote content. `status`
+These commands do not synchronize files or modify remote content. `inspect status`
 opens an existing SQLite database read-only and does not create or migrate a
 missing or older database. All five commands support `--output json`.
 

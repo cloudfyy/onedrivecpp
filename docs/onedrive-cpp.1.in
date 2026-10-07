@@ -12,23 +12,23 @@ onedrive-cpp \- modern C++ OneDrive synchronization client
 .B onedrive-cpp account logout
 .RI [ options ]
 .PP
-.B onedrive-cpp doctor
+.B onedrive-cpp inspect health
 .RI [ options ]
 .PP
-.B onedrive-cpp drives
+.B onedrive-cpp inspect drives
 .RI [ options ]
 .PP
-.B onedrive-cpp shared
+.B onedrive-cpp inspect shared
 .RI [ options ]
 .PP
-.B onedrive-cpp sites
+.B onedrive-cpp inspect sites
 .RI [ options ]
 .I QUERY
 .PP
-.B onedrive-cpp quota
+.B onedrive-cpp inspect quota
 .RI [ options ]
 .PP
-.B onedrive-cpp status
+.B onedrive-cpp inspect status
 .RI [ options ]
 .PP
 .B onedrive-cpp state reset-cursor
@@ -70,7 +70,7 @@ Remove the locally stored refresh token. This does not revoke consent on the
 Microsoft account; revoke the application separately in Microsoft account
 settings when required.
 .TP
-.B doctor
+.B inspect health
 Run a read-only SQLite
 .BR integrity_check ,
 foreign-key check, and exact application-schema check for every Drive database
@@ -79,18 +79,18 @@ Graph and returns nonzero when any database is unhealthy. Use
 .B \-\-output json
 for structured diagnostics.
 .TP
-.B drives
+.B inspect drives
 List OneDrive drives available to the active Microsoft account and mark the
 configured drive. The command reads Microsoft Graph metadata without changing
 remote or local synchronization state.
 .TP
-.B shared
+.B inspect shared
 List items shared with the active account and shortcuts added to the configured
 OneDrive. Output includes target Drive and item IDs, ownership, item kind, web
 URL, and the local OneDrive path for shortcuts. The command performs read-only
 Graph queries and does not synchronize content.
 .TP
-.B sites
+.B inspect sites
 Search accessible SharePoint sites matching
 .I QUERY
 and list their document-library Drives. This read-only command requires
@@ -103,11 +103,11 @@ run
 .B onedrive-cpp account login
 again after changing scopes.
 .TP
-.B quota
+.B inspect quota
 Show total, used, remaining, deleted, and quota-state values for the configured
 drive. The command does not run synchronization.
 .TP
-.B status
+.B inspect status
 Show the active account and canonical Drive identity, synchronization mode and
 delete policy, last recorded synchronization result, tracked and blocked item
 counts, pending journals, Delta cursor, selective-sync fingerprint, state

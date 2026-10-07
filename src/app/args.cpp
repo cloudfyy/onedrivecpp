@@ -65,22 +65,26 @@ ParseResult parse_arguments(int argc, char* argv[]) {
     auto* account_logout = account->add_subcommand(
         "logout", "Remove the locally stored refresh token"
     );
-    auto* doctor = application.add_subcommand(
-        "doctor", "Run local synchronization-state diagnostics"
+    auto* inspect = application.add_subcommand(
+        "inspect", "Inspect account, cloud, and synchronization state"
     );
-    auto* drives = application.add_subcommand(
+    inspect->require_subcommand(1);
+    auto* inspect_health = inspect->add_subcommand(
+        "health", "Run local synchronization-state diagnostics"
+    );
+    auto* inspect_drives = inspect->add_subcommand(
         "drives", "List OneDrive drives available to the active account"
     );
-    auto* shared = application.add_subcommand(
+    auto* inspect_shared = inspect->add_subcommand(
         "shared", "List items shared with the account and OneDrive shortcuts"
     );
-    auto* sites = application.add_subcommand(
+    auto* inspect_sites = inspect->add_subcommand(
         "sites", "Find SharePoint sites and their document libraries"
     );
-    auto* quota = application.add_subcommand(
+    auto* inspect_quota = inspect->add_subcommand(
         "quota", "Show storage quota for the configured drive"
     );
-    auto* status = application.add_subcommand(
+    auto* inspect_status = inspect->add_subcommand(
         "status", "Show read-only synchronization status"
     );
     auto* state = application.add_subcommand(
@@ -106,12 +110,12 @@ ParseResult parse_arguments(int argc, char* argv[]) {
     const std::array command_operations{
         std::pair{account_login, Operation::authenticate},
         std::pair{account_logout, Operation::logout},
-        std::pair{doctor, Operation::diagnose},
-        std::pair{drives, Operation::drives},
-        std::pair{shared, Operation::shared},
-        std::pair{sites, Operation::sites},
-        std::pair{quota, Operation::quota},
-        std::pair{status, Operation::status},
+        std::pair{inspect_health, Operation::diagnose},
+        std::pair{inspect_drives, Operation::drives},
+        std::pair{inspect_shared, Operation::shared},
+        std::pair{inspect_sites, Operation::sites},
+        std::pair{inspect_quota, Operation::quota},
+        std::pair{inspect_status, Operation::status},
         std::pair{reset_cursor, Operation::reset_cursor},
         std::pair{clear_state, Operation::clear_state},
         std::pair{sync, Operation::synchronize},
@@ -221,7 +225,7 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         arguments.force_dry_run,
         "Show the single-file download plan without changing local state"
     );
-    sites
+    inspect_sites
         ->add_option(
             "QUERY", arguments.site_query, "SharePoint site search query"
         )
@@ -240,19 +244,19 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         return result;
     }
 
-    arguments.operation = *account_login  ? Operation::authenticate
+    arguments.operation = *account_login    ? Operation::authenticate
                           : *account_logout ? Operation::logout
-                          : *doctor         ? Operation::diagnose
-                          : *drives         ? Operation::drives
-                          : *shared         ? Operation::shared
-                          : *sites          ? Operation::sites
-                          : *quota          ? Operation::quota
-                          : *status         ? Operation::status
+                          : *inspect_health ? Operation::diagnose
+                          : *inspect_drives ? Operation::drives
+                          : *inspect_shared ? Operation::shared
+                          : *inspect_sites  ? Operation::sites
+                          : *inspect_quota  ? Operation::quota
+                          : *inspect_status ? Operation::status
                           : *reset_cursor   ? Operation::reset_cursor
                           : *clear_state    ? Operation::clear_state
                           : *download       ? Operation::download
                           : *monitor        ? Operation::monitor
-                                             : Operation::synchronize;
+                                               : Operation::synchronize;
     return result;
 }
 

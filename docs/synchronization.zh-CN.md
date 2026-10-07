@@ -53,7 +53,7 @@ synchronous、自动 checkpoint 和 FAST secure delete。状态目录保持 `070
 `integrity_check`、外键检查和精确 schema 检查：
 
 ```bash
-onedrive-cpp doctor
+onedrive-cpp inspect health
 ```
 
 任何数据库不健康时命令返回非零；可配合 `--output json` 输出结构化诊断。

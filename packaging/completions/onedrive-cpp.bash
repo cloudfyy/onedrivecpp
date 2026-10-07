@@ -1,6 +1,6 @@
 _onedrive_cpp_completion()
 {
-    local current previous command="" account_action="" state_action="" word
+    local current previous command="" account_action="" inspect_action="" state_action="" word
     COMPREPLY=()
     current="${COMP_WORDS[COMP_CWORD]}"
     previous="${COMP_WORDS[COMP_CWORD-1]}"
@@ -41,7 +41,7 @@ _onedrive_cpp_completion()
 
     for word in "${COMP_WORDS[@]:1:COMP_CWORD-1}"; do
         case "$word" in
-            account|doctor|drives|shared|sites|quota|status|state|download|sync|monitor)
+            account|inspect|state|download|sync|monitor)
                 if [[ -z "$command" ]]; then
                     command="$word"
                 fi
@@ -49,6 +49,11 @@ _onedrive_cpp_completion()
             login|logout)
                 if [[ "$command" == "account" ]]; then
                     account_action="$word"
+                fi
+                ;;
+            health|status|drives|shared|sites|quota)
+                if [[ "$command" == "inspect" ]]; then
+                    inspect_action="$word"
                 fi
                 ;;
             reset-cursor|clear)
@@ -61,7 +66,7 @@ _onedrive_cpp_completion()
 
     if [[ -z "$command" ]]; then
         mapfile -t COMPREPLY < <(compgen -W \
-            "account doctor drives shared sites quota status state download sync monitor --help --version" \
+            "account inspect state download sync monitor --help --version" \
             -- "$current")
         return
     fi
@@ -94,14 +99,6 @@ _onedrive_cpp_completion()
                     ;;
             esac
             ;;
-        doctor)
-            mapfile -t COMPREPLY < <(compgen -W \
-                "$common_options --ui --theme" -- "$current")
-            ;;
-        status)
-            mapfile -t COMPREPLY < <(compgen -W \
-                "$common_options --ui --theme" -- "$current")
-            ;;
         download)
             mapfile -t COMPREPLY < <(compgen -W \
                 "$common_options --ui --theme --dry-run" -- "$current")
@@ -132,10 +129,23 @@ _onedrive_cpp_completion()
                     ;;
             esac
             ;;
-        drives|shared|sites|quota)
-            mapfile -t COMPREPLY < <(
-                compgen -W "$common_options" -- "$current"
-            )
+        inspect)
+            case "$inspect_action" in
+                health|status)
+                    mapfile -t COMPREPLY < <(compgen -W \
+                        "$common_options --ui --theme" -- "$current")
+                    ;;
+                drives|shared|sites|quota)
+                    mapfile -t COMPREPLY < <(
+                        compgen -W "$common_options" -- "$current"
+                    )
+                    ;;
+                *)
+                    mapfile -t COMPREPLY < <(
+                        compgen -W "health status drives shared sites quota --help" -- "$current"
+                    )
+                    ;;
+            esac
             ;;
     esac
 }

@@ -37,7 +37,7 @@ cli::TuiView tui_view(detail::Operation operation) noexcept {
         case detail::Operation::authenticate:
             return cli::TuiView::auth;
         case detail::Operation::diagnose:
-            return cli::TuiView::doctor;
+            return cli::TuiView::health;
         case detail::Operation::status:
             return cli::TuiView::status;
         case detail::Operation::download:

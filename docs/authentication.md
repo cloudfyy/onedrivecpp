@@ -68,7 +68,7 @@ Sites.Read.All
 Sites.ReadWrite.All
 ```
 
-`Sites.Read.All` is sufficient for the read-only `sites QUERY` discovery
+`Sites.Read.All` is sufficient for the read-only `inspect sites QUERY` discovery
 command. Use `Sites.ReadWrite.All` only when synchronization must modify a
 SharePoint document library.
 

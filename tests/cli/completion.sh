@@ -24,12 +24,7 @@ COMP_CWORD=1
 _onedrive_cpp_completion
 assert_contains sync "${COMPREPLY[@]}"
 assert_contains download "${COMPREPLY[@]}"
-assert_contains doctor "${COMPREPLY[@]}"
-assert_contains drives "${COMPREPLY[@]}"
-assert_contains shared "${COMPREPLY[@]}"
-assert_contains sites "${COMPREPLY[@]}"
-assert_contains quota "${COMPREPLY[@]}"
-assert_contains status "${COMPREPLY[@]}"
+assert_contains inspect "${COMPREPLY[@]}"
 assert_contains state "${COMPREPLY[@]}"
 assert_contains account "${COMPREPLY[@]}"
 assert_contains --version "${COMPREPLY[@]}"
@@ -59,17 +54,31 @@ COMP_CWORD=3
 _onedrive_cpp_completion
 assert_contains --config "${COMPREPLY[@]}"
 
-COMP_WORDS=(onedrive-cpp status --)
+COMP_WORDS=(onedrive-cpp inspect "")
 COMP_CWORD=2
+_onedrive_cpp_completion
+assert_contains health "${COMPREPLY[@]}"
+assert_contains status "${COMPREPLY[@]}"
+assert_contains drives "${COMPREPLY[@]}"
+assert_contains shared "${COMPREPLY[@]}"
+assert_contains sites "${COMPREPLY[@]}"
+assert_contains quota "${COMPREPLY[@]}"
+
+COMP_WORDS=(onedrive-cpp inspect health --)
+COMP_CWORD=3
 _onedrive_cpp_completion
 assert_contains --ui "${COMPREPLY[@]}"
 assert_contains --theme "${COMPREPLY[@]}"
 
-COMP_WORDS=(onedrive-cpp doctor --)
-COMP_CWORD=2
+COMP_WORDS=(onedrive-cpp inspect status --)
+COMP_CWORD=3
 _onedrive_cpp_completion
 assert_contains --ui "${COMPREPLY[@]}"
-assert_contains --theme "${COMPREPLY[@]}"
+
+COMP_WORDS=(onedrive-cpp inspect sites --)
+COMP_CWORD=3
+_onedrive_cpp_completion
+assert_contains --config "${COMPREPLY[@]}"
 
 COMP_WORDS=(onedrive-cpp download --)
 COMP_CWORD=2

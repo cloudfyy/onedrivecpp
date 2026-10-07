@@ -10,11 +10,7 @@ int test_args() {
     const auto help =
         run_application(runtime_factory, {"build/release/onedrive-cpp"});
     if (help.exit_code != 0 || !help.standard_output.contains("account") ||
-        !help.standard_output.contains("drives") ||
-        !help.standard_output.contains("shared") ||
-        !help.standard_output.contains("sites") ||
-        !help.standard_output.contains("quota") ||
-        !help.standard_output.contains("status") ||
+        !help.standard_output.contains("inspect") ||
         !help.standard_output.contains("state") ||
         !help.standard_output.contains("download") ||
         !help.standard_output.contains("sync") ||
@@ -67,18 +63,31 @@ int test_args() {
         !download_help.standard_output.contains("--theme")) {
         return fail("download help did not document TUI options");
     }
-    const auto doctor_help =
-        run_application(runtime_factory, {"onedrive-cpp", "doctor", "--help"});
-    if (doctor_help.exit_code != 0 ||
-        !doctor_help.standard_output.contains(
+    const auto inspect_help =
+        run_application(runtime_factory, {"onedrive-cpp", "inspect", "--help"});
+    if (inspect_help.exit_code != 0 ||
+        !inspect_help.standard_output.contains("health") ||
+        !inspect_help.standard_output.contains("status") ||
+        !inspect_help.standard_output.contains("drives") ||
+        !inspect_help.standard_output.contains("shared") ||
+        !inspect_help.standard_output.contains("sites") ||
+        !inspect_help.standard_output.contains("quota")) {
+        return fail("inspect help did not list its read-only actions");
+    }
+    const auto health_help = run_application(
+        runtime_factory, {"onedrive-cpp", "inspect", "health", "--help"}
+    );
+    if (health_help.exit_code != 0 ||
+        !health_help.standard_output.contains(
             "Run local synchronization-state diagnostics"
         ) ||
-        !doctor_help.standard_output.contains("--ui") ||
-        !doctor_help.standard_output.contains("--theme")) {
-        return fail("doctor help was not available");
+        !health_help.standard_output.contains("--ui") ||
+        !health_help.standard_output.contains("--theme")) {
+        return fail("inspect health help was not available");
     }
-    const auto status_help =
-        run_application(runtime_factory, {"onedrive-cpp", "status", "--help"});
+    const auto status_help = run_application(
+        runtime_factory, {"onedrive-cpp", "inspect", "status", "--help"}
+    );
     if (status_help.exit_code != 0 ||
         !status_help.standard_output.contains(
             "Show read-only synchronization status"
@@ -177,6 +186,10 @@ int test_args() {
             .exit_code != 2) {
         return fail("account command accepted a missing action");
     }
+    if (run_application(runtime_factory, {"onedrive-cpp", "inspect"})
+            .exit_code != 2) {
+        return fail("inspect command accepted a missing action");
+    }
     if (run_application(runtime_factory, {"onedrive-cpp", "auth"}).exit_code !=
             2 ||
         run_application(runtime_factory, {"onedrive-cpp", "logout"})
@@ -197,9 +210,20 @@ int test_args() {
             .exit_code != 2) {
         return fail("download command accepted a missing remote path");
     }
-    if (run_application(runtime_factory, {"onedrive-cpp", "sites"}).exit_code !=
-        2) {
-        return fail("sites command accepted a missing search query");
+    if (run_application(
+            runtime_factory, {"onedrive-cpp", "inspect", "sites"}
+        )
+            .exit_code != 2) {
+        return fail("inspect sites accepted a missing search query");
+    }
+    for (const std::string_view command :
+         {"doctor", "status", "drives", "shared", "sites", "quota"}) {
+        if (run_application(
+                runtime_factory, {"onedrive-cpp", std::string{command}}
+            )
+                .exit_code != 2) {
+            return fail("removed inspection command was still accepted");
+        }
     }
 
     CliFixture ui_fixture;

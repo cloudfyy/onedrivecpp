@@ -63,7 +63,7 @@ Sites.Read.All
 Sites.ReadWrite.All
 ```
 
-只读 `sites QUERY` 发现命令使用 `Sites.Read.All` 即可。只有同步过程需要修改
+只读 `inspect sites QUERY` 发现命令使用 `Sites.Read.All` 即可。只有同步过程需要修改
 SharePoint 文档库时才应使用 `Sites.ReadWrite.All`。
 
 组织租户的策略可能要求管理员批准权限。个人 Microsoft 账号通常在设备登录时

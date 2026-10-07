@@ -37,7 +37,7 @@ enum class TuiTheme {
 
 enum class TuiView {
     auth,
-    doctor,
+    health,
     status,
     sync,
     download,

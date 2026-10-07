@@ -20,16 +20,16 @@ onedrive-cpp sync --dry-run --color always
 onedrive-cpp sync --ui tui
 onedrive-cpp sync --theme ocean
 onedrive-cpp account login --ui tui
-onedrive-cpp doctor --ui tui
-onedrive-cpp status --ui tui
+onedrive-cpp inspect health --ui tui
+onedrive-cpp inspect status --ui tui
 onedrive-cpp download Documents/report.pdf --ui tui
 onedrive-cpp sync --dry-run --output json
 onedrive-cpp sync --dry-run --quiet
-onedrive-cpp drives --output json
-onedrive-cpp shared
-onedrive-cpp sites Engineering
-onedrive-cpp quota
-onedrive-cpp status
+onedrive-cpp inspect drives --output json
+onedrive-cpp inspect shared
+onedrive-cpp inspect sites Engineering
+onedrive-cpp inspect quota
+onedrive-cpp inspect status
 ```
 
 日志级别支持 `trace`、`debug`、`info`、`warn`、`error`、`critical` 和
@@ -48,7 +48,7 @@ URL，但仍可能包含账号与 Drive 显示名称、远端项目名称和本�
 使用 `--yes` 显式确认。`--quiet` 会隐藏普通信息和成功消息，但仍保留警告和
 错误。诊断日志继续写入标准错误，命令结果写入标准输出。
 
-`account login`、`doctor`、`status`、`sync`、`download` 和 `monitor` 读取配置中的 `console.ui`，默认值为 `auto`；
+`account login`、`inspect health`、`inspect status`、`sync`、`download` 和 `monitor` 读取配置中的 `console.ui`，默认值为 `auto`；
 命令行显式提供的 `--ui` 只覆盖本次运行。auto 模式只有在标准输入和标准输出均连接终端、`TERM`
 支持终端控制，并且窗口至少为 60 列 × 12 行时，才会打开 FTXUI 实时状态面板。
 输出重定向、管道、JSON、quiet 模式、`TERM=dumb` 或窗口过小时，会自动切回普通
@@ -66,19 +66,19 @@ download 面板复用同步期间持久显示的进度、传输速率和 ETA。�
 
 ## 只读账号与同步信息
 
-`drives` 列出当前 Microsoft 账号可用的 OneDrive Drive，并标记配置正在使用的
-Drive。`shared` 会列出 `sharedWithMe` 返回的项目，以及已添加到当前 OneDrive 的
+`inspect drives` 列出当前 Microsoft 账号可用的 OneDrive Drive，并标记配置正在使用的
+Drive。`inspect shared` 会列出 `sharedWithMe` 返回的项目，以及已添加到当前 OneDrive 的
 快捷方式（shortcut）；同时显示配置共享 Drive 所需的目标 Drive ID 和 item ID。
-`sites QUERY` 搜索可访问的 SharePoint 站点并列出各站点的文档库 Drive。
+`inspect sites QUERY` 搜索可访问的 SharePoint 站点并列出各站点的文档库 Drive。
 站点发现要求 `Sites.Read.All` 或 `Sites.ReadWrite.All`；修改 scope 后需要重新
 运行 `onedrive-cpp account login`。
 
-`quota` 显示配置 Drive 的总量、已用、剩余、回收站占用和配额状态。`status`
+`inspect quota` 显示配置 Drive 的总量、已用、剩余、回收站占用和配额状态。`inspect status`
 合并当前账号及规范 Drive 身份与本地只读状态，包括同步模式、删除策略、最后一次
 同步结果、tracked/blocked 数量、pending journal、Delta cursor、
 selective-sync fingerprint 和 WebSocket 配置。
 
-这些命令不会同步文件或修改远端内容。`status` 以只读方式打开现有 SQLite 数据库，不会创建缺失的数据库，也不会迁移
+这些命令不会同步文件或修改远端内容。`inspect status` 以只读方式打开现有 SQLite 数据库，不会创建缺失的数据库，也不会迁移
 旧版数据库。以上五个命令均支持 `--output json`。
 
 ## Shell 自动补全

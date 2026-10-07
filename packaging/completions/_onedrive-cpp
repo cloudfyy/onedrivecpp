@@ -8,20 +8,10 @@ _onedrive_cpp()
     _arguments -C \
         '(-h --help)'{-h,--help}'[show command help]' \
         '--version[show version information]' \
-        '1:command:(account doctor drives shared sites quota status state download sync monitor)' \
+        '1:command:(account inspect state download sync monitor)' \
         '*::argument:->command_options'
 
     case "${line[1]}" in
-        drives|shared|quota)
-            _arguments \
-                '(-h --help)'{-h,--help}'[show command help]' \
-                '--config[path to configuration file]:configuration file:_files' \
-                '--log-level[minimum log level]:level:(trace debug info warn error critical off)' \
-                '--log-file[write rotating logs to file]:log file:_files' \
-                '--color[color output mode]:mode:(auto always never)' \
-                '--output[output format]:format:(text json)' \
-                '--quiet[suppress informational and success output]'
-            ;;
         account)
             case "${line[2]}" in
                 login)
@@ -52,30 +42,6 @@ _onedrive_cpp()
                     ;;
             esac
             ;;
-        doctor)
-            _arguments \
-                '(-h --help)'{-h,--help}'[show command help]' \
-                '--config[path to configuration file]:configuration file:_files' \
-                '--log-level[minimum log level]:level:(trace debug info warn error critical off)' \
-                '--log-file[write rotating logs to file]:log file:_files' \
-                '--color[color output mode]:mode:(auto always never)' \
-                '--output[output format]:format:(text json)' \
-                '--ui[diagnostic interface]:mode:(auto console tui)' \
-                '--theme[TUI color theme]:theme:(hacker ocean amber synthwave)' \
-                '--quiet[suppress informational and success output]'
-            ;;
-        status)
-            _arguments \
-                '(-h --help)'{-h,--help}'[show command help]' \
-                '--config[path to configuration file]:configuration file:_files' \
-                '--log-level[minimum log level]:level:(trace debug info warn error critical off)' \
-                '--log-file[write rotating logs to file]:log file:_files' \
-                '--color[color output mode]:mode:(auto always never)' \
-                '--output[output format]:format:(text json)' \
-                '--ui[status interface]:mode:(auto console tui)' \
-                '--theme[TUI color theme]:theme:(hacker ocean amber synthwave)' \
-                '--quiet[suppress informational and success output]'
-            ;;
         monitor)
             _arguments \
                 '(-h --help)'{-h,--help}'[show command help]' \
@@ -88,16 +54,46 @@ _onedrive_cpp()
                 '--theme[TUI color theme]:theme:(hacker ocean amber synthwave)' \
                 '--quiet[suppress informational and success output]'
             ;;
-        sites)
-            _arguments \
-                '(-h --help)'{-h,--help}'[show command help]' \
-                '--config[path to configuration file]:configuration file:_files' \
-                '--log-level[minimum log level]:level:(trace debug info warn error critical off)' \
-                '--log-file[write rotating logs to file]:log file:_files' \
-                '--color[color output mode]:mode:(auto always never)' \
-                '--output[output format]:format:(text json)' \
-                '--quiet[suppress informational and success output]' \
-                '1:SharePoint site search query:'
+        inspect)
+            case "${line[2]}" in
+                health|status)
+                    _arguments \
+                        '(-h --help)'{-h,--help}'[show command help]' \
+                        '--config[path to configuration file]:configuration file:_files' \
+                        '--log-level[minimum log level]:level:(trace debug info warn error critical off)' \
+                        '--log-file[write rotating logs to file]:log file:_files' \
+                        '--color[color output mode]:mode:(auto always never)' \
+                        '--output[output format]:format:(text json)' \
+                        '--ui[inspection interface]:mode:(auto console tui)' \
+                        '--theme[TUI color theme]:theme:(hacker ocean amber synthwave)' \
+                        '--quiet[suppress informational and success output]'
+                    ;;
+                sites)
+                    _arguments \
+                        '(-h --help)'{-h,--help}'[show command help]' \
+                        '--config[path to configuration file]:configuration file:_files' \
+                        '--log-level[minimum log level]:level:(trace debug info warn error critical off)' \
+                        '--log-file[write rotating logs to file]:log file:_files' \
+                        '--color[color output mode]:mode:(auto always never)' \
+                        '--output[output format]:format:(text json)' \
+                        '--quiet[suppress informational and success output]' \
+                        '1:SharePoint site search query:'
+                    ;;
+                drives|shared|quota)
+                    _arguments \
+                        '(-h --help)'{-h,--help}'[show command help]' \
+                        '--config[path to configuration file]:configuration file:_files' \
+                        '--log-level[minimum log level]:level:(trace debug info warn error critical off)' \
+                        '--log-file[write rotating logs to file]:log file:_files' \
+                        '--color[color output mode]:mode:(auto always never)' \
+                        '--output[output format]:format:(text json)' \
+                        '--quiet[suppress informational and success output]'
+                    ;;
+                *)
+                    _arguments \
+                        '1:inspection action:(health status drives shared sites quota)'
+                    ;;
+            esac
             ;;
         sync)
             _arguments \

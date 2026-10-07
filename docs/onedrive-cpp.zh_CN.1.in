@@ -12,23 +12,23 @@ onedrive-cpp \- 现代 C++ OneDrive 同步客户端
 .B onedrive-cpp account logout
 .RI [ 选项 ]
 .PP
-.B onedrive-cpp doctor
+.B onedrive-cpp inspect health
 .RI [ 选项 ]
 .PP
-.B onedrive-cpp drives
+.B onedrive-cpp inspect drives
 .RI [ 选项 ]
 .PP
-.B onedrive-cpp shared
+.B onedrive-cpp inspect shared
 .RI [ 选项 ]
 .PP
-.B onedrive-cpp sites
+.B onedrive-cpp inspect sites
 .RI [ 选项 ]
 .I 查询词
 .PP
-.B onedrive-cpp quota
+.B onedrive-cpp inspect quota
 .RI [ 选项 ]
 .PP
-.B onedrive-cpp status
+.B onedrive-cpp inspect status
 .RI [ 选项 ]
 .PP
 .B onedrive-cpp state reset-cursor
@@ -65,7 +65,7 @@ Graph 操作传播删除、移动和重命名。SQLite journal 为传输和元�
 删除本地保存的 refresh token。此操作不会撤销 Microsoft 账号上的应用授权；
 需要时应在 Microsoft 账号设置中另行撤销。
 .TP
-.B doctor
+.B inspect health
 对配置状态目录中的每个 Drive 数据库执行只读 SQLite
 .BR integrity_check 、
 外键检查和精确的应用 schema 检查。该命令不访问 Microsoft Graph；任一数据库
@@ -73,16 +73,16 @@ Graph 操作传播删除、移动和重命名。SQLite journal 为传输和元�
 .B \-\-output json
 可获得结构化诊断。
 .TP
-.B drives
+.B inspect drives
 列出当前 Microsoft 账号可用的 OneDrive Drive，并标记配置正在使用的 Drive。
 该命令只读取 Microsoft Graph 元数据，不修改远端或本地同步状态。
 .TP
-.B shared
+.B inspect shared
 列出与当前账号共享的项目和已添加到配置 OneDrive 的 shortcut。输出包含目标
 Drive ID、item ID、所有者、项目类型、web URL 以及 shortcut 的本地 OneDrive
 路径。该命令只读查询 Graph，不同步内容。
 .TP
-.B sites
+.B inspect sites
 搜索与
 .I 查询词
 匹配且可访问的 SharePoint 站点，并列出其文档库 Drive。该只读命令要求
@@ -94,10 +94,10 @@ Drive ID、item ID、所有者、项目类型、web URL 以及 shortcut 的本�
 修改 scope 后需要重新运行
 .BR onedrive-cpp\ account\ login 。
 .TP
-.B quota
+.B inspect quota
 显示配置 Drive 的总量、已用、剩余、回收站占用和配额状态，不执行同步。
 .TP
-.B status
+.B inspect status
 显示当前账号与规范 Drive 身份、同步模式和删除策略、最后一次同步结果、
 tracked/blocked 数量、pending journal、Delta cursor、selective-sync
 fingerprint、状态数据库可用性和 WebSocket 配置。已有 SQLite 状态以只读方式

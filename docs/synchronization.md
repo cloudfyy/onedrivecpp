@@ -78,7 +78,7 @@ Run a read-only full `integrity_check`, foreign-key check, and exact schema
 check across every Drive database without contacting Microsoft Graph:
 
 ```bash
-onedrive-cpp doctor
+onedrive-cpp inspect health
 ```
 
 The command returns nonzero when any database is unhealthy and supports

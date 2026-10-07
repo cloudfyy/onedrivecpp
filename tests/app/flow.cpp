@@ -84,6 +84,7 @@ int test_flow() {
         runtime_factory,
         {
             "onedrive-cpp",
+            "inspect",
             "drives",
             "--config",
             config_path.string(),
@@ -107,6 +108,7 @@ int test_flow() {
         runtime_factory,
         {
             "onedrive-cpp",
+            "inspect",
             "shared",
             "--config",
             config_path.string(),
@@ -127,6 +129,7 @@ int test_flow() {
         runtime_factory,
         {
             "onedrive-cpp",
+            "inspect",
             "sites",
             "Engineering",
             "--config",
@@ -147,6 +150,7 @@ int test_flow() {
         runtime_factory,
         {
             "onedrive-cpp",
+            "inspect",
             "shared",
             "--config",
             config_path.string(),
@@ -165,6 +169,7 @@ int test_flow() {
         runtime_factory,
         {
             "onedrive-cpp",
+            "inspect",
             "sites",
             "Engineering",
             "--config",
@@ -184,6 +189,7 @@ int test_flow() {
         runtime_factory,
         {
             "onedrive-cpp",
+            "inspect",
             "quota",
             "--config",
             config_path.string(),
@@ -203,6 +209,7 @@ int test_flow() {
         runtime_factory,
         {
             "onedrive-cpp",
+            "inspect",
             "status",
             "--config",
             config_path.string(),
@@ -229,6 +236,7 @@ int test_flow() {
         runtime_factory,
         {
             "onedrive-cpp",
+            "inspect",
             "status",
             "--config",
             config_path.string(),

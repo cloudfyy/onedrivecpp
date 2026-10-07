@@ -213,7 +213,7 @@ int test_tui_dashboard() {
         {
             .color = ColorMode::never,
             .ui = UiMode::tui,
-            .view = TuiView::doctor,
+            .view = TuiView::health,
         },
         doctor_output,
         error,
@@ -228,9 +228,9 @@ int test_tui_dashboard() {
         },
     });
     doctor_backend.reset();
-    if (!doctor_output.str().contains("ONEDRIVE // DOCTOR  v") ||
+    if (!doctor_output.str().contains("ONEDRIVE // HEALTH  v") ||
         !doctor_output.str().contains("status: healthy")) {
-        return fail("doctor TUI did not render diagnostic status");
+        return fail("health TUI did not render diagnostic status");
     }
 
     std::ostringstream status_output;

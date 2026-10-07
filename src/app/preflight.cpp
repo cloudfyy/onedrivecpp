@@ -22,7 +22,7 @@ RuntimePreflight::RuntimePreflight(
         !config::has_auth_scope(config.auth_scope, "Sites.Read.All") &&
         !config::has_auth_scope(config.auth_scope, "Sites.ReadWrite.All")) {
         throw std::runtime_error(
-            "sites requires Sites.Read.All or Sites.ReadWrite.All in "
+            "inspect sites requires Sites.Read.All or Sites.ReadWrite.All in "
             "auth.scopes; run 'onedrive-cpp account login' after changing "
             "scopes"
         );

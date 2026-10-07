@@ -22,7 +22,8 @@ int test_doctor() {
         runtime_factory,
         {
             "onedrive-cpp",
-            "doctor",
+            "inspect",
+            "health",
             "--config",
             config_path.string(),
             "--output",
@@ -36,7 +37,7 @@ int test_doctor() {
         !healthy_diagnostics.standard_output.contains(
             R"("status":"healthy")"
         )) {
-        return fail("doctor did not report a healthy state database");
+        return fail("inspect health did not report a healthy state database");
     }
     {
         std::ofstream corrupt{
@@ -49,7 +50,8 @@ int test_doctor() {
         runtime_factory,
         {
             "onedrive-cpp",
-            "doctor",
+            "inspect",
+            "health",
             "--config",
             config_path.string(),
             "--output",
@@ -63,7 +65,7 @@ int test_doctor() {
         !unhealthy_diagnostics.standard_output.contains(
             R"("status":"unhealthy")"
         )) {
-        return fail("doctor did not reject a corrupt state database");
+        return fail("inspect health did not reject a corrupt state database");
     }
     return EXIT_SUCCESS;
 }
