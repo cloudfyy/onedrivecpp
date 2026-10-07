@@ -1,8 +1,36 @@
 #include "support.hpp"
 
+#include "onedrive/cli/backend.hpp"
+
 namespace {
 
 using namespace onedrive::test::sync;
+
+class ProgressBackend final : public onedrive::cli::ConsoleBackend {
+public:
+    void emit(const onedrive::cli::ConsoleEvent& event) override {
+        if (const auto* progress =
+                std::get_if<onedrive::cli::DownloadProgressEvent>(&event)) {
+            downloads.push_back(*progress);
+        }
+    }
+
+    bool confirm(
+        const onedrive::cli::ConfirmationRequest&
+    ) override {
+        return false;
+    }
+
+    onedrive::cli::OutputMode output_mode() const noexcept override {
+        return onedrive::cli::OutputMode::text;
+    }
+
+    onedrive::cli::UiMode ui_mode() const noexcept override {
+        return onedrive::cli::UiMode::console;
+    }
+
+    std::vector<onedrive::cli::DownloadProgressEvent> downloads;
+};
 
 int test_engine_owns_configuration() {
     TemporaryDirectory temporary;
@@ -682,6 +710,63 @@ int test_failure_and_conflict() {
         return fail(
             "an independently completed download was discarded after failure"
         );
+    }
+    independent_graph.failing_id.clear();
+    independent_graph.contents["failed-first"] = "data";
+    independent_graph.download_count.store(0, std::memory_order_relaxed);
+    auto progress_backend = std::make_unique<ProgressBackend>();
+    auto* captured_progress = progress_backend.get();
+    const onedrive::cli::Console progress_console{
+        std::move(progress_backend)
+    };
+    if (onedrive::sync::SyncEngine{
+            independent_config,
+            independent_graph,
+            independent_items,
+            independent_metrics,
+            &progress_console
+        }
+            .synchronize() != 0 ||
+        independent_graph.download_count.load(std::memory_order_relaxed) != 1 ||
+        captured_progress->downloads.size() < 2 ||
+        captured_progress->downloads.front().completed_files != 1 ||
+        captured_progress->downloads.front().file_count != 2 ||
+        captured_progress->downloads.front().downloaded != 4 ||
+        captured_progress->downloads.front().total != 8 ||
+        captured_progress->downloads.back().completed_files != 2 ||
+        captured_progress->downloads.back().file_count != 2 ||
+        !std::filesystem::exists(independent_root / "failed-first.txt") ||
+        !std::filesystem::exists(
+            independent_root / "completed-second.txt"
+        ) ||
+        !independent_metrics.last_success) {
+        return fail(
+            "retry downloaded a file that completed before interruption"
+        );
+    }
+    independent_graph.download_count.store(0, std::memory_order_relaxed);
+    auto reused_backend = std::make_unique<ProgressBackend>();
+    auto* captured_reused = reused_backend.get();
+    const onedrive::cli::Console reused_console{
+        std::move(reused_backend)
+    };
+    if (onedrive::sync::SyncEngine{
+            independent_config,
+            independent_graph,
+            independent_items,
+            independent_metrics,
+            &reused_console
+        }
+            .synchronize() != 0 ||
+        independent_graph.download_count.load(std::memory_order_relaxed) != 0 ||
+        captured_reused->downloads.size() != 1 ||
+        captured_reused->downloads.front().completed_files != 2 ||
+        captured_reused->downloads.front().file_count != 2 ||
+        captured_reused->downloads.front().downloaded != 8 ||
+        captured_reused->downloads.front().total != 8 ||
+        captured_reused->downloads.front().state !=
+            onedrive::util::ProgressState::completed) {
+        return fail("fully reused downloads did not report completed progress");
     }
 
     const auto changed_root = temporary.path() / "changed-during-download";

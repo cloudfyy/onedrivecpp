@@ -130,6 +130,7 @@ ExecutionSummary execute_plan(
 
     std::size_t downloaded_count = 0;
     std::size_t reused_count = 0;
+    std::uint64_t reused_bytes = 0;
     std::vector<engine_detail::DownloadTask> download_tasks;
     download_tasks.reserve(plan.download_count());
     for (std::size_t index = 0; index < plan.download_count(); ++index) {
@@ -189,6 +190,7 @@ ExecutionSummary execute_plan(
         const auto previous = items.find(drive_id, item.id);
         if (move_summary.reusable_files.contains(item.id)) {
             ++reused_count;
+            reused_bytes += static_cast<std::uint64_t>(item.size);
             continue;
         }
         const auto target_status =
@@ -230,6 +232,7 @@ ExecutionSummary execute_plan(
             state.local_device = identity.device;
             state.local_inode = identity.inode;
             ++reused_count;
+            reused_bytes += static_cast<std::uint64_t>(item.size);
         } else {
             detail::LocalFileBaseline baseline;
             try {
@@ -314,6 +317,10 @@ ExecutionSummary execute_plan(
     };
     auto downloads = engine_detail::download_files(
         download_tasks,
+        {
+            .files = reused_count,
+            .bytes = reused_bytes,
+        },
         download_concurrency,
         graph,
         items,

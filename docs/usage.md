@@ -62,8 +62,10 @@ it. In the monitor dashboard, press `q`, `Q`, or `Esc` to stop cleanly.
 The dashboard enters the terminal's alternate full-screen buffer immediately,
 shows the client version, and restores the original screen on exit. The
 download dashboard reuses the persistent progress, transfer-rate, and ETA
-display used during synchronization. Its user-facing status uses cloud and
-file terminology rather than API names.
+display used during synchronization. After an interrupted sync, its file and
+byte progress includes downloads already completed and verified, while speed
+and ETA measure only new transfer activity. Its user-facing status uses cloud
+and file terminology rather than API names.
 `console.theme` selects `hacker` (the green default), `ocean`, `amber`, or
 `synthwave`; `--theme` overrides it for one run. `--color=never` and
 `NO_COLOR` keep the selected layout but suppress theme colors.

@@ -21,6 +21,7 @@ namespace onedrive::sync::engine_detail {
 
 DownloadBatch download_files(
     const std::vector<DownloadTask>& tasks,
+    CompletedDownloadBaseline completed,
     std::size_t concurrency,
     graph::GraphClient& graph,
     storage::ItemStore& items,
@@ -38,7 +39,7 @@ DownloadBatch download_files(
         .conflicts = std::vector<std::optional<std::string>>(tasks.size()),
         .errors = std::vector<std::exception_ptr>(tasks.size()),
     };
-    if (tasks.empty()) {
+    if (tasks.empty() && completed.files == 0) {
         return batch;
     }
 
@@ -53,14 +54,43 @@ DownloadBatch download_files(
     std::vector<DownloadTaskState> task_states(
         tasks.size(), DownloadTaskState::active
     );
-    std::uint64_t downloaded_bytes = 0;
-    std::uint64_t total_bytes = 0;
+    std::uint64_t downloaded_bytes = completed.bytes;
+    std::uint64_t total_bytes = completed.bytes;
     for (const auto& task : tasks) {
         total_bytes += static_cast<std::uint64_t>(task.item.size);
     }
-    std::size_t completed_files = 0;
+    std::size_t completed_files = completed.files;
+    const auto file_count = completed.files + tasks.size();
     detail::DownloadProgressEstimator progress_estimator;
     detail::DownloadProgressReporter progress_reporter;
+    const auto started_at = detail::DownloadProgressReporter::Clock::now();
+    const auto initial_state =
+        tasks.empty() ?
+            util::ProgressState::completed :
+            util::ProgressState::ongoing;
+    const auto initial_metrics = progress_estimator.sample(
+        downloaded_bytes, total_bytes, started_at
+    );
+    if (progress_reporter.should_report(
+            completed_files,
+            file_count,
+            downloaded_bytes,
+            total_bytes,
+            initial_state,
+            started_at
+        )) {
+        console.download_progress(
+            completed_files,
+            file_count,
+            downloaded_bytes,
+            total_bytes,
+            initial_state,
+            initial_metrics
+        );
+    }
+    if (tasks.empty()) {
+        return batch;
+    }
     const auto report_progress =
         [&](std::size_t index,
             std::uint64_t downloaded,
@@ -79,7 +109,7 @@ DownloadBatch download_files(
                 task_states[index] = DownloadTaskState::completed;
                 ++completed_files;
             }
-            const bool all_completed = completed_files == tasks.size();
+            const bool all_completed = completed_files == file_count;
             const auto progress_state =
                 all_completed ?
                     util::ProgressState::completed :
@@ -88,7 +118,7 @@ DownloadBatch download_files(
                 detail::DownloadProgressReporter::Clock::now();
             if (!progress_reporter.should_report(
                     completed_files,
-                    tasks.size(),
+                    file_count,
                     downloaded_bytes,
                     total_bytes,
                     progress_state,
@@ -103,7 +133,7 @@ DownloadBatch download_files(
             );
             console.download_progress(
                 completed_files,
-                tasks.size(),
+                file_count,
                 downloaded_bytes,
                 total_bytes,
                 progress_state,

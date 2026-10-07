@@ -39,8 +39,14 @@ struct DownloadBatch {
     std::vector<std::exception_ptr> errors;
 };
 
+struct CompletedDownloadBaseline {
+    std::size_t files{0};
+    std::uint64_t bytes{0};
+};
+
 DownloadBatch download_files(
     const std::vector<DownloadTask>& tasks,
+    CompletedDownloadBaseline completed,
     std::size_t concurrency,
     graph::GraphClient& graph,
     storage::ItemStore& items,
