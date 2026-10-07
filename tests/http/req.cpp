@@ -2,6 +2,7 @@
 #include "http/callbacks.hpp"
 #include "http/curl.hpp"
 #include "onedrive/http/http_client.hpp"
+#include "onedrive/util/unique_file_descriptor.hpp"
 #include "support/network.hpp"
 #include "support/common.hpp"
 
@@ -15,6 +16,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
+#include <fcntl.h>
 #include <fstream>
 #include <limits>
 #include <memory>
@@ -24,6 +26,7 @@
 #include <stop_token>
 #include <string>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -171,6 +174,71 @@ int main() {
     const ScopedUmask download_umask{0022};
     const onedrive::test::TemporaryDirectory temporary;
     std::error_code ignored;
+    const auto callback_path = temporary.path() / "callback.bin";
+    onedrive::util::UniqueFD callback_descriptor{
+        ::open(
+            callback_path.c_str(),
+            O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC,
+            S_IRUSR | S_IWUSR
+        )
+    };
+    if (!callback_descriptor) {
+        return fail("cannot create callback boundary test file");
+    }
+    onedrive::http::DownloadCheckpoint failing_checkpoint{
+        [](std::uint64_t) {
+            throw std::bad_alloc{};
+        }
+    };
+    onedrive::http::detail::DownloadState checkpoint_state;
+    onedrive::http::detail::WriteContext checkpoint_context{
+        .descriptor = callback_descriptor.get(),
+        .file_offset = 1,
+        .checkpoint = &failing_checkpoint,
+        .download_state = &checkpoint_state,
+    };
+    if (onedrive::http::detail::make_download_checkpoint(
+            checkpoint_context
+        ) ||
+        checkpoint_context.failure.kind !=
+            onedrive::http::detail::CallbackFailureKind::data_callback ||
+        !checkpoint_context.failure.exception) {
+        return fail(
+            "checkpoint callback allocation failure crossed the C boundary"
+        );
+    }
+    onedrive::http::DownloadResponseGate failing_gate{
+        [](long, std::span<const onedrive::http::HttpHeader>) -> bool {
+            throw std::bad_alloc{};
+        }
+    };
+    std::vector<onedrive::http::HttpHeader> response_headers;
+    if (onedrive::http::detail::initialize_curl() != CURLE_OK) {
+        return fail("cannot initialize curl for callback boundary test");
+    }
+    const onedrive::http::detail::CurlHandleLease callback_handle;
+    if (!callback_handle) {
+        return fail("cannot create curl callback boundary test handle");
+    }
+    onedrive::http::detail::DownloadState gate_state;
+    onedrive::http::detail::WriteContext gate_context{
+        .descriptor = callback_descriptor.get(),
+        .response_gate = &failing_gate,
+        .response_headers = &response_headers,
+        .handle = callback_handle.get(),
+        .download_state = &gate_state,
+    };
+    char response_byte{'x'};
+    if (onedrive::http::detail::write_response(
+            &response_byte, 1, 1, &gate_context
+        ) != 0 ||
+        gate_context.failure.kind !=
+            onedrive::http::detail::CallbackFailureKind::data_callback ||
+        !gate_context.failure.exception) {
+        return fail(
+            "response gate allocation failure crossed the C boundary"
+        );
+    }
     auto http_listener = onedrive::test::create_loopback_listener(4);
     auto& listener = http_listener.socket;
     if (listener.get() == -1) {
