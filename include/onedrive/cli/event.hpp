@@ -46,6 +46,8 @@ enum class TuiView {
     storage,
     partials,
     files,
+    verify,
+    config,
     sync,
     download,
     watch,

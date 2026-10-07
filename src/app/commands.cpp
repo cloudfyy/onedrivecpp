@@ -205,6 +205,27 @@ int execute_command(
             arguments.inspect_file_status
         );
     }
+    if (operation == Operation::verify) {
+        return verify_files(
+            config,
+            runtime_factory,
+            console,
+            arguments.inspect_path,
+            arguments.verify_mode
+        );
+    }
+    if (operation == Operation::config) {
+        return show_config(config, arguments.config_path, console);
+    }
+    if (operation == Operation::cleanup_state) {
+        return cleanup_state(
+            config,
+            runtime_factory,
+            console,
+            arguments.force_dry_run,
+            arguments.assume_yes
+        );
+    }
     if (operation == Operation::reset_cursor ||
         operation == Operation::clear_state) {
         const bool clear_all = operation == Operation::clear_state;

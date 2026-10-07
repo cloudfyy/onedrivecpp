@@ -157,6 +157,9 @@ QuickXorHash，并将流式 SHA-256 同时用作崩溃恢复指纹。如果断�
 如果哈希不匹配，程序会删除 partial 检查点和临时文件，使下次尝试从 byte 0
 重新下载。本地 SHA-256 指纹仅用于保护崩溃恢复状态，不能替代远端完整性哈希。
 
+验证完成后，Graph 内容哈希的算法和值会保存在 item 快照中。
+`inspect verify --mode content` 会复用该哈希进行离线完整性检查，不下载远端内容。
+
 安装后的文件采用 Graph 权威的 `fileSystemInfo.lastModifiedDateTime`；缺少有效
 权威时间的文件会在下载前被拒绝。新下载文件的权限由 `0666` 和进程 `umask`
 共同决定（`umask 0022` 时通常为 `0644`），程序不会添加可执行位。

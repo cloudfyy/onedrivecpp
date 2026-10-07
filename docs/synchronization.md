@@ -208,6 +208,10 @@ so the next attempt restarts from byte zero. The local SHA-256 fingerprint
 protects crash recovery state and is not treated as a substitute for a remote
 integrity hash.
 
+After validation, the Graph content-hash algorithm and value are retained in
+the item snapshot. `inspect verify --mode content` reuses that saved hash for
+offline integrity checks without downloading remote content.
+
 Installed files receive the authoritative Graph
 `fileSystemInfo.lastModifiedDateTime` value. Files without a valid authoritative
 timestamp are rejected before download. New download files are created with

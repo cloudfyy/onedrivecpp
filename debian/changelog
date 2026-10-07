@@ -1,3 +1,12 @@
+onedrive-cpp (0.10.6-1~ubuntu24.04) noble; urgency=medium
+
+  * Add safe partial-state cleanup with dry-run and explicit confirmation.
+  * Add offline metadata and saved Graph content-hash verification.
+  * Add a redacted effective-configuration inspection command.
+  * Persist validated item content hashes in schema version 25.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Wed, 07 Oct 2026 11:56:31 +0000
+
 onedrive-cpp (0.10.5-1~ubuntu24.04) noble; urgency=medium
 
   * Add read-only inspect storage, inspect partials, and inspect files commands

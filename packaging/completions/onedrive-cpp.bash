@@ -44,6 +44,12 @@ _onedrive_cpp_completion()
             )
             return
             ;;
+        --mode)
+            mapfile -t COMPREPLY < <(
+                compgen -W "metadata content" -- "$current"
+            )
+            return
+            ;;
     esac
 
     for word in "${COMP_WORDS[@]:1:COMP_CWORD-1}"; do
@@ -58,12 +64,12 @@ _onedrive_cpp_completion()
                     account_action="$word"
                 fi
                 ;;
-            health|status|drives|shared|sites|quota|storage|partials|files)
+            health|status|drives|shared|sites|quota|storage|partials|files|verify|config)
                 if [[ "$command" == "inspect" ]]; then
                     inspect_action="$word"
                 fi
                 ;;
-            reset-cursor|clear)
+            reset-cursor|cleanup|clear)
                 if [[ "$command" == "state" ]]; then
                     state_action="$word"
                 fi
@@ -118,20 +124,25 @@ _onedrive_cpp_completion()
                         compgen -W "$common_options" -- "$current"
                     )
                     ;;
+                cleanup)
+                    mapfile -t COMPREPLY < <(
+                        compgen -W "$common_options --dry-run --yes" -- "$current"
+                    )
+                    ;;
                 clear)
                     mapfile -t COMPREPLY < <(compgen -W \
                         "$common_options --yes" -- "$current")
                     ;;
                 *)
                     mapfile -t COMPREPLY < <(
-                        compgen -W "reset-cursor clear --help" -- "$current"
+                        compgen -W "reset-cursor cleanup clear --help" -- "$current"
                     )
                     ;;
             esac
             ;;
         inspect)
             case "$inspect_action" in
-                health|status|drives|shared|sites|quota|storage|partials)
+                health|status|drives|shared|sites|quota|storage|partials|config)
                     mapfile -t COMPREPLY < <(compgen -W \
                         "$common_options --ui --theme" -- "$current")
                     ;;
@@ -139,9 +150,13 @@ _onedrive_cpp_completion()
                     mapfile -t COMPREPLY < <(compgen -W \
                         "$common_options --ui --theme --status" -- "$current")
                     ;;
+                verify)
+                    mapfile -t COMPREPLY < <(compgen -W \
+                        "$common_options --ui --theme --mode" -- "$current")
+                    ;;
                 *)
                     mapfile -t COMPREPLY < <(
-                        compgen -W "health status drives shared sites quota storage partials files --help" -- "$current"
+                        compgen -W "health status drives shared sites quota storage partials files verify config --help" -- "$current"
                     )
                     ;;
             esac

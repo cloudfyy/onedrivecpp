@@ -41,7 +41,17 @@ onedrive-cpp \- modern C++ OneDrive synchronization client
 .RI [ options ]
 .RI [ PATH ]
 .PP
+.B onedrive-cpp inspect verify
+.RI [ options ]
+.RI [ PATH ]
+.PP
+.B onedrive-cpp inspect config
+.RI [ options ]
+.PP
 .B onedrive-cpp state reset-cursor
+.RI [ options ]
+.PP
+.B onedrive-cpp state cleanup
 .RI [ options ]
 .PP
 .B onedrive-cpp state clear
@@ -148,6 +158,18 @@ or
 .B outside-root
 to filter the result.
 .TP
+.B inspect verify
+Verify tracked files below optional Drive-relative
+.IR PATH .
+Metadata mode checks saved size and modification metadata. Content mode
+additionally computes a saved Graph SHA-256 or QuickXorHash and reports when
+the hash is unavailable or mismatched.
+.TP
+.B inspect config
+Show effective non-secret configuration paths, synchronization policy,
+transfer limits, output settings, and whether a proxy is configured. Secrets
+and proxy URLs are not printed.
+.TP
 .B state reset-cursor
 Reset the saved delta link for the configured drive. This preserves
 authentication, configuration, local files, item snapshots, pending-download,
@@ -157,6 +179,17 @@ retained upload suppressions, blocked-item records, and state for other drives. 
 recovers pending downloads and performs a full initial delta query for the
 configured drive. The complete remote inventory replaces old item metadata;
 items that still conflict are recorded as blocked.
+.TP
+.B state cleanup
+List and safely remove invalid partial-download records and orphaned
+.B .onedrive-partial-*
+regular files. Use
+.B \-\-dry-run
+to preview and
+.B \-\-yes
+for non-interactive confirmation. Paths outside the Drive root, symbolic
+links, non-regular files, and files that do not match the destination partial
+pattern are never deleted.
 .TP
 .B state clear
 remove item snapshots, the delta link, pending-download, partial-download,

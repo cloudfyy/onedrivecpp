@@ -1,4 +1,5 @@
 #include "onedrive/storage/item_database.hpp"
+#include "storage/file_hash.hpp"
 #include "storage/query.hpp"
 #include "storage/sqlite.hpp"
 #include "storage/worker.hpp"
@@ -17,6 +18,7 @@ using item_database_detail::bind_integer;
 using item_database_detail::bind_text;
 using item_database_detail::column_text;
 using item_database_detail::query_count;
+using item_database_detail::serialize_file_hash;
 using item_database_detail::Statement;
 using item_database_detail::Transaction;
 
@@ -65,9 +67,10 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         "INSERT INTO item ("
         "drive_id, remote_id, parent_id, name, etag, ctag, remote_path, "
         "local_path, last_modified, size, local_size, local_modified_ticks, "
-        "local_device, local_inode, directory"
+        "local_device, local_inode, content_hash_algorithm, "
+        "content_hash_value, directory"
         ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, "
-        "?13, ?14, ?15) "
+        "?13, ?14, ?15, ?16, ?17) "
         "ON CONFLICT(drive_id, remote_id) DO UPDATE SET "
         "parent_id = excluded.parent_id, name = excluded.name, "
         "etag = excluded.etag, ctag = excluded.ctag, "
@@ -78,6 +81,8 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         "local_modified_ticks = excluded.local_modified_ticks, "
         "local_device = excluded.local_device, "
         "local_inode = excluded.local_inode, "
+        "content_hash_algorithm = excluded.content_hash_algorithm, "
+        "content_hash_value = excluded.content_hash_value, "
         "directory = excluded.directory;"
     };
     for (auto& item : delta.upserts) {
@@ -114,8 +119,12 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
             14,
             static_cast<std::int64_t>(item.local_inode)
         );
+        const auto [hash_algorithm, hash_value] =
+            serialize_file_hash(item.content_hash);
+        bind_text(database, upsert_statement.get(), 15, hash_algorithm);
+        bind_text(database, upsert_statement.get(), 16, hash_value);
         bind_integer(
-            database, upsert_statement.get(), 15, item.directory ? 1 : 0
+            database, upsert_statement.get(), 17, item.directory ? 1 : 0
         );
         if (sqlite3_step(upsert_statement.get()) != SQLITE_DONE) {
             throw std::runtime_error(

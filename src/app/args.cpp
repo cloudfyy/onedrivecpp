@@ -96,6 +96,12 @@ ParseResult parse_arguments(int argc, char* argv[]) {
     auto* inspect_files = inspect->add_subcommand(
         "files", "Check downloaded files against saved synchronization state"
     );
+    auto* inspect_verify = inspect->add_subcommand(
+        "verify", "Verify downloaded file metadata or content"
+    );
+    auto* inspect_config = inspect->add_subcommand(
+        "config", "Show effective non-secret configuration"
+    );
     auto* state = application.add_subcommand(
         "state", "Maintain saved synchronization state"
     );
@@ -103,6 +109,9 @@ ParseResult parse_arguments(int argc, char* argv[]) {
     auto* reset_cursor = state->add_subcommand(
         "reset-cursor",
         "Reset the cloud change cursor while preserving item state"
+    );
+    auto* cleanup_state = state->add_subcommand(
+        "cleanup", "Remove invalid and orphaned partial download state"
     );
     auto* clear_state = state->add_subcommand(
         "clear",
@@ -131,7 +140,10 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         std::pair{inspect_storage, Operation::storage},
         std::pair{inspect_partials, Operation::partials},
         std::pair{inspect_files, Operation::files},
+        std::pair{inspect_verify, Operation::verify},
+        std::pair{inspect_config, Operation::config},
         std::pair{reset_cursor, Operation::reset_cursor},
+        std::pair{cleanup_state, Operation::cleanup_state},
         std::pair{clear_state, Operation::clear_state},
         std::pair{transfer_sync, Operation::synchronize},
         std::pair{transfer_download, Operation::download},
@@ -199,6 +211,16 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         arguments.assume_yes,
         "Confirm the state clear without an interactive prompt"
     );
+    cleanup_state->add_flag(
+        "--dry-run",
+        arguments.force_dry_run,
+        "Show cleanup candidates without removing files or state"
+    );
+    cleanup_state->add_flag(
+        "--yes",
+        arguments.assume_yes,
+        "Confirm removal of invalid partial files and state"
+    );
     transfer_sync->add_flag(
         "--dry-run",
         arguments.force_dry_run,
@@ -259,6 +281,19 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         ->check(CLI::IsMember(
             {"ok", "missing", "modified", "type-changed", "outside-root"}
         ));
+    inspect_verify->add_option(
+        "PATH",
+        arguments.inspect_path,
+        "Optional Drive-relative file or directory path"
+    );
+    inspect_verify
+        ->add_option(
+            "--mode",
+            arguments.verify_mode,
+            "Verification mode: metadata or content"
+        )
+        ->check(CLI::IsMember({"metadata", "content"}))
+        ->default_str("metadata");
 
     if (argc < 2) {
         std::cout << application.help();
@@ -284,7 +319,10 @@ ParseResult parse_arguments(int argc, char* argv[]) {
                           : *inspect_storage ? Operation::storage
                           : *inspect_partials ? Operation::partials
                           : *inspect_files  ? Operation::files
+                          : *inspect_verify ? Operation::verify
+                          : *inspect_config ? Operation::config
                           : *reset_cursor   ? Operation::reset_cursor
+                          : *cleanup_state ? Operation::cleanup_state
                           : *clear_state    ? Operation::clear_state
                           : *transfer_download ? Operation::download
                           : *transfer_watch ? Operation::monitor

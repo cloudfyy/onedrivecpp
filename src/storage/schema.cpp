@@ -38,6 +38,8 @@ void create_item_schema(sqlite3* database) {
         "local_modified_ticks INTEGER NOT NULL,"
         "local_device INTEGER NOT NULL DEFAULT 0,"
         "local_inode INTEGER NOT NULL DEFAULT 0,"
+        "content_hash_algorithm TEXT NOT NULL DEFAULT '',"
+        "content_hash_value TEXT NOT NULL DEFAULT '',"
         "directory INTEGER NOT NULL,"
         "PRIMARY KEY (drive_id, remote_id)"
         ");"
@@ -144,6 +146,16 @@ void add_blocked_item_deleted_column(sqlite3* database) {
         database,
         "ALTER TABLE blocked_item ADD COLUMN deleted "
         "INTEGER NOT NULL DEFAULT 0;"
+    );
+}
+
+void add_item_content_hash(sqlite3* database) {
+    execute(
+        database,
+        "ALTER TABLE item ADD COLUMN content_hash_algorithm "
+        "TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE item ADD COLUMN content_hash_value "
+        "TEXT NOT NULL DEFAULT '';"
     );
 }
 

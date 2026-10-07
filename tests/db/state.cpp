@@ -103,6 +103,11 @@ int main() {
                         .size = 42,
                         .local_size = 42,
                         .local_modified_ticks = 123456,
+                        .content_hash = onedrive::util::FileHash{
+                            .algorithm =
+                                onedrive::util::FileHashAlgorithm::sha256,
+                            .value = "saved-hash",
+                        },
                         .directory = false,
                     },
                 },
@@ -193,6 +198,10 @@ int main() {
         if (third->drive_id != "me" || third->parent_id != "root-id" ||
             third->remote_path != "notes.txt" || third->size != 42 ||
             third->local_size != 42 || third->local_modified_ticks != 123456 ||
+            !third->content_hash ||
+            third->content_hash->algorithm !=
+                onedrive::util::FileHashAlgorithm::sha256 ||
+            third->content_hash->value != "saved-hash" ||
             third->directory ||
             database.delta_link("me") !=
                 std::optional<std::string>{

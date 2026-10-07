@@ -6,7 +6,9 @@
 #include "onedrive/metrics/metrics.hpp"
 #include "onedrive/storage/status.hpp"
 #include "onedrive/sync/capabilities.hpp"
+#include "sync/download/integrity.hpp"
 #include "sync/filesystem/operations.hpp"
+#include "util/ascii.hpp"
 
 #include <algorithm>
 #include <array>
@@ -20,6 +22,7 @@
 #include <memory>
 #include <optional>
 #include <ranges>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -267,6 +270,70 @@ bool path_matches_filter(std::string_view path, std::string_view filter) {
     return filter.empty() || path == filter ||
            (path.size() > filter.size() && path.starts_with(filter) &&
             path[filter.size()] == '/');
+}
+
+std::string hash_algorithm_name(util::FileHashAlgorithm algorithm) {
+    return algorithm == util::FileHashAlgorithm::sha256 ? "sha256"
+                                                        : "quick_xor";
+}
+
+std::string color_mode_name(cli::ColorMode mode) {
+    switch (mode) {
+        case cli::ColorMode::automatic:
+            return "auto";
+        case cli::ColorMode::always:
+            return "always";
+        case cli::ColorMode::never:
+            return "never";
+    }
+    return "unknown";
+}
+
+std::string ui_mode_name(cli::UiMode mode) {
+    switch (mode) {
+        case cli::UiMode::automatic:
+            return "auto";
+        case cli::UiMode::console:
+            return "console";
+        case cli::UiMode::tui:
+            return "tui";
+    }
+    return "unknown";
+}
+
+std::string theme_name(cli::TuiTheme theme) {
+    switch (theme) {
+        case cli::TuiTheme::hacker:
+            return "hacker";
+        case cli::TuiTheme::ocean:
+            return "ocean";
+        case cli::TuiTheme::amber:
+            return "amber";
+        case cli::TuiTheme::synthwave:
+            return "synthwave";
+    }
+    return "unknown";
+}
+
+std::string transfer_order_name(config::TransferOrder order) {
+    switch (order) {
+        case config::TransferOrder::default_order:
+            return "default";
+        case config::TransferOrder::size_ascending:
+            return "size_asc";
+        case config::TransferOrder::size_descending:
+            return "size_dsc";
+        case config::TransferOrder::name_ascending:
+            return "name_asc";
+        case config::TransferOrder::name_descending:
+            return "name_dsc";
+    }
+    return "unknown";
+}
+
+bool partial_filename(std::string_view name) {
+    return name.starts_with('.') &&
+           name.find(".onedrive-partial-") != std::string_view::npos;
 }
 
 enum class PartialStatus {
@@ -952,6 +1019,424 @@ int show_files(
                     )]),
             },
         }
+    );
+    return 0;
+}
+
+int verify_files(
+    const config::Config& config,
+    const RuntimeFactory& runtime_factory,
+    const cli::Console& console,
+    std::string_view path,
+    std::string_view mode
+) {
+    const auto filter = normalized_inspection_path(path);
+    auto inspection = open_inspection_store(config, runtime_factory);
+    const auto items =
+        inspection.items
+            ? inspection.items->drive_items(inspection.identity.drive_id)
+            : std::vector<storage::ItemState>{};
+    std::size_t verified = 0;
+    std::size_t failed = 0;
+    std::size_t unavailable = 0;
+    for (const auto& item : items) {
+        if (item.directory ||
+            !path_matches_filter(item.remote_path, filter)) {
+            continue;
+        }
+        const auto metadata = inspect_file(inspection.sync_root, item);
+        std::string result{status_name(metadata.status)};
+        std::string algorithm{"none"};
+        if (metadata.status == LocalFileStatus::ok) {
+            if (mode == "metadata") {
+                result = "verified";
+                ++verified;
+            } else if (!item.content_hash) {
+                result = "hash-unavailable";
+                ++unavailable;
+            } else {
+                algorithm = hash_algorithm_name(item.content_hash->algorithm);
+                const auto actual =
+                    item.content_hash->algorithm ==
+                            util::FileHashAlgorithm::sha256
+                        ? sync::detail::content_fingerprint(item.local_path)
+                        : sync::detail::quick_xor_hash(item.local_path);
+                const bool matches =
+                    item.content_hash->algorithm ==
+                            util::FileHashAlgorithm::sha256
+                        ? util::ascii_iequals(actual, item.content_hash->value)
+                        : actual == item.content_hash->value;
+                result = matches ? "verified" : "hash-mismatch";
+                matches ? ++verified : ++failed;
+            }
+        } else {
+            ++failed;
+        }
+        console.section(
+            "file_verification",
+            "File verification:",
+            {
+                {
+                    .label = "remote path:",
+                    .key = "remote_path",
+                    .value = item.remote_path,
+                },
+                {
+                    .label = "local path:",
+                    .key = "local_path",
+                    .value = item.local_path.string(),
+                },
+                {.label = "mode:", .key = "mode", .value = std::string{mode}},
+                {.label = "result:", .key = "result", .value = result},
+                {
+                    .label = "algorithm:",
+                    .key = "algorithm",
+                    .value = algorithm,
+                },
+            }
+        );
+    }
+    console.section(
+        "file_verification_summary",
+        "File verification summary:",
+        {
+            {
+                .label = "verified:",
+                .key = "verified",
+                .value = std::to_string(verified),
+            },
+            {
+                .label = "failed:",
+                .key = "failed",
+                .value = std::to_string(failed),
+            },
+            {
+                .label = "hash unavailable:",
+                .key = "hash_unavailable",
+                .value = std::to_string(unavailable),
+            },
+        }
+    );
+    return failed == 0 && unavailable == 0 ? 0 : 1;
+}
+
+int show_config(
+    const config::Config& config,
+    const std::filesystem::path& config_path,
+    const cli::Console& console
+) {
+    console.section(
+        "effective_config",
+        "Effective configuration:",
+        {
+            {
+                .label = "config file:",
+                .key = "config_file",
+                .value = config_path.string(),
+            },
+            {
+                .label = "data directory:",
+                .key = "data_directory",
+                .value = config.sync_data_directory.string(),
+            },
+            {
+                .label = "state directory:",
+                .key = "state_directory",
+                .value = config.state_directory.string(),
+            },
+            {
+                .label = "data mount point:",
+                .key = "data_mount_point",
+                .value = config.sync_data_mount_point
+                           ? config.sync_data_mount_point->string()
+                           : "none",
+            },
+            {
+                .label = "configured drive:",
+                .key = "drive_id",
+                .value = config.drive_id,
+            },
+            {
+                .label = "sync list:",
+                .key = "sync_list",
+                .value = config.sync_list ? config.sync_list->string() : "none",
+            },
+            {
+                .label = "sync mode:",
+                .key = "sync_mode",
+                .value = sync_mode_name(config.sync_mode),
+            },
+            {
+                .label = "delete policy:",
+                .key = "delete_policy",
+                .value = delete_policy_name(config.delete_policy),
+            },
+            {
+                .label = "dry run:",
+                .key = "dry_run",
+                .value = config.dry_run ? "true" : "false",
+            },
+        }
+    );
+    console.section(
+        "effective_transfer_config",
+        "Effective transfer configuration:",
+        {
+            {
+                .label = "order:",
+                .key = "order",
+                .value = transfer_order_name(config.transfer_order),
+            },
+            {
+                .label = "download concurrency:",
+                .key = "download_concurrency",
+                .value = std::to_string(config.download_concurrency),
+            },
+            {
+                .label = "download retries:",
+                .key = "download_maximum_retries",
+                .value = std::to_string(config.download_maximum_retries),
+            },
+            {
+                .label = "download rate:",
+                .key = "download_rate",
+                .value = format_bytes(
+                    config.download_maximum_rate_bytes_per_second
+                ) + "/s",
+            },
+            {
+                .label = "total download rate:",
+                .key = "download_total_rate",
+                .value = format_bytes(
+                    config.download_maximum_total_rate_bytes_per_second
+                ) + "/s",
+            },
+            {
+                .label = "upload concurrency:",
+                .key = "upload_concurrency",
+                .value = std::to_string(config.upload_concurrency),
+            },
+            {
+                .label = "upload rate:",
+                .key = "upload_rate",
+                .value = format_bytes(
+                    config.upload_maximum_rate_bytes_per_second
+                ) + "/s",
+            },
+            {
+                .label = "total upload rate:",
+                .key = "upload_total_rate",
+                .value = format_bytes(
+                    config.upload_maximum_total_rate_bytes_per_second
+                ) + "/s",
+            },
+        }
+    );
+    console.section(
+        "effective_output_config",
+        "Effective output configuration:",
+        {
+            {
+                .label = "UI:",
+                .key = "ui",
+                .value = ui_mode_name(config.console_ui),
+            },
+            {
+                .label = "theme:",
+                .key = "theme",
+                .value = theme_name(config.console_theme),
+            },
+            {
+                .label = "color:",
+                .key = "color",
+                .value = color_mode_name(config.console_color),
+            },
+            {
+                .label = "log level:",
+                .key = "log_level",
+                .value = config.logging.level,
+            },
+            {
+                .label = "log file:",
+                .key = "log_file",
+                .value = config.logging.file ? config.logging.file->string()
+                                             : "none",
+            },
+            {
+                .label = "proxy:",
+                .key = "proxy",
+                .value = config.proxy.url ? "configured" : "disabled",
+            },
+        }
+    );
+    return 0;
+}
+
+int cleanup_state(
+    const config::Config& config,
+    const RuntimeFactory& runtime_factory,
+    const cli::Console& console,
+    bool dry_run,
+    bool assume_yes
+) {
+    auto inspection = open_inspection_store(config, runtime_factory);
+    const auto partials =
+        inspection.items
+            ? inspection.items->partial_downloads(inspection.identity.drive_id)
+            : std::vector<storage::PartialDownload>{};
+    std::vector<const storage::PartialDownload*> invalid;
+    std::set<std::filesystem::path> recorded;
+    for (const auto& partial : partials) {
+        recorded.insert(partial.temporary_path.lexically_normal());
+        if (inspect_partial(inspection.sync_root, partial).status !=
+            PartialStatus::resumable) {
+            invalid.push_back(&partial);
+        }
+    }
+
+    std::vector<std::filesystem::path> orphaned;
+    std::error_code root_error;
+    if (std::filesystem::is_directory(inspection.sync_root, root_error)) {
+        std::filesystem::recursive_directory_iterator iterator{
+            inspection.sync_root,
+            std::filesystem::directory_options::skip_permission_denied
+        };
+        for (const auto& entry : iterator) {
+            std::error_code status_error;
+            const auto status = entry.symlink_status(status_error);
+            if (status_error || !std::filesystem::is_regular_file(status) ||
+                !partial_filename(entry.path().filename().string()) ||
+                recorded.contains(entry.path().lexically_normal())) {
+                continue;
+            }
+            orphaned.push_back(entry.path());
+        }
+    } else if (root_error != std::errc::no_such_file_or_directory) {
+        throw std::runtime_error(
+            "cannot inspect synchronization root for cleanup: " +
+            root_error.message()
+        );
+    }
+
+    for (const auto* partial : invalid) {
+        console.section(
+            "cleanup_partial",
+            "Invalid partial download:",
+            {
+                {
+                    .label = "remote path:",
+                    .key = "remote_path",
+                    .value = partial->item.remote_path,
+                },
+                {
+                    .label = "temporary path:",
+                    .key = "temporary_path",
+                    .value = partial->temporary_path.string(),
+                },
+                {
+                    .label = "status:",
+                    .key = "status",
+                    .value = std::string{status_name(
+                        inspect_partial(inspection.sync_root, *partial).status
+                    )},
+                },
+            }
+        );
+    }
+    for (const auto& path : orphaned) {
+        console.section(
+            "cleanup_orphan",
+            "Orphaned partial file:",
+            {
+                {
+                    .label = "path:",
+                    .key = "path",
+                    .value = path.string(),
+                },
+            }
+        );
+    }
+    console.section(
+        "cleanup_summary",
+        "Partial cleanup summary:",
+        {
+            {
+                .label = "invalid records:",
+                .key = "invalid_records",
+                .value = std::to_string(invalid.size()),
+            },
+            {
+                .label = "orphaned files:",
+                .key = "orphaned_files",
+                .value = std::to_string(orphaned.size()),
+            },
+            {
+                .label = "mode:",
+                .key = "mode",
+                .value = dry_run ? "dry-run" : "cleanup",
+            },
+        }
+    );
+    if (dry_run || (invalid.empty() && orphaned.empty())) {
+        return 0;
+    }
+    if (!assume_yes) {
+        if (console.output_mode() == cli::OutputMode::json) {
+            console.message(
+                cli::MessageKind::error,
+                "confirmation_required",
+                "Cleanup requires --yes with JSON output."
+            );
+            return 1;
+        }
+        if (!console.confirm(
+                "cleanup_confirmation",
+                "Type the configured drive reference '" +
+                    inspection.identity.configured_drive_id +
+                    "' to confirm cleanup: ",
+                inspection.identity.configured_drive_id
+            )) {
+            console.message(
+                cli::MessageKind::warning,
+                "cleanup_cancelled",
+                "Partial cleanup cancelled."
+            );
+            return 1;
+        }
+    }
+
+    inspection.items.reset();
+    auto writable =
+        runtime_factory.create_item_store(config, inspection.identity);
+    writable->open();
+    std::size_t removed_files = 0;
+    for (const auto* partial : invalid) {
+        const auto inspected = inspect_partial(inspection.sync_root, *partial);
+        if (inspected.actual_size &&
+            path_is_within(inspection.sync_root, partial->temporary_path) &&
+            sync::detail::is_temporary_path_for(
+                partial->item.local_path, partial->temporary_path
+            ) &&
+            sync::detail::remove_no_symlinks(partial->temporary_path)) {
+            ++removed_files;
+        }
+        writable->remove_partial_download(
+            inspection.identity.drive_id, partial->item.remote_id
+        );
+    }
+    for (const auto& path : orphaned) {
+        if (sync::detail::remove_no_symlinks(path)) {
+            ++removed_files;
+        }
+    }
+    console.message(
+        cli::MessageKind::success,
+        "cleanup_completed",
+        std::format(
+            "Removed {} invalid partial records and {} partial files.",
+            invalid.size(),
+            removed_files
+        )
     );
     return 0;
 }

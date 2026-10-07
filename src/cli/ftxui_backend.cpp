@@ -308,6 +308,10 @@ private:
                     return "PARTIALS";
                 case TuiView::files:
                     return "FILES";
+                case TuiView::verify:
+                    return "VERIFY";
+                case TuiView::config:
+                    return "CONFIG";
                 case TuiView::download:
                     return "DOWNLOAD";
                 case TuiView::watch:

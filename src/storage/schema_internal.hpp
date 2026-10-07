@@ -7,12 +7,13 @@
 
 namespace onedrive::storage::item_database_detail {
 
-inline constexpr int current_schema_version = 24;
+inline constexpr int current_schema_version = 25;
 
 [[nodiscard]] int schema_version(sqlite3* database);
 void create_blocked_item_v5_schema(sqlite3* database);
 void add_blocked_item_hash_columns(sqlite3* database);
 void add_blocked_item_deleted_column(sqlite3* database);
+void add_item_content_hash(sqlite3* database);
 void create_identity_schema(sqlite3* database);
 void create_drive_mapping_schema(sqlite3* database);
 void create_partial_download_v8_schema(sqlite3* database);

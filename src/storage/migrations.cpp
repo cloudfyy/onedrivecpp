@@ -217,6 +217,7 @@ constexpr std::array schema_migrations{
     SchemaMigration{21, 22, add_content_tags},
     SchemaMigration{22, 23, add_pending_upload_failure},
     SchemaMigration{23, 24, add_blocked_item_content_tag},
+    SchemaMigration{24, 25, add_item_content_hash},
 };
 
 consteval bool schema_migration_chain_is_complete() {

@@ -38,6 +38,10 @@ onedrive-cpp inspect status
 onedrive-cpp inspect storage
 onedrive-cpp inspect partials
 onedrive-cpp inspect files Documents --status modified
+onedrive-cpp inspect verify Documents --mode content
+onedrive-cpp inspect config
+onedrive-cpp state cleanup --dry-run
+onedrive-cpp state cleanup --yes
 ```
 
 Supported levels are `trace`, `debug`, `info`, `warn`, `error`, `critical`,
@@ -108,6 +112,25 @@ These commands do not synchronize files or modify remote content. Commands
 that inspect local state open an existing SQLite database read-only and do not
 create, migrate, repair, or quarantine a missing or older database. All
 inspection commands support `--output json`.
+
+`inspect verify [PATH]` performs the same metadata checks as `inspect files`.
+With `--mode content`, it additionally computes the saved Graph SHA-256 or
+QuickXorHash and reports `verified`, `hash-mismatch`, or `hash-unavailable`.
+Content hashes are retained with item state after validated downloads and
+remote metadata updates; older tracked files may remain unavailable until a
+later synchronization records a hash.
+
+`inspect config` prints effective non-secret paths, synchronization policy,
+transfer limits, output settings, and whether a proxy is configured. It never
+prints application credentials, authentication tokens, proxy credentials, or
+proxy URLs.
+
+`state cleanup --dry-run` lists invalid partial-download records and orphaned
+`.onedrive-partial-*` regular files without changing state. Run
+`state cleanup --yes` to remove them. Files outside the resolved Drive root,
+paths that do not match the destination's partial-file pattern, symbolic
+links, and non-regular files are never deleted; invalid database records for
+such paths can still be removed so they cannot be resumed.
 
 ## Shell completion
 

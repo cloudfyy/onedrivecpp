@@ -1,4 +1,5 @@
 #include "support.hpp"
+#include "onedrive/util/sha256.hpp"
 
 #include <chrono>
 
@@ -79,15 +80,26 @@ int test_inspection() {
         output << "changed";
     }
     auto ok = item(root, "Documents/ok.txt", 4, modified_ticks(ok_path));
+    ok.content_hash = onedrive::util::FileHash{
+        .algorithm = onedrive::util::FileHashAlgorithm::sha256,
+        .value = onedrive::util::sha256_hex("okay"),
+    };
     auto missing = item(root, "Documents/missing.txt", 7, 1);
     auto modified =
         item(root, "Documents/modified.txt", 1, modified_ticks(modified_path));
+    const auto no_hash_path = root / "Documents/no-hash.txt";
+    {
+        std::ofstream output{no_hash_path};
+        output << "plain";
+    }
+    auto no_hash =
+        item(root, "Documents/no-hash.txt", 5, modified_ticks(no_hash_path));
     auto type_changed = item(root, "Documents/type-changed.txt", 0, 0);
     std::filesystem::create_directory(type_changed.local_path);
     auto outside_root = item(root, "Documents/outside.txt", 0, 0);
     outside_root.local_path = fixture.temporary_directory.path() / "outside.txt";
     fixture.runtime_factory.item_states = {
-        ok, missing, modified, type_changed, outside_root
+        ok, missing, modified, no_hash, type_changed, outside_root
     };
 
     const auto partial_path =
@@ -184,7 +196,7 @@ int test_inspection() {
     );
     if (storage.exit_code != 0 ||
         !storage.standard_output.contains(R"("event":"storage")") ||
-        !storage.standard_output.contains(R"("tracked_files":"5")") ||
+        !storage.standard_output.contains(R"("tracked_files":"6")") ||
         !storage.standard_output.contains(R"("partial_downloads":"7")") ||
         !storage.standard_output.contains(R"("resumable_partials":"1")") ||
         !storage.standard_output.contains(R"("partial_bytes":"6 B")")) {
@@ -241,7 +253,7 @@ int test_inspection() {
         !files.standard_output.contains(
             R"("event":"downloaded_file_summary")"
         ) ||
-        !files.standard_output.contains(R"("inspected":"5")") ||
+        !files.standard_output.contains(R"("inspected":"6")") ||
         !files.standard_output.contains(R"("shown":"1")") ||
         !files.standard_output.contains(R"("modified":"1")") ||
         !files.standard_output.contains(R"("type_changed":"1")") ||
@@ -263,6 +275,177 @@ int test_inspection() {
     if (invalid_path.exit_code != 1 ||
         !invalid_path.standard_error.contains("invalid component")) {
         return fail("inspect files accepted an unsafe Drive-relative path");
+    }
+
+    const auto verified = run_application(
+        fixture.runtime_factory,
+        {
+            "onedrive-cpp",
+            "inspect",
+            "verify",
+            "Documents/ok.txt",
+            "--mode",
+            "content",
+            "--config",
+            fixture.config_path.string(),
+            "--output",
+            "json",
+        }
+    );
+    if (verified.exit_code != 0 ||
+        !verified.standard_output.contains(R"("result":"verified")") ||
+        !verified.standard_output.contains(R"("algorithm":"sha256")")) {
+        return fail("inspect verify did not validate saved content hash");
+    }
+    fixture.runtime_factory.item_states[0].content_hash->value = "incorrect";
+    const auto mismatch = run_application(
+        fixture.runtime_factory,
+        {
+            "onedrive-cpp",
+            "inspect",
+            "verify",
+            "Documents/ok.txt",
+            "--mode",
+            "content",
+            "--config",
+            fixture.config_path.string(),
+            "--output",
+            "json",
+        }
+    );
+    if (mismatch.exit_code != 1 ||
+        !mismatch.standard_output.contains(R"("result":"hash-mismatch")")) {
+        return fail("inspect verify accepted mismatched content");
+    }
+    const auto unavailable = run_application(
+        fixture.runtime_factory,
+        {
+            "onedrive-cpp",
+            "inspect",
+            "verify",
+            "Documents/no-hash.txt",
+            "--mode",
+            "content",
+            "--config",
+            fixture.config_path.string(),
+            "--output",
+            "json",
+        }
+    );
+    const auto metadata_verified = run_application(
+        fixture.runtime_factory,
+        {
+            "onedrive-cpp",
+            "inspect",
+            "verify",
+            "Documents/no-hash.txt",
+            "--mode",
+            "metadata",
+            "--config",
+            fixture.config_path.string(),
+            "--output",
+            "json",
+        }
+    );
+    if (unavailable.exit_code != 1 ||
+        !unavailable.standard_output.contains(
+            R"("result":"hash-unavailable")"
+        ) ||
+        metadata_verified.exit_code != 0 ||
+        !metadata_verified.standard_output.contains(
+            R"("result":"verified")"
+        )) {
+        return fail("inspect verify did not distinguish verification modes");
+    }
+
+    const auto effective_config = run_application(
+        fixture.runtime_factory,
+        {
+            "onedrive-cpp",
+            "inspect",
+            "config",
+            "--config",
+            fixture.config_path.string(),
+            "--output",
+            "json",
+        }
+    );
+    if (effective_config.exit_code != 0 ||
+        !effective_config.standard_output.contains(
+            R"("event":"effective_config")"
+        ) ||
+        !effective_config.standard_output.contains(
+            R"("event":"effective_transfer_config")"
+        ) ||
+        !effective_config.standard_output.contains(R"("proxy":"disabled")") ||
+        effective_config.standard_output.contains("test-application")) {
+        return fail("inspect config exposed secrets or omitted effective data");
+    }
+
+    const auto orphan =
+        root / "Documents/.orphan.bin.onedrive-partial-9-9";
+    {
+        std::ofstream output{orphan};
+        output << "orphan";
+    }
+    const auto cleanup_plan = run_application(
+        fixture.runtime_factory,
+        {
+            "onedrive-cpp",
+            "state",
+            "cleanup",
+            "--dry-run",
+            "--config",
+            fixture.config_path.string(),
+            "--output",
+            "json",
+        }
+    );
+    if (cleanup_plan.exit_code != 0 ||
+        !cleanup_plan.standard_output.contains(R"("mode":"dry-run")") ||
+        !cleanup_plan.standard_output.contains(R"("orphaned_files":"1")") ||
+        !std::filesystem::exists(orphan) ||
+        !std::filesystem::exists(truncated_partial_path)) {
+        return fail("state cleanup dry-run changed partial state");
+    }
+    const auto unconfirmed_cleanup = run_application(
+        fixture.runtime_factory,
+        {
+            "onedrive-cpp",
+            "state",
+            "cleanup",
+            "--config",
+            fixture.config_path.string(),
+            "--output",
+            "json",
+        }
+    );
+    if (unconfirmed_cleanup.exit_code != 1 ||
+        !unconfirmed_cleanup.standard_error.contains(
+            R"("event":"confirmation_required")"
+        ) ||
+        !std::filesystem::exists(orphan)) {
+        return fail("state cleanup bypassed JSON confirmation");
+    }
+    const auto cleanup = run_application(
+        fixture.runtime_factory,
+        {
+            "onedrive-cpp",
+            "state",
+            "cleanup",
+            "--yes",
+            "--config",
+            fixture.config_path.string(),
+            "--output",
+            "json",
+        }
+    );
+    if (cleanup.exit_code != 0 ||
+        !cleanup.standard_output.contains(R"("event":"cleanup_completed")") ||
+        std::filesystem::exists(orphan) ||
+        std::filesystem::exists(truncated_partial_path) ||
+        !std::filesystem::exists(type_changed_partial_path)) {
+        return fail("state cleanup did not safely remove partial files");
     }
     return 0;
 }

@@ -24,6 +24,7 @@ storage::ItemState item_state_for(
         .size = item.size,
         .local_size = 0,
         .local_modified_ticks = 0,
+        .content_hash = item.content_hash,
         .directory = item.directory,
     };
 }

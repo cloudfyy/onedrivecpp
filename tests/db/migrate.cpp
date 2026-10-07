@@ -49,7 +49,7 @@ int main() {
             onedrive::storage::ItemDatabase database{directory, identity()};
             database.open();
         }
-        if (!schema_version_is(database_path, 24) ||
+        if (!schema_version_is(database_path, 25) ||
             !identity_row_is_valid(database_path)) {
             return fail(
                 std::string{fixture.name} +
@@ -785,9 +785,9 @@ int main() {
             return fail("blocked item content tag was not persisted");
         }
     }
-    if (!schema_version_is(version_twenty_three_path, 24)) {
+    if (!schema_version_is(version_twenty_three_path, 25)) {
         return fail(
-            "version twenty-three database was not migrated to version 24"
+            "version twenty-three database was not migrated to version 25"
         );
     }
 

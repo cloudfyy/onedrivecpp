@@ -1,4 +1,5 @@
 #include "onedrive/storage/item_database.hpp"
+#include "storage/file_hash.hpp"
 #include "storage/query.hpp"
 #include "storage/sqlite.hpp"
 #include "storage/worker.hpp"
@@ -18,6 +19,8 @@ using item_database_detail::bind_integer;
 using item_database_detail::bind_text;
 using item_database_detail::column_text;
 using item_database_detail::query_count;
+using item_database_detail::parse_file_hash;
+using item_database_detail::serialize_file_hash;
 
 void ItemDatabase::upsert(ItemState item) {
     impl_->invoke([this, item = std::move(item)] {
@@ -36,9 +39,10 @@ void ItemDatabase::upsert_on_worker(const ItemState& item) {
         "INSERT INTO item ("
         "drive_id, remote_id, parent_id, name, etag, ctag, remote_path, "
         "local_path, last_modified, size, local_size, local_modified_ticks, "
-        "local_device, local_inode, directory"
+        "local_device, local_inode, content_hash_algorithm, "
+        "content_hash_value, directory"
         ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, "
-        "?13, ?14, ?15) "
+        "?13, ?14, ?15, ?16, ?17) "
         "ON CONFLICT(drive_id, remote_id) DO UPDATE SET "
         "parent_id = excluded.parent_id, name = excluded.name, "
         "etag = excluded.etag, ctag = excluded.ctag, "
@@ -49,6 +53,8 @@ void ItemDatabase::upsert_on_worker(const ItemState& item) {
         "local_modified_ticks = excluded.local_modified_ticks, "
         "local_device = excluded.local_device, "
         "local_inode = excluded.local_inode, "
+        "content_hash_algorithm = excluded.content_hash_algorithm, "
+        "content_hash_value = excluded.content_hash_value, "
         "directory = excluded.directory;"
     };
     const std::string local_path = item.local_path.string();
@@ -76,7 +82,11 @@ void ItemDatabase::upsert_on_worker(const ItemState& item) {
         14,
         static_cast<std::int64_t>(item.local_inode)
     );
-    bind_integer(database, statement.get(), 15, item.directory ? 1 : 0);
+    const auto [hash_algorithm, hash_value] =
+        serialize_file_hash(item.content_hash);
+    bind_text(database, statement.get(), 15, hash_algorithm);
+    bind_text(database, statement.get(), 16, hash_value);
+    bind_integer(database, statement.get(), 17, item.directory ? 1 : 0);
 
     if (sqlite3_step(statement.get()) != SQLITE_DONE) {
         throw std::runtime_error(
@@ -180,7 +190,8 @@ std::optional<ItemState> ItemDatabase::find_on_worker(
         database,
         "SELECT drive_id, remote_id, parent_id, name, etag, ctag, remote_path, "
         "local_path, last_modified, size, local_size, local_modified_ticks, "
-        "local_device, local_inode, directory FROM item "
+        "local_device, local_inode, content_hash_algorithm, "
+        "content_hash_value, directory FROM item "
         "WHERE drive_id = ?1 AND remote_id = ?2;"
     };
     bind_text(database, statement.get(), 1, drive_id);
@@ -214,7 +225,12 @@ std::optional<ItemState> ItemDatabase::find_on_worker(
         .local_inode = static_cast<std::uint64_t>(
             sqlite3_column_int64(statement.get(), 13)
         ),
-        .directory = sqlite3_column_int(statement.get(), 14) != 0,
+        .content_hash = parse_file_hash(
+            column_text(statement.get(), 14),
+            column_text(statement.get(), 15),
+            "item"
+        ),
+        .directory = sqlite3_column_int(statement.get(), 16) != 0,
     };
 }
 
@@ -237,7 +253,8 @@ std::vector<ItemState> ItemDatabase::drive_items_on_worker(
         database,
         "SELECT drive_id, remote_id, parent_id, name, etag, ctag, remote_path, "
         "local_path, last_modified, size, local_size, local_modified_ticks, "
-        "local_device, local_inode, directory FROM item "
+        "local_device, local_inode, content_hash_algorithm, "
+        "content_hash_value, directory FROM item "
         "WHERE drive_id = ?1 ORDER BY remote_path;"
     };
     bind_text(database, statement.get(), 1, drive_id);
@@ -273,7 +290,12 @@ std::vector<ItemState> ItemDatabase::drive_items_on_worker(
             .local_inode = static_cast<std::uint64_t>(
                 sqlite3_column_int64(statement.get(), 13)
             ),
-            .directory = sqlite3_column_int(statement.get(), 14) != 0,
+            .content_hash = parse_file_hash(
+                column_text(statement.get(), 14),
+                column_text(statement.get(), 15),
+                "item"
+            ),
+            .directory = sqlite3_column_int(statement.get(), 16) != 0,
         });
     }
     return result;

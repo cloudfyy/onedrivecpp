@@ -54,6 +54,10 @@ cli::TuiView tui_view(detail::Operation operation) noexcept {
             return cli::TuiView::partials;
         case detail::Operation::files:
             return cli::TuiView::files;
+        case detail::Operation::verify:
+            return cli::TuiView::verify;
+        case detail::Operation::config:
+            return cli::TuiView::config;
         case detail::Operation::download:
             return cli::TuiView::download;
         case detail::Operation::monitor:

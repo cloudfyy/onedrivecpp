@@ -85,7 +85,9 @@ int test_args() {
         !inspect_help.standard_output.contains("quota") ||
         !inspect_help.standard_output.contains("storage") ||
         !inspect_help.standard_output.contains("partials") ||
-        !inspect_help.standard_output.contains("files")) {
+        !inspect_help.standard_output.contains("files") ||
+        !inspect_help.standard_output.contains("verify") ||
+        !inspect_help.standard_output.contains("config")) {
         return fail("inspect help did not list its read-only actions");
     }
     const auto health_help = run_application(
@@ -119,6 +121,14 @@ int test_args() {
         !files_help.standard_output.contains("--ui")) {
         return fail("inspect files help was not available");
     }
+    const auto verify_help = run_application(
+        runtime_factory, {"onedrive-cpp", "inspect", "verify", "--help"}
+    );
+    if (verify_help.exit_code != 0 ||
+        !verify_help.standard_output.contains("--mode") ||
+        !verify_help.standard_output.contains("[PATH]")) {
+        return fail("inspect verify help was not available");
+    }
     if (run_application(
             runtime_factory,
             {
@@ -136,8 +146,17 @@ int test_args() {
         run_application(runtime_factory, {"onedrive-cpp", "state", "--help"});
     if (state_help.exit_code != 0 ||
         !state_help.standard_output.contains("reset-cursor") ||
+        !state_help.standard_output.contains("cleanup") ||
         !state_help.standard_output.contains("clear")) {
         return fail("state help did not list its maintenance actions");
+    }
+    const auto cleanup_help = run_application(
+        runtime_factory, {"onedrive-cpp", "state", "cleanup", "--help"}
+    );
+    if (cleanup_help.exit_code != 0 ||
+        !cleanup_help.standard_output.contains("--dry-run") ||
+        !cleanup_help.standard_output.contains("--yes")) {
+        return fail("state cleanup help did not document safety options");
     }
     const auto reset_cursor_help = run_application(
         runtime_factory, {"onedrive-cpp", "state", "reset-cursor", "--help"}

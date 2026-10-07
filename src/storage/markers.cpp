@@ -1,4 +1,5 @@
 #include "onedrive/storage/item_database.hpp"
+#include "storage/file_hash.hpp"
 #include "storage/sqlite.hpp"
 #include "storage/worker.hpp"
 
@@ -146,24 +147,11 @@ std::vector<BlockedItem> ItemDatabase::blocked_items_on_worker(
                 std::string{sqlite3_errmsg(database)}
             );
         }
-        const std::string hash_algorithm = column_text(statement.get(), 14);
-        const std::string hash_value = column_text(statement.get(), 15);
-        std::optional<util::FileHash> content_hash;
-        if (!hash_algorithm.empty() || !hash_value.empty()) {
-            if (hash_value.empty() ||
-                (hash_algorithm != "sha256" &&
-                 hash_algorithm != "quick_xor")) {
-                throw std::runtime_error(
-                    "blocked item contains invalid content hash metadata"
-                );
-            }
-            content_hash = util::FileHash{
-                .algorithm = hash_algorithm == "sha256" ?
-                    util::FileHashAlgorithm::sha256 :
-                    util::FileHashAlgorithm::quick_xor,
-                .value = hash_value,
-            };
-        }
+        auto content_hash = item_database_detail::parse_file_hash(
+            column_text(statement.get(), 14),
+            column_text(statement.get(), 15),
+            "blocked item"
+        );
         result.push_back({
             .drive_id = column_text(statement.get(), 0),
             .remote_id = column_text(statement.get(), 1),

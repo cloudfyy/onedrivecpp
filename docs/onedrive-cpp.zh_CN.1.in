@@ -41,7 +41,17 @@ onedrive-cpp \- 现代 C++ OneDrive 同步客户端
 .RI [ 选项 ]
 .RI [ 路径 ]
 .PP
+.B onedrive-cpp inspect verify
+.RI [ 选项 ]
+.RI [ 路径 ]
+.PP
+.B onedrive-cpp inspect config
+.RI [ 选项 ]
+.PP
 .B onedrive-cpp state reset-cursor
+.RI [ 选项 ]
+.PP
+.B onedrive-cpp state cleanup
 .RI [ 选项 ]
 .PP
 .B onedrive-cpp state clear
@@ -135,12 +145,32 @@ checkpoint 是否可续传或无效。
 .B outside-root
 过滤结果。
 .TP
+.B inspect verify
+验证可选 Drive 相对
+.I 路径
+下的 tracked 文件。metadata 模式检查保存的大小和修改时间；content 模式还会计算
+状态中保存的 Graph SHA-256 或 QuickXorHash，并报告哈希不可用或不匹配。
+.TP
+.B inspect config
+显示最终生效的非敏感配置路径、同步策略、传输限制、输出设置以及代理是否配置；
+不会输出机密或代理 URL。
+.TP
 .B state reset-cursor
 重置当前 Drive 保存的 Delta 游标。认证、配置、本地文件、item 快照、
 pending-download、partial-download、pending-upload、pending-move、选择性保留
 对象的上传抑制、blocked item 和其他 Drive 状态均会保留。下一次
 .B transfer sync
 先恢复未完成操作，再执行完整的初始 Delta 查询；完整远端清单会替换旧远端元数据。
+.TP
+.B state cleanup
+列出并安全移除无效 partial download 记录和孤立的
+.B .onedrive-partial-*
+普通文件。使用
+.B \-\-dry-run
+预览，使用
+.B \-\-yes
+进行非交互确认。位于 Drive 根目录外、符号链接、非普通文件或名称不符合目标 partial
+规则的文件绝不会删除。
 .TP
 .B state clear
 会清除当前 Drive 的 item 快照、Delta 游标、pending-download、

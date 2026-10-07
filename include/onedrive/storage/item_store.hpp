@@ -30,6 +30,7 @@ struct ItemState {
     std::int64_t local_modified_ticks{0};
     std::uint64_t local_device{0};
     std::uint64_t local_inode{0};
+    std::optional<util::FileHash> content_hash;
     bool directory{false};
 };
 

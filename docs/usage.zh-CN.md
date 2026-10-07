@@ -37,6 +37,10 @@ onedrive-cpp inspect status
 onedrive-cpp inspect storage
 onedrive-cpp inspect partials
 onedrive-cpp inspect files Documents --status modified
+onedrive-cpp inspect verify Documents --mode content
+onedrive-cpp inspect config
+onedrive-cpp state cleanup --dry-run
+onedrive-cpp state cleanup --yes
 ```
 
 日志级别支持 `trace`、`debug`、`info`、`warn`、`error`、`critical` 和
@@ -94,6 +98,20 @@ partial download，并将其标记为可续传、缺失、类型变化、位于�
 这些命令不会同步文件或修改远端内容。检查本地状态的命令以只读方式打开现有 SQLite
 数据库，不会创建、迁移、修复或隔离缺失或旧版数据库。全部检查命令均支持
 `--output json`。
+
+`inspect verify [PATH]` 会执行与 `inspect files` 相同的元数据检查。指定
+`--mode content` 后，还会计算状态中保存的 Graph SHA-256 或 QuickXorHash，并报告
+`verified`、`hash-mismatch` 或 `hash-unavailable`。经过验证的下载和远端元数据更新
+会把内容哈希保存到 item 状态；旧 tracked 文件可能要等后续同步记录哈希后才能做
+内容验证。
+
+`inspect config` 显示最终生效的非敏感路径、同步策略、传输限制和输出设置，并只说明
+代理是否配置。它不会输出应用凭据、认证 token、代理凭据或代理 URL。
+
+`state cleanup --dry-run` 只列出无效 partial download 记录和孤立的
+`.onedrive-partial-*` 普通文件。使用 `state cleanup --yes` 才会实际清理。位于解析后
+Drive 根目录之外、名称不符合目标 partial 规则、符号链接或非普通文件绝不会被删除；
+但相应的无效数据库记录仍可移除，防止后续错误续传。
 
 ## Shell 自动补全
 

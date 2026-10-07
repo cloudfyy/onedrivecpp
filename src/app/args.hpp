@@ -25,6 +25,7 @@ struct Arguments {
     std::string site_query;
     std::string inspect_path;
     std::optional<std::string> inspect_file_status;
+    std::string verify_mode{"metadata"};
     Operation operation{Operation::synchronize};
 };
 
