@@ -45,6 +45,14 @@ int test_args() {
         !monitor_help.standard_output.contains("--theme")) {
         return fail("monitor help did not document TUI options");
     }
+    const auto download_help = run_application(
+        runtime_factory, {"onedrive-cpp", "download", "--help"}
+    );
+    if (download_help.exit_code != 0 ||
+        !download_help.standard_output.contains("--ui") ||
+        !download_help.standard_output.contains("--theme")) {
+        return fail("download help did not document TUI options");
+    }
     const auto doctor_help =
         run_application(runtime_factory, {"onedrive-cpp", "doctor", "--help"});
     if (doctor_help.exit_code != 0 ||
@@ -164,8 +172,20 @@ int test_args() {
             "console",
         }
     );
+    const auto download_tui = run_application(
+        ui_fixture.runtime_factory,
+        {
+            "onedrive-cpp",
+            "download",
+            "Documents/file.txt",
+            "--config",
+            ui_fixture.config_path.string(),
+            "--dry-run",
+        }
+    );
     if (configured_tui.exit_code != 1 ||
-        overridden_tui.exit_code != 0) {
+        overridden_tui.exit_code != 0 ||
+        download_tui.exit_code != 1) {
         return fail("CLI UI mode did not override configured TUI mode");
     }
     return EXIT_SUCCESS;

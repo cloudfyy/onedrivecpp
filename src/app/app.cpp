@@ -32,6 +32,23 @@ cli::MessageKind message_kind(logging::Severity severity) noexcept {
     return cli::MessageKind::information;
 }
 
+bool supports_tui(detail::Operation operation) noexcept {
+    return operation == detail::Operation::synchronize ||
+        operation == detail::Operation::download ||
+        operation == detail::Operation::monitor;
+}
+
+cli::TuiView tui_view(detail::Operation operation) noexcept {
+    switch (operation) {
+        case detail::Operation::download:
+            return cli::TuiView::download;
+        case detail::Operation::monitor:
+            return cli::TuiView::monitor;
+        default:
+            return cli::TuiView::sync;
+    }
+}
+
 }  // namespace
 
 Application::Application(
@@ -51,16 +68,12 @@ int Application::run(int argc, char* argv[]) {
             {
                 .color = arguments.color_mode.value_or(config.console_color),
                 .output = arguments.output_mode,
-                .ui =
-                    arguments.operation == detail::Operation::synchronize ||
-                            arguments.operation == detail::Operation::monitor ?
-                        arguments.ui_mode.value_or(config.console_ui) :
-                        cli::UiMode::console,
+                .ui = supports_tui(arguments.operation) ?
+                    arguments.ui_mode.value_or(config.console_ui) :
+                    cli::UiMode::console,
                 .theme =
                     arguments.tui_theme.value_or(config.console_theme),
-                .view = arguments.operation == detail::Operation::monitor ?
-                    cli::TuiView::monitor :
-                    cli::TuiView::sync,
+                .view = tui_view(arguments.operation),
                 .quiet = arguments.quiet,
             }
         };

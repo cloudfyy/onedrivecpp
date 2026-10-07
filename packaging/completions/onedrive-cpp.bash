@@ -67,7 +67,7 @@ _onedrive_cpp_completion()
     case "$command" in
         download)
             mapfile -t COMPREPLY < <(compgen -W \
-                "$common_options --dry-run" -- "$current")
+                "$common_options --ui --theme --dry-run" -- "$current")
             ;;
         sync)
             mapfile -t COMPREPLY < <(compgen -W \

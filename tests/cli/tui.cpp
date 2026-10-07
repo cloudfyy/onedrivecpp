@@ -152,6 +152,23 @@ int test_tui_dashboard() {
         return fail("FTXUI did not restore the original terminal screen");
     }
 
+    std::ostringstream download_output;
+    auto download_backend = detail::make_ftxui_console_backend(
+        {
+            .color = ColorMode::never,
+            .ui = UiMode::tui,
+            .view = TuiView::download,
+        },
+        download_output,
+        error,
+        80,
+        20
+    );
+    download_backend.reset();
+    if (!download_output.str().contains("ONEDRIVE // DOWNLOAD  v")) {
+        return fail("download TUI did not render its command title");
+    }
+
     std::ostringstream unstyled_output;
     auto unstyled_backend = detail::make_ftxui_console_backend(
         {

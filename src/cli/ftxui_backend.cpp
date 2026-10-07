@@ -285,11 +285,15 @@ private:
     void update(const EndDownloadProgressEvent&) {}
 
     Element header() const {
+        const auto view_name =
+            view_ == TuiView::monitor ?
+                "MONITOR" :
+                view_ == TuiView::download ? "DOWNLOAD" : "SYNC";
         return hbox({
             with_color(
                 emphasized(text(fmt::format(
                     " ONEDRIVE // {}  v{} ",
-                    view_ == TuiView::monitor ? "MONITOR" : "SYNC",
+                    view_name,
                     build_info::version
                 ))),
                 palette_.primary

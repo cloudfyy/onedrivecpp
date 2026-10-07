@@ -67,6 +67,8 @@ _onedrive_cpp()
                 '--log-file[write rotating logs to file]:log file:_files' \
                 '--color[color output mode]:mode:(auto always never)' \
                 '--output[output format]:format:(text json)' \
+                '--ui[download interface]:mode:(auto console tui)' \
+                '--theme[TUI color theme]:theme:(hacker ocean amber synthwave)' \
                 '--quiet[suppress informational and success output]' \
                 '--dry-run[show download plan without changing local state]' \
                 '1:remote Drive-relative path:'

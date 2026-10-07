@@ -2,6 +2,7 @@
 
 #include "onedrive/util/mount.hpp"
 #include "onedrive/util/path_security.hpp"
+#include "sync/download/progress.hpp"
 #include "sync/download/recovery.hpp"
 #include "sync/download/space.hpp"
 #include "sync/download/target.hpp"
@@ -166,6 +167,7 @@ int download_single_file(
     };
     auto state =
         detail::item_state_for(config.drive_id, item, destination);
+    detail::DownloadProgressEstimator progress_estimator;
     const auto installed = detail::commit_download(
         items,
         safe_root,
@@ -189,7 +191,7 @@ int download_single_file(
                     downloaded >= total ?
                         util::ProgressState::completed :
                         util::ProgressState::ongoing,
-                    {}
+                    progress_estimator.sample(downloaded, total)
                 );
             }
         ),
