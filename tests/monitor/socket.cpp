@@ -55,9 +55,14 @@ int test_open_frame() {
     for (const auto frame : {
              "40",
              "0not-json",
+             R"(0[])",
+             R"(0{"pingTimeout":20000})",
              R"(0{"pingInterval":25000})",
              R"(0{"pingInterval":0,"pingTimeout":20000})",
+             R"(0{"pingInterval":25000,"pingTimeout":0})",
+             R"(0{"pingInterval":-1,"pingTimeout":20000})",
              R"(0{"pingInterval":"25000","pingTimeout":20000})",
+             R"(0{"pingInterval":18446744073709551615,"pingTimeout":1})",
          }) {
         if (socket_io_heartbeat_timeout(frame)) {
             return fail("invalid Socket.IO open frame was accepted");
@@ -79,7 +84,11 @@ int test_event_parsing() {
              "2",
              "40",
              R"(42["other",{}])",
+             R"(42[])",
+             R"(42[1,{}])",
              "42/notifications",
+             "42/",
+             "42/notifications,",
              "42/notifications,{}",
              "42not-json",
          }) {

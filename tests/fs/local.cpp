@@ -20,8 +20,8 @@
 
 namespace {
 
-using onedrive::test::TemporaryDirectory;
 using onedrive::test::fail;
+using onedrive::test::TemporaryDirectory;
 
 bool rejects_path_with(
     const std::filesystem::path& root,
@@ -29,23 +29,20 @@ bool rejects_path_with(
     std::string_view expected
 ) {
     try {
-        static_cast<void>(
-            onedrive::sync::detail::local_path_for(root, path)
-        );
+        static_cast<void>(onedrive::sync::detail::local_path_for(root, path));
     } catch (const std::runtime_error& error) {
         return std::string_view{error.what()}.contains(expected);
     }
     return false;
 }
 
-}  // namespace
+} // namespace
 
 int main() {
     namespace detail = onedrive::sync::detail;
 
     if (detail::persisted_file_size(
-            static_cast<std::uintmax_t>(
-                std::numeric_limits<std::int64_t>::max()
+            static_cast<std::uintmax_t>(std::numeric_limits<std::int64_t>::max()
             )
         ) != std::numeric_limits<std::int64_t>::max()) {
         return fail("maximum persistent file size was not preserved");
@@ -91,11 +88,7 @@ int main() {
         }
         excessive_path += std::string(240, 'a' + index % 26);
     }
-    if (!rejects_path_with(
-            root,
-            excessive_path,
-            "resulting local path"
-        )) {
+    if (!rejects_path_with(root, excessive_path, "resulting local path")) {
         return fail("excessive complete path length was accepted");
     }
 
@@ -132,11 +125,8 @@ int main() {
     if (detail::local_file_matches_baseline(file, baseline)) {
         return fail("same-size local content change was not detected");
     }
-    detail::apply_remote_modified_time(
-        file,
-        "2026-10-02T03:04:05.123456789Z"
-    );
-    struct stat remote_status {};
+    detail::apply_remote_modified_time(file, "2026-10-02T03:04:05.123456789Z");
+    struct stat remote_status{};
     if (::stat(file.c_str(), &remote_status) == -1) {
         return fail("cannot inspect applied remote modification time");
     }
@@ -144,13 +134,13 @@ int main() {
         std::chrono::sys_days{
             std::chrono::year{2026} / std::chrono::October / 2
         } +
-        std::chrono::hours{3} +
-        std::chrono::minutes{4} +
+        std::chrono::hours{3} + std::chrono::minutes{4} +
         std::chrono::seconds{5};
     if (remote_status.st_mtim.tv_sec !=
             std::chrono::duration_cast<std::chrono::seconds>(
                 expected_remote_time.time_since_epoch()
-            ).count() ||
+            )
+                .count() ||
         remote_status.st_mtim.tv_nsec != 123'456'789) {
         return fail("remote modification time was not applied precisely");
     }
@@ -167,22 +157,19 @@ int main() {
         output << "user data";
     }
     if (detail::local_file_matches_baseline(
-            created_during_download,
-            missing_baseline
+            created_during_download, missing_baseline
         )) {
         return fail("file created after baseline was not detected");
     }
     try {
-        static_cast<void>(
-            detail::content_fingerprint(root / "missing.txt")
-        );
+        static_cast<void>(detail::content_fingerprint(root / "missing.txt"));
         return fail("missing fingerprint input was accepted");
     } catch (const std::runtime_error&) {
     }
 
     const auto nested = root / "nested" / "directory";
     detail::ensure_directory_tree(root, nested);
-    struct stat nested_status {};
+    struct stat nested_status{};
     if (!std::filesystem::is_directory(nested) ||
         ::stat(nested.c_str(), &nested_status) == -1 ||
         (nested_status.st_mode & 0777) != 0700) {
@@ -228,17 +215,14 @@ int main() {
     static_cast<void>(onedrive::util::open_path_no_symlinks(
         umask_file,
         O_WRONLY | O_CREAT | O_EXCL,
-        S_IRUSR | S_IWUSR |
-            S_IRGRP | S_IWGRP |
-            S_IROTH | S_IWOTH
+        S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH
     ));
     assigned_root.ensure_directory_tree(
-        umask_directory,
-        onedrive::config::SyncPermissionsMode::umask
+        umask_directory, onedrive::config::SyncPermissionsMode::umask
     );
     ::umask(original_umask);
-    struct stat umask_status {};
-    struct stat umask_file_status {};
+    struct stat umask_status{};
+    struct stat umask_file_status{};
     if (::stat(umask_file.c_str(), &umask_file_status) == -1 ||
         (umask_file_status.st_mode & 0777) != 0644 ||
         ::stat(umask_directory.c_str(), &umask_status) == -1 ||
@@ -262,16 +246,148 @@ int main() {
         std::filesystem::exists(attack_outside / "renamed.txt")) {
         return fail("safe root modified data outside the synchronization root");
     }
+
+    if (assigned_root.path() != std::filesystem::absolute(root) ||
+        assigned_root.relative_path(root / "child") != "child") {
+        return fail("safe root did not preserve or relativize its path");
+    }
+    try {
+        static_cast<void>(
+            assigned_root.relative_path(temporary.path() / "outside.txt")
+        );
+        return fail("safe root accepted a path outside its root");
+    } catch (const std::runtime_error&) {
+    }
+    try {
+        detail::SafeSyncRoot invalid_root{rename_source};
+        return fail("regular file was accepted as a safe root");
+    } catch (const std::runtime_error&) {
+    }
+
+    {
+        auto descriptor = assigned_root.open(rename_source, O_RDONLY);
+        if (!descriptor) {
+            return fail("safe root did not open an existing file");
+        }
+    }
+    {
+        auto descriptor = assigned_root.open_directory(root);
+        if (!descriptor) {
+            return fail("safe root did not open its root directory");
+        }
+    }
+    try {
+        static_cast<void>(assigned_root.open_directory(rename_source));
+        return fail("safe root opened a regular file as a directory");
+    } catch (const std::runtime_error&) {
+    }
+
+    const auto rename_destination = root / "rename-destination.txt";
+    assigned_root.rename(rename_source, rename_destination);
+    if (std::filesystem::exists(rename_source) ||
+        !std::filesystem::exists(rename_destination)) {
+        return fail("safe root rename did not move the file");
+    }
+    const auto invalid_rename_source = root / "invalid-rename-source.txt";
+    const auto invalid_rename_destination = root / "invalid-rename-destination";
+    {
+        std::ofstream output{invalid_rename_source};
+        output << "data";
+    }
+    std::filesystem::create_directory(invalid_rename_destination);
+    try {
+        assigned_root.rename(invalid_rename_source, invalid_rename_destination);
+        return fail("safe root renamed a file over a directory");
+    } catch (const std::runtime_error&) {
+    }
+    const auto no_replace_source = root / "no-replace-source.txt";
+    const auto no_replace_destination = root / "no-replace-destination.txt";
+    {
+        std::ofstream output{no_replace_source};
+        output << "source";
+    }
+    if (!assigned_root.rename_no_replace(
+            no_replace_source, no_replace_destination
+        )) {
+        return fail("safe no-replace rename did not move an available file");
+    }
+    {
+        std::ofstream output{no_replace_source};
+        output << "replacement";
+    }
+    if (assigned_root.rename_no_replace(
+            no_replace_source, no_replace_destination
+        )) {
+        return fail("safe no-replace rename overwrote an existing file");
+    }
+
+    const auto identity = assigned_root.identity(
+        no_replace_source, detail::FilesystemItemKind::file
+    );
+    const auto root_identity =
+        assigned_root.identity(root, detail::FilesystemItemKind::directory);
+    if (identity.device == 0 || identity.inode == 0 ||
+        root_identity.device == 0 || root_identity.inode == 0) {
+        return fail("safe root returned an empty filesystem identity");
+    }
+    try {
+        static_cast<void>(assigned_root.identity(
+            no_replace_source, detail::FilesystemItemKind::directory
+        ));
+        return fail("safe root accepted a file as a directory identity");
+    } catch (const detail::SafePathConflictError&) {
+    }
+    try {
+        static_cast<void>(assigned_root.identity(
+            root / "missing-identity", detail::FilesystemItemKind::file
+        ));
+        return fail("safe root returned an identity for a missing file");
+    } catch (const std::runtime_error&) {
+    }
+
+    const auto nonempty_directory = root / "nonempty";
+    std::filesystem::create_directory(nonempty_directory);
+    {
+        std::ofstream output{nonempty_directory / "child.txt"};
+        output << "child";
+    }
+    try {
+        static_cast<void>(assigned_root.remove(
+            nonempty_directory, detail::FilesystemItemKind::directory
+        ));
+        return fail("safe root removed a nonempty directory");
+    } catch (const detail::SafePathConflictError&) {
+    }
+    if (!assigned_root.remove(
+            no_replace_source, detail::FilesystemItemKind::file
+        ) ||
+        assigned_root.remove(
+            no_replace_source, detail::FilesystemItemKind::file
+        )) {
+        return fail("safe root file removal returned the wrong result");
+    }
+    try {
+        static_cast<void>(assigned_root.remove(
+            no_replace_destination, detail::FilesystemItemKind::directory
+        ));
+        return fail("safe root removed a file as a directory");
+    } catch (const detail::SafePathConflictError&) {
+    }
+    std::filesystem::remove(nonempty_directory / "child.txt");
+    if (!assigned_root.remove(
+            nonempty_directory, detail::FilesystemItemKind::directory
+        )) {
+        return fail("safe root did not remove an empty directory");
+    }
+    assigned_root.fsync_directory(root);
+
     const auto conflicting_file = root / "not-a-directory";
     {
         std::ofstream output{conflicting_file};
         output << "data";
     }
     try {
-        detail::ensure_directory_tree(
-            root,
-            conflicting_file / "directory"
-        );
+        detail::ensure_directory_tree(root, conflicting_file / "directory");
         return fail("file was accepted as a directory component");
     } catch (const std::runtime_error&) {
     }
@@ -290,30 +406,26 @@ int main() {
         output << "data";
     }
     if (!detail::remove_no_symlinks(
-            removable,
-            detail::MissingPathPolicy::report
+            removable, detail::MissingPathPolicy::report
         ) ||
         std::filesystem::exists(removable)) {
         return fail("safe removal did not remove an existing file");
     }
     if (detail::remove_no_symlinks(
-            removable,
-            detail::MissingPathPolicy::ignore
+            removable, detail::MissingPathPolicy::ignore
         )) {
         return fail("ignored missing removal reported a removed file");
     }
     try {
         static_cast<void>(detail::remove_no_symlinks(
-            removable,
-            detail::MissingPathPolicy::report
+            removable, detail::MissingPathPolicy::report
         ));
         return fail("reported missing removal did not fail");
     } catch (const std::runtime_error&) {
     }
 
     const auto metadata = detail::FilesystemMetadata::detect(
-        onedrive::config::FilesystemMetadataMode::database,
-        root
+        onedrive::config::FilesystemMetadataMode::database, root
     );
     if (metadata.uses_xattrs()) {
         return fail("database metadata mode enabled xattrs");

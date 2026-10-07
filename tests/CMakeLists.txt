@@ -125,7 +125,13 @@ foreach(
         INCLUDE_DIRS tests tests/graph
     )
 endforeach()
-foreach(APP_TEST IN ITEMS args doctor flow inspection)
+add_onedrive_test(
+    graph_support_tests
+    SOURCES tests/graph/helpers.cpp
+    INCLUDE_DIRS src tests
+    LIBRARIES spdlog::spdlog
+)
+foreach(APP_TEST IN ITEMS args doctor factory flow inspection)
     add_onedrive_test(
         app_${APP_TEST}_tests
         SOURCES tests/app/${APP_TEST}.cpp

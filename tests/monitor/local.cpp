@@ -62,6 +62,25 @@ int test_local() {
         return fail("new directory subtree did not trigger synchronization");
     }
     std::this_thread::sleep_for(100ms);
+    const int runs_before_rename = local_runs;
+    std::filesystem::rename(nested / "file.txt", nested / "renamed.txt");
+    std::filesystem::remove(nested / "renamed.txt");
+    if (!wait_until([&] { return local_runs > runs_before_rename; }, 2s, 5ms)) {
+        local_worker.request_stop();
+        return fail("local rename and removal did not trigger synchronization");
+    }
+    std::this_thread::sleep_for(100ms);
+    const int runs_before_directory_removal = local_runs;
+    std::filesystem::remove_all(root / "new");
+    if (!wait_until(
+            [&] { return local_runs > runs_before_directory_removal; }, 2s, 5ms
+        )) {
+        local_worker.request_stop();
+        return fail(
+            "watched directory removal did not trigger synchronization"
+        );
+    }
+    std::this_thread::sleep_for(100ms);
     const int runs_before_symlink = local_runs;
     const auto outside = temporary.path() / "outside";
     std::filesystem::create_directory(outside);
