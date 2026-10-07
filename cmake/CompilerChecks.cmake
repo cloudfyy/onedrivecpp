@@ -33,6 +33,11 @@ option(
     OFF
 )
 option(
+    ONEDRIVE_ENABLE_CLANG_ANALYZER
+    "Include path-sensitive Clang Static Analyzer checks in Clang-Tidy"
+    OFF
+)
+option(
     ONEDRIVE_ENABLE_GRAPH_E2E
     "Enable live Microsoft Graph end-to-end tests"
     OFF
@@ -47,6 +52,13 @@ if(ONEDRIVE_ENABLE_CLANG_TIDY)
         CMAKE_CXX_CLANG_TIDY
         "${ONEDRIVE_CLANG_TIDY};--config-file=${CMAKE_CURRENT_SOURCE_DIR}/.clang-tidy"
     )
+    if(ONEDRIVE_ENABLE_CLANG_ANALYZER)
+        list(
+            APPEND CMAKE_CXX_CLANG_TIDY
+            "--checks=clang-analyzer-*"
+            "--warnings-as-errors=clang-analyzer-*"
+        )
+    endif()
 endif()
 configure_file(
     include/onedrive/version.hpp.in

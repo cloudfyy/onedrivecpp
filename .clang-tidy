@@ -1,6 +1,5 @@
 Checks: >
   -*,
-  clang-analyzer-*,
   bugprone-*,
   -bugprone-crtp-constructor-accessibility,
   -bugprone-easily-swappable-parameters,
@@ -17,7 +16,6 @@ Checks: >
   -cppcoreguidelines-pro-type-reinterpret-cast,
   -cppcoreguidelines-pro-type-vararg
 WarningsAsErrors: >
-  clang-analyzer-*,
   bugprone-*,
   performance-*,
   portability-*,

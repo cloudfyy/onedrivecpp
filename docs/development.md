@@ -91,14 +91,22 @@ ctest --test-dir build/e2e --output-on-failure -L boundary
 
 ## C++ Core Guidelines checks
 
-The lint preset runs Clang-Tidy during compilation with the project
-`.clang-tidy` policy. Diagnostics from the Clang static analyzer, bug-prone,
-performance, portability, and selected C++ Core Guidelines checks are treated
-as build errors:
+The `lint` preset runs the faster Clang-Tidy policy during compilation.
+Bug-prone, performance, portability, and selected C++ Core Guidelines
+diagnostics are treated as build errors:
 
 ```bash
 cmake --preset lint
 cmake --build --preset lint
+```
+
+The path-sensitive Clang Static Analyzer is intentionally excluded from the
+fast preset because it can be expensive for template-heavy translation units.
+Use the deep preset for periodic or CI analysis:
+
+```bash
+cmake --preset lint-deep
+cmake --build --preset lint-deep
 ```
 
 The policy excludes only reviewed noise from required C/POSIX APIs, protocol

@@ -31,7 +31,7 @@ if(NOT msft_proxy4_FOUND)
     add_library(onedrive_proxy INTERFACE)
     target_include_directories(
         onedrive_proxy
-        INTERFACE "${msft_proxy4_SOURCE_DIR}"
+        SYSTEM INTERFACE "${msft_proxy4_SOURCE_DIR}"
     )
     add_library(msft_proxy4::proxy ALIAS onedrive_proxy)
 endif()
