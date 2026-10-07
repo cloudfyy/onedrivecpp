@@ -530,4 +530,4 @@ Drive 数据库除远端 ID、ETag 和本地路径外，还会保存并校验用
 
 旧的平面 `<state.directory>/items.sqlite3` 和
 `<state.directory>/refresh_token` 布局不会自动迁移。升级后需要重新运行
-`onedrive-cpp auth` 初始化账号目录，并重新建立同步状态。
+`onedrive-cpp account login` 初始化账号目录，并重新建立同步状态。

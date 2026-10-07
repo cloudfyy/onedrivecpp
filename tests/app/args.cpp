@@ -9,7 +9,7 @@ int test_args() {
 
     const auto help =
         run_application(runtime_factory, {"build/release/onedrive-cpp"});
-    if (help.exit_code != 0 || !help.standard_output.contains("auth") ||
+    if (help.exit_code != 0 || !help.standard_output.contains("account") ||
         !help.standard_output.contains("drives") ||
         !help.standard_output.contains("shared") ||
         !help.standard_output.contains("sites") ||
@@ -37,12 +37,20 @@ int test_args() {
         !sync_help.standard_output.contains("--theme")) {
         return fail("sync help did not document sync-specific options");
     }
-    const auto auth_help =
-        run_application(runtime_factory, {"onedrive-cpp", "auth", "--help"});
-    if (auth_help.exit_code != 0 ||
-        !auth_help.standard_output.contains("--ui") ||
-        !auth_help.standard_output.contains("--theme")) {
-        return fail("auth help did not document TUI options");
+    const auto account_help =
+        run_application(runtime_factory, {"onedrive-cpp", "account", "--help"});
+    if (account_help.exit_code != 0 ||
+        !account_help.standard_output.contains("login") ||
+        !account_help.standard_output.contains("logout")) {
+        return fail("account help did not list its authentication actions");
+    }
+    const auto login_help = run_application(
+        runtime_factory, {"onedrive-cpp", "account", "login", "--help"}
+    );
+    if (login_help.exit_code != 0 ||
+        !login_help.standard_output.contains("--ui") ||
+        !login_help.standard_output.contains("--theme")) {
+        return fail("account login help did not document TUI options");
     }
     const auto monitor_help =
         run_application(runtime_factory, {"onedrive-cpp", "monitor", "--help"});
@@ -106,11 +114,17 @@ int test_args() {
             .exit_code != 2) {
         return fail("unknown command did not return usage exit code 2");
     }
-    if (run_application(runtime_factory, {"onedrive-cpp", "auth", "--config"})
+    if (run_application(
+            runtime_factory,
+            {"onedrive-cpp", "account", "login", "--config"}
+        )
             .exit_code != 2) {
         return fail("missing option value did not return usage exit code 2");
     }
-    if (run_application(runtime_factory, {"onedrive-cpp", "auth", "--dry-run"})
+    if (run_application(
+            runtime_factory,
+            {"onedrive-cpp", "account", "login", "--dry-run"}
+        )
             .exit_code != 2) {
         return fail(
             "command-specific option was accepted by the wrong command"
@@ -124,19 +138,21 @@ int test_args() {
     }
     if (run_application(
             runtime_factory,
-            {"onedrive-cpp", "logout", "--log-level", "verbose"}
+            {"onedrive-cpp", "account", "logout", "--log-level", "verbose"}
         )
             .exit_code != 2) {
         return fail("invalid log level did not return usage exit code 2");
     }
     if (run_application(
-            runtime_factory, {"onedrive-cpp", "logout", "--color", "sometimes"}
+            runtime_factory,
+            {"onedrive-cpp", "account", "logout", "--color", "sometimes"}
         )
             .exit_code != 2) {
         return fail("invalid color mode did not return usage exit code 2");
     }
     if (run_application(
-            runtime_factory, {"onedrive-cpp", "logout", "--output", "yaml"}
+            runtime_factory,
+            {"onedrive-cpp", "account", "logout", "--output", "yaml"}
         )
             .exit_code != 2) {
         return fail("invalid output mode did not return usage exit code 2");
@@ -156,6 +172,16 @@ int test_args() {
     if (run_application(runtime_factory, {"onedrive-cpp", "state"}).exit_code !=
         2) {
         return fail("state command accepted a missing action");
+    }
+    if (run_application(runtime_factory, {"onedrive-cpp", "account"})
+            .exit_code != 2) {
+        return fail("account command accepted a missing action");
+    }
+    if (run_application(runtime_factory, {"onedrive-cpp", "auth"}).exit_code !=
+            2 ||
+        run_application(runtime_factory, {"onedrive-cpp", "logout"})
+                .exit_code != 2) {
+        return fail("removed authentication commands were still accepted");
     }
     if (run_application(
             runtime_factory, {"onedrive-cpp", "state", "reset-cursor", "--yes"}

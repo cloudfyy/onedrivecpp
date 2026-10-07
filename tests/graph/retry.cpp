@@ -19,7 +19,9 @@ int test_missing_authentication() {
         static_cast<void>(client.list_root());
         return fail("missing authentication was accepted");
     } catch (const std::runtime_error& error) {
-        if (!std::string{error.what()}.contains("onedrive-cpp auth")) {
+        if (!std::string{error.what()}.contains(
+                "onedrive-cpp account login"
+            )) {
             return fail("missing authentication error was not actionable");
         }
     }

@@ -87,13 +87,13 @@ administrators, backup software, or log collectors.
 ## 7. Retention and deletion
 
 Locally stored information remains until you remove it, uninstall the
-Software, or delete its state directory. Running `onedrive-cpp logout` removes
+Software, or delete its state directory. Running `onedrive-cpp account logout` removes
 the locally stored refresh token but does not necessarily delete other local
 state or revoke Microsoft-side consent.
 
 To stop future authorized access:
 
-1. run `onedrive-cpp logout`;
+1. run `onedrive-cpp account logout`;
 2. revoke the application's permissions in your Microsoft account;
 3. delete local state that you no longer need.
 

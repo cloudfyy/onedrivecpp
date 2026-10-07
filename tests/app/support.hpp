@@ -752,7 +752,13 @@ struct CliFixture final {
     [[nodiscard]] RunResult authenticate() {
         return run_application(
             runtime_factory,
-            {"onedrive-cpp", "auth", "--config", config_path.string()}
+            {
+                "onedrive-cpp",
+                "account",
+                "login",
+                "--config",
+                config_path.string(),
+            }
         );
     }
 };

@@ -76,7 +76,7 @@ int test_sync() {
                     config, Operation::synchronize
                 };
             },
-            "run 'onedrive-cpp auth'"
+            "run 'onedrive-cpp account login'"
         )) {
         return fail("sync without a refresh token was accepted");
     }

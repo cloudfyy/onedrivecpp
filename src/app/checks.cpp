@@ -115,7 +115,8 @@ void validate_private_file(
     if (!exists) {
         if (required) {
             throw std::runtime_error(
-                std::string{description} + " is missing; run 'onedrive-cpp auth'"
+                std::string{description} +
+                " is missing; run 'onedrive-cpp account login'"
             );
         }
         return;
@@ -135,7 +136,8 @@ void validate_private_file(
     );
     if (required && status.st_size == 0) {
         throw std::runtime_error(
-            std::string{description} + " is empty; run 'onedrive-cpp auth'"
+            std::string{description} +
+            " is empty; run 'onedrive-cpp account login'"
         );
     }
     if (const auto close_error = descriptor.close(); close_error) {

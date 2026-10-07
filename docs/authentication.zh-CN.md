@@ -114,7 +114,7 @@ scopes = ["User.Read", "Files.ReadWrite", "offline_access"]
 使用以下命令启动设备授权：
 
 ```bash
-onedrive-cpp auth
+onedrive-cpp account login
 ```
 
 打开终端中显示的网址，输入用户代码，再使用应用所支持的账号类型登录并确认
@@ -135,7 +135,7 @@ onedrive-cpp auth
 tenant_id = "common"
 ```
 
-重新运行 `onedrive-cpp auth`，并且只在新显示的
+重新运行 `onedrive-cpp account login`，并且只在新显示的
 `https://login.microsoft.com/device` 页面中使用本次新代码。之前生成的设备代码
 不能重复使用。只有应用的 Supported account type 确实为
 **Personal Microsoft accounts only** 时才使用 `consumers`。
@@ -149,11 +149,11 @@ tenant_id = "common"
 scopes = ["User.Read", "Files.ReadWrite", "offline_access"]
 ```
 
-修改权限后必须重新运行 `onedrive-cpp auth`；已有设备代码仍绑定原来的权限，
+修改权限后必须重新运行 `onedrive-cpp account login`；已有设备代码仍绑定原来的权限，
 无法修复或重复使用。
 
 使用以下命令删除已保存的认证：
 
 ```bash
-onedrive-cpp logout
+onedrive-cpp account logout
 ```

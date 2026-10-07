@@ -121,7 +121,7 @@ prints a warning when a broader organizational scope is configured.
 Run the device authorization flow:
 
 ```bash
-onedrive-cpp auth
+onedrive-cpp account login
 ```
 
 Open the displayed URL, enter the user code, sign in with the account matching
@@ -145,7 +145,7 @@ configured with `auth.tenant_id = "consumers"`. Change it to:
 tenant_id = "common"
 ```
 
-Start `onedrive-cpp auth` again and use only the newly generated code at the
+Start `onedrive-cpp account login` again and use only the newly generated code at the
 newly displayed `https://login.microsoft.com/device` URL. Previously generated
 device codes cannot be reused. Keep `consumers` only for applications whose
 supported account type is **Personal Microsoft accounts only**.
@@ -161,11 +161,11 @@ use:
 scopes = ["User.Read", "Files.ReadWrite", "offline_access"]
 ```
 
-After changing scopes, restart `onedrive-cpp auth`; an existing device code
+After changing scopes, restart `onedrive-cpp account login`; an existing device code
 retains its original scopes and cannot be repaired or reused.
 
 Remove the saved authentication with:
 
 ```bash
-onedrive-cpp logout
+onedrive-cpp account logout
 ```

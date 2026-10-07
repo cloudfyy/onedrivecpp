@@ -20,7 +20,7 @@ onedrive-cpp monitor --log-file ~/.local/state/onedrive-cpp/onedrive-cpp.log
 onedrive-cpp sync --dry-run --color always
 onedrive-cpp sync --ui tui
 onedrive-cpp sync --theme ocean
-onedrive-cpp auth --ui tui
+onedrive-cpp account login --ui tui
 onedrive-cpp doctor --ui tui
 onedrive-cpp status --ui tui
 onedrive-cpp download Documents/report.pdf --ui tui
@@ -52,7 +52,7 @@ in this mode. `--quiet` suppresses informational and success output while
 retaining warnings and errors. Diagnostic logs remain on standard error, while
 command results are written to standard output.
 
-`auth`, `doctor`, `status`, `sync`, `download`, and `monitor` use `console.ui` from the configuration,
+`account login`, `doctor`, `status`, `sync`, `download`, and `monitor` use `console.ui` from the configuration,
 which defaults to `auto`; an explicit `--ui` overrides it for one invocation.
 Auto mode opens the FTXUI status dashboard only when standard input and output are terminals,
 `TERM` supports terminal controls, and the terminal is at least 60 columns by
@@ -81,7 +81,7 @@ shortcuts added to the configured OneDrive, including the target Drive and
 item IDs needed for configuration. `sites QUERY` searches accessible
 SharePoint sites and lists each site's document-library Drives. Site discovery
 requires `Sites.Read.All` or `Sites.ReadWrite.All`; change scopes and run
-`onedrive-cpp auth` again before using it.
+`onedrive-cpp account login` again before using it.
 
 `quota` reports total, used, remaining, deleted, and quota-state values for the
 configured drive. `status` combines the active account and canonical Drive

@@ -6,10 +6,10 @@ onedrive-cpp \- modern C++ OneDrive synchronization client
 .RI [ options ]
 .I command
 .PP
-.B onedrive-cpp auth
+.B onedrive-cpp account login
 .RI [ options ]
 .PP
-.B onedrive-cpp logout
+.B onedrive-cpp account logout
 .RI [ options ]
 .PP
 .B onedrive-cpp doctor
@@ -61,11 +61,11 @@ synchronization, dry-run and JSON output, inotify monitoring, proxy support,
 rate limiting, shell completion, and packaging integration.
 .SH COMMANDS
 .TP
-.B auth
+.B account login
 Authorize the application with Microsoft using the OAuth 2.0 device-code flow.
 On success, save the refresh token in the configured state directory.
 .TP
-.B logout
+.B account logout
 Remove the locally stored refresh token. This does not revoke consent on the
 Microsoft account; revoke the application separately in Microsoft account
 settings when required.
@@ -100,7 +100,7 @@ or
 in
 .BR auth.scopes ;
 run
-.B onedrive-cpp auth
+.B onedrive-cpp account login
 again after changing scopes.
 .TP
 .B quota
@@ -933,7 +933,7 @@ more blocked items.
 Authorize a Microsoft account:
 .PP
 .RS
-.B onedrive-cpp auth \-\-config ~/.config/onedrive-cpp/config.toml
+.B onedrive-cpp account login \-\-config ~/.config/onedrive-cpp/config.toml
 .RE
 .PP
 Inspect synchronization inputs:

@@ -332,7 +332,8 @@ std::filesystem::path AccountState::active_token_directory(
     const auto directory = find_active_token_directory(state_directory);
     if (!directory) {
         throw std::runtime_error(
-            "active Microsoft account is missing; run 'onedrive-cpp auth'"
+            "active Microsoft account is missing; run 'onedrive-cpp account "
+            "login'"
         );
     }
     return *directory;

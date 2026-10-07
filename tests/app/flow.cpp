@@ -16,7 +16,8 @@ int test_flow() {
         runtime_factory,
         {
             "onedrive-cpp",
-            "auth",
+            "account",
+            "login",
             "--config",
             config_path.string(),
         }
@@ -42,6 +43,7 @@ int test_flow() {
         runtime_factory,
         {
             "onedrive-cpp",
+            "account",
             "logout",
             "--config",
             config_path.string(),
@@ -68,7 +70,8 @@ int test_flow() {
             runtime_factory,
             {
                 "onedrive-cpp",
-                "auth",
+                "account",
+                "login",
                 "--config",
                 config_path.string(),
             }

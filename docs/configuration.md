@@ -613,5 +613,5 @@ example `me` to the canonical Microsoft Drive ID. SQLite uses WAL mode.
 
 The former flat `<state.directory>/items.sqlite3` and
 `<state.directory>/refresh_token` layout is intentionally not migrated. Run
-`onedrive-cpp auth` again to initialize the account-based layout and rebuild
+`onedrive-cpp account login` again to initialize the account-based layout and rebuild
 synchronization state.

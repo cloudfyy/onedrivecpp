@@ -1,6 +1,6 @@
 _onedrive_cpp_completion()
 {
-    local current previous command="" state_action="" word
+    local current previous command="" account_action="" state_action="" word
     COMPREPLY=()
     current="${COMP_WORDS[COMP_CWORD]}"
     previous="${COMP_WORDS[COMP_CWORD-1]}"
@@ -41,9 +41,14 @@ _onedrive_cpp_completion()
 
     for word in "${COMP_WORDS[@]:1:COMP_CWORD-1}"; do
         case "$word" in
-            auth|logout|doctor|drives|shared|sites|quota|status|state|download|sync|monitor)
+            account|doctor|drives|shared|sites|quota|status|state|download|sync|monitor)
                 if [[ -z "$command" ]]; then
                     command="$word"
+                fi
+                ;;
+            login|logout)
+                if [[ "$command" == "account" ]]; then
+                    account_action="$word"
                 fi
                 ;;
             reset-cursor|clear)
@@ -56,7 +61,7 @@ _onedrive_cpp_completion()
 
     if [[ -z "$command" ]]; then
         mapfile -t COMPREPLY < <(compgen -W \
-            "auth logout doctor drives shared sites quota status state download sync monitor --help --version" \
+            "account doctor drives shared sites quota status state download sync monitor --help --version" \
             -- "$current")
         return
     fi
@@ -71,9 +76,23 @@ _onedrive_cpp_completion()
         --help
     "
     case "$command" in
-        auth)
-            mapfile -t COMPREPLY < <(compgen -W \
-                "$common_options --ui --theme" -- "$current")
+        account)
+            case "$account_action" in
+                login)
+                    mapfile -t COMPREPLY < <(compgen -W \
+                        "$common_options --ui --theme" -- "$current")
+                    ;;
+                logout)
+                    mapfile -t COMPREPLY < <(
+                        compgen -W "$common_options" -- "$current"
+                    )
+                    ;;
+                *)
+                    mapfile -t COMPREPLY < <(
+                        compgen -W "login logout --help" -- "$current"
+                    )
+                    ;;
+            esac
             ;;
         doctor)
             mapfile -t COMPREPLY < <(compgen -W \
@@ -113,7 +132,7 @@ _onedrive_cpp_completion()
                     ;;
             esac
             ;;
-        logout|drives|shared|sites|quota)
+        drives|shared|sites|quota)
             mapfile -t COMPREPLY < <(
                 compgen -W "$common_options" -- "$current"
             )

@@ -55,10 +55,14 @@ ParseResult parse_arguments(int argc, char* argv[]) {
     );
     application.require_subcommand(1);
 
-    auto* auth = application.add_subcommand(
-        "auth", "Authorize with Microsoft using the device code flow"
+    auto* account = application.add_subcommand(
+        "account", "Manage Microsoft account authentication"
     );
-    auto* logout = application.add_subcommand(
+    account->require_subcommand(1);
+    auto* account_login = account->add_subcommand(
+        "login", "Authorize with Microsoft using the device code flow"
+    );
+    auto* account_logout = account->add_subcommand(
         "logout", "Remove the locally stored refresh token"
     );
     auto* doctor = application.add_subcommand(
@@ -100,8 +104,8 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         "monitor", "Monitor for synchronization changes"
     );
     const std::array command_operations{
-        std::pair{auth, Operation::authenticate},
-        std::pair{logout, Operation::logout},
+        std::pair{account_login, Operation::authenticate},
+        std::pair{account_logout, Operation::logout},
         std::pair{doctor, Operation::diagnose},
         std::pair{drives, Operation::drives},
         std::pair{shared, Operation::shared},
@@ -236,19 +240,19 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         return result;
     }
 
-    arguments.operation = *auth           ? Operation::authenticate
-                          : *logout       ? Operation::logout
-                          : *doctor       ? Operation::diagnose
-                          : *drives       ? Operation::drives
-                          : *shared       ? Operation::shared
-                          : *sites        ? Operation::sites
-                          : *quota        ? Operation::quota
-                          : *status       ? Operation::status
-                          : *reset_cursor ? Operation::reset_cursor
-                          : *clear_state  ? Operation::clear_state
-                          : *download     ? Operation::download
-                          : *monitor      ? Operation::monitor
-                                          : Operation::synchronize;
+    arguments.operation = *account_login  ? Operation::authenticate
+                          : *account_logout ? Operation::logout
+                          : *doctor         ? Operation::diagnose
+                          : *drives         ? Operation::drives
+                          : *shared         ? Operation::shared
+                          : *sites          ? Operation::sites
+                          : *quota          ? Operation::quota
+                          : *status         ? Operation::status
+                          : *reset_cursor   ? Operation::reset_cursor
+                          : *clear_state    ? Operation::clear_state
+                          : *download       ? Operation::download
+                          : *monitor        ? Operation::monitor
+                                             : Operation::synchronize;
     return result;
 }
 

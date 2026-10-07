@@ -19,7 +19,7 @@ onedrive-cpp monitor --log-file ~/.local/state/onedrive-cpp/onedrive-cpp.log
 onedrive-cpp sync --dry-run --color always
 onedrive-cpp sync --ui tui
 onedrive-cpp sync --theme ocean
-onedrive-cpp auth --ui tui
+onedrive-cpp account login --ui tui
 onedrive-cpp doctor --ui tui
 onedrive-cpp status --ui tui
 onedrive-cpp download Documents/report.pdf --ui tui
@@ -48,7 +48,7 @@ URL，但仍可能包含账号与 Drive 显示名称、远端项目名称和本�
 使用 `--yes` 显式确认。`--quiet` 会隐藏普通信息和成功消息，但仍保留警告和
 错误。诊断日志继续写入标准错误，命令结果写入标准输出。
 
-`auth`、`doctor`、`status`、`sync`、`download` 和 `monitor` 读取配置中的 `console.ui`，默认值为 `auto`；
+`account login`、`doctor`、`status`、`sync`、`download` 和 `monitor` 读取配置中的 `console.ui`，默认值为 `auto`；
 命令行显式提供的 `--ui` 只覆盖本次运行。auto 模式只有在标准输入和标准输出均连接终端、`TERM`
 支持终端控制，并且窗口至少为 60 列 × 12 行时，才会打开 FTXUI 实时状态面板。
 输出重定向、管道、JSON、quiet 模式、`TERM=dumb` 或窗口过小时，会自动切回普通
@@ -71,7 +71,7 @@ Drive。`shared` 会列出 `sharedWithMe` 返回的项目，以及已添加到�
 快捷方式（shortcut）；同时显示配置共享 Drive 所需的目标 Drive ID 和 item ID。
 `sites QUERY` 搜索可访问的 SharePoint 站点并列出各站点的文档库 Drive。
 站点发现要求 `Sites.Read.All` 或 `Sites.ReadWrite.All`；修改 scope 后需要重新
-运行 `onedrive-cpp auth`。
+运行 `onedrive-cpp account login`。
 
 `quota` 显示配置 Drive 的总量、已用、剩余、回收站占用和配额状态。`status`
 合并当前账号及规范 Drive 身份与本地只读状态，包括同步模式、删除策略、最后一次

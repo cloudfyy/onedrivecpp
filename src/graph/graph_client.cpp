@@ -309,7 +309,8 @@ std::string MicrosoftGraphClient::access_token() const {
     const auto refresh_token = token_store_->load_refresh_token();
     if (!refresh_token) {
         throw std::runtime_error(
-            "no saved Microsoft authentication is available; run 'onedrive-cpp auth'"
+            "no saved Microsoft authentication is available; run "
+            "'onedrive-cpp account login'"
         );
     }
     spdlog::debug("Refreshing Microsoft access token");

@@ -23,7 +23,8 @@ RuntimePreflight::RuntimePreflight(
         !config::has_auth_scope(config.auth_scope, "Sites.ReadWrite.All")) {
         throw std::runtime_error(
             "sites requires Sites.Read.All or Sites.ReadWrite.All in "
-            "auth.scopes; run 'onedrive-cpp auth' after changing scopes"
+            "auth.scopes; run 'onedrive-cpp account login' after changing "
+            "scopes"
         );
     }
 
@@ -41,7 +42,8 @@ RuntimePreflight::RuntimePreflight(
         );
     if (capabilities.requires_authentication && !token_directory) {
         throw std::runtime_error(
-            "active Microsoft account is missing; run 'onedrive-cpp auth' "
+            "active Microsoft account is missing; run 'onedrive-cpp account "
+            "login' "
             "to initialize the account-based state layout"
         );
     }

@@ -31,6 +31,7 @@ assert_contains sites "${COMPREPLY[@]}"
 assert_contains quota "${COMPREPLY[@]}"
 assert_contains status "${COMPREPLY[@]}"
 assert_contains state "${COMPREPLY[@]}"
+assert_contains account "${COMPREPLY[@]}"
 assert_contains --version "${COMPREPLY[@]}"
 
 COMP_WORDS=(onedrive-cpp sync --)
@@ -41,11 +42,22 @@ assert_contains --force-large-delete "${COMPREPLY[@]}"
 assert_contains --output "${COMPREPLY[@]}"
 assert_contains --quiet "${COMPREPLY[@]}"
 
-COMP_WORDS=(onedrive-cpp auth --)
+COMP_WORDS=(onedrive-cpp account "")
 COMP_CWORD=2
+_onedrive_cpp_completion
+assert_contains login "${COMPREPLY[@]}"
+assert_contains logout "${COMPREPLY[@]}"
+
+COMP_WORDS=(onedrive-cpp account login --)
+COMP_CWORD=3
 _onedrive_cpp_completion
 assert_contains --ui "${COMPREPLY[@]}"
 assert_contains --theme "${COMPREPLY[@]}"
+
+COMP_WORDS=(onedrive-cpp account logout --)
+COMP_CWORD=3
+_onedrive_cpp_completion
+assert_contains --config "${COMPREPLY[@]}"
 
 COMP_WORDS=(onedrive-cpp status --)
 COMP_CWORD=2

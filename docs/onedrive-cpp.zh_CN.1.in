@@ -6,10 +6,10 @@ onedrive-cpp \- 现代 C++ OneDrive 同步客户端
 .RI [ 选项 ]
 .I 命令
 .PP
-.B onedrive-cpp auth
+.B onedrive-cpp account login
 .RI [ 选项 ]
 .PP
-.B onedrive-cpp logout
+.B onedrive-cpp account logout
 .RI [ 选项 ]
 .PP
 .B onedrive-cpp doctor
@@ -57,11 +57,11 @@ Graph 操作传播删除、移动和重命名。SQLite journal 为传输和元�
 监控、代理、速率限制、Shell 自动补全和软件包集成。
 .SH 命令
 .TP
-.B auth
+.B account login
 使用 OAuth 2.0 设备代码流程授权应用。成功后将 refresh token 保存到配置的状态
 目录。
 .TP
-.B logout
+.B account logout
 删除本地保存的 refresh token。此操作不会撤销 Microsoft 账号上的应用授权；
 需要时应在 Microsoft 账号设置中另行撤销。
 .TP
@@ -92,7 +92,7 @@ Drive ID、item ID、所有者、项目类型、web URL 以及 shortcut 的本�
 或
 .BR Sites.ReadWrite.All ；
 修改 scope 后需要重新运行
-.BR onedrive-cpp\ auth 。
+.BR onedrive-cpp\ account\ login 。
 .TP
 .B quota
 显示配置 Drive 的总量、已用、剩余、回收站占用和配额状态，不执行同步。
@@ -740,7 +740,7 @@ OAuth token、设备代码、Authorization header 和密码不得写入日志。
 授权 Microsoft 账号：
 .PP
 .RS
-.B onedrive-cpp auth \-\-config ~/.config/onedrive-cpp/config.toml
+.B onedrive-cpp account login \-\-config ~/.config/onedrive-cpp/config.toml
 .RE
 .PP
 查看同步输入：
