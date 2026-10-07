@@ -3,13 +3,13 @@
 [English](authentication.md) | 简体中文 |
 [文档中心](README.zh-CN.md)
 
-客户端使用 OAuth 2.0 设备授权流程。必须在 Microsoft Entra 中注册自己的公共
-客户端应用；不要创建客户端密钥。
+客户端采用 OAuth 2.0 设备授权流程。使用前，必须在 Microsoft Entra 中注册
+自己的公共客户端应用；不要创建客户端密钥。
 
 ## 注册应用
 
-Microsoft 当前要求账号具有有效的 Azure 订阅、可访问的 Microsoft Entra 租户，
-并拥有注册应用的权限。如果只有 Outlook.com/Hotmail 个人账号且无法打开
+Microsoft 目前要求账号具有有效的 Azure 订阅、可访问的 Microsoft Entra 租户，
+以及注册应用的权限。如果只有 Outlook.com/Hotmail 个人账号，且无法打开
 **App registrations**，请先创建
 [免费 Azure 账号](https://azure.microsoft.com/zh-cn/pricing/purchase-options/azure-account)，
 使用其 **Default Directory**，或者请租户管理员分配 Application Developer
@@ -32,8 +32,8 @@ Microsoft 当前要求账号具有有效的 Azure 订阅、可访问的 Microsof
 7. 打开 **身份验证（Authentication）> 高级设置（Advanced settings）**，
    将 **Allow public client flows** 设置为 **Yes** 并保存。
 
-设备代码流不需要 Redirect URI。公共客户端中也不要添加 Client Secret，因为
-桌面或命令行程序无法安全保存嵌入的客户端密钥。
+设备代码流不需要 Redirect URI。也不要为公共客户端添加 Client Secret，因为
+桌面或命令行程序无法安全保存嵌入其中的客户端密钥。
 
 对应的 Microsoft 官方文档：
 
@@ -53,10 +53,9 @@ User.Read
 Files.ReadWrite
 ```
 
-`User.Read` 用于识别当前登录账号和下载头像。客户端还会请求
-`offline_access`，以便 Microsoft 返回 refresh token。只有在
-组织版 OneDrive、共享文档库或 SharePoint 场景确实需要时，才添加更广泛的
-委托权限：
+`User.Read` 用于识别当前登录账号并下载头像。客户端还会请求
+`offline_access`，以便 Microsoft 返回 refresh token。只有组织版 OneDrive、
+共享文档库或 SharePoint 场景确有需要时，才应添加范围更广的委托权限：
 
 ```text
 Files.ReadWrite.All
@@ -118,10 +117,10 @@ scopes = ["User.Read", "Files.ReadWrite", "offline_access"]
 onedrive-cpp auth
 ```
 
-打开终端显示的网址，输入用户代码，使用与应用支持账号类型相符的账号登录，
-并确认所请求的权限。成功后，客户端会读取稳定的用户和 Drive 身份以及头像，
-并将 refresh token 和头像原子保存到友好的账号状态目录，权限限制为仅文件
-所有者可访问。
+打开终端中显示的网址，输入用户代码，再使用应用所支持的账号类型登录并确认
+所请求的权限。授权成功后，客户端会读取稳定的用户身份、Drive 身份和头像，
+然后将 refresh token 与头像原子写入易于识别的账号状态目录。目录权限仅允许
+文件所有者访问。
 
 如果 Microsoft 提示账号类型不受支持，请检查应用注册中的
 **Supported account types**：仅个人账号注册应使用 `consumers`，同时支持个人
@@ -138,7 +137,7 @@ tenant_id = "common"
 
 重新运行 `onedrive-cpp auth`，并且只在新显示的
 `https://login.microsoft.com/device` 页面中使用本次新代码。之前生成的设备代码
-不能重复使用。只有应用的 Supported account type 确实是
+不能重复使用。只有应用的 Supported account type 确实为
 **Personal Microsoft accounts only** 时才使用 `consumers`。
 
 如果设备代码已被接受并进入账号登录，但之后 Microsoft 又提示代码已过期，

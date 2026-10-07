@@ -51,52 +51,69 @@ flowchart TB
 
 ## 依赖与存储边界
 
-应用使用构造器注入和明确的端口接口，不使用 Service Locator。`main` 是唯一的
-composition root。生产 runtime factory 在配置加载后创建 libcurl、文件 token、
-SQLite、monitor、Graph 和 metrics 适配器；测试则注入内存 fake。这样业务编排
-不再依赖基础设施实现，instrumentation 也通过稳定端口与编排解耦。
-运行时端口使用 Proxy 4 类型擦除，因此适配器只需满足所需操作，无需继承项目
+应用通过构造器注入依赖，并使用明确的端口接口，不采用 Service Locator。`main`
+是唯一的组合根（composition root）。加载配置后，生产环境的运行时工厂
+（runtime factory）会创建 libcurl、文件 token、SQLite、monitor、Graph 和
+metrics 适配器；测试则注入内存实现（fake）。这样，业务编排无需依赖具体的
+基础设施实现，检测逻辑（instrumentation）也能通过稳定端口与编排解耦。
+
+运行时端口使用 Proxy 4 类型擦除。适配器只需提供所要求的操作，无需继承项目
 定义的抽象基类。
-SQLite ItemStore 拥有专用数据库线程。下载、监控和上传工作线程发起的调用
-都会排队并同步等待完成，因此 SQLite 连接和事务顺序始终由一个线程负责，错误
-则返回给调用方。SQLite 是状态的权威来源，适配器不再维护重复的可变条目缓存。
+
+SQLite ItemStore 使用专用数据库线程。下载、监控和上传工作线程发起调用后，
+请求会排队，并同步等待执行结果。因此，SQLite 连接和事务顺序始终由同一线程
+管理，错误则返回调用方。SQLite 是状态的权威来源，适配器不再重复维护可变的
+条目缓存。
+
 ## 事务状态机
 
-下载和上传事务复用一个小型模板 Typestate 核心，用于隔离状态族并在合法阶段间
-移动 payload。下载包含内容已验证和恢复 journal 已持久化阶段；上传包含快照已
-准备、journal 已持久化和远端已提交阶段，并且只有 journaled 上传可以持久化
-Graph 会话 checkpoint。公共模板不包含 Graph、SQLite 或文件系统策略：Typestate
-负责约束进程内转换，SQLite 仍然是持久化恢复的权威来源。
-每种事务都在公共底层原语之上提供精确类型的命名转换边。转换可以映射 payload
-类型，因此后续状态只保存有效数据：journaled 上传不再携带已释放的 snapshot，
-Graph 已提交的远端移动直接拥有必需的远端条目，而不是 optional 值。
-本地移动恢复也复用该核心，表达 prepared、journaled、恢复 journal、staged 和
-installed 阶段。只有类型状态能够证明尚未生成 staging 或目标对象时，失败路径
-才会删除 journal；后续阶段始终保留恢复证据供重启使用。
-远端移动使用独立状态族表达 prepared、journaled、Graph 已提交和本地已提交阶段。
-只有 journal 持久化后才能调用 Microsoft Graph；远端移动成功后仍保留 journal，
-直到本地条目状态和目录后代路径完成原子提交。
-远端删除同样使用 prepared、journaled、Graph 已删除和本地已提交状态。journal
-写入失败时不能调用 Graph；Graph 删除完成后继续保留 journal，直到本地跟踪子树
-完成原子删除。
-远端目录创建使用独立的 prepared、journaled、Graph 已创建和本地已提交状态族。
-新建和重启恢复统一进入同一个 Graph 已创建提交路径，复用本地目录验证、inode
-获取、SQLite 提交和远端身份 metadata 写入。
-Graph 大文件上传会话也在同步层之外复用此核心。不存在或已保存的会话只能通过
-创建或验证恢复进入 active；已过期、不存在或已失效的保存会话先返回 absent，
-再创建新会话。每个已接受的分片只有在 checkpoint 成功后才推进 active 状态，
-并且只有 active 会话能够生成包含远端条目的 finalized 状态。
+下载和上传事务共用一个小型的模板化类型状态（Typestate）核心。它将不同状态族
+彼此隔离，并确保载荷（payload）只能在合法阶段之间移动。下载事务包括“内容已
+验证”和“恢复日志已持久化”阶段；上传事务包括“快照已准备”“日志已持久化”和
+“远端已提交”阶段。只有已写入日志的上传才能持久化 Graph 会话检查点。
+
+公共模板不包含 Graph、SQLite 或文件系统策略。Typestate 只约束进程内的状态
+转换，SQLite 仍是持久化恢复状态的权威来源。每种事务都基于公共底层原语提供
+精确类型的命名转换。转换时可以映射 payload 类型，因此后续状态只保留有效数据：
+已写入日志的上传不再携带已经释放的快照；Graph 已提交的远端移动直接持有必需的
+远端条目，而不是可选值。
+
+本地移动恢复也复用该核心，用于表达 prepared、journaled、恢复 journal、staged
+和 installed 阶段。只有类型状态能够证明尚未生成 staging 或目标对象时，失败
+路径才会删除 journal；进入后续阶段后，系统始终保留恢复证据，以供重启时使用。
+
+远端移动使用独立的状态族，依次表达 prepared、journaled、Graph 已提交和本地
+已提交阶段。只有 journal 持久化后才能调用 Microsoft Graph。远端移动成功后，
+journal 仍会保留，直到本地条目状态和目录后代路径完成原子提交。
+
+远端删除同样使用 prepared、journaled、Graph 已删除和本地已提交状态。如果
+journal 写入失败，程序不会调用 Graph；Graph 完成删除后，journal 仍会保留，
+直到本地跟踪子树完成原子删除。
+
+远端目录创建使用另一套独立的 prepared、journaled、Graph 已创建和本地已提交
+状态。新建操作与重启恢复会汇入同一条“Graph 已创建”提交路径，共用本地目录
+验证、inode 获取、SQLite 提交和远端身份 metadata 写入逻辑。
+
+Graph 大文件上传会话也在同步层之外复用这一核心。不存在或已保存的会话只能
+通过“创建”或“验证并恢复”进入 active 状态。对于已过期、不存在或失效的已保存
+会话，程序先返回 absent，再创建新会话。每个已接受的分片只有在 checkpoint
+成功后才会推进 active 状态；也只有 active 会话能够生成包含远端条目的
+finalized 状态。
 ## 通知架构
 
-远端变更通知使用独立于 Monitor 调度状态机的纯连接状态机。连接 reducer 负责
-channel 获取、token 刷新、socket 连接、租约续期、有界指数退避和停止 effect。
-通知只是唤醒信号：它不包含权威条目数据，也不会推进 Delta cursor。首次连接或
-重连后必须安排一次 catch-up Delta 同步；同步期间收到通知时会锁存，并在完成后
-再执行一轮。原有 Graph 定时轮询始终作为权威 fallback 保持启用，因此 channel
-发现或 socket 故障不会阻止最终收敛。网络 adapter 只执行 reducer effect，不
-决定状态转移策略。生产 adapter 通过 Graph 获取 channel，并在 libcurl 的纯
-WebSocket transport 上执行 Engine.IO 4 / Socket.IO framing、心跳处理和 eventfd
-唤醒。
+远端变更通知使用纯连接状态机，与 Monitor 的调度状态机相互独立。连接归约器
+（reducer）负责获取 channel、刷新 token、建立 socket 连接、续订租约、执行
+有界指数退避，以及产生停止 effect。
+
+通知只是一种唤醒信号：它不含权威条目数据，也不会推进 Delta cursor。首次连接
+或重连后，必须安排一次补偿性（catch-up）Delta 同步。同步期间收到的通知会先
+锁存，待当前同步完成后再执行一轮。原有的 Graph 定时轮询始终作为权威后备机制
+（fallback）启用，因此，即使 channel 发现或 socket 出现故障，系统仍能最终
+收敛。
+
+网络适配器只执行 reducer 产生的 effect，不负责决定状态转换策略。生产适配器
+通过 Graph 获取 channel，并基于 libcurl 的纯 WebSocket 传输实现 Engine.IO 4 /
+Socket.IO framing、心跳处理和 eventfd 唤醒。
 
 ## 源码目录
 

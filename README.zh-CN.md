@@ -2,30 +2,32 @@
 
 [English](README.md) | 简体中文
 
-`onedrive-cpp` 是一个面向 Ubuntu 24.04 LTS 及以上版本的 C++26 OneDrive
-同步客户端。它参考
-[abraunegg/onedrive](https://github.com/abraunegg/onedrive) 的职责拆分方式，
-但不复制其 D 语言实现。
+`onedrive-cpp` 是一款使用 C++26 编写的 OneDrive 同步客户端，支持 Ubuntu
+24.04 LTS 及以上版本。项目参考
+[abraunegg/onedrive](https://github.com/abraunegg/onedrive) 的职责划分，但未
+复制其 D 语言实现。
 
 ## 功能
 
-- OAuth 2.0 设备代码认证，以及安全隔离的账号 Token 和资料状态。
+- OAuth 2.0 设备代码认证，并安全隔离各账号的 Token 和资料状态。
 - Microsoft Graph Delta 增量同步、多账号和多 Drive 隔离、选择性同步规则及
   显式单文件下载。
 - 并发、可续传且带完整性校验的下载，支持原子安装、磁盘空间协调、总速率限制，
   以及阻止或备份本地冲突。
-- 并发简单上传和 upload session，支持稳定快照、持久 checkpoint、崩溃恢复、
-  单文件及总速率限制和条件 Graph 写入。
-- 文件与目录的双向创建、修改、删除、移动和重命名传播，包括依赖环 staging 和
-  可配置的大批量远端删除保护。
-- 基于 SQLite journal 的下载、上传、本地与远端移动、远端删除和目录创建恢复。
-- inotify 长驻监控、Graph 轮询、事件合并、队列溢出恢复和干净信号退出。
-- dry-run、结构化 JSON 输出、轮转日志、代理、Shell 自动补全、手册页、加固的
-  systemd 用户服务和 Debian 打包。
+- 并发简单上传和上传会话（upload session），支持稳定快照、持久检查点
+  （checkpoint）、崩溃恢复、单文件与总速率限制，以及带条件的 Graph 写入。
+- 双向传播文件和目录的创建、修改、删除、移动与重命名；支持通过暂存
+  （staging）解决依赖环，并提供可配置的大批量远端删除保护。
+- 使用 SQLite 日志（journal）恢复下载、上传、本地与远端移动、远端删除和目录
+  创建操作。
+- 通过 inotify 长驻监控，支持 Graph 轮询、事件合并、队列溢出恢复和收到信号后
+  安全退出。
+- 支持试运行（dry-run）、结构化 JSON 输出、日志轮转、代理、Shell 自动补全、
+  手册页、加固的 systemd 用户服务和 Debian 打包。
 
 ## 文档
 
-[文档中心](docs/README.zh-CN.md)把手册组织为三个章节：
+[文档中心](docs/README.zh-CN.md)将手册分为三个部分：
 
 1. **开始使用：**[认证](docs/authentication.zh-CN.md)、
    [配置](docs/configuration.zh-CN.md)和[命令使用](docs/usage.zh-CN.md)。
@@ -71,9 +73,9 @@ clang-format-20 --version
 cmake --version
 ```
 
-提交前必须格式化本次修改的 C/C++ 行。先暂存源文件和头文件，再从仓库根目录
-运行固定版本的 Git 集成，使其读取仓库内的 `.clang-format`，同时避免重排无关
-的历史代码：
+提交前必须格式化本次改动涉及的 C/C++ 代码行。先暂存源文件和头文件，再从仓库
+根目录运行指定版本的 Git 集成。该命令会读取仓库中的 `.clang-format`，且不会
+重排无关的历史代码：
 
 ```bash
 git add path/to/modified.cpp path/to/modified.hpp
@@ -84,10 +86,11 @@ git add path/to/modified.cpp path/to/modified.hpp
 新文件可以直接使用 `clang-format-20 -i` 完整格式化。不要使用无版本后缀的
 命令或其他主版本，因为输出可能与 Clang 20 不一致。
 
-编译库从操作系统解析并动态链接。这样 Debian 的安全更新可以替换 libcurl、
-OpenSSL、SQLite、spdlog 和 fmt，而无需重新构建 `onedrive-cpp`。
-Proxy 4 是 header-only 库。CMake 优先使用已安装的 `msft_proxy4` 包，否则下载
-固定版本的 ngcpp/proxy 4.1.0；vcpkg manifest 则通过 `proxy` port 解析它。
+构建系统从操作系统解析依赖库，并采用动态链接。因此，Debian 可以通过安全更新
+替换 libcurl、OpenSSL、SQLite、spdlog 和 fmt，无需重新构建 `onedrive-cpp`。
+Proxy 4 是纯头文件库（header-only）。CMake 优先使用已安装的 `msft_proxy4`
+包；如果找不到，则下载固定版本的 ngcpp/proxy 4.1.0。vcpkg manifest 通过
+`proxy` port 解析该依赖。
 
 ## 编译
 
@@ -111,7 +114,7 @@ ctest --preset release
 
 ### 完整 Release 重编译
 
-仅删除 Release 构建目录，使 CMake 和 Ninja 从空白状态重新配置和编译：
+只需删除 Release 构建目录，即可让 CMake 和 Ninja 从空白状态重新配置并编译：
 
 ```bash
 rm -rf build/release
@@ -150,8 +153,8 @@ Debug 程序位于 `build/debug/onedrive-cpp`。
 sudo cmake --install build/release
 ```
 
-默认前缀会把可执行文件、示例配置、systemd 用户服务、中英文手册页和 Shell
-自动补全安装到 `/usr/local`。需要其他前缀时，在配置阶段设置
+使用默认前缀时，可执行文件、示例配置、systemd 用户服务、中英文手册页和
+Shell 自动补全都会安装到 `/usr/local`。如需更改前缀，请在配置阶段设置
 `CMAKE_INSTALL_PREFIX`。
 
 ### 快速生成 CPack 包
@@ -202,8 +205,8 @@ dpkg-buildpackage --build=binary --no-sign
 ../onedrive-cpp_0.8.7-1~ubuntu24.04_amd64.deb
 ```
 
-Debian changelog 保存原生构建发行版后缀。将来增加 Ubuntu 26.04 支持时，应在
-Ubuntu 26.04 环境中使用 对应的 `-1~ubuntu26.04` changelog 版本构建。
+Debian changelog 保留原生构建的发行版后缀。将来增加 Ubuntu 26.04 支持时，应
+在 Ubuntu 26.04 环境中使用对应的 `-1~ubuntu26.04` changelog 版本构建。
 
 安装并检查：
 

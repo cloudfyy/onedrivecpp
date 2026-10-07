@@ -14,27 +14,28 @@ cp /etc/onedrive-cpp/onedrive-cpp.toml ~/.config/onedrive-cpp/config.toml
 sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 ```
 
-配置文件使用 TOML，并且必须声明 `config_version = 2`。版本 1 配置必须把原来的
-`sync.download_*` 键迁移到下方的 `transfer` 和 `download` 表。未知配置项和错误
-的值类型会直接报错，不会被静默忽略。
+配置文件采用 TOML 格式，并且必须声明 `config_version = 2`。版本 1 的配置需要
+将原有的 `sync.download_*` 键迁移到下文所示的 `transfer` 和 `download` 表。
+程序会直接报告未知配置项和错误的值类型，不会静默忽略。
 
-执行子命令前，客户端会把 `state.directory` 收紧为仅所有者可访问的 `0700`，
-校验当前账号 token 路径，并在该目录持有独占的 `onedrive-cpp.lock`。第二个
-使用同一状态目录的进程会立即失败。当前用户拥有的既有私有状态文件会收紧为
-`0600`；符号链接或其他用户拥有的文件会被拒绝。
+执行子命令前，客户端会将 `state.directory` 的权限收紧为仅所有者可访问的
+`0700`，校验当前账号的 token 路径，并在该目录中持有独占的
+`onedrive-cpp.lock`。如果另一个进程正在使用同一状态目录，新进程会立即失败。
+对于当前用户拥有的现有私有状态文件，程序会将权限收紧为 `0600`；符号链接或
+属于其他用户的文件会被拒绝。
 
 同步时，`sync.data_directory` 和 `state.directory` 不能互相包含，不能把文件系统
 根目录用作同步目录，并且所有已存在的路径组件都不能是符号链接。普通同步会在
 访问 Graph 前执行创建、写入、`fsync`、删除探测；dry-run 仍保持不修改同步目录。
-下载会保留实际传输量 5% 或 256 MiB 中的较大值作为安全余量。并发 worker 在
-传输前只预留各自尚未下载的字节，每个可靠 checkpoint 后释放对应承诺空间；当
-可用容量已被其他活动下载预留时会等待。这样大批次可以顺序推进，同时不会让
-并发下载过量承诺磁盘空间。
+下载会按“实际传输量的 5%”与“256 MiB”两者中的较大值预留安全空间。并发工作
+线程（worker）在传输前只预留各自尚未下载的字节，并在每个可靠 checkpoint 后
+释放相应的承诺空间。如果可用容量已被其他活动下载预留，当前下载会等待。这样，
+大批次任务可以依次推进，同时避免并发下载过度承诺磁盘空间。
 
-`sync.drive_id` 指定要访问的远端 OneDrive Drive。默认值 `me` 表示当前登录账号的
-默认 OneDrive，程序使用 Microsoft Graph 路径 `/me/drive/root/children`
-列出其根目录。若要访问账号有权使用的其他 OneDrive 或 SharePoint 文档库，
-可将其设置为实际的 Drive ID；程序将改用
+`sync.drive_id` 指定要访问的远端 OneDrive Drive。默认值 `me` 表示当前登录
+账号的默认 OneDrive，程序通过 Microsoft Graph 路径
+`/me/drive/root/children` 列出根目录。如果需要访问该账号有权使用的其他
+OneDrive 或 SharePoint 文档库，请将其设置为实际的 Drive ID；程序将改用
 `/drives/<drive_id>/root/children`。
 
 ## 配置参考示例
@@ -115,12 +116,14 @@ settle_delay_milliseconds = 1000
 
 ## 存储与挂载安全
 
-当 `sync.data_directory` 位于可移动存储、网络文件系统或其他可能掉线的挂载盘时，
-设置 `sync.data_mount_point`。该路径必须是当前真实挂载的目录，并且是
-`sync.data_directory` 的祖先。客户端会在启动时检查它，并在每轮完整同步或单文件
-下载前再次检查。如果 Monitor 运行期间挂载盘消失，下一轮同步会在本地扫描、
-pending 操作恢复、下载、上传、远端删除或 Delta 游标更新之前停止。Monitor 会在
-之后的调度中重试，因此相同路径重新挂载后可以恢复正常工作。
+如果 `sync.data_directory` 位于可移动存储、网络文件系统或其他可能掉线的挂载
+盘，请设置 `sync.data_mount_point`。该路径必须是当前实际挂载的目录，并且必须
+是 `sync.data_directory` 的祖先目录。客户端会在启动时检查该路径，并在每轮
+完整同步或单文件下载前再次检查。
+
+如果 Monitor 运行期间挂载盘消失，下一轮同步会在本地扫描、恢复 pending 操作、
+下载、上传、远端删除或更新 Delta 游标之前停止。Monitor 会在后续调度中重试，
+因此，只要同一路径重新挂载，程序就能恢复正常工作。
 
 此选项默认关闭，客户端不会根据 `sync.data_directory` 猜测挂载点。例如
 `/mnt/data/OneDrive` 是同步目录、`/mnt/data` 是实际挂载点时，配置为：
@@ -133,16 +136,16 @@ data_mount_point = "/mnt/data"
 
 ## 大批量删除保护
 
-`sync.maximum_remote_deletions` 限制一次本地删除计划最多可从 OneDrive 删除
-多少个已跟踪项目，默认值为 `1000`；设为 `0` 时，除非显式强制，否则任何远端
-删除都会被阻止。已跟踪目录消失时，计数包含目录自身及其所有已跟踪后代，即使
-Graph 只需要对父目录发出一次 DELETE。客户端会在上传侧移动、建目录、上传或
-删除发生前检查完整批次，并在真正执行删除前再次检查。
+`sync.maximum_remote_deletions` 限制单次本地删除计划最多可以从 OneDrive 删除
+多少个已跟踪项目，默认值为 `1000`。设为 `0` 后，除非显式强制执行，否则任何
+远端删除都会被阻止。如果已跟踪目录消失，计数会包含目录本身及其所有已跟踪
+后代，即使 Graph 只需对父目录发出一次 DELETE。客户端会在上传侧执行移动、
+创建目录、上传或删除之前检查整个批次，并在实际删除前再次检查。
 
-超过限制时，普通 sync 和 monitor 都会在发出远端 DELETE 前停止；monitor 永不
-自动绕过保护。`sync --dry-run` 会报告 Graph 删除操作数、受影响快照数、限制值
-以及普通运行是否会被阻止。确认本地文件系统状态且删除确属预期后，可执行一次性
-强制：
+超过限制时，普通 sync 和 monitor 都会在发出远端 DELETE 前停止；monitor 绝不
+会自动绕过这项保护。`sync --dry-run` 会报告 Graph 删除操作数、受影响的快照
+数量、限制值，以及普通运行是否会被阻止。确认本地文件系统状态无误，并确定删除
+符合预期后，可以执行一次性强制操作：
 
 ```bash
 onedrive-cpp sync --force-large-delete
@@ -153,25 +156,27 @@ onedrive-cpp sync --force-large-delete
 
 ## Monitor 调度与通知
 
-`monitor` 启动时先执行一轮完整同步并获取 Microsoft Graph Socket.IO channel，
-随后休眠，直到收到远端 WebSocket 通知、inotify 报告已完成的本地变化，或者
-Graph 轮询周期到期。本地事件突发会按
-`monitor.settle_delay_milliseconds` 合并；即使没有本地活动，
-`monitor.poll_interval_seconds` 也会在通知 channel 获取、续期或投递失败时限制
-远端变化的最长发现延迟。WebSocket 通知只负责唤醒，每次通知及重连后的 catch-up
-仍通过权威 Delta 查询收敛。新建或移入的目录树会被递归监听；inotify 队列溢出时
-会重建全部 watch 并安排完整同步。
+`monitor` 启动后，先执行一轮完整同步并获取 Microsoft Graph Socket.IO
+channel，然后进入休眠。收到远端 WebSocket 通知、inotify 报告完整的本地变化，
+或 Graph 轮询周期到期时，它会被唤醒。本地事件突发会按照
+`monitor.settle_delay_milliseconds` 合并。即使没有本地活动，当通知 channel
+获取、续期或投递失败时，`monitor.poll_interval_seconds` 仍会限制发现远端变化
+的最长延迟。
+
+WebSocket 通知只负责唤醒。每次通知以及重连后的 catch-up 仍通过权威 Delta
+查询完成收敛。程序会递归监听新建或移入的目录树；如果 inotify 队列溢出，则
+重建全部 watch，并安排一次完整同步。
 `SIGINT` 和 `SIGTERM` 会唤醒阻塞等待，并在当前同步结束后安全退出。
 设置 `monitor.websocket_enabled = false` 可禁用 Graph Socket.IO/WSS 通知；
 本地 inotify 事件和 Graph 定时轮询仍保持启用。request/connect timeout 分别限制
 channel 获取和 WSS 握手时间，renewal lead 控制提前续期时间，initial/maximum
 backoff 限制指数退避范围。Engine.IO heartbeat 时间由服务器协商，因此不提供
 本地配置。
-Monitor 调度器使用显式的单线程运行时状态机，状态包括 starting、idle、本地事件
-settling、synchronizing 和 stopped。本地事件突发会重置 settle deadline，队列
-溢出会升级待处理原因，并且待完成的本地 settle 优先于已到期的 Graph poll。
-系统 I/O 和 `SyncEngine` 保持在纯状态 reducer 之外，因此调度器只约束事件顺序，
-不会复制同步策略。
+Monitor 调度器采用显式的单线程运行时状态机，状态包括 starting、idle、本地
+事件 settling、synchronizing 和 stopped。本地事件突发会重置 settle deadline；
+队列溢出会提升待处理原因的优先级；尚未完成的本地 settle 优先于已经到期的
+Graph poll。系统 I/O 和 `SyncEngine` 位于纯状态 reducer 之外，因此调度器只
+约束事件顺序，不会重复实现同步策略。
 
 ## 选择与过滤
 
@@ -204,15 +209,18 @@ Pictures/*.jpg
 的规则可以在任意深度匹配，因此作用范围更广。反斜杠、空路径组件、`.`、`..`
 以及嵌入其他字符中的 `**` 会被拒绝。
 
-过滤发生在 Microsoft Graph 返回 Delta 元数据之后；它可以减少本地文件和内容
-传输，但不是 Graph 服务端过滤。有效规则的摘要会与 Delta 游标在同一个 SQLite
-事务中提交。增加、修改、删除或重新排序规则后，下次同步会自动获取完整远端
-状态。选择范围变化不是远端删除记录，因此已经存在于本地但后来被排除的文件会
-被明确保留。当已跟踪文件从包含路径移动到排除路径时，schema v16 SQLite 状态会
-用该保留对象的 device/inode 身份建立上传抑制；即使同一对象随后被本地修改，也
-不会从旧路径错误上传。对象消失或被不同 filesystem identity 替换后，下次上传
-扫描会清理失效抑制。远端项目重新移入选择范围时会下载当前路径，但不会解除旧保留
-副本的保护。用户执行的 `download REMOTE_PATH` 不受 `sync.sync_list` 限制。
+Microsoft Graph 返回 Delta 元数据后，客户端才会应用过滤规则。过滤可以减少
+本地文件数量和内容传输量，但不属于 Graph 服务端过滤。程序会在同一个 SQLite
+事务中提交有效规则摘要和 Delta 游标。增加、修改、删除规则或调整规则顺序后，
+下一次同步会自动获取完整的远端状态。
+
+选择范围变化不属于远端删除，因此，本地已有但后来被排除的文件会明确保留。
+如果已跟踪文件从包含路径移到排除路径，schema v16 SQLite 状态会根据该保留对象
+的 device/inode 身份抑制上传。即使之后在本地修改同一对象，程序也不会错误地从
+旧路径上传。如果对象消失，或被具有不同 filesystem identity 的对象替换，下一次
+上传扫描会清理失效的抑制记录。远端项目重新移入选择范围后，程序会下载其当前
+路径，但不会解除对旧保留副本的保护。用户手动执行的
+`download REMOTE_PATH` 不受 `sync.sync_list` 限制。
 
 配置 `sync.sync_list` 后，设置 `sync.sync_root_files = true` 会自动包含直接位于
 Drive 根目录中的普通文件。根目录下的目录及其后代仍然必须由包含规则选中，
@@ -230,26 +238,26 @@ Drive 根目录中的普通文件。根目录下的目录及其后代仍然必�
 - `sync.maximum_file_size_bytes = 0` 表示不限制大小。正值会在两个同步方向上
   排除严格大于该字节数的普通文件；大小恰好等于限制值的文件仍可同步。
 
-被过滤文件在本地不存在不会被解释成远端删除。修改这些策略或增加、删除
-`.nosync` 标记会更新过滤摘要并触发完整 Delta 查询。后来被排除的现有本地文件
-会保留，并使用基于 filesystem identity 的上传抑制；文件重新符合条件时仍执行
-正常的本地冲突保护。显式 `download REMOTE_PATH` 命令不受这些自动同步过滤器
-限制。
+被过滤的文件如果在本地不存在，不会被视为远端删除。修改这些策略，或增加、
+删除 `.nosync` 标记，会更新过滤摘要并触发完整 Delta 查询。程序会保留后来被
+排除的现有本地文件，并根据 filesystem identity 抑制上传。文件重新符合条件时，
+仍会执行正常的本地冲突保护。显式执行的 `download REMOTE_PATH` 命令不受这些
+自动同步过滤器限制。
 
 ## 冲突处理
 
-`sync.local_conflict` 控制同时发生的本地和远端文件变化。默认值
-`"block"` 保持原有行为：普通同步把项目记录为 `local_modification`，显式单文件
-下载则在开始传输前停止。设置为 `"backup"` 后，程序会先把稳定的本地内容复制到
-同目录的持久备份，例如
+`sync.local_conflict` 决定如何处理同时发生的本地和远端文件变化。默认值
+`"block"` 保持原有行为：普通同步会将项目记录为 `local_modification`，显式
+单文件下载则会在传输开始前停止。设为 `"backup"` 后，程序会先将稳定的本地
+内容复制为同目录下的持久备份，例如
 `report.safeBackup-20261004T051000Z-0001.pdf`，然后再原子安装远端权威版本。
 备份是独立副本而不是硬链接，会保留本地权限位，并会被排除在上传之外。
-如果本地内容与已下载内容的 SHA-256 指纹相同，程序不会创建备份，也不会替换原
-inode，而是直接采用现有文件。创建备份需要额外占用约等于本地文件大小的磁盘
-空间；失败时程序会安全停止，不会替换目标。该策略同时作用于普通同步、
+如果本地内容与已下载内容的 SHA-256 指纹相同，程序不会创建备份，也不会替换
+原 inode，而是直接采用现有文件。创建备份需要额外占用约等于本地文件大小的
+磁盘空间。如果备份失败，程序会安全停止，不会替换目标。该策略同时用于普通同步、
 `download REMOTE_PATH`，以及恢复上传时发现的并发远端变化。上传恢复只会丢弃
-已经过期的上传快照和 journal，然后通过同一策略对账远端 delta。无法创建安全
-普通文件副本的目录冲突和远端删除冲突仍会被阻止。
+已经过期的上传快照和 journal，再使用同一策略与远端 delta 对账。对于无法创建
+安全普通文件副本的目录冲突和远端删除冲突，程序仍会阻止操作。
 
 对于已跟踪文件，状态数据库会同时保存 Graph eTag 和 cTag。本地快照未变化时，
 如果 delta 只改变 eTag，而非空 cTag 保持一致，程序只刷新远端元数据，不会重新
@@ -265,11 +273,12 @@ inode，而是直接采用现有文件。创建备份需要额外占用约等于
 `download_only` 会下载远端变化，但不扫描本地变化进行上传，也不会恢复
 pending upload、远端移动或远端删除操作。
 
-在 `download_only` 下，`sync.delete_policy = "propagate"` 会在远端源项目删除后
-安全删除未变化的已跟踪本地项目。本地修改、类型异常或非空目录会被阻止，并通过
-已有 blocked-item journal 重试。`preserve` 会保留本地实体，但消费远端
-tombstone、移除其跟踪状态，并清理旧的 blocked deletion，避免完整 Delta 刷新
-反复规划同一删除。pending download 仍会在应用最新远端 Delta 前恢复。
+在 `download_only` 模式下，如果设置
+`sync.delete_policy = "propagate"`，远端源项目删除后，程序会安全删除未变化的
+已跟踪本地项目。遇到本地修改、类型异常或非空目录时，程序会阻止删除，并通过
+现有的 blocked-item journal 重试。`preserve` 会保留本地实体，但会消费远端
+tombstone、移除对应的跟踪状态，并清理旧的 blocked deletion，避免完整 Delta
+刷新反复规划同一删除。应用最新远端 Delta 之前，程序仍会恢复 pending download。
 
 设置 `sync.delete_policy = "preserve"` 后，本地项目缺失不会删除远端对应项目；
 当 `upload_only` 未显式设置删除策略时，这也是安全默认值。双向同步默认使用
@@ -287,21 +296,23 @@ Graph 明确返回冲突时会移除 journal 并阻止操作；发生结果不�
 流程会重试请求，并且只有同一路径的远端项目确实是目录时才采用它。
 ## 上传、移动与远端修改
 
-250 MB 以内使用简单上传，更大的文件使用 Microsoft Graph upload
-session 连续分片，并且只推进到 Graph 通过 `nextExpectedRanges` 精确确认的偏移。
+不超过 250 MB 的文件使用简单上传；更大的文件使用 Microsoft Graph upload
+session 连续分片上传。只有 Graph 通过 `nextExpectedRanges` 精确确认后，程序
+才会推进上传偏移。
 默认分片大小为 10 MiB；非末尾分片必须是 320 KiB 的整数倍，并低于 Graph 的
 60 MiB 单请求上限。预授权 upload session URL 不会携带 Graph Authorization
-header，也不会写入日志。pending-upload journal 会持久保存 session URL、过期时间
-以及 Graph 每次确认的偏移。进程重启后，程序会在不携带 Authorization header 的
-情况下查询 session；如果 Graph 进度领先于本地最后一个 checkpoint，则先持久化
-远端进度，再从该位置续传，不会重发已确认分片。session 过期或返回 HTTP 404/410
-时会安全创建新 session；服务端偏移落后于可靠 checkpoint 时会停止，避免重复发送
-数据。旧配置中的 `upload = false` 会映射为 `mode = "download_only"`。
+header，也不会写入日志。pending-upload journal 会持久保存 session URL、过期时间，以及 Graph 每次确认
+的偏移。进程重启后，程序会在不携带 Authorization header 的情况下查询 session。
+如果 Graph 进度领先于本地最后一个 checkpoint，程序会先持久化远端进度，再从
+该位置续传，不会重发已确认的分片。session 过期或返回 HTTP 404/410 时，程序会
+安全创建新 session；如果服务端偏移落后于可靠 checkpoint，程序会停止，避免
+重复发送数据。旧配置中的 `upload = false` 会映射为
+`mode = "download_only"`。
 
-OneDrive 配额响应，以及本地上传读取、权限、快照空间或 I/O 失败，会在同一个
-pending-upload journal 中持久记录可操作原因和尝试次数。单个失败项目不会阻止
-其他上传。每轮同步会对已记录失败重试一次；恢复成功后清除 journal，重复失败则
-继续通过警告和 blocked 汇总显示。
+如果收到 OneDrive 配额响应，或本地上传发生读取、权限、快照空间或 I/O 错误，
+程序会在同一个 pending-upload journal 中持久记录可操作的原因和尝试次数。单个
+项目失败不会阻止其他上传。每轮同步会对已记录的失败重试一次；恢复成功后清除
+journal，重复失败则继续通过警告和 blocked 汇总显示。
 
 已跟踪本地项目消失后，程序会使用保存的 eTag 作为 `If-Match` 前置条件删除远端
 项目。目录删除按父目录优先处理，并同时清理其已跟踪后代。独立的 SQLite journal
@@ -399,11 +410,11 @@ ca_file = "/etc/ssl/certs/company-proxy-ca.pem"
 
 ## 传输行为与限制
 
-`download.concurrency` 控制可同时下载的文件数量，默认值为 `4`，允许范围为
-`1` 到 `16`。指向同一规范化本地路径的下载始终会串行执行，包括常见的仅
-ASCII 大小写不同的路径；无关目标仍可并发下载。
+`download.concurrency` 控制可以同时下载的文件数量，默认值为 `4`，允许范围为
+`1` 到 `16`。如果多个下载指向同一个规范化本地路径，它们始终会串行执行；这也
+包括仅有 ASCII 字母大小写差异的常见情况。目标无关的下载仍可并发执行。
 
-`transfer.order` 控制文件传输进入 worker 队列的顺序。支持 `default`、
+`transfer.order` 控制文件传输进入 worker 队列的顺序，支持 `default`、
 `size_asc`、`size_dsc`、`name_asc` 和 `name_dsc`。默认保留同步计划顺序，
 排序键相同时也保持原顺序。并发执行时，它控制任务开始顺序而非完成顺序。
 该设置作用于下载队列；上传依赖继续使用父目录优先的操作顺序。
@@ -411,13 +422,14 @@ ASCII 大小写不同的路径；无关目标仍可并发下载。
 `download.chunk_threshold_bytes` 设置大文件阈值（字节）。超过该值的文件会通过
 HTTP 字节范围请求顺序分片下载，并以该值作为单个分片的最大大小。默认值为
 `8388608`（8 MiB），且必须大于零。等于或小于阈值的文件仍使用单次请求。
-程序会在写入响应正文前验证 Range 响应元数据；单请求和宽松下载也会先拒绝
-非成功 HTTP 响应正文，防止其进入临时文件或 durable checkpoint。大型传输
-会在 Graph 内容请求中通过 `If-Match` 提交预期远端 eTag，远端版本发生变化时
-会在签发下载 URL 前拒绝请求。大型传输过程中会定期可靠写盘和记录 checkpoint；
-请求中断后会从最后一个安全落盘的
-偏移量继续，而不是重新下载整个分片。用户正常取消时，程序也会在停止前可靠
-写盘并记录已经通过 Range 响应验证的字节。
+程序会在写入响应正文前验证 Range 响应元数据。单请求下载和宽松模式下载也会
+先拒绝非成功 HTTP 响应的正文，防止它进入临时文件或 durable checkpoint。
+大型传输会在 Graph 内容请求中通过 `If-Match` 提交预期的远端 eTag。如果远端
+版本发生变化，Graph 会在签发下载 URL 前拒绝请求。
+
+大型传输期间，程序会定期可靠写盘并记录 checkpoint。请求中断后，会从最后一个
+安全落盘的偏移量继续，而不是重新下载整个分片。用户正常取消时，程序也会在停止
+前可靠写盘，并记录已经通过 Range 响应验证的字节。
 
 `download.checkpoint_interval_bytes` 控制每新增多少下载字节就可靠写盘并记录
 可续传进度。默认值为 `1048576`（1 MiB），且必须大于零。更小的值可以减少
@@ -472,10 +484,10 @@ HEIC 文件实际下载的字节可能与 Graph 元数据不同；`"relaxed"` �
 
 ## 权限与存储布局
 
-`permissions` 默认为 `"private"`。新同步文件使用 `0600` 创建，同步根目录和
-新目录会设置为 `0700`，防止本机其他用户读取同步内容。只有确实需要通过 Unix
-组权限共享同步目录时，才应设置为 `"umask"`，让权限遵循进程 umask。打包的
-systemd 用户服务还会使用 `UMask=0077` 作为纵深防御。
+`permissions` 默认为 `"private"`。新同步文件以 `0600` 权限创建，同步根目录和
+新目录则设为 `0700`，防止本机其他用户读取同步内容。只有确实需要通过 Unix 组
+权限共享同步目录时，才应将其设为 `"umask"`，使权限遵循进程 umask。打包的
+systemd 用户服务还会使用 `UMask=0077`，提供纵深防御。
 
 `sync.data_directory` 是同步数据的公共根目录。实际 Drive 内容会使用与 state 相同的
 稳定 ID 和友好名称组件进行隔离：
@@ -486,9 +498,9 @@ systemd 用户服务还会使用 `UMask=0077` 作为纵深防御。
     <同步的 OneDrive 内容>
 ```
 
-因此，同一个配置根目录可以同时容纳多个 Microsoft 用户和多个 Drive，且不会
-发生路径冲突。旧的平面 `<sync.data_directory>` 布局中的文件不会自动移动，并会
-保持原样。
+因此，同一个配置根目录可以同时容纳多个 Microsoft 用户和多个 Drive，而不会
+发生路径冲突。旧的平面 `<sync.data_directory>` 布局中的文件不会自动移动，
+仍会保持原样。
 
 状态按稳定的 Microsoft 用户 ID 和真实 Drive ID 隔离，同时保留友好的目录名：
 

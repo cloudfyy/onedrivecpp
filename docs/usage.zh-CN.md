@@ -26,21 +26,21 @@ onedrive-cpp quota
 onedrive-cpp status
 ```
 
-支持 `trace`、`debug`、`info`、`warn`、`error`、`critical` 和 `off`。
-日志文件达到 5 MiB 时轮转，并保留三个旧文件。不得把认证 token、设备代码或
-Authorization header 写入日志。
+日志级别支持 `trace`、`debug`、`info`、`warn`、`error`、`critical` 和
+`off`。日志文件达到 5 MiB 时会轮转，并保留三个旧文件。日志中不得写入认证
+token、设备代码或 Authorization header。
 
-`--color=auto` 是默认值：仅在终端中启用样式，设置 `NO_COLOR` 时自动禁用；
-`always` 强制输出 ANSI 样式，`never` 始终禁用。`--output=json` 每行输出一个
-紧凑 JSON 对象且绝不包含 ANSI 序列；危险操作在该模式下必须使用 `--yes`
-显式确认。`--quiet` 隐藏普通信息和成功消息，但保留警告和错误。诊断日志继续
-写入标准错误，命令结果写入标准输出。
+`--color=auto` 是默认值：仅在终端中启用样式；设置 `NO_COLOR` 后会自动禁用。
+`always` 强制输出 ANSI 样式，`never` 则始终禁用。`--output=json` 每行输出
+一个紧凑的 JSON 对象，绝不包含 ANSI 序列。在该模式下执行危险操作时，必须
+使用 `--yes` 显式确认。`--quiet` 会隐藏普通信息和成功消息，但仍保留警告和
+错误。诊断日志继续写入标准错误，命令结果写入标准输出。
 
 ## 只读账号与同步信息
 
 `drives` 列出当前 Microsoft 账号可用的 OneDrive Drive，并标记配置正在使用的
-Drive。`shared` 列出 `sharedWithMe` 返回的项目和已添加到配置 OneDrive 的
-shortcut，并显示配置共享 Drive 所需的目标 Drive ID 与 item ID。
+Drive。`shared` 会列出 `sharedWithMe` 返回的项目，以及已添加到当前 OneDrive 的
+快捷方式（shortcut）；同时显示配置共享 Drive 所需的目标 Drive ID 和 item ID。
 `sites QUERY` 搜索可访问的 SharePoint 站点并列出各站点的文档库 Drive。
 站点发现要求 `Sites.Read.All` 或 `Sites.ReadWrite.All`；修改 scope 后需要重新
 运行 `onedrive-cpp auth`。
@@ -50,13 +50,13 @@ shortcut，并显示配置共享 Drive 所需的目标 Drive ID 与 item ID。
 同步结果、tracked/blocked 数量、pending journal、Delta cursor、
 selective-sync fingerprint 和 WebSocket 配置。
 
-这些命令不会同步文件或修改远端内容。`status` 以只读方式打开已有 SQLite
-数据库，不会创建或迁移缺失或旧版本数据库。五个命令均支持 `--output json`。
+这些命令不会同步文件或修改远端内容。`status` 以只读方式打开现有 SQLite 数据库，不会创建缺失的数据库，也不会迁移
+旧版数据库。以上五个命令均支持 `--output json`。
 
 ## Shell 自动补全
 
 安装包会安装 Bash 和 Zsh 补全定义，支持子命令、选项、枚举值和文件路径。
-启用 shell completion 的新终端会自动加载。
+新终端启用 Shell 补全后会自动加载这些定义。
 
 开发构建可在当前 Bash 中执行：
 
