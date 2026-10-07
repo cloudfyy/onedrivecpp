@@ -1,4 +1,5 @@
 #include "info.hpp"
+#include "drive_fields.hpp"
 
 #include "onedrive/account/account_state.hpp"
 #include "onedrive/graph/graph_client.hpp"
@@ -93,22 +94,7 @@ int show_drives(
         console.section(
             "drive",
             "OneDrive drive:",
-            {
-                {.label = "name:", .key = "name", .value = drive.name},
-                {.label = "id:", .key = "id", .value = drive.id},
-                {.label = "type:", .key = "type", .value = drive.type},
-                {.label = "owner:", .key = "owner", .value = drive.owner},
-                {
-                    .label = "configured:",
-                    .key = "configured",
-                    .value = drive.id == configured.id ? "true" : "false",
-                },
-                {
-                    .label = "web URL:",
-                    .key = "web_url",
-                    .value = drive.web_url,
-                },
-            }
+            drive_fields(drive, drive.id == configured.id)
         );
     }
     return 0;

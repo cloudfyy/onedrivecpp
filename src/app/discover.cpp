@@ -1,4 +1,5 @@
 #include "discover.hpp"
+#include "drive_fields.hpp"
 
 #include "onedrive/graph/graph_client.hpp"
 
@@ -114,9 +115,9 @@ int show_sites(
             }
         );
         for (const auto& drive : site.drives) {
-            console.section(
-                "site_drive",
-                "SharePoint document library:",
+            auto fields = drive_fields(drive);
+            fields.insert(
+                fields.begin(),
                 {
                     {
                         .label = "site:",
@@ -128,20 +129,12 @@ int show_sites(
                         .key = "site_id",
                         .value = site.id,
                     },
-                    {.label = "name:", .key = "name", .value = drive.name},
-                    {.label = "id:", .key = "id", .value = drive.id},
-                    {.label = "type:", .key = "type", .value = drive.type},
-                    {
-                        .label = "owner:",
-                        .key = "owner",
-                        .value = drive.owner,
-                    },
-                    {
-                        .label = "web URL:",
-                        .key = "web_url",
-                        .value = drive.web_url,
-                    },
                 }
+            );
+            console.section(
+                "site_drive",
+                "SharePoint document library:",
+                std::move(fields)
             );
         }
     }

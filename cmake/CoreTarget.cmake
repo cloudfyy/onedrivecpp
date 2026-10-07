@@ -7,6 +7,7 @@ add_library(onedrive_core
     src/app/checks.cpp
     src/app/commands.cpp
     src/app/discover.cpp
+    src/app/drive_fields.cpp
     src/app/lock.cpp
     src/app/preflight.cpp
     src/app/factory.cpp
