@@ -1,5 +1,7 @@
 #include "support.hpp"
 
+#include <algorithm>
+
 namespace {
 
 using namespace onedrive::test::sync;

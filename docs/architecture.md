@@ -64,6 +64,21 @@ monitor, and upload workers are queued and completed synchronously, so
 one thread owns the SQLite connection and transaction order while errors are
 returned to the caller. SQLite is the authoritative state source; the adapter
 does not maintain duplicate mutable item caches.
+
+## Presentation boundary
+
+Synchronization, upload, Delta, monitor, and command orchestration publish
+typed console events through the `Console` facade. The facade serializes calls
+from worker threads and forwards each event to a `ConsoleBackend`; it contains
+no text or JSON rendering policy. The built-in text and JSON backends render
+the same event model independently, while confirmations use a separate typed
+request.
+
+This boundary preserves JSON, redirected text, quiet mode, and interactive
+terminal behavior without coupling business code to a specific renderer. A
+future terminal UI can implement another backend that queues events for its UI
+thread; synchronization code does not need to call terminal widgets directly.
+
 ## Transaction state machines
 
 Download and upload transactions reuse a small template typestate core that

@@ -14,6 +14,8 @@ add_library(onedrive_core
     src/auth/device_auth.cpp
     src/auth/token_store.cpp
     src/cli/console.cpp
+    src/cli/json_backend.cpp
+    src/cli/text_backend.cpp
     src/config/config.cpp
     src/config/network.cpp
     src/config/output.cpp

@@ -1,276 +1,34 @@
 #include "onedrive/cli/console.hpp"
 
-#include <fmt/format.h>
-#include <nlohmann/json.hpp>
+#include "cli/backend_factory.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
-#include <cstdlib>
 #include <iostream>
 #include <stdexcept>
 #include <string>
-#include <unistd.h>
+#include <utility>
 
 namespace onedrive::cli {
 namespace {
 
-struct Style {
-    std::string_view symbol;
-    std::string_view color;
-};
-
 constexpr unsigned completed_percentage = 100;
 constexpr unsigned maximum_incomplete_percentage = 99;
 
-Style style_for(MessageKind kind) {
-    switch (kind) {
-        case MessageKind::information:
-            return {.symbol = "->", .color = "\033[36m"};
-        case MessageKind::success:
-            return {.symbol = "OK", .color = "\033[32m"};
-        case MessageKind::warning:
-            return {.symbol = "!!", .color = "\033[33m"};
-        case MessageKind::error:
-            return {.symbol = "XX", .color = "\033[31m"};
-    }
-    throw std::logic_error{"unknown console message kind"};
-}
-
-std::string_view level_for(MessageKind kind) {
-    switch (kind) {
-        case MessageKind::information:
-            return "info";
-        case MessageKind::success:
-            return "success";
-        case MessageKind::warning:
-            return "warning";
-        case MessageKind::error:
-            return "error";
-    }
-    throw std::logic_error{"unknown console message kind"};
-}
-
-bool suppressed(const ConsoleOptions& options, MessageKind kind) {
-    return options.quiet &&
-           kind != MessageKind::warning &&
-           kind != MessageKind::error;
-}
-
-std::string format_bytes(std::uint64_t bytes) {
-    constexpr std::uint64_t unit_size = 1024;
-    constexpr std::array<std::string_view, 3> units{
-        "KiB",
-        "MiB",
-        "GiB",
-    };
-    if (bytes < unit_size) {
-        return fmt::format("{} B", bytes);
-    }
-
-    double value = static_cast<double>(bytes);
-    std::size_t unit = 0;
-    while (true) {
-        value /= static_cast<double>(unit_size);
-        if (value < static_cast<double>(unit_size) ||
-            unit + 1 == units.size()) {
-            break;
-        }
-        ++unit;
-    }
-    return fmt::format("{:.1f} {}", value, units.at(unit));
-}
-
-std::string format_duration(std::uint64_t seconds) {
-    const auto hours = seconds / 3600;
-    const auto minutes = (seconds % 3600) / 60;
-    const auto remaining_seconds = seconds % 60;
-    return fmt::format(
-        "{:02}:{:02}:{:02}",
-        hours,
-        minutes,
-        remaining_seconds
-    );
-}
-
-}  // namespace
-
-Console::Console(
+std::unique_ptr<ConsoleBackend> make_backend(
     ConsoleOptions options,
     std::ostream& output,
     std::ostream& error
-)
-    : options_{options},
-      output_{&output},
-      error_{&error},
-      styled_{
-        options_.output == OutputMode::text &&
-        options_.color != ColorMode::never &&
-        (options_.color == ColorMode::always ||
-         (::isatty(STDOUT_FILENO) != 0 && std::getenv("NO_COLOR") == nullptr))
-      },
-      interactive_{
-          options_.output == OutputMode::text && output_.get() == &std::cout &&
-          ::isatty(STDOUT_FILENO) != 0
-      } {}
-
-void Console::message(
-    MessageKind kind,
-    std::string_view event,
-    std::string_view text
-) const {
-    if (suppressed(options_, kind)) {
-        return;
-    }
-    std::ostream& stream =
-        kind == MessageKind::error ? *error_ : *output_;
-    if (options_.output == OutputMode::json) {
-        stream << nlohmann::json{
-            {"event", event},
-            {"level", level_for(kind)},
-            {"message", text},
-        }.dump() << '\n';
-        return;
-    }
-    if (!styled_) {
-        stream << text << '\n';
-        return;
-    }
-    const auto style = style_for(kind);
-    stream << style.color << "\033[1m" << style.symbol << "\033[0m "
-           << text << '\n';
-}
-
-void Console::section(
-    std::string_view event,
-    std::string_view title,
-    const std::vector<Field>& fields
-) const {
-    if (options_.quiet) {
-        return;
-    }
-    if (options_.output == OutputMode::json) {
-        nlohmann::json values = nlohmann::json::object();
-        for (const auto& field : fields) {
-            values[field.key] = field.value;
-        }
-        *output_ << nlohmann::json{
-            {"event", event},
-            {"values", std::move(values)},
-        }.dump() << '\n';
-        return;
-    }
-
-    if (styled_) {
-        *output_ << "\033[1;36m" << title << "\033[0m\n";
-    } else {
-        *output_ << title << '\n';
-    }
-    std::size_t width = 0;
-    for (const auto& field : fields) {
-        width = std::max(width, field.label.size());
-    }
-    for (const auto& field : fields) {
-        *output_ << fmt::format(
-            "  {:<{}} {}\n",
-            field.label,
-            width,
-            field.value
+) {
+    if (options.output == OutputMode::json) {
+        return detail::make_json_console_backend(
+            options, output, error
         );
     }
+    return detail::make_text_console_backend(options, output, error);
 }
 
-void Console::delta_progress(
-    std::size_t pages,
-    std::size_t items,
-    util::ProgressState state
-) const {
-    if (options_.quiet) {
-        return;
-    }
-    const bool completed = state == util::ProgressState::completed;
-    if (options_.output == OutputMode::json) {
-        *output_ << nlohmann::json{
-            {"event", "delta_progress"},
-            {"pages", pages},
-            {"items", items},
-            {"completed", completed},
-        }.dump() << '\n';
-        return;
-    }
-    if (!delta_progress_active_) {
-        *output_ << "Microsoft Graph delta: ";
-        delta_progress_active_ = true;
-        delta_progress_pages_ = 0;
-    }
-    if (pages > delta_progress_pages_) {
-        *output_ << std::string(pages - delta_progress_pages_, '.')
-                 << std::flush;
-        delta_progress_pages_ = pages;
-    }
-}
-
-void Console::delta_summary(const DeltaSummary& summary) const {
-    if (options_.quiet) {
-        return;
-    }
-    if (options_.output == OutputMode::json) {
-        *output_ << nlohmann::json{
-            {"event", "delta_summary"},
-            {"pages", summary.pages},
-            {"scanned_items", summary.scanned_items},
-            {"unique_changes", summary.unique_changes},
-            {"files", summary.files},
-            {"directories", summary.directories},
-            {"deletions", summary.deletions},
-        }.dump() << '\n';
-        return;
-    }
-    const auto items_per_page =
-        summary.pages == 0 ?
-            0.0 :
-            static_cast<double>(summary.scanned_items) /
-                static_cast<double>(summary.pages);
-    *output_ << (delta_progress_active_ ? "\n" : "")
-             << fmt::format(
-                    "Microsoft Graph delta complete: {} page{}, {} items "
-                    "scanned, {} unique changes ({} files, {} folders, {} "
-                    "deletions), {:.1f} items/page\n",
-                    summary.pages,
-                    summary.pages == 1 ? "" : "s",
-                    summary.scanned_items,
-                    summary.unique_changes,
-                    summary.files,
-                    summary.directories,
-                    summary.deletions,
-                    items_per_page
-                );
-    delta_progress_pages_ = 0;
-    delta_progress_active_ = false;
-}
-
-void Console::blocked_item(
-    std::string_view path,
-    std::string_view reason_code,
-    std::string_view reason_message
-) const {
-    if (options_.output == OutputMode::json) {
-        *error_ << nlohmann::json{
-            {"event", "item_blocked"},
-            {"level", "warning"},
-            {"path", path},
-            {"reason_code", reason_code},
-            {"message", reason_message},
-        }.dump() << '\n';
-        return;
-    }
-    *error_ << fmt::format(
-        "Blocked '{}': {} ({})\n",
-        path,
-        reason_message,
-        reason_code
-    );
-}
+}  // namespace
 
 unsigned download_progress_percentage(
     std::size_t completed_files,
@@ -309,6 +67,81 @@ unsigned download_progress_percentage(
     return percentage;
 }
 
+Console::Console(
+    ConsoleOptions options,
+    std::ostream& output,
+    std::ostream& error
+)
+    : backend_{make_backend(options, output, error)} {}
+
+Console::Console(std::unique_ptr<ConsoleBackend> backend)
+    : backend_{std::move(backend)} {
+    if (!backend_) {
+        throw std::invalid_argument{
+            "console backend must not be null"
+        };
+    }
+}
+
+Console::~Console() = default;
+
+void Console::message(
+    MessageKind kind,
+    std::string_view event,
+    std::string_view text
+) const {
+    const std::scoped_lock lock{backend_mutex_};
+    backend_->emit(MessageEvent{
+        .kind = kind,
+        .event = std::string{event},
+        .text = std::string{text},
+    });
+}
+
+void Console::section(
+    std::string_view event,
+    std::string_view title,
+    const std::vector<Field>& fields
+) const {
+    const std::scoped_lock lock{backend_mutex_};
+    backend_->emit(SectionEvent{
+        .event = std::string{event},
+        .title = std::string{title},
+        .fields = fields,
+    });
+}
+
+void Console::delta_progress(
+    std::size_t pages,
+    std::size_t items,
+    util::ProgressState state
+) const {
+    const std::scoped_lock lock{backend_mutex_};
+    backend_->emit(DeltaProgressEvent{
+        .pages = pages,
+        .items = items,
+        .state = state,
+    });
+}
+
+void Console::delta_summary(const DeltaSummary& summary) const {
+    const std::scoped_lock lock{backend_mutex_};
+    backend_->emit(DeltaSummaryEvent{.summary = summary});
+}
+
+void Console::blocked_item(
+    std::string_view path,
+    std::string_view reason_code,
+    std::string_view reason_message
+) const {
+    const std::scoped_lock lock{backend_mutex_};
+    backend_->emit(BlockedItemEvent{
+        .path = std::string{path},
+        .reason_code = std::string{reason_code},
+        .reason_message = std::string{reason_message},
+    });
+}
+
 void Console::download_progress(
     std::size_t completed_files,
     std::size_t file_count,
@@ -317,88 +150,20 @@ void Console::download_progress(
     util::ProgressState state,
     const DownloadProgressMetrics& metrics
 ) const {
-    if (options_.quiet) {
-        return;
-    }
-    const bool completed = state == util::ProgressState::completed;
-    const auto percentage = download_progress_percentage(
-        completed_files,
-        file_count,
-        downloaded,
-        total,
-        state
-    );
-    if (options_.output == OutputMode::json) {
-        *output_ << nlohmann::json{
-            {"event", "download_progress"},
-            {"completed_files", completed_files},
-            {"file_count", file_count},
-            {"downloaded_bytes", downloaded},
-            {"total_bytes", total},
-            {"percentage", percentage},
-            {"completed", completed},
-            {"bytes_per_second", metrics.bytes_per_second},
-            {
-                "estimated_seconds_remaining",
-                metrics.estimated_seconds_remaining.has_value() ?
-                    nlohmann::json(
-                        *metrics.estimated_seconds_remaining
-                    ) :
-                    nlohmann::json(nullptr)
-            },
-            {
-                "elapsed_milliseconds",
-                metrics.elapsed_milliseconds
-            },
-        }.dump() << '\n';
-        return;
-    }
-
-    auto line = fmt::format(
-        "{}: {}/{} files, {}% ({}/{})",
-        completed ? "Done" : "DL",
-        completed_files,
-        file_count,
-        percentage,
-        format_bytes(downloaded),
-        format_bytes(total)
-    );
-    if (metrics.bytes_per_second != 0) {
-        line += fmt::format(
-            ", {}/s",
-            format_bytes(metrics.bytes_per_second)
-        );
-    }
-    if (completed) {
-        line += fmt::format(
-            ", elapsed {}",
-            metrics.elapsed_milliseconds < 1000 ?
-                "<1s" :
-                format_duration(metrics.elapsed_milliseconds / 1000)
-        );
-    } else if (metrics.estimated_seconds_remaining.has_value()) {
-        line += fmt::format(
-            ", ETA {}",
-            format_duration(*metrics.estimated_seconds_remaining)
-        );
-    }
-    if (interactive_) {
-        *output_ << '\r' << "\033[2K" << line;
-        if (completed) {
-            *output_ << '\n';
-        }
-        *output_ << std::flush;
-        download_progress_active_ = !completed;
-        return;
-    }
-    *output_ << line << '\n';
+    const std::scoped_lock lock{backend_mutex_};
+    backend_->emit(DownloadProgressEvent{
+        .completed_files = completed_files,
+        .file_count = file_count,
+        .downloaded = downloaded,
+        .total = total,
+        .state = state,
+        .metrics = metrics,
+    });
 }
 
 void Console::end_download_progress() const {
-    if (interactive_ && download_progress_active_) {
-        *output_ << '\n' << std::flush;
-        download_progress_active_ = false;
-    }
+    const std::scoped_lock lock{backend_mutex_};
+    backend_->emit(EndDownloadProgressEvent{});
 }
 
 bool Console::confirm(
@@ -406,18 +171,17 @@ bool Console::confirm(
     std::string_view prompt,
     std::string_view expected
 ) const {
-    if (options_.output == OutputMode::json) {
-        throw std::runtime_error(
-            "interactive confirmation is unavailable with --output=json; "
-            "use --yes to confirm explicitly"
-        );
+    const ConfirmationRequest request{
+        .event = std::string{event},
+        .prompt = std::string{prompt},
+        .expected = std::string{expected},
+    };
+    bool matched;
+    {
+        const std::scoped_lock lock{backend_mutex_};
+        matched = backend_->confirm(request);
     }
-    *output_ << prompt << std::flush;
-    std::string confirmation;
-    const bool matched =
-        static_cast<bool>(std::getline(std::cin, confirmation)) &&
-        confirmation == expected;
-    if (!matched && !options_.quiet) {
+    if (!matched) {
         message(
             MessageKind::warning,
             event,
@@ -428,7 +192,7 @@ bool Console::confirm(
 }
 
 OutputMode Console::output_mode() const noexcept {
-    return options_.output;
+    return backend_->output_mode();
 }
 
 ColorMode Console::parse_color_mode(std::string_view value) {

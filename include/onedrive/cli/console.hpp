@@ -1,63 +1,16 @@
 #pragma once
 
-#include "onedrive/util/progress.hpp"
-
-#include <gsl/pointers>
+#include "onedrive/cli/backend.hpp"
 
 #include <cstddef>
 #include <cstdint>
 #include <iosfwd>
-#include <optional>
-#include <string>
+#include <memory>
+#include <mutex>
 #include <string_view>
 #include <vector>
 
 namespace onedrive::cli {
-
-enum class ColorMode {
-    automatic,
-    always,
-    never,
-};
-
-enum class OutputMode {
-    text,
-    json,
-};
-
-enum class MessageKind {
-    information,
-    success,
-    warning,
-    error,
-};
-
-struct ConsoleOptions {
-    ColorMode color{ColorMode::automatic};
-    OutputMode output{OutputMode::text};
-    bool quiet{false};
-};
-
-struct Field {
-    std::string label;
-    std::string key;
-    std::string value;
-};
-
-struct DownloadProgressMetrics {
-    std::uint64_t bytes_per_second{0};
-    std::optional<std::uint64_t> estimated_seconds_remaining;
-    std::uint64_t elapsed_milliseconds{0};
-};
-
-struct DeltaSummary {
-    std::size_t pages{0};
-    std::size_t scanned_items{0};
-    std::size_t unique_changes{0};
-    std::size_t files{0};
-    std::size_t directories{0};
-    std::size_t deletions{0};
-};
 
 [[nodiscard]] unsigned download_progress_percentage(
     std::size_t completed_files,
@@ -74,7 +27,11 @@ public:
         std::ostream& output = default_output(),
         std::ostream& error = default_error()
     );
+    explicit Console(std::unique_ptr<ConsoleBackend> backend);
+    ~Console();
 
+    Console(const Console&) = delete;
+    Console& operator=(const Console&) = delete;
     void message(
         MessageKind kind,
         std::string_view event,
@@ -119,14 +76,8 @@ private:
     [[nodiscard]] static std::ostream& default_output();
     [[nodiscard]] static std::ostream& default_error();
 
-    ConsoleOptions options_;
-    gsl::not_null<std::ostream*> output_;
-    gsl::not_null<std::ostream*> error_;
-    bool styled_{false};
-    bool interactive_{false};
-    mutable std::size_t delta_progress_pages_{0};
-    mutable bool delta_progress_active_{false};
-    mutable bool download_progress_active_{false};
+    std::unique_ptr<ConsoleBackend> backend_;
+    mutable std::mutex backend_mutex_;
 };
 
 }  // namespace onedrive::cli

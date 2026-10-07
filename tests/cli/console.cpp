@@ -4,13 +4,39 @@
 #include <nlohmann/json.hpp>
 
 #include <cstdlib>
+#include <memory>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace {
 
 using onedrive::test::fail;
+
+class CapturingBackend final : public onedrive::cli::ConsoleBackend {
+public:
+    void emit(const onedrive::cli::ConsoleEvent& event) override {
+        events.push_back(event);
+    }
+
+    bool confirm(
+        const onedrive::cli::ConfirmationRequest& request
+    ) override {
+        confirmation = request;
+        return confirmation_result;
+    }
+
+    onedrive::cli::OutputMode output_mode() const noexcept override {
+        return onedrive::cli::OutputMode::json;
+    }
+
+    std::vector<onedrive::cli::ConsoleEvent> events;
+    std::optional<onedrive::cli::ConfirmationRequest> confirmation;
+    bool confirmation_result{false};
+};
 
 }  // namespace
 
@@ -186,6 +212,7 @@ int main() {
             .elapsed_milliseconds = 1'500,
         }
     );
+    json.end_download_progress();
     std::istringstream json_lines{json_output.str()};
     std::string line;
     std::getline(json_lines, line);
@@ -238,8 +265,54 @@ int main() {
         blocked.at("event") != "item_blocked" ||
         blocked.at("path") != "conflict.txt" ||
         blocked.at("reason_code") != "local_modification" ||
+        json.output_mode() != OutputMode::json ||
         json_output.str().contains("\033[")) {
         return fail("JSON console output was invalid");
+    }
+    try {
+        static_cast<void>(
+            json.confirm("confirm", "Continue?", "yes")
+        );
+        return fail("JSON console accepted interactive confirmation");
+    } catch (const std::runtime_error&) {
+    }
+
+    std::ostringstream quiet_json_output;
+    std::ostringstream quiet_json_error;
+    const Console quiet_json{
+        {
+            .output = OutputMode::json,
+            .quiet = true,
+        },
+        quiet_json_output,
+        quiet_json_error
+    };
+    quiet_json.message(MessageKind::information, "info", "Hidden");
+    quiet_json.message(MessageKind::success, "success", "Hidden");
+    quiet_json.section(
+        "summary",
+        "Hidden",
+        {{.label = "Files", .key = "files", .value = "12"}}
+    );
+    quiet_json.delta_progress(1, 200, ProgressState::ongoing);
+    quiet_json.delta_summary({
+        .pages = 1,
+        .scanned_items = 200,
+    });
+    quiet_json.download_progress(
+        0, 1, 1, 2, ProgressState::ongoing
+    );
+    quiet_json.blocked_item(
+        "conflict.txt",
+        "local_modification",
+        "local file was modified"
+    );
+    const auto quiet_json_blocked =
+        nlohmann::json::parse(quiet_json_error.str());
+    if (!quiet_json_output.str().empty() ||
+        quiet_json_blocked.at("event") != "item_blocked" ||
+        quiet_json_blocked.at("path") != "conflict.txt") {
+        return fail("quiet JSON mode retained the wrong events");
     }
 
     std::ostringstream quiet_output;
@@ -281,6 +354,24 @@ int main() {
             "(local_modification)\nVisible error\n") {
         return fail("quiet mode suppressed or retained the wrong output");
     }
+    if (plain.output_mode() != OutputMode::text) {
+        return fail("text console reported the wrong output mode");
+    }
+
+    if (download_progress_percentage(
+            0, 0, 0, 0, ProgressState::ongoing
+        ) != 0 ||
+        download_progress_percentage(
+            0, 0, 0, 0, ProgressState::completed
+        ) != 100 ||
+        download_progress_percentage(
+            1, 4, 0, 0, ProgressState::ongoing
+        ) != 25 ||
+        download_progress_percentage(
+            5, 4, 0, 0, ProgressState::ongoing
+        ) != 99) {
+        return fail("download progress fallback percentage was incorrect");
+    }
 
     if (Console::parse_color_mode("auto") != ColorMode::automatic ||
         Console::parse_color_mode("always") != ColorMode::always ||
@@ -297,6 +388,85 @@ int main() {
     try {
         static_cast<void>(Console::parse_output_mode("invalid"));
         return fail("invalid output mode was accepted");
+    } catch (const std::invalid_argument&) {
+    }
+
+    auto backend = std::make_unique<CapturingBackend>();
+    auto* captured = backend.get();
+    const Console event_console{std::move(backend)};
+    event_console.message(
+        MessageKind::information, "phase", "Working"
+    );
+    event_console.section(
+        "summary",
+        "Summary",
+        {{.label = "Files", .key = "files", .value = "2"}}
+    );
+    event_console.delta_progress(2, 350, ProgressState::ongoing);
+    event_console.delta_summary({
+        .pages = 2,
+        .scanned_items = 350,
+        .unique_changes = 340,
+        .files = 300,
+        .directories = 30,
+        .deletions = 10,
+    });
+    event_console.blocked_item(
+        "conflict.txt", "local_modification", "changed"
+    );
+    event_console.download_progress(
+        1,
+        2,
+        5,
+        10,
+        ProgressState::ongoing,
+        {
+            .bytes_per_second = 5,
+            .estimated_seconds_remaining = 1,
+            .elapsed_milliseconds = 1'000,
+        }
+    );
+    event_console.end_download_progress();
+    if (event_console.confirm("confirm", "Continue?", "yes")) {
+        return fail("capturing backend confirmation unexpectedly matched");
+    }
+    if (event_console.output_mode() != OutputMode::json ||
+        captured->events.size() != 8 ||
+        !std::holds_alternative<MessageEvent>(captured->events[0]) ||
+        !std::holds_alternative<SectionEvent>(captured->events[1]) ||
+        !std::holds_alternative<DeltaProgressEvent>(
+            captured->events[2]
+        ) ||
+        !std::holds_alternative<DeltaSummaryEvent>(
+            captured->events[3]
+        ) ||
+        !std::holds_alternative<BlockedItemEvent>(
+            captured->events[4]
+        ) ||
+        !std::holds_alternative<DownloadProgressEvent>(
+            captured->events[5]
+        ) ||
+        !std::holds_alternative<EndDownloadProgressEvent>(
+            captured->events[6]
+        ) ||
+        !std::holds_alternative<MessageEvent>(captured->events[7]) ||
+        std::get<MessageEvent>(captured->events[0]).event != "phase" ||
+        std::get<DeltaSummaryEvent>(captured->events[3])
+                .summary.files != 300 ||
+        std::get<DownloadProgressEvent>(captured->events[5])
+                .metrics.bytes_per_second != 5 ||
+        std::get<MessageEvent>(captured->events[7]).kind !=
+            MessageKind::warning ||
+        !captured->confirmation ||
+        captured->confirmation->event != "confirm" ||
+        captured->confirmation->expected != "yes") {
+        return fail("console facade did not publish structured events");
+    }
+    try {
+        const Console invalid{
+            std::unique_ptr<ConsoleBackend>{}
+        };
+        return fail("null console backend was accepted");
     } catch (const std::invalid_argument&) {
     }
     return EXIT_SUCCESS;
