@@ -129,7 +129,7 @@ int test_input_errors() {
     return EXIT_SUCCESS;
 }
 
-int test_monitor_keyboard_exit() {
+int test_monitor_keyboard_exit(char key) {
     const int master = ::posix_openpt(O_RDWR | O_NOCTTY);
     if (master == -1 ||
         ::grantpt(master) == -1 ||
@@ -167,9 +167,9 @@ int test_monitor_keyboard_exit() {
         std::chrono::hours{1},
         std::chrono::milliseconds{10}
     };
-    std::jthread writer{[master] {
+    std::jthread writer{[master, key] {
         std::this_thread::sleep_for(std::chrono::milliseconds{100});
-        static_cast<void>(::write(master, "q", 1));
+        static_cast<void>(::write(master, &key, 1));
     }};
     const int result = monitor.run(true);
     writer.join();
@@ -180,6 +180,69 @@ int test_monitor_keyboard_exit() {
     static_cast<void>(::close(master));
     if (result != 0 || synchronization_count != 1 || !restored) {
         return fail("monitor did not stop cleanly from a keyboard exit");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_keyboard_exit_during_initial_sync() {
+    const int master = ::posix_openpt(O_RDWR | O_NOCTTY);
+    if (master == -1 ||
+        ::grantpt(master) == -1 ||
+        ::unlockpt(master) == -1) {
+        if (master != -1) {
+            static_cast<void>(::close(master));
+        }
+        return fail("could not create initial-sync keyboard pseudo-terminal");
+    }
+    const char* slave_name = ::ptsname(master);
+    const int slave =
+        slave_name == nullptr ? -1 : ::open(slave_name, O_RDWR | O_NOCTTY);
+    const int saved_input = ::dup(STDIN_FILENO);
+    if (slave == -1 || saved_input == -1 ||
+        ::dup2(slave, STDIN_FILENO) == -1) {
+        if (slave != -1) {
+            static_cast<void>(::close(slave));
+        }
+        if (saved_input != -1) {
+            static_cast<void>(::close(saved_input));
+        }
+        static_cast<void>(::close(master));
+        return fail("could not redirect initial-sync keyboard input");
+    }
+    static_cast<void>(::close(slave));
+
+    onedrive::test::TemporaryDirectory root;
+    bool raw_during_sync = false;
+    const onedrive::monitor::Monitor monitor{
+        root.path(),
+        [&raw_during_sync] {
+            termios active{};
+            raw_during_sync =
+                ::tcgetattr(STDIN_FILENO, &active) == 0 &&
+                (active.c_lflag & ICANON) == 0;
+            std::this_thread::sleep_for(std::chrono::milliseconds{150});
+            return 0;
+        },
+        std::chrono::hours{1},
+        std::chrono::milliseconds{10}
+    };
+    std::jthread writer{[master] {
+        std::this_thread::sleep_for(std::chrono::milliseconds{25});
+        static_cast<void>(::write(master, "q", 1));
+        std::this_thread::sleep_for(std::chrono::milliseconds{475});
+        static_cast<void>(::write(master, "\n", 1));
+    }};
+    const auto started = std::chrono::steady_clock::now();
+    const int result = monitor.run(true);
+    const auto elapsed = std::chrono::steady_clock::now() - started;
+
+    const bool restored = ::dup2(saved_input, STDIN_FILENO) != -1;
+    static_cast<void>(::close(saved_input));
+    writer.join();
+    static_cast<void>(::close(master));
+    if (result != 0 || !restored || !raw_during_sync ||
+        elapsed >= std::chrono::milliseconds{400}) {
+        return fail("monitor lost keyboard exit during initial sync");
     }
     return EXIT_SUCCESS;
 }
@@ -202,5 +265,13 @@ int main() {
         result != EXIT_SUCCESS) {
         return result;
     }
-    return test_monitor_keyboard_exit();
+    if (const int result = test_monitor_keyboard_exit('q');
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_monitor_keyboard_exit('\033');
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return test_keyboard_exit_during_initial_sync();
 }

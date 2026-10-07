@@ -363,6 +363,10 @@ int Monitor::run_loop(
         .poll_interval = poll_interval_,
         .settle_delay = settle_delay_,
     };
+    detail::KeyboardInput keyboard{
+        keyboard_exit ? STDIN_FILENO : -1,
+        keyboard_exit
+    };
     detail::MonitorState state = detail::StartingState{};
     if (stop_token.stop_requested()) {
         state = detail::transition_monitor(
@@ -536,10 +540,6 @@ int Monitor::run_loop(
             std::chrono::steady_clock::now()
         });
     }
-    detail::KeyboardInput keyboard{
-        keyboard_exit ? STDIN_FILENO : -1,
-        keyboard_exit
-    };
     const auto shutdown = [&] {
         spdlog::info("Monitor shutdown requested");
         state = detail::transition_monitor(
