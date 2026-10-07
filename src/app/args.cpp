@@ -87,6 +87,15 @@ ParseResult parse_arguments(int argc, char* argv[]) {
     auto* inspect_status = inspect->add_subcommand(
         "status", "Show read-only synchronization status"
     );
+    auto* inspect_storage = inspect->add_subcommand(
+        "storage", "Show local synchronization storage usage"
+    );
+    auto* inspect_partials = inspect->add_subcommand(
+        "partials", "List resumable and invalid partial downloads"
+    );
+    auto* inspect_files = inspect->add_subcommand(
+        "files", "Check downloaded files against saved synchronization state"
+    );
     auto* state = application.add_subcommand(
         "state", "Maintain saved synchronization state"
     );
@@ -119,6 +128,9 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         std::pair{inspect_sites, Operation::sites},
         std::pair{inspect_quota, Operation::quota},
         std::pair{inspect_status, Operation::status},
+        std::pair{inspect_storage, Operation::storage},
+        std::pair{inspect_partials, Operation::partials},
+        std::pair{inspect_files, Operation::files},
         std::pair{reset_cursor, Operation::reset_cursor},
         std::pair{clear_state, Operation::clear_state},
         std::pair{transfer_sync, Operation::synchronize},
@@ -233,6 +245,20 @@ ParseResult parse_arguments(int argc, char* argv[]) {
             "QUERY", arguments.site_query, "SharePoint site search query"
         )
         ->required();
+    inspect_files->add_option(
+        "PATH",
+        arguments.inspect_path,
+        "Optional Drive-relative file or directory path"
+    );
+    inspect_files
+        ->add_option(
+            "--status",
+            arguments.inspect_file_status,
+            "Only show files with this status"
+        )
+        ->check(CLI::IsMember(
+            {"ok", "missing", "modified", "type-changed", "outside-root"}
+        ));
 
     if (argc < 2) {
         std::cout << application.help();
@@ -255,6 +281,9 @@ ParseResult parse_arguments(int argc, char* argv[]) {
                           : *inspect_sites  ? Operation::sites
                           : *inspect_quota  ? Operation::quota
                           : *inspect_status ? Operation::status
+                          : *inspect_storage ? Operation::storage
+                          : *inspect_partials ? Operation::partials
+                          : *inspect_files  ? Operation::files
                           : *reset_cursor   ? Operation::reset_cursor
                           : *clear_state    ? Operation::clear_state
                           : *transfer_download ? Operation::download

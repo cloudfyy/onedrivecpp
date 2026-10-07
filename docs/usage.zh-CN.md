@@ -34,6 +34,9 @@ onedrive-cpp inspect shared
 onedrive-cpp inspect sites Engineering
 onedrive-cpp inspect quota
 onedrive-cpp inspect status
+onedrive-cpp inspect storage
+onedrive-cpp inspect partials
+onedrive-cpp inspect files Documents --status modified
 ```
 
 日志级别支持 `trace`、`debug`、`info`、`warn`、`error`、`critical` 和
@@ -82,8 +85,15 @@ Drive。`inspect shared` 会列出 `sharedWithMe` 返回的项目，以及已添
 同步结果、tracked/blocked 数量、pending journal、Delta cursor、
 selective-sync fingerprint 和 WebSocket 配置。
 
-这些命令不会同步文件或修改远端内容。`inspect status` 以只读方式打开现有 SQLite 数据库，不会创建缺失的数据库，也不会迁移
-旧版数据库。以上五个命令均支持 `--output json`。
+`inspect storage` 显示解析后的 Drive 数据目录、文件系统容量和可用空间、tracked
+文件字节数、partial download 占用以及状态数据库路径。`inspect partials` 列出每个
+partial download，并将其标记为可续传、缺失、类型变化、位于同步根之外、路径不匹配
+或 checkpoint 无效。`inspect files [PATH]` 使用保存的大小和修改时间检查 tracked
+普通文件；可用 `--status ok|missing|modified|type-changed|outside-root` 过滤输出。
+
+这些命令不会同步文件或修改远端内容。检查本地状态的命令以只读方式打开现有 SQLite
+数据库，不会创建、迁移、修复或隔离缺失或旧版数据库。全部检查命令均支持
+`--output json`。
 
 ## Shell 自动补全
 

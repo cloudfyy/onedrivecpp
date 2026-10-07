@@ -32,6 +32,7 @@ public:
     ItemDatabase& operator=(ItemDatabase&&) = delete;
 
     void open();
+    void open_read_only();
     void upsert(ItemState item);
     void apply_delta(ItemDelta delta);
     void save_pending_download(PendingDownload download);
@@ -104,6 +105,7 @@ private:
     };
 
     void open_on_worker(CorruptionRecovery recovery);
+    void open_read_only_on_worker();
     void upsert_on_worker(const ItemState& item);
     void apply_delta_on_worker(ItemDelta delta);
     void save_pending_download_on_worker(const PendingDownload& download);

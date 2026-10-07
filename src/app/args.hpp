@@ -23,6 +23,8 @@ struct Arguments {
     bool quiet{false};
     std::string remote_download_path;
     std::string site_query;
+    std::string inspect_path;
+    std::optional<std::string> inspect_file_status;
     Operation operation{Operation::synchronize};
 };
 

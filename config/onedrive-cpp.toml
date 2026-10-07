@@ -3,7 +3,7 @@ config_version = 2
 [console]
 # Supported values: "auto", "always", and "never".
 color = "auto"
-# Sync, download, and monitor interface: "auto", "console", or "tui".
+# Login, inspection, and transfer interface: "auto", "console", or "tui".
 ui = "auto"
 # TUI colors: "hacker", "ocean", "amber", or "synthwave".
 theme = "hacker"

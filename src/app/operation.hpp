@@ -11,6 +11,9 @@ enum class Operation {
     sites,
     quota,
     status,
+    storage,
+    partials,
+    files,
     reset_cursor,
     clear_state,
     download,
@@ -66,11 +69,18 @@ constexpr OperationCapabilities operation_capabilities(
                 .requires_authentication = true,
             };
         case Operation::status:
+        case Operation::storage:
+        case Operation::partials:
+        case Operation::files:
             return {
                 .supports_tui = true,
                 .validates_authentication_config = true,
                 .requires_drive_id = true,
                 .requires_authentication = true,
+                .requires_sync_directory =
+                    operation == Operation::storage ||
+                    operation == Operation::partials ||
+                    operation == Operation::files,
             };
         case Operation::reset_cursor:
         case Operation::clear_state:

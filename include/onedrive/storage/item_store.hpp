@@ -157,6 +157,7 @@ struct ClearedState {
 };
 
 PRO_DEF_MEM_DISPATCH(StoreOpenDispatch, open);
+PRO_DEF_MEM_DISPATCH(StoreOpenReadOnlyDispatch, open_read_only);
 PRO_DEF_MEM_DISPATCH(StoreUpsertDispatch, upsert);
 PRO_DEF_MEM_DISPATCH(StoreApplyDeltaDispatch, apply_delta);
 PRO_DEF_MEM_DISPATCH(StoreSavePendingDispatch, save_pending_download);
@@ -200,7 +201,7 @@ PRO_DEF_MEM_DISPATCH(StoreFindDispatch, find);
 PRO_DEF_MEM_DISPATCH(StoreDriveItemsDispatch, drive_items);
 PRO_DEF_MEM_DISPATCH(StoreSizeDispatch, size);
 
-struct ItemStoreFacade : pro::facade_builder ::add_convention<StoreOpenDispatch, void()>::add_convention<
+struct ItemStoreFacade : pro::facade_builder ::add_convention<StoreOpenDispatch, void()>::add_convention<StoreOpenReadOnlyDispatch, void()>::add_convention<
                              StoreUpsertDispatch,
                              void(ItemState
                              )>::add_convention<StoreApplyDeltaDispatch, void(ItemDelta)>::
@@ -310,6 +311,10 @@ public:
 
     void open() {
         implementation()->open();
+    }
+
+    void open_read_only() {
+        implementation()->open_read_only();
     }
 
     void upsert(ItemState item) {

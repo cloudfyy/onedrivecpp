@@ -44,7 +44,7 @@ _onedrive_cpp()
             ;;
         inspect)
             case "${line[2]}" in
-                health|status|drives|shared|quota)
+                health|status|drives|shared|quota|storage|partials)
                     _arguments \
                         '(-h --help)'{-h,--help}'[show command help]' \
                         '--config[path to configuration file]:configuration file:_files' \
@@ -55,6 +55,20 @@ _onedrive_cpp()
                         '--ui[inspection interface]:mode:(auto console tui)' \
                         '--theme[TUI color theme]:theme:(hacker ocean amber synthwave)' \
                         '--quiet[suppress informational and success output]'
+                    ;;
+                files)
+                    _arguments \
+                        '(-h --help)'{-h,--help}'[show command help]' \
+                        '--config[path to configuration file]:configuration file:_files' \
+                        '--log-level[minimum log level]:level:(trace debug info warn error critical off)' \
+                        '--log-file[write rotating logs to file]:log file:_files' \
+                        '--color[color output mode]:mode:(auto always never)' \
+                        '--output[output format]:format:(text json)' \
+                        '--ui[inspection interface]:mode:(auto console tui)' \
+                        '--theme[TUI color theme]:theme:(hacker ocean amber synthwave)' \
+                        '--quiet[suppress informational and success output]' \
+                        '--status[filter by local file status]:status:(ok missing modified type-changed outside-root)' \
+                        '1:Drive-relative file or directory path:'
                     ;;
                 sites)
                     _arguments \
@@ -71,7 +85,7 @@ _onedrive_cpp()
                     ;;
                 *)
                     _arguments \
-                        '1:inspection action:(health status drives shared sites quota)'
+                        '1:inspection action:(health status drives shared sites quota storage partials files)'
                     ;;
             esac
             ;;

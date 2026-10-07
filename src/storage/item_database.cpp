@@ -263,6 +263,82 @@ void ItemDatabase::open() {
     });
 }
 
+void ItemDatabase::open_read_only() {
+    impl_->invoke([this] {
+        open_read_only_on_worker();
+    });
+}
+
+void ItemDatabase::open_read_only_on_worker() {
+    spdlog::debug("Opening synchronization state database read-only");
+    if (identity_.user_id.empty() || identity_.drive_id.empty()) {
+        throw std::invalid_argument(
+            "read-only state database requires an account and drive identity"
+        );
+    }
+    onedrive::util::reject_symlink_components(
+        state_directory_, "SQLite state directory"
+    );
+    impl_->database.reset();
+
+    const auto database_path = state_directory_ / "items.sqlite3";
+    sqlite3* database = nullptr;
+    const int result = sqlite3_open_v2(
+        database_path.string().c_str(),
+        &database,
+        SQLITE_OPEN_READONLY | SQLITE_OPEN_NOFOLLOW,
+        nullptr
+    );
+    SqliteHandle opened_database{database};
+    if (result != SQLITE_OK) {
+        const std::string message =
+            opened_database == nullptr ?
+                "unknown SQLite error" :
+                sqlite3_errmsg(opened_database.get());
+        throw std::runtime_error(
+            "cannot open state database read-only '" +
+            database_path.string() + "': " + message
+        );
+    }
+    impl_->database = std::move(opened_database);
+    try {
+        configure_database_connection(database);
+        activate_database_pragmas(database, DatabaseAccess::read_only);
+        verify_database_integrity(database);
+        verify_current_schema(database);
+    } catch (const std::exception& error) {
+        impl_->database.reset();
+        throw std::runtime_error(
+            "cannot safely inspect state database '" +
+            database_path.string() + "': " + error.what()
+        );
+    }
+
+    Statement identity_query{
+        database,
+        "SELECT user_id, drive_id FROM identity WHERE singleton = 1;"
+    };
+    const int identity_result = sqlite3_step(identity_query.get());
+    if (identity_result != SQLITE_ROW) {
+        const std::string detail =
+            identity_result == SQLITE_DONE ?
+                "database identity is missing" :
+                sqlite3_errmsg(database);
+        impl_->database.reset();
+        throw std::runtime_error(
+            "cannot validate state database identity: " + detail
+        );
+    }
+    if (column_text(identity_query.get(), 0) != identity_.user_id ||
+        column_text(identity_query.get(), 1) != identity_.drive_id) {
+        impl_->database.reset();
+        throw std::runtime_error(
+            "state database identity does not match the current Microsoft "
+            "account and drive"
+        );
+    }
+}
+
 void ItemDatabase::open_on_worker(CorruptionRecovery recovery) {
     spdlog::debug("Opening synchronization state database");
     if (identity_.user_id.empty() || identity_.user_display_name.empty() ||

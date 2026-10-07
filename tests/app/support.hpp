@@ -357,17 +357,25 @@ public:
         int& reset_count,
         std::string& reset_drive_id,
         int& clear_count,
-        std::string& clear_drive_id
+        std::string& clear_drive_id,
+        const std::vector<onedrive::storage::ItemState>& items,
+        const std::vector<onedrive::storage::PartialDownload>& partials
     )
         : open_count_{open_count},
           apply_delta_count_{apply_delta_count},
           reset_count_{reset_count},
           reset_drive_id_{reset_drive_id},
           clear_count_{clear_count},
-          clear_drive_id_{clear_drive_id} {
+          clear_drive_id_{clear_drive_id},
+          items_{items},
+          partials_{partials} {
     }
 
     void open() {
+        ++open_count_;
+    }
+
+    void open_read_only() {
         ++open_count_;
     }
 
@@ -402,7 +410,7 @@ public:
 
     [[nodiscard]] std::vector<onedrive::storage::PartialDownload>
     partial_downloads(const std::string&) const {
-        return {};
+        return partials_;
     }
 
     void save_pending_upload(onedrive::storage::PendingUpload) {
@@ -512,7 +520,7 @@ public:
 
     [[nodiscard]] std::vector<onedrive::storage::ItemState>
     drive_items(const std::string&) const {
-        return {};
+        return items_;
     }
 
 private:
@@ -522,6 +530,8 @@ private:
     std::string& reset_drive_id_;
     int& clear_count_;
     std::string& clear_drive_id_;
+    const std::vector<onedrive::storage::ItemState>& items_;
+    const std::vector<onedrive::storage::PartialDownload>& partials_;
 };
 
 class FakeMonitor final {
@@ -618,7 +628,9 @@ public:
             item_store_reset_count,
             reset_drive_id,
             clear_count_,
-            clear_drive_id_
+            clear_drive_id_,
+            item_states,
+            partial_download_states
         );
     }
 
@@ -668,6 +680,9 @@ public:
     mutable int monitor_sync_count{0};
     mutable int metrics_count{0};
     mutable std::filesystem::path last_item_store_sync_directory;
+    std::vector<onedrive::storage::ItemState> item_states;
+    std::vector<onedrive::storage::PartialDownload>
+        partial_download_states;
 };
 
 RunResult run_application(

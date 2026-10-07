@@ -186,6 +186,9 @@ public:
     void open() {
     }
 
+    void open_read_only() {
+    }
+
     void upsert(onedrive::storage::ItemState item) {
         if (fail_upsert) {
             throw std::runtime_error{"simulated persistence failure"};

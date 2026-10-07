@@ -380,6 +380,9 @@ public:
     void open() {
     }
 
+    void open_read_only() {
+    }
+
     void upsert(onedrive::storage::ItemState item) {
         const std::scoped_lock lock{mutex};
         if (fail_upsert) {

@@ -48,6 +48,12 @@ cli::TuiView tui_view(detail::Operation operation) noexcept {
             return cli::TuiView::sites;
         case detail::Operation::quota:
             return cli::TuiView::quota;
+        case detail::Operation::storage:
+            return cli::TuiView::storage;
+        case detail::Operation::partials:
+            return cli::TuiView::partials;
+        case detail::Operation::files:
+            return cli::TuiView::files;
         case detail::Operation::download:
             return cli::TuiView::download;
         case detail::Operation::monitor:

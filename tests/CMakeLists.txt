@@ -125,7 +125,7 @@ foreach(
         INCLUDE_DIRS tests tests/graph
     )
 endforeach()
-foreach(APP_TEST IN ITEMS args doctor flow)
+foreach(APP_TEST IN ITEMS args doctor flow inspection)
     add_onedrive_test(
         app_${APP_TEST}_tests
         SOURCES tests/app/${APP_TEST}.cpp

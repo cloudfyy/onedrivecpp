@@ -190,6 +190,21 @@ int execute_command(
     if (operation == Operation::status) {
         return show_status(config, runtime_factory, console);
     }
+    if (operation == Operation::storage) {
+        return show_storage(config, runtime_factory, console);
+    }
+    if (operation == Operation::partials) {
+        return show_partials(config, runtime_factory, console);
+    }
+    if (operation == Operation::files) {
+        return show_files(
+            config,
+            runtime_factory,
+            console,
+            arguments.inspect_path,
+            arguments.inspect_file_status
+        );
+    }
     if (operation == Operation::reset_cursor ||
         operation == Operation::clear_state) {
         const bool clear_all = operation == Operation::clear_state;

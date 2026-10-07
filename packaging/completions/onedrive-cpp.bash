@@ -37,6 +37,13 @@ _onedrive_cpp_completion()
             )
             return
             ;;
+        --status)
+            mapfile -t COMPREPLY < <(
+                compgen -W "ok missing modified type-changed outside-root" \
+                    -- "$current"
+            )
+            return
+            ;;
     esac
 
     for word in "${COMP_WORDS[@]:1:COMP_CWORD-1}"; do
@@ -51,7 +58,7 @@ _onedrive_cpp_completion()
                     account_action="$word"
                 fi
                 ;;
-            health|status|drives|shared|sites|quota)
+            health|status|drives|shared|sites|quota|storage|partials|files)
                 if [[ "$command" == "inspect" ]]; then
                     inspect_action="$word"
                 fi
@@ -124,13 +131,17 @@ _onedrive_cpp_completion()
             ;;
         inspect)
             case "$inspect_action" in
-                health|status|drives|shared|sites|quota)
+                health|status|drives|shared|sites|quota|storage|partials)
                     mapfile -t COMPREPLY < <(compgen -W \
                         "$common_options --ui --theme" -- "$current")
                     ;;
+                files)
+                    mapfile -t COMPREPLY < <(compgen -W \
+                        "$common_options --ui --theme --status" -- "$current")
+                    ;;
                 *)
                     mapfile -t COMPREPLY < <(
-                        compgen -W "health status drives shared sites quota --help" -- "$current"
+                        compgen -W "health status drives shared sites quota storage partials files --help" -- "$current"
                     )
                     ;;
             esac

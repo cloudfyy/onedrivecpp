@@ -302,6 +302,12 @@ private:
                     return "SITES";
                 case TuiView::quota:
                     return "QUOTA";
+                case TuiView::storage:
+                    return "STORAGE";
+                case TuiView::partials:
+                    return "PARTIALS";
+                case TuiView::files:
+                    return "FILES";
                 case TuiView::download:
                     return "DOWNLOAD";
                 case TuiView::watch:

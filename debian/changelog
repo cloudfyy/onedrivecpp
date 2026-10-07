@@ -1,3 +1,12 @@
+onedrive-cpp (0.10.5-1~ubuntu24.04) noble; urgency=medium
+
+  * Add read-only inspect storage, inspect partials, and inspect files commands
+    for local capacity, resumable-download, and downloaded-file diagnostics.
+  * Open inspection databases without creating, migrating, repairing, or
+    quarantining synchronization state.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Wed, 07 Oct 2026 07:52:02 +0000
+
 onedrive-cpp (0.10.4-1~ubuntu24.04) noble; urgency=medium
 
   * Add themed TUI support for inspect drives, inspect shared, inspect sites,

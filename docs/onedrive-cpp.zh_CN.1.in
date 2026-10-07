@@ -31,6 +31,16 @@ onedrive-cpp \- 现代 C++ OneDrive 同步客户端
 .B onedrive-cpp inspect status
 .RI [ 选项 ]
 .PP
+.B onedrive-cpp inspect storage
+.RI [ 选项 ]
+.PP
+.B onedrive-cpp inspect partials
+.RI [ 选项 ]
+.PP
+.B onedrive-cpp inspect files
+.RI [ 选项 ]
+.RI [ 路径 ]
+.PP
 .B onedrive-cpp state reset-cursor
 .RI [ 选项 ]
 .PP
@@ -102,6 +112,28 @@ Drive ID、item ID、所有者、项目类型、web URL 以及 shortcut 的本�
 tracked/blocked 数量、pending journal、Delta cursor、selective-sync
 fingerprint、状态数据库可用性和 WebSocket 配置。已有 SQLite 状态以只读方式
 打开；该命令不会创建或迁移数据库。
+.TP
+.B inspect storage
+显示解析后的 Drive 数据目录、文件系统容量和可用空间、tracked 文件数量和字节数、
+partial download 数量和字节数以及状态数据库路径。
+.TP
+.B inspect partials
+列出保存的 partial download、目标和临时路径、已完成/预期/实际字节数，并判断各
+checkpoint 是否可续传或无效。
+.TP
+.B inspect files
+检查可选 Drive 相对
+.I 路径
+下的 tracked 普通文件是否符合保存的大小和修改时间。使用
+.B \-\-status
+可按
+.BR ok 、
+.BR missing 、
+.BR modified 、
+.BR type-changed
+或
+.B outside-root
+过滤结果。
 .TP
 .B state reset-cursor
 重置当前 Drive 保存的 Delta 游标。认证、配置、本地文件、item 快照、

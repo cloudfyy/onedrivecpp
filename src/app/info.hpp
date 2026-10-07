@@ -24,4 +24,24 @@ namespace onedrive::app::detail {
     const cli::Console& console
 );
 
+[[nodiscard]] int show_storage(
+    const config::Config& config,
+    const RuntimeFactory& runtime_factory,
+    const cli::Console& console
+);
+
+[[nodiscard]] int show_partials(
+    const config::Config& config,
+    const RuntimeFactory& runtime_factory,
+    const cli::Console& console
+);
+
+[[nodiscard]] int show_files(
+    const config::Config& config,
+    const RuntimeFactory& runtime_factory,
+    const cli::Console& console,
+    std::string_view path,
+    const std::optional<std::string>& status
+);
+
 } // namespace onedrive::app::detail

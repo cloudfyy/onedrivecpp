@@ -35,6 +35,9 @@ onedrive-cpp inspect shared
 onedrive-cpp inspect sites Engineering
 onedrive-cpp inspect quota
 onedrive-cpp inspect status
+onedrive-cpp inspect storage
+onedrive-cpp inspect partials
+onedrive-cpp inspect files Documents --status modified
 ```
 
 Supported levels are `trace`, `debug`, `info`, `warn`, `error`, `critical`,
@@ -93,9 +96,18 @@ identity with local read-only state: sync mode, delete policy, last recorded
 synchronization result, tracked and blocked item counts, pending journals,
 Delta cursor, selective-sync fingerprint, and WebSocket configuration.
 
-These commands do not synchronize files or modify remote content. `inspect status`
-opens an existing SQLite database read-only and does not create or migrate a
-missing or older database. All five commands support `--output json`.
+`inspect storage` reports the resolved Drive data root, filesystem capacity and
+available space, tracked file bytes, partial-download bytes, and the state
+database path. `inspect partials` lists each saved partial download and
+classifies it as resumable, missing, type-changed, outside the sync root,
+path-mismatched, or an invalid checkpoint. `inspect files [PATH]` compares
+tracked regular files with saved size and modification metadata. Use
+`--status ok|missing|modified|type-changed|outside-root` to filter its output.
+
+These commands do not synchronize files or modify remote content. Commands
+that inspect local state open an existing SQLite database read-only and do not
+create, migrate, repair, or quarantine a missing or older database. All
+inspection commands support `--output json`.
 
 ## Shell completion
 

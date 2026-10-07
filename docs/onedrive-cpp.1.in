@@ -31,6 +31,16 @@ onedrive-cpp \- modern C++ OneDrive synchronization client
 .B onedrive-cpp inspect status
 .RI [ options ]
 .PP
+.B onedrive-cpp inspect storage
+.RI [ options ]
+.PP
+.B onedrive-cpp inspect partials
+.RI [ options ]
+.PP
+.B onedrive-cpp inspect files
+.RI [ options ]
+.RI [ PATH ]
+.PP
 .B onedrive-cpp state reset-cursor
 .RI [ options ]
 .PP
@@ -113,6 +123,30 @@ delete policy, last recorded synchronization result, tracked and blocked item
 counts, pending journals, Delta cursor, selective-sync fingerprint, state
 database availability, and WebSocket configuration. Existing SQLite state is
 opened read-only and is never created or migrated by this command.
+.TP
+.B inspect storage
+Show the resolved Drive data root, filesystem capacity and available space,
+tracked file count and bytes, partial-download count and bytes, and state
+database path.
+.TP
+.B inspect partials
+List saved partial downloads, their destination and temporary paths, completed,
+expected, and actual byte counts, and whether each checkpoint is resumable or
+invalid.
+.TP
+.B inspect files
+Check tracked regular files below the optional Drive-relative
+.I PATH
+against saved size and modification metadata. Use
+.B \-\-status
+with
+.BR ok ,
+.BR missing ,
+.BR modified ,
+.BR type-changed ,
+or
+.B outside-root
+to filter the result.
 .TP
 .B state reset-cursor
 Reset the saved delta link for the configured drive. This preserves

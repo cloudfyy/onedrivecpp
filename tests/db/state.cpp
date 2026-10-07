@@ -134,6 +134,45 @@ int main() {
         onedrive::storage::ItemDatabase database{
             temporary_directory.path(), identity()
         };
+        database.open_read_only();
+        if (database.size() != 3 ||
+            database.drive_items("me").size() != 1) {
+            return fail("read-only database open did not expose saved state");
+        }
+        try {
+            database.upsert({
+                .remote_id = "read-only-write",
+                .etag = "etag",
+                .local_path = "read-only-write.txt",
+            });
+            return fail("read-only database open allowed a state write");
+        } catch (const std::runtime_error&) {
+        }
+    }
+
+    {
+        TemporaryDirectory old_schema;
+        const auto database_path = old_schema.path() / "items.sqlite3";
+        if (!create_version_twenty_three_database(database_path)) {
+            return fail("could not create old schema for read-only open");
+        }
+        try {
+            onedrive::storage::ItemDatabase database{
+                old_schema.path(), identity()
+            };
+            database.open_read_only();
+            return fail("read-only database open migrated an old schema");
+        } catch (const std::runtime_error&) {
+        }
+        if (!schema_version_is(database_path, 23)) {
+            return fail("read-only database open changed the schema version");
+        }
+    }
+
+    {
+        onedrive::storage::ItemDatabase database{
+            temporary_directory.path(), identity()
+        };
         database.open();
 
         const auto first = database.find("", "remote-1");

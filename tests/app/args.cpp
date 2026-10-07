@@ -82,7 +82,10 @@ int test_args() {
         !inspect_help.standard_output.contains("drives") ||
         !inspect_help.standard_output.contains("shared") ||
         !inspect_help.standard_output.contains("sites") ||
-        !inspect_help.standard_output.contains("quota")) {
+        !inspect_help.standard_output.contains("quota") ||
+        !inspect_help.standard_output.contains("storage") ||
+        !inspect_help.standard_output.contains("partials") ||
+        !inspect_help.standard_output.contains("files")) {
         return fail("inspect help did not list its read-only actions");
     }
     const auto health_help = run_application(
@@ -106,6 +109,28 @@ int test_args() {
         !status_help.standard_output.contains("--ui") ||
         !status_help.standard_output.contains("--theme")) {
         return fail("status help was not available");
+    }
+    const auto files_help = run_application(
+        runtime_factory, {"onedrive-cpp", "inspect", "files", "--help"}
+    );
+    if (files_help.exit_code != 0 ||
+        !files_help.standard_output.contains("[PATH]") ||
+        !files_help.standard_output.contains("--status") ||
+        !files_help.standard_output.contains("--ui")) {
+        return fail("inspect files help was not available");
+    }
+    if (run_application(
+            runtime_factory,
+            {
+                "onedrive-cpp",
+                "inspect",
+                "files",
+                "--status",
+                "corrupt",
+            }
+        )
+            .exit_code != 2) {
+        return fail("inspect files accepted an invalid status");
     }
     const auto state_help =
         run_application(runtime_factory, {"onedrive-cpp", "state", "--help"});
