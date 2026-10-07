@@ -427,7 +427,7 @@ private:
             content.push_back(separator());
             for (const auto& message : messages_) {
                 content.push_back(with_color(
-                    text(message.text), color_for(message.kind)
+                    paragraph(message.text), color_for(message.kind)
                 ));
             }
         }

@@ -190,13 +190,22 @@ int test_tui_dashboard() {
     );
     auth_backend->emit(MessageEvent{
         .kind = MessageKind::information,
+        .event = "device_authorization",
+        .text =
+            "To sign in, use a web browser to open the page "
+            "https://login.microsoftonline.com/device and enter the code "
+            "ABCD-EFGH to authenticate.",
+    });
+    auth_backend->emit(MessageEvent{
+        .kind = MessageKind::information,
         .event = "authorization_wait",
         .text = "Waiting for authorization...",
     });
     auth_backend.reset();
     if (!auth_output.str().contains("ONEDRIVE // AUTH  v") ||
+        !auth_output.str().contains("ABCD-EFGH") ||
         !auth_output.str().contains("Waiting for authorization...")) {
-        return fail("auth TUI did not render authorization status");
+        return fail("auth TUI did not wrap the device code and status");
     }
 
     std::ostringstream doctor_output;
