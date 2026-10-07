@@ -114,6 +114,7 @@ private:
     gsl::not_null<std::ostream*> error_;
     bool styled_{false};
     bool interactive_{false};
+    mutable bool download_progress_active_{false};
 };
 
 }  // namespace onedrive::cli

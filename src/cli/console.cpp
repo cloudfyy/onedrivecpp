@@ -347,14 +347,16 @@ void Console::download_progress(
             *output_ << '\n';
         }
         *output_ << std::flush;
+        download_progress_active_ = !completed;
         return;
     }
     *output_ << line << '\n';
 }
 
 void Console::end_download_progress() const {
-    if (interactive_) {
+    if (interactive_ && download_progress_active_) {
         *output_ << '\n' << std::flush;
+        download_progress_active_ = false;
     }
 }
 

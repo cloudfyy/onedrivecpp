@@ -525,6 +525,15 @@ int test_flow() {
             std::istreambuf_iterator<char>{log},
             std::istreambuf_iterator<char>{}
         };
+        const auto queued = contents.find(
+            "Queued 'notes.txt' for download (42 bytes)"
+        );
+        const auto executing = contents.find(
+            "Executing 1 downloads with concurrency"
+        );
+        const auto downloading = contents.find(
+            "Downloading 'notes.txt' (42 bytes)"
+        );
         if (!contents.contains(
                 "Remote delta prepared for drive 'drive-id': 1 upserts, 0 "
                 "removals"
@@ -532,7 +541,10 @@ int test_flow() {
             !contents.contains(
                 "Persisting remote delta for drive 'drive-id'"
             ) ||
-            !contents.contains("Downloading 'notes.txt' (42 bytes)") ||
+            queued == std::string::npos ||
+            executing == std::string::npos ||
+            downloading == std::string::npos ||
+            !(queued < executing && executing < downloading) ||
             !contents.contains("Atomically installed 'notes.txt' (42 bytes)") ||
             !contents.contains(
                 "Download execution completed: 1 downloaded, 0 reused, 0 "

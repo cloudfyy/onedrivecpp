@@ -8,6 +8,8 @@
 #include "sync/filesystem/metadata.hpp"
 #include "sync/filesystem/safe_sync_root.hpp"
 
+#include <spdlog/spdlog.h>
+
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
@@ -147,6 +149,15 @@ DownloadBatch download_files(
                         task.destination
                     );
                     preserve_local = baseline.existed;
+                }
+                {
+                    const std::scoped_lock lock{console_mutex};
+                    console.end_download_progress();
+                    spdlog::info(
+                        "Downloading '{}' ({} bytes)",
+                        task.item.remote_path,
+                        task.item.size
+                    );
                 }
                 batch.states[index].emplace(detail::commit_download(
                     items,

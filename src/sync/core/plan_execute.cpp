@@ -274,8 +274,8 @@ ExecutionSummary execute_plan(
                     continue;
                 }
             }
-            spdlog::info(
-                "Downloading '{}' ({} bytes)",
+            spdlog::trace(
+                "Queued '{}' for download ({} bytes)",
                 item.remote_path,
                 item.size
             );
