@@ -65,8 +65,12 @@ struct DownloadCommitOptions {
         config::LocalConflictPolicy::block
     };
     bool preserve_local{false};
-    std::function<void(const std::filesystem::path&)> backup_created;
+    std::move_only_function<void(const std::filesystem::path&)>
+        backup_created;
 };
+
+static_assert(std::movable<DownloadCommitOptions>);
+static_assert(!std::copyable<DownloadCommitOptions>);
 
 [[nodiscard]] PreparedDownload prepare_download(
     graph::GraphClient& graph,
