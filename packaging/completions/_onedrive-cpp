@@ -41,6 +41,7 @@ _onedrive_cpp()
                 '--log-file[write rotating logs to file]:log file:_files' \
                 '--color[color output mode]:mode:(auto always never)' \
                 '--output[output format]:format:(text json)' \
+                '--ui[sync interface]:mode:(auto console tui)' \
                 '--quiet[suppress informational and success output]' \
                 '--dry-run[show synchronization plan without changing files]' \
                 '--force-large-delete[allow this sync to exceed the remote deletion limit]'

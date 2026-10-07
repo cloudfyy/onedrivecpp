@@ -68,6 +68,7 @@ public:
         std::string_view expected
     ) const;
     [[nodiscard]] OutputMode output_mode() const noexcept;
+    [[nodiscard]] UiMode ui_mode() const noexcept;
 
     [[nodiscard]] static ColorMode parse_color_mode(std::string_view value);
     [[nodiscard]] static OutputMode parse_output_mode(std::string_view value);

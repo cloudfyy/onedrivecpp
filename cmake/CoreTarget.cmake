@@ -14,7 +14,10 @@ add_library(onedrive_core
     src/auth/device_auth.cpp
     src/auth/token_store.cpp
     src/cli/console.cpp
+    src/cli/format.cpp
+    src/cli/ftxui_backend.cpp
     src/cli/json_backend.cpp
+    src/cli/terminal.cpp
     src/cli/text_backend.cpp
     src/config/config.cpp
     src/config/network.cpp
@@ -122,6 +125,8 @@ target_link_libraries(onedrive_core
     PRIVATE
         CLI11::CLI11
         CURL::libcurl
+        ftxui::dom
+        ftxui::screen
         nlohmann_json::nlohmann_json
         OpenSSL::Crypto
         spdlog::spdlog

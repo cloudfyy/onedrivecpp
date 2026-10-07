@@ -32,8 +32,9 @@ int test_args() {
     const auto sync_help =
         run_application(runtime_factory, {"onedrive-cpp", "sync", "--help"});
     if (sync_help.exit_code != 0 ||
-        !sync_help.standard_output.contains("--force-large-delete")) {
-        return fail("sync help did not document the large-delete override");
+        !sync_help.standard_output.contains("--force-large-delete") ||
+        !sync_help.standard_output.contains("--ui")) {
+        return fail("sync help did not document sync-specific options");
     }
     const auto doctor_help =
         run_application(runtime_factory, {"onedrive-cpp", "doctor", "--help"});
@@ -90,6 +91,18 @@ int test_args() {
         )
             .exit_code != 2) {
         return fail("invalid output mode did not return usage exit code 2");
+    }
+    if (run_application(
+            runtime_factory, {"onedrive-cpp", "sync", "--ui", "graphical"}
+        )
+            .exit_code != 2) {
+        return fail("invalid UI mode did not return usage exit code 2");
+    }
+    if (run_application(
+            runtime_factory, {"onedrive-cpp", "monitor", "--ui", "tui"}
+        )
+            .exit_code != 2) {
+        return fail("monitor accepted the sync-only UI option");
     }
     if (run_application(
             runtime_factory, {"onedrive-cpp", "reset-state", "--yes"}

@@ -150,6 +150,12 @@ eTag 前置条件、HTTPS 重定向、Range 传输、持久 checkpoint、完整�
 修改时间。SQLite pending-download 和 SHA-256 指纹提供不依赖扩展属性的崩溃
 恢复。
 .PP
+默认的
+.B \-\-ui auto
+仅在标准输入与输出均连接终端、支持终端控制且窗口至少为 60 列 × 12 行时显示
+FTXUI 实时状态面板。终端不支持、重定向、管道、JSON 和 quiet 模式会自动保留
+普通 Console 输出。
+.PP
 Range 分片只有在 HTTP 状态、Content-Range、总大小和实际接收字节数完全匹配时
 才会接受；失败分片回滚到前一个持久 offset。HTTP 408、429、502、503 和 504
 按照 Retry-After 或有界指数退避重试。预认证下载 URL 返回 401 或 403 时会向
@@ -256,6 +262,20 @@ trace 会记录协商协议、新建连接数及 DNS、TCP、TLS、服务端等�
 隐藏信息和成功消息，但保留警告与错误。诊断日志仍由
 .B \-\-log\-level
 控制。
+.TP
+.BI \-\-ui " 模式"
+选择
+.B sync
+界面，可用值为
+.BR auto 、
+.BR console
+和
+.BR tui 。
+默认的
+.B auto
+在 TUI 不可用时切回普通 Console；
+.B tui
+则在终端条件不满足时明确报错。
 .TP
 .B \-\-dry\-run
 对于

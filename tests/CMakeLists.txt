@@ -35,6 +35,16 @@ add_onedrive_test(
     INCLUDE_DIRS tests
 )
 add_onedrive_test(
+    terminal_tests
+    SOURCES tests/cli/terminal.cpp
+    INCLUDE_DIRS src tests
+)
+add_onedrive_test(
+    tui_tests
+    SOURCES tests/cli/tui.cpp
+    INCLUDE_DIRS src tests
+)
+add_onedrive_test(
     metrics_status_tests
     SOURCES tests/metrics/status.cpp
     INCLUDE_DIRS tests

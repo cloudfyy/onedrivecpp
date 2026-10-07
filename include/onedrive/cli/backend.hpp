@@ -13,6 +13,7 @@ public:
         const ConfirmationRequest& request
     ) = 0;
     [[nodiscard]] virtual OutputMode output_mode() const noexcept = 0;
+    [[nodiscard]] virtual UiMode ui_mode() const noexcept = 0;
 };
 
 }  // namespace onedrive::cli

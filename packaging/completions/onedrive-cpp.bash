@@ -25,6 +25,12 @@ _onedrive_cpp_completion()
             mapfile -t COMPREPLY < <(compgen -W "text json" -- "$current")
             return
             ;;
+        --ui)
+            mapfile -t COMPREPLY < <(
+                compgen -W "auto console tui" -- "$current"
+            )
+            return
+            ;;
     esac
 
     for word in "${COMP_WORDS[@]:1:COMP_CWORD-1}"; do
@@ -59,7 +65,7 @@ _onedrive_cpp_completion()
             ;;
         sync)
             mapfile -t COMPREPLY < <(compgen -W \
-                "$common_options --dry-run --force-large-delete" -- "$current")
+                "$common_options --ui --dry-run --force-large-delete" -- "$current")
             ;;
         reset-state)
             mapfile -t COMPREPLY < <(compgen -W \

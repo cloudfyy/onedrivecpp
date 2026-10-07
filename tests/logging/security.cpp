@@ -9,6 +9,8 @@
 #include <string>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <utility>
+#include <vector>
 
 namespace {
 
@@ -121,6 +123,35 @@ int test_rejects_untrusted_directory() {
     return EXIT_SUCCESS;
 }
 
+int test_message_sink() {
+    std::vector<
+        std::pair<onedrive::logging::Severity, std::string>
+    > messages;
+    {
+        onedrive::logging::Session session{{
+            .level = "warn",
+            .message_sink =
+                [&messages](
+                    onedrive::logging::Severity severity,
+                    std::string_view message
+                ) {
+                    messages.emplace_back(severity, message);
+                },
+        }};
+        spdlog::info("filtered");
+        spdlog::warn("dashboard warning");
+        spdlog::error("dashboard error");
+    }
+    if (messages.size() != 2 ||
+        messages[0].first != onedrive::logging::Severity::warning ||
+        messages[0].second != "dashboard warning" ||
+        messages[1].first != onedrive::logging::Severity::error ||
+        messages[1].second != "dashboard error") {
+        return fail("logging message sink received incorrect events");
+    }
+    return EXIT_SUCCESS;
+}
+
 }  // namespace
 
 int main() {
@@ -132,5 +163,9 @@ int main() {
         result != EXIT_SUCCESS) {
         return result;
     }
-    return test_rejects_untrusted_directory();
+    if (const int result = test_rejects_untrusted_directory();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return test_message_sink();
 }

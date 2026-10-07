@@ -73,8 +73,10 @@ SQLite ItemStore 使用专用数据库线程。下载、监控和上传工作线
 backend 分别消费同一套事件，交互确认则使用独立的强类型请求。
 
 这条边界在保留 JSON、重定向文本、quiet 模式和交互式终端行为的同时，让业务
-代码不再依赖具体渲染器。将来接入终端 UI 时，只需新增一个把事件送入 UI 线程
-队列的 backend，同步逻辑无需直接调用任何终端控件。
+代码不再依赖具体渲染器。内置 Text、JSON 与 FTXUI backend 独立消费同一套事件。
+仅用于 `sync` 的 FTXUI 面板会聚合 Delta、下载、摘要、阻塞项和最近消息；集中式
+能力探测只在终端合适时选择它。重定向、JSON、quiet、`TERM=dumb` 和窗口过小的
+场景继续使用 Text backend，同步逻辑始终无需直接调用终端控件。
 
 ## 事务状态机
 
@@ -134,7 +136,7 @@ Socket.IO framing、心跳处理和 eventfd 唤醒。
 - `src/app`：CLI 解析、应用生命周期和运行时依赖工厂。
 - `src/account`：稳定账号与 Drive 身份、元数据和路径。
 - `src/auth`：设备代码 OAuth、Token 刷新和安全持久化。
-- `src/cli`：文本和 JSON 用户输出。
+- `src/cli`：文本、JSON、FTXUI 用户输出及终端能力探测。
 - `src/config`：配置文件加载和校验。
 - `src/graph`：Microsoft Graph API 访问边界。
 - `src/http`：强类型 libcurl HTTP 传输层。

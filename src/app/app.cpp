@@ -15,6 +15,24 @@
 #include <utility>
 
 namespace onedrive::app {
+namespace {
+
+cli::MessageKind message_kind(logging::Severity severity) noexcept {
+    switch (severity) {
+        case logging::Severity::trace:
+        case logging::Severity::debug:
+        case logging::Severity::information:
+            return cli::MessageKind::information;
+        case logging::Severity::warning:
+            return cli::MessageKind::warning;
+        case logging::Severity::error:
+        case logging::Severity::critical:
+            return cli::MessageKind::error;
+    }
+    return cli::MessageKind::information;
+}
+
+}  // namespace
 
 Application::Application(
     gsl::not_null<const RuntimeFactory*> runtime_factory
@@ -33,6 +51,9 @@ int Application::run(int argc, char* argv[]) {
             {
                 .color = arguments.color_mode.value_or(config.console_color),
                 .output = arguments.output_mode,
+                .ui = arguments.operation == detail::Operation::synchronize ?
+                    arguments.ui_mode :
+                    cli::UiMode::console,
                 .quiet = arguments.quiet,
             }
         };
@@ -42,6 +63,18 @@ int Application::run(int argc, char* argv[]) {
                 .file = arguments.log_file ?
                     std::optional<std::filesystem::path>{*arguments.log_file} :
                     config.logging.file,
+                .message_sink = console.ui_mode() == cli::UiMode::tui ?
+                    logging::MessageSink{
+                        [&console](
+                            logging::Severity severity,
+                            std::string_view message
+                        ) {
+                            console.message(
+                                message_kind(severity), "log", message
+                            );
+                        }
+                    } :
+                    logging::MessageSink{},
             }
         };
         config.dry_run = config.dry_run || arguments.force_dry_run;

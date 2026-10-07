@@ -59,6 +59,10 @@ public:
         return OutputMode::json;
     }
 
+    UiMode ui_mode() const noexcept override {
+        return UiMode::console;
+    }
+
 private:
     void render(const MessageEvent& event) {
         if (suppressed(options_, event.kind)) {

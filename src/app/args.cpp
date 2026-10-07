@@ -33,6 +33,11 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         {"text", cli::OutputMode::text},
         {"json", cli::OutputMode::json},
     };
+    const std::map<std::string, cli::UiMode> ui_modes{
+        {"auto", cli::UiMode::automatic},
+        {"console", cli::UiMode::console},
+        {"tui", cli::UiMode::tui},
+    };
 
     CLI::App application{
         "A modern C++ OneDrive synchronization client",
@@ -175,6 +180,14 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         arguments.force_large_delete,
         "Allow this sync to exceed the configured remote deletion limit"
     );
+    sync
+        ->add_option(
+            "--ui",
+            arguments.ui_mode,
+            "Sync interface: auto, console, or tui"
+        )
+        ->transform(CLI::CheckedTransformer(ui_modes))
+        ->default_str("auto");
     download
         ->add_option(
             "REMOTE_PATH",

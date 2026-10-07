@@ -174,6 +174,13 @@ status 2, and blocked items are retried on later syncs. Installed files use the
 authoritative fileSystemInfo.lastModifiedDateTime value; files without a valid
 value are rejected before download. Permissions are derived from mode 0666 and
 the process umask.
+.PP
+The default
+.B \-\-ui auto
+mode displays an FTXUI status dashboard only when both standard streams are
+terminals, terminal controls are supported, and the window is at least 60 by
+12. Unsupported terminals, redirection, pipes, JSON, and quiet mode
+automatically retain normal console output.
 SQLite pending-download records and SHA-256 content fingerprints provide
 crash recovery independently of target-file-system extended attributes.
 Downloads starting at byte zero calculate SHA-256 and QuickXorHash while data
@@ -318,6 +325,20 @@ for destructive operations that would otherwise prompt interactively.
 Suppress informational and success command output while retaining warnings
 and errors. Diagnostic logging remains controlled separately by
 .BR \-\-log\-level .
+.TP
+.BI \-\-ui " MODE"
+Select the
+.B sync
+interface:
+.BR auto ,
+.BR console ,
+or
+.BR tui .
+The default
+.B auto
+mode falls back to the normal console when a TUI is unavailable.
+.B tui
+instead reports an error when terminal requirements are not met.
 .TP
 .B \-\-dry\-run
 For

@@ -70,14 +70,16 @@ does not maintain duplicate mutable item caches.
 Synchronization, upload, Delta, monitor, and command orchestration publish
 typed console events through the `Console` facade. The facade serializes calls
 from worker threads and forwards each event to a `ConsoleBackend`; it contains
-no text or JSON rendering policy. The built-in text and JSON backends render
-the same event model independently, while confirmations use a separate typed
-request.
+no text or JSON rendering policy. The built-in text, JSON, and FTXUI backends render the same event model
+independently, while confirmations use a separate typed request.
 
 This boundary preserves JSON, redirected text, quiet mode, and interactive
-terminal behavior without coupling business code to a specific renderer. A
-future terminal UI can implement another backend that queues events for its UI
-thread; synchronization code does not need to call terminal widgets directly.
+terminal behavior without coupling business code to a specific renderer. The
+sync-only FTXUI dashboard aggregates Delta, download, summary, blocked-item,
+and recent-message state. A centralized capability probe selects it only for
+a suitable terminal; redirected, JSON, quiet, `TERM=dumb`, and undersized
+sessions retain the text backend. Synchronization code never calls terminal
+widgets directly.
 
 ## Transaction state machines
 
@@ -139,7 +141,8 @@ The directories correspond to the responsibilities of
 - `src/app`: CLI parsing, application lifecycle, and runtime dependency factory.
 - `src/account`: Stable account and Drive identity, metadata, and paths.
 - `src/auth`: Device-code OAuth, token refresh, and secure token persistence.
-- `src/cli`: Text and JSON user output.
+- `src/cli`: Text, JSON, and FTXUI user output plus terminal capability
+  detection.
 - `src/config`: Configuration file loading and validation.
 - `src/graph`: Microsoft Graph API boundary.
 - `src/http`: Typed libcurl HTTP transport.

@@ -33,6 +33,10 @@ public:
         return onedrive::cli::OutputMode::json;
     }
 
+    onedrive::cli::UiMode ui_mode() const noexcept override {
+        return onedrive::cli::UiMode::console;
+    }
+
     std::vector<onedrive::cli::ConsoleEvent> events;
     std::optional<onedrive::cli::ConfirmationRequest> confirmation;
     bool confirmation_result{false};
@@ -373,6 +377,58 @@ int main() {
         return fail("download progress fallback percentage was incorrect");
     }
 
+    std::ostringstream automatic_output;
+    std::ostringstream automatic_error;
+    const Console automatic{
+        {
+            .ui = UiMode::automatic,
+        },
+        automatic_output,
+        automatic_error
+    };
+    automatic.message(
+        MessageKind::information, "phase", "Console fallback"
+    );
+    if (automatic_output.str() != "Console fallback\n" ||
+        !automatic_error.str().empty()) {
+        return fail("automatic UI did not fall back for redirected output");
+    }
+    try {
+        const Console forced_tui{
+            {
+                .ui = UiMode::tui,
+            },
+            automatic_output,
+            automatic_error
+        };
+        return fail("forced TUI accepted redirected output");
+    } catch (const std::runtime_error&) {
+    }
+    try {
+        const Console json_tui{
+            {
+                .output = OutputMode::json,
+                .ui = UiMode::tui,
+            },
+            automatic_output,
+            automatic_error
+        };
+        return fail("forced TUI accepted JSON output");
+    } catch (const std::invalid_argument&) {
+    }
+    try {
+        const Console quiet_tui{
+            {
+                .ui = UiMode::tui,
+                .quiet = true,
+            },
+            automatic_output,
+            automatic_error
+        };
+        return fail("forced TUI accepted quiet output");
+    } catch (const std::invalid_argument&) {
+    }
+
     if (Console::parse_color_mode("auto") != ColorMode::automatic ||
         Console::parse_color_mode("always") != ColorMode::always ||
         Console::parse_color_mode("never") != ColorMode::never ||
@@ -431,6 +487,7 @@ int main() {
         return fail("capturing backend confirmation unexpectedly matched");
     }
     if (event_console.output_mode() != OutputMode::json ||
+        event_console.ui_mode() != UiMode::console ||
         captured->events.size() != 8 ||
         !std::holds_alternative<MessageEvent>(captured->events[0]) ||
         !std::holds_alternative<SectionEvent>(captured->events[1]) ||

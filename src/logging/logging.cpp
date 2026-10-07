@@ -32,6 +32,46 @@ constexpr std::size_t maximum_log_file_size =
 constexpr std::size_t retained_log_files = 3;
 constexpr mode_t private_log_mode = S_IRUSR | S_IWUSR;
 
+Severity severity_for(spdlog::level::level_enum level) noexcept {
+    switch (level) {
+        case spdlog::level::trace:
+            return Severity::trace;
+        case spdlog::level::debug:
+            return Severity::debug;
+        case spdlog::level::info:
+            return Severity::information;
+        case spdlog::level::warn:
+            return Severity::warning;
+        case spdlog::level::err:
+            return Severity::error;
+        case spdlog::level::critical:
+            return Severity::critical;
+        case spdlog::level::off:
+        case spdlog::level::n_levels:
+            return Severity::information;
+    }
+    return Severity::information;
+}
+
+class MessageCallbackSink final
+    : public spdlog::sinks::base_sink<std::mutex> {
+public:
+    explicit MessageCallbackSink(MessageSink sink)
+        : sink_{std::move(sink)} {}
+
+private:
+    void sink_it_(const spdlog::details::log_msg& message) override {
+        sink_(
+            severity_for(message.level),
+            std::string_view{message.payload.data(), message.payload.size()}
+        );
+    }
+
+    void flush_() override {}
+
+    MessageSink sink_;
+};
+
 [[noreturn]] void throw_log_error(
     std::string_view operation,
     const std::filesystem::path& path,
@@ -267,7 +307,15 @@ spdlog::level::level_enum parse_level(std::string level) {
 
 Session::Session(const Options& options) {
     std::vector<spdlog::sink_ptr> sinks;
-    sinks.push_back(std::make_shared<spdlog::sinks::stderr_color_sink_mt>());
+    if (options.message_sink) {
+        sinks.push_back(std::make_shared<MessageCallbackSink>(
+            options.message_sink
+        ));
+    } else {
+        sinks.push_back(
+            std::make_shared<spdlog::sinks::stderr_color_sink_mt>()
+        );
+    }
     if (options.file) {
         sinks.push_back(std::make_shared<SecureRotatingFileSink>(
             *options.file,

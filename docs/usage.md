@@ -18,6 +18,7 @@ Every subcommand accepts diagnostic logging and user-output options:
 onedrive-cpp sync --dry-run --log-level debug
 onedrive-cpp monitor --log-file ~/.local/state/onedrive-cpp/onedrive-cpp.log
 onedrive-cpp sync --dry-run --color always
+onedrive-cpp sync --ui tui
 onedrive-cpp sync --dry-run --output json
 onedrive-cpp sync --dry-run --quiet
 onedrive-cpp drives --output json
@@ -45,6 +46,14 @@ emits ANSI sequences; destructive interactive confirmation requires `--yes`
 in this mode. `--quiet` suppresses informational and success output while
 retaining warnings and errors. Diagnostic logs remain on standard error, while
 command results are written to standard output.
+
+`sync` uses `--ui=auto` by default. It opens the FTXUI status dashboard only
+when standard input and output are terminals, `TERM` supports terminal
+controls, and the terminal is at least 60 columns by 12 rows. Redirected
+output, pipes, JSON, quiet mode, `TERM=dumb`, and undersized terminals
+automatically use the normal console. Use `--ui=console` to disable the
+dashboard. `--ui=tui` requires the dashboard and reports a clear error instead
+of falling back when the terminal cannot support it.
 
 ## Read-only account and synchronization information
 

@@ -22,6 +22,12 @@ enum class OutputMode {
     json,
 };
 
+enum class UiMode {
+    automatic,
+    console,
+    tui,
+};
+
 enum class MessageKind {
     information,
     success,
@@ -32,6 +38,7 @@ enum class MessageKind {
 struct ConsoleOptions {
     ColorMode color{ColorMode::automatic};
     OutputMode output{OutputMode::text};
+    UiMode ui{UiMode::console};
     bool quiet{false};
 };
 

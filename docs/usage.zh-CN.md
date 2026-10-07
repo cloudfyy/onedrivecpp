@@ -17,6 +17,7 @@ journalctl --user -u onedrive-cpp.service -f
 onedrive-cpp sync --dry-run --log-level debug
 onedrive-cpp monitor --log-file ~/.local/state/onedrive-cpp/onedrive-cpp.log
 onedrive-cpp sync --dry-run --color always
+onedrive-cpp sync --ui tui
 onedrive-cpp sync --dry-run --output json
 onedrive-cpp sync --dry-run --quiet
 onedrive-cpp drives --output json
@@ -41,6 +42,12 @@ URL，但仍可能包含账号与 Drive 显示名称、远端项目名称和本�
 一个紧凑的 JSON 对象，绝不包含 ANSI 序列。在该模式下执行危险操作时，必须
 使用 `--yes` 显式确认。`--quiet` 会隐藏普通信息和成功消息，但仍保留警告和
 错误。诊断日志继续写入标准错误，命令结果写入标准输出。
+
+`sync` 默认使用 `--ui=auto`。只有标准输入和标准输出均连接终端、`TERM` 支持
+终端控制，并且窗口至少为 60 列 × 12 行时，程序才会打开 FTXUI 实时状态面板。
+输出重定向、管道、JSON、quiet 模式、`TERM=dumb` 或窗口过小时，会自动切回普通
+Console。使用 `--ui=console` 可以始终关闭面板；`--ui=tui` 则会强制启用面板，
+若当前终端不支持，会明确报错而不是静默回退。
 
 ## 只读账号与同步信息
 

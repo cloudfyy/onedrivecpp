@@ -17,5 +17,11 @@ namespace onedrive::cli::detail {
     std::ostream& output,
     std::ostream& error
 );
+[[nodiscard]] std::unique_ptr<ConsoleBackend> make_ftxui_console_backend(
+    ConsoleOptions options,
+    std::ostream& output,
+    std::ostream& error,
+    std::size_t columns
+);
 
 }  // namespace onedrive::cli::detail
