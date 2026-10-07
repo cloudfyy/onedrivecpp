@@ -124,14 +124,9 @@ _onedrive_cpp_completion()
             ;;
         inspect)
             case "$inspect_action" in
-                health|status)
+                health|status|drives|shared|sites|quota)
                     mapfile -t COMPREPLY < <(compgen -W \
                         "$common_options --ui --theme" -- "$current")
-                    ;;
-                drives|shared|sites|quota)
-                    mapfile -t COMPREPLY < <(
-                        compgen -W "$common_options" -- "$current"
-                    )
                     ;;
                 *)
                     mapfile -t COMPREPLY < <(

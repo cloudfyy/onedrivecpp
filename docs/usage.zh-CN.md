@@ -22,6 +22,10 @@ onedrive-cpp transfer sync --theme ocean
 onedrive-cpp account login --ui tui
 onedrive-cpp inspect health --ui tui
 onedrive-cpp inspect status --ui tui
+onedrive-cpp inspect drives --ui tui
+onedrive-cpp inspect shared --ui tui
+onedrive-cpp inspect sites Engineering --ui tui
+onedrive-cpp inspect quota --ui tui
 onedrive-cpp transfer download Documents/report.pdf --ui tui
 onedrive-cpp transfer sync --dry-run --output json
 onedrive-cpp transfer sync --dry-run --quiet
@@ -48,7 +52,7 @@ URL，但仍可能包含账号与 Drive 显示名称、远端项目名称和本�
 使用 `--yes` 显式确认。`--quiet` 会隐藏普通信息和成功消息，但仍保留警告和
 错误。诊断日志继续写入标准错误，命令结果写入标准输出。
 
-`account login`、`inspect health`、`inspect status`、`transfer sync`、`transfer download` 和 `transfer watch` 读取配置中的 `console.ui`，默认值为 `auto`；
+`account login`、全部 `inspect` 查询命令和全部 `transfer` 命令读取配置中的 `console.ui`，默认值为 `auto`；
 命令行显式提供的 `--ui` 只覆盖本次运行。auto 模式只有在标准输入和标准输出均连接终端、`TERM`
 支持终端控制，并且窗口至少为 60 列 × 12 行时，才会打开 FTXUI 实时状态面板。
 输出重定向、管道、JSON、quiet 模式、`TERM=dumb` 或窗口过小时，会自动切回普通

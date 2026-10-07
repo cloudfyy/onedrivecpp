@@ -74,7 +74,7 @@ backend 分别消费同一套事件，交互确认则使用独立的强类型请
 
 这条边界在保留 JSON、重定向文本、quiet 模式和交互式终端行为的同时，让业务
 代码不再依赖具体渲染器。内置 Text、JSON 与 FTXUI backend 独立消费同一套事件。
-用于 `account login`、`inspect health`、`inspect status`、`transfer sync`、`transfer download` 和 `transfer watch` 的 FTXUI 面板会聚合认证、诊断、状态、云端检查、下载、摘要、阻塞项和最近消息；它
+`account login`、全部 `inspect` 命令和全部 `transfer` 命令使用 FTXUI 面板聚合认证、诊断、状态、云端检查、下载、摘要、阻塞项和最近消息；它
 使用全屏备用缓冲区，显示构建版本和可选主题，并把传输层事件翻译成面向用户的云端
 活动。集中式能力探测只在终端合适时选择它。重定向、JSON、quiet、`TERM=dumb`
 和窗口过小的场景继续使用 Text backend，同步逻辑始终无需直接调用终端控件。

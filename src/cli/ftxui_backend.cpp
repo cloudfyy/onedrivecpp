@@ -294,6 +294,14 @@ private:
                     return "HEALTH";
                 case TuiView::status:
                     return "STATUS";
+                case TuiView::drives:
+                    return "DRIVES";
+                case TuiView::shared:
+                    return "SHARED";
+                case TuiView::sites:
+                    return "SITES";
+                case TuiView::quota:
+                    return "QUOTA";
                 case TuiView::download:
                     return "DOWNLOAD";
                 case TuiView::watch:

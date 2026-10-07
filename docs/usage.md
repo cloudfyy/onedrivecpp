@@ -23,6 +23,10 @@ onedrive-cpp transfer sync --theme ocean
 onedrive-cpp account login --ui tui
 onedrive-cpp inspect health --ui tui
 onedrive-cpp inspect status --ui tui
+onedrive-cpp inspect drives --ui tui
+onedrive-cpp inspect shared --ui tui
+onedrive-cpp inspect sites Engineering --ui tui
+onedrive-cpp inspect quota --ui tui
 onedrive-cpp transfer download Documents/report.pdf --ui tui
 onedrive-cpp transfer sync --dry-run --output json
 onedrive-cpp transfer sync --dry-run --quiet
@@ -52,7 +56,7 @@ in this mode. `--quiet` suppresses informational and success output while
 retaining warnings and errors. Diagnostic logs remain on standard error, while
 command results are written to standard output.
 
-`account login`, `inspect health`, `inspect status`, `transfer sync`, `transfer download`, and `transfer watch` use `console.ui` from the configuration,
+`account login`, all `inspect` commands, and all `transfer` commands use `console.ui` from the configuration,
 which defaults to `auto`; an explicit `--ui` overrides it for one invocation.
 Auto mode opens the FTXUI status dashboard only when standard input and output are terminals,
 `TERM` supports terminal controls, and the terminal is at least 60 columns by

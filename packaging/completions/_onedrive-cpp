@@ -44,7 +44,7 @@ _onedrive_cpp()
             ;;
         inspect)
             case "${line[2]}" in
-                health|status)
+                health|status|drives|shared|quota)
                     _arguments \
                         '(-h --help)'{-h,--help}'[show command help]' \
                         '--config[path to configuration file]:configuration file:_files' \
@@ -64,18 +64,10 @@ _onedrive_cpp()
                         '--log-file[write rotating logs to file]:log file:_files' \
                         '--color[color output mode]:mode:(auto always never)' \
                         '--output[output format]:format:(text json)' \
+                        '--ui[inspection interface]:mode:(auto console tui)' \
+                        '--theme[TUI color theme]:theme:(hacker ocean amber synthwave)' \
                         '--quiet[suppress informational and success output]' \
                         '1:SharePoint site search query:'
-                    ;;
-                drives|shared|quota)
-                    _arguments \
-                        '(-h --help)'{-h,--help}'[show command help]' \
-                        '--config[path to configuration file]:configuration file:_files' \
-                        '--log-level[minimum log level]:level:(trace debug info warn error critical off)' \
-                        '--log-file[write rotating logs to file]:log file:_files' \
-                        '--color[color output mode]:mode:(auto always never)' \
-                        '--output[output format]:format:(text json)' \
-                        '--quiet[suppress informational and success output]'
                     ;;
                 *)
                     _arguments \

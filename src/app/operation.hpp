@@ -41,22 +41,26 @@ constexpr OperationCapabilities operation_capabilities(
             return {.supports_tui = true};
         case Operation::drives:
             return {
+                .supports_tui = true,
                 .validates_authentication_config = true,
                 .requires_authentication = true,
             };
         case Operation::shared:
             return {
+                .supports_tui = true,
                 .validates_authentication_config = true,
                 .requires_drive_id = true,
                 .requires_authentication = true,
             };
         case Operation::sites:
             return {
+                .supports_tui = true,
                 .validates_authentication_config = true,
                 .requires_authentication = true,
             };
         case Operation::quota:
             return {
+                .supports_tui = true,
                 .validates_authentication_config = true,
                 .requires_drive_id = true,
                 .requires_authentication = true,
