@@ -1,3 +1,11 @@
+onedrive-cpp (0.10.1-1~ubuntu24.04) noble; urgency=medium
+
+  * Replace the top-level auth and logout commands with the account login and
+    account logout command group across the CLI, shell completions, recovery
+    guidance, tests, privacy notice, and English and Chinese documentation.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Wed, 07 Oct 2026 06:45:23 +0000
+
 onedrive-cpp (0.10.0-1~ubuntu24.04) noble; urgency=medium
 
   * Add themed full-screen terminal dashboards for synchronization, downloads,
