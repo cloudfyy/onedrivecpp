@@ -224,6 +224,33 @@ int test_tui_dashboard() {
         return fail("doctor TUI did not render diagnostic status");
     }
 
+    std::ostringstream status_output;
+    auto status_backend = detail::make_ftxui_console_backend(
+        {
+            .color = ColorMode::never,
+            .ui = UiMode::tui,
+            .view = TuiView::status,
+        },
+        status_output,
+        error,
+        80,
+        24
+    );
+    status_backend->emit(SectionEvent{
+        .event = "status",
+        .title = "Synchronization status:",
+        .fields = {
+            {.label = "account:", .key = "account", .value = "Test User"},
+            {.label = "tracked:", .key = "tracked_items", .value = "42"},
+        },
+    });
+    status_backend.reset();
+    if (!status_output.str().contains("ONEDRIVE // STATUS  v") ||
+        !status_output.str().contains("account: Test User") ||
+        !status_output.str().contains("tracked: 42")) {
+        return fail("status TUI did not render synchronization status");
+    }
+
     std::ostringstream unstyled_output;
     auto unstyled_backend = detail::make_ftxui_console_backend(
         {

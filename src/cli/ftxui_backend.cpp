@@ -292,6 +292,8 @@ private:
                     return "AUTH";
                 case TuiView::doctor:
                     return "DOCTOR";
+                case TuiView::status:
+                    return "STATUS";
                 case TuiView::download:
                     return "DOWNLOAD";
                 case TuiView::monitor:

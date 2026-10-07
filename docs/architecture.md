@@ -75,7 +75,7 @@ independently, while confirmations use a separate typed request.
 
 This boundary preserves JSON, redirected text, quiet mode, and interactive
 terminal behavior without coupling business code to a specific renderer. The
-auth, doctor, sync, download, and monitor FTXUI dashboard aggregates authorization, diagnostics, cloud checks, download, summary, blocked-item,
+auth, doctor, status, sync, download, and monitor FTXUI dashboard aggregates authorization, diagnostics, status, cloud checks, download, summary, blocked-item,
 and recent-message state. It enters an alternate full-screen buffer, renders
 the build version and a selectable theme, and translates transport-oriented
 events into user-facing cloud activity. A centralized capability probe selects

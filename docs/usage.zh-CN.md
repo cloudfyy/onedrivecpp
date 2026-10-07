@@ -21,6 +21,7 @@ onedrive-cpp sync --ui tui
 onedrive-cpp sync --theme ocean
 onedrive-cpp auth --ui tui
 onedrive-cpp doctor --ui tui
+onedrive-cpp status --ui tui
 onedrive-cpp download Documents/report.pdf --ui tui
 onedrive-cpp sync --dry-run --output json
 onedrive-cpp sync --dry-run --quiet
@@ -47,7 +48,7 @@ URL，但仍可能包含账号与 Drive 显示名称、远端项目名称和本�
 使用 `--yes` 显式确认。`--quiet` 会隐藏普通信息和成功消息，但仍保留警告和
 错误。诊断日志继续写入标准错误，命令结果写入标准输出。
 
-`auth`、`doctor`、`sync`、`download` 和 `monitor` 读取配置中的 `console.ui`，默认值为 `auto`；
+`auth`、`doctor`、`status`、`sync`、`download` 和 `monitor` 读取配置中的 `console.ui`，默认值为 `auto`；
 命令行显式提供的 `--ui` 只覆盖本次运行。auto 模式只有在标准输入和标准输出均连接终端、`TERM`
 支持终端控制，并且窗口至少为 60 列 × 12 行时，才会打开 FTXUI 实时状态面板。
 输出重定向、管道、JSON、quiet 模式、`TERM=dumb` 或窗口过小时，会自动切回普通

@@ -73,6 +73,10 @@ _onedrive_cpp_completion()
             mapfile -t COMPREPLY < <(compgen -W \
                 "$common_options --ui --theme" -- "$current")
             ;;
+        status)
+            mapfile -t COMPREPLY < <(compgen -W \
+                "$common_options --ui --theme" -- "$current")
+            ;;
         download)
             mapfile -t COMPREPLY < <(compgen -W \
                 "$common_options --ui --theme --dry-run" -- "$current")
@@ -89,7 +93,7 @@ _onedrive_cpp_completion()
             mapfile -t COMPREPLY < <(compgen -W \
                 "$common_options --clear-all --yes" -- "$current")
             ;;
-        logout|drives|shared|sites|quota|status)
+        logout|drives|shared|sites|quota)
             mapfile -t COMPREPLY < <(
                 compgen -W "$common_options" -- "$current"
             )

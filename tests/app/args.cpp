@@ -75,7 +75,9 @@ int test_args() {
     if (status_help.exit_code != 0 ||
         !status_help.standard_output.contains(
             "Show read-only synchronization status"
-        )) {
+        ) ||
+        !status_help.standard_output.contains("--ui") ||
+        !status_help.standard_output.contains("--theme")) {
         return fail("status help was not available");
     }
 

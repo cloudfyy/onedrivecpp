@@ -186,7 +186,7 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         arguments.force_large_delete,
         "Allow this sync to exceed the configured remote deletion limit"
     );
-    for (auto* command : {auth, doctor, sync, download, monitor}) {
+    for (auto* command : {auth, doctor, status, sync, download, monitor}) {
         command->add_option(
             "--ui",
             arguments.ui_mode,

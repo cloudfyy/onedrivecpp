@@ -47,6 +47,12 @@ _onedrive_cpp_completion
 assert_contains --ui "${COMPREPLY[@]}"
 assert_contains --theme "${COMPREPLY[@]}"
 
+COMP_WORDS=(onedrive-cpp status --)
+COMP_CWORD=2
+_onedrive_cpp_completion
+assert_contains --ui "${COMPREPLY[@]}"
+assert_contains --theme "${COMPREPLY[@]}"
+
 COMP_WORDS=(onedrive-cpp doctor --)
 COMP_CWORD=2
 _onedrive_cpp_completion

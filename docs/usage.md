@@ -22,6 +22,7 @@ onedrive-cpp sync --ui tui
 onedrive-cpp sync --theme ocean
 onedrive-cpp auth --ui tui
 onedrive-cpp doctor --ui tui
+onedrive-cpp status --ui tui
 onedrive-cpp download Documents/report.pdf --ui tui
 onedrive-cpp sync --dry-run --output json
 onedrive-cpp sync --dry-run --quiet
@@ -51,7 +52,7 @@ in this mode. `--quiet` suppresses informational and success output while
 retaining warnings and errors. Diagnostic logs remain on standard error, while
 command results are written to standard output.
 
-`auth`, `doctor`, `sync`, `download`, and `monitor` use `console.ui` from the configuration,
+`auth`, `doctor`, `status`, `sync`, `download`, and `monitor` use `console.ui` from the configuration,
 which defaults to `auto`; an explicit `--ui` overrides it for one invocation.
 Auto mode opens the FTXUI status dashboard only when standard input and output are terminals,
 `TERM` supports terminal controls, and the terminal is at least 60 columns by
