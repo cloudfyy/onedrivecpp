@@ -48,28 +48,12 @@ void secure_state_directory(const std::filesystem::path& directory) {
         );
     }
 
-    struct stat status {};
-    if (::fstat(descriptor.get(), &status) == -1) {
-        const std::string message = std::strerror(errno);
-        throw std::runtime_error(
-            "cannot inspect state directory '" + directory.string() + "': " +
-            message
-        );
-    }
-    if (!S_ISDIR(status.st_mode) || status.st_uid != ::geteuid()) {
-        throw std::runtime_error(
-            "state directory must be owned by the current user: " +
-            directory.string()
-        );
-    }
-    if ((status.st_mode & 07777) != private_directory_mode &&
-        ::fchmod(descriptor.get(), private_directory_mode) == -1) {
-        const std::string message = std::strerror(errno);
-        throw std::runtime_error(
-            "cannot secure state directory '" + directory.string() + "': " +
-            message
-        );
-    }
+    static_cast<void>(onedrive::util::secure_owned_directory(
+        descriptor.get(),
+        directory,
+        private_directory_mode,
+        "state directory"
+    ));
     if (const auto error = descriptor.close(); error) {
         throw std::runtime_error(
             "cannot close state directory '" + directory.string() + "': " +
@@ -97,28 +81,12 @@ void secure_sync_directory(const std::filesystem::path& directory) {
             std::strerror(errno)
         );
     }
-    struct stat status {};
-    if (::fstat(descriptor.get(), &status) == -1) {
-        const std::string message = std::strerror(errno);
-        throw std::runtime_error(
-            "cannot inspect sync directory '" + directory.string() + "': " +
-            message
-        );
-    }
-    if (!S_ISDIR(status.st_mode) || status.st_uid != ::geteuid()) {
-        throw std::runtime_error(
-            "sync directory must be owned by the current user: " +
-            directory.string()
-        );
-    }
-    if ((status.st_mode & 07777) != private_directory_mode &&
-        ::fchmod(descriptor.get(), private_directory_mode) == -1) {
-        const std::string message = std::strerror(errno);
-        throw std::runtime_error(
-            "cannot secure sync directory '" + directory.string() + "': " +
-            message
-        );
-    }
+    static_cast<void>(onedrive::util::secure_owned_directory(
+        descriptor.get(),
+        directory,
+        private_directory_mode,
+        "sync directory"
+    ));
     if (const auto error = descriptor.close(); error) {
         throw std::runtime_error(
             "cannot close sync directory '" + directory.string() + "': " +
@@ -162,29 +130,9 @@ void validate_private_file(
             path.string() + "': " + std::strerror(errno)
         );
     }
-    struct stat status {};
-    if (::fstat(descriptor.get(), &status) == -1) {
-        const std::string message = std::strerror(errno);
-        throw std::runtime_error(
-            "cannot inspect " + std::string{description} + " '" +
-            path.string() + "': " + message
-        );
-    }
-    if (!S_ISREG(status.st_mode) || status.st_uid != ::geteuid()) {
-        throw std::runtime_error(
-            std::string{description} +
-            " must be a regular file owned by the current user: " +
-            path.string()
-        );
-    }
-    if ((status.st_mode & 07777) != private_file_mode &&
-        ::fchmod(descriptor.get(), private_file_mode) == -1) {
-        const std::string message = std::strerror(errno);
-        throw std::runtime_error(
-            "cannot secure " + std::string{description} + " '" +
-            path.string() + "': " + message
-        );
-    }
+    const auto status = onedrive::util::secure_owned_regular_file(
+        descriptor.get(), path, private_file_mode, description
+    );
     if (required && status.st_size == 0) {
         throw std::runtime_error(
             std::string{description} + " is empty; run 'onedrive-cpp auth'"

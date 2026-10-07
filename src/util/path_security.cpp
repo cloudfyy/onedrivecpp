@@ -11,6 +11,72 @@
 #include <unistd.h>
 
 namespace onedrive::util {
+namespace {
+
+[[noreturn]] void throw_path_error(
+    std::string_view operation,
+    std::string_view description,
+    const std::filesystem::path& path,
+    int error
+) {
+    throw std::system_error{
+        error,
+        std::generic_category(),
+        "cannot " + std::string{operation} + " " +
+            std::string{description} + " '" + path.string() + "'"
+    };
+}
+
+struct stat inspect_owned_path(
+    int descriptor,
+    const std::filesystem::path& path,
+    std::string_view description,
+    mode_t expected_type,
+    bool require_single_link
+) {
+    struct stat status{};
+    if (::fstat(descriptor, &status) == -1) {
+        throw_path_error("inspect", description, path, errno);
+    }
+    if ((status.st_mode & S_IFMT) != expected_type ||
+        status.st_uid != ::geteuid() ||
+        (require_single_link && status.st_nlink != 1)) {
+        throw std::runtime_error(
+            std::string{description} +
+            (expected_type == S_IFDIR ?
+                 " must be a directory owned by the current user: " :
+                 " must be a regular single-link file owned by the current "
+                 "user: ") +
+            path.string()
+        );
+    }
+    return status;
+}
+
+struct stat secure_owned_path(
+    int descriptor,
+    const std::filesystem::path& path,
+    mode_t mode,
+    std::string_view description,
+    mode_t expected_type,
+    bool require_single_link
+) {
+    auto status = inspect_owned_path(
+        descriptor,
+        path,
+        description,
+        expected_type,
+        require_single_link
+    );
+    if ((status.st_mode & 07777) != mode &&
+        ::fchmod(descriptor, mode) == -1) {
+        throw_path_error("secure", description, path, errno);
+    }
+    status.st_mode = (status.st_mode & S_IFMT) | mode;
+    return status;
+}
+
+}  // namespace
 
 std::filesystem::path normalized_absolute(
     const std::filesystem::path& path
@@ -100,6 +166,48 @@ UniqueFD open_path_no_symlinks(
         );
     }
     return UniqueFD{descriptor};
+}
+
+struct stat inspect_owned_directory(
+    int descriptor,
+    const std::filesystem::path& path,
+    std::string_view description
+) {
+    return inspect_owned_path(
+        descriptor, path, description, S_IFDIR, false
+    );
+}
+
+struct stat inspect_owned_regular_file(
+    int descriptor,
+    const std::filesystem::path& path,
+    std::string_view description
+) {
+    return inspect_owned_path(
+        descriptor, path, description, S_IFREG, true
+    );
+}
+
+struct stat secure_owned_directory(
+    int descriptor,
+    const std::filesystem::path& path,
+    mode_t mode,
+    std::string_view description
+) {
+    return secure_owned_path(
+        descriptor, path, mode, description, S_IFDIR, false
+    );
+}
+
+struct stat secure_owned_regular_file(
+    int descriptor,
+    const std::filesystem::path& path,
+    mode_t mode,
+    std::string_view description
+) {
+    return secure_owned_path(
+        descriptor, path, mode, description, S_IFREG, true
+    );
 }
 
 }  // namespace onedrive::util

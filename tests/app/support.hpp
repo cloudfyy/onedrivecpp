@@ -711,6 +711,10 @@ struct CliFixture final {
     FakeRuntimeFactory runtime_factory;
 
     CliFixture() {
+        std::filesystem::permissions(
+            temporary_directory.path(),
+            std::filesystem::perms::owner_all
+        );
         std::ofstream config{config_path};
         config << "config_version = 2\n"
                << "[console]\n"

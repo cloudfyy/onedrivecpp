@@ -29,8 +29,14 @@ onedrive-cpp status
 
 Supported levels are `trace`, `debug`, `info`, `warn`, `error`, `critical`,
 and `off`. A configured log file rotates at 5 MiB and retains three older
-files. Authentication tokens, device codes, and authorization headers must
-never be written to logs.
+files. The parent directory must already exist, be owned by the current user,
+contain no symbolic-link path components, and not be writable by other users.
+The active log and every rotated file must be regular, single-link files owned
+by the current user; the client enforces mode `0600` and refuses symbolic or
+hard links. Authentication tokens, device codes, authorization headers, proxy
+passwords, and preauthorized transfer URLs are never written to logs. Logs can
+still contain account and Drive display names, remote item names, and local
+paths, so retain the enforced private permissions when copying diagnostics.
 
 `--color=auto` is the default: styling is enabled only for a terminal and is
 disabled when `NO_COLOR` is set. `always` forces ANSI styling and `never`

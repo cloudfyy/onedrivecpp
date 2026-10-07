@@ -1,5 +1,7 @@
 #include "lock.hpp"
 
+#include "onedrive/util/path_security.hpp"
+
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
@@ -33,26 +35,9 @@ onedrive::util::UniqueFD acquire_runtime_lock(
             std::strerror(errno)
         );
     }
-    struct stat status {};
-    if (::fstat(descriptor.get(), &status) == -1) {
-        const std::string message = std::strerror(errno);
-        throw std::runtime_error(
-            "cannot use runtime lock '" + path.string() + "': " + message
-        );
-    }
-    if (!S_ISREG(status.st_mode) || status.st_uid != ::geteuid() ||
-        status.st_nlink != 1) {
-        throw std::runtime_error(
-            "cannot use runtime lock '" + path.string() +
-            "': unsafe lock file"
-        );
-    }
-    if (::fchmod(descriptor.get(), private_file_mode) == -1) {
-        const std::string message = std::strerror(errno);
-        throw std::runtime_error(
-            "cannot secure runtime lock '" + path.string() + "': " + message
-        );
-    }
+    static_cast<void>(onedrive::util::secure_owned_regular_file(
+        descriptor.get(), path, private_file_mode, "runtime lock"
+    ));
     if (::flock(descriptor.get(), LOCK_EX | LOCK_NB) == -1) {
         const std::string message = errno == EWOULDBLOCK ?
             "another onedrive-cpp process is already using this state directory" :

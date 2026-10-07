@@ -13,6 +13,11 @@ add_onedrive_test(
     INCLUDE_DIRS src tests
 )
 add_onedrive_test(
+    path_security_tests
+    SOURCES tests/util/path_security.cpp
+    INCLUDE_DIRS tests
+)
+add_onedrive_test(
     ascii_tests
     SOURCES tests/util/ascii.cpp
     INCLUDE_DIRS src tests
@@ -33,6 +38,12 @@ add_onedrive_test(
     metrics_status_tests
     SOURCES tests/metrics/status.cpp
     INCLUDE_DIRS tests
+)
+add_onedrive_test(
+    logging_security_tests
+    SOURCES tests/logging/security.cpp
+    INCLUDE_DIRS tests
+    LIBRARIES spdlog::spdlog
 )
 
 add_test(

@@ -24,5 +24,27 @@ void reject_symlink_components(
     int flags,
     mode_t mode = 0
 );
+[[nodiscard]] struct stat inspect_owned_directory(
+    int descriptor,
+    const std::filesystem::path& path,
+    std::string_view description
+);
+[[nodiscard]] struct stat inspect_owned_regular_file(
+    int descriptor,
+    const std::filesystem::path& path,
+    std::string_view description
+);
+[[nodiscard]] struct stat secure_owned_directory(
+    int descriptor,
+    const std::filesystem::path& path,
+    mode_t mode,
+    std::string_view description
+);
+[[nodiscard]] struct stat secure_owned_regular_file(
+    int descriptor,
+    const std::filesystem::path& path,
+    mode_t mode,
+    std::string_view description
+);
 
 }  // namespace onedrive::util

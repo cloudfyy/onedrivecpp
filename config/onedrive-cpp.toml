@@ -9,6 +9,8 @@ color = "auto"
 # and "off".
 level = "info"
 # Optional rotating log file. Relative paths resolve from this TOML file.
+# The parent directory must already exist, be owned by the current user, and
+# not be writable by other users. Log files are restricted to mode 0600.
 # file = "onedrive-cpp.log"
 
 [auth]
