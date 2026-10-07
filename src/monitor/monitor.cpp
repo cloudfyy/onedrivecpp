@@ -12,7 +12,6 @@
 #include <cerrno>
 #include <chrono>
 #include <cstdint>
-#include <cstring>
 #include <limits>
 #include <poll.h>
 #include <pthread.h>
@@ -56,13 +55,13 @@ detail::TerminationSignalMask::~TerminationSignalMask() {
         try {
             spdlog::error(
                 "Cannot restore monitor termination signal mask: {}",
-                std::strerror(result)
+                onedrive::util::system_error_message(result)
             );
         } catch (...) {
             std::fprintf(
                 stderr,
-                "Cannot restore monitor termination signal mask: %s\n",
-                std::strerror(result)
+                "Cannot restore monitor termination signal mask: error %d\n",
+                result
             );
         }
     }

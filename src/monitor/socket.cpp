@@ -2,6 +2,7 @@
 
 #include "http/curl.hpp"
 #include "http/proxy.hpp"
+#include "onedrive/util/system_error.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"
 
 #include <curl/curl.h>
@@ -13,7 +14,6 @@
 #include <cerrno>
 #include <chrono>
 #include <cstdint>
-#include <cstring>
 #include <mutex>
 #include <poll.h>
 #include <stdexcept>
@@ -235,7 +235,7 @@ private:
             errno != EAGAIN) {
             spdlog::warn(
                 "Cannot signal Monitor notification event: {}",
-                std::strerror(errno)
+                onedrive::util::system_error_message(errno)
             );
         }
     }

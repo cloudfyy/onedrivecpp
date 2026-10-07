@@ -2,12 +2,12 @@
 
 #include "onedrive/util/mount.hpp"
 #include "onedrive/util/path_security.hpp"
+#include "onedrive/util/system_error.hpp"
 
 #include <spdlog/spdlog.h>
 
 #include <cerrno>
 #include <chrono>
-#include <cstring>
 #include <fcntl.h>
 #include <format>
 #include <stdexcept>
@@ -44,7 +44,7 @@ void secure_state_directory(const std::filesystem::path& directory) {
     if (!descriptor) {
         throw std::runtime_error(
             "cannot open state directory '" + directory.string() + "': " +
-            std::strerror(errno)
+            onedrive::util::system_error_message(errno)
         );
     }
 
@@ -78,7 +78,7 @@ void secure_sync_directory(const std::filesystem::path& directory) {
     if (!descriptor) {
         throw std::runtime_error(
             "cannot open sync directory '" + directory.string() + "': " +
-            std::strerror(errno)
+            onedrive::util::system_error_message(errno)
         );
     }
     static_cast<void>(onedrive::util::secure_owned_directory(
@@ -128,7 +128,7 @@ void validate_private_file(
     if (!descriptor) {
         throw std::runtime_error(
             "cannot open " + std::string{description} + " '" +
-            path.string() + "': " + std::strerror(errno)
+            path.string() + "': " + onedrive::util::system_error_message(errno)
         );
     }
     const auto status = onedrive::util::secure_owned_regular_file(
@@ -188,7 +188,7 @@ void probe_writable_directory(const std::filesystem::path& directory) {
     if (!descriptor) {
         throw std::runtime_error(
             "sync directory is not writable '" + directory.string() + "': " +
-            std::strerror(errno)
+            onedrive::util::system_error_message(errno)
         );
     }
 
@@ -199,7 +199,7 @@ void probe_writable_directory(const std::filesystem::path& directory) {
     constexpr char content = '\0';
     if (::write(descriptor.get(), &content, 1) != 1 ||
         ::fsync(descriptor.get()) == -1) {
-        const std::string message = std::strerror(errno);
+        const std::string message = onedrive::util::system_error_message(errno);
         descriptor.reset();
         cleanup();
         throw std::runtime_error(
@@ -229,11 +229,11 @@ void probe_writable_directory(const std::filesystem::path& directory) {
     if (!directory_descriptor) {
         throw std::runtime_error(
             "cannot open sync directory '" + directory.string() + "': " +
-            std::strerror(errno)
+            onedrive::util::system_error_message(errno)
         );
     }
     if (::fsync(directory_descriptor.get()) == -1) {
-        const std::string message = std::strerror(errno);
+        const std::string message = onedrive::util::system_error_message(errno);
         throw std::runtime_error(
             "cannot flush sync directory '" + directory.string() + "': " +
             message

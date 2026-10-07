@@ -5,6 +5,7 @@
 
 #include "onedrive/cli/console.hpp"
 #include "onedrive/util/path_security.hpp"
+#include "onedrive/util/system_error.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"
 #include "sync/filesystem/metadata.hpp"
 #include "sync/filesystem/operations.hpp"
@@ -15,7 +16,6 @@
 
 #include <array>
 #include <cerrno>
-#include <cstring>
 #include <fcntl.h>
 #include <filesystem>
 #include <format>
@@ -296,7 +296,7 @@ UploadSnapshot create_upload_snapshot(
                     "local_read"
                 ),
                 "cannot read local upload source '" + source.string() +
-                "': " + std::strerror(errno)
+                "': " + onedrive::util::system_error_message(errno)
             );
         }
         if (count == 0) {
@@ -316,7 +316,7 @@ UploadSnapshot create_upload_snapshot(
                         "local_storage"
                     ),
                     "cannot write local upload snapshot '" +
-                    snapshot_path.string() + "': " + std::strerror(errno)
+                    snapshot_path.string() + "': " + onedrive::util::system_error_message(errno)
                 );
             }
             written += static_cast<std::size_t>(result);
@@ -329,7 +329,7 @@ UploadSnapshot create_upload_snapshot(
                 "local_storage"
             ),
             "cannot flush local upload snapshot '" + snapshot_path.string() +
-            "': " + std::strerror(errno)
+            "': " + onedrive::util::system_error_message(errno)
         );
     }
     output.reset();
@@ -363,6 +363,7 @@ storage::ItemState uploaded_state(
         .size = item.size,
         .local_size = baseline.size,
         .local_modified_ticks = baseline.modified_ticks,
+        .content_hash = std::nullopt,
         .directory = false,
     };
 }

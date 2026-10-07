@@ -1,5 +1,6 @@
 #include "sync/filesystem/metadata.hpp"
 
+#include "onedrive/util/system_error.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"
 #include "onedrive/util/path_security.hpp"
 #include "sync/filesystem/operations.hpp"
@@ -8,7 +9,6 @@
 
 #include <array>
 #include <cerrno>
-#include <cstring>
 #include <fcntl.h>
 #include <format>
 #include <stdexcept>
@@ -35,7 +35,7 @@ bool probe_xattr_support(const std::filesystem::path& root) {
     if (!descriptor) {
         throw std::runtime_error(
             "cannot create filesystem capability probe in '" + root.string() +
-            "': " + std::strerror(errno)
+            "': " + onedrive::util::system_error_message(errno)
         );
     }
     if (const auto close_error = descriptor.close(); close_error) {
@@ -76,13 +76,13 @@ bool probe_xattr_support(const std::filesystem::path& root) {
             spdlog::debug(
                 "User xattr probe is unavailable for '{}': {}",
                 root.string(),
-                std::strerror(error)
+                onedrive::util::system_error_message(error)
             );
             return false;
         }
         throw std::runtime_error(
             "cannot probe user extended attributes in '" + root.string() +
-            "': " + std::strerror(error)
+            "': " + onedrive::util::system_error_message(error)
         );
     }
 
@@ -114,13 +114,13 @@ bool probe_xattr_support(const std::filesystem::path& root) {
             spdlog::debug(
                 "User xattr probe could not read metadata in '{}': {}",
                 root.string(),
-                std::strerror(read_error)
+                onedrive::util::system_error_message(read_error)
             );
             return false;
         }
         throw std::runtime_error(
             "cannot read filesystem user extended attribute probe in '" +
-            root.string() + "': " + std::strerror(read_error)
+            root.string() + "': " + onedrive::util::system_error_message(read_error)
         );
     }
     if (remove_error != 0) {
@@ -128,13 +128,13 @@ bool probe_xattr_support(const std::filesystem::path& root) {
             spdlog::debug(
                 "User xattr probe could not remove metadata in '{}': {}",
                 root.string(),
-                std::strerror(remove_error)
+                onedrive::util::system_error_message(remove_error)
             );
             return false;
         }
         throw std::runtime_error(
             "cannot remove filesystem user extended attribute probe in '" +
-            root.string() + "': " + std::strerror(remove_error)
+            root.string() + "': " + onedrive::util::system_error_message(remove_error)
         );
     }
     if (!valid) {
@@ -223,7 +223,7 @@ void FilesystemMetadata::write_remote_identity(
             item.etag.size(),
             0
         ) == -1) {
-        const std::string message = std::strerror(errno);
+        const std::string message = onedrive::util::system_error_message(errno);
         throw std::runtime_error(
             "cannot write synchronization metadata to '" + path.string() +
             "': " + message
@@ -238,7 +238,7 @@ void FilesystemMetadata::write_remote_identity(
             ticks.size(),
             0
         ) == -1) {
-        const std::string message = std::strerror(errno);
+        const std::string message = onedrive::util::system_error_message(errno);
         throw std::runtime_error(
             "cannot write synchronization metadata to '" + path.string() +
             "': " + message

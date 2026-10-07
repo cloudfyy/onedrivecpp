@@ -1,4 +1,5 @@
 #include "onedrive/storage/item_database.hpp"
+#include "onedrive/util/system_error.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"
 #include "onedrive/util/path_security.hpp"
 #include "storage/query.hpp"
@@ -11,7 +12,6 @@
 
 #include <algorithm>
 #include <cerrno>
-#include <cstring>
 #include <fcntl.h>
 #include <limits>
 #include <memory>
@@ -200,7 +200,7 @@ diagnose_state_databases(const std::filesystem::path& state_directory) {
         struct stat file_status{};
         if (::lstat(entry.path().c_str(), &file_status) == -1) {
             result.detail = "cannot inspect database security: " +
-                            std::string{std::strerror(errno)};
+                            std::string{onedrive::util::system_error_message(errno)};
             results.push_back(std::move(result));
             continue;
         }

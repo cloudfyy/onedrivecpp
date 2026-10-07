@@ -4,13 +4,13 @@
 #include "onedrive/util/unique_file_descriptor.hpp"
 #include "onedrive/auth/token_store.hpp"
 #include "onedrive/util/sha256.hpp"
+#include "onedrive/util/system_error.hpp"
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
 #include <cerrno>
 #include <cctype>
-#include <cstring>
 #include <fcntl.h>
 #include <format>
 #include <stdexcept>
@@ -182,7 +182,7 @@ void ensure_private_directory(const std::filesystem::path& path) {
     if (::chmod(path.c_str(), private_directory_mode) == -1) {
         throw std::runtime_error(
             "cannot secure account state directory '" + path.string() +
-            "': " + std::strerror(errno)
+            "': " + onedrive::util::system_error_message(errno)
         );
     }
     if (created) {
@@ -356,7 +356,7 @@ AccountState::find_active_token_directory(
     if (!descriptor) {
         throw std::runtime_error(
             "cannot open active Microsoft account marker: " +
-            std::string{std::strerror(errno)}
+            std::string{onedrive::util::system_error_message(errno)}
         );
     }
     struct stat marker_status {};
@@ -382,7 +382,7 @@ AccountState::find_active_token_directory(
         throw std::runtime_error(
             size == -1 ?
                 "cannot read active Microsoft account marker: " +
-                    std::string{std::strerror(read_error)} :
+                    std::string{onedrive::util::system_error_message(read_error)} :
                 "active Microsoft account marker is empty or too large"
         );
     }

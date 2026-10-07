@@ -1,5 +1,6 @@
 #include "sync/filesystem/operations.hpp"
 
+#include "onedrive/util/system_error.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"
 #include "onedrive/util/path_security.hpp"
 #include "onedrive/util/remote_time.hpp"
@@ -12,7 +13,6 @@
 #include <cerrno>
 #include <chrono>
 #include <climits>
-#include <cstring>
 #include <fcntl.h>
 #include <format>
 #include <fstream>
@@ -83,7 +83,7 @@ std::size_t filesystem_limit(
     }
     throw std::runtime_error(
         "cannot determine the target filesystem " + std::string{description} +
-        " at '" + probe.string() + "': " + std::strerror(errno)
+        " at '" + probe.string() + "': " + onedrive::util::system_error_message(errno)
     );
 }
 
@@ -118,7 +118,7 @@ std::filesystem::path prepare_sync_root(
         ::chmod(absolute_root.c_str(), S_IRWXU) == -1) {
         throw std::runtime_error(
             "cannot secure synchronization root '" +
-            absolute_root.string() + "': " + std::strerror(errno)
+            absolute_root.string() + "': " + onedrive::util::system_error_message(errno)
         );
     }
     const auto root = std::filesystem::weakly_canonical(absolute_root);
@@ -259,7 +259,7 @@ bool remove_no_symlinks(
         }
         throw std::runtime_error(
             "cannot safely remove local synchronization file '" +
-            path.string() + "': " + std::strerror(error)
+            path.string() + "': " + onedrive::util::system_error_message(error)
         );
     }
     if (const auto error = parent.close(); error) {
@@ -300,7 +300,7 @@ void apply_remote_modified_time(
         onedrive::util::open_path_no_symlinks(path, O_WRONLY)
     };
     if (::futimens(descriptor.get(), times) == -1) {
-        const std::string message = std::strerror(errno);
+        const std::string message = onedrive::util::system_error_message(errno);
         throw std::runtime_error(
             "cannot apply remote modification time to '" + path.string() +
             "': " + message
@@ -518,7 +518,7 @@ void fsync_file(const std::filesystem::path& path) {
         onedrive::util::open_path_no_symlinks(path, O_RDONLY)
     };
     if (::fsync(descriptor.get()) == -1) {
-        const std::string message = std::strerror(errno);
+        const std::string message = onedrive::util::system_error_message(errno);
         throw std::runtime_error(
             "cannot flush downloaded file metadata for '" + path.string() +
             "': " + message
@@ -542,11 +542,11 @@ void fsync_directory(const std::filesystem::path& directory) {
     if (!descriptor) {
         throw std::runtime_error(
             "cannot open download directory '" + directory.string() + "': " +
-            std::strerror(errno)
+            onedrive::util::system_error_message(errno)
         );
     }
     if (::fsync(descriptor.get()) == -1) {
-        const std::string message = std::strerror(errno);
+        const std::string message = onedrive::util::system_error_message(errno);
         throw std::runtime_error(
             "cannot flush download directory '" + directory.string() + "': " +
             message
@@ -596,7 +596,7 @@ void ensure_directory_tree(
             ::chmod(current.c_str(), S_IRWXU) == -1) {
             throw std::runtime_error(
                 "cannot secure local synchronization directory '" +
-                current.string() + "': " + std::strerror(errno)
+                current.string() + "': " + onedrive::util::system_error_message(errno)
             );
         }
         spdlog::trace("Created local directory '{}'", current.string());

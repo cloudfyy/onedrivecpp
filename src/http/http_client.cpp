@@ -3,10 +3,10 @@
 #include "http/proxy.hpp"
 #include "http/request.hpp"
 #include "onedrive/util/path_security.hpp"
+#include "onedrive/util/system_error.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"
-
 #include <cerrno>
-#include <cstring>
+#include <cerrno>
 #include <exception>
 #include <fcntl.h>
 #include <limits>
@@ -105,7 +105,7 @@ HttpResult CurlHttpClient::download(
             descriptor.get(),
             static_cast<off_t>(download_state.durable_offset)
         ) == -1) {
-        truncate_error = std::strerror(errno);
+        truncate_error = onedrive::util::system_error_message(errno);
     }
     if (const auto error = descriptor.close(); error) {
         close_error = error.message();

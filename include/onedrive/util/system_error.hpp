@@ -7,6 +7,10 @@
 
 namespace onedrive::util {
 
+[[nodiscard]] inline std::string system_error_message(int error) {
+    return std::error_code{error, std::generic_category()}.message();
+}
+
 [[noreturn]] inline void throw_system_error(
     int error,
     std::string message

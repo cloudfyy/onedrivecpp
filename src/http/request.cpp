@@ -1,6 +1,7 @@
 #include "http/request.hpp"
 #include "http/curl.hpp"
 
+#include "onedrive/util/system_error.hpp"
 #include "onedrive/version.hpp"
 
 #include <curl/curl.h>
@@ -9,7 +10,6 @@
 #include <algorithm>
 #include <array>
 #include <cerrno>
-#include <cstring>
 #include <limits>
 #include <string>
 #include <string_view>
@@ -499,7 +499,7 @@ HttpResult perform_request(
                     return std::unexpected(HttpError{
                         .message = "cannot flush cancelled download: " +
                                    std::string{
-                                       std::strerror(
+                                       onedrive::util::system_error_message(
                                            write_context.failure.system_error
                                        )
                                    },
@@ -551,7 +551,7 @@ HttpResult perform_request(
         if (write_context.failure.kind == CallbackFailureKind::write) {
             return std::unexpected(HttpError{
                 .message = "cannot write HTTP response: " +
-                           std::string{std::strerror(
+                           std::string{onedrive::util::system_error_message(
                                write_context.failure.system_error
                            )},
             });
@@ -638,7 +638,7 @@ HttpResult perform_request(
         if (::fsync(descriptor) == -1) {
             return std::unexpected(HttpError{
                 .message = "cannot flush downloaded response: " +
-                           std::string{std::strerror(errno)},
+                           std::string{onedrive::util::system_error_message(errno)},
             });
         }
     }

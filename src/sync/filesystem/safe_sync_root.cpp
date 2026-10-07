@@ -1,9 +1,9 @@
 #include "sync/filesystem/safe_sync_root.hpp"
 
+#include "onedrive/util/system_error.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"
 
 #include <cerrno>
-#include <cstring>
 #include <fcntl.h>
 #include <linux/openat2.h>
 #include <stdexcept>
@@ -54,7 +54,7 @@ SafeSyncRoot::SafeSyncRoot(const std::filesystem::path& root)
     if (!descriptor_) {
         throw std::runtime_error(
             "cannot open synchronization root '" + root_.string() + "': " +
-            std::strerror(errno)
+            onedrive::util::system_error_message(errno)
         );
     }
 }
@@ -110,7 +110,7 @@ onedrive::util::UniqueFD SafeSyncRoot::open(
     if (descriptor == -1) {
         throw std::runtime_error(
             "cannot safely open synchronization path '" + path.string() +
-            "': " + std::strerror(errno)
+            "': " + onedrive::util::system_error_message(errno)
         );
     }
     return onedrive::util::UniqueFD{descriptor};
@@ -131,7 +131,7 @@ void SafeSyncRoot::ensure_directory_tree(
     if (current.get() == -1) {
         throw std::runtime_error(
             "cannot duplicate synchronization root descriptor: " +
-            std::string{std::strerror(errno)}
+            std::string{onedrive::util::system_error_message(errno)}
         );
     }
     for (const auto& component : relative) {
@@ -145,7 +145,7 @@ void SafeSyncRoot::ensure_directory_tree(
             errno != EEXIST) {
             throw std::runtime_error(
                 "cannot create local synchronization directory '" +
-                (root_ / relative).string() + "': " + std::strerror(errno)
+                (root_ / relative).string() + "': " + onedrive::util::system_error_message(errno)
             );
         }
         Descriptor next{open_beneath(
@@ -157,14 +157,14 @@ void SafeSyncRoot::ensure_directory_tree(
         if (next.get() == -1) {
             throw SafePathConflictError(
                 "local synchronization path is not a safe directory: " +
-                (root_ / relative).string() + ": " + std::strerror(errno)
+                (root_ / relative).string() + ": " + onedrive::util::system_error_message(errno)
             );
         }
         if (permissions == config::SyncPermissionsMode::private_access &&
             ::fchmod(next.get(), S_IRWXU) == -1) {
             throw std::runtime_error(
                 "cannot secure local synchronization directory '" +
-                (root_ / relative).string() + "': " + std::strerror(errno)
+                (root_ / relative).string() + "': " + onedrive::util::system_error_message(errno)
             );
         }
         current = std::move(next);
@@ -192,7 +192,7 @@ void SafeSyncRoot::rename(
     if (source_parent.get() == -1 || destination_parent.get() == -1) {
         throw std::runtime_error(
             "cannot safely open synchronization directory for rename: " +
-            std::string{std::strerror(errno)}
+            std::string{onedrive::util::system_error_message(errno)}
         );
     }
 
@@ -204,7 +204,7 @@ void SafeSyncRoot::rename(
         ) == -1) {
         throw std::runtime_error(
             "cannot install synchronized file '" + destination.string() +
-            "': " + std::strerror(errno)
+            "': " + onedrive::util::system_error_message(errno)
         );
     }
 }
@@ -230,7 +230,7 @@ bool SafeSyncRoot::rename_no_replace(
     if (source_parent.get() == -1 || destination_parent.get() == -1) {
         throw std::runtime_error(
             "cannot safely open synchronization directory for rename: " +
-            std::string{std::strerror(errno)}
+            std::string{onedrive::util::system_error_message(errno)}
         );
     }
     if (::renameat2(
@@ -254,7 +254,7 @@ bool SafeSyncRoot::rename_no_replace(
     throw std::runtime_error(
         "cannot rename synchronization item to '" + destination.string() +
         "': " +
-        std::strerror(errno)
+        onedrive::util::system_error_message(errno)
     );
 }
 
@@ -272,7 +272,7 @@ FilesystemIdentity SafeSyncRoot::identity(
     if (parent.get() == -1) {
         throw SafePathConflictError(
             "cannot safely open synchronization item parent '" +
-            path.parent_path().string() + "': " + std::strerror(errno)
+            path.parent_path().string() + "': " + onedrive::util::system_error_message(errno)
         );
     }
     struct stat status {};
@@ -284,7 +284,7 @@ FilesystemIdentity SafeSyncRoot::identity(
         ) == -1) {
         throw std::runtime_error(
             "cannot inspect synchronization item identity '" +
-            path.string() + "': " + std::strerror(errno)
+            path.string() + "': " + onedrive::util::system_error_message(errno)
         );
     }
     const bool directory = kind == FilesystemItemKind::directory;
@@ -315,7 +315,7 @@ bool SafeSyncRoot::remove(
     if (parent.get() == -1) {
         throw SafePathConflictError(
             "cannot safely open local deletion parent '" +
-            path.parent_path().string() + "': " + std::strerror(errno)
+            path.parent_path().string() + "': " + onedrive::util::system_error_message(errno)
         );
     }
 
@@ -331,7 +331,7 @@ bool SafeSyncRoot::remove(
         }
         throw std::runtime_error(
             "cannot inspect local deletion target '" + path.string() +
-            "': " + std::strerror(errno)
+            "': " + onedrive::util::system_error_message(errno)
         );
     }
     const bool directory = kind == FilesystemItemKind::directory;
@@ -354,13 +354,13 @@ bool SafeSyncRoot::remove(
         }
         throw std::runtime_error(
             "cannot remove local synchronization item '" + path.string() +
-            "': " + std::strerror(errno)
+            "': " + onedrive::util::system_error_message(errno)
         );
     }
     if (::fsync(parent.get()) == -1) {
         throw std::runtime_error(
             "cannot flush local deletion parent '" +
-            path.parent_path().string() + "': " + std::strerror(errno)
+            path.parent_path().string() + "': " + onedrive::util::system_error_message(errno)
         );
     }
     return true;
@@ -373,7 +373,7 @@ void SafeSyncRoot::fsync_directory(
     if (::fsync(descriptor.get()) == -1) {
         throw std::runtime_error(
             "cannot flush synchronization directory '" + directory.string() +
-            "': " + std::strerror(errno)
+            "': " + onedrive::util::system_error_message(errno)
         );
     }
 }

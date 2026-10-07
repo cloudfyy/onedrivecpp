@@ -1,12 +1,12 @@
 #include "sync/filesystem/safe_backup.hpp"
 
+#include "onedrive/util/system_error.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"
 #include "onedrive/util/sha256.hpp"
 
 #include <array>
 #include <cerrno>
 #include <chrono>
-#include <cstring>
 #include <fcntl.h>
 #include <format>
 #include <stdexcept>
@@ -74,7 +74,7 @@ void write_all(int descriptor, const char* data, std::size_t size) {
             }
             throw std::runtime_error(
                 "cannot write safeBackup: " +
-                std::string{std::strerror(errno)}
+                std::string{onedrive::util::system_error_message(errno)}
             );
         }
         written += static_cast<std::size_t>(result);
@@ -121,7 +121,7 @@ void copy_source(
                 }
                 throw std::runtime_error(
                     "cannot read local file for safeBackup: " +
-                    std::string{std::strerror(errno)}
+                    std::string{onedrive::util::system_error_message(errno)}
                 );
             }
             write_all(
@@ -137,7 +137,7 @@ void copy_source(
             ::fsync(output.get()) == -1) {
             throw std::runtime_error(
                 "cannot flush safeBackup: " +
-                std::string{std::strerror(errno)}
+                std::string{onedrive::util::system_error_message(errno)}
             );
         }
     } catch (...) {

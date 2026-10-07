@@ -2,11 +2,11 @@
 
 #include "onedrive/util/unique_file_descriptor.hpp"
 #include "onedrive/util/path_security.hpp"
+#include "onedrive/util/system_error.hpp"
 
 #include <atomic>
 #include <cerrno>
 #include <cstdint>
-#include <cstring>
 #include <fcntl.h>
 #include <format>
 #include <stdexcept>
@@ -28,7 +28,7 @@ namespace {
         action,
         description,
         path.string(),
-        std::strerror(error)
+        onedrive::util::system_error_message(error)
     );
 }
 
@@ -42,7 +42,7 @@ namespace {
         message += std::format(
             "; additionally cannot remove temporary file '{}': {}",
             temporary_name,
-            std::strerror(errno)
+            onedrive::util::system_error_message(errno)
         );
     }
     throw std::runtime_error{message};
