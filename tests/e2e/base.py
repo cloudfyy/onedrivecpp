@@ -65,6 +65,8 @@ def rewrite_config(
     sync_list: Path | None = None,
     local_conflict: str | None = None,
     sync_root_files: bool | None = None,
+    dry_run: bool = False,
+    sync_mode: str | None = None,
     proxy_url: str | None = None,
     monitor_poll_interval_seconds: int | None = None,
     monitor_settle_delay_milliseconds: int | None = None,
@@ -72,7 +74,7 @@ def rewrite_config(
 ) -> str:
     replacements = {
         ("sync", "data_directory"): json.dumps(str(sync_data_directory)),
-        ("sync", "dry_run"): "false",
+        ("sync", "dry_run"): json.dumps(dry_run),
         ("state", "directory"): json.dumps(str(state_directory)),
     }
     insert_missing: set[tuple[str, str]] = set()
@@ -85,6 +87,9 @@ def rewrite_config(
     if sync_root_files is not None:
         replacements[("sync", "sync_root_files")] = json.dumps(sync_root_files)
         insert_missing.add(("sync", "sync_root_files"))
+    if sync_mode is not None:
+        replacements[("sync", "mode")] = json.dumps(sync_mode)
+        insert_missing.add(("sync", "mode"))
     if proxy_url is not None:
         replacements[("proxy", "url")] = json.dumps(proxy_url)
         replacements[("proxy", "no_proxy")] = "[]"

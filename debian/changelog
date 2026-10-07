@@ -1,3 +1,11 @@
+onedrive-cpp (0.10.7-1~ubuntu24.04) noble; urgency=medium
+
+  * Extend live Graph E2E coverage for dry-run and directional sync modes.
+  * Cover zero-byte and special-name downloads, clean remote updates, and
+    individual remote file deletion.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Wed, 07 Oct 2026 23:27:10 +0000
+
 onedrive-cpp (0.10.6-1~ubuntu24.04) noble; urgency=medium
 
   * Add safe partial-state cleanup with dry-run and explicit confirmation.

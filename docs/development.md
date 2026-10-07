@@ -30,8 +30,12 @@ account token to create another uniquely named disposable Graph subtree, moves
 and renames a file and a directory across remote parents, and verifies that
 synchronization reuses the same local inodes, updates snapshots, emits
 structured move events, and removes the fixture after remote cleanup. Temporary
-remote subtrees are deleted even when the test fails. Finally, the runner
-injects an isolated trusted snapshot
+remote subtrees are deleted even when the test fails. A separate disposable
+subtree covers seven additional interoperability cases: bidirectional dry-run
+without local, Graph, or snapshot mutation; upload-only and download-only
+direction isolation; zero-byte files; names containing spaces and Unicode;
+clean remote content replacement; and deletion of an individual remote file.
+Finally, the runner injects an isolated trusted snapshot
 whose ID is absent from a real full Graph Delta response and verifies safe
 local deletion, SQLite cleanup, structured output, and preservation of the
 live fixture. It also enables `sync_root_files`, verifies that the selection

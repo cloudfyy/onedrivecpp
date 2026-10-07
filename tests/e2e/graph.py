@@ -268,14 +268,17 @@ class GraphMoveFixture:
             expected_statuses={200},
         )
 
+    def delete_item(self, item_id: str) -> None:
+        self._request(
+            "DELETE",
+            "/items/" + parse.quote(item_id, safe=""),
+            expected_statuses={204, 404},
+        )
+
     def delete_root(self) -> None:
         if self.root_id is None:
             return
-        self._request(
-            "DELETE",
-            "/items/" + parse.quote(self.root_id, safe=""),
-            expected_statuses={204, 404},
-        )
+        self.delete_item(self.root_id)
         self.root_id = None
 
 

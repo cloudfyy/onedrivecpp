@@ -61,14 +61,17 @@ directory = "/old/state"
         Path("/new/sync_list"),
         "backup",
         True,
+        True,
+        "download_only",
     )
     parsed = tomllib.loads(rewritten)
     if (
         parsed["sync"]["data_directory"] != "/new/sync"
-        or parsed["sync"]["dry_run"] is not False
+        or parsed["sync"]["dry_run"] is not True
         or parsed["sync"]["sync_list"] != "/new/sync_list"
         or parsed["sync"]["local_conflict"] != "backup"
         or parsed["sync"]["sync_root_files"] is not True
+        or parsed["sync"]["mode"] != "download_only"
         or parsed["state"]["directory"] != "/new/state"
     ):
         raise E2EError("configuration rewrite self-test failed")
