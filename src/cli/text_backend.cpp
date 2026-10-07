@@ -1,5 +1,6 @@
 #include "cli/backend_factory.hpp"
 #include "cli/format.hpp"
+#include "cli/message.hpp"
 
 #include "onedrive/cli/console.hpp"
 
@@ -30,13 +31,7 @@ Style style_for(MessageKind kind) {
         case MessageKind::error:
             return {.symbol = "XX", .color = "\033[31m"};
     }
-    throw std::logic_error{"unknown console message kind"};
-}
-
-bool suppressed(const ConsoleOptions& options, MessageKind kind) {
-    return options.quiet &&
-           kind != MessageKind::warning &&
-           kind != MessageKind::error;
+    throw_unknown_message_kind();
 }
 
 class TextConsoleBackend final : public ConsoleBackend {
@@ -84,7 +79,7 @@ public:
 
 private:
     void render(const MessageEvent& event) {
-        if (suppressed(options_, event.kind)) {
+        if (message_suppressed(options_, event.kind)) {
             return;
         }
         std::ostream& stream =

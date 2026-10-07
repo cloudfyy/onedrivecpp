@@ -1,4 +1,5 @@
 #include "cli/backend_factory.hpp"
+#include "cli/message.hpp"
 
 #include "onedrive/cli/console.hpp"
 
@@ -9,26 +10,6 @@
 
 namespace onedrive::cli::detail {
 namespace {
-
-std::string_view level_for(MessageKind kind) {
-    switch (kind) {
-        case MessageKind::information:
-            return "info";
-        case MessageKind::success:
-            return "success";
-        case MessageKind::warning:
-            return "warning";
-        case MessageKind::error:
-            return "error";
-    }
-    throw std::logic_error{"unknown console message kind"};
-}
-
-bool suppressed(const ConsoleOptions& options, MessageKind kind) {
-    return options.quiet &&
-           kind != MessageKind::warning &&
-           kind != MessageKind::error;
-}
 
 class JsonConsoleBackend final : public ConsoleBackend {
 public:
@@ -65,14 +46,14 @@ public:
 
 private:
     void render(const MessageEvent& event) {
-        if (suppressed(options_, event.kind)) {
+        if (message_suppressed(options_, event.kind)) {
             return;
         }
         std::ostream& stream =
             event.kind == MessageKind::error ? error_ : output_;
         stream << nlohmann::json{
             {"event", event.event},
-            {"level", level_for(event.kind)},
+            {"level", message_level(event.kind)},
             {"message", event.text},
         }.dump() << '\n';
     }

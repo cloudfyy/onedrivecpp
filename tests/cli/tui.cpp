@@ -147,6 +147,13 @@ int test_tui_dashboard() {
         if (!confirmed) {
             return fail("FTXUI confirmation did not accept expected input");
         }
+        try {
+            console.message(
+                static_cast<MessageKind>(255), "invalid", "Invalid"
+            );
+            return fail("FTXUI accepted an unknown message kind");
+        } catch (const std::logic_error&) {
+        }
     }
     if (!output.str().contains("\033[?1049l")) {
         return fail("FTXUI did not restore the original terminal screen");

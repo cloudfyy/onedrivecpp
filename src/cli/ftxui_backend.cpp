@@ -1,5 +1,6 @@
 #include "cli/backend_factory.hpp"
 #include "cli/format.hpp"
+#include "cli/message.hpp"
 
 #include "onedrive/cli/console.hpp"
 #include "onedrive/version.hpp"
@@ -238,7 +239,7 @@ private:
             case MessageKind::error:
                 return palette_.error;
         }
-        return palette_.primary;
+        throw_unknown_message_kind();
     }
 
     void update(const MessageEvent& event) {

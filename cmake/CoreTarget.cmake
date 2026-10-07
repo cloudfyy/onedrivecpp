@@ -17,6 +17,7 @@ add_library(onedrive_core
     src/cli/format.cpp
     src/cli/ftxui_backend.cpp
     src/cli/json_backend.cpp
+    src/cli/message.cpp
     src/cli/terminal.cpp
     src/cli/text_backend.cpp
     src/config/config.cpp

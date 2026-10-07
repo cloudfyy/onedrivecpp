@@ -143,6 +143,13 @@ int main() {
             "(local_modification)\n") {
         return fail("plain console output was incorrect");
     }
+    try {
+        plain.message(
+            static_cast<MessageKind>(255), "invalid", "Invalid"
+        );
+        return fail("text console accepted an unknown message kind");
+    } catch (const std::logic_error&) {
+    }
 
     std::ostringstream styled_output;
     std::ostringstream styled_error;
@@ -272,6 +279,13 @@ int main() {
         json.output_mode() != OutputMode::json ||
         json_output.str().contains("\033[")) {
         return fail("JSON console output was invalid");
+    }
+    try {
+        json.message(
+            static_cast<MessageKind>(255), "invalid", "Invalid"
+        );
+        return fail("JSON console accepted an unknown message kind");
+    } catch (const std::logic_error&) {
     }
     try {
         static_cast<void>(
