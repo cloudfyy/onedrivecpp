@@ -16,6 +16,8 @@ int main() {
     using namespace std::chrono_literals;
     using Estimator =
         onedrive::sync::detail::DownloadProgressEstimator;
+    using Reporter =
+        onedrive::sync::detail::DownloadProgressReporter;
 
     const Estimator::Clock::time_point started{};
     Estimator estimator{started};
@@ -57,6 +59,66 @@ int main() {
         );
         return fail("backwards progress time was accepted");
     } catch (const std::invalid_argument&) {
+    }
+
+    Reporter reporter{started};
+    if (!reporter.should_report(
+            801,
+            13'342,
+            459'700'000,
+            17'395'200'000,
+            onedrive::util::ProgressState::ongoing,
+            started + 100ms
+        ) ||
+        reporter.should_report(
+            934,
+            13'342,
+            473'600'000,
+            17'395'200'000,
+            onedrive::util::ProgressState::ongoing,
+            started + 200ms
+        ) ||
+        !reporter.should_report(
+            1'068,
+            13'342,
+            487'100'000,
+            17'395'200'000,
+            onedrive::util::ProgressState::ongoing,
+            started + 1100ms
+        )) {
+        return fail(
+            "file-count progress bypassed the timed refresh interval"
+        );
+    }
+    if (!reporter.should_report(
+            1'068,
+            13'342,
+            521'856'000,
+            17'395'200'000,
+            onedrive::util::ProgressState::ongoing,
+            started + 1200ms
+        )) {
+        return fail("displayed percentage change was not reported");
+    }
+    if (reporter.should_report(
+            1'068,
+            13'342,
+            521'856'000,
+            17'395'200'000,
+            onedrive::util::ProgressState::ongoing,
+            started + 2200ms
+        )) {
+        return fail("unchanged progress was reported");
+    }
+    if (!reporter.should_report(
+            13'342,
+            13'342,
+            17'395'200'000,
+            17'395'200'000,
+            onedrive::util::ProgressState::completed,
+            started + 2300ms
+        )) {
+        return fail("completed progress was not reported");
     }
     return EXIT_SUCCESS;
 }

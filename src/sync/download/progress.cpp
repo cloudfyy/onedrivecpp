@@ -9,6 +9,7 @@ namespace onedrive::sync::detail {
 namespace {
 
 constexpr double smoothing_weight = 0.25;
+constexpr auto progress_refresh_interval = std::chrono::seconds{1};
 
 std::uint64_t bounded_round(double value) {
     if (!std::isfinite(value) || value <= 0.0) {
@@ -99,6 +100,53 @@ cli::DownloadProgressMetrics DownloadProgressEstimator::sample(
         );
     }
     return metrics;
+}
+
+DownloadProgressReporter::DownloadProgressReporter(
+    Clock::time_point started_at
+)
+    : last_reported_at_{started_at} {}
+
+bool DownloadProgressReporter::should_report(
+    std::size_t completed_files,
+    std::size_t file_count,
+    std::uint64_t downloaded,
+    std::uint64_t total,
+    util::ProgressState state,
+    Clock::time_point sampled_at
+) {
+    if (sampled_at < last_reported_at_) {
+        throw std::invalid_argument(
+            "download progress report time moved backwards"
+        );
+    }
+    const bool changed =
+        completed_files != last_observed_completed_files_ ||
+        downloaded != last_observed_downloaded_;
+    last_observed_completed_files_ = completed_files;
+    last_observed_downloaded_ = downloaded;
+
+    const auto percentage = cli::download_progress_percentage(
+        completed_files,
+        file_count,
+        downloaded,
+        total,
+        state
+    );
+    const bool completed = state == util::ProgressState::completed;
+    const bool due =
+        completed ||
+        (!reported_ && changed) ||
+        (changed &&
+         (percentage != last_reported_percentage_ ||
+          sampled_at - last_reported_at_ >= progress_refresh_interval));
+    if (!due) {
+        return false;
+    }
+    last_reported_at_ = sampled_at;
+    last_reported_percentage_ = percentage;
+    reported_ = true;
+    return true;
 }
 
 }  // namespace onedrive::sync::detail

@@ -57,8 +57,8 @@ DownloadBatch download_files(
         total_bytes += static_cast<std::uint64_t>(task.item.size);
     }
     std::size_t completed_files = 0;
-    unsigned last_reported_percentage = 0;
     detail::DownloadProgressEstimator progress_estimator;
+    detail::DownloadProgressReporter progress_reporter;
     const auto report_progress =
         [&](std::size_t index,
             std::uint64_t downloaded,
@@ -77,38 +77,34 @@ DownloadBatch download_files(
                 task_states[index] = DownloadTaskState::completed;
                 ++completed_files;
             }
-            const auto byte_percentage =
-                total_bytes == 0 ?
-                    0U :
-                    static_cast<unsigned>(
-                        static_cast<long double>(downloaded_bytes) * 100.0L /
-                        static_cast<long double>(total_bytes)
-                    );
-            const auto file_percentage = static_cast<unsigned>(
-                completed_files * 100 / tasks.size()
-            );
-            const auto percentage = std::max(
-                byte_percentage,
-                file_percentage
-            );
             const bool all_completed = completed_files == tasks.size();
-            if (!all_completed &&
-                percentage < last_reported_percentage + 1) {
+            const auto progress_state =
+                all_completed ?
+                    util::ProgressState::completed :
+                    util::ProgressState::ongoing;
+            const auto sampled_at =
+                detail::DownloadProgressReporter::Clock::now();
+            if (!progress_reporter.should_report(
+                    completed_files,
+                    tasks.size(),
+                    downloaded_bytes,
+                    total_bytes,
+                    progress_state,
+                    sampled_at
+                )) {
                 return;
             }
-            last_reported_percentage = percentage;
             const auto metrics = progress_estimator.sample(
                 downloaded_bytes,
-                total_bytes
+                total_bytes,
+                sampled_at
             );
             console.download_progress(
                 completed_files,
                 tasks.size(),
                 downloaded_bytes,
                 total_bytes,
-                all_completed ?
-                    util::ProgressState::completed :
-                    util::ProgressState::ongoing,
+                progress_state,
                 metrics
             );
         };

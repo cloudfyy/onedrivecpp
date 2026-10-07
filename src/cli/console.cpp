@@ -231,17 +231,13 @@ void Console::blocked_item(
     );
 }
 
-void Console::download_progress(
+unsigned download_progress_percentage(
     std::size_t completed_files,
     std::size_t file_count,
     std::uint64_t downloaded,
     std::uint64_t total,
-    util::ProgressState state,
-    const DownloadProgressMetrics& metrics
-) const {
-    if (options_.quiet) {
-        return;
-    }
+    util::ProgressState state
+) noexcept {
     const bool completed = state == util::ProgressState::completed;
     auto percentage =
         total == 0 ?
@@ -269,6 +265,28 @@ void Console::download_progress(
             maximum_incomplete_percentage
         );
     }
+    return percentage;
+}
+
+void Console::download_progress(
+    std::size_t completed_files,
+    std::size_t file_count,
+    std::uint64_t downloaded,
+    std::uint64_t total,
+    util::ProgressState state,
+    const DownloadProgressMetrics& metrics
+) const {
+    if (options_.quiet) {
+        return;
+    }
+    const bool completed = state == util::ProgressState::completed;
+    const auto percentage = download_progress_percentage(
+        completed_files,
+        file_count,
+        downloaded,
+        total,
+        state
+    );
     if (options_.output == OutputMode::json) {
         *output_ << nlohmann::json{
             {"event", "download_progress"},

@@ -50,6 +50,14 @@ struct DownloadProgressMetrics {
     std::uint64_t elapsed_milliseconds{0};
 };
 
+[[nodiscard]] unsigned download_progress_percentage(
+    std::size_t completed_files,
+    std::size_t file_count,
+    std::uint64_t downloaded,
+    std::uint64_t total,
+    util::ProgressState state
+) noexcept;
+
 class Console {
 public:
     explicit Console(
