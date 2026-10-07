@@ -174,22 +174,14 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
     spdlog::info("Starting Microsoft Graph root directory listing");
     std::string next_url =
         graph_drive_prefix(options_) + "/root/children";
-    const std::string allowed_url_prefix = options_.endpoint + "/";
     std::unordered_set<std::string> visited_urls;
     std::vector<RemoteItem> items;
     std::size_t page_number = 1;
 
     while (!next_url.empty()) {
-        if (!next_url.starts_with(allowed_url_prefix)) {
-            throw std::runtime_error(
-                "Microsoft Graph returned a pagination URL outside its endpoint"
-            );
-        }
-        if (!visited_urls.insert(next_url).second) {
-            throw std::runtime_error(
-                "Microsoft Graph returned a repeated pagination URL"
-            );
-        }
+        record_graph_page_url(
+            next_url, options_.endpoint, visited_urls, "pagination"
+        );
 
         const auto response = perform_with_retries(
             [&] {
@@ -227,12 +219,8 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
         }
 
         try {
-            const auto& values = json.at("value");
-            if (!values.is_array()) {
-                throw std::runtime_error(
-                    "Microsoft Graph response field 'value' is not an array"
-                );
-            }
+            const auto& values =
+                require_graph_page_values(json, "root");
             const std::size_t page_item_count = values.size();
             for (const auto& value : values) {
                 RemoteItem item{
@@ -261,16 +249,8 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
                 items.push_back(std::move(item));
             }
 
-            next_url.clear();
-            if (const auto next = json.find("@odata.nextLink");
-                next != json.end()) {
-                if (!next->is_string()) {
-                    throw std::runtime_error(
-                        "Microsoft Graph returned an invalid pagination URL"
-                    );
-                }
-                next_url = next->get<std::string>();
-            }
+            next_url = graph_next_link(json, "pagination")
+                           .value_or(std::string{});
             spdlog::debug(
                 "Received Microsoft Graph root page {} with {} items; {} total",
                 page_number,

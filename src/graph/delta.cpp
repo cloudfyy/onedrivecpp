@@ -63,7 +63,6 @@ DeltaResult MicrosoftGraphClient::list_delta(
         spdlog::debug("Persisted rotated Microsoft refresh token");
     }
 
-    const std::string allowed_url_prefix = options_.endpoint + "/";
     std::string next_url;
     if (delta_link) {
         next_url = *delta_link;
@@ -79,16 +78,9 @@ DeltaResult MicrosoftGraphClient::list_delta(
     std::size_t page_number = 1;
     std::size_t scanned_item_count = 0;
     while (!next_url.empty()) {
-        if (!next_url.starts_with(allowed_url_prefix)) {
-            throw std::runtime_error(
-                "Microsoft Graph returned a delta URL outside its endpoint"
-            );
-        }
-        if (!visited_urls.insert(next_url).second) {
-            throw std::runtime_error(
-                "Microsoft Graph returned a repeated delta URL"
-            );
-        }
+        record_graph_page_url(
+            next_url, options_.endpoint, visited_urls, "delta"
+        );
 
         const auto response = perform_with_retries(
             [&] {
@@ -133,12 +125,8 @@ DeltaResult MicrosoftGraphClient::list_delta(
         }
 
         try {
-            const auto& values = json.at("value");
-            if (!values.is_array()) {
-                throw std::runtime_error(
-                    "Microsoft Graph delta response field 'value' is not an array"
-                );
-            }
+            const auto& values =
+                require_graph_page_values(json, "delta");
             const std::size_t page_item_count = values.size();
             for (const auto& value : values) {
                 RemoteItem item{};
@@ -210,16 +198,9 @@ DeltaResult MicrosoftGraphClient::list_delta(
                 }
             }
 
-            next_url.clear();
-            if (const auto next = json.find("@odata.nextLink");
-                next != json.end()) {
-                if (!next->is_string()) {
-                    throw std::runtime_error(
-                        "Microsoft Graph returned an invalid delta pagination URL"
-                    );
-                }
-                next_url = next->get<std::string>();
-            } else {
+            next_url = graph_next_link(json, "delta pagination")
+                           .value_or(std::string{});
+            if (next_url.empty()) {
                 const auto final_link = json.find("@odata.deltaLink");
                 if (final_link == json.end() || !final_link->is_string()) {
                     throw std::runtime_error(
@@ -228,11 +209,9 @@ DeltaResult MicrosoftGraphClient::list_delta(
                     );
                 }
                 result.delta_link = final_link->get<std::string>();
-                if (!result.delta_link.starts_with(allowed_url_prefix)) {
-                    throw std::runtime_error(
-                        "Microsoft Graph returned a delta URL outside its endpoint"
-                    );
-                }
+                require_graph_endpoint_url(
+                    result.delta_link, options_.endpoint, "delta"
+                );
                 spdlog::debug(
                     "Received final Microsoft Graph delta cursor on page {}",
                     page_number

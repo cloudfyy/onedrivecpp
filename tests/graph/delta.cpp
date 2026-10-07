@@ -41,6 +41,60 @@ int test_untrusted_pagination_url() {
     }
     return EXIT_SUCCESS;
 }
+
+int test_invalid_root_page_shapes() {
+    const auto rejected = [](
+                              std::string body,
+                              std::string_view expected_message
+                          ) {
+        auto transport = std::make_unique<FakeTransport>(
+            std::deque<onedrive::http::HttpResult>{
+                onedrive::http::HttpResponse{
+                    .status_code = 200,
+                    .body =
+                        R"({"expires_in":3600,"access_token":"access-secret"})",
+                },
+                onedrive::http::HttpResponse{
+                    .status_code = 200,
+                    .body = std::move(body),
+                },
+            }
+        );
+        auto* transport_pointer = transport.get();
+        onedrive::graph::MicrosoftGraphClient client{
+            wrap_transport(std::move(transport)),
+            wrap_token_store(std::make_unique<FakeTokenStore>(
+                std::string{"existing-refresh"}
+            )),
+            auth_options(),
+        };
+        try {
+            static_cast<void>(client.list_root());
+        } catch (const std::runtime_error& error) {
+            return std::string_view{error.what()}.contains(expected_message) &&
+                transport_pointer->queued.requests.size() == 2;
+        }
+        return false;
+    };
+
+    if (!rejected(
+            R"json({"value":[],"@odata.nextLink":"https://graph.microsoft.com/v1.0/me/drive/root/children"})json",
+            "repeated pagination URL"
+        ) ||
+        !rejected(
+            R"json({"value":[],"@odata.nextLink":42})json",
+            "invalid pagination URL"
+        ) ||
+        !rejected(R"json({})json", "missing field 'value'") ||
+        !rejected(
+            R"json({"value":{}})json",
+            "field 'value' is not an array"
+        )) {
+        return fail("invalid Graph root page shape was accepted");
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_delta_with_pagination() {
     auto transport = std::make_unique<
         FakeTransport>(std::deque<onedrive::http::HttpResult>{
@@ -340,6 +394,10 @@ int test_invalid_delta_cursor_error() {
 
 int main() {
     if (const int result = test_untrusted_pagination_url();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_invalid_root_page_shapes();
         result != EXIT_SUCCESS) {
         return result;
     }

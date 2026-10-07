@@ -55,6 +55,71 @@ using Json = nlohmann::json;
     const std::stop_token& stop_token
 );
 
+inline void require_graph_endpoint_url(
+    std::string_view url,
+    std::string_view endpoint,
+    std::string_view description
+) {
+    if (!url.starts_with(std::string{endpoint} + "/")) {
+        throw std::runtime_error(
+            "Microsoft Graph returned a " + std::string{description} +
+            " URL outside its endpoint"
+        );
+    }
+}
+
+inline void record_graph_page_url(
+    const std::string& url,
+    std::string_view endpoint,
+    std::unordered_set<std::string>& visited_urls,
+    std::string_view description
+) {
+    require_graph_endpoint_url(url, endpoint, description);
+    if (!visited_urls.insert(url).second) {
+        throw std::runtime_error(
+            "Microsoft Graph returned a repeated " +
+            std::string{description} + " URL"
+        );
+    }
+}
+
+inline const Json& require_graph_page_values(
+    const Json& document,
+    std::string_view description
+) {
+    const auto values = document.find("value");
+    if (values == document.end()) {
+        throw std::runtime_error(
+            "Microsoft Graph " + std::string{description} +
+            " response is missing field 'value'"
+        );
+    }
+    if (!values->is_array()) {
+        throw std::runtime_error(
+            "Microsoft Graph " + std::string{description} +
+            " response field 'value' is not an array"
+        );
+    }
+    return *values;
+}
+
+inline std::optional<std::string> graph_next_link(
+    const Json& document,
+    std::string_view description
+) {
+    const auto next = document.find("@odata.nextLink");
+    if (next == document.end()) {
+        return std::nullopt;
+    }
+    if (!next->is_string()) {
+        throw std::runtime_error(
+            "Microsoft Graph returned an invalid " +
+            std::string{description} + " URL"
+        );
+    }
+    return next->get<std::string>();
+}
+
 template <typename Fetch>
 std::vector<Json> paged_graph_values(
     std::string next_url,
@@ -62,38 +127,21 @@ std::vector<Json> paged_graph_values(
     std::string_view description,
     Fetch&& fetch
 ) {
-    const std::string allowed_url_prefix = endpoint + "/";
     std::unordered_set<std::string> visited_urls;
     std::vector<Json> values;
     while (!next_url.empty()) {
-        if (!next_url.starts_with(allowed_url_prefix) ||
-            !visited_urls.insert(next_url).second) {
-            throw std::runtime_error(
-                "Microsoft Graph returned an invalid " +
-                std::string{description} + " pagination URL"
-            );
-        }
+        const auto url_description =
+            std::string{description} + " pagination";
+        record_graph_page_url(
+            next_url, endpoint, visited_urls, url_description
+        );
         const auto document = fetch(next_url);
         try {
-            const auto& page = document.at("value");
-            if (!page.is_array()) {
-                throw std::runtime_error(
-                    "Microsoft Graph " + std::string{description} +
-                    " response field 'value' is not an array"
-                );
-            }
+            const auto& page =
+                require_graph_page_values(document, description);
             values.insert(values.end(), page.begin(), page.end());
-            next_url.clear();
-            if (const auto next = document.find("@odata.nextLink");
-                next != document.end()) {
-                if (!next->is_string()) {
-                    throw std::runtime_error(
-                        "Microsoft Graph returned an invalid " +
-                        std::string{description} + " pagination URL"
-                    );
-                }
-                next_url = next->template get<std::string>();
-            }
+            next_url = graph_next_link(document, url_description)
+                           .value_or(std::string{});
         } catch (const Json::exception& error) {
             throw std::runtime_error(
                 "Microsoft Graph " + std::string{description} +
