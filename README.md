@@ -53,8 +53,9 @@ chapters:
 - x86_64 or arm64, depending on the LLVM and Ubuntu build environment.
 - Clang 20 with `-std=c++2c` / CMake `CXX_STANDARD 26`.
 - CMake 3.28 or later.
-- Development packages for CLI11, libcurl/OpenSSL, nlohmann/json, spdlog/fmt,
-  SQLite, and toml++ from the system package manager.
+- Development packages for CLI11, libcurl/OpenSSL, Microsoft GSL,
+  nlohmann/json, spdlog/fmt, SQLite, and toml++ from the system package
+  manager.
 
 Ubuntu 24.04 provides the required CMake, Ninja, and Clang 20 packages through
 its official repositories. GCC 13 is not used because its C++26 support is not
@@ -100,9 +101,10 @@ may differ from Clang 20.
 The compiled libraries are resolved from the operating system and linked
 dynamically. This lets Debian security updates replace libcurl, OpenSSL,
 SQLite, spdlog, and fmt without rebuilding `onedrive-cpp`.
-Proxy 4 is header-only. CMake uses an installed `msft_proxy4` package when
-available and otherwise downloads the pinned ngcpp/proxy 4.1.0 release.
-The vcpkg manifest resolves it through the `proxy` port.
+FTXUI and Proxy 4 can be supplied as installed CMake packages. When they are
+unavailable, CMake downloads the pinned FTXUI 7.0.3 and ngcpp/proxy 4.1.0
+releases. Proxy 4 is header-only. The vcpkg manifest resolves these dependencies
+through the `ftxui` and `proxy` ports.
 
 ## Build
 

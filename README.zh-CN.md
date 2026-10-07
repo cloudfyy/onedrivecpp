@@ -45,8 +45,8 @@
 - x86_64 或 arm64（取决于 LLVM 和 Ubuntu 构建环境）。
 - Clang 20，使用 `-std=c++2c`/CMake `CXX_STANDARD 26`。
 - CMake 3.28 或更高版本。
-- 使用系统包管理器提供 CLI11、libcurl/OpenSSL、nlohmann/json、
-  spdlog/fmt、SQLite 和 toml++ 开发包。
+- 使用系统包管理器提供 CLI11、libcurl/OpenSSL、Microsoft GSL、
+  nlohmann/json、spdlog/fmt、SQLite 和 toml++ 开发包。
 
 Ubuntu 24.04 的官方仓库已经提供项目所需的 CMake、Ninja 和 Clang 20。
 项目不使用默认的 GCC 13，因为它的 C++26 支持不足以满足当前配置。
@@ -88,9 +88,9 @@ git add path/to/modified.cpp path/to/modified.hpp
 
 构建系统从操作系统解析依赖库，并采用动态链接。因此，Debian 可以通过安全更新
 替换 libcurl、OpenSSL、SQLite、spdlog 和 fmt，无需重新构建 `onedrive-cpp`。
-Proxy 4 是纯头文件库（header-only）。CMake 优先使用已安装的 `msft_proxy4`
-包；如果找不到，则下载固定版本的 ngcpp/proxy 4.1.0。vcpkg manifest 通过
-`proxy` port 解析该依赖。
+FTXUI 和 Proxy 4 可以由已安装的 CMake 包提供；如果找不到，CMake 会分别下载
+固定版本的 FTXUI 7.0.3 和 ngcpp/proxy 4.1.0。Proxy 4 是纯头文件库
+（header-only）。vcpkg manifest 通过 `ftxui` 和 `proxy` port 解析这些依赖。
 
 ## 编译
 
