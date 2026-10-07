@@ -264,6 +264,33 @@ int test_insufficient_capacity_and_cancellation() {
     return EXIT_SUCCESS;
 }
 
+int test_lease_outlives_coordinator() {
+    namespace detail = onedrive::sync::detail;
+
+    auto lease = [] {
+        detail::DownloadSpaceCoordinator coordinator{
+            "/downloads",
+            10,
+            [](const std::filesystem::path&) {
+                return std::uintmax_t{100};
+            }
+        };
+        return coordinator.acquire(20);
+    }();
+    try {
+        lease.expand(1);
+        return fail("detached space lease accepted an expansion");
+    } catch (const detail::DownloadSpaceCancelledError&) {
+    }
+    try {
+        lease.consume(1);
+        return fail("detached space lease accepted consumption");
+    } catch (const detail::DownloadSpaceCancelledError&) {
+    }
+    lease = {};
+    return EXIT_SUCCESS;
+}
+
 }  // namespace
 
 int main() {
@@ -283,5 +310,9 @@ int main() {
         result != EXIT_SUCCESS) {
         return result;
     }
-    return test_insufficient_capacity_and_cancellation();
+    if (const int result = test_insufficient_capacity_and_cancellation();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return test_lease_outlives_coordinator();
 }

@@ -99,6 +99,38 @@ int test_unauthorized_channel_invalidates_token() {
     return EXIT_SUCCESS;
 }
 
+int test_transport_failure_is_transient() {
+    auto transport =
+        std::make_unique<FakeTransport>(std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body = R"({"token_type":"Bearer","expires_in":3600,)"
+                        R"("access_token":"access-secret",)"
+                        R"("refresh_token":"existing-refresh"})",
+            },
+            std::unexpected(onedrive::http::HttpError{
+                .message = "simulated notification transport failure",
+            }),
+        });
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(std::string{"existing-refresh"})
+        ),
+        auth_options(),
+    };
+
+    try {
+        static_cast<void>(client.notification_channel());
+        return fail("failed notification transport was accepted");
+    } catch (const onedrive::graph::NotificationChannelError& error) {
+        if (error.unauthorized()) {
+            return fail("transport failure was classified as unauthorized");
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
 } // namespace
 
 int main() {
@@ -106,5 +138,9 @@ int main() {
         result != EXIT_SUCCESS) {
         return result;
     }
-    return test_unauthorized_channel_invalidates_token();
+    if (const int result = test_unauthorized_channel_invalidates_token();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return test_transport_failure_is_transient();
 }

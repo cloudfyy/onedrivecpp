@@ -37,7 +37,7 @@ NotificationChannel MicrosoftGraphClient::notification_channel() const {
     );
     if (!response) {
         throw NotificationChannelError{
-            false,
+            NotificationFailureKind::transient,
             "Microsoft Graph notification channel request failed: " +
                 response.error().message,
         };
@@ -48,7 +48,9 @@ NotificationChannel MicrosoftGraphClient::notification_channel() const {
             invalidate_access_token();
         }
         throw NotificationChannelError{
-            response->status_code == 401,
+            response->status_code == 401 ?
+                NotificationFailureKind::unauthorized :
+                NotificationFailureKind::transient,
             std::format(
                 "Microsoft Graph notification channel request failed with "
                 "HTTP {}",

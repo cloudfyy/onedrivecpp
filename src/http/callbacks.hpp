@@ -35,10 +35,16 @@ enum class CallbackStorage {
     response_headers,
 };
 
+enum class CallbackFailureDetail {
+    none,
+    upload_read_buffer_size_overflow,
+    download_status_inspection,
+};
+
 struct CallbackFailure {
     CallbackFailureKind kind{CallbackFailureKind::none};
     int system_error{};
-    std::string_view detail;
+    CallbackFailureDetail detail{CallbackFailureDetail::none};
     std::exception_ptr exception;
 };
 

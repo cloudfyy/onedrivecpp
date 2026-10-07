@@ -1,5 +1,8 @@
 #include "storage/sqlite.hpp"
 
+#include <spdlog/spdlog.h>
+
+#include <cstdio>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -15,7 +18,65 @@ struct SqliteFreer {
 
 using SqliteString = std::unique_ptr<char, SqliteFreer>;
 
+void log_cleanup_failure(
+    std::string_view operation,
+    std::string_view detail
+) noexcept {
+    try {
+        spdlog::error("{}: {}", operation, detail);
+    } catch (...) {
+        std::fprintf(
+            stderr,
+            "%.*s: %.*s\n",
+            static_cast<int>(operation.size()),
+            operation.data(),
+            static_cast<int>(detail.size()),
+            detail.data()
+        );
+    }
+}
+
 }  // namespace
+
+void SqliteCloser::operator()(sqlite3* handle) const noexcept {
+    const int result = sqlite3_close_v2(handle);
+    if (result != SQLITE_OK) {
+        log_cleanup_failure(
+            "cannot close SQLite database",
+            sqlite3_errstr(result)
+        );
+    }
+}
+
+void SqliteStatementFinalizer::operator()(sqlite3_stmt* statement) const
+    noexcept {
+    const int result = sqlite3_finalize(statement);
+    if (result != SQLITE_OK) {
+        log_cleanup_failure(
+            "cannot finalize SQLite statement",
+            sqlite3_errstr(result)
+        );
+    }
+}
+
+Transaction::~Transaction() {
+    if (committed_) {
+        return;
+    }
+    const int result = sqlite3_exec(
+        database_.get(),
+        "ROLLBACK;",
+        nullptr,
+        nullptr,
+        nullptr
+    );
+    if (result != SQLITE_OK) {
+        log_cleanup_failure(
+            "cannot roll back SQLite transaction",
+            sqlite3_errmsg(database_.get())
+        );
+    }
+}
 
 void execute(sqlite3* database, const char* sql) {
     char* raw_error_message = nullptr;

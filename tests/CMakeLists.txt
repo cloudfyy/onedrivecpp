@@ -64,6 +64,12 @@ foreach(DB_TEST IN ITEMS state journal migrate security)
     )
 endforeach()
 add_onedrive_test(
+    db_sqlite_tests
+    SOURCES tests/db/sqlite.cpp
+    INCLUDE_DIRS src tests
+    LIBRARIES SQLite3::SQLite3
+)
+add_onedrive_test(
     device_auth_tests
     SOURCES tests/auth/device.cpp
     INCLUDE_DIRS tests

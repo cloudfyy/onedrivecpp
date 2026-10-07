@@ -129,12 +129,19 @@ int main() {
     callback_failure = {
         .kind = onedrive::http::detail::CallbackFailureKind::throttle,
         .system_error = 0,
-        .detail = "literal callback detail",
+        .detail = onedrive::http::detail::CallbackFailureDetail::
+            upload_read_buffer_size_overflow,
         .exception = {},
     };
     if (onedrive::http::detail::callback_failure_detail(callback_failure) !=
-        "literal callback detail") {
-        return fail("literal callback failure detail was not preserved");
+        "upload read buffer size overflow") {
+        return fail("typed callback failure detail was not preserved");
+    }
+    callback_failure.detail = onedrive::http::detail::CallbackFailureDetail::
+        download_status_inspection;
+    if (onedrive::http::detail::callback_failure_detail(callback_failure) !=
+        "cannot inspect download response status") {
+        return fail("response inspection failure detail was not preserved");
     }
     callback_failure = {};
     onedrive::http::detail::record_callback_failure(callback_failure, {});

@@ -336,7 +336,9 @@ RemoteItem MicrosoftGraphClient::item_by_path(
     return parse_drive_item(
         json,
         "path lookup",
-        !options_.relaxed_download_validation,
+        options_.relaxed_download_validation ?
+            ContentValidation::relaxed :
+            ContentValidation::strict,
         DriveItemKind::file_or_directory
     );
 }
@@ -414,7 +416,9 @@ RemoteItem MicrosoftGraphClient::create_directory(
     auto item = parse_drive_item(
         json,
         "directory creation response",
-        !options_.relaxed_download_validation,
+        options_.relaxed_download_validation ?
+            ContentValidation::relaxed :
+            ContentValidation::strict,
         DriveItemKind::file_or_directory
     );
     if (!item.directory) {
@@ -569,7 +573,9 @@ RemoteItem MicrosoftGraphClient::move_item(
     return parse_drive_item(
         json,
         "item move response",
-        !options_.relaxed_download_validation,
+        options_.relaxed_download_validation ?
+            ContentValidation::relaxed :
+            ContentValidation::strict,
         DriveItemKind::file_or_directory
     );
 }

@@ -3,6 +3,7 @@
 #include <condition_variable>
 #include <cstddef>
 #include <filesystem>
+#include <memory>
 #include <mutex>
 #include <stdexcept>
 #include <stop_token>
@@ -34,6 +35,12 @@ class ItemOperationCoordinator final {
         [[nodiscard]] std::size_t operator()(const ItemKey& key) const noexcept;
     };
 
+    struct State {
+        std::mutex mutex;
+        std::condition_variable_any condition;
+        std::unordered_set<ItemKey, ItemKeyHash> active;
+    };
+
 public:
     class Lease final {
     public:
@@ -48,10 +55,10 @@ public:
     private:
         friend class ItemOperationCoordinator;
 
-        Lease(ItemOperationCoordinator& coordinator, ItemKey key);
+        Lease(std::shared_ptr<State> state, ItemKey key);
         void release() noexcept;
 
-        ItemOperationCoordinator* coordinator_{nullptr};
+        std::shared_ptr<State> state_;
         ItemKey key_;
     };
 
@@ -75,11 +82,12 @@ public:
     );
 
 private:
-    void release(const ItemKey& key) noexcept;
+    static void release(
+        const std::shared_ptr<State>& state,
+        const ItemKey& key
+    ) noexcept;
 
-    std::mutex mutex_;
-    std::condition_variable_any condition_;
-    std::unordered_set<ItemKey, ItemKeyHash> active_;
+    std::shared_ptr<State> state_{std::make_shared<State>()};
 };
 
 }  // namespace onedrive::sync::detail

@@ -487,7 +487,9 @@ RemoteItem MicrosoftGraphClient::upload_file(
         return parse_drive_item(
             json,
             "upload response",
-            !options_.relaxed_download_validation
+            options_.relaxed_download_validation ?
+                ContentValidation::relaxed :
+                ContentValidation::strict
         );
     }
 
@@ -831,7 +833,9 @@ RemoteItem MicrosoftGraphClient::upload_file(
             parse_drive_item(
                 chunk_json,
                 "upload session response",
-                !options_.relaxed_download_validation
+                options_.relaxed_download_validation ?
+                    ContentValidation::relaxed :
+                    ContentValidation::strict
             )
         );
         return std::move(finalized.remote);

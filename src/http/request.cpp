@@ -523,7 +523,7 @@ HttpResult perform_request(
                                .kind =
                                    CallbackFailureKind::data_callback,
                                .system_error = 0,
-                               .detail = {},
+                               .detail = CallbackFailureDetail::none,
                                .exception = progress_context.exception,
                            }),
             });

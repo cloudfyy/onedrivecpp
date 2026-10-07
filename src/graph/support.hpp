@@ -227,10 +227,15 @@ enum class DriveItemKind {
     file_or_directory,
 };
 
+enum class ContentValidation {
+    strict,
+    relaxed,
+};
+
 [[nodiscard]] RemoteItem parse_drive_item(
     const Json& json,
     std::string_view description,
-    bool validate_content,
+    ContentValidation validation,
     DriveItemKind kind = DriveItemKind::file_only
 );
 

@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <stdexcept>
 
@@ -23,6 +24,25 @@ public:
     using SpaceQuery =
         std::function<std::uintmax_t(const std::filesystem::path&)>;
 
+private:
+    enum class ReservationKind {
+        initial,
+        expansion,
+    };
+
+    struct State {
+        std::filesystem::path directory;
+        std::uintmax_t safety_reserve;
+        SpaceQuery query;
+        std::mutex mutex;
+        std::condition_variable condition;
+        std::uintmax_t reserved{0};
+        std::size_t active_leases{0};
+        bool cancelled{false};
+        bool closed{false};
+    };
+
+public:
     class Lease final {
     public:
         Lease() = default;
@@ -40,12 +60,12 @@ public:
         friend DownloadSpaceCoordinator;
 
         Lease(
-            DownloadSpaceCoordinator* owner,
+            std::shared_ptr<State> state,
             std::uintmax_t remaining
         ) noexcept;
         void release() noexcept;
 
-        DownloadSpaceCoordinator* owner_{nullptr};
+        std::shared_ptr<State> state_;
         std::uintmax_t remaining_{0};
     };
 
@@ -54,6 +74,7 @@ public:
         std::uintmax_t safety_reserve,
         SpaceQuery query = {}
     );
+    ~DownloadSpaceCoordinator();
 
     [[nodiscard]] Lease acquire(std::uintmax_t bytes);
     void cancel() noexcept;
@@ -61,23 +82,21 @@ public:
 private:
     friend Lease;
 
-    enum class ReservationKind {
-        initial,
-        expansion,
-    };
+    static void reserve(
+        const std::shared_ptr<State>& state,
+        std::uintmax_t bytes,
+        ReservationKind kind
+    );
+    static void consume(
+        const std::shared_ptr<State>& state,
+        std::uintmax_t bytes
+    );
+    static void release(
+        const std::shared_ptr<State>& state,
+        std::uintmax_t remaining
+    ) noexcept;
 
-    void reserve(std::uintmax_t bytes, ReservationKind kind);
-    void consume(std::uintmax_t bytes);
-    void release(std::uintmax_t remaining) noexcept;
-
-    std::filesystem::path directory_;
-    std::uintmax_t safety_reserve_;
-    SpaceQuery query_;
-    std::mutex mutex_;
-    std::condition_variable condition_;
-    std::uintmax_t reserved_{0};
-    std::size_t active_leases_{0};
-    bool cancelled_{false};
+    std::shared_ptr<State> state_;
 };
 
 }  // namespace onedrive::sync::detail

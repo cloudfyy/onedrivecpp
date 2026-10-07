@@ -188,6 +188,68 @@ struct MoveSchedule {
     std::vector<MoveAction> actions;
 };
 
+struct DirectoryMove {
+    std::filesystem::path source;
+    std::filesystem::path destination;
+};
+
+class MovePathRemapper {
+public:
+    [[nodiscard]] std::filesystem::path remap(
+        std::filesystem::path source
+    ) const {
+        for (const auto& directory : completed_directory_moves_) {
+            const auto relative =
+                source.lexically_relative(directory.source);
+            if (relative.empty()) {
+                source = directory.destination;
+            } else if (!relative.native().starts_with("..") &&
+                       !relative.is_absolute()) {
+                source = directory.destination / relative;
+            }
+        }
+        return source;
+    }
+
+    void record(
+        std::filesystem::path source,
+        std::filesystem::path destination
+    ) {
+        completed_directory_moves_.push_back({
+            .source = std::move(source),
+            .destination = std::move(destination),
+        });
+    }
+
+private:
+    std::vector<DirectoryMove> completed_directory_moves_;
+};
+
+struct MoveExecutionContext {
+    detail::SyncPlan& plan;
+    const detail::SafeSyncRoot& safe_root;
+    const std::string& drive_id;
+    storage::ItemStore& items;
+    detail::ItemOperationCoordinator& operations;
+    const cli::Console& console;
+    config::SyncPermissionsMode permissions;
+    const std::vector<LocalMoveCandidate>& moves;
+    std::unordered_map<std::string, storage::PendingMove>& pending_moves;
+    const MoveSchedule& schedule;
+    MoveSummary& summary;
+    MovePathRemapper& paths;
+
+    void block(
+        const LocalMoveCandidate& move,
+        std::string code,
+        std::string message
+    ) {
+        plan.block(move.item, std::move(code), std::move(message));
+        summary.blocked.insert(move.item.id);
+        report_blocked(plan.blocked(plan.blocked_count() - 1), console);
+    }
+};
+
 MoveSchedule build_move_schedule(
     const std::vector<LocalMoveCandidate>& moves,
     const std::unordered_map<std::string, storage::PendingMove>& pending_moves
@@ -350,6 +412,600 @@ MoveSchedule build_move_schedule(
     return schedule;
 }
 
+void execute_staging_action(
+    std::size_t move_index,
+    MoveExecutionContext& context
+) {
+    const auto& move = context.moves[move_index];
+    const auto source = context.paths.remap(move.previous.local_path);
+    const auto pending_iterator =
+        context.pending_moves.find(move.item.id);
+    const storage::PendingMove* saved_pending =
+        pending_iterator == context.pending_moves.end() ?
+            nullptr :
+            &pending_iterator->second;
+    using ActiveStagingMove = std::variant<
+        JournaledLocalMove,
+        RecoveredJournalLocalMove,
+        StagedLocalMove>;
+    std::optional<ActiveStagingMove> move_transaction;
+    const auto block = [&](std::string code, std::string message) {
+        context.block(move, std::move(code), std::move(message));
+    };
+    const auto discard_journal = [&] {
+        if (!has_discardable_move_journal(move_transaction)) {
+            return false;
+        }
+        context.items.remove_pending_move(context.drive_id, move.item.id);
+        context.pending_moves.erase(move.item.id);
+        return true;
+    };
+    try {
+        auto operation = context.operations.acquire(
+            context.drive_id, move.previous.remote_id
+        );
+        auto source_operation =
+            context.operations.acquire_destination(source);
+        static_cast<void>(context.safe_root.relative_path(source));
+        static_cast<void>(
+            context.safe_root.relative_path(move.destination)
+        );
+        const auto expected_type = [&](auto status) {
+            return !std::filesystem::is_symlink(status) &&
+                   (move.previous.directory ?
+                        std::filesystem::is_directory(status) :
+                        std::filesystem::is_regular_file(status));
+        };
+        const auto identity_matches = [&](const auto& path,
+                                          const auto& pending) {
+            std::error_code error;
+            const auto status =
+                std::filesystem::symlink_status(path, error);
+            if (error == std::errc::no_such_file_or_directory) {
+                return false;
+            }
+            if (error) {
+                throw std::runtime_error(
+                    "cannot inspect pending move path '" + path.string() +
+                    "': " + error.message()
+                );
+            }
+            if (!std::filesystem::exists(status) ||
+                !expected_type(status)) {
+                return false;
+            }
+            const auto identity = context.safe_root.identity(
+                path,
+                detail::filesystem_item_kind(move.previous.directory)
+            );
+            return identity.device == pending.source_device &&
+                   identity.inode == pending.source_inode;
+        };
+
+        std::filesystem::path staging;
+        if (saved_pending != nullptr) {
+            if (saved_pending->source_path != source ||
+                saved_pending->destination_path != move.destination ||
+                saved_pending->staging_path.empty() ||
+                saved_pending->directory != move.previous.directory) {
+                block(
+                    "pending_move_conflict",
+                    "saved staging journal does not match the current "
+                    "remote move for: " + move.item.remote_path
+                );
+                return;
+            }
+            staging = saved_pending->staging_path;
+            static_cast<void>(context.safe_root.relative_path(staging));
+            if (staging == source || staging == move.destination) {
+                block(
+                    "pending_move_conflict",
+                    "saved staging path overlaps a move endpoint: " +
+                        staging.string()
+                );
+                return;
+            }
+            if (identity_matches(move.destination, *saved_pending)) {
+                if (move.previous.directory) {
+                    context.paths.record(source, move.destination);
+                }
+                return;
+            }
+            if (identity_matches(staging, *saved_pending)) {
+                if (move.previous.directory) {
+                    context.paths.record(source, staging);
+                }
+                return;
+            }
+            if (!identity_matches(source, *saved_pending)) {
+                block(
+                    "pending_move_conflict",
+                    "staged move object does not match its durable "
+                    "filesystem identity: " + move.item.remote_path
+                );
+                return;
+            }
+            move_transaction.emplace(
+                std::in_place_type<RecoveredJournalLocalMove>,
+                RecoveredJournalLocalMove{
+                    LocalMoveTransactionPayload{*saved_pending},
+                }
+            );
+        } else {
+            std::error_code source_error;
+            const auto source_status =
+                std::filesystem::symlink_status(source, source_error);
+            if (source_error ||
+                !std::filesystem::exists(source_status) ||
+                !expected_type(source_status)) {
+                block(
+                    "local_path_conflict",
+                    "remote move staging source is missing or has an "
+                    "unexpected type: " + source.string()
+                );
+                return;
+            }
+            if (!move.previous.directory &&
+                !detail::local_snapshot_matches(move.previous, source)) {
+                block(
+                    "local_modification",
+                    "local file changed before staging remote move: " +
+                        source.string()
+                );
+                return;
+            }
+            for (std::size_t attempt = 0; attempt < 100; ++attempt) {
+                const auto candidate =
+                    detail::move_staging_path_for(source);
+                std::error_code candidate_error;
+                const auto candidate_status =
+                    std::filesystem::symlink_status(
+                        candidate, candidate_error
+                    );
+                if (candidate_error ==
+                    std::errc::no_such_file_or_directory) {
+                    staging = candidate;
+                    break;
+                }
+                if (candidate_error) {
+                    throw std::runtime_error(
+                        "cannot inspect move staging path '" +
+                        candidate.string() + "': " +
+                        candidate_error.message()
+                    );
+                }
+                if (!std::filesystem::exists(candidate_status)) {
+                    staging = candidate;
+                    break;
+                }
+            }
+            if (staging.empty()) {
+                throw std::runtime_error(
+                    "cannot allocate a private move staging path for: " +
+                    source.string()
+                );
+            }
+            const auto identity = context.safe_root.identity(
+                source,
+                detail::filesystem_item_kind(move.previous.directory)
+            );
+            storage::PendingMove pending{
+                .drive_id = context.drive_id,
+                .remote_id = move.item.id,
+                .source_path = source,
+                .destination_path = move.destination,
+                .staging_path = staging,
+                .source_device = identity.device,
+                .source_inode = identity.inode,
+                .directory = move.previous.directory,
+            };
+            auto prepared = PreparedLocalMove{
+                LocalMoveTransactionPayload{pending},
+            };
+            context.items.save_pending_move(prepared.journal);
+            context.pending_moves.insert_or_assign(
+                move.item.id, prepared.journal
+            );
+            move_transaction.emplace(
+                std::in_place_type<JournaledLocalMove>,
+                journal_local_move(std::move(prepared))
+            );
+        }
+
+        auto staging_operation =
+            context.operations.acquire_destination(staging);
+        if (!context.safe_root.rename_no_replace(source, staging)) {
+            if (discard_journal()) {
+                move_transaction.reset();
+            }
+            block(
+                "local_path_conflict",
+                "private move staging path already exists: " +
+                    staging.string()
+            );
+            return;
+        }
+        auto staged = std::visit(
+            [](auto&& transaction) -> StagedLocalMove {
+                using Transaction =
+                    std::remove_cvref_t<decltype(transaction)>;
+                if constexpr (std::same_as<Transaction, StagedLocalMove>) {
+                    return std::move(transaction);
+                } else {
+                    return stage_local_move(std::move(transaction));
+                }
+            },
+            std::move(*move_transaction)
+        );
+        move_transaction.emplace(
+            std::in_place_type<StagedLocalMove>, std::move(staged)
+        );
+        context.safe_root.fsync_directory(source.parent_path());
+        if (move.previous.directory) {
+            context.paths.record(source, staging);
+        }
+        context.console.message(
+            cli::MessageKind::information,
+            "local_item_move_staged",
+            "Staged remotely moved item from '" + source.string() +
+                "' at '" + staging.string() + "'."
+        );
+    } catch (const detail::CrossDeviceMoveError& error) {
+        static_cast<void>(discard_journal());
+        block("cross_device_move", error.what());
+    } catch (const detail::SafePathConflictError& error) {
+        static_cast<void>(discard_journal());
+        block("local_path_conflict", error.what());
+    } catch (const detail::LocalPathConflictError& error) {
+        static_cast<void>(discard_journal());
+        block("local_path_conflict", error.what());
+    }
+}
+
+void execute_install_action(
+    std::size_t move_index,
+    MoveExecutionContext& context
+) {
+    const auto& move = context.moves[move_index];
+    const auto failed_prerequisite = std::ranges::find_if(
+        context.schedule.dependencies[move_index],
+        [&](std::size_t prerequisite) {
+            return context.summary.blocked.contains(
+                context.moves[prerequisite].item.id
+            );
+        }
+    );
+    if (failed_prerequisite !=
+        context.schedule.dependencies[move_index].end()) {
+        context.block(
+            move,
+            "move_dependency_blocked",
+            "remote move depends on another move that could not be "
+            "applied: " +
+                context.moves[*failed_prerequisite].item.remote_path
+        );
+        return;
+    }
+    auto& state = context.plan.state_for(move.item.id);
+    const auto& destination = move.destination;
+    const auto pending_iterator =
+        context.pending_moves.find(move.item.id);
+    const storage::PendingMove* pending =
+        pending_iterator == context.pending_moves.end() ?
+            nullptr :
+            &pending_iterator->second;
+    const auto dependency_source =
+        context.paths.remap(move.previous.local_path);
+    const auto source =
+        pending != nullptr && !pending->staging_path.empty() ?
+            pending->staging_path :
+            dependency_source;
+    const bool staged_journal =
+        pending != nullptr && !pending->staging_path.empty();
+    using ActiveLocalMove = std::variant<
+        PreparedLocalMove,
+        JournaledLocalMove,
+        StagedLocalMove,
+        InstalledLocalMove>;
+    ActiveLocalMove move_transaction =
+        pending == nullptr ?
+            ActiveLocalMove{std::in_place_type<PreparedLocalMove>} :
+        staged_journal ?
+            ActiveLocalMove{
+                std::in_place_type<StagedLocalMove>,
+                StagedLocalMove{
+                    LocalMoveTransactionPayload{*pending},
+                },
+            } :
+            ActiveLocalMove{
+                std::in_place_type<JournaledLocalMove>,
+                JournaledLocalMove{
+                    LocalMoveTransactionPayload{*pending},
+                },
+            };
+    const auto mark_installed = [&] {
+        auto installed = std::visit(
+            [](auto&& transaction) -> InstalledLocalMove {
+                using Transaction =
+                    std::remove_cvref_t<decltype(transaction)>;
+                if constexpr (std::same_as<
+                                  Transaction,
+                                  JournaledLocalMove> ||
+                              std::same_as<Transaction, StagedLocalMove>) {
+                    return install_local_move(std::move(transaction));
+                } else if constexpr (std::same_as<
+                                         Transaction,
+                                         InstalledLocalMove>) {
+                    return std::move(transaction);
+                } else {
+                    throw std::logic_error(
+                        "local move was installed without a journal"
+                    );
+                }
+            },
+            std::move(move_transaction)
+        );
+        move_transaction.emplace<InstalledLocalMove>(std::move(installed));
+    };
+    const auto block = [&](std::string code, std::string message) {
+        context.block(move, std::move(code), std::move(message));
+    };
+    const auto discard_journal = [&] {
+        if (!has_discardable_move_journal(move_transaction)) {
+            return false;
+        }
+        context.items.remove_pending_move(context.drive_id, move.item.id);
+        return true;
+    };
+    try {
+        if (pending != nullptr &&
+            ((!staged_journal &&
+              pending->source_path != dependency_source) ||
+             pending->destination_path != destination ||
+             pending->directory != move.previous.directory)) {
+            block(
+                "pending_move_conflict",
+                "saved move journal does not match the current remote "
+                "move for: " + move.item.remote_path
+            );
+            return;
+        }
+        auto operation = context.operations.acquire(
+            context.drive_id, move.previous.remote_id
+        );
+        auto source_operation =
+            context.operations.acquire_destination(source);
+        std::optional<detail::ItemOperationCoordinator::Lease>
+            destination_operation;
+        if (source != destination) {
+            destination_operation.emplace(
+                context.operations.acquire_destination(destination)
+            );
+        }
+        static_cast<void>(context.safe_root.relative_path(source));
+        static_cast<void>(context.safe_root.relative_path(destination));
+
+        std::error_code source_error;
+        const auto source_status =
+            std::filesystem::symlink_status(source, source_error);
+        const bool source_exists =
+            !source_error && std::filesystem::exists(source_status);
+        if (source_error &&
+            source_error != std::errc::no_such_file_or_directory) {
+            throw std::runtime_error(
+                "cannot inspect local move source '" + source.string() +
+                "': " + source_error.message()
+            );
+        }
+
+        std::error_code destination_error;
+        const auto destination_status = std::filesystem::symlink_status(
+            destination, destination_error
+        );
+        const bool destination_exists =
+            !destination_error &&
+            std::filesystem::exists(destination_status);
+        if (destination_error &&
+            destination_error != std::errc::no_such_file_or_directory) {
+            throw std::runtime_error(
+                "cannot inspect local move destination '" +
+                destination.string() + "': " +
+                destination_error.message()
+            );
+        }
+
+        const auto expected_type = [&](auto status) {
+            return !std::filesystem::is_symlink(status) &&
+                   (move.previous.directory ?
+                        std::filesystem::is_directory(status) :
+                        std::filesystem::is_regular_file(status));
+        };
+        bool pending_destination_matches = false;
+        if (pending != nullptr && destination_exists &&
+            expected_type(destination_status)) {
+            const auto identity = context.safe_root.identity(
+                destination,
+                detail::filesystem_item_kind(move.previous.directory)
+            );
+            pending_destination_matches =
+                identity.device == pending->source_device &&
+                identity.inode == pending->source_inode;
+            if (pending_destination_matches) {
+                mark_installed();
+            }
+        }
+        if (!pending_destination_matches && source == destination) {
+            if (!source_exists ||
+                !expected_type(source_status) ||
+                (!move.previous.directory &&
+                 !detail::local_snapshot_matches(move.previous, source))) {
+                block(
+                    "local_path_conflict",
+                    "remotely moved item is not present at its "
+                    "dependency-adjusted destination: " +
+                        destination.string()
+                );
+                return;
+            }
+            if (pending != nullptr) {
+                block(
+                    "pending_move_conflict",
+                    "remote move destination does not match the durable "
+                    "source identity: " + destination.string()
+                );
+                return;
+            }
+        } else if (!pending_destination_matches && !source_exists) {
+            if (!destination_exists ||
+                !expected_type(destination_status) ||
+                (!move.previous.directory &&
+                 !detail::local_snapshot_matches(
+                     move.previous, destination
+                 ))) {
+                block(
+                    "local_path_conflict",
+                    "remote move source is missing and its destination "
+                    "cannot be safely adopted: " + source.string()
+                );
+                return;
+            }
+            if (pending != nullptr) {
+                const auto identity = context.safe_root.identity(
+                    destination,
+                    detail::filesystem_item_kind(move.previous.directory)
+                );
+                if (identity.device != pending->source_device ||
+                    identity.inode != pending->source_inode) {
+                    block(
+                        "pending_move_conflict",
+                        "remote move destination does not match the "
+                        "durable source identity: " +
+                            destination.string()
+                    );
+                    return;
+                }
+            }
+        } else if (!pending_destination_matches) {
+            if (!expected_type(source_status)) {
+                block(
+                    "local_path_conflict",
+                    "remote move source has an unexpected local type: " +
+                        source.string()
+                );
+                return;
+            }
+            if (!move.previous.directory &&
+                !detail::local_snapshot_matches(move.previous, source)) {
+                block(
+                    "local_modification",
+                    "local file changed before applying remote move: " +
+                        source.string()
+                );
+                return;
+            }
+            if (destination_exists) {
+                block(
+                    "local_path_conflict",
+                    "remote move destination already exists: " +
+                        destination.string()
+                );
+                return;
+            }
+            context.safe_root.ensure_directory_tree(
+                destination.parent_path(), context.permissions
+            );
+            const auto source_identity = context.safe_root.identity(
+                source,
+                detail::filesystem_item_kind(move.previous.directory)
+            );
+            if (pending != nullptr &&
+                (source_identity.device != pending->source_device ||
+                 source_identity.inode != pending->source_inode)) {
+                block(
+                    "pending_move_conflict",
+                    "remote move source no longer matches its durable "
+                    "filesystem identity: " + source.string()
+                );
+                return;
+            }
+            if (pending == nullptr) {
+                auto& prepared =
+                    std::get<PreparedLocalMove>(move_transaction);
+                prepared.journal = {
+                    .drive_id = context.drive_id,
+                    .remote_id = move.item.id,
+                    .source_path = source,
+                    .destination_path = destination,
+                    .staging_path = {},
+                    .source_device = source_identity.device,
+                    .source_inode = source_identity.inode,
+                    .directory = move.previous.directory,
+                };
+                context.items.save_pending_move(prepared.journal);
+                move_transaction.emplace<JournaledLocalMove>(
+                    journal_local_move(std::move(prepared))
+                );
+            }
+            if (!context.safe_root.rename_no_replace(source, destination)) {
+                if (discard_journal()) {
+                    move_transaction.emplace<PreparedLocalMove>();
+                }
+                block(
+                    "local_path_conflict",
+                    "remote move destination already exists: " +
+                        destination.string()
+                );
+                return;
+            }
+            mark_installed();
+            context.safe_root.fsync_directory(source.parent_path());
+            if (source.parent_path() != destination.parent_path()) {
+                context.safe_root.fsync_directory(
+                    destination.parent_path()
+                );
+            }
+            ++context.summary.moved;
+            context.console.message(
+                cli::MessageKind::information,
+                "local_item_moved",
+                "Moved remotely renamed item from '" + source.string() +
+                    "' to '" + destination.string() + "'."
+            );
+        }
+
+        if (move.previous.directory && source != destination) {
+            context.paths.record(source, destination);
+        }
+        if (!move.previous.directory) {
+            state.local_size = detail::persisted_file_size(
+                std::filesystem::file_size(destination)
+            );
+            state.local_modified_ticks =
+                detail::modified_ticks(destination);
+            if (remote_file_content_unchanged(
+                    move.item, move.previous, destination
+                )) {
+                context.summary.reusable_files.insert(move.item.id);
+            }
+        }
+        const auto identity = context.safe_root.identity(
+            destination,
+            detail::filesystem_item_kind(move.previous.directory)
+        );
+        state.local_device = identity.device;
+        state.local_inode = identity.inode;
+    } catch (const detail::CrossDeviceMoveError& error) {
+        static_cast<void>(discard_journal());
+        block("cross_device_move", error.what());
+    } catch (const detail::SafePathConflictError& error) {
+        static_cast<void>(discard_journal());
+        block("local_path_conflict", error.what());
+    } catch (const detail::LocalPathConflictError& error) {
+        static_cast<void>(discard_journal());
+        block("local_path_conflict", error.what());
+    }
+}
+
 }  // namespace
 
 MoveSummary execute_moves(
@@ -379,670 +1035,31 @@ MoveSummary execute_moves(
     }
 
     MoveSummary summary;
-    const auto block_move = [&](const LocalMoveCandidate& move,
-                                std::string code,
-                                std::string message) {
-        plan.block(move.item, std::move(code), std::move(message));
-        summary.blocked.insert(move.item.id);
-        report_blocked(plan.blocked(plan.blocked_count() - 1), console);
-    };
     auto schedule = build_move_schedule(moves, pending_moves);
-
-    struct DirectoryMove {
-        std::filesystem::path source;
-        std::filesystem::path destination;
+    MovePathRemapper paths;
+    MoveExecutionContext context{
+        .plan = plan,
+        .safe_root = safe_root,
+        .drive_id = drive_id,
+        .items = items,
+        .operations = operations,
+        .console = console,
+        .permissions = permissions,
+        .moves = moves,
+        .pending_moves = pending_moves,
+        .schedule = schedule,
+        .summary = summary,
+        .paths = paths,
     };
-    std::vector<DirectoryMove> completed_directory_moves;
-    const auto remap_source = [&](std::filesystem::path source) {
-        for (const auto& directory : completed_directory_moves) {
-            const auto relative =
-                source.lexically_relative(directory.source);
-            if (relative.empty()) {
-                source = directory.destination;
-            } else if (!relative.native().starts_with("..") &&
-                       !relative.is_absolute()) {
-                source = directory.destination / relative;
-            }
-        }
-        return source;
-    };
-
     for (const auto& action : schedule.actions) {
-        const auto move_index = action.move_index;
-        const auto& move = moves[move_index];
+        const auto& move = moves[action.move_index];
         if (summary.blocked.contains(move.item.id)) {
             continue;
         }
         if (action.kind == MoveActionKind::stage) {
-            const auto source = remap_source(move.previous.local_path);
-            const auto pending_iterator =
-                pending_moves.find(move.item.id);
-            const storage::PendingMove* saved_pending =
-                pending_iterator == pending_moves.end() ?
-                    nullptr :
-                    &pending_iterator->second;
-            using ActiveStagingMove = std::variant<
-                JournaledLocalMove,
-                RecoveredJournalLocalMove,
-                StagedLocalMove>;
-            std::optional<ActiveStagingMove> move_transaction;
-            const auto block = [&](std::string code, std::string message) {
-                block_move(move, std::move(code), std::move(message));
-            };
-            const auto discard_journal = [&] {
-                if (!has_discardable_move_journal(move_transaction)) {
-                    return false;
-                }
-                items.remove_pending_move(drive_id, move.item.id);
-                pending_moves.erase(move.item.id);
-                return true;
-            };
-            try {
-                auto operation =
-                    operations.acquire(drive_id, move.previous.remote_id);
-                auto source_operation =
-                    operations.acquire_destination(source);
-                static_cast<void>(safe_root.relative_path(source));
-                static_cast<void>(
-                    safe_root.relative_path(move.destination)
-                );
-                const auto expected_type = [&](auto status) {
-                    return !std::filesystem::is_symlink(status) &&
-                           (move.previous.directory ?
-                                std::filesystem::is_directory(status) :
-                                std::filesystem::is_regular_file(status));
-                };
-                const auto identity_matches = [&](
-                                                  const auto& path,
-                                                  const auto& pending
-                                              ) {
-                    std::error_code error;
-                    const auto status =
-                        std::filesystem::symlink_status(path, error);
-                    if (error ==
-                        std::errc::no_such_file_or_directory) {
-                        return false;
-                    }
-                    if (error) {
-                        throw std::runtime_error(
-                            "cannot inspect pending move path '" +
-                            path.string() + "': " + error.message()
-                        );
-                    }
-                    if (!std::filesystem::exists(status) ||
-                        !expected_type(status)) {
-                        return false;
-                    }
-                    const auto identity = safe_root.identity(
-                        path,
-                        detail::filesystem_item_kind(
-                            move.previous.directory
-                        )
-                    );
-                    return identity.device == pending.source_device &&
-                           identity.inode == pending.source_inode;
-                };
-
-                std::filesystem::path staging;
-                if (saved_pending != nullptr) {
-                    if (saved_pending->source_path != source ||
-                        saved_pending->destination_path !=
-                            move.destination ||
-                        saved_pending->staging_path.empty() ||
-                        saved_pending->directory !=
-                            move.previous.directory) {
-                        block(
-                            "pending_move_conflict",
-                            "saved staging journal does not match the "
-                            "current remote move for: " +
-                                move.item.remote_path
-                        );
-                        continue;
-                    }
-                    staging = saved_pending->staging_path;
-                    static_cast<void>(safe_root.relative_path(staging));
-                    if (staging == source ||
-                        staging == move.destination) {
-                        block(
-                            "pending_move_conflict",
-                            "saved staging path overlaps a move endpoint: " +
-                                staging.string()
-                        );
-                        continue;
-                    }
-                    if (identity_matches(
-                            move.destination,
-                            *saved_pending
-                        )) {
-                        if (move.previous.directory) {
-                            completed_directory_moves.push_back({
-                                .source = source,
-                                .destination = move.destination,
-                            });
-                        }
-                        continue;
-                    }
-                    if (identity_matches(staging, *saved_pending)) {
-                        if (move.previous.directory) {
-                            completed_directory_moves.push_back({
-                                .source = source,
-                                .destination = staging,
-                            });
-                        }
-                        continue;
-                    }
-                    if (!identity_matches(source, *saved_pending)) {
-                        block(
-                            "pending_move_conflict",
-                            "staged move object does not match its durable "
-                            "filesystem identity: " +
-                                move.item.remote_path
-                        );
-                        continue;
-                    }
-                    move_transaction.emplace(
-                        std::in_place_type<RecoveredJournalLocalMove>,
-                        RecoveredJournalLocalMove{
-                            LocalMoveTransactionPayload{*saved_pending},
-                        }
-                    );
-                } else {
-                    std::error_code source_error;
-                    const auto source_status =
-                        std::filesystem::symlink_status(
-                            source,
-                            source_error
-                        );
-                    if (source_error ||
-                        !std::filesystem::exists(source_status) ||
-                        !expected_type(source_status)) {
-                        block(
-                            "local_path_conflict",
-                            "remote move staging source is missing or has "
-                            "an unexpected type: " + source.string()
-                        );
-                        continue;
-                    }
-                    if (!move.previous.directory &&
-                        !detail::local_snapshot_matches(
-                            move.previous,
-                            source
-                        )) {
-                        block(
-                            "local_modification",
-                            "local file changed before staging remote move: " +
-                                source.string()
-                        );
-                        continue;
-                    }
-                    for (std::size_t attempt = 0; attempt < 100; ++attempt) {
-                        const auto candidate =
-                            detail::move_staging_path_for(source);
-                        std::error_code candidate_error;
-                        const auto candidate_status =
-                            std::filesystem::symlink_status(
-                                candidate,
-                                candidate_error
-                            );
-                        if (candidate_error ==
-                            std::errc::no_such_file_or_directory) {
-                            staging = candidate;
-                            break;
-                        }
-                        if (candidate_error) {
-                            throw std::runtime_error(
-                                "cannot inspect move staging path '" +
-                                candidate.string() + "': " +
-                                candidate_error.message()
-                            );
-                        }
-                        if (!std::filesystem::exists(candidate_status)) {
-                            staging = candidate;
-                            break;
-                        }
-                    }
-                    if (staging.empty()) {
-                        throw std::runtime_error(
-                            "cannot allocate a private move staging path "
-                            "for: " + source.string()
-                        );
-                    }
-                    const auto identity = safe_root.identity(
-                        source,
-                        detail::filesystem_item_kind(
-                            move.previous.directory
-                        )
-                    );
-                    storage::PendingMove pending{
-                        .drive_id = drive_id,
-                        .remote_id = move.item.id,
-                        .source_path = source,
-                        .destination_path = move.destination,
-                        .staging_path = staging,
-                        .source_device = identity.device,
-                        .source_inode = identity.inode,
-                        .directory = move.previous.directory,
-                    };
-                    auto prepared = PreparedLocalMove{
-                        LocalMoveTransactionPayload{pending},
-                    };
-                    items.save_pending_move(prepared.journal);
-                    pending_moves.insert_or_assign(
-                        move.item.id, prepared.journal
-                    );
-                    move_transaction.emplace(
-                        std::in_place_type<JournaledLocalMove>,
-                        journal_local_move(std::move(prepared))
-                    );
-                }
-
-                auto staging_operation =
-                    operations.acquire_destination(staging);
-                if (!safe_root.rename_no_replace(source, staging)) {
-                    if (discard_journal()) {
-                        move_transaction.reset();
-                    }
-                    block(
-                        "local_path_conflict",
-                        "private move staging path already exists: " +
-                            staging.string()
-                    );
-                    continue;
-                }
-                auto staged = std::visit(
-                    [](auto&& transaction) -> StagedLocalMove {
-                        using Transaction =
-                            std::remove_cvref_t<decltype(transaction)>;
-                        if constexpr (std::same_as<
-                                          Transaction,
-                                          StagedLocalMove>) {
-                            return std::move(transaction);
-                        } else {
-                            return stage_local_move(std::move(transaction));
-                        }
-                    },
-                    std::move(*move_transaction)
-                );
-                move_transaction.emplace(
-                    std::in_place_type<StagedLocalMove>, std::move(staged)
-                );
-                safe_root.fsync_directory(source.parent_path());
-                if (move.previous.directory) {
-                    completed_directory_moves.push_back({
-                        .source = source,
-                        .destination = staging,
-                    });
-                }
-                console.message(
-                    cli::MessageKind::information,
-                    "local_item_move_staged",
-                    "Staged remotely moved item from '" + source.string() +
-                        "' at '" + staging.string() + "'."
-                );
-            } catch (const detail::CrossDeviceMoveError& error) {
-                static_cast<void>(discard_journal());
-                block("cross_device_move", error.what());
-            } catch (const detail::SafePathConflictError& error) {
-                static_cast<void>(discard_journal());
-                block("local_path_conflict", error.what());
-            } catch (const detail::LocalPathConflictError& error) {
-                static_cast<void>(discard_journal());
-                block("local_path_conflict", error.what());
-            }
-            continue;
-        }
-        const auto failed_prerequisite = std::ranges::find_if(
-            schedule.dependencies[move_index],
-            [&](std::size_t prerequisite) {
-                return summary.blocked.contains(
-                    moves[prerequisite].item.id
-                );
-            }
-        );
-        if (failed_prerequisite !=
-            schedule.dependencies[move_index].end()) {
-            block_move(
-                move,
-                "move_dependency_blocked",
-                "remote move depends on another move that could not be "
-                "applied: " +
-                    moves[*failed_prerequisite].item.remote_path
-            );
-            continue;
-        }
-        auto& state = plan.state_for(move.item.id);
-        const auto& destination = move.destination;
-        const auto pending_iterator =
-            pending_moves.find(move.item.id);
-        const storage::PendingMove* pending =
-            pending_iterator == pending_moves.end() ?
-                nullptr :
-                &pending_iterator->second;
-        const auto dependency_source =
-            remap_source(move.previous.local_path);
-        const auto source =
-            pending != nullptr && !pending->staging_path.empty() ?
-                pending->staging_path :
-                dependency_source;
-        const bool staged_journal =
-            pending != nullptr && !pending->staging_path.empty();
-        using ActiveLocalMove = std::variant<
-            PreparedLocalMove,
-            JournaledLocalMove,
-            StagedLocalMove,
-            InstalledLocalMove>;
-        ActiveLocalMove move_transaction =
-            pending == nullptr ?
-                ActiveLocalMove{std::in_place_type<PreparedLocalMove>} :
-            staged_journal ?
-                ActiveLocalMove{
-                    std::in_place_type<StagedLocalMove>,
-                    StagedLocalMove{
-                        LocalMoveTransactionPayload{*pending},
-                    },
-                } :
-                ActiveLocalMove{
-                    std::in_place_type<JournaledLocalMove>,
-                    JournaledLocalMove{
-                        LocalMoveTransactionPayload{*pending},
-                    },
-                };
-        const auto mark_installed = [&] {
-            auto installed = std::visit(
-                [](auto&& transaction) -> InstalledLocalMove {
-                    using Transaction =
-                        std::remove_cvref_t<decltype(transaction)>;
-                    if constexpr (std::same_as<
-                                      Transaction,
-                                      JournaledLocalMove> ||
-                                  std::same_as<Transaction, StagedLocalMove>) {
-                        return install_local_move(std::move(transaction));
-                    } else if constexpr (std::same_as<
-                                             Transaction,
-                                             InstalledLocalMove>) {
-                        return std::move(transaction);
-                    } else {
-                        throw std::logic_error(
-                            "local move was installed without a journal"
-                        );
-                    }
-                },
-                std::move(move_transaction)
-            );
-            move_transaction.emplace<InstalledLocalMove>(std::move(installed));
-        };
-        const auto block = [&](std::string code, std::string message) {
-            block_move(move, std::move(code), std::move(message));
-        };
-        const auto discard_journal = [&] {
-            if (!has_discardable_move_journal(move_transaction)) {
-                return false;
-            }
-            items.remove_pending_move(drive_id, move.item.id);
-            return true;
-        };
-        try {
-            if (pending != nullptr &&
-                ((!staged_journal &&
-                  pending->source_path != dependency_source) ||
-                 pending->destination_path != destination ||
-                 pending->directory != move.previous.directory)) {
-                block(
-                    "pending_move_conflict",
-                    "saved move journal does not match the current remote "
-                    "move for: " + move.item.remote_path
-                );
-                continue;
-            }
-            auto operation =
-                operations.acquire(drive_id, move.previous.remote_id);
-            auto source_operation =
-                operations.acquire_destination(source);
-            std::optional<detail::ItemOperationCoordinator::Lease>
-                destination_operation;
-            if (source != destination) {
-                destination_operation.emplace(
-                    operations.acquire_destination(destination)
-                );
-            }
-            static_cast<void>(safe_root.relative_path(source));
-            static_cast<void>(safe_root.relative_path(destination));
-
-            std::error_code source_error;
-            const auto source_status =
-                std::filesystem::symlink_status(source, source_error);
-            const bool source_exists =
-                !source_error && std::filesystem::exists(source_status);
-            if (source_error &&
-                source_error != std::errc::no_such_file_or_directory) {
-                throw std::runtime_error(
-                    "cannot inspect local move source '" + source.string() +
-                    "': " + source_error.message()
-                );
-            }
-
-            std::error_code destination_error;
-            const auto destination_status =
-                std::filesystem::symlink_status(
-                    destination,
-                    destination_error
-                );
-            const bool destination_exists =
-                !destination_error &&
-                std::filesystem::exists(destination_status);
-            if (destination_error &&
-                destination_error !=
-                    std::errc::no_such_file_or_directory) {
-                throw std::runtime_error(
-                    "cannot inspect local move destination '" +
-                    destination.string() + "': " +
-                    destination_error.message()
-                );
-            }
-
-            const auto expected_type = [&](auto status) {
-                return !std::filesystem::is_symlink(status) &&
-                       (move.previous.directory ?
-                            std::filesystem::is_directory(status) :
-                            std::filesystem::is_regular_file(status));
-            };
-            bool pending_destination_matches = false;
-            if (pending != nullptr && destination_exists &&
-                expected_type(destination_status)) {
-                const auto identity = safe_root.identity(
-                    destination,
-                    detail::filesystem_item_kind(move.previous.directory)
-                );
-                pending_destination_matches =
-                    identity.device == pending->source_device &&
-                    identity.inode == pending->source_inode;
-                if (pending_destination_matches) {
-                    mark_installed();
-                }
-            }
-            if (!pending_destination_matches && source == destination) {
-                if (!source_exists ||
-                    !expected_type(source_status) ||
-                    (!move.previous.directory &&
-                     !detail::local_snapshot_matches(
-                         move.previous,
-                         source
-                     ))) {
-                    block(
-                        "local_path_conflict",
-                        "remotely moved item is not present at its "
-                        "dependency-adjusted destination: " +
-                            destination.string()
-                    );
-                    continue;
-                }
-                if (pending != nullptr) {
-                    block(
-                    "pending_move_conflict",
-                    "remote move destination does not match the "
-                    "durable source identity: " +
-                        destination.string()
-                    );
-                    continue;
-                }
-            } else if (!pending_destination_matches && !source_exists) {
-                if (!destination_exists ||
-                    !expected_type(destination_status) ||
-                    (!move.previous.directory &&
-                     !detail::local_snapshot_matches(
-                         move.previous,
-                         destination
-                     ))) {
-                    block(
-                        "local_path_conflict",
-                        "remote move source is missing and its destination "
-                        "cannot be safely adopted: " + source.string()
-                    );
-                    continue;
-                }
-                if (pending != nullptr) {
-                    const auto identity = safe_root.identity(
-                        destination,
-                        detail::filesystem_item_kind(
-                            move.previous.directory
-                        )
-                    );
-                    if (identity.device != pending->source_device ||
-                        identity.inode != pending->source_inode) {
-                        block(
-                            "pending_move_conflict",
-                            "remote move destination does not match the "
-                            "durable source identity: " +
-                                destination.string()
-                        );
-                        continue;
-                    }
-                }
-            } else if (!pending_destination_matches) {
-                if (!expected_type(source_status)) {
-                    block(
-                        "local_path_conflict",
-                        "remote move source has an unexpected local type: " +
-                            source.string()
-                    );
-                    continue;
-                }
-                if (!move.previous.directory &&
-                    !detail::local_snapshot_matches(
-                        move.previous,
-                        source
-                    )) {
-                    block(
-                        "local_modification",
-                        "local file changed before applying remote move: " +
-                            source.string()
-                    );
-                    continue;
-                }
-                if (destination_exists) {
-                    block(
-                        "local_path_conflict",
-                        "remote move destination already exists: " +
-                            destination.string()
-                    );
-                    continue;
-                }
-                safe_root.ensure_directory_tree(
-                    destination.parent_path(),
-                    permissions
-                );
-                const auto source_identity = safe_root.identity(
-                    source,
-                    detail::filesystem_item_kind(move.previous.directory)
-                );
-                if (pending != nullptr &&
-                    (source_identity.device != pending->source_device ||
-                     source_identity.inode != pending->source_inode)) {
-                    block(
-                        "pending_move_conflict",
-                        "remote move source no longer matches its durable "
-                        "filesystem identity: " + source.string()
-                    );
-                    continue;
-                }
-                if (pending == nullptr) {
-                    auto& prepared =
-                        std::get<PreparedLocalMove>(move_transaction);
-                    prepared.journal = {
-                        .drive_id = drive_id,
-                        .remote_id = move.item.id,
-                        .source_path = source,
-                        .destination_path = destination,
-                        .staging_path = {},
-                        .source_device = source_identity.device,
-                        .source_inode = source_identity.inode,
-                        .directory = move.previous.directory,
-                    };
-                    items.save_pending_move(prepared.journal);
-                    move_transaction.emplace<JournaledLocalMove>(
-                        journal_local_move(std::move(prepared))
-                    );
-                }
-                if (!safe_root.rename_no_replace(source, destination)) {
-                    if (discard_journal()) {
-                        move_transaction.emplace<PreparedLocalMove>();
-                    }
-                    block(
-                        "local_path_conflict",
-                        "remote move destination already exists: " +
-                            destination.string()
-                    );
-                    continue;
-                }
-                mark_installed();
-                safe_root.fsync_directory(source.parent_path());
-                if (source.parent_path() != destination.parent_path()) {
-                    safe_root.fsync_directory(destination.parent_path());
-                }
-                ++summary.moved;
-                console.message(
-                    cli::MessageKind::information,
-                    "local_item_moved",
-                    "Moved remotely renamed item from '" + source.string() +
-                        "' to '" + destination.string() + "'."
-                );
-            }
-
-            if (move.previous.directory && source != destination) {
-                completed_directory_moves.push_back({
-                    .source = source,
-                    .destination = destination,
-                });
-            }
-            if (!move.previous.directory) {
-                state.local_size = detail::persisted_file_size(
-                    std::filesystem::file_size(destination)
-                );
-                state.local_modified_ticks =
-                    detail::modified_ticks(destination);
-                if (remote_file_content_unchanged(
-                        move.item,
-                        move.previous,
-                        destination
-                    )) {
-                    summary.reusable_files.insert(move.item.id);
-                }
-            }
-            const auto identity = safe_root.identity(
-                destination,
-                detail::filesystem_item_kind(move.previous.directory)
-            );
-            state.local_device = identity.device;
-            state.local_inode = identity.inode;
-        } catch (const detail::CrossDeviceMoveError& error) {
-            static_cast<void>(discard_journal());
-            block("cross_device_move", error.what());
-        } catch (const detail::SafePathConflictError& error) {
-            static_cast<void>(discard_journal());
-            block("local_path_conflict", error.what());
-        } catch (const detail::LocalPathConflictError& error) {
-            static_cast<void>(discard_journal());
-            block("local_path_conflict", error.what());
+            execute_staging_action(action.move_index, context);
+        } else {
+            execute_install_action(action.move_index, context);
         }
     }
     return summary;

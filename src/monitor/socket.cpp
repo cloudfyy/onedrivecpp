@@ -421,6 +421,13 @@ private:
                 spdlog::warn("Notification WebSocket failed: {}", error.what());
                 publish(SocketEvent::disconnected);
             }
+        } catch (...) {
+            if (!stop_token.stop_requested()) {
+                spdlog::warn(
+                    "Notification WebSocket failed with an unknown error"
+                );
+                publish(SocketEvent::disconnected);
+            }
         }
     }
 

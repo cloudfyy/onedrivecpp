@@ -18,6 +18,7 @@
 #include <spdlog/spdlog.h>
 #include <stdexcept>
 #include <string>
+#include <cstdio>
 #include <sys/eventfd.h>
 #include <sys/inotify.h>
 #include <sys/signalfd.h>
@@ -44,10 +45,24 @@ detail::TerminationSignalMask::TerminationSignalMask() {
 }
 
 detail::TerminationSignalMask::~TerminationSignalMask() {
-    if (active_) {
-        static_cast<void>(
-            ::pthread_sigmask(SIG_SETMASK, &previous_, nullptr)
-        );
+    if (!active_) {
+        return;
+    }
+    const int result =
+        ::pthread_sigmask(SIG_SETMASK, &previous_, nullptr);
+    if (result != 0) {
+        try {
+            spdlog::error(
+                "Cannot restore monitor termination signal mask: {}",
+                std::strerror(result)
+            );
+        } catch (...) {
+            std::fprintf(
+                stderr,
+                "Cannot restore monitor termination signal mask: %s\n",
+                std::strerror(result)
+            );
+        }
     }
 }
 

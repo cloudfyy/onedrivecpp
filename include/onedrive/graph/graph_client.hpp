@@ -120,20 +120,25 @@ struct SiteInfo {
     std::vector<DriveInfo> drives;
 };
 
+enum class NotificationFailureKind {
+    transient,
+    unauthorized,
+};
+
 class NotificationChannelError final : public std::runtime_error {
 public:
     NotificationChannelError(
-        bool unauthorized, const std::string& message
+        NotificationFailureKind kind, const std::string& message
     )
         : std::runtime_error{message},
-          unauthorized_{unauthorized} {}
+          kind_{kind} {}
 
     [[nodiscard]] bool unauthorized() const noexcept {
-        return unauthorized_;
+        return kind_ == NotificationFailureKind::unauthorized;
     }
 
 private:
-    bool unauthorized_;
+    NotificationFailureKind kind_;
 };
 
 class DeltaCursorInvalidError final : public std::runtime_error {

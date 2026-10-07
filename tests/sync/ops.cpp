@@ -215,5 +215,11 @@ int main() {
     } catch (const std::invalid_argument&) {
     }
 
+    auto detached_lease = [] {
+        ItemOperationCoordinator temporary;
+        return temporary.acquire("drive", "detached-item");
+    }();
+    detached_lease = {};
+
     return EXIT_SUCCESS;
 }

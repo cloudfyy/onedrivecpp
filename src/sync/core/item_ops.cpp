@@ -47,10 +47,10 @@ std::size_t ItemOperationCoordinator::ItemKeyHash::operator()(
 }
 
 ItemOperationCoordinator::Lease::Lease(
-    ItemOperationCoordinator& coordinator,
+    std::shared_ptr<State> state,
     ItemKey key
 )
-    : coordinator_{&coordinator},
+    : state_{std::move(state)},
       key_{std::move(key)} {}
 
 ItemOperationCoordinator::Lease::~Lease() {
@@ -58,25 +58,25 @@ ItemOperationCoordinator::Lease::~Lease() {
 }
 
 ItemOperationCoordinator::Lease::Lease(Lease&& other) noexcept
-    : coordinator_{std::exchange(other.coordinator_, nullptr)},
+    : state_{std::move(other.state_)},
       key_{std::move(other.key_)} {}
 
 ItemOperationCoordinator::Lease&
 ItemOperationCoordinator::Lease::operator=(Lease&& other) noexcept {
     if (this != &other) {
         release();
-        coordinator_ = std::exchange(other.coordinator_, nullptr);
+        state_ = std::move(other.state_);
         key_ = std::move(other.key_);
     }
     return *this;
 }
 
 void ItemOperationCoordinator::Lease::release() noexcept {
-    if (coordinator_ == nullptr) {
+    if (!state_) {
         return;
     }
-    coordinator_->release(key_);
-    coordinator_ = nullptr;
+    ItemOperationCoordinator::release(state_, key_);
+    state_.reset();
 }
 
 ItemOperationCoordinator::Lease ItemOperationCoordinator::acquire(
@@ -95,17 +95,17 @@ ItemOperationCoordinator::Lease ItemOperationCoordinator::acquire(
         .remote_id = std::move(remote_id),
     };
     {
-        std::unique_lock lock{mutex_};
-        if (!condition_.wait(lock, stop_token, [&] {
-                return !active_.contains(key);
+        std::unique_lock lock{state_->mutex};
+        if (!state_->condition.wait(lock, stop_token, [&] {
+                return !state_->active.contains(key);
             })) {
             throw ItemOperationCancelledError{
                 "item operation coordination was cancelled"
             };
         }
-        active_.insert(key);
+        state_->active.insert(key);
     }
-    return Lease{*this, std::move(key)};
+    return Lease{state_, std::move(key)};
 }
 
 ItemOperationCoordinator::Lease
@@ -119,25 +119,28 @@ ItemOperationCoordinator::acquire_destination(
         .remote_id = {},
     };
     {
-        std::unique_lock lock{mutex_};
-        if (!condition_.wait(lock, stop_token, [&] {
-                return !active_.contains(key);
+        std::unique_lock lock{state_->mutex};
+        if (!state_->condition.wait(lock, stop_token, [&] {
+                return !state_->active.contains(key);
             })) {
             throw ItemOperationCancelledError{
                 "destination operation coordination was cancelled"
             };
         }
-        active_.insert(key);
+        state_->active.insert(key);
     }
-    return Lease{*this, std::move(key)};
+    return Lease{state_, std::move(key)};
 }
 
-void ItemOperationCoordinator::release(const ItemKey& key) noexcept {
+void ItemOperationCoordinator::release(
+    const std::shared_ptr<State>& state,
+    const ItemKey& key
+) noexcept {
     {
-        std::lock_guard lock{mutex_};
-        active_.erase(key);
+        std::lock_guard lock{state->mutex};
+        state->active.erase(key);
     }
-    condition_.notify_all();
+    state->condition.notify_all();
 }
 
 }  // namespace onedrive::sync::detail

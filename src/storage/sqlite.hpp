@@ -13,15 +13,11 @@
 namespace onedrive::storage::item_database_detail {
 
 struct SqliteCloser {
-    void operator()(sqlite3* handle) const noexcept {
-        sqlite3_close(handle);
-    }
+    void operator()(sqlite3* handle) const noexcept;
 };
 
 struct SqliteStatementFinalizer {
-    void operator()(sqlite3_stmt* statement) const noexcept {
-        sqlite3_finalize(statement);
-    }
+    void operator()(sqlite3_stmt* statement) const noexcept;
 };
 
 using SqliteHandle = std::unique_ptr<sqlite3, SqliteCloser>;
@@ -101,17 +97,7 @@ public:
         execute(database_.get(), "BEGIN IMMEDIATE;");
     }
 
-    ~Transaction() {
-        if (!committed_) {
-            sqlite3_exec(
-                database_.get(),
-                "ROLLBACK;",
-                nullptr,
-                nullptr,
-                nullptr
-            );
-        }
-    }
+    ~Transaction();
 
     Transaction(const Transaction&) = delete;
     Transaction& operator=(const Transaction&) = delete;

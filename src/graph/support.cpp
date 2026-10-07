@@ -419,7 +419,7 @@ std::string item_ctag(const Json& item) {
 RemoteItem parse_drive_item(
     const Json& json,
     std::string_view description,
-    bool validate_content,
+    ContentValidation validation,
     DriveItemKind kind
 ) {
     try {
@@ -437,7 +437,7 @@ RemoteItem parse_drive_item(
             .root = json.contains("root"),
             .malware = item_is_malware(json),
             .content_hash = item_content_hash(json),
-            .validate_content = validate_content,
+            .validate_content = validation == ContentValidation::strict,
         };
         item.remote_path = item_remote_path(json, item.name);
         if (const auto parent = json.find("parentReference");

@@ -37,8 +37,13 @@ void record_callback_failure(
 }
 
 std::string callback_failure_detail(const CallbackFailure& failure) {
-    if (!failure.detail.empty()) {
-        return std::string{failure.detail};
+    switch (failure.detail) {
+    case CallbackFailureDetail::upload_read_buffer_size_overflow:
+        return "upload read buffer size overflow";
+    case CallbackFailureDetail::download_status_inspection:
+        return "cannot inspect download response status";
+    case CallbackFailureDetail::none:
+        break;
     }
     if (!failure.exception) {
         return "unknown error";
@@ -79,7 +84,8 @@ std::size_t read_request_body(
         count > std::numeric_limits<std::size_t>::max() / size) {
         context.failure = {
             .kind = CallbackFailureKind::throttle,
-            .detail = "upload read buffer size overflow",
+            .detail =
+                CallbackFailureDetail::upload_read_buffer_size_overflow,
             .exception = {},
         };
         return CURL_READFUNC_ABORT;
@@ -174,7 +180,8 @@ std::size_t write_response(
                 ) != CURLE_OK) {
                 write_context.failure = {
                     .kind = CallbackFailureKind::data_callback,
-                    .detail = "cannot inspect download response status",
+                    .detail =
+                        CallbackFailureDetail::download_status_inspection,
                     .exception = {},
                 };
                 return 0;

@@ -49,6 +49,16 @@ constexpr mode_t private_directory_mode = S_IRWXU;
 constexpr mode_t private_file_mode = S_IRUSR | S_IWUSR;
 constexpr int database_busy_timeout_milliseconds = 5000;
 
+enum class DatabaseAccess {
+    read_only,
+    writable,
+};
+
+enum class FileCreation {
+    existing_only,
+    create_if_missing,
+};
+
 void require_sqlite_result(
     sqlite3* database, int result, std::string_view operation
 ) {
@@ -96,7 +106,10 @@ void configure_database_connection(sqlite3* database) {
     sqlite3_limit(database, SQLITE_LIMIT_VARIABLE_NUMBER, 128);
 }
 
-void activate_database_pragmas(sqlite3* database, bool writable) {
+void activate_database_pragmas(
+    sqlite3* database,
+    DatabaseAccess access
+) {
     execute(database, "PRAGMA trusted_schema = OFF;");
     execute(database, "PRAGMA foreign_keys = ON;");
     require_pragma_value(
@@ -105,7 +118,7 @@ void activate_database_pragmas(sqlite3* database, bool writable) {
     require_pragma_value(
         database, "PRAGMA foreign_keys;", "1", "foreign-key enforcement"
     );
-    if (!writable) {
+    if (access == DatabaseAccess::read_only) {
         execute(database, "PRAGMA query_only = ON;");
         require_pragma_value(
             database, "PRAGMA query_only;", "1", "read-only diagnostics"
@@ -153,7 +166,11 @@ void secure_directory(
     }
 }
 
-void secure_database_file(const std::filesystem::path& path, bool create) {
+void secure_database_file(
+    const std::filesystem::path& path,
+    FileCreation creation
+) {
+    const bool create = creation == FileCreation::create_if_missing;
     const int flags = O_RDWR | (create ? O_CREAT : 0);
     onedrive::util::UniqueFD descriptor;
     try {
@@ -255,7 +272,9 @@ diagnose_state_databases(const std::filesystem::path& state_directory) {
 
         try {
             configure_database_connection(database.get());
-            activate_database_pragmas(database.get(), false);
+            activate_database_pragmas(
+                database.get(), DatabaseAccess::read_only
+            );
             result.detail = full_integrity_result(database.get());
             if (result.detail == "ok") {
                 verify_current_schema(database.get());
@@ -304,9 +323,13 @@ void ItemDatabase::open_on_worker(CorruptionRecovery recovery) {
 
     sqlite3* database = nullptr;
     const auto database_path = state_directory_ / "items.sqlite3";
-    secure_database_file(database_path, true);
-    secure_database_file(database_path.string() + "-wal", false);
-    secure_database_file(database_path.string() + "-shm", false);
+    secure_database_file(database_path, FileCreation::create_if_missing);
+    secure_database_file(
+        database_path.string() + "-wal", FileCreation::existing_only
+    );
+    secure_database_file(
+        database_path.string() + "-shm", FileCreation::existing_only
+    );
     const int result = sqlite3_open_v2(
         database_path.string().c_str(),
         &database,
@@ -328,14 +351,18 @@ void ItemDatabase::open_on_worker(CorruptionRecovery recovery) {
     try {
         configure_database_connection(database);
         verify_database_integrity(database);
-        activate_database_pragmas(database, true);
+        activate_database_pragmas(database, DatabaseAccess::writable);
         configure_writable_database(database);
         migrate_schema(database);
         verify_database_integrity(database);
         verify_current_schema(database);
-        secure_database_file(database_path, false);
-        secure_database_file(database_path.string() + "-wal", false);
-        secure_database_file(database_path.string() + "-shm", false);
+        secure_database_file(database_path, FileCreation::existing_only);
+        secure_database_file(
+            database_path.string() + "-wal", FileCreation::existing_only
+        );
+        secure_database_file(
+            database_path.string() + "-shm", FileCreation::existing_only
+        );
     } catch (const DatabaseCorruption& error) {
         impl_->database.reset();
         if (recovery == CorruptionRecovery::fail) {
