@@ -36,6 +36,7 @@ enum class TuiTheme {
 };
 
 enum class TuiView {
+    auth,
     sync,
     download,
     monitor,

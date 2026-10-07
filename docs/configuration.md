@@ -50,7 +50,7 @@ The following example shows every major configuration group:
 
 ```toml
 [console]
-# "auto", "console", or "tui"; applies to sync, download, and monitor.
+# "auto", "console", or "tui"; applies to auth, sync, download, and monitor.
 ui = "auto"
 # "hacker", "ocean", "amber", or "synthwave"; overridden by --theme.
 theme = "hacker"

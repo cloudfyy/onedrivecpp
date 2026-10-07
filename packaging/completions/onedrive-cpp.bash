@@ -65,6 +65,10 @@ _onedrive_cpp_completion()
         --help
     "
     case "$command" in
+        auth)
+            mapfile -t COMPREPLY < <(compgen -W \
+                "$common_options --ui --theme" -- "$current")
+            ;;
         download)
             mapfile -t COMPREPLY < <(compgen -W \
                 "$common_options --ui --theme --dry-run" -- "$current")
@@ -81,7 +85,7 @@ _onedrive_cpp_completion()
             mapfile -t COMPREPLY < <(compgen -W \
                 "$common_options --clear-all --yes" -- "$current")
             ;;
-        auth|logout|doctor|drives|shared|sites|quota|status)
+        logout|doctor|drives|shared|sites|quota|status)
             mapfile -t COMPREPLY < <(
                 compgen -W "$common_options" -- "$current"
             )

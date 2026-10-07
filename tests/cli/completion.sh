@@ -41,6 +41,12 @@ assert_contains --force-large-delete "${COMPREPLY[@]}"
 assert_contains --output "${COMPREPLY[@]}"
 assert_contains --quiet "${COMPREPLY[@]}"
 
+COMP_WORDS=(onedrive-cpp auth --)
+COMP_CWORD=2
+_onedrive_cpp_completion
+assert_contains --ui "${COMPREPLY[@]}"
+assert_contains --theme "${COMPREPLY[@]}"
+
 COMP_WORDS=(onedrive-cpp download --)
 COMP_CWORD=2
 _onedrive_cpp_completion

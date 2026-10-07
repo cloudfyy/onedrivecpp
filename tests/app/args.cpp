@@ -37,6 +37,13 @@ int test_args() {
         !sync_help.standard_output.contains("--theme")) {
         return fail("sync help did not document sync-specific options");
     }
+    const auto auth_help =
+        run_application(runtime_factory, {"onedrive-cpp", "auth", "--help"});
+    if (auth_help.exit_code != 0 ||
+        !auth_help.standard_output.contains("--ui") ||
+        !auth_help.standard_output.contains("--theme")) {
+        return fail("auth help did not document TUI options");
+    }
     const auto monitor_help = run_application(
         runtime_factory, {"onedrive-cpp", "monitor", "--help"}
     );

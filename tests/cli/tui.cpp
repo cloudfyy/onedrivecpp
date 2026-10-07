@@ -176,6 +176,29 @@ int test_tui_dashboard() {
         return fail("download TUI did not render its command title");
     }
 
+    std::ostringstream auth_output;
+    auto auth_backend = detail::make_ftxui_console_backend(
+        {
+            .color = ColorMode::never,
+            .ui = UiMode::tui,
+            .view = TuiView::auth,
+        },
+        auth_output,
+        error,
+        80,
+        20
+    );
+    auth_backend->emit(MessageEvent{
+        .kind = MessageKind::information,
+        .event = "authorization_wait",
+        .text = "Waiting for authorization...",
+    });
+    auth_backend.reset();
+    if (!auth_output.str().contains("ONEDRIVE // AUTH  v") ||
+        !auth_output.str().contains("Waiting for authorization...")) {
+        return fail("auth TUI did not render authorization status");
+    }
+
     std::ostringstream unstyled_output;
     auto unstyled_backend = detail::make_ftxui_console_backend(
         {

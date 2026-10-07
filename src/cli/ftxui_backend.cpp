@@ -286,10 +286,19 @@ private:
     void update(const EndDownloadProgressEvent&) {}
 
     Element header() const {
-        const auto view_name =
-            view_ == TuiView::monitor ?
-                "MONITOR" :
-                view_ == TuiView::download ? "DOWNLOAD" : "SYNC";
+        const auto view_name = [&] {
+            switch (view_) {
+                case TuiView::auth:
+                    return "AUTH";
+                case TuiView::download:
+                    return "DOWNLOAD";
+                case TuiView::monitor:
+                    return "MONITOR";
+                case TuiView::sync:
+                    return "SYNC";
+            }
+            return "SYNC";
+        }();
         return hbox({
             with_color(
                 emphasized(text(fmt::format(
