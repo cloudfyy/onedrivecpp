@@ -1,3 +1,25 @@
+onedrive-cpp (0.10.0-1~ubuntu24.04) noble; urgency=medium
+
+  * Add themed full-screen terminal dashboards for synchronization, downloads,
+    authentication, diagnostics, status, and Monitor, including persistent
+    progress, transfer rates, ETA, and resumed-file counts.
+  * Add download-only and upload-only synchronization capabilities, selective
+    synchronization policies, shared-resource discovery, quota reporting, and
+    read-only state diagnostics.
+  * Preserve interrupted downloads with durable checkpoints and safely clean
+    partial-download state and temporary files after remote deletion.
+  * Split state maintenance into explicit reset-cursor and clear commands,
+    centralize operation capabilities, and align Monitor preflight validation
+    with synchronization.
+  * Capture Monitor exit keys during initial synchronization and wrap long TUI
+    activity messages so device authentication codes remain visible.
+  * Harden file logging and Graph error, pagination, progress, console-event,
+    Drive-field, test-response, and modern C++ implementation boundaries.
+  * Reorganize and expand the English and Chinese user, configuration,
+    synchronization, architecture, and development documentation.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Wed, 07 Oct 2026 06:44:09 +0000
+
 onedrive-cpp (0.8.7-1~ubuntu24.04) noble; urgency=medium
 
   * Add Monitor controls for disabling WebSocket notifications and tuning
