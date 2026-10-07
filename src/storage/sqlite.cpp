@@ -78,11 +78,11 @@ Transaction::~Transaction() {
     }
 }
 
-void execute(sqlite3* database, const char* sql) {
+void execute(Database database, Sql sql) {
     char* raw_error_message = nullptr;
     const int result =
         sqlite3_exec(
-            database,
+            database.get(),
             sql,
             nullptr,
             nullptr,
@@ -95,19 +95,19 @@ void execute(sqlite3* database, const char* sql) {
 
     const std::string message =
         error_message == nullptr ?
-            sqlite3_errmsg(database) :
+            sqlite3_errmsg(database.get()) :
             error_message.get();
     throw std::runtime_error("SQLite operation failed: " + message);
 }
 
 void bind_text(
-    sqlite3* database,
-    sqlite3_stmt* statement,
+    Database database,
+    PreparedStatement statement,
     int index,
     std::string_view value
 ) {
     const int result = sqlite3_bind_text64(
-        statement,
+        statement.get(),
         index,
         value.data(),
         static_cast<sqlite3_uint64>(value.size()),
@@ -116,35 +116,37 @@ void bind_text(
     );
     if (result != SQLITE_OK) {
         throw std::runtime_error(
-            "cannot bind SQLite value: " + std::string{sqlite3_errmsg(database)}
+            "cannot bind SQLite value: " +
+            std::string{sqlite3_errmsg(database.get())}
         );
     }
 }
 
 void bind_integer(
-    sqlite3* database,
-    sqlite3_stmt* statement,
+    Database database,
+    PreparedStatement statement,
     int index,
     std::int64_t value
 ) {
-    if (sqlite3_bind_int64(statement, index, value) != SQLITE_OK) {
+    if (sqlite3_bind_int64(statement.get(), index, value) != SQLITE_OK) {
         throw std::runtime_error(
-            "cannot bind SQLite integer: " + std::string{sqlite3_errmsg(database)}
+            "cannot bind SQLite integer: " +
+            std::string{sqlite3_errmsg(database.get())}
         );
     }
 }
 
 void bind_blob(
-    sqlite3* database,
-    sqlite3_stmt* statement,
+    Database database,
+    PreparedStatement statement,
     int index,
     const std::vector<std::uint8_t>& value
 ) {
     const int result =
         value.empty() ?
-            sqlite3_bind_zeroblob64(statement, index, 0) :
+            sqlite3_bind_zeroblob64(statement.get(), index, 0) :
             sqlite3_bind_blob64(
-                statement,
+                statement.get(),
                 index,
                 value.data(),
                 static_cast<sqlite3_uint64>(value.size()),
@@ -152,20 +154,21 @@ void bind_blob(
             );
     if (result != SQLITE_OK) {
         throw std::runtime_error(
-            "cannot bind SQLite blob: " + std::string{sqlite3_errmsg(database)}
+            "cannot bind SQLite blob: " +
+            std::string{sqlite3_errmsg(database.get())}
         );
     }
 }
 
-std::string column_text(sqlite3_stmt* statement, int column) {
-    const auto* value = sqlite3_column_text(statement, column);
+std::string column_text(PreparedStatement statement, int column) {
+    const auto* value = sqlite3_column_text(statement.get(), column);
     return value == nullptr ? std::string{} :
                               std::string{reinterpret_cast<const char*>(value)};
 }
 
 void require_pragma_value(
-    sqlite3* database,
-    const char* sql,
+    Database database,
+    Sql sql,
     std::string_view expected,
     std::string_view description
 ) {

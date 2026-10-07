@@ -22,12 +22,15 @@ struct SqliteStatementFinalizer {
 
 using SqliteHandle = std::unique_ptr<sqlite3, SqliteCloser>;
 using SqliteStatement = std::unique_ptr<sqlite3_stmt, SqliteStatementFinalizer>;
+using Database = gsl::not_null<sqlite3*>;
+using PreparedStatement = gsl::not_null<sqlite3_stmt*>;
+using Sql = gsl::not_null<const char*>;
 
-void execute(sqlite3* database, const char* sql);
+void execute(Database database, Sql sql);
 
 class Statement {
 public:
-    Statement(gsl::not_null<sqlite3*> database, const char* sql)
+    Statement(Database database, Sql sql)
         : database_{database} {
         sqlite3_stmt* statement = nullptr;
         const int result =
@@ -46,8 +49,8 @@ public:
     Statement(Statement&&) = delete;
     Statement& operator=(Statement&&) = delete;
 
-    [[nodiscard]] sqlite3_stmt* get() const noexcept {
-        return statement_.get();
+    [[nodiscard]] PreparedStatement get() const noexcept {
+        return PreparedStatement{statement_.get()};
     }
 
     [[nodiscard]] int step() noexcept {
@@ -92,36 +95,42 @@ private:
         );
     }
 
-    gsl::not_null<sqlite3*> database_;
+    Database database_;
     SqliteStatement statement_;
 };
 
 void bind_text(
-    sqlite3* database,
-    sqlite3_stmt* statement,
+    Database database,
+    PreparedStatement statement,
     int index,
     std::string_view value
 );
 void bind_integer(
-    sqlite3* database, sqlite3_stmt* statement, int index, std::int64_t value
+    Database database,
+    PreparedStatement statement,
+    int index,
+    std::int64_t value
 );
 void bind_blob(
-    sqlite3* database,
-    sqlite3_stmt* statement,
+    Database database,
+    PreparedStatement statement,
     int index,
     const std::vector<std::uint8_t>& value
 );
-[[nodiscard]] std::string column_text(sqlite3_stmt* statement, int column);
+[[nodiscard]] std::string column_text(
+    PreparedStatement statement,
+    int column
+);
 void require_pragma_value(
-    sqlite3* database,
-    const char* sql,
+    Database database,
+    Sql sql,
     std::string_view expected,
     std::string_view description
 );
 
 class Transaction {
 public:
-    explicit Transaction(gsl::not_null<sqlite3*> database)
+    explicit Transaction(Database database)
         : database_{database} {
         execute(database_.get(), "BEGIN IMMEDIATE;");
     }
@@ -139,7 +148,7 @@ public:
     }
 
 private:
-    gsl::not_null<sqlite3*> database_;
+    Database database_;
     bool committed_{false};
 };
 

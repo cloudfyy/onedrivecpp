@@ -15,8 +15,8 @@
 namespace onedrive::storage::item_database_detail {
 
 inline std::size_t query_count(
-    sqlite3* database,
-    const char* sql,
+    Database database,
+    Sql sql,
     std::optional<std::string_view> value = std::nullopt
 ) {
     Statement statement{database, sql};
