@@ -468,12 +468,7 @@ void ItemDatabase::open_on_worker(CorruptionRecovery recovery) {
     bind_text(database, identity_upsert.get(), 4, identity_.drive_name);
     bind_text(database, identity_upsert.get(), 5, avatar_content_type);
     bind_blob(database, identity_upsert.get(), 6, avatar_bytes);
-    if (sqlite3_step(identity_upsert.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot update state database identity: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    identity_upsert.step_done("cannot update state database identity");
     Statement mapping_upsert{
         database,
         "INSERT INTO drive_mapping ("
@@ -490,12 +485,7 @@ void ItemDatabase::open_on_worker(CorruptionRecovery recovery) {
         identity_.configured_drive_id
     );
     bind_text(database, mapping_upsert.get(), 2, identity_.drive_id);
-    if (sqlite3_step(mapping_upsert.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot update configured Drive ID mapping: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    mapping_upsert.step_done("cannot update configured Drive ID mapping");
 
     const auto item_count =
         query_count(database, "SELECT COUNT(*) FROM item;");

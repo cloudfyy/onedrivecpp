@@ -82,15 +82,9 @@ StateSummary read_state_summary(
         "WHERE drive_id = ?1;"
     };
     bind_text(database.get(), statement.get(), 1, drive_id);
-    const int step = sqlite3_step(statement.get());
-    if (step == SQLITE_ROW) {
+    if (statement.next("cannot read synchronization drive state")) {
         summary.delta_cursor = !column_text(statement.get(), 0).empty();
         summary.sync_filter_fingerprint = column_text(statement.get(), 1);
-    } else if (step != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot read synchronization drive state: " +
-            std::string{sqlite3_errmsg(database.get())}
-        );
     }
     return summary;
 }

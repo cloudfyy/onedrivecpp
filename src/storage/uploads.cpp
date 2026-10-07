@@ -14,11 +14,11 @@
 
 namespace onedrive::storage {
 
-using item_database_detail::Statement;
-using item_database_detail::Transaction;
 using item_database_detail::bind_integer;
 using item_database_detail::bind_text;
 using item_database_detail::column_text;
+using item_database_detail::Statement;
+using item_database_detail::Transaction;
 
 void ItemDatabase::save_pending_upload(PendingUpload upload) {
     impl_->invoke([this, upload = std::move(upload)] {
@@ -26,9 +26,7 @@ void ItemDatabase::save_pending_upload(PendingUpload upload) {
     });
 }
 
-void ItemDatabase::save_pending_upload_on_worker(
-    const PendingUpload& upload
-) {
+void ItemDatabase::save_pending_upload_on_worker(const PendingUpload& upload) {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
         throw std::runtime_error("state database is not open");
@@ -39,19 +37,14 @@ void ItemDatabase::save_pending_upload_on_worker(
         has_failure != (upload.failure_attempt_count != 0);
     const bool invalid_directory =
         upload.directory &&
-        (!upload.snapshot_path.empty() ||
-         !upload.content_fingerprint.empty() ||
-         upload.local_size != 0 ||
-         upload.remote_id ||
-         !upload.expected_etag.empty() ||
-         !upload.upload_url.empty() ||
-         !upload.upload_expiration.empty() ||
-         upload.completed_bytes != 0);
+        (!upload.snapshot_path.empty() || !upload.content_fingerprint.empty() ||
+         upload.local_size != 0 || upload.remote_id ||
+         !upload.expected_etag.empty() || !upload.upload_url.empty() ||
+         !upload.upload_expiration.empty() || upload.completed_bytes != 0);
     const bool invalid_file =
         !upload.directory &&
         ((!has_failure && upload.snapshot_path.empty()) ||
-         (upload.snapshot_path.empty() !=
-              upload.content_fingerprint.empty()) ||
+         (upload.snapshot_path.empty() != upload.content_fingerprint.empty()) ||
          upload.local_size < 0 ||
          upload.remote_id.has_value() != !upload.expected_etag.empty() ||
          upload.completed_bytes >
@@ -59,8 +52,8 @@ void ItemDatabase::save_pending_upload_on_worker(
          (upload.upload_url.empty() != upload.upload_expiration.empty()) ||
          (upload.upload_url.empty() && upload.completed_bytes != 0));
     if (upload.drive_id.empty() || upload.remote_path.empty() ||
-        upload.local_path.empty() || invalid_failure ||
-        invalid_directory || invalid_file) {
+        upload.local_path.empty() || invalid_failure || invalid_directory ||
+        invalid_file) {
         throw std::invalid_argument("pending upload contains invalid metadata");
     }
     Statement statement{
@@ -95,12 +88,7 @@ void ItemDatabase::save_pending_upload_on_worker(
     bind_text(database, statement.get(), 5, upload.content_fingerprint);
     bind_integer(database, statement.get(), 6, upload.local_size);
     bind_integer(database, statement.get(), 7, upload.local_modified_ticks);
-    bind_text(
-        database,
-        statement.get(),
-        8,
-        upload.remote_id.value_or("")
-    );
+    bind_text(database, statement.get(), 8, upload.remote_id.value_or(""));
     bind_text(database, statement.get(), 9, upload.expected_etag);
     bind_text(database, statement.get(), 10, upload.upload_url);
     bind_text(database, statement.get(), 11, upload.upload_expiration);
@@ -118,23 +106,12 @@ void ItemDatabase::save_pending_upload_on_worker(
         15,
         static_cast<std::int64_t>(upload.failure_attempt_count)
     );
-    bind_integer(
-        database,
-        statement.get(),
-        16,
-        upload.directory ? 1 : 0
-    );
-    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot persist pending upload: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    bind_integer(database, statement.get(), 16, upload.directory ? 1 : 0);
+    statement.step_done("cannot persist pending upload");
 }
 
 void ItemDatabase::remove_pending_upload(
-    const std::string& drive_id,
-    const std::string& remote_path
+    const std::string& drive_id, const std::string& remote_path
 ) {
     impl_->invoke([this, drive_id, remote_path] {
         remove_pending_upload_on_worker(drive_id, remote_path);
@@ -142,8 +119,7 @@ void ItemDatabase::remove_pending_upload(
 }
 
 void ItemDatabase::remove_pending_upload_on_worker(
-    const std::string& drive_id,
-    const std::string& remote_path
+    const std::string& drive_id, const std::string& remote_path
 ) {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
@@ -160,25 +136,18 @@ void ItemDatabase::remove_pending_upload_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     bind_text(database, statement.get(), 2, remote_path);
-    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot remove pending upload: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    statement.step_done("cannot remove pending upload");
 }
 
-std::vector<PendingUpload> ItemDatabase::pending_uploads(
-    const std::string& drive_id
-) const {
+std::vector<PendingUpload>
+ItemDatabase::pending_uploads(const std::string& drive_id) const {
     return impl_->invoke([this, drive_id] {
         return pending_uploads_on_worker(drive_id);
     });
 }
 
-std::vector<PendingUpload> ItemDatabase::pending_uploads_on_worker(
-    const std::string& drive_id
-) const {
+std::vector<PendingUpload>
+ItemDatabase::pending_uploads_on_worker(const std::string& drive_id) const {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
         throw std::runtime_error("state database is not open");
@@ -194,17 +163,7 @@ std::vector<PendingUpload> ItemDatabase::pending_uploads_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     std::vector<PendingUpload> uploads;
-    while (true) {
-        const int result = sqlite3_step(statement.get());
-        if (result == SQLITE_DONE) {
-            break;
-        }
-        if (result != SQLITE_ROW) {
-            throw std::runtime_error(
-                "cannot read pending uploads: " +
-                std::string{sqlite3_errmsg(database)}
-            );
-        }
+    while (statement.next("cannot read pending uploads")) {
         auto remote_id = column_text(statement.get(), 7);
         uploads.push_back({
             .drive_id = column_text(statement.get(), 0),
@@ -214,9 +173,9 @@ std::vector<PendingUpload> ItemDatabase::pending_uploads_on_worker(
             .content_fingerprint = column_text(statement.get(), 4),
             .local_size = sqlite3_column_int64(statement.get(), 5),
             .local_modified_ticks = sqlite3_column_int64(statement.get(), 6),
-            .remote_id = remote_id.empty() ?
-                std::nullopt :
-                std::optional{std::move(remote_id)},
+            .remote_id = remote_id.empty()
+                             ? std::nullopt
+                             : std::optional{std::move(remote_id)},
             .expected_etag = column_text(statement.get(), 8),
             .upload_url = column_text(statement.get(), 9),
             .upload_expiration = column_text(statement.get(), 10),
@@ -234,18 +193,14 @@ std::vector<PendingUpload> ItemDatabase::pending_uploads_on_worker(
     return uploads;
 }
 
-void ItemDatabase::commit_upload(
-    const PendingUpload& upload,
-    ItemState item
-) {
+void ItemDatabase::commit_upload(const PendingUpload& upload, ItemState item) {
     impl_->invoke([this, upload, item = std::move(item)] {
         commit_upload_on_worker(upload, item);
     });
 }
 
 void ItemDatabase::commit_upload_on_worker(
-    const PendingUpload& upload,
-    const ItemState& item
+    const PendingUpload& upload, const ItemState& item
 ) {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
@@ -265,8 +220,8 @@ void ItemDatabase::commit_upload_on_worker(
     };
     bind_text(database, statement.get(), 1, upload.drive_id);
     bind_text(database, statement.get(), 2, upload.remote_path);
-    if (sqlite3_step(statement.get()) != SQLITE_DONE ||
-        sqlite3_changes(database) != 1) {
+    statement.step_done("cannot complete pending upload journal");
+    if (sqlite3_changes(database) != 1) {
         throw std::runtime_error(
             "cannot complete pending upload journal: " +
             std::string{sqlite3_errmsg(database)}
@@ -275,4 +230,4 @@ void ItemDatabase::commit_upload_on_worker(
     transaction.commit();
 }
 
-}  // namespace onedrive::storage
+} // namespace onedrive::storage

@@ -21,8 +21,7 @@ struct SqliteStatementFinalizer {
 };
 
 using SqliteHandle = std::unique_ptr<sqlite3, SqliteCloser>;
-using SqliteStatement =
-    std::unique_ptr<sqlite3_stmt, SqliteStatementFinalizer>;
+using SqliteStatement = std::unique_ptr<sqlite3_stmt, SqliteStatementFinalizer>;
 
 void execute(sqlite3* database, const char* sql);
 
@@ -31,13 +30,8 @@ public:
     Statement(gsl::not_null<sqlite3*> database, const char* sql)
         : database_{database} {
         sqlite3_stmt* statement = nullptr;
-        const int result = sqlite3_prepare_v2(
-            database_.get(),
-            sql,
-            -1,
-            &statement,
-            nullptr
-        );
+        const int result =
+            sqlite3_prepare_v2(database_.get(), sql, -1, &statement, nullptr);
         statement_.reset(statement);
         if (result != SQLITE_OK) {
             throw std::runtime_error(
@@ -56,7 +50,48 @@ public:
         return statement_.get();
     }
 
+    [[nodiscard]] int step() noexcept {
+        return sqlite3_step(statement_.get());
+    }
+
+    [[nodiscard]] bool next(std::string_view operation) {
+        const int result = step();
+        if (result == SQLITE_ROW) {
+            return true;
+        }
+        if (result == SQLITE_DONE) {
+            return false;
+        }
+        throw_error(operation);
+    }
+
+    void step_done(std::string_view operation) {
+        if (step() != SQLITE_DONE) {
+            throw_error(operation);
+        }
+    }
+
+    void step_row(std::string_view operation) {
+        if (step() != SQLITE_ROW) {
+            throw_error(operation);
+        }
+    }
+
+    void reset_for_reuse() {
+        const int reset_result = sqlite3_reset(statement_.get());
+        const int clear_result = sqlite3_clear_bindings(statement_.get());
+        if (reset_result != SQLITE_OK || clear_result != SQLITE_OK) {
+            throw_error("cannot reset SQLite statement for reuse");
+        }
+    }
+
 private:
+    [[noreturn]] void throw_error(std::string_view operation) const {
+        throw std::runtime_error(
+            std::string{operation} + ": " + sqlite3_errmsg(database_.get())
+        );
+    }
+
     gsl::not_null<sqlite3*> database_;
     SqliteStatement statement_;
 };
@@ -68,10 +103,7 @@ void bind_text(
     std::string_view value
 );
 void bind_integer(
-    sqlite3* database,
-    sqlite3_stmt* statement,
-    int index,
-    std::int64_t value
+    sqlite3* database, sqlite3_stmt* statement, int index, std::int64_t value
 );
 void bind_blob(
     sqlite3* database,
@@ -79,10 +111,7 @@ void bind_blob(
     int index,
     const std::vector<std::uint8_t>& value
 );
-[[nodiscard]] std::string column_text(
-    sqlite3_stmt* statement,
-    int column
-);
+[[nodiscard]] std::string column_text(sqlite3_stmt* statement, int column);
 void require_pragma_value(
     sqlite3* database,
     const char* sql,
@@ -114,4 +143,4 @@ private:
     bool committed_{false};
 };
 
-}  // namespace onedrive::storage::item_database_detail
+} // namespace onedrive::storage::item_database_detail

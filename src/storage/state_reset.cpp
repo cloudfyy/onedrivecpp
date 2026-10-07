@@ -13,17 +13,16 @@
 
 namespace onedrive::storage {
 
-using item_database_detail::Statement;
-using item_database_detail::Transaction;
 using item_database_detail::bind_integer;
 using item_database_detail::bind_text;
 using item_database_detail::column_text;
 using item_database_detail::query_count;
+using item_database_detail::Statement;
+using item_database_detail::Transaction;
 
 bool ItemDatabase::reset(const std::string& drive_id) {
-    return impl_->invoke([this, drive_id] {
-        return reset_on_worker(drive_id);
-    });
+    return impl_->invoke([this, drive_id] { return reset_on_worker(drive_id); }
+    );
 }
 
 bool ItemDatabase::reset_on_worker(const std::string& drive_id) {
@@ -39,23 +38,15 @@ bool ItemDatabase::reset_on_worker(const std::string& drive_id) {
 
     Transaction transaction{database};
     Statement state_statement{
-        database,
-        "DELETE FROM drive_state WHERE drive_id = ?1;"
+        database, "DELETE FROM drive_state WHERE drive_id = ?1;"
     };
     bind_text(database, state_statement.get(), 1, drive_id);
-    if (sqlite3_step(state_statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot reset drive delta link: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    state_statement.step_done("cannot reset drive delta link");
     const bool had_delta_link = sqlite3_changes(database) != 0;
     transaction.commit();
 
     const auto retained_items = query_count(
-        database,
-        "SELECT COUNT(*) FROM item WHERE drive_id = ?1;",
-        drive_id
+        database, "SELECT COUNT(*) FROM item WHERE drive_id = ?1;", drive_id
     );
     spdlog::debug(
         "Reset synchronization cursor for drive '{}': saved cursor {}, "
@@ -68,9 +59,8 @@ bool ItemDatabase::reset_on_worker(const std::string& drive_id) {
 }
 
 ClearedState ItemDatabase::clear(const std::string& drive_id) {
-    return impl_->invoke([this, drive_id] {
-        return clear_on_worker(drive_id);
-    });
+    return impl_->invoke([this, drive_id] { return clear_on_worker(drive_id); }
+    );
 }
 
 ClearedState ItemDatabase::clear_on_worker(const std::string& drive_id) {
@@ -86,143 +76,79 @@ ClearedState ItemDatabase::clear_on_worker(const std::string& drive_id) {
 
     ClearedState cleared;
     Transaction transaction{database};
-    Statement item_statement{
-        database,
-        "DELETE FROM item WHERE drive_id = ?1;"
-    };
+    Statement item_statement{database, "DELETE FROM item WHERE drive_id = ?1;"};
     bind_text(database, item_statement.get(), 1, drive_id);
-    if (sqlite3_step(item_statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot clear drive items: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    item_statement.step_done("cannot clear drive items");
     cleared.items = static_cast<std::size_t>(sqlite3_changes(database));
 
     Statement state_statement{
-        database,
-        "DELETE FROM drive_state WHERE drive_id = ?1;"
+        database, "DELETE FROM drive_state WHERE drive_id = ?1;"
     };
     bind_text(database, state_statement.get(), 1, drive_id);
-    if (sqlite3_step(state_statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot clear drive delta link: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    state_statement.step_done("cannot clear drive delta link");
     cleared.delta_link = sqlite3_changes(database) != 0;
 
     Statement pending_statement{
-        database,
-        "DELETE FROM pending_download WHERE drive_id = ?1;"
+        database, "DELETE FROM pending_download WHERE drive_id = ?1;"
     };
     bind_text(database, pending_statement.get(), 1, drive_id);
-    if (sqlite3_step(pending_statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot clear pending downloads: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    pending_statement.step_done("cannot clear pending downloads");
     cleared.pending_downloads =
         static_cast<std::size_t>(sqlite3_changes(database));
 
     Statement partial_statement{
-        database,
-        "DELETE FROM partial_download WHERE drive_id = ?1;"
+        database, "DELETE FROM partial_download WHERE drive_id = ?1;"
     };
     bind_text(database, partial_statement.get(), 1, drive_id);
-    if (sqlite3_step(partial_statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot clear partial downloads: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    partial_statement.step_done("cannot clear partial downloads");
     cleared.partial_downloads =
         static_cast<std::size_t>(sqlite3_changes(database));
 
     Statement upload_statement{
-        database,
-        "DELETE FROM pending_upload WHERE drive_id = ?1;"
+        database, "DELETE FROM pending_upload WHERE drive_id = ?1;"
     };
     bind_text(database, upload_statement.get(), 1, drive_id);
-    if (sqlite3_step(upload_statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot clear pending uploads: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    upload_statement.step_done("cannot clear pending uploads");
     cleared.pending_uploads =
         static_cast<std::size_t>(sqlite3_changes(database));
 
     Statement delete_statement{
-        database,
-        "DELETE FROM pending_delete WHERE drive_id = ?1;"
+        database, "DELETE FROM pending_delete WHERE drive_id = ?1;"
     };
     bind_text(database, delete_statement.get(), 1, drive_id);
-    if (sqlite3_step(delete_statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot clear pending deletions: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    delete_statement.step_done("cannot clear pending deletions");
     cleared.pending_deletes =
         static_cast<std::size_t>(sqlite3_changes(database));
 
     Statement remote_move_statement{
-        database,
-        "DELETE FROM pending_remote_move WHERE drive_id = ?1;"
+        database, "DELETE FROM pending_remote_move WHERE drive_id = ?1;"
     };
     bind_text(database, remote_move_statement.get(), 1, drive_id);
-    if (sqlite3_step(remote_move_statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot clear pending remote moves: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    remote_move_statement.step_done("cannot clear pending remote moves");
     cleared.pending_remote_moves =
         static_cast<std::size_t>(sqlite3_changes(database));
 
     Statement move_statement{
-        database,
-        "DELETE FROM pending_move WHERE drive_id = ?1;"
+        database, "DELETE FROM pending_move WHERE drive_id = ?1;"
     };
     bind_text(database, move_statement.get(), 1, drive_id);
-    if (sqlite3_step(move_statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot clear pending moves: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
-    cleared.pending_moves =
-        static_cast<std::size_t>(sqlite3_changes(database));
+    move_statement.step_done("cannot clear pending moves");
+    cleared.pending_moves = static_cast<std::size_t>(sqlite3_changes(database));
 
     Statement suppression_statement{
-        database,
-        "DELETE FROM upload_suppression WHERE drive_id = ?1;"
+        database, "DELETE FROM upload_suppression WHERE drive_id = ?1;"
     };
     bind_text(database, suppression_statement.get(), 1, drive_id);
-    if (sqlite3_step(suppression_statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot clear upload suppressions: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    suppression_statement.step_done("cannot clear upload suppressions");
     cleared.upload_suppressions =
         static_cast<std::size_t>(sqlite3_changes(database));
 
     Statement blocked_statement{
-        database,
-        "DELETE FROM blocked_item WHERE drive_id = ?1;"
+        database, "DELETE FROM blocked_item WHERE drive_id = ?1;"
     };
     bind_text(database, blocked_statement.get(), 1, drive_id);
-    if (sqlite3_step(blocked_statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot clear blocked items: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
-    cleared.blocked_items =
-        static_cast<std::size_t>(sqlite3_changes(database));
+    blocked_statement.step_done("cannot clear blocked items");
+    cleared.blocked_items = static_cast<std::size_t>(sqlite3_changes(database));
     transaction.commit();
 
     spdlog::warn(
@@ -246,4 +172,4 @@ ClearedState ItemDatabase::clear_on_worker(const std::string& drive_id) {
     return cleared;
 }
 
-}  // namespace onedrive::storage
+} // namespace onedrive::storage

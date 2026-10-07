@@ -15,11 +15,11 @@
 
 namespace onedrive::storage {
 
-using item_database_detail::Statement;
-using item_database_detail::Transaction;
 using item_database_detail::bind_integer;
 using item_database_detail::bind_text;
 using item_database_detail::column_text;
+using item_database_detail::Statement;
+using item_database_detail::Transaction;
 
 void ItemDatabase::save_pending_move(PendingMove move) {
     impl_->invoke([this, move = std::move(move)] {
@@ -27,9 +27,7 @@ void ItemDatabase::save_pending_move(PendingMove move) {
     });
 }
 
-void ItemDatabase::save_pending_move_on_worker(
-    const PendingMove& move
-) {
+void ItemDatabase::save_pending_move_on_worker(const PendingMove& move) {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
         throw std::runtime_error("state database is not open");
@@ -41,12 +39,10 @@ void ItemDatabase::save_pending_move_on_worker(
          (move.staging_path == move.source_path ||
           move.staging_path == move.destination_path)) ||
         move.source_device >
-            static_cast<std::uint64_t>(
-                std::numeric_limits<std::int64_t>::max()
+            static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()
             ) ||
         move.source_inode >
-            static_cast<std::uint64_t>(
-                std::numeric_limits<std::int64_t>::max()
+            static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()
             )) {
         throw std::invalid_argument("pending move contains invalid metadata");
     }
@@ -67,12 +63,7 @@ void ItemDatabase::save_pending_move_on_worker(
     bind_text(database, statement.get(), 1, move.drive_id);
     bind_text(database, statement.get(), 2, move.remote_id);
     bind_text(database, statement.get(), 3, move.source_path.string());
-    bind_text(
-        database,
-        statement.get(),
-        4,
-        move.destination_path.string()
-    );
+    bind_text(database, statement.get(), 4, move.destination_path.string());
     bind_text(database, statement.get(), 5, move.staging_path.string());
     bind_integer(
         database,
@@ -87,17 +78,11 @@ void ItemDatabase::save_pending_move_on_worker(
         static_cast<std::int64_t>(move.source_inode)
     );
     bind_integer(database, statement.get(), 8, move.directory ? 1 : 0);
-    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot persist pending move: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    statement.step_done("cannot persist pending move");
 }
 
 void ItemDatabase::remove_pending_move(
-    const std::string& drive_id,
-    const std::string& remote_id
+    const std::string& drive_id, const std::string& remote_id
 ) {
     impl_->invoke([this, drive_id, remote_id] {
         remove_pending_move_on_worker(drive_id, remote_id);
@@ -105,8 +90,7 @@ void ItemDatabase::remove_pending_move(
 }
 
 void ItemDatabase::remove_pending_move_on_worker(
-    const std::string& drive_id,
-    const std::string& remote_id
+    const std::string& drive_id, const std::string& remote_id
 ) {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
@@ -118,25 +102,18 @@ void ItemDatabase::remove_pending_move_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     bind_text(database, statement.get(), 2, remote_id);
-    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot remove pending move: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    statement.step_done("cannot remove pending move");
 }
 
-std::vector<PendingMove> ItemDatabase::pending_moves(
-    const std::string& drive_id
-) const {
+std::vector<PendingMove>
+ItemDatabase::pending_moves(const std::string& drive_id) const {
     return impl_->invoke([this, drive_id] {
         return pending_moves_on_worker(drive_id);
     });
 }
 
-std::vector<PendingMove> ItemDatabase::pending_moves_on_worker(
-    const std::string& drive_id
-) const {
+std::vector<PendingMove>
+ItemDatabase::pending_moves_on_worker(const std::string& drive_id) const {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
         throw std::runtime_error("state database is not open");
@@ -150,17 +127,7 @@ std::vector<PendingMove> ItemDatabase::pending_moves_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     std::vector<PendingMove> moves;
-    while (true) {
-        const int result = sqlite3_step(statement.get());
-        if (result == SQLITE_DONE) {
-            break;
-        }
-        if (result != SQLITE_ROW) {
-            throw std::runtime_error(
-                "cannot read pending moves: " +
-                std::string{sqlite3_errmsg(database)}
-            );
-        }
+    while (statement.next("cannot read pending moves")) {
         const auto device = sqlite3_column_int64(statement.get(), 5);
         const auto inode = sqlite3_column_int64(statement.get(), 6);
         if (device < 0 || inode < 0) {
@@ -182,4 +149,4 @@ std::vector<PendingMove> ItemDatabase::pending_moves_on_worker(
     return moves;
 }
 
-}  // namespace onedrive::storage
+} // namespace onedrive::storage

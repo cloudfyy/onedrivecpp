@@ -120,12 +120,7 @@ void ItemDatabase::save_pending_download_on_worker(
     bind_text(database, statement.get(), 13, download.content_fingerprint);
     bind_text(database, statement.get(), 14, download.backup_path.string());
     bind_text(database, statement.get(), 15, download.backup_fingerprint);
-    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot save pending download: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    statement.step_done("cannot save pending download");
     spdlog::debug(
         "Saved pending download journal for '{}'", download.item.remote_path
     );
@@ -152,12 +147,7 @@ void ItemDatabase::remove_pending_download_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     bind_text(database, statement.get(), 2, remote_id);
-    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot remove pending download: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    statement.step_done("cannot remove pending download");
     spdlog::debug(
         "Removed pending download journal for drive '{}', item '{}'",
         drive_id,
@@ -188,17 +178,7 @@ ItemDatabase::pending_downloads_on_worker(const std::string& drive_id) const {
     };
     bind_text(database, statement.get(), 1, drive_id);
     std::vector<PendingDownload> downloads;
-    while (true) {
-        const int result = sqlite3_step(statement.get());
-        if (result == SQLITE_DONE) {
-            break;
-        }
-        if (result != SQLITE_ROW) {
-            throw std::runtime_error(
-                "cannot read pending downloads: " +
-                std::string{sqlite3_errmsg(database)}
-            );
-        }
+    while (statement.next("cannot read pending downloads")) {
         downloads.push_back({
             .item =
                 {
@@ -289,12 +269,7 @@ void ItemDatabase::save_partial_download_on_worker(
         13,
         static_cast<std::int64_t>(download.completed_bytes)
     );
-    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot save partial download: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    statement.step_done("cannot save partial download");
 }
 
 void ItemDatabase::remove_partial_download(
@@ -318,12 +293,7 @@ void ItemDatabase::remove_partial_download_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     bind_text(database, statement.get(), 2, remote_id);
-    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot remove partial download: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    statement.step_done("cannot remove partial download");
 }
 
 std::optional<PartialDownload> ItemDatabase::partial_download(
@@ -350,15 +320,8 @@ std::optional<PartialDownload> ItemDatabase::partial_download_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     bind_text(database, statement.get(), 2, remote_id);
-    const int result = sqlite3_step(statement.get());
-    if (result == SQLITE_DONE) {
+    if (!statement.next("cannot read partial download")) {
         return std::nullopt;
-    }
-    if (result != SQLITE_ROW) {
-        throw std::runtime_error(
-            "cannot read partial download: " +
-            std::string{sqlite3_errmsg(database)}
-        );
     }
     return partial_download_from_row(statement.get());
 }
@@ -385,17 +348,7 @@ ItemDatabase::partial_downloads_on_worker(const std::string& drive_id) const {
     };
     bind_text(database, statement.get(), 1, drive_id);
     std::vector<PartialDownload> downloads;
-    while (true) {
-        const int result = sqlite3_step(statement.get());
-        if (result == SQLITE_DONE) {
-            break;
-        }
-        if (result != SQLITE_ROW) {
-            throw std::runtime_error(
-                "cannot read partial downloads: " +
-                std::string{sqlite3_errmsg(database)}
-            );
-        }
+    while (statement.next("cannot read partial downloads")) {
         downloads.push_back(partial_download_from_row(statement.get()));
     }
     return downloads;

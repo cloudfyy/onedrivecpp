@@ -45,22 +45,14 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
             database, "DELETE FROM item WHERE drive_id = ?1;"
         };
         bind_text(database, replace_statement.get(), 1, delta.drive_id);
-        if (sqlite3_step(replace_statement.get()) != SQLITE_DONE) {
-            throw std::runtime_error(
-                "cannot replace drive items: " +
-                std::string{sqlite3_errmsg(database)}
-            );
-        }
+        replace_statement.step_done("cannot replace drive items");
         Statement replace_blocked_statement{
             database, "DELETE FROM blocked_item WHERE drive_id = ?1;"
         };
         bind_text(database, replace_blocked_statement.get(), 1, delta.drive_id);
-        if (sqlite3_step(replace_blocked_statement.get()) != SQLITE_DONE) {
-            throw std::runtime_error(
-                "cannot replace blocked drive items: " +
-                std::string{sqlite3_errmsg(database)}
-            );
-        }
+        replace_blocked_statement.step_done(
+            "cannot replace blocked drive items"
+        );
     }
     Statement upsert_statement{
         database,
@@ -126,14 +118,8 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         bind_integer(
             database, upsert_statement.get(), 17, item.directory ? 1 : 0
         );
-        if (sqlite3_step(upsert_statement.get()) != SQLITE_DONE) {
-            throw std::runtime_error(
-                "cannot apply delta item: " +
-                std::string{sqlite3_errmsg(database)}
-            );
-        }
-        sqlite3_reset(upsert_statement.get());
-        sqlite3_clear_bindings(upsert_statement.get());
+        upsert_statement.step_done("cannot apply delta item");
+        upsert_statement.reset_for_reuse();
     }
 
     Statement complete_move_statement{
@@ -143,26 +129,18 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
     for (const auto& item : delta.upserts) {
         bind_text(database, complete_move_statement.get(), 1, delta.drive_id);
         bind_text(database, complete_move_statement.get(), 2, item.remote_id);
-        if (sqlite3_step(complete_move_statement.get()) != SQLITE_DONE) {
-            throw std::runtime_error(
-                "cannot complete pending move journal: " +
-                std::string{sqlite3_errmsg(database)}
-            );
-        }
-        sqlite3_reset(complete_move_statement.get());
-        sqlite3_clear_bindings(complete_move_statement.get());
+        complete_move_statement.step_done(
+            "cannot complete pending move journal"
+        );
+        complete_move_statement.reset_for_reuse();
     }
     for (const auto& remote_id : delta.removals) {
         bind_text(database, complete_move_statement.get(), 1, delta.drive_id);
         bind_text(database, complete_move_statement.get(), 2, remote_id);
-        if (sqlite3_step(complete_move_statement.get()) != SQLITE_DONE) {
-            throw std::runtime_error(
-                "cannot discard removed pending move journal: " +
-                std::string{sqlite3_errmsg(database)}
-            );
-        }
-        sqlite3_reset(complete_move_statement.get());
-        sqlite3_clear_bindings(complete_move_statement.get());
+        complete_move_statement.step_done(
+            "cannot discard removed pending move journal"
+        );
+        complete_move_statement.reset_for_reuse();
     }
 
     Statement delete_statement{
@@ -176,14 +154,8 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         }
         bind_text(database, delete_statement.get(), 1, delta.drive_id);
         bind_text(database, delete_statement.get(), 2, remote_id);
-        if (sqlite3_step(delete_statement.get()) != SQLITE_DONE) {
-            throw std::runtime_error(
-                "cannot remove delta item: " +
-                std::string{sqlite3_errmsg(database)}
-            );
-        }
-        sqlite3_reset(delete_statement.get());
-        sqlite3_clear_bindings(delete_statement.get());
+        delete_statement.step_done("cannot remove delta item");
+        delete_statement.reset_for_reuse();
     }
 
     Statement delete_partial_statement{
@@ -199,14 +171,8 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         }
         bind_text(database, delete_partial_statement.get(), 1, delta.drive_id);
         bind_text(database, delete_partial_statement.get(), 2, remote_id);
-        if (sqlite3_step(delete_partial_statement.get()) != SQLITE_DONE) {
-            throw std::runtime_error(
-                "cannot remove partial download: " +
-                std::string{sqlite3_errmsg(database)}
-            );
-        }
-        sqlite3_reset(delete_partial_statement.get());
-        sqlite3_clear_bindings(delete_partial_statement.get());
+        delete_partial_statement.step_done("cannot remove partial download");
+        delete_partial_statement.reset_for_reuse();
     }
 
     Statement suppression_statement{
@@ -258,14 +224,8 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
             5,
             static_cast<std::int64_t>(suppression.source_inode)
         );
-        if (sqlite3_step(suppression_statement.get()) != SQLITE_DONE) {
-            throw std::runtime_error(
-                "cannot persist upload suppression: " +
-                std::string{sqlite3_errmsg(database)}
-            );
-        }
-        sqlite3_reset(suppression_statement.get());
-        sqlite3_clear_bindings(suppression_statement.get());
+        suppression_statement.step_done("cannot persist upload suppression");
+        suppression_statement.reset_for_reuse();
     }
 
     Statement delete_blocked_statement{
@@ -280,14 +240,8 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         }
         bind_text(database, delete_blocked_statement.get(), 1, delta.drive_id);
         bind_text(database, delete_blocked_statement.get(), 2, remote_id);
-        if (sqlite3_step(delete_blocked_statement.get()) != SQLITE_DONE) {
-            throw std::runtime_error(
-                "cannot remove blocked item: " +
-                std::string{sqlite3_errmsg(database)}
-            );
-        }
-        sqlite3_reset(delete_blocked_statement.get());
-        sqlite3_clear_bindings(delete_blocked_statement.get());
+        delete_blocked_statement.step_done("cannot remove blocked item");
+        delete_blocked_statement.reset_for_reuse();
     }
 
     Statement upsert_blocked_statement{
@@ -361,14 +315,8 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         }
         bind_text(database, upsert_blocked_statement.get(), 14, hash_algorithm);
         bind_text(database, upsert_blocked_statement.get(), 15, hash_value);
-        if (sqlite3_step(upsert_blocked_statement.get()) != SQLITE_DONE) {
-            throw std::runtime_error(
-                "cannot persist blocked item: " +
-                std::string{sqlite3_errmsg(database)}
-            );
-        }
-        sqlite3_reset(upsert_blocked_statement.get());
-        sqlite3_clear_bindings(upsert_blocked_statement.get());
+        upsert_blocked_statement.step_done("cannot persist blocked item");
+        upsert_blocked_statement.reset_for_reuse();
     }
 
     Statement state_statement{
@@ -385,11 +333,7 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
     bind_text(
         database, state_statement.get(), 3, delta.sync_filter_fingerprint
     );
-    if (sqlite3_step(state_statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot update delta link: " + std::string{sqlite3_errmsg(database)}
-        );
-    }
+    state_statement.step_done("cannot update delta link");
     transaction.commit();
 
     spdlog::debug(

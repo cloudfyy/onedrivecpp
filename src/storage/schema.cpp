@@ -11,12 +11,7 @@ namespace onedrive::storage::item_database_detail {
 
 int schema_version(sqlite3* database) {
     Statement statement{database, "PRAGMA user_version;"};
-    if (sqlite3_step(statement.get()) != SQLITE_ROW) {
-        throw std::runtime_error(
-            "cannot read state database schema version: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    statement.step_row("cannot read state database schema version");
     return sqlite3_column_int(statement.get(), 0);
 }
 
@@ -355,8 +350,7 @@ void create_upload_suppression_schema(sqlite3* database) {
 }
 
 void set_schema_version(sqlite3* database, int version) {
-    const auto sql =
-        "PRAGMA user_version = " + std::to_string(version) + ";";
+    const auto sql = "PRAGMA user_version = " + std::to_string(version) + ";";
     execute(database, sql.c_str());
 }
 
@@ -376,4 +370,4 @@ void ensure_current_schema(sqlite3* database) {
     set_schema_version(database, current_schema_version);
 }
 
-}  // namespace onedrive::storage::item_database_detail
+} // namespace onedrive::storage::item_database_detail

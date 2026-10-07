@@ -16,24 +16,21 @@
 
 namespace onedrive::storage {
 
-using item_database_detail::Statement;
-using item_database_detail::Transaction;
 using item_database_detail::bind_integer;
 using item_database_detail::bind_text;
 using item_database_detail::column_text;
+using item_database_detail::Statement;
+using item_database_detail::Transaction;
 
-std::vector<UploadSuppression> ItemDatabase::upload_suppressions(
-    const std::string& drive_id
-) const {
+std::vector<UploadSuppression>
+ItemDatabase::upload_suppressions(const std::string& drive_id) const {
     return impl_->invoke([this, drive_id] {
         return upload_suppressions_on_worker(drive_id);
     });
 }
 
 std::vector<UploadSuppression>
-ItemDatabase::upload_suppressions_on_worker(
-    const std::string& drive_id
-) const {
+ItemDatabase::upload_suppressions_on_worker(const std::string& drive_id) const {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
         throw std::runtime_error("state database is not open");
@@ -45,17 +42,7 @@ ItemDatabase::upload_suppressions_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     std::vector<UploadSuppression> suppressions;
-    while (true) {
-        const int result = sqlite3_step(statement.get());
-        if (result == SQLITE_DONE) {
-            break;
-        }
-        if (result != SQLITE_ROW) {
-            throw std::runtime_error(
-                "cannot read upload suppressions: " +
-                std::string{sqlite3_errmsg(database)}
-            );
-        }
+    while (statement.next("cannot read upload suppressions")) {
         const auto device = sqlite3_column_int64(statement.get(), 3);
         const auto inode = sqlite3_column_int64(statement.get(), 4);
         if (device < 0 || inode < 0) {
@@ -75,8 +62,7 @@ ItemDatabase::upload_suppressions_on_worker(
 }
 
 void ItemDatabase::remove_upload_suppression(
-    const std::string& drive_id,
-    const std::filesystem::path& local_path
+    const std::string& drive_id, const std::filesystem::path& local_path
 ) {
     impl_->invoke([this, drive_id, local_path] {
         remove_upload_suppression_on_worker(drive_id, local_path);
@@ -84,8 +70,7 @@ void ItemDatabase::remove_upload_suppression(
 }
 
 void ItemDatabase::remove_upload_suppression_on_worker(
-    const std::string& drive_id,
-    const std::filesystem::path& local_path
+    const std::string& drive_id, const std::filesystem::path& local_path
 ) {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
@@ -103,25 +88,18 @@ void ItemDatabase::remove_upload_suppression_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     bind_text(database, statement.get(), 2, local_path.string());
-    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot remove upload suppression: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    statement.step_done("cannot remove upload suppression");
 }
 
-std::vector<BlockedItem> ItemDatabase::blocked_items(
-    const std::string& drive_id
-) const {
+std::vector<BlockedItem>
+ItemDatabase::blocked_items(const std::string& drive_id) const {
     return impl_->invoke([this, drive_id] {
         return blocked_items_on_worker(drive_id);
     });
 }
 
-std::vector<BlockedItem> ItemDatabase::blocked_items_on_worker(
-    const std::string& drive_id
-) const {
+std::vector<BlockedItem>
+ItemDatabase::blocked_items_on_worker(const std::string& drive_id) const {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
         throw std::runtime_error("state database is not open");
@@ -136,17 +114,7 @@ std::vector<BlockedItem> ItemDatabase::blocked_items_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     std::vector<BlockedItem> result;
-    while (true) {
-        const int step_result = sqlite3_step(statement.get());
-        if (step_result == SQLITE_DONE) {
-            break;
-        }
-        if (step_result != SQLITE_ROW) {
-            throw std::runtime_error(
-                "cannot read blocked synchronization items: " +
-                std::string{sqlite3_errmsg(database)}
-            );
-        }
+    while (statement.next("cannot read blocked synchronization items")) {
         auto content_hash = item_database_detail::parse_file_hash(
             column_text(statement.get(), 14),
             column_text(statement.get(), 15),
@@ -175,4 +143,4 @@ std::vector<BlockedItem> ItemDatabase::blocked_items_on_worker(
     return result;
 }
 
-}  // namespace onedrive::storage
+} // namespace onedrive::storage

@@ -15,11 +15,11 @@
 
 namespace onedrive::storage {
 
-using item_database_detail::Statement;
-using item_database_detail::Transaction;
 using item_database_detail::bind_integer;
 using item_database_detail::bind_text;
 using item_database_detail::column_text;
+using item_database_detail::Statement;
+using item_database_detail::Transaction;
 
 void ItemDatabase::save_pending_remote_move(PendingRemoteMove move) {
     impl_->invoke([this, move = std::move(move)] {
@@ -38,16 +38,13 @@ void ItemDatabase::save_pending_remote_move_on_worker(
         move.expected_etag.empty() || move.source_remote_path.empty() ||
         move.destination_remote_path.empty() ||
         move.source_remote_path == move.destination_remote_path ||
-        move.source_local_path.empty() ||
-        move.destination_local_path.empty() ||
+        move.source_local_path.empty() || move.destination_local_path.empty() ||
         move.local_device == 0 || move.local_inode == 0 ||
         move.local_device >
-            static_cast<std::uint64_t>(
-                std::numeric_limits<std::int64_t>::max()
+            static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()
             ) ||
         move.local_inode >
-            static_cast<std::uint64_t>(
-                std::numeric_limits<std::int64_t>::max()
+            static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()
             )) {
         throw std::invalid_argument(
             "pending remote move contains invalid metadata"
@@ -66,17 +63,9 @@ void ItemDatabase::save_pending_remote_move_on_worker(
     bind_text(database, statement.get(), 3, move.expected_etag);
     bind_text(database, statement.get(), 4, move.source_remote_path);
     bind_text(database, statement.get(), 5, move.destination_remote_path);
+    bind_text(database, statement.get(), 6, move.source_local_path.string());
     bind_text(
-        database,
-        statement.get(),
-        6,
-        move.source_local_path.string()
-    );
-    bind_text(
-        database,
-        statement.get(),
-        7,
-        move.destination_local_path.string()
+        database, statement.get(), 7, move.destination_local_path.string()
     );
     bind_integer(
         database,
@@ -91,17 +80,11 @@ void ItemDatabase::save_pending_remote_move_on_worker(
         static_cast<std::int64_t>(move.local_inode)
     );
     bind_integer(database, statement.get(), 10, move.directory ? 1 : 0);
-    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot persist pending remote move: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    statement.step_done("cannot persist pending remote move");
 }
 
 void ItemDatabase::remove_pending_remote_move(
-    const std::string& drive_id,
-    const std::string& remote_id
+    const std::string& drive_id, const std::string& remote_id
 ) {
     impl_->invoke([this, drive_id, remote_id] {
         remove_pending_remote_move_on_worker(drive_id, remote_id);
@@ -109,8 +92,7 @@ void ItemDatabase::remove_pending_remote_move(
 }
 
 void ItemDatabase::remove_pending_remote_move_on_worker(
-    const std::string& drive_id,
-    const std::string& remote_id
+    const std::string& drive_id, const std::string& remote_id
 ) {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
@@ -123,24 +105,17 @@ void ItemDatabase::remove_pending_remote_move_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     bind_text(database, statement.get(), 2, remote_id);
-    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot remove pending remote move: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    statement.step_done("cannot remove pending remote move");
 }
 
-std::vector<PendingRemoteMove> ItemDatabase::pending_remote_moves(
-    const std::string& drive_id
-) const {
+std::vector<PendingRemoteMove>
+ItemDatabase::pending_remote_moves(const std::string& drive_id) const {
     return impl_->invoke([this, drive_id] {
         return pending_remote_moves_on_worker(drive_id);
     });
 }
 
-std::vector<PendingRemoteMove>
-ItemDatabase::pending_remote_moves_on_worker(
+std::vector<PendingRemoteMove> ItemDatabase::pending_remote_moves_on_worker(
     const std::string& drive_id
 ) const {
     sqlite3* database = impl_->database.get();
@@ -156,17 +131,7 @@ ItemDatabase::pending_remote_moves_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     std::vector<PendingRemoteMove> moves;
-    while (true) {
-        const int result = sqlite3_step(statement.get());
-        if (result == SQLITE_DONE) {
-            break;
-        }
-        if (result != SQLITE_ROW) {
-            throw std::runtime_error(
-                "cannot read pending remote moves: " +
-                std::string{sqlite3_errmsg(database)}
-            );
-        }
+    while (statement.next("cannot read pending remote moves")) {
         moves.push_back({
             .drive_id = column_text(statement.get(), 0),
             .remote_id = column_text(statement.get(), 1),
@@ -188,8 +153,7 @@ ItemDatabase::pending_remote_moves_on_worker(
 }
 
 void ItemDatabase::commit_remote_move(
-    const PendingRemoteMove& move,
-    ItemState item
+    const PendingRemoteMove& move, ItemState item
 ) {
     impl_->invoke([this, move, item = std::move(item)] {
         commit_remote_move_on_worker(move, item);
@@ -197,15 +161,13 @@ void ItemDatabase::commit_remote_move(
 }
 
 void ItemDatabase::commit_remote_move_on_worker(
-    const PendingRemoteMove& move,
-    const ItemState& item
+    const PendingRemoteMove& move, const ItemState& item
 ) {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
         throw std::runtime_error("state database is not open");
     }
-    if (move.drive_id != item.drive_id ||
-        move.remote_id != item.remote_id ||
+    if (move.drive_id != item.drive_id || move.remote_id != item.remote_id ||
         move.destination_remote_path != item.remote_path ||
         move.destination_local_path != item.local_path) {
         throw std::invalid_argument(
@@ -224,38 +186,17 @@ void ItemDatabase::commit_remote_move_on_worker(
             "substr(remote_path, 1, length(?2) + 1) = ?2 || '/' AND "
             "substr(local_path, 1, length(?4) + 1) = ?4 || '/';"
         };
+        bind_text(database, descendants.get(), 1, move.destination_remote_path);
+        bind_text(database, descendants.get(), 2, move.source_remote_path);
         bind_text(
-            database,
-            descendants.get(),
-            1,
-            move.destination_remote_path
+            database, descendants.get(), 3, move.destination_local_path.string()
         );
         bind_text(
-            database,
-            descendants.get(),
-            2,
-            move.source_remote_path
-        );
-        bind_text(
-            database,
-            descendants.get(),
-            3,
-            move.destination_local_path.string()
-        );
-        bind_text(
-            database,
-            descendants.get(),
-            4,
-            move.source_local_path.string()
+            database, descendants.get(), 4, move.source_local_path.string()
         );
         bind_text(database, descendants.get(), 5, move.drive_id);
         bind_text(database, descendants.get(), 6, move.remote_id);
-        if (sqlite3_step(descendants.get()) != SQLITE_DONE) {
-            throw std::runtime_error(
-                "cannot remap moved directory descendants: " +
-                std::string{sqlite3_errmsg(database)}
-            );
-        }
+        descendants.step_done("cannot remap moved directory descendants");
     }
     Statement journal{
         database,
@@ -264,8 +205,8 @@ void ItemDatabase::commit_remote_move_on_worker(
     };
     bind_text(database, journal.get(), 1, move.drive_id);
     bind_text(database, journal.get(), 2, move.remote_id);
-    if (sqlite3_step(journal.get()) != SQLITE_DONE ||
-        sqlite3_changes(database) != 1) {
+    journal.step_done("cannot complete pending remote move journal");
+    if (sqlite3_changes(database) != 1) {
         throw std::runtime_error(
             "cannot complete pending remote move journal: " +
             std::string{sqlite3_errmsg(database)}
@@ -274,4 +215,4 @@ void ItemDatabase::commit_remote_move_on_worker(
     transaction.commit();
 }
 
-}  // namespace onedrive::storage
+} // namespace onedrive::storage

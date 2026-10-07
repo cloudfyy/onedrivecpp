@@ -23,19 +23,13 @@ inline std::size_t query_count(
     if (value) {
         bind_text(database, statement.get(), 1, *value);
     }
-    if (sqlite3_step(statement.get()) != SQLITE_ROW) {
-        throw std::runtime_error(
-            "cannot count synchronization state rows: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    statement.step_row("cannot count synchronization state rows");
     const auto count = sqlite3_column_int64(statement.get(), 0);
-    if (count < 0 ||
-        static_cast<std::uintmax_t>(count) >
-            std::numeric_limits<std::size_t>::max()) {
+    if (count < 0 || static_cast<std::uintmax_t>(count) >
+                         std::numeric_limits<std::size_t>::max()) {
         throw std::runtime_error("SQLite row count is not representable");
     }
     return static_cast<std::size_t>(count);
 }
 
-}  // namespace onedrive::storage::item_database_detail
+} // namespace onedrive::storage::item_database_detail

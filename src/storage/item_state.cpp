@@ -14,18 +14,16 @@
 
 namespace onedrive::storage {
 
-using item_database_detail::Statement;
 using item_database_detail::bind_integer;
 using item_database_detail::bind_text;
 using item_database_detail::column_text;
-using item_database_detail::query_count;
 using item_database_detail::parse_file_hash;
+using item_database_detail::query_count;
 using item_database_detail::serialize_file_hash;
+using item_database_detail::Statement;
 
 void ItemDatabase::upsert(ItemState item) {
-    impl_->invoke([this, item = std::move(item)] {
-        upsert_on_worker(item);
-    });
+    impl_->invoke([this, item = std::move(item)] { upsert_on_worker(item); });
 }
 
 void ItemDatabase::upsert_on_worker(const ItemState& item) {
@@ -88,11 +86,7 @@ void ItemDatabase::upsert_on_worker(const ItemState& item) {
     bind_text(database, statement.get(), 16, hash_value);
     bind_integer(database, statement.get(), 17, item.directory ? 1 : 0);
 
-    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot update state database: " + std::string{sqlite3_errmsg(database)}
-        );
-    }
+    statement.step_done("cannot update state database");
     spdlog::trace(
         "Updated synchronization state for drive '{}', item '{}'",
         item.drive_id,
@@ -100,50 +94,38 @@ void ItemDatabase::upsert_on_worker(const ItemState& item) {
     );
 }
 
-std::optional<std::string> ItemDatabase::delta_link(
-    const std::string& drive_id
-) const {
+std::optional<std::string>
+ItemDatabase::delta_link(const std::string& drive_id) const {
     return impl_->invoke([this, drive_id] {
         return delta_link_on_worker(drive_id);
     });
 }
 
-std::optional<std::string> ItemDatabase::delta_link_on_worker(
-    const std::string& drive_id
-) const {
+std::optional<std::string>
+ItemDatabase::delta_link_on_worker(const std::string& drive_id) const {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
         throw std::runtime_error("state database is not open");
     }
 
     Statement statement{
-        database,
-        "SELECT delta_link FROM drive_state WHERE drive_id = ?1;"
+        database, "SELECT delta_link FROM drive_state WHERE drive_id = ?1;"
     };
     bind_text(database, statement.get(), 1, drive_id);
-    const int result = sqlite3_step(statement.get());
-    if (result == SQLITE_DONE) {
+    if (!statement.next("cannot read drive delta link")) {
         return std::nullopt;
-    }
-    if (result != SQLITE_ROW) {
-        throw std::runtime_error(
-            "cannot read drive delta link: " +
-            std::string{sqlite3_errmsg(database)}
-        );
     }
     return column_text(statement.get(), 0);
 }
 
-std::optional<std::string> ItemDatabase::sync_filter_fingerprint(
-    const std::string& drive_id
-) const {
+std::optional<std::string>
+ItemDatabase::sync_filter_fingerprint(const std::string& drive_id) const {
     return impl_->invoke([this, drive_id] {
         return sync_filter_fingerprint_on_worker(drive_id);
     });
 }
 
-std::optional<std::string>
-ItemDatabase::sync_filter_fingerprint_on_worker(
+std::optional<std::string> ItemDatabase::sync_filter_fingerprint_on_worker(
     const std::string& drive_id
 ) const {
     sqlite3* database = impl_->database.get();
@@ -156,22 +138,14 @@ ItemDatabase::sync_filter_fingerprint_on_worker(
         "WHERE drive_id = ?1;"
     };
     bind_text(database, statement.get(), 1, drive_id);
-    const int result = sqlite3_step(statement.get());
-    if (result == SQLITE_DONE) {
+    if (!statement.next("cannot read sync filter fingerprint")) {
         return std::nullopt;
-    }
-    if (result != SQLITE_ROW) {
-        throw std::runtime_error(
-            "cannot read sync filter fingerprint: " +
-            std::string{sqlite3_errmsg(database)}
-        );
     }
     return column_text(statement.get(), 0);
 }
 
 std::optional<ItemState> ItemDatabase::find(
-    const std::string& drive_id,
-    const std::string& remote_id
+    const std::string& drive_id, const std::string& remote_id
 ) const {
     return impl_->invoke([this, drive_id, remote_id] {
         return find_on_worker(drive_id, remote_id);
@@ -179,8 +153,7 @@ std::optional<ItemState> ItemDatabase::find(
 }
 
 std::optional<ItemState> ItemDatabase::find_on_worker(
-    const std::string& drive_id,
-    const std::string& remote_id
+    const std::string& drive_id, const std::string& remote_id
 ) const {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
@@ -196,15 +169,8 @@ std::optional<ItemState> ItemDatabase::find_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     bind_text(database, statement.get(), 2, remote_id);
-    const int result = sqlite3_step(statement.get());
-    if (result == SQLITE_DONE) {
+    if (!statement.next("cannot read synchronization item")) {
         return std::nullopt;
-    }
-    if (result != SQLITE_ROW) {
-        throw std::runtime_error(
-            "cannot read synchronization item: " +
-            std::string{sqlite3_errmsg(database)}
-        );
     }
     return ItemState{
         .drive_id = column_text(statement.get(), 0),
@@ -219,12 +185,12 @@ std::optional<ItemState> ItemDatabase::find_on_worker(
         .size = sqlite3_column_int64(statement.get(), 9),
         .local_size = sqlite3_column_int64(statement.get(), 10),
         .local_modified_ticks = sqlite3_column_int64(statement.get(), 11),
-        .local_device = static_cast<std::uint64_t>(
-            sqlite3_column_int64(statement.get(), 12)
-        ),
-        .local_inode = static_cast<std::uint64_t>(
-            sqlite3_column_int64(statement.get(), 13)
-        ),
+        .local_device =
+            static_cast<std::uint64_t>(sqlite3_column_int64(statement.get(), 12)
+            ),
+        .local_inode =
+            static_cast<std::uint64_t>(sqlite3_column_int64(statement.get(), 13)
+            ),
         .content_hash = parse_file_hash(
             column_text(statement.get(), 14),
             column_text(statement.get(), 15),
@@ -234,17 +200,15 @@ std::optional<ItemState> ItemDatabase::find_on_worker(
     };
 }
 
-std::vector<ItemState> ItemDatabase::drive_items(
-    const std::string& drive_id
-) const {
+std::vector<ItemState>
+ItemDatabase::drive_items(const std::string& drive_id) const {
     return impl_->invoke([this, drive_id] {
         return drive_items_on_worker(drive_id);
     });
 }
 
-std::vector<ItemState> ItemDatabase::drive_items_on_worker(
-    const std::string& drive_id
-) const {
+std::vector<ItemState>
+ItemDatabase::drive_items_on_worker(const std::string& drive_id) const {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
         throw std::runtime_error("state database is not open");
@@ -259,17 +223,7 @@ std::vector<ItemState> ItemDatabase::drive_items_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     std::vector<ItemState> result;
-    while (true) {
-        const int step_result = sqlite3_step(statement.get());
-        if (step_result == SQLITE_DONE) {
-            break;
-        }
-        if (step_result != SQLITE_ROW) {
-            throw std::runtime_error(
-                "cannot read synchronization drive items: " +
-                std::string{sqlite3_errmsg(database)}
-            );
-        }
+    while (statement.next("cannot read synchronization drive items")) {
         result.push_back({
             .drive_id = column_text(statement.get(), 0),
             .remote_id = column_text(statement.get(), 1),
@@ -282,8 +236,7 @@ std::vector<ItemState> ItemDatabase::drive_items_on_worker(
             .last_modified = column_text(statement.get(), 8),
             .size = sqlite3_column_int64(statement.get(), 9),
             .local_size = sqlite3_column_int64(statement.get(), 10),
-            .local_modified_ticks =
-                sqlite3_column_int64(statement.get(), 11),
+            .local_modified_ticks = sqlite3_column_int64(statement.get(), 11),
             .local_device = static_cast<std::uint64_t>(
                 sqlite3_column_int64(statement.get(), 12)
             ),
@@ -302,9 +255,7 @@ std::vector<ItemState> ItemDatabase::drive_items_on_worker(
 }
 
 std::size_t ItemDatabase::size() const {
-    return impl_->invoke([this] {
-        return size_on_worker();
-    });
+    return impl_->invoke([this] { return size_on_worker(); });
 }
 
 std::size_t ItemDatabase::size_on_worker() const {
@@ -315,4 +266,4 @@ std::size_t ItemDatabase::size_on_worker() const {
     return query_count(database, "SELECT COUNT(*) FROM item;");
 }
 
-}  // namespace onedrive::storage
+} // namespace onedrive::storage

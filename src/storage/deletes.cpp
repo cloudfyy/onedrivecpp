@@ -15,11 +15,11 @@
 
 namespace onedrive::storage {
 
-using item_database_detail::Statement;
-using item_database_detail::Transaction;
 using item_database_detail::bind_integer;
 using item_database_detail::bind_text;
 using item_database_detail::column_text;
+using item_database_detail::Statement;
+using item_database_detail::Transaction;
 
 void ItemDatabase::save_pending_delete(PendingDelete deletion) {
     impl_->invoke([this, deletion = std::move(deletion)] {
@@ -51,28 +51,13 @@ void ItemDatabase::save_pending_delete_on_worker(
     bind_text(database, statement.get(), 2, deletion.remote_id);
     bind_text(database, statement.get(), 3, deletion.expected_etag);
     bind_text(database, statement.get(), 4, deletion.remote_path);
-    bind_text(
-        database,
-        statement.get(),
-        5,
-        deletion.local_path.string()
-    );
-    if (sqlite3_bind_int(
-            statement.get(),
-            6,
-            deletion.directory ? 1 : 0
-        ) != SQLITE_OK ||
-        sqlite3_step(statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot persist pending deletion: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    bind_text(database, statement.get(), 5, deletion.local_path.string());
+    bind_integer(database, statement.get(), 6, deletion.directory ? 1 : 0);
+    statement.step_done("cannot persist pending deletion");
 }
 
 void ItemDatabase::remove_pending_delete(
-    const std::string& drive_id,
-    const std::string& remote_id
+    const std::string& drive_id, const std::string& remote_id
 ) {
     impl_->invoke([this, drive_id, remote_id] {
         remove_pending_delete_on_worker(drive_id, remote_id);
@@ -80,8 +65,7 @@ void ItemDatabase::remove_pending_delete(
 }
 
 void ItemDatabase::remove_pending_delete_on_worker(
-    const std::string& drive_id,
-    const std::string& remote_id
+    const std::string& drive_id, const std::string& remote_id
 ) {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
@@ -93,25 +77,18 @@ void ItemDatabase::remove_pending_delete_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     bind_text(database, statement.get(), 2, remote_id);
-    if (sqlite3_step(statement.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot remove pending deletion: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    statement.step_done("cannot remove pending deletion");
 }
 
-std::vector<PendingDelete> ItemDatabase::pending_deletes(
-    const std::string& drive_id
-) const {
+std::vector<PendingDelete>
+ItemDatabase::pending_deletes(const std::string& drive_id) const {
     return impl_->invoke([this, drive_id] {
         return pending_deletes_on_worker(drive_id);
     });
 }
 
-std::vector<PendingDelete> ItemDatabase::pending_deletes_on_worker(
-    const std::string& drive_id
-) const {
+std::vector<PendingDelete>
+ItemDatabase::pending_deletes_on_worker(const std::string& drive_id) const {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
         throw std::runtime_error("state database is not open");
@@ -124,17 +101,7 @@ std::vector<PendingDelete> ItemDatabase::pending_deletes_on_worker(
     };
     bind_text(database, statement.get(), 1, drive_id);
     std::vector<PendingDelete> deletions;
-    while (true) {
-        const int result = sqlite3_step(statement.get());
-        if (result == SQLITE_DONE) {
-            break;
-        }
-        if (result != SQLITE_ROW) {
-            throw std::runtime_error(
-                "cannot read pending deletions: " +
-                std::string{sqlite3_errmsg(database)}
-            );
-        }
+    while (statement.next("cannot read pending deletions")) {
         deletions.push_back({
             .drive_id = column_text(statement.get(), 0),
             .remote_id = column_text(statement.get(), 1),
@@ -148,14 +115,10 @@ std::vector<PendingDelete> ItemDatabase::pending_deletes_on_worker(
 }
 
 void ItemDatabase::commit_delete(const PendingDelete& deletion) {
-    impl_->invoke([this, deletion] {
-        commit_delete_on_worker(deletion);
-    });
+    impl_->invoke([this, deletion] { commit_delete_on_worker(deletion); });
 }
 
-void ItemDatabase::commit_delete_on_worker(
-    const PendingDelete& deletion
-) {
+void ItemDatabase::commit_delete_on_worker(const PendingDelete& deletion) {
     sqlite3* database = impl_->database.get();
     if (database == nullptr) {
         throw std::runtime_error("state database is not open");
@@ -170,20 +133,15 @@ void ItemDatabase::commit_delete_on_worker(
     bind_text(database, remove_items.get(), 1, deletion.drive_id);
     bind_text(database, remove_items.get(), 2, deletion.remote_id);
     bind_text(database, remove_items.get(), 3, deletion.remote_path);
-    if (sqlite3_step(remove_items.get()) != SQLITE_DONE) {
-        throw std::runtime_error(
-            "cannot remove deleted item state: " +
-            std::string{sqlite3_errmsg(database)}
-        );
-    }
+    remove_items.step_done("cannot remove deleted item state");
     Statement remove_journal{
         database,
         "DELETE FROM pending_delete WHERE drive_id = ?1 AND remote_id = ?2;"
     };
     bind_text(database, remove_journal.get(), 1, deletion.drive_id);
     bind_text(database, remove_journal.get(), 2, deletion.remote_id);
-    if (sqlite3_step(remove_journal.get()) != SQLITE_DONE ||
-        sqlite3_changes(database) != 1) {
+    remove_journal.step_done("cannot complete pending deletion journal");
+    if (sqlite3_changes(database) != 1) {
         throw std::runtime_error(
             "cannot complete pending deletion journal: " +
             std::string{sqlite3_errmsg(database)}
@@ -192,4 +150,4 @@ void ItemDatabase::commit_delete_on_worker(
     transaction.commit();
 }
 
-}  // namespace onedrive::storage
+} // namespace onedrive::storage
