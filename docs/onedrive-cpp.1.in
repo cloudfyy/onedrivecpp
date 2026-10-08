@@ -54,6 +54,9 @@ onedrive-cpp \- modern C++ OneDrive synchronization client
 .B onedrive-cpp state cleanup
 .RI [ options ]
 .PP
+.B onedrive-cpp state migrate
+.RI [ options ]
+.PP
 .B onedrive-cpp state clear
 .RI [ options ]
 .PP
@@ -95,7 +98,10 @@ Run a read-only SQLite
 .BR integrity_check ,
 foreign-key check, and exact application-schema check for every Drive database
 under the configured state directory. The command does not contact Microsoft
-Graph and returns nonzero when any database is unhealthy. Use
+Graph. Results show the actual and latest supported schema versions, or
+unknown when the actual version cannot be read. Intact older databases report
+upgrade-required; unsupported versions or failed checks report unhealthy.
+The command returns nonzero for either condition. Use
 .B \-\-output json
 for structured diagnostics.
 .TP
@@ -190,6 +196,25 @@ to preview and
 for non-interactive confirmation. Paths outside the Drive root, symbolic
 links, non-regular files, and files that do not match the destination partial
 pattern are never deleted.
+.TP
+.B state migrate
+Upgrade all existing state databases offline, including legacy databases.
+Use
+.B \-\-dry-run
+to preview versions without creating backups or changing databases, or
+.B \-\-yes
+to confirm upgrades. Otherwise text output asks you to type migrate;
+JSON requires explicit confirmation. Configured dry-run also prevents upgrades.
+No authentication, network access, or file synchronization is required.
+The command acquires the synchronization runtime lock, rejects detected
+corruption and unsupported versions, and skips current databases.
+Before each upgrade it creates a mode-0600 SQLite backup beside the database
+named items.sqlite3.pre-migrate-v<VERSION>-<SUFFIX>, including committed WAL data,
+and reports its path. Backups require additional disk space and are retained.
+Each database upgrade and final integrity/schema validation form one transaction.
+On failure the database rolls back, its backup remains, and the command stops;
+databases already upgraded earlier remain upgraded. No automatic rebuild or
+quarantine is performed. A preview does not validate every older schema shape.
 .TP
 .B state clear
 remove item snapshots, the delta link, pending-download, partial-download,

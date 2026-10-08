@@ -147,12 +147,21 @@ int test_args() {
     if (state_help.exit_code != 0 ||
         !state_help.standard_output.contains("reset-cursor") ||
         !state_help.standard_output.contains("cleanup") ||
+        !state_help.standard_output.contains("migrate") ||
         !state_help.standard_output.contains("clear")) {
         return fail("state help did not list its maintenance actions");
     }
     const auto cleanup_help = run_application(
         runtime_factory, {"onedrive-cpp", "state", "cleanup", "--help"}
     );
+    const auto migrate_help = run_application(
+        runtime_factory, {"onedrive-cpp", "state", "migrate", "--help"}
+    );
+    if (migrate_help.exit_code != 0 ||
+        !migrate_help.standard_output.contains("--dry-run") ||
+        !migrate_help.standard_output.contains("--yes")) {
+        return fail("state migrate help did not document safety options");
+    }
     if (cleanup_help.exit_code != 0 ||
         !cleanup_help.standard_output.contains("--dry-run") ||
         !cleanup_help.standard_output.contains("--yes")) {

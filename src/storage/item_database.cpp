@@ -4,6 +4,7 @@
 #include "onedrive/util/path_security.hpp"
 #include "storage/query.hpp"
 #include "storage/schema.hpp"
+#include "storage/schema_internal.hpp"
 #include "storage/sqlite.hpp"
 #include "storage/worker.hpp"
 
@@ -12,6 +13,7 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cstdlib>
 #include <fcntl.h>
 #include <limits>
 #include <memory>
@@ -167,6 +169,109 @@ void secure_database_file(
     ));
 }
 
+void validate_diagnostic_file(const std::filesystem::path& path) {
+    struct stat status{};
+    if (::lstat(path.c_str(), &status) == -1) {
+        throw std::runtime_error(
+            "cannot inspect database security: " +
+            std::string{onedrive::util::system_error_message(errno)}
+        );
+    }
+    if (!S_ISREG(status.st_mode)) {
+        throw std::runtime_error(
+            "database path is not a regular non-symbolic-link file"
+        );
+    }
+    onedrive::util::reject_symlink_components(path, "state database");
+    if (status.st_uid != ::geteuid() || status.st_nlink != 1 ||
+        (status.st_mode & 07777) != private_file_mode) {
+        throw std::runtime_error(
+            "database must be a single-link, current-user-owned mode 0600 file"
+        );
+    }
+}
+
+SqliteHandle open_maintenance_database(
+    const std::filesystem::path& path, DatabaseAccess access
+) {
+    validate_diagnostic_file(path);
+    for (const auto* suffix : {"-wal", "-shm"}) {
+        const std::filesystem::path sidecar{path.string() + suffix};
+        if (std::filesystem::exists(std::filesystem::symlink_status(sidecar))) {
+            validate_diagnostic_file(sidecar);
+        }
+    }
+    sqlite3* handle = nullptr;
+    const int flags = access == DatabaseAccess::read_only
+                          ? SQLITE_OPEN_READONLY
+                          : SQLITE_OPEN_READWRITE;
+    const int result = sqlite3_open_v2(
+        path.c_str(), &handle, flags | SQLITE_OPEN_NOFOLLOW, nullptr
+    );
+    SqliteHandle database{handle};
+    if (result != SQLITE_OK) {
+        throw std::runtime_error(
+            "cannot open state database: " +
+            std::string{handle ? sqlite3_errmsg(handle) : "SQLite open failed"}
+        );
+    }
+    configure_database_connection(handle);
+    activate_database_pragmas(handle, access);
+    return database;
+}
+
+std::filesystem::path backup_database(
+    sqlite3* source, const std::filesystem::path& path, int version
+) {
+    auto name =
+        path.string() + ".pre-migrate-v" + std::to_string(version) + "-XXXXXX";
+    util::UniqueFD file{::mkstemp(name.data())};
+    if (!file) {
+        throw std::runtime_error(
+            "cannot create migration backup: " +
+            std::string{util::system_error_message(errno)}
+        );
+    }
+    const std::filesystem::path backup_path{name};
+    {
+        auto destination =
+            open_maintenance_database(backup_path, DatabaseAccess::writable);
+        sqlite3_backup* backup =
+            sqlite3_backup_init(destination.get(), "main", source, "main");
+        if (backup == nullptr) {
+            throw std::runtime_error(
+                "cannot initialize migration backup '" + name +
+                "': " + sqlite3_errmsg(destination.get())
+            );
+        }
+        const int copied = sqlite3_backup_step(backup, -1);
+        const int finished = sqlite3_backup_finish(backup);
+        if (copied != SQLITE_DONE || finished != SQLITE_OK) {
+            throw std::runtime_error(
+                "cannot complete migration backup '" + name +
+                "': " + sqlite3_errmsg(destination.get())
+            );
+        }
+        execute_sql(destination.get(), "PRAGMA journal_mode = DELETE;");
+        const auto integrity = full_integrity_result(destination.get());
+        if (integrity != "ok") {
+            throw std::runtime_error(
+                "migration backup failed integrity check: " + integrity
+            );
+        }
+    }
+    util::UniqueFD directory{
+        util::open_path_no_symlinks(path.parent_path(), O_RDONLY | O_DIRECTORY)
+    };
+    if (::fsync(file.get()) == -1 || ::fsync(directory.get()) == -1) {
+        throw std::runtime_error(
+            "cannot flush migration backup '" + name +
+            "': " + util::system_error_message(errno)
+        );
+    }
+    return backup_path;
+}
+
 }  // namespace
 
 std::vector<DatabaseIntegrityResult>
@@ -187,56 +292,35 @@ diagnose_state_databases(const std::filesystem::path& state_directory) {
         DatabaseIntegrityResult result{
             .path = entry.path(),
             .healthy = false,
+            .migration_required = false,
+            .schema_version = std::nullopt,
+            .latest_schema_version =
+                item_database_detail::current_schema_version,
             .detail = {},
         };
-        const auto status = entry.symlink_status();
-        if (std::filesystem::is_symlink(status) ||
-            !std::filesystem::is_regular_file(status)) {
-            result.detail =
-                "database path is not a regular non-symbolic-link file";
-            results.push_back(std::move(result));
-            continue;
-        }
-        struct stat file_status{};
-        if (::lstat(entry.path().c_str(), &file_status) == -1) {
-            result.detail = "cannot inspect database security: " +
-                            std::string{onedrive::util::system_error_message(errno)};
-            results.push_back(std::move(result));
-            continue;
-        }
-        if (file_status.st_uid != ::geteuid() || file_status.st_nlink != 1 ||
-            (file_status.st_mode & 07777) != private_file_mode) {
-            result.detail =
-                "database must be a single-link, current-user-owned mode "
-                "0600 file";
-            results.push_back(std::move(result));
-            continue;
-        }
-
-        sqlite3* handle = nullptr;
-        const int open_result = sqlite3_open_v2(
-            entry.path().string().c_str(),
-            &handle,
-            SQLITE_OPEN_READONLY | SQLITE_OPEN_NOFOLLOW,
-            nullptr
-        );
-        SqliteHandle database{handle};
-        if (open_result != SQLITE_OK) {
-            result.detail = handle == nullptr ? "unknown SQLite open error"
-                                              : sqlite3_errmsg(handle);
-            results.push_back(std::move(result));
-            continue;
-        }
-
         try {
-            configure_database_connection(database.get());
-            activate_database_pragmas(
-                database.get(), DatabaseAccess::read_only
+            auto database = open_maintenance_database(
+                entry.path(), DatabaseAccess::read_only
             );
+            result.schema_version =
+                item_database_detail::schema_version(database.get());
             result.detail = full_integrity_result(database.get());
             if (result.detail == "ok") {
-                verify_current_schema(database.get());
-                result.healthy = true;
+                if (*result.schema_version > 0 &&
+                    *result.schema_version < result.latest_schema_version) {
+                    result.migration_required = true;
+                    result.detail =
+                        "Database upgrade required; run 'state migrate "
+                        "--dry-run' to preview.";
+                } else if (*result.schema_version !=
+                           result.latest_schema_version) {
+                    result.detail =
+                        "Unsupported state database schema version " +
+                        std::to_string(*result.schema_version);
+                } else {
+                    verify_current_schema(database.get());
+                    result.healthy = true;
+                }
             }
         } catch (const std::exception& error) {
             result.detail = error.what();
@@ -245,6 +329,40 @@ diagnose_state_databases(const std::filesystem::path& state_directory) {
     }
     std::ranges::sort(results, {}, &DatabaseIntegrityResult::path);
     return results;
+}
+
+std::filesystem::path
+migrate_state_database(const std::filesystem::path& database_path) {
+    auto database =
+        open_maintenance_database(database_path, DatabaseAccess::writable);
+    const auto version = item_database_detail::schema_version(database.get());
+    if (version <= 0 ||
+        version > item_database_detail::current_schema_version) {
+        throw std::runtime_error(
+            "unsupported state database schema version " +
+            std::to_string(version)
+        );
+    }
+    const auto integrity = full_integrity_result(database.get());
+    if (integrity != "ok") {
+        throw std::runtime_error(
+            "state database integrity check failed: " + integrity
+        );
+    }
+    if (version == item_database_detail::current_schema_version) {
+        verify_current_schema(database.get());
+        return {};
+    }
+    const auto backup = backup_database(database.get(), database_path, version);
+    try {
+        migrate_schema(database.get());
+    } catch (const std::exception& error) {
+        throw std::runtime_error(
+            "database migration failed; backup retained at '" +
+            backup.string() + "': " + error.what()
+        );
+    }
+    return backup;
 }
 
 ItemDatabase::ItemDatabase(

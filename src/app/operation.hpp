@@ -18,6 +18,7 @@ enum class Operation {
     config,
     reset_cursor,
     cleanup_state,
+    migrate_state,
     clear_state,
     download,
     monitor,
@@ -42,6 +43,7 @@ constexpr OperationCapabilities operation_capabilities(
                 .validates_authentication_config = true,
             };
         case Operation::logout:
+        case Operation::migrate_state:
             return {};
         case Operation::diagnose:
             return {.supports_tui = true};

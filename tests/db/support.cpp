@@ -532,6 +532,16 @@ bool create_version_twenty_three_database(const std::filesystem::path& path) {
     );
 }
 
+bool create_version_twenty_four_database(const std::filesystem::path& path) {
+    return create_version_twenty_three_database(path) &&
+           execute_schema(
+               path,
+               "ALTER TABLE blocked_item ADD COLUMN ctag TEXT NOT NULL DEFAULT "
+               "'';"
+               "PRAGMA user_version = 24;"
+           );
+}
+
 bool identity_row_is_valid(const std::filesystem::path& path) {
     auto database = open_database(path);
     if (!database) {

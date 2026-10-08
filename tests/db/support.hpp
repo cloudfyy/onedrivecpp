@@ -57,6 +57,8 @@ create_version_twenty_one_database(const std::filesystem::path& path);
 create_version_twenty_two_database(const std::filesystem::path& path);
 [[nodiscard]] bool
 create_version_twenty_three_database(const std::filesystem::path& path);
+[[nodiscard]] bool
+create_version_twenty_four_database(const std::filesystem::path& path);
 [[nodiscard]] bool identity_row_is_valid(const std::filesystem::path& path);
 [[nodiscard]] bool
 schema_version_is(const std::filesystem::path& path, int expected);

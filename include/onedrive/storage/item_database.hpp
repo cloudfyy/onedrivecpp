@@ -5,6 +5,7 @@
 
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -13,11 +14,17 @@ namespace onedrive::storage {
 struct DatabaseIntegrityResult {
     std::filesystem::path path;
     bool healthy{false};
+    bool migration_required{false};
+    std::optional<int> schema_version;
+    int latest_schema_version{0};
     std::string detail;
 };
 
 [[nodiscard]] std::vector<DatabaseIntegrityResult>
 diagnose_state_databases(const std::filesystem::path& state_directory);
+
+[[nodiscard]] std::filesystem::path
+migrate_state_database(const std::filesystem::path& database_path);
 
 class ItemDatabase final {
 public:

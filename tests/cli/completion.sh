@@ -103,6 +103,13 @@ COMP_CWORD=2
 _onedrive_cpp_completion
 assert_contains reset-cursor "${COMPREPLY[@]}"
 assert_contains clear "${COMPREPLY[@]}"
+assert_contains migrate "${COMPREPLY[@]}"
+
+COMP_WORDS=(onedrive-cpp state migrate --)
+COMP_CWORD=3
+_onedrive_cpp_completion
+assert_contains --yes "${COMPREPLY[@]}"
+assert_contains --dry-run "${COMPREPLY[@]}"
 
 COMP_WORDS=(onedrive-cpp state clear --)
 COMP_CWORD=3

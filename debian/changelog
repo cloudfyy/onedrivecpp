@@ -1,3 +1,14 @@
+onedrive-cpp (0.10.13-1~ubuntu24.04) noble; urgency=medium
+
+  * Add offline state migrate with previews, explicit confirmation, private
+    SQLite backups, shared runtime locking, and transactional schema upgrades.
+  * Show actual and latest database versions in health checks and distinguish
+    older databases requiring an upgrade from unhealthy state.
+  * Cover WAL backups, migration rollback, unsupported and unsafe databases,
+    dry-run behavior, and command integration; update manuals and completions.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Thu, 08 Oct 2026 00:51:09 +0000
+
 onedrive-cpp (0.10.12-1~ubuntu24.04) noble; urgency=medium
 
   * Explicitly initialize uploaded directory content hashes to remove the

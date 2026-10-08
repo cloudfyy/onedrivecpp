@@ -97,6 +97,18 @@ add_onedrive_test(
     LIBRARIES SQLite3::SQLite3
 )
 add_onedrive_test(
+    db_maintenance_tests
+    SOURCES tests/db/maintenance.cpp
+    INCLUDE_DIRS src tests tests/db
+    LIBRARIES db_test_support SQLite3::SQLite3
+)
+add_onedrive_test(
+    app_migrate_tests
+    SOURCES tests/app/migrate.cpp
+    INCLUDE_DIRS src tests tests/app
+    LIBRARIES db_test_support
+)
+add_onedrive_test(
     device_auth_tests
     SOURCES tests/auth/device.cpp
     INCLUDE_DIRS tests

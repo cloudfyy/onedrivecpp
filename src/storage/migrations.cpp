@@ -244,13 +244,16 @@ static_assert(schema_migration_chain_is_complete());
 
 void migrate_schema(sqlite3* database) {
     int version = schema_version(database);
+    if (version == current_schema_version) {
+        return;
+    }
+    Transaction transaction{database};
     if (version == 0) {
         if (!user_tables(database).empty()) {
             throw std::runtime_error(
                 "unversioned state database contains existing tables"
             );
         }
-        Transaction transaction{database};
         ensure_current_schema(database);
         transaction.commit();
         return;
@@ -277,13 +280,18 @@ void migrate_schema(sqlite3* database) {
             );
         }
 
-        Transaction transaction{database};
         migration->apply(database);
         set_schema_version(database, migration->to_version);
-        transaction.commit();
         version = migration->to_version;
     }
-
+    verify_current_schema(database);
+    const auto integrity = full_integrity_result(database);
+    if (integrity != "ok") {
+        throw std::runtime_error(
+            "migrated state database integrity check failed: " + integrity
+        );
+    }
+    transaction.commit();
 }
 
 }  // namespace onedrive::storage::item_database_detail

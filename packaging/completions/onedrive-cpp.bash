@@ -69,7 +69,7 @@ _onedrive_cpp_completion()
                     inspect_action="$word"
                 fi
                 ;;
-            reset-cursor|cleanup|clear)
+            reset-cursor|cleanup|migrate|clear)
                 if [[ "$command" == "state" ]]; then
                     state_action="$word"
                 fi
@@ -124,7 +124,7 @@ _onedrive_cpp_completion()
                         compgen -W "$common_options" -- "$current"
                     )
                     ;;
-                cleanup)
+                cleanup|migrate)
                     mapfile -t COMPREPLY < <(
                         compgen -W "$common_options --dry-run --yes" -- "$current"
                     )
@@ -135,7 +135,7 @@ _onedrive_cpp_completion()
                     ;;
                 *)
                     mapfile -t COMPREPLY < <(
-                        compgen -W "reset-cursor cleanup clear --help" -- "$current"
+                        compgen -W "reset-cursor cleanup migrate clear --help" -- "$current"
                     )
                     ;;
             esac

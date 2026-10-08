@@ -41,6 +41,8 @@ onedrive-cpp inspect verify Documents --mode content
 onedrive-cpp inspect config
 onedrive-cpp state cleanup --dry-run
 onedrive-cpp state cleanup --yes
+onedrive-cpp state migrate --dry-run
+onedrive-cpp state migrate --yes
 ```
 
 日志级别支持 `trace`、`debug`、`info`、`warn`、`error`、`critical` 和
@@ -101,6 +103,13 @@ partial download，并将其标记为可续传、缺失、类型变化、位于�
 数据库，不会创建、迁移、修复或隔离缺失或旧版数据库。全部检查命令均支持
 `--output json`。
 
+`inspect health` 递归检查配置状态目录中的全部 `items.sqlite3`，包括账号目录布局之外
+的旧数据库。每项结果显示实际版本 `schema_version` 和程序支持的最新版本
+`latest_schema_version`（Console/TUI 标签为 `version` 和 `latest`）。无法读取版本时
+显示 `unknown`。完整性检查通过的旧库显示 `upgrade-required`，不再直接标记为
+`unhealthy`；不支持的版本、完整性或结构检查失败仍为不健康。任一数据库需要升级或
+检查失败时，命令返回 1。
+
 `inspect verify [PATH]` 会执行与 `inspect files` 相同的元数据检查。指定
 `--mode content` 后，还会计算状态中保存的 Graph SHA-256 或 QuickXorHash，并报告
 `verified`、`hash-mismatch` 或 `hash-unavailable`。经过验证的下载和远端元数据更新
@@ -114,6 +123,25 @@ partial download，并将其标记为可续传、缺失、类型变化、位于�
 `.onedrive-partial-*` 普通文件。使用 `state cleanup --yes` 才会实际清理。位于解析后
 Drive 根目录之外、名称不符合目标 partial 规则、符号链接或非普通文件绝不会被删除；
 但相应的无效数据库记录仍可移除，防止后续错误续传。
+
+## 离线升级数据库
+
+`state migrate --dry-run` 列出已有数据库及当前、目标版本，不升级数据库或创建备份。
+实际升级前请停止使用同一状态目录的 sync/watch 进程，然后使用与检查相同的
+`--config` 运行 `state migrate --yes`。未指定 `--yes` 时，文本模式要求输入
+`migrate` 确认；JSON 模式必须指定 `--yes`。配置中的 `sync.dry_run = true` 也会
+阻止实际升级。
+
+命令无需认证、不访问网络、不同步文件，并复用同步进程的运行锁。开始前检查全部发现
+的数据库，发现损坏或不支持的版本时拒绝执行；已经最新的数据库直接跳过。旧库的完整
+结构校验在迁移过程中执行，因此预览成功不保证迁移一定成功。
+
+每个数据库升级前，使用 SQLite 在同目录生成私有、一致的备份
+`items.sqlite3.pre-migrate-v<VERSION>-<SUFFIX>`，包含已提交的 WAL 数据，并输出备份
+路径。备份需要额外磁盘空间，不自动删除，且可能包含敏感同步元数据；请保留至确认升级
+成功后再处理。每个库的全部升级步骤及最终完整性、结构校验位于同一事务中：失败时
+回滚该库、保留备份并以状态 1 停止；本轮先前已成功升级的其他数据库仍保持已升级。
+此命令绝不自动重建或隔离损坏数据库。完成后可再次运行 `inspect health`。
 
 ## Shell 自动补全
 

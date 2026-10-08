@@ -42,6 +42,8 @@ onedrive-cpp inspect verify Documents --mode content
 onedrive-cpp inspect config
 onedrive-cpp state cleanup --dry-run
 onedrive-cpp state cleanup --yes
+onedrive-cpp state migrate --dry-run
+onedrive-cpp state migrate --yes
 ```
 
 Supported levels are `trace`, `debug`, `info`, `warn`, `error`, `critical`,
@@ -117,6 +119,14 @@ that inspect local state open an existing SQLite database read-only and do not
 create, migrate, repair, or quarantine a missing or older database. All
 inspection commands support `--output json`.
 
+`inspect health` recursively checks every `items.sqlite3` under the configured
+state directory, including legacy databases outside the account layout. Each
+result includes `schema_version` and `latest_schema_version` (Console/TUI
+labels: `version` and `latest`). An unreadable version is `unknown`.
+An intact older database reports `upgrade-required`, not `unhealthy`;
+unsupported versions and integrity/schema failures remain unhealthy. The
+command returns 1 if any database needs an upgrade or fails a check.
+
 `inspect verify [PATH]` performs the same metadata checks as `inspect files`.
 With `--mode content`, it additionally computes the saved Graph SHA-256 or
 QuickXorHash and reports `verified`, `hash-mismatch`, or `hash-unavailable`.
@@ -135,6 +145,33 @@ proxy URLs.
 paths that do not match the destination's partial-file pattern, symbolic
 links, and non-regular files are never deleted; invalid database records for
 such paths can still be removed so they cannot be resumed.
+
+## Offline database upgrades
+
+`state migrate --dry-run` lists existing databases and their current and target
+versions without upgrading them or creating backups. To upgrade, stop any
+sync/watch process using this state directory, then run `state migrate --yes`
+with the same `--config` as your inspection. Without `--yes`, text output asks
+you to type `migrate`; JSON requires `--yes`. A configured `sync.dry_run = true`
+also prevents upgrades.
+
+This command needs no authentication or network access and does not synchronize
+files. It holds the same runtime lock as synchronization. It checks all
+discovered databases before starting and refuses detected corruption or
+unsupported versions; current databases are skipped. Older schemas undergo
+full structural validation during migration, so a preview is not a guarantee
+that migration will succeed.
+
+Before each upgrade, SQLite creates a private, consistent backup beside the
+database named `items.sqlite3.pre-migrate-v<VERSION>-<SUFFIX>`, including
+committed WAL data. The command reports its path. Keep these backups until
+you have verified the upgrade; they are not deleted automatically and may
+contain sensitive synchronization metadata. Backups require additional disk
+space. Each database's upgrade and final integrity/schema checks form one
+transaction: a failed upgrade rolls back, retains the backup, and stops with
+exit status 1. Databases already upgraded earlier in the run remain upgraded.
+Corrupt databases are never automatically rebuilt or quarantined by this command.
+Afterwards, run `inspect health` again.
 
 ## Shell completion
 

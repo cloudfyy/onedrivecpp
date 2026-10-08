@@ -174,7 +174,7 @@ _onedrive_cpp()
                         '--quiet[suppress informational and success output]' \
                         '--yes[confirm state clear without an interactive prompt]'
                     ;;
-                cleanup)
+                cleanup|migrate)
                     _arguments \
                         '(-h --help)'{-h,--help}'[show command help]' \
                         '--config[path to configuration file]:configuration file:_files' \
@@ -183,12 +183,12 @@ _onedrive_cpp()
                         '--color[color output mode]:mode:(auto always never)' \
                         '--output[output format]:format:(text json)' \
                         '--quiet[suppress informational and success output]' \
-                        '--dry-run[show cleanup candidates without removing them]' \
-                        '--yes[confirm cleanup without an interactive prompt]'
+                        '--dry-run[preview state maintenance without changing databases or files]' \
+                        '--yes[confirm state maintenance without an interactive prompt]'
                     ;;
                 *)
                     _arguments \
-                        '1:state action:(reset-cursor cleanup clear)'
+                        '1:state action:(reset-cursor cleanup migrate clear)'
                     ;;
             esac
             ;;

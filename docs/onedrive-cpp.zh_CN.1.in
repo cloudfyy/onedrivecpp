@@ -54,6 +54,9 @@ onedrive-cpp \- 现代 C++ OneDrive 同步客户端
 .B onedrive-cpp state cleanup
 .RI [ 选项 ]
 .PP
+.B onedrive-cpp state migrate
+.RI [ 选项 ]
+.PP
 .B onedrive-cpp state clear
 .RI [ 选项 ]
 .PP
@@ -88,8 +91,9 @@ Graph 操作传播删除、移动和重命名。SQLite journal 为传输和元�
 .B inspect health
 对配置状态目录中的每个 Drive 数据库执行只读 SQLite
 .BR integrity_check 、
-外键检查和精确的应用 schema 检查。该命令不访问 Microsoft Graph；任一数据库
-不健康时返回非零值。使用
+外键检查和应用 schema 检查。显示实际版本和程序支持的最新版本；无法读取实际版本时
+显示 unknown。完整性通过的旧库显示 upgrade-required，不支持的版本或检查失败显示
+unhealthy。该命令不访问 Microsoft Graph；上述任一情况返回非零值。使用
 .B \-\-output json
 可获得结构化诊断。
 .TP
@@ -171,6 +175,20 @@ pending-download、partial-download、pending-upload、pending-move、选择性�
 .B \-\-yes
 进行非交互确认。位于 Drive 根目录外、符号链接、非普通文件或名称不符合目标 partial
 规则的文件绝不会删除。
+.TP
+.B state migrate
+离线升级全部已有状态数据库，包括旧目录布局中的数据库。使用
+.B \-\-dry-run
+预览版本，不修改数据库或创建备份；使用
+.B \-\-yes
+确认实际升级，否则文本模式要求输入 migrate，JSON 模式必须显式确认。
+配置中的 dry-run 也会阻止升级。无需认证、不访问网络、不同步文件。
+命令复用同步运行锁，拒绝已检测出的损坏和不支持的版本，跳过最新数据库。
+每个库升级前在同目录创建权限为 0600、包含已提交 WAL 数据的 SQLite 一致性备份，
+名称为 items.sqlite3.pre-migrate-v<VERSION>-<SUFFIX>，并输出路径。
+备份需要额外空间且不会自动删除。每个库的全部升级步骤和最终完整性、结构校验使用
+同一事务；失败时回滚该库、保留备份并停止，先前成功升级的其他库保持已升级。
+不自动重建或隔离损坏数据库。预览不校验所有旧版数据库结构。
 .TP
 .B state clear
 会清除当前 Drive 的 item 快照、Delta 游标、pending-download、

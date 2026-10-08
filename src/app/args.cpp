@@ -113,6 +113,9 @@ ParseResult parse_arguments(int argc, char* argv[]) {
     auto* cleanup_state = state->add_subcommand(
         "cleanup", "Remove invalid and orphaned partial download state"
     );
+    auto* migrate_state = state->add_subcommand(
+        "migrate", "Back up and upgrade local state databases without syncing"
+    );
     auto* clear_state = state->add_subcommand(
         "clear",
         "Clear all saved synchronization state for the configured drive"
@@ -144,6 +147,7 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         std::pair{inspect_config, Operation::config},
         std::pair{reset_cursor, Operation::reset_cursor},
         std::pair{cleanup_state, Operation::cleanup_state},
+        std::pair{migrate_state, Operation::migrate_state},
         std::pair{clear_state, Operation::clear_state},
         std::pair{transfer_sync, Operation::synchronize},
         std::pair{transfer_download, Operation::download},
@@ -220,6 +224,14 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         "--yes",
         arguments.assume_yes,
         "Confirm removal of invalid partial files and state"
+    );
+    migrate_state->add_flag(
+        "--dry-run",
+        arguments.force_dry_run,
+        "List database versions and upgrade candidates without changing them"
+    );
+    migrate_state->add_flag(
+        "--yes", arguments.assume_yes, "Confirm database backups and upgrades"
     );
     transfer_sync->add_flag(
         "--dry-run",
@@ -308,24 +320,25 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         return result;
     }
 
-    arguments.operation = *account_login    ? Operation::authenticate
-                          : *account_logout ? Operation::logout
-                          : *inspect_health ? Operation::diagnose
-                          : *inspect_drives ? Operation::drives
-                          : *inspect_shared ? Operation::shared
-                          : *inspect_sites  ? Operation::sites
-                          : *inspect_quota  ? Operation::quota
-                          : *inspect_status ? Operation::status
-                          : *inspect_storage ? Operation::storage
-                          : *inspect_partials ? Operation::partials
-                          : *inspect_files  ? Operation::files
-                          : *inspect_verify ? Operation::verify
-                          : *inspect_config ? Operation::config
-                          : *reset_cursor   ? Operation::reset_cursor
-                          : *cleanup_state ? Operation::cleanup_state
-                          : *clear_state    ? Operation::clear_state
+    arguments.operation = *account_login       ? Operation::authenticate
+                          : *account_logout    ? Operation::logout
+                          : *inspect_health    ? Operation::diagnose
+                          : *inspect_drives    ? Operation::drives
+                          : *inspect_shared    ? Operation::shared
+                          : *inspect_sites     ? Operation::sites
+                          : *inspect_quota     ? Operation::quota
+                          : *inspect_status    ? Operation::status
+                          : *inspect_storage   ? Operation::storage
+                          : *inspect_partials  ? Operation::partials
+                          : *inspect_files     ? Operation::files
+                          : *inspect_verify    ? Operation::verify
+                          : *inspect_config    ? Operation::config
+                          : *reset_cursor      ? Operation::reset_cursor
+                          : *cleanup_state     ? Operation::cleanup_state
+                          : *migrate_state     ? Operation::migrate_state
+                          : *clear_state       ? Operation::clear_state
                           : *transfer_download ? Operation::download
-                          : *transfer_watch ? Operation::monitor
+                          : *transfer_watch    ? Operation::monitor
                                                : Operation::synchronize;
     return result;
 }

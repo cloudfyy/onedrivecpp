@@ -23,6 +23,136 @@
 namespace onedrive::app::detail {
 namespace {
 
+void show_database_result(
+    const cli::Console& console, const storage::DatabaseIntegrityResult& result
+) {
+    console.section(
+        "database_integrity",
+        "Synchronization state database:",
+        {
+            {.label = "path:", .key = "path", .value = result.path.string()},
+            {
+                .label = "status:",
+                .key = "status",
+                .value = result.healthy              ? "healthy"
+                         : result.migration_required ? "upgrade-required"
+                                                     : "unhealthy",
+            },
+            {
+                .label = "version:",
+                .key = "schema_version",
+                .value = result.schema_version
+                             ? std::to_string(*result.schema_version)
+                             : "unknown",
+            },
+            {
+                .label = "latest:",
+                .key = "latest_schema_version",
+                .value = std::to_string(result.latest_schema_version),
+            },
+            {.label = "detail:", .key = "detail", .value = result.detail},
+        }
+    );
+}
+
+int migrate_state(
+    const config::Config& config,
+    const Arguments& arguments,
+    const cli::Console& console
+) {
+    const auto results =
+        storage::diagnose_state_databases(config.state_directory);
+    bool invalid = false;
+    bool pending = false;
+    for (const auto& result : results) {
+        show_database_result(console, result);
+        invalid = invalid || (!result.healthy && !result.migration_required);
+        pending = pending || result.migration_required;
+    }
+    if (invalid) {
+        console.message(
+            cli::MessageKind::error,
+            "database_migration_failed",
+            "Migration refused: one or more databases are unhealthy or have "
+            "unsupported versions. No databases were upgraded."
+        );
+        return 1;
+    }
+    if (!pending || arguments.force_dry_run || config.dry_run) {
+        console.message(
+            cli::MessageKind::success,
+            "database_migration_preview",
+            pending ? "Dry run: listed databases require an upgrade; no "
+                      "databases or backups were changed."
+                    : "No databases require an upgrade."
+        );
+        return 0;
+    }
+    if (!arguments.assume_yes) {
+        if (console.output_mode() == cli::OutputMode::json) {
+            console.message(
+                cli::MessageKind::error,
+                "confirmation_required",
+                "Database migration requires --yes with JSON output."
+            );
+            return 1;
+        }
+        if (!console.confirm(
+                "database_migration_confirmation",
+                "Back up and upgrade all listed outdated databases? "
+                "Type 'migrate' to confirm: ",
+                "migrate"
+            )) {
+            console.message(
+                cli::MessageKind::warning,
+                "database_migration_cancelled",
+                "Database migration cancelled."
+            );
+            return 1;
+        }
+    }
+    for (const auto& result : results) {
+        if (!result.migration_required) {
+            continue;
+        }
+        try {
+            const auto backup = storage::migrate_state_database(result.path);
+            console.section(
+                "database_migrated",
+                "Database upgrade completed:",
+                {
+                    {.label = "path:",
+                     .key = "path",
+                     .value = result.path.string()},
+                    {.label = "from:",
+                     .key = "previous_schema_version",
+                     .value = std::to_string(*result.schema_version)},
+                    {.label = "version:",
+                     .key = "schema_version",
+                     .value = std::to_string(result.latest_schema_version)},
+                    {.label = "backup:",
+                     .key = "backup_path",
+                     .value = backup.string()},
+                }
+            );
+        } catch (const std::exception& error) {
+            console.message(
+                cli::MessageKind::error,
+                "database_migration_failed",
+                "Cannot upgrade '" + result.path.string() + "': " + error.what()
+            );
+            return 1;
+        }
+    }
+    console.message(
+        cli::MessageKind::success,
+        "database_migration_completed",
+        "Database upgrades completed; no local or remote files were "
+        "synchronized."
+    );
+    return 0;
+}
+
 int authenticate(
     const config::Config& config,
     const RuntimeFactory& runtime_factory,
@@ -93,6 +223,9 @@ int execute_command(
     const cli::Console& console
 ) {
     const auto operation = arguments.operation;
+    if (operation == Operation::migrate_state) {
+        return migrate_state(config, arguments, console);
+    }
     if (operation == Operation::authenticate) {
         spdlog::info("Starting Microsoft authentication");
         if (config::has_broad_auth_scope(config.auth_scope)) {
@@ -139,37 +272,26 @@ int execute_command(
         }
 
         bool healthy = true;
+        bool invalid = false;
         for (const auto& result : results) {
-            console.section(
-                "database_integrity",
-                "Synchronization state database:",
-                {
-                    {
-                        .label = "path:",
-                        .key = "path",
-                        .value = result.path.string(),
-                    },
-                    {
-                        .label = "status:",
-                        .key = "status",
-                        .value = result.healthy ? "healthy" : "unhealthy",
-                    },
-                    {
-                        .label = "detail:",
-                        .key = "detail",
-                        .value = result.detail,
-                    },
-                }
-            );
+            show_database_result(console, result);
             healthy = healthy && result.healthy;
+            invalid =
+                invalid || (!result.healthy && !result.migration_required);
         }
         console.message(
-            healthy ? cli::MessageKind::success : cli::MessageKind::error,
-            healthy ? "database_integrity_passed" : "database_integrity_failed",
+            healthy   ? cli::MessageKind::success
+            : invalid ? cli::MessageKind::error
+                      : cli::MessageKind::warning,
+            healthy   ? "database_integrity_passed"
+            : invalid ? "database_integrity_failed"
+                      : "database_upgrade_required",
             healthy ? "All synchronization state databases passed full "
                       "integrity and schema checks."
-                    : "One or more synchronization state databases failed "
-                      "integrity or schema checks."
+            : invalid
+                ? "One or more synchronization state databases failed "
+                  "integrity or schema checks."
+                : "Database upgrade required; run 'state migrate --dry-run'."
         );
         return healthy ? 0 : 1;
     }
