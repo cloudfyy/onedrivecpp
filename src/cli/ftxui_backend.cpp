@@ -183,6 +183,35 @@ public:
         leave_fullscreen();
     }
 
+    void finish() override {
+        switch (view_) {
+            case TuiView::health:
+            case TuiView::status:
+            case TuiView::drives:
+            case TuiView::shared:
+            case TuiView::sites:
+            case TuiView::quota:
+            case TuiView::storage:
+            case TuiView::partials:
+            case TuiView::files:
+            case TuiView::verify:
+            case TuiView::config:
+                break;
+            default:
+                return;
+        }
+        if (finished_) {
+            return;
+        }
+        finished_ = true;
+        render();
+        std::string input;
+        std::getline(std::cin, input);
+        if (std::cin.bad()) {
+            throw std::runtime_error("cannot read terminal completion input");
+        }
+    }
+
     void emit(const ConsoleEvent& event) override {
         std::visit(
             [this](const auto& value) { update(value); },
@@ -456,6 +485,12 @@ private:
                 palette_.accent
             ));
         }
+        if (finished_) {
+            content.push_back(separator());
+            content.push_back(with_color(
+                text(" Enter  CLOSE "), palette_.accent
+            ));
+        }
         return vbox(std::move(content)) | border;
     }
 
@@ -491,6 +526,7 @@ private:
     ThemePalette palette_;
     bool styled_;
     bool fullscreen_active_{false};
+    bool finished_{false};
     std::vector<DashboardMessage> messages_;
     std::string section_title_;
     std::vector<Field> section_fields_;

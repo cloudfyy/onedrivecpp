@@ -13,6 +13,98 @@ namespace {
 
 using onedrive::test::fail;
 
+int test_inspection_completion() {
+    using namespace onedrive::cli;
+    constexpr std::array inspection_views{
+        TuiView::health, TuiView::status, TuiView::drives, TuiView::shared,
+        TuiView::sites, TuiView::quota, TuiView::storage, TuiView::partials,
+        TuiView::files, TuiView::verify, TuiView::config,
+    };
+    for (const auto view : inspection_views) {
+        std::ostringstream output;
+        std::ostringstream error;
+        {
+            const Console console{detail::make_ftxui_console_backend(
+                {.color = ColorMode::never, .ui = UiMode::tui, .view = view},
+                output, error, 100, 30
+            )};
+            console.message(
+                MessageKind::success, "result", "Inspection result retained"
+            );
+            std::istringstream input{"\nremaining\n"};
+            auto* original = std::cin.rdbuf(input.rdbuf());
+            console.finish();
+            console.finish();
+            std::cin.rdbuf(original);
+            const auto rendered = output.str();
+            const auto frame = rendered.substr(rendered.rfind("\033[H"));
+            if (!frame.contains("Enter  CLOSE") ||
+                !frame.contains("Inspection result retained") ||
+                rendered.contains("\033[?1049l") ||
+                input.peek() != 'r') {
+                return fail("inspection completion lost results or read twice");
+            }
+        }
+        if (!output.str().contains("\033[?1049l")) {
+            return fail("inspection completion did not restore the terminal");
+        }
+    }
+    for (const auto view :
+         {TuiView::sync, TuiView::download, TuiView::watch, TuiView::auth}) {
+        std::ostringstream output;
+        std::ostringstream error;
+        const Console console{detail::make_ftxui_console_backend(
+            {.ui = UiMode::tui, .view = view}, output, error, 80, 20
+        )};
+        std::istringstream input{"untouched\n"};
+        auto* original = std::cin.rdbuf(input.rdbuf());
+        console.finish();
+        std::cin.rdbuf(original);
+        if (input.peek() != 'u' || output.str().contains("Enter  CLOSE")) {
+            return fail("non-inspection TUI unexpectedly waited for input");
+        }
+    }
+    for (const bool read_error : {false, true}) {
+        std::ostringstream output;
+        std::ostringstream error;
+        const Console console{detail::make_ftxui_console_backend(
+            {.ui = UiMode::tui, .view = TuiView::health},
+            output, error, 80, 20
+        )};
+        std::istringstream input;
+        auto* original = std::cin.rdbuf(input.rdbuf());
+        if (read_error) {
+            std::cin.setstate(std::ios::badbit);
+        }
+        const bool threw = onedrive::test::throws_with<std::runtime_error>(
+            [&console] { console.finish(); },
+            "cannot read terminal completion input"
+        );
+        const bool reached_eof = std::cin.eof();
+        std::cin.rdbuf(original);
+        if (threw != read_error || (!read_error && !reached_eof)) {
+            return fail("inspection completion mishandled EOF or input failure");
+        }
+    }
+    for (const auto mode : {OutputMode::text, OutputMode::json}) {
+        std::ostringstream output;
+        std::ostringstream error;
+        const Console console{
+            {.output = mode, .ui = UiMode::console, .view = TuiView::health},
+            output, error
+        };
+        std::istringstream input{"untouched\n"};
+        auto* original = std::cin.rdbuf(input.rdbuf());
+        console.finish();
+        std::cin.rdbuf(original);
+        if (input.peek() != 'u' || !output.str().empty() ||
+            !error.str().empty()) {
+            return fail("console or JSON completion was not a no-op");
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_tui_dashboard() {
     using namespace onedrive::cli;
     using onedrive::util::ProgressState;
@@ -347,5 +439,8 @@ int test_tui_dashboard() {
 }  // namespace
 
 int main() {
+    if (const auto result = test_inspection_completion(); result != EXIT_SUCCESS) {
+        return result;
+    }
     return test_tui_dashboard();
 }

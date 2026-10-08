@@ -29,6 +29,7 @@ public:
     );
     explicit Console(std::unique_ptr<ConsoleBackend> backend);
     ~Console();
+    void finish() const;
 
     Console(const Console&) = delete;
     Console& operator=(const Console&) = delete;

@@ -127,9 +127,11 @@ int Application::run(int argc, char* argv[]) {
         const detail::RuntimePreflight runtime_preflight{
             config, arguments.operation
         };
-        return detail::execute_command(
+        const auto result = detail::execute_command(
             arguments, std::move(config), *runtime_factory_, console
         );
+        console.finish();
+        return result;
     } catch (const std::exception& error) {
         if (const auto logger = spdlog::default_logger()) {
             logger->error("{}", error.what());

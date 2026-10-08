@@ -9,6 +9,7 @@ public:
     virtual ~ConsoleBackend() = default;
 
     virtual void emit(const ConsoleEvent& event) = 0;
+    virtual void finish() {}
     [[nodiscard]] virtual bool confirm(
         const ConfirmationRequest& request
     ) = 0;

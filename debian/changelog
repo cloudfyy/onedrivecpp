@@ -1,3 +1,11 @@
+onedrive-cpp (0.10.11-1~ubuntu24.04) noble; urgency=medium
+
+  * Keep inspection TUI results visible until Enter is pressed.
+  * Add explicit console completion without blocking destructors, JSON output,
+    or transfer and watch commands.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Thu, 08 Oct 2026 00:27:54 +0000
+
 onedrive-cpp (0.10.10-1~ubuntu24.04) noble; urgency=medium
 
   * Share constrained exception assertions across account, Graph, atomic-file,

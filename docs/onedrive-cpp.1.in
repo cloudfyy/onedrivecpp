@@ -248,6 +248,11 @@ mode displays an FTXUI status dashboard only when both standard streams are
 terminals, terminal controls are supported, and the window is at least 60 by
 12. Unsupported terminals, redirection, pipes, JSON, and quiet mode
 automatically retain normal console output.
+Inspection dashboards retain their final results until Enter is pressed.
+Console and JSON output exit immediately after completion. Use
+.B \-\-ui console
+to keep inspection results in terminal scrollback instead.
+.PP
 SQLite pending-download records and SHA-256 content fingerprints provide
 crash recovery independently of target-file-system extended attributes.
 Downloads starting at byte zero calculate SHA-256 and QuickXorHash while data

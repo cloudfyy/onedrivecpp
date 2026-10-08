@@ -73,6 +73,10 @@ undersized terminals automatically use the normal console. Use
 reports a clear error instead of falling back when the terminal cannot support
 it. In the watch dashboard, press `q`, `Q`, or `Esc` to stop cleanly.
 
+Inspection dashboards keep their final results visible until you press Enter.
+Console and JSON output still exit immediately; use `--ui console` to retain
+inspection results in the terminal scrollback without an interactive pause.
+
 The dashboard enters the terminal's alternate full-screen buffer immediately,
 shows the client version, and restores the original screen on exit. The
 download dashboard reuses the persistent progress, transfer-rate, and ETA

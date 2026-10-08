@@ -122,6 +122,11 @@ Console::Console(std::unique_ptr<ConsoleBackend> backend)
 
 Console::~Console() = default;
 
+void Console::finish() const {
+    const std::scoped_lock lock{backend_mutex_};
+    backend_->finish();
+}
+
 void Console::message(
     MessageKind kind,
     std::string_view event,
