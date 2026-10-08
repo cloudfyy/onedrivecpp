@@ -130,3 +130,10 @@ log levels instead of allocating and lowercasing copies. Use `std::string_view`
 for synchronous borrowed text and `std::span` subviews for remaining I/O buffers.
 Keep POSIX calls behind RAII owners; newer syntax must not weaken checked
 close, durability, or error-reporting behavior.
+
+Test fixtures share checked binary file I/O and exception matching through
+`tests/support/common.hpp`. `throws_with<Exception>(operation, message)` matches
+a message substring and returns false when no exception is thrown. Exceptions
+outside the requested type propagate; specify `std::runtime_error` when a test
+must not accept logic errors. Callables are borrowed, including move-only ones.
+The `test_support_tests` target verifies these helper contracts independently.

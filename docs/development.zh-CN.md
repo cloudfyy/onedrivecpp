@@ -107,3 +107,8 @@ ngcpp/proxy 提供具有明确拥有/借用适配方式的类型擦除运行时�
 转小写。同步借用文本使用 `std::string_view`，剩余 I/O 缓冲区使用 `std::span`
 子视图。POSIX 调用继续由 RAII 对象管理；新语法不能削弱关闭错误检查、持久化
 和错误报告行为。
+
+测试通过 `tests/support/common.hpp` 复用带错误检查的二进制文件 I/O 和异常匹配。
+`throws_with<Exception>(operation, message)` 按消息子串匹配；未抛异常时返回 false，
+指定类型之外的异常继续传播。测试不应接受逻辑错误时，应指定 `std::runtime_error`。
+callable 采用借用方式，支持不可复制对象。`test_support_tests` 独立验证这些契约。

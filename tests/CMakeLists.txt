@@ -3,6 +3,12 @@ include(${PROJECT_SOURCE_DIR}/cmake/TestHelpers.cmake)
 find_program(BASH_EXECUTABLE bash REQUIRED)
 
 add_onedrive_test(
+    test_support_tests
+    SOURCES tests/support/common.cpp
+    INCLUDE_DIRS tests
+)
+
+add_onedrive_test(
     account_state_tests
     SOURCES tests/account/state.cpp
     INCLUDE_DIRS tests

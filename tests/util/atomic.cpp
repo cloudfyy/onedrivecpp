@@ -14,15 +14,7 @@ namespace {
 
 using onedrive::test::fail;
 
-template <typename Action>
-bool throws_with(Action action, const std::string& expected) {
-    try {
-        action();
-    } catch (const std::exception& error) {
-        return std::string{error.what()}.contains(expected);
-    }
-    return false;
-}
+using onedrive::test::throws_with;
 
 }  // namespace
 

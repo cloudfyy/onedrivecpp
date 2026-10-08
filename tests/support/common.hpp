@@ -1,9 +1,11 @@
 #pragma once
 
 #include <chrono>
+#include <concepts>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <iterator>
 #include <source_location>
@@ -17,6 +19,21 @@ namespace onedrive::test {
 [[nodiscard]] inline int fail(std::string_view message) {
     std::cerr << message << '\n';
     return EXIT_FAILURE;
+}
+
+template <typename Exception = std::exception, typename Operation>
+    requires std::derived_from<Exception, std::exception> &&
+             std::invocable<Operation&>
+[[nodiscard]] bool throws_with(
+    Operation&& operation,
+    std::string_view expected = {}
+) {
+    try {
+        std::invoke(operation);
+    } catch (const Exception& error) {
+        return std::string_view{error.what()}.contains(expected);
+    }
+    return false;
 }
 
 template <typename Predicate>

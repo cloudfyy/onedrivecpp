@@ -15,15 +15,7 @@ namespace detail = onedrive::graph::client_detail;
 using detail::Json;
 using onedrive::test::fail;
 
-template <typename Operation>
-bool throws_with(Operation&& operation, std::string_view expected) {
-    try {
-        operation();
-    } catch (const std::exception& error) {
-        return std::string_view{error.what()}.contains(expected);
-    }
-    return false;
-}
+using onedrive::test::throws_with;
 
 int test_paths_and_errors() {
     if (detail::percent_encode_remote_path("My Folder/report #1.txt") !=

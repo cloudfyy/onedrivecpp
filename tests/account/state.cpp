@@ -14,15 +14,7 @@ namespace {
 using onedrive::test::fail;
 using onedrive::test::TemporaryDirectory;
 
-template <typename Operation>
-bool throws_with(Operation&& operation, std::string_view expected) {
-    try {
-        operation();
-    } catch (const std::exception& error) {
-        return std::string_view{error.what()}.contains(expected);
-    }
-    return false;
-}
+using onedrive::test::throws_with;
 
 bool rejected_active_marker(
     const std::filesystem::path& root,

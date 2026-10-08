@@ -35,26 +35,19 @@ std::filesystem::path write_token(
     const auto account_directory =
         state_directory / "accounts/Test-User--12345678";
     std::filesystem::create_directories(account_directory);
-    {
-        std::ofstream marker{state_directory / "active_account"};
-        marker << account_directory.filename().string() << '\n';
-    }
+    write_file(
+        state_directory / "active_account",
+        account_directory.filename().string() + '\n'
+    );
     const auto token_path = account_directory / "refresh_token";
-    std::ofstream output{token_path};
-    output << "test-refresh-token";
-    output.close();
+    write_file(token_path, "test-refresh-token");
     std::filesystem::permissions(token_path, permissions);
     return token_path;
 }
 
 template <typename Action>
-bool throws_with(Action action, const std::string& expected) {
-    try {
-        action();
-    } catch (const std::runtime_error& error) {
-        return std::string{error.what()}.contains(expected);
-    }
-    return false;
+[[nodiscard]] bool throws_with(Action&& action, std::string_view expected) {
+    return onedrive::test::throws_with<std::runtime_error>(action, expected);
 }
 
 } // namespace onedrive::test::preflight
