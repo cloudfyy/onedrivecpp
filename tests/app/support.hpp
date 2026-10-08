@@ -20,6 +20,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <ranges>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -143,11 +144,13 @@ public:
     explicit FakeGraphClient(
         std::string configured_drive_id,
         bool empty_shared = false,
-        bool empty_sites = false
+        bool empty_sites = false,
+        bool include_configured_drive = false
     )
         : configured_drive_id_{std::move(configured_drive_id)},
           empty_shared_{empty_shared},
-          empty_sites_{empty_sites} {
+          empty_sites_{empty_sites},
+          include_configured_drive_{include_configured_drive} {
     }
 
     [[nodiscard]] onedrive::account::DriveIdentity drive_identity() const {
@@ -155,7 +158,7 @@ public:
     }
 
     [[nodiscard]] std::vector<onedrive::graph::DriveInfo> list_drives() const {
-        return {
+        std::vector<onedrive::graph::DriveInfo> drives{
             {
                 .id = "shared-drive-id",
                 .name = "Shared Drive",
@@ -165,6 +168,10 @@ public:
                 .quota = std::nullopt,
             },
         };
+        if (include_configured_drive_) {
+            drives.push_back(drive_info());
+        }
+        return drives;
     }
 
     [[nodiscard]] onedrive::graph::DriveInfo drive_info() const {
@@ -347,6 +354,7 @@ private:
     std::string configured_drive_id_;
     bool empty_shared_;
     bool empty_sites_;
+    bool include_configured_drive_;
 };
 
 class FakeItemStore final {
@@ -359,7 +367,9 @@ public:
         int& clear_count,
         std::string& clear_drive_id,
         const std::vector<onedrive::storage::ItemState>& items,
-        const std::vector<onedrive::storage::PartialDownload>& partials
+        const std::vector<onedrive::storage::PartialDownload>& partials,
+        const std::vector<onedrive::storage::PendingDownload>& pending,
+        const std::vector<onedrive::storage::BlockedItem>& blocked
     )
         : open_count_{open_count},
           apply_delta_count_{apply_delta_count},
@@ -368,7 +378,9 @@ public:
           clear_count_{clear_count},
           clear_drive_id_{clear_drive_id},
           items_{items},
-          partials_{partials} {
+          partials_{partials},
+          pending_{pending},
+          blocked_{blocked} {
     }
 
     void open() {
@@ -393,8 +405,12 @@ public:
     }
 
     [[nodiscard]] std::vector<onedrive::storage::PendingDownload>
-    pending_downloads(const std::string&) const {
-        return {};
+    pending_downloads(const std::string& drive_id) const {
+        auto filtered =
+            pending_ | std::views::filter([&](const auto& download) {
+                return download.item.drive_id == drive_id;
+            });
+        return {filtered.begin(), filtered.end()};
     }
 
     void save_partial_download(onedrive::storage::PartialDownload) {
@@ -409,8 +425,12 @@ public:
     }
 
     [[nodiscard]] std::vector<onedrive::storage::PartialDownload>
-    partial_downloads(const std::string&) const {
-        return partials_;
+    partial_downloads(const std::string& drive_id) const {
+        auto filtered =
+            partials_ | std::views::filter([&](const auto& partial) {
+                return partial.item.drive_id == drive_id;
+            });
+        return {filtered.begin(), filtered.end()};
     }
 
     void save_pending_upload(onedrive::storage::PendingUpload) {
@@ -474,8 +494,11 @@ public:
     }
 
     [[nodiscard]] std::vector<onedrive::storage::BlockedItem>
-    blocked_items(const std::string&) const {
-        return {};
+    blocked_items(const std::string& drive_id) const {
+        auto filtered = blocked_ | std::views::filter([&](const auto& item) {
+                            return item.drive_id == drive_id;
+                        });
+        return {filtered.begin(), filtered.end()};
     }
 
     bool reset(const std::string& drive_id) {
@@ -519,8 +542,11 @@ public:
     }
 
     [[nodiscard]] std::vector<onedrive::storage::ItemState>
-    drive_items(const std::string&) const {
-        return items_;
+    drive_items(const std::string& drive_id) const {
+        auto filtered = items_ | std::views::filter([&](const auto& item) {
+                            return item.drive_id == drive_id;
+                        });
+        return {filtered.begin(), filtered.end()};
     }
 
 private:
@@ -532,6 +558,8 @@ private:
     std::string& clear_drive_id_;
     const std::vector<onedrive::storage::ItemState>& items_;
     const std::vector<onedrive::storage::PartialDownload>& partials_;
+    const std::vector<onedrive::storage::PendingDownload>& pending_;
+    const std::vector<onedrive::storage::BlockedItem>& blocked_;
 };
 
 class FakeMonitor final {
@@ -610,7 +638,8 @@ public:
             std::in_place_type<FakeGraphClient>,
             configured_drive_id,
             empty_shared,
-            empty_sites
+            empty_sites,
+            include_configured_drive
         );
     }
 
@@ -630,7 +659,9 @@ public:
             clear_count_,
             clear_drive_id_,
             item_states,
-            partial_download_states
+            partial_download_states,
+            pending_download_states,
+            blocked_item_states
         );
     }
 
@@ -665,6 +696,7 @@ public:
     std::string configured_drive_id{"me"};
     bool empty_shared{false};
     bool empty_sites{false};
+    bool include_configured_drive{false};
     mutable int token_store_count{0};
     mutable int graph_client_count{0};
     mutable int graph_info_client_count{0};
@@ -683,6 +715,8 @@ public:
     std::vector<onedrive::storage::ItemState> item_states;
     std::vector<onedrive::storage::PartialDownload>
         partial_download_states;
+    std::vector<onedrive::storage::PendingDownload> pending_download_states;
+    std::vector<onedrive::storage::BlockedItem> blocked_item_states;
 };
 
 RunResult run_application(

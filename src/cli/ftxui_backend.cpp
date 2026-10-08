@@ -452,7 +452,7 @@ private:
                     field.label + " " + field.value
                 ));
             }
-            content.push_back(vbox(std::move(fields)) | border);
+            content.push_back(vbox(std::move(fields)) | border | yflex_shrink);
         }
         if (blocked_items_ != 0) {
             content.push_back(with_color(
@@ -487,9 +487,9 @@ private:
         }
         if (finished_) {
             content.push_back(separator());
-            content.push_back(with_color(
-                text(" Enter  CLOSE "), palette_.accent
-            ));
+            content.push_back(
+                with_color(text(" Press Enter to exit "), palette_.accent)
+            );
         }
         return vbox(std::move(content)) | border;
     }

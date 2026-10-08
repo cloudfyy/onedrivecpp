@@ -1,7 +1,9 @@
 #include "cli/backend_factory.hpp"
+#include "app/drive_fields.hpp"
 #include "onedrive/cli/console.hpp"
 #include "support/common.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstdlib>
 #include <iostream>
@@ -38,10 +40,9 @@ int test_inspection_completion() {
             std::cin.rdbuf(original);
             const auto rendered = output.str();
             const auto frame = rendered.substr(rendered.rfind("\033[H"));
-            if (!frame.contains("Enter  CLOSE") ||
+            if (!frame.contains("Press Enter to exit") ||
                 !frame.contains("Inspection result retained") ||
-                rendered.contains("\033[?1049l") ||
-                input.peek() != 'r') {
+                rendered.contains("\033[?1049l") || input.peek() != 'r') {
                 return fail("inspection completion lost results or read twice");
             }
         }
@@ -60,7 +61,8 @@ int test_inspection_completion() {
         auto* original = std::cin.rdbuf(input.rdbuf());
         console.finish();
         std::cin.rdbuf(original);
-        if (input.peek() != 'u' || output.str().contains("Enter  CLOSE")) {
+        if (input.peek() != 'u' ||
+            output.str().contains("Press Enter to exit")) {
             return fail("non-inspection TUI unexpectedly waited for input");
         }
     }
@@ -101,6 +103,125 @@ int test_inspection_completion() {
             !error.str().empty()) {
             return fail("console or JSON completion was not a no-op");
         }
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_drive_details(std::size_t rows) {
+    using namespace onedrive::cli;
+    std::ostringstream output;
+    std::ostringstream error;
+    const Console console{detail::make_ftxui_console_backend(
+        {.color = ColorMode::never, .ui = UiMode::tui, .view = TuiView::drives},
+        output,
+        error,
+        100,
+        rows
+    )};
+    auto fields = onedrive::app::detail::drive_fields(
+        {
+            .id = "real-drive-id",
+            .name = "OneDrive",
+            .quota =
+                onedrive::graph::DriveQuota{
+                    .total = 5ULL * 1024 * 1024 * 1024,
+                    .used = 1024,
+                    .remaining = 4096,
+                    .deleted = 0,
+                    .state = "normal",
+                },
+        },
+        true
+    );
+    fields.insert(
+        fields.begin() + 2,
+        {
+            .label = "reference:",
+            .key = "reference",
+            .value = "me",
+        }
+    );
+    fields.insert(
+        fields.end(),
+        {
+            {.label = "statistics source:",
+             .key = "statistics_source",
+             .value = "local state (not cloud totals)"},
+            {.label = "known files:", .key = "known_files", .value = "12"},
+            {.label = "downloaded (local):",
+             .key = "downloaded_files",
+             .value = "8"},
+            {.label = "pending downloads:",
+             .key = "pending_files",
+             .value = "3"},
+            {.label = "blocked files:", .key = "blocked_files", .value = "1"},
+            {.label = "state database:",
+             .key = "state_database",
+             .value = "present"},
+        }
+    );
+    console.section("drive", "OneDrive drive:", std::move(fields));
+    std::istringstream input{"\n"};
+    auto* original = std::cin.rdbuf(input.rdbuf());
+    console.finish();
+    std::cin.rdbuf(original);
+    const auto rendered = output.str();
+    const auto frame = rendered.substr(rendered.rfind("\033[H"));
+    if (!frame.contains("Press Enter to exit") || frame.contains("CLOSE")) {
+        return fail("drive TUI hid or retained the ambiguous exit prompt");
+    }
+    if (rows < 30) {
+        return EXIT_SUCCESS;
+    }
+    for (const auto* expected : {
+             "reference: me",
+             "id: real-drive-id",
+             "total: 5.00 GiB",
+             "used: 1.00 KiB",
+             "remaining: 4.00 KiB",
+             "deleted: 0 B",
+             "known files: 12",
+             "downloaded (local): 8",
+             "pending downloads: 3",
+             "blocked files: 1",
+             "local state (not cloud totals)",
+             "Press Enter to exit",
+         }) {
+        if (!frame.contains(expected)) {
+            return fail(std::string{"drive TUI omitted: "} + expected);
+        }
+    }
+    if (frame.contains("CLOSE")) {
+        return fail("drive TUI retained the ambiguous exit prompt");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_drive_field_helpers() {
+    using onedrive::app::detail::format_bytes;
+    if (format_bytes(0) != "0 B" || format_bytes(1023) != "1023 B" ||
+        format_bytes(1024) != "1.00 KiB" ||
+        format_bytes(1ULL << 20) != "1.00 MiB" ||
+        format_bytes(1ULL << 30) != "1.00 GiB" ||
+        format_bytes(1ULL << 40) != "1.00 TiB" ||
+        format_bytes(1ULL << 50) != "1024.00 TiB") {
+        return fail("shared quota formatter mishandled unit boundaries");
+    }
+    const auto fields = onedrive::app::detail::drive_fields({
+        .id = "site-drive",
+        .name = "Library",
+        .quota = std::nullopt,
+    });
+    if (std::ranges::any_of(
+            fields,
+            [](const auto& field) {
+                return field.key == "configured" || field.key == "reference";
+            }
+        ) ||
+        std::ranges::none_of(fields, [](const auto& field) {
+            return field.key == "total" && field.value == "unavailable";
+        })) {
+        return fail("shared Drive fields invented configuration or quota data");
     }
     return EXIT_SUCCESS;
 }
@@ -439,8 +560,18 @@ int test_tui_dashboard() {
 }  // namespace
 
 int main() {
+    if (const auto result = test_drive_field_helpers();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
     if (const auto result = test_inspection_completion(); result != EXIT_SUCCESS) {
         return result;
+    }
+    for (const auto rows : {12U, 24U, 30U}) {
+        if (const auto result = test_drive_details(rows);
+            result != EXIT_SUCCESS) {
+            return result;
+        }
     }
     return test_tui_dashboard();
 }

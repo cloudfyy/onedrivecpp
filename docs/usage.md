@@ -75,7 +75,9 @@ undersized terminals automatically use the normal console. Use
 reports a clear error instead of falling back when the terminal cannot support
 it. In the watch dashboard, press `q`, `Q`, or `Esc` to stop cleanly.
 
-Inspection dashboards keep their final results visible until you press Enter.
+Inspection dashboards keep their final results visible with the prompt
+`Press Enter to exit`. The prompt stays visible even when a small terminal
+clips the details; enlarge the terminal or use console output to see all fields.
 Console and JSON output still exit immediately; use `--ui console` to retain
 inspection results in the terminal scrollback without an interactive pause.
 
@@ -93,7 +95,24 @@ and file terminology rather than API names.
 ## Read-only account and synchronization information
 
 `inspect drives` lists OneDrive drives available to the active Microsoft account and
-marks the configured drive. `inspect shared` lists items returned by `sharedWithMe` and
+marks the configured drive. Its `reference` field shows the configured reference
+(such as `me`) separately from the real Drive ID; other drives are not labelled
+`me`. Each drive includes total, used, remaining, deleted, and quota-state values,
+reusing `inspect quota` formatting. Missing quota values are `unavailable`.
+
+File statistics are explicitly labelled `local state (not cloud totals)`:
+`known_files` counts distinct file IDs recorded in item snapshots, pending or
+partial downloads, and non-deleted blocked items. Directories are excluded.
+`downloaded_files` counts tracked regular files still present inside the local
+Drive root, including modified or previously uploaded files; this is local
+availability, not a historical download counter or content verification.
+`pending_files` deduplicates pending and partial download records, while
+`blocked_files` counts non-deleted blocked files. Counts can overlap (for example,
+a local file may have an update pending). No cloud inventory scan is performed.
+Each drive uses its own read-only state database; absent state is `unavailable`,
+not zero. Invalid databases and filesystem inspection errors are reported.
+
+`inspect shared` lists items returned by `sharedWithMe` and
 shortcuts added to the configured OneDrive, including the target Drive and
 item IDs needed for configuration. `inspect sites QUERY` searches accessible
 SharePoint sites and lists each site's document-library Drives. Site discovery

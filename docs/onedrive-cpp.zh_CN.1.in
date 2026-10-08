@@ -99,7 +99,12 @@ unhealthy。该命令不访问 Microsoft Graph；上述任一情况返回非零�
 .TP
 .B inspect drives
 列出当前 Microsoft 账号可用的 OneDrive Drive，并标记配置正在使用的 Drive。
-该命令只读取 Microsoft Graph 元数据，不修改远端或本地同步状态。
+单独显示配置引用（例如 me）和真实 Drive ID，同时显示总量、已用、剩余、回收站占用
+及配额状态。文件数量来自本地状态，不遍历云端：已知文件对快照、待下载、断点和未删除
+的 blocked 文件去重；已下载数是受跟踪且仍存在的本地普通文件数，包括本地修改过或
+曾上传的文件。待下载数对待下载和断点记录去重。排除目录，不同状态可重叠。
+缺少状态库或配额时显示 unavailable，不伪装为零。
+该命令只读取 Microsoft Graph 元数据及本地状态，不修改远端或本地同步状态。
 .TP
 .B inspect shared
 列出与当前账号共享的项目和已添加到配置 OneDrive 的 shortcut。输出包含目标
@@ -235,7 +240,9 @@ eTag 前置条件、HTTPS 重定向、Range 传输、持久 checkpoint、完整�
 仅在标准输入与输出均连接终端、支持终端控制且窗口至少为 60 列 × 12 行时显示
 FTXUI 实时状态面板。终端不支持、重定向、管道、JSON 和 quiet 模式会自动保留
 普通 Console 输出。
-检查命令的面板会保留最终结果，按 Enter 后退出。Console 和 JSON 输出在完成后
+检查命令的面板会保留最终结果，显示 Press Enter to exit，按 Enter 后退出。
+小窗口裁剪详情时仍保留提示，可扩大终端或使用 Console 查看全部字段。
+Console 和 JSON 输出在完成后
 立即退出。使用
 .B \-\-ui console
 可将检查结果保留在终端滚动历史中。

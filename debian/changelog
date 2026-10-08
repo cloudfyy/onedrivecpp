@@ -1,3 +1,15 @@
+onedrive-cpp (0.10.14-1~ubuntu24.04) noble; urgency=medium
+
+  * Show configured Drive references such as me alongside canonical IDs.
+  * Add per-Drive local file statistics and reuse quota and byte formatting
+    across Drive listings, SharePoint libraries, and quota inspection.
+  * Replace the ambiguous TUI completion label with Press Enter to exit and
+    keep the prompt visible when details exceed the terminal height.
+  * Cover deduplicated counts, missing state, Drive isolation, capacity output,
+    and compact terminals; document the local-statistics semantics.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Thu, 08 Oct 2026 01:23:20 +0000
+
 onedrive-cpp (0.10.13-1~ubuntu24.04) noble; urgency=medium
 
   * Add offline state migrate with previews, explicit confirmation, private

@@ -107,7 +107,15 @@ for structured diagnostics.
 .TP
 .B inspect drives
 List OneDrive drives available to the active Microsoft account and mark the
-configured drive. The command reads Microsoft Graph metadata without changing
+configured drive. Show its configured reference (such as me) separately from
+the real Drive ID, plus total, used, remaining, deleted, and quota-state values.
+File counts come from local state, not a cloud inventory scan: known files
+deduplicate snapshots, pending/partial downloads, and non-deleted blocked files;
+downloaded files are tracked regular files still present locally, including
+modified or previously uploaded files. Pending downloads are deduplicated across
+pending and partial records. Directories are excluded and status counts may
+overlap. Missing databases or quota data are reported as unavailable, not zero.
+The command reads Microsoft Graph metadata and local state without changing
 remote or local synchronization state.
 .TP
 .B inspect shared
@@ -273,7 +281,9 @@ mode displays an FTXUI status dashboard only when both standard streams are
 terminals, terminal controls are supported, and the window is at least 60 by
 12. Unsupported terminals, redirection, pipes, JSON, and quiet mode
 automatically retain normal console output.
-Inspection dashboards retain their final results until Enter is pressed.
+Inspection dashboards retain their final results and show Press Enter to exit.
+Small terminals clip details while retaining this prompt; enlarge the terminal
+or use console output to read all fields.
 Console and JSON output exit immediately after completion. Use
 .B \-\-ui console
 to keep inspection results in terminal scrollback instead.

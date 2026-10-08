@@ -65,7 +65,9 @@ URL，但仍可能包含账号与 Drive 显示名称、远端项目名称和本�
 命令行显式提供的 `--ui` 只覆盖本次运行。auto 模式只有在标准输入和标准输出均连接终端、`TERM`
 支持终端控制，并且窗口至少为 60 列 × 12 行时，才会打开 FTXUI 实时状态面板。
 输出重定向、管道、JSON、quiet 模式、`TERM=dumb` 或窗口过小时，会自动切回普通
-Console。检查类命令的 TUI 会保留最终结果，按 Enter 后退出；Console 和 JSON
+Console。检查类命令的 TUI 会保留最终结果，显示 `Press Enter to exit`，按 Enter 后
+退出。小窗口裁剪详情时也会保留退出提示；可扩大终端或使用 Console 查看全部字段。
+Console 和 JSON
 仍立即退出。使用 `--ui=console` 可在终端历史中保留结果而无需等待按键。
 `--ui=tui` 则会强制启用面板，
 若当前终端不支持，会明确报错而不是静默回退。在 watch 面板中按 `q`、`Q` 或
@@ -82,7 +84,20 @@ download 面板复用同步期间持久显示的进度、传输速率和 ETA。�
 ## 只读账号与同步信息
 
 `inspect drives` 列出当前 Microsoft 账号可用的 OneDrive Drive，并标记配置正在使用的
-Drive。`inspect shared` 会列出 `sharedWithMe` 返回的项目，以及已添加到当前 OneDrive 的
+Drive。`reference` 单独显示配置中的引用（例如 `me`），同时保留真实 Drive ID；
+其他 Drive 不会误标为 `me`。每个 Drive 显示总容量、已用、剩余、回收站占用及配额
+状态，复用 `inspect quota` 的格式；缺失配额信息显示 `unavailable`。
+
+文件统计明确标注 `local state (not cloud totals)`，不遍历云端：
+`known_files` 对已保存的文件快照、待下载、断点下载和未删除的 blocked item 按文件
+ID 去重，排除目录。`downloaded_files` 表示受跟踪且仍存在于本地 Drive 根目录内的
+普通文件，包括本地修改过或曾上传的文件；这是已落盘数量，不是历史下载次数或内容
+校验结果。`pending_files` 对待下载和断点记录去重，`blocked_files` 统计未删除的
+blocked 文件。不同状态可重叠，例如已有本地文件仍可能有待下载更新。
+各 Drive 分别只读查询自己的状态库；缺少状态库显示 `unavailable`，不会伪装为零。
+数据库异常或文件系统检查失败会明确报错。
+
+`inspect shared` 会列出 `sharedWithMe` 返回的项目，以及已添加到当前 OneDrive 的
 快捷方式（shortcut）；同时显示配置共享 Drive 所需的目标 Drive ID 和 item ID。
 `inspect sites QUERY` 搜索可访问的 SharePoint 站点并列出各站点的文档库 Drive。
 站点发现要求 `Sites.Read.All` 或 `Sites.ReadWrite.All`；修改 scope 后需要重新

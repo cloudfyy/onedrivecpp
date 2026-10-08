@@ -18,6 +18,7 @@
 #include <filesystem>
 #include <format>
 #include <iomanip>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -32,21 +33,6 @@
 
 namespace onedrive::app::detail {
 namespace {
-
-std::string format_bytes(std::uint64_t bytes) {
-    constexpr std::uint64_t unit = 1024;
-    constexpr std::array<std::string_view, 5> names{
-        "B", "KiB", "MiB", "GiB", "TiB"
-    };
-    double value = static_cast<double>(bytes);
-    std::size_t index = 0;
-    while (value >= static_cast<double>(unit) && index + 1 < names.size()) {
-        value /= static_cast<double>(unit);
-        ++index;
-    }
-    return index == 0 ? std::format("{} {}", bytes, names[index])
-                      : std::format("{:.2f} {}", value, names[index]);
-}
 
 std::string sync_mode_name(sync::SyncMode mode) {
     switch (mode) {
@@ -75,13 +61,6 @@ std::string format_timestamp(std::int64_t seconds) {
     return output.str();
 }
 
-std::string quota_value(
-    const std::optional<graph::DriveQuota>& quota,
-    std::uint64_t graph::DriveQuota::* member
-) {
-    return quota ? format_bytes((*quota).*member) : "unavailable";
-}
-
 struct InspectionStore {
     account::DriveIdentity identity;
     std::filesystem::path sync_root;
@@ -90,10 +69,10 @@ struct InspectionStore {
 };
 
 InspectionStore open_inspection_store(
-    const config::Config& config, const RuntimeFactory& runtime_factory
+    const config::Config& config,
+    const RuntimeFactory& runtime_factory,
+    account::DriveIdentity identity
 ) {
-    auto graph = runtime_factory.create_graph_info_client(config);
-    auto identity = graph->drive_identity();
     const auto account_paths =
         account::AccountState::locate(config.state_directory, identity);
     const auto database_path = account_paths.drive_directory / "items.sqlite3";
@@ -129,6 +108,16 @@ InspectionStore open_inspection_store(
         .database_path = database_path,
         .items = std::move(items),
     };
+}
+
+InspectionStore open_inspection_store(
+    const config::Config& config, const RuntimeFactory& runtime_factory
+) {
+    return open_inspection_store(
+        config,
+        runtime_factory,
+        runtime_factory.create_graph_info_client(config)->drive_identity()
+    );
 }
 
 bool path_is_within(
@@ -230,6 +219,70 @@ InspectedFile inspect_file(
                 ? LocalFileStatus::ok
                 : LocalFileStatus::modified,
         .actual_size = static_cast<std::uint64_t>(actual_size),
+    };
+}
+
+std::vector<cli::Field> drive_file_fields(const InspectionStore& inspection) {
+    std::set<std::string> known;
+    std::set<std::string> downloaded;
+    std::set<std::string> pending;
+    std::set<std::string> blocked;
+    if (inspection.items) {
+        const auto& drive_id = inspection.identity.drive_id;
+        for (const auto& item : inspection.items->drive_items(drive_id)) {
+            if (item.directory) {
+                continue;
+            }
+            known.insert(item.remote_id);
+            if (inspect_file(inspection.sync_root, item).actual_size) {
+                downloaded.insert(item.remote_id);
+            }
+        }
+        const auto record_pending = [&](const storage::ItemState& item) {
+            if (!item.directory) {
+                known.insert(item.remote_id);
+                pending.insert(item.remote_id);
+            }
+        };
+        for (const auto& download :
+             inspection.items->pending_downloads(drive_id)) {
+            record_pending(download.item);
+        }
+        for (const auto& partial :
+             inspection.items->partial_downloads(drive_id)) {
+            record_pending(partial.item);
+        }
+        for (const auto& item : inspection.items->blocked_items(drive_id)) {
+            if (!item.directory && !item.deleted) {
+                known.insert(item.remote_id);
+                blocked.insert(item.remote_id);
+            }
+        }
+    }
+    const auto count = [&](std::size_t value) {
+        return inspection.items ? std::to_string(value) : "unavailable";
+    };
+    return {
+        {
+            .label = "statistics source:",
+            .key = "statistics_source",
+            .value = "local state (not cloud totals)",
+        },
+        {.label = "known files:",
+         .key = "known_files",
+         .value = count(known.size())},
+        {.label = "downloaded (local):",
+         .key = "downloaded_files",
+         .value = count(downloaded.size())},
+        {.label = "pending downloads:",
+         .key = "pending_files",
+         .value = count(pending.size())},
+        {.label = "blocked files:",
+         .key = "blocked_files",
+         .value = count(blocked.size())},
+        {.label = "state database:",
+         .key = "state_database",
+         .value = inspection.items ? "present" : "unavailable"},
     };
 }
 
@@ -491,6 +544,7 @@ int show_drives(
     auto graph = runtime_factory.create_graph_info_client(config);
     const auto configured = graph->drive_info();
     auto drives = graph->list_drives();
+    const auto account_identity = graph->drive_identity();
     if (std::ranges::none_of(
             drives,
             [&configured](const graph::DriveInfo& drive) {
@@ -500,11 +554,29 @@ int show_drives(
         drives.push_back(configured);
     }
     for (const auto& drive : drives) {
-        console.section(
-            "drive",
-            "OneDrive drive:",
-            drive_fields(drive, drive.id == configured.id)
+        const bool is_configured = drive.id == configured.id;
+        auto identity = account_identity;
+        identity.drive_id = drive.id;
+        identity.drive_name = drive.name;
+        identity.configured_drive_id =
+            is_configured ? config.drive_id : drive.id;
+        const auto inspection =
+            open_inspection_store(config, runtime_factory, std::move(identity));
+        auto fields = drive_fields(drive, is_configured);
+        if (is_configured) {
+            fields.insert(
+                fields.begin() + 2,
+                {
+                    .label = "reference:",
+                    .key = "reference",
+                    .value = config.drive_id,
+                }
+            );
+        }
+        std::ranges::move(
+            drive_file_fields(inspection), std::back_inserter(fields)
         );
+        console.section("drive", "OneDrive drive:", std::move(fields));
     }
     return 0;
 }
@@ -516,40 +588,12 @@ int show_quota(
 ) {
     const auto drive =
         runtime_factory.create_graph_info_client(config)->drive_info();
-    console.section(
-        "quota",
-        "OneDrive storage quota:",
-        {
-            {.label = "drive:", .key = "drive", .value = drive.name},
-            {.label = "drive id:", .key = "drive_id", .value = drive.id},
-            {
-                .label = "total:",
-                .key = "total",
-                .value = quota_value(drive.quota, &graph::DriveQuota::total),
-            },
-            {
-                .label = "used:",
-                .key = "used",
-                .value = quota_value(drive.quota, &graph::DriveQuota::used),
-            },
-            {
-                .label = "remaining:",
-                .key = "remaining",
-                .value =
-                    quota_value(drive.quota, &graph::DriveQuota::remaining),
-            },
-            {
-                .label = "deleted:",
-                .key = "deleted",
-                .value = quota_value(drive.quota, &graph::DriveQuota::deleted),
-            },
-            {
-                .label = "state:",
-                .key = "state",
-                .value = drive.quota ? drive.quota->state : "unavailable",
-            },
-        }
-    );
+    std::vector<cli::Field> fields{
+        {.label = "drive:", .key = "drive", .value = drive.name},
+        {.label = "drive id:", .key = "drive_id", .value = drive.id},
+    };
+    std::ranges::move(quota_fields(drive.quota), std::back_inserter(fields));
+    console.section("quota", "OneDrive storage quota:", std::move(fields));
     return 0;
 }
 
