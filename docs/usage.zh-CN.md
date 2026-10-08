@@ -117,7 +117,14 @@ selective-sync fingerprint 和 WebSocket 配置。
 `inspect storage` 显示解析后的 Drive 数据目录、文件系统容量和可用空间、tracked
 文件字节数、partial download 占用以及状态数据库路径。`inspect partials` 列出每个
 partial download，并将其标记为可续传、缺失、类型变化、位于同步根之外、路径不匹配
-或 checkpoint 无效。`inspect files [PATH]` 使用保存的大小和修改时间检查 tracked
+或 checkpoint 无效。TUI 顶部保留记录数、可续传数、异常数和实际占用，下面显示完整
+文件列表，包括远端路径、状态和已完成 / 预期大小。上下方向键或 `k`/`j` 选择文件，
+列表自动滚动以显示选中项，首尾不循环。终端至少 18 行时，下方同时显示选中文件的
+远端路径、目标路径、临时路径和实际大小；更小的窗口优先保留列表与操作提示。
+路径过长被裁剪时，可扩大终端或使用 Console 查看完整信息。
+Enter、`q` 或 `Q` 退出；Console 和 JSON 仍完整输出每条记录。
+
+`inspect files [PATH]` 使用保存的大小和修改时间检查 tracked
 普通文件；可用 `--status ok|missing|modified|type-changed|outside-root` 过滤输出。
 
 这些命令不会同步文件或修改远端内容。检查本地状态的命令以只读方式打开现有 SQLite

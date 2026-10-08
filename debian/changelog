@@ -1,3 +1,14 @@
+onedrive-cpp (0.10.17-1~ubuntu24.04) noble; urgency=medium
+
+  * Retain partial-download results in a scrollable TUI file list with summary
+    counts, progress, status, and selected-file paths and actual size.
+  * Reuse inspection navigation and FTXUI scrolling, adapt details to terminal
+    height, and preserve complete console and JSON output.
+  * Cover empty and single lists, navigation, narrow and resized terminals,
+    long paths, malformed results, and non-interactive output; update manuals.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Thu, 08 Oct 2026 02:04:36 +0000
+
 onedrive-cpp (0.10.16-1~ubuntu24.04) noble; urgency=medium
 
   * Unify inspection TUI completion with immediate Enter, q, or Q exit and

@@ -3,6 +3,7 @@
 #include "onedrive/util/system_error.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"
 #include "support/common.hpp"
+#include "cli/partials_fixture.hpp"
 
 #include <array>
 #include <cerrno>
@@ -107,6 +108,15 @@ public:
         }
     }
 
+    void resize(unsigned short rows) {
+        output_.clear();
+        const winsize size{.ws_row = rows, .ws_col = 100};
+        if (::ioctl(slave_.get(), TIOCSWINSZ, &size) == -1 ||
+            ::kill(child_, SIGWINCH) == -1) {
+            throw_errno_error("cannot resize active inspection terminal");
+        }
+    }
+
     void expect_exit(bool interrupted = false) {
         int status = 0;
         if (!wait_until(
@@ -179,20 +189,25 @@ private:
                     MessageKind::success, "result", "Inspection result retained"
                 );
             }
-            for (int page = 1; page <= pages; ++page) {
-                console.section(
-                    "drive",
-                    "OneDrive drive:",
-                    {
-                        {.label = "name:",
-                         .key = "name",
-                         .value = "Test-drive-" + std::to_string(page)},
-                        {.label = "known files:",
-                         .key = "known_files",
-                         .value = std::to_string(page * 10)},
-                    }
+            if (view == TuiView::partials && pages > 0) {
+                onedrive::test::emit_partial_results(
+                    console, static_cast<std::size_t>(pages)
                 );
-            }
+            } else
+                for (int page = 1; page <= pages; ++page) {
+                    console.section(
+                        "drive",
+                        "OneDrive drive:",
+                        {
+                            {.label = "name:",
+                             .key = "name",
+                             .value = "Test-drive-" + std::to_string(page)},
+                            {.label = "known files:",
+                             .key = "known_files",
+                             .value = std::to_string(page * 10)},
+                        }
+                    );
+                }
             console.finish();
             console.finish();
         } catch (const std::exception& error) {
@@ -237,6 +252,27 @@ private:
 int main() {
     try {
         using onedrive::cli::TuiView;
+        {
+            TerminalPager terminal{20, 12, -1, TuiView::partials};
+            terminal.expect_result("File 1/20", "> folder/partial-1.bin");
+            terminal.send("\033[B");
+            terminal.expect_result("File 2/20", "> folder/partial-2.bin");
+            terminal.send(std::string(25, 'j'));
+            terminal.expect_result("File 20/20", "> folder/partial-20.bin");
+            terminal.resize(24);
+            terminal.expect_result(
+                "File 20/20",
+                "temporary file: /sync/folder/partial-20.bin.partial"
+            );
+            terminal.resize(12);
+            terminal.expect_result("File 20/20", "> folder/partial-20.bin");
+            terminal.send("\033[B\033[A");
+            terminal.expect_result("File 19/20", "> folder/partial-19.bin");
+            terminal.send("k");
+            terminal.expect_result("File 18/20", "> folder/partial-18.bin");
+            terminal.send("q");
+            terminal.expect_exit();
+        }
         for (const auto view : {
                  TuiView::health,
                  TuiView::status,

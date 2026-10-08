@@ -11,11 +11,13 @@
 #include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/screen/screen.hpp>
+#include <ftxui/screen/terminal.hpp>
 
 #include <algorithm>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -154,6 +156,17 @@ std::optional<std::string> friendly_message(
     return friendly_text(std::move(text));
 }
 
+const std::string&
+field_value(const SectionEvent& section, std::string_view key) {
+    const auto field = std::ranges::find(section.fields, key, &Field::key);
+    if (field == section.fields.end()) {
+        throw std::runtime_error(
+            fmt::format("{} result is missing field '{}'", section.event, key)
+        );
+    }
+    return field->value;
+}
+
 class FtxuiConsoleBackend final : public ConsoleBackend {
 public:
     FtxuiConsoleBackend(
@@ -208,7 +221,7 @@ public:
             return;
         }
         finished_ = true;
-        drive_page_ = 0;
+        result_index_ = 0;
         if (&output_ == &std::cout && ::isatty(STDIN_FILENO) != 0 &&
             ::isatty(STDOUT_FILENO) != 0) {
             browse_results();
@@ -267,13 +280,15 @@ private:
             event == Event::Character('Q')) {
             return true;
         }
-        if ((event == Event::ArrowRight || event == Event::Character('n')) &&
-            drive_page_ + 1 < drive_pages_.size()) {
-            ++drive_page_;
-        } else if ((event == Event::ArrowLeft || event == Event::Character('p')
-                   ) &&
-                   drive_page_ > 0) {
-            --drive_page_;
+        const bool partials = view_ == TuiView::partials;
+        if ((event == (partials ? Event::ArrowDown : Event::ArrowRight) ||
+             event == Event::Character(partials ? 'j' : 'n')) &&
+            result_index_ + 1 < result_pages_.size()) {
+            ++result_index_;
+        } else if ((event == (partials ? Event::ArrowUp : Event::ArrowLeft) ||
+                    event == Event::Character(partials ? 'k' : 'p')) &&
+                   result_index_ > 0) {
+            --result_index_;
         }
         return false;
     }
@@ -282,7 +297,7 @@ private:
         auto screen = ScreenInteractive::Fullscreen();
         screen.TrackMouse(false);
         auto component = CatchEvent(
-            Renderer([this] { return dashboard(); }),
+            Renderer([this] { return dashboard(Terminal::Size().dimy); }),
             [&](const Event& event) {
                 if (handle_result_key(event)) {
                     screen.Exit();
@@ -337,9 +352,14 @@ private:
         for (auto& field : section_.fields) {
             field.label = friendly_text(std::move(field.label));
         }
-        if (view_ == TuiView::drives && event.event == "drive") {
-            drive_pages_.push_back(section_);
-            drive_page_ = drive_pages_.size() - 1;
+        if ((view_ == TuiView::drives && event.event == "drive") ||
+            (view_ == TuiView::partials && event.event == "partial_download")) {
+            result_pages_.push_back(section_);
+            result_index_ = result_pages_.size() - 1;
+        }
+        if (view_ == TuiView::partials &&
+            event.event == "partial_download_summary") {
+            partial_summary_ = section_;
         }
     }
 
@@ -484,7 +504,69 @@ private:
         }) | border;
     }
 
-    Element dashboard() const {
+    Element partial_results(int rows_available) const {
+        Elements content;
+        if (partial_summary_) {
+            Elements summary;
+            for (const auto& field : partial_summary_->fields) {
+                summary.push_back(text(field.label + " " + field.value + "  "));
+            }
+            content.push_back(flexbox(std::move(summary)));
+        }
+        content.push_back(emphasized(text(
+            fmt::format(
+                "Partial downloads [File {}/{}]",
+                result_index_ + 1,
+                result_pages_.size()
+            )
+        )));
+        content.push_back(hbox({
+            text("  PATH") | xflex,
+            text("STATUS  COMPLETED / EXPECTED"),
+        }));
+        Elements rows;
+        for (std::size_t index = 0; index < result_pages_.size(); ++index) {
+            const auto& item = result_pages_[index];
+            auto row = hbox({
+                text(index == result_index_ ? "> " : "  "),
+                text(field_value(item, "remote_path")) | xflex,
+                text(
+                    fmt::format(
+                        " {}  {} / {}",
+                        field_value(item, "status"),
+                        field_value(item, "completed_bytes"),
+                        field_value(item, "expected_bytes")
+                    )
+                ),
+            });
+            if (index == result_index_) {
+                row = with_color(std::move(row), palette_.primary) | focus;
+            }
+            rows.push_back(std::move(row));
+        }
+        content.push_back(
+            vbox(std::move(rows)) | vscroll_indicator | yframe |
+            size(HEIGHT, GREATER_THAN, 1) | yflex
+        );
+        if (rows_available >= 18) {
+            Elements details;
+            for (const auto& field : result_pages_[result_index_].fields) {
+                if (field.key == "remote_path" || field.key == "destination" ||
+                    field.key == "temporary_path" ||
+                    field.key == "actual_bytes") {
+                    details.push_back(paragraph(field.label + " " + field.value)
+                    );
+                }
+            }
+            content.push_back(
+                vbox(std::move(details)) |
+                size(HEIGHT, LESS_THAN, rows_available / 3)
+            );
+        }
+        return vbox(std::move(content));
+    }
+
+    Element dashboard(int rows_available) const {
         Elements content{
             header(),
             separator(),
@@ -496,18 +578,24 @@ private:
         if (download_) {
             content.push_back(download_status());
         }
+        const bool drive_list =
+            view_ == TuiView::drives && !result_pages_.empty();
         const auto& section =
-            drive_pages_.empty() ? section_ : drive_pages_[drive_page_];
-        if (!section.title.empty()) {
+            drive_list ? result_pages_[result_index_] : section_;
+        const bool partial_list =
+            view_ == TuiView::partials && !result_pages_.empty() && finished_;
+        if (partial_list) {
+            content.push_back(partial_results(rows_available) | flex);
+        } else if (!section.title.empty()) {
             Elements fields{
                 emphasized(text(
-                    drive_pages_.empty() ? section.title
-                                         : fmt::format(
-                                               "{}  [Drive {}/{}]",
-                                               section.title,
-                                               drive_page_ + 1,
-                                               drive_pages_.size()
-                                           )
+                    !drive_list ? section.title
+                                : fmt::format(
+                                      "{}  [Drive {}/{}]",
+                                      section.title,
+                                      result_index_ + 1,
+                                      result_pages_.size()
+                                  )
                 )),
             };
             for (const auto& field : section.fields) {
@@ -528,7 +616,9 @@ private:
             ));
         }
 
-        content.push_back(filler());
+        if (!partial_list) {
+            content.push_back(filler());
+        }
         if (!messages_.empty()) {
             content.push_back(with_color(
                 emphasized(text("ACTIVITY")),
@@ -550,9 +640,13 @@ private:
         }
         if (finished_) {
             content.push_back(separator());
-            if (drive_pages_.size() > 1) {
+            if (result_pages_.size() > 1) {
                 content.push_back(with_color(
-                    text(" Left/Right or n/p: previous/next Drive "),
+                    text(
+                        partial_list
+                            ? " Up/Down or k/j: select file "
+                            : " Left/Right or n/p: previous/next Drive "
+                    ),
                     palette_.accent
                 ));
             }
@@ -577,7 +671,7 @@ private:
     }
 
     void render() {
-        auto document = dashboard();
+        auto document = dashboard(static_cast<int>(rows_));
         auto screen = Screen::Create(
             Dimension::Fixed(static_cast<int>(columns_)),
             Dimension::Fixed(static_cast<int>(rows_))
@@ -598,8 +692,9 @@ private:
     bool finished_{false};
     std::vector<DashboardMessage> messages_;
     SectionEvent section_;
-    std::vector<SectionEvent> drive_pages_;
-    std::size_t drive_page_{0};
+    std::vector<SectionEvent> result_pages_;
+    std::size_t result_index_{0};
+    std::optional<SectionEvent> partial_summary_;
     std::size_t delta_items_{0};
     std::size_t delta_changes_{0};
     bool delta_complete_{false};

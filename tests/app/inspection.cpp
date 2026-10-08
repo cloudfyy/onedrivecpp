@@ -231,6 +231,39 @@ int test_inspection() {
         return fail("inspect partials did not classify partial downloads");
     }
 
+    const auto partials_console = run_application(
+        fixture.runtime_factory,
+        {
+            "onedrive-cpp",
+            "inspect",
+            "partials",
+            "--config",
+            fixture.config_path.string(),
+            "--ui",
+            "console",
+        },
+        "untouched\n"
+    );
+    if (partials_console.exit_code != 0 ||
+        !partials_console.standard_output.contains("recorded:     7") ||
+        !partials_console.standard_output.contains("invalid:      6") ||
+        partials_console.standard_output.contains("Press Enter to exit")) {
+        return fail(
+            "partial console output lost its summary or became interactive"
+        );
+    }
+    for (const auto& partial :
+         fixture.runtime_factory.partial_download_states) {
+        if (!partials.standard_output.contains(partial.item.remote_path) ||
+            !partials_console.standard_output.contains(partial.item.remote_path
+            ) ||
+            !partials_console.standard_output.contains(
+                partial.temporary_path.string()
+            )) {
+            return fail("partial console or JSON output omitted a saved file");
+        }
+    }
+
     const auto files = run_application(
         fixture.runtime_factory,
         {

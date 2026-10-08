@@ -138,7 +138,17 @@ Delta cursor, selective-sync fingerprint, and WebSocket configuration.
 available space, tracked file bytes, partial-download bytes, and the state
 database path. `inspect partials` lists each saved partial download and
 classifies it as resumable, missing, type-changed, outside the sync root,
-path-mismatched, or an invalid checkpoint. `inspect files [PATH]` compares
+path-mismatched, or an invalid checkpoint.
+Its TUI retains the complete list below the recorded/resumable/invalid counts
+and actual disk usage. Each row shows the remote path, status, and completed /
+expected bytes. Up/Down or `k`/`j` selects a file and scrolls it into view;
+selection stops at the first and last files. At 18 terminal rows or more, a
+details area also shows the selected file's remote, destination, and temporary
+paths and actual size. Smaller windows prioritize the list and controls; enlarge
+the terminal or use console output for long paths that are clipped.
+Enter, `q`, or `Q` exits. Console and JSON output still include every record.
+
+`inspect files [PATH]` compares
 tracked regular files with saved size and modification metadata. Use
 `--status ok|missing|modified|type-changed|outside-root` to filter its output.
 

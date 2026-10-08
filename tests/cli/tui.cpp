@@ -2,6 +2,7 @@
 #include "app/drive_fields.hpp"
 #include "onedrive/cli/console.hpp"
 #include "support/common.hpp"
+#include "cli/partials_fixture.hpp"
 
 #include <algorithm>
 #include <array>
@@ -289,6 +290,165 @@ int test_drive_pagination() {
                 frame.contains("Drive-name-" + std::to_string(page))) {
                 return fail("Drive paging mixed details from different drives");
             }
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_partial_list() {
+    using namespace onedrive::cli;
+    struct Case {
+        std::string_view input;
+        int selected;
+    };
+    constexpr std::array cases{
+        Case{"\n", 1},
+        Case{"k\nq\n", 1},
+        Case{"j\nq\n", 2},
+        Case{"j\nk\nq\n", 1},
+        Case{"\033[B\nq\n", 2},
+        Case{"j\n\033[A\nq\n", 1},
+        Case{"\033[A\nq\n", 1},
+        Case{"n\np\nx\nq\n", 1},
+        Case{"Q\n", 1},
+        Case{"", 1},
+    };
+    for (const auto columns : {60U, 100U}) {
+        for (const auto rows : {12U, 18U, 24U, 30U}) {
+            for (const auto& test : cases) {
+                std::ostringstream output;
+                std::ostringstream error;
+                const Console console{detail::make_ftxui_console_backend(
+                    {.color = ColorMode::never,
+                     .ui = UiMode::tui,
+                     .view = TuiView::partials},
+                    output,
+                    error,
+                    columns,
+                    rows
+                )};
+                onedrive::test::emit_partial_results(console, 20);
+                std::istringstream input{std::string{test.input}};
+                auto* original = std::cin.rdbuf(input.rdbuf());
+                console.finish();
+                console.finish();
+                std::cin.rdbuf(original);
+                const auto rendered = output.str();
+                const auto frame = rendered.substr(rendered.rfind("\033[H"));
+                const auto path =
+                    "folder/partial-" + std::to_string(test.selected) + ".bin";
+                if (!frame.contains(
+                        "File " + std::to_string(test.selected) + "/20"
+                    ) ||
+                    !frame.contains("> " + path) ||
+                    !frame.contains("recorded: 20") ||
+                    !frame.contains("resumable: 10") ||
+                    !frame.contains("invalid: 10") ||
+                    !frame.contains("actual bytes: 40 B") ||
+                    !frame.contains("4 B / 8 B") ||
+                    !frame.contains("Up/Down or k/j") ||
+                    !frame.contains("Press Enter to exit (or q)")) {
+                    return fail(
+                        "partial list lost files, summary, selection, or "
+                        "controls\n" +
+                        frame
+                    );
+                }
+                if (rows >= 18 &&
+                    (!frame.contains("destination: /sync/" + path) ||
+                     !frame.contains(
+                         "temporary file: /sync/" + path + ".partial"
+                     ) ||
+                     !frame.contains(
+                         test.selected == 1 ? "actual: 4 B"
+                                            : "actual: unavailable"
+                     ))) {
+                    return fail(
+                        "partial list lost selected file details\n" + frame
+                    );
+                }
+            }
+        }
+    }
+    for (const auto count : {0U, 1U}) {
+        std::ostringstream output;
+        std::ostringstream error;
+        const Console console{detail::make_ftxui_console_backend(
+            {.color = ColorMode::never,
+             .ui = UiMode::tui,
+             .view = TuiView::partials},
+            output,
+            error,
+            100,
+            24
+        )};
+        onedrive::test::emit_partial_results(console, count);
+        std::istringstream input{"j\nk\n\033[B\n\033[A\nq\nuntouched\n"};
+        auto* original = std::cin.rdbuf(input.rdbuf());
+        console.finish();
+        console.finish();
+        std::cin.rdbuf(original);
+        const auto rendered = output.str();
+        const auto frame = rendered.substr(rendered.rfind("\033[H"));
+        if (!frame.contains("recorded: " + std::to_string(count)) ||
+            frame.contains("Up/Down or k/j") || input.peek() != 'u' ||
+            !frame.contains(
+                count == 0 ? "No partial downloads are recorded." : "File 1/1"
+            )) {
+            return fail(
+                "empty or single partial list mishandled navigation\n" + frame
+            );
+        }
+    }
+    for (const auto rows : {12U, 18U, 30U}) {
+        std::ostringstream output;
+        std::ostringstream error;
+        const Console console{detail::make_ftxui_console_backend(
+            {.color = ColorMode::never,
+             .ui = UiMode::tui,
+             .view = TuiView::partials},
+            output,
+            error,
+            60,
+            rows
+        )};
+        onedrive::test::emit_partial_results(
+            console, 3, std::string(200, 'x') + "/"
+        );
+        std::istringstream input{"j\nq\n"};
+        auto* original = std::cin.rdbuf(input.rdbuf());
+        console.finish();
+        std::cin.rdbuf(original);
+        const auto rendered = output.str();
+        const auto frame = rendered.substr(rendered.rfind("\033[H"));
+        if (!frame.contains("File 2/3") || !frame.contains("4 B / 8 B") ||
+            !frame.contains("Up/Down or k/j") ||
+            !frame.contains("Press Enter to exit (or q)")) {
+            return fail("long partial paths hid list navigation\n" + frame);
+        }
+    }
+    {
+        std::ostringstream output;
+        std::ostringstream error;
+        const Console console{detail::make_ftxui_console_backend(
+            {.ui = UiMode::tui, .view = TuiView::partials},
+            output,
+            error,
+            100,
+            24
+        )};
+        if (!onedrive::test::throws_with<std::runtime_error>(
+                [&] {
+                    console.section(
+                        "partial_download", "Partial download:", {}
+                    );
+                    console.finish();
+                },
+                "partial_download result is missing field 'remote_path'"
+            )) {
+            return fail(
+                "partial list silently accepted incomplete result fields"
+            );
         }
     }
     return EXIT_SUCCESS;
@@ -657,6 +817,9 @@ int test_tui_dashboard() {
 }  // namespace
 
 int main() {
+    if (const auto result = test_partial_list(); result != EXIT_SUCCESS) {
+        return result;
+    }
     if (const auto result = test_drive_pagination(); result != EXIT_SUCCESS) {
         return result;
     }

@@ -142,6 +142,11 @@ partial download 数量和字节数以及状态数据库路径。
 .B inspect partials
 列出保存的 partial download、目标和临时路径、已完成/预期/实际字节数，并判断各
 checkpoint 是否可续传或无效。
+TUI 保留顶部汇总及可滚动的文件列表，显示路径、状态、已完成/预期大小。
+上下方向键或 k/j 选择文件，首尾不循环。终端至少 18 行时，下方显示选中文件的
+远端路径、目标路径、临时路径和实际大小；小窗口优先保留列表和操作提示。
+路径被裁剪时，可扩大终端或使用 Console 查看完整信息。
+Enter、q 或 Q 退出；Console 和 JSON 仍完整输出每条记录。
 .TP
 .B inspect files
 检查可选 Drive 相对

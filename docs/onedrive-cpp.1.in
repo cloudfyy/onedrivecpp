@@ -161,6 +161,12 @@ database path.
 List saved partial downloads, their destination and temporary paths, completed,
 expected, and actual byte counts, and whether each checkpoint is resumable or
 invalid.
+The TUI keeps the summary above a scrollable list of paths, statuses, and
+completed/expected sizes. Up/Down or k/j selects a file without wrapping at
+the ends. At 18 terminal rows or more, selected-file paths and actual size
+appear below the list. Smaller windows prioritize the list and controls;
+enlarge the terminal or use console output to see clipped paths.
+Enter, q, or Q exits. Console and JSON output include every record.
 .TP
 .B inspect files
 Check tracked regular files below the optional Drive-relative
