@@ -89,9 +89,9 @@ int test_base() {
     std::filesystem::remove(path);
     const auto graph_options = onedrive::app::graph_options(config);
 
-    if (config.console_color != onedrive::cli::ColorMode::always ||
-        config.console_ui != onedrive::cli::UiMode::console ||
-        config.console_theme != onedrive::cli::TuiTheme::synthwave ||
+    if (config.console_color != onedrive::config::ColorMode::always ||
+        config.console_ui != onedrive::config::UiMode::console ||
+        config.console_theme != onedrive::config::TuiTheme::synthwave ||
         config.logging.level != "debug" ||
         config.logging.file !=
             std::optional<std::filesystem::path>{
@@ -106,8 +106,7 @@ int test_base() {
             std::optional<std::filesystem::path>{
                 path.parent_path() / "rules/sync_list"
             } ||
-        !config.sync_root_files ||
-        config.nosync_enabled ||
+        !config.sync_root_files || config.nosync_enabled ||
         config.dotfiles != onedrive::config::DotfilePolicy::exclude ||
         config.maximum_file_size_bytes != 8'388'608 ||
         config.application_id != "test-application" ||

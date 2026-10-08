@@ -39,11 +39,18 @@ add_onedrive_test(
     console_tests
     SOURCES tests/cli/console.cpp
     INCLUDE_DIRS tests
+    LIBRARIES onedrive_cli
+)
+add_onedrive_test(
+    event_observer_tests
+    SOURCES tests/events/observer.cpp
+    INCLUDE_DIRS src tests
 )
 add_onedrive_test(
     terminal_tests
     SOURCES tests/cli/terminal.cpp
     INCLUDE_DIRS src tests
+    LIBRARIES onedrive_cli
 )
 add_onedrive_test(
     tui_tests
@@ -55,6 +62,7 @@ add_onedrive_test(
     tui_paging_tests
     SOURCES tests/cli/tui_paging.cpp
     INCLUDE_DIRS src tests
+    LIBRARIES onedrive_cli
 )
 add_onedrive_test(
     metrics_status_tests
@@ -196,6 +204,7 @@ foreach(SYNC_TEST IN ITEMS base delete move download upload mode)
         sync_${SYNC_TEST}_tests
         SOURCES tests/sync/${SYNC_TEST}.cpp
         INCLUDE_DIRS src tests tests/sync
+        LIBRARIES onedrive_cli
     )
 endforeach()
 add_onedrive_test(
@@ -250,6 +259,7 @@ foreach(DOWNLOAD_TEST IN ITEMS single safe txn relaxed resume recover)
         INCLUDE_DIRS src tests tests/download
     )
 endforeach()
+target_link_libraries(download_single_tests PRIVATE onedrive_cli)
 add_onedrive_test(
     download_integrity_tests
     SOURCES tests/download/integrity.cpp

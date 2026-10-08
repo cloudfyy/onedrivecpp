@@ -18,6 +18,8 @@ target_include_directories(onedrive_cli
 )
 
 target_link_libraries(onedrive_cli
+    PUBLIC
+        onedrive_core
     PRIVATE
         ftxui::component
         ftxui::dom
@@ -36,6 +38,8 @@ add_library(onedrive_core
     src/account/account_state.cpp
     src/auth/device_auth.cpp
     src/auth/token_store.cpp
+    src/events/observer.cpp
+    src/config/console.cpp
     src/config/config.cpp
     src/config/network.cpp
     src/config/output.cpp
@@ -140,7 +144,6 @@ target_link_libraries(onedrive_core
     PUBLIC
         Microsoft.GSL::GSL
         msft_proxy4::proxy
-        onedrive_cli
     PRIVATE
         CURL::libcurl
         nlohmann_json::nlohmann_json
@@ -180,6 +183,7 @@ target_link_libraries(onedrive_app
     PUBLIC
         onedrive_core
     PRIVATE
+        onedrive_cli
         CLI11::CLI11
         spdlog::spdlog
 )

@@ -1,6 +1,6 @@
 #include "sync/core/reporting.hpp"
 
-#include "onedrive/cli/console.hpp"
+#include "onedrive/events/observer.hpp"
 #include "onedrive/storage/item_store.hpp"
 
 #include <spdlog/spdlog.h>
@@ -8,8 +8,7 @@
 namespace onedrive::sync::engine_detail {
 
 void report_blocked(
-    const storage::BlockedItem& item,
-    const cli::Console& console
+    const storage::BlockedItem& item, const events::Observer& observer
 ) {
     spdlog::warn(
         "Blocked remote item '{}': {} ({})",
@@ -17,10 +16,8 @@ void report_blocked(
         item.reason_message,
         item.reason_code
     );
-    console.blocked_item(
-        item.remote_path,
-        item.reason_code,
-        item.reason_message
+    observer.blocked_item(
+        item.remote_path, item.reason_code, item.reason_message
     );
 }
 

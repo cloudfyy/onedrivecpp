@@ -1,7 +1,7 @@
 #include "sync/upload/orchestration.hpp"
 #include "sync/upload/remote_delete.hpp"
 #include "sync/upload/planning.hpp"
-#include "onedrive/cli/console.hpp"
+#include "onedrive/events/observer.hpp"
 #include "util/typestate.hpp"
 #include "sync/filesystem/operations.hpp"
 #include "sync/filesystem/safe_sync_root.hpp"
@@ -167,7 +167,7 @@ DeletionPlan deletion_plan_for(
 bool enforce_remote_deletion_limit(
     const DeletionPlan& plan,
     RemoteDeletionGuard guard,
-    const cli::Console& console,
+    const events::Observer& observer,
     ExecutionMode execution_mode
 ) {
     if (plan.affected_items <= guard.maximum_affected_items) {
@@ -179,7 +179,7 @@ bool enforce_remote_deletion_limit(
         plan.affected_items,
         guard.maximum_affected_items
     );
-    console.section(
+    observer.section(
         "large_delete_guard",
         "Large remote deletion safeguard:",
         {
@@ -207,24 +207,24 @@ bool enforce_remote_deletion_limit(
     );
     if (guard.force) {
         spdlog::warn("{} Explicit override accepted.", message);
-        console.message(
-            cli::MessageKind::warning,
+        observer.message(
+            events::MessageKind::warning,
             "large_delete_forced",
             message + " Proceeding because --force-large-delete was provided."
         );
         return false;
     }
     if (execution_mode == ExecutionMode::preview) {
-        console.message(
-            cli::MessageKind::warning,
+        observer.message(
+            events::MessageKind::warning,
             "large_delete_detected",
             message + " A normal sync would be blocked."
         );
         return true;
     }
     spdlog::error("{}", message);
-    console.message(
-        cli::MessageKind::error,
+    observer.message(
+        events::MessageKind::error,
         "large_delete_blocked",
         message + " Review the local filesystem and rerun sync with "
                   "--force-large-delete only if the deletions are intentional."
@@ -384,7 +384,7 @@ void recover_pending_deletes(
     const std::string& drive_id,
     graph::GraphClient& graph,
     storage::ItemStore& items,
-    const cli::Console& console,
+    const events::Observer& observer,
     RemoteDeletionGuard deletion_guard
 ) {
     std::vector<storage::PendingDelete> active;
@@ -399,8 +399,8 @@ void recover_pending_deletes(
         static_cast<void>(
             execute_pending_delete(std::move(journaled), graph, items)
         );
-        console.message(
-            cli::MessageKind::information,
+        observer.message(
+            events::MessageKind::information,
             "pending_delete_cancelled",
             "Cancelled pending remote deletion because the local item "
             "reappeared: '" +
@@ -409,14 +409,9 @@ void recover_pending_deletes(
     }
     const auto plan =
         deletion_plan_for(std::move(active), items.drive_items(drive_id));
-    static_cast<void>(
-        enforce_remote_deletion_limit(
-            plan,
-            deletion_guard,
-            console,
-            ExecutionMode::apply
-        )
-    );
+    static_cast<void>(enforce_remote_deletion_limit(
+        plan, deletion_guard, observer, ExecutionMode::apply
+    ));
     for (const auto& deletion : plan.operations) {
         auto journaled = JournaledRemoteDelete{
             PendingRemoteDeletePayload{deletion},
@@ -424,8 +419,8 @@ void recover_pending_deletes(
         static_cast<void>(
             execute_pending_delete(std::move(journaled), graph, items)
         );
-        console.message(
-            cli::MessageKind::information,
+        observer.message(
+            events::MessageKind::information,
             "pending_delete_recovered",
             "Recovered remote deletion '" + deletion.remote_path + "'."
         );

@@ -1,7 +1,7 @@
 #include "sync/upload/directory.hpp"
 #include "sync/upload/errors.hpp"
 
-#include "onedrive/cli/console.hpp"
+#include "onedrive/events/observer.hpp"
 #include "sync/filesystem/metadata.hpp"
 #include "sync/filesystem/operations.hpp"
 #include "sync/filesystem/safe_sync_root.hpp"
@@ -214,7 +214,7 @@ bool upload_directory(
     graph::GraphClient& graph,
     storage::ItemStore& items,
     const FilesystemMetadata& metadata,
-    const cli::Console& console,
+    const events::Observer& observer,
     UploadSummary& summary
 ) {
     auto prepared = PreparedDirectoryUpload{
@@ -257,11 +257,10 @@ bool upload_directory(
         pending.failure_attempt_count = 1;
         items.save_pending_upload(pending);
         ++summary.blocked;
-        console.message(
-            cli::MessageKind::warning,
+        observer.message(
+            events::MessageKind::warning,
             "local_upload_resource_blocked",
-            "Deferred upload '" + upload.remote_path + "': " +
-                error.what()
+            "Deferred upload '" + upload.remote_path + "': " + error.what()
         );
         return false;
     }
@@ -272,8 +271,8 @@ bool upload_directory(
         sync_root, std::move(graph_created), items, metadata
     ));
     ++summary.created_directories;
-    console.message(
-        cli::MessageKind::information,
+    observer.message(
+        events::MessageKind::information,
         "local_directory_created",
         "Created remote directory '" + upload.remote_path + "'."
     );

@@ -5,6 +5,7 @@ namespace {
 using namespace onedrive::test::sync;
 
 int test_pending_download_recovery() {
+    const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "files";
     std::filesystem::create_directories(root);
@@ -41,8 +42,10 @@ int test_pending_download_recovery() {
     );
     FakeMetrics metrics;
     const auto config = config_for(root, false);
-    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
-        ) != 0 ||
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != 0 ||
         !items.pending.empty() || !items.find("me", "recovered") ||
         !std::filesystem::exists(destination) ||
         std::filesystem::exists(temporary_file) || graph.download_count != 0) {
@@ -54,6 +57,7 @@ int test_pending_download_recovery() {
 }
 
 int test_post_install_recovery() {
+    const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "files";
     FakeGraphClient graph;
@@ -64,10 +68,10 @@ int test_post_install_recovery() {
     FakeMetrics metrics;
     const auto config = config_for(root, false);
     try {
-        static_cast<void>(
-            onedrive::sync::SyncEngine{config, graph, items, metrics}
-                .synchronize()
-        );
+        static_cast<void>(onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                              .synchronize());
         return fail("item persistence failure did not stop synchronization");
     } catch (const std::runtime_error&) {
     }
@@ -78,8 +82,10 @@ int test_post_install_recovery() {
     }
 
     items.fail_upsert = false;
-    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
-        ) != 0 ||
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != 0 ||
         !items.pending.empty() || !items.find("me", "recover-after-install") ||
         graph.download_count != 1 || !metrics.last_success) {
         return fail(
@@ -90,6 +96,7 @@ int test_post_install_recovery() {
 }
 
 int test_unsafe_pending_path_rejected() {
+    const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "files";
     std::filesystem::create_directories(root);
@@ -122,7 +129,7 @@ int test_unsafe_pending_path_rejected() {
     FakeMetrics metrics;
     try {
         static_cast<void>(onedrive::sync::SyncEngine{
-            config_for(root, false), graph, items, metrics
+            config_for(root, false), graph, items, metrics, &default_console
         }
                               .synchronize());
         return fail("unsafe pending temporary path was accepted");
@@ -137,6 +144,7 @@ int test_unsafe_pending_path_rejected() {
 }
 
 int test_mismatched_recovery_file_preserved() {
+    const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "files";
     std::filesystem::create_directories(root);
@@ -174,7 +182,7 @@ int test_mismatched_recovery_file_preserved() {
     FakeMetrics metrics;
     try {
         static_cast<void>(onedrive::sync::SyncEngine{
-            config_for(root, false), graph, items, metrics
+            config_for(root, false), graph, items, metrics, &default_console
         }
                               .synchronize());
         return fail("mismatched recovery temporary file was removed");
@@ -189,6 +197,7 @@ int test_mismatched_recovery_file_preserved() {
 }
 
 int test_partial_download_resume() {
+    const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "files";
     std::filesystem::create_directories(root);
@@ -224,7 +233,7 @@ int test_partial_download_resume() {
     );
     FakeMetrics metrics;
     if (onedrive::sync::SyncEngine{
-            config_for(root, false), graph, items, metrics
+            config_for(root, false), graph, items, metrics, &default_console
         }
                 .synchronize() != 0 ||
         graph.last_download_offset != 4 || !items.partials.empty() ||
@@ -242,6 +251,7 @@ int test_partial_download_resume() {
 }
 
 int test_concurrent_failure_cancels_active_download() {
+    const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "files";
     FakeGraphClient graph;
@@ -261,10 +271,10 @@ int test_concurrent_failure_cancels_active_download() {
     config.download_concurrency = 2;
 
     try {
-        static_cast<void>(
-            onedrive::sync::SyncEngine{config, graph, items, metrics}
-                .synchronize()
-        );
+        static_cast<void>(onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                              .synchronize());
         return fail("concurrent download failure was accepted");
     } catch (const std::runtime_error& error) {
         if (std::string_view{error.what()} != "simulated download failure") {
@@ -288,6 +298,7 @@ int test_concurrent_failure_cancels_active_download() {
 }
 
 int test_bounded_concurrent_downloads() {
+    const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "files";
     FakeGraphClient graph;
@@ -306,8 +317,10 @@ int test_bounded_concurrent_downloads() {
     auto config = config_for(root, false);
     config.download_concurrency = 2;
 
-    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
-        ) != 0 ||
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != 0 ||
         graph.download_count != 4 || graph.maximum_concurrent_downloads != 2 ||
         items.upsert_count != 4 || items.apply_count != 1 ||
         !metrics.last_success) {
@@ -322,6 +335,7 @@ int test_bounded_concurrent_downloads() {
 }
 
 int test_configured_download_order() {
+    const onedrive::cli::Console default_console;
     const std::vector<onedrive::graph::RemoteItem> changes{
         file("alpha", "alpha.txt", 3),
         file("gamma", "gamma.txt", 1),
@@ -374,7 +388,9 @@ int test_configured_download_order() {
         config.download_concurrency = 1;
         config.transfer_order = cases[index].first;
 
-        if (onedrive::sync::SyncEngine{config, graph, items, metrics}
+        if (onedrive::sync::SyncEngine{
+                config, graph, items, metrics, &default_console
+            }
                     .synchronize() != 0 ||
             started != cases[index].second || graph.download_count != 4 ||
             items.upsert_count != 4 || !metrics.last_success) {
@@ -385,6 +401,7 @@ int test_configured_download_order() {
 }
 
 int test_duplicate_destination_downloads_are_serialized() {
+    const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "files";
     FakeGraphClient graph;
@@ -401,7 +418,10 @@ int test_duplicate_destination_downloads_are_serialized() {
     config.download_concurrency = 2;
 
     const auto result =
-        onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize();
+        onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+            .synchronize();
     std::ifstream input{root / "duplicate.txt", std::ios::binary};
     const std::string contents{
         std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}

@@ -9,8 +9,8 @@
 #include <unordered_set>
 #include <vector>
 
-namespace onedrive::cli {
-class Console;
+namespace onedrive::events {
+class Observer;
 }
 
 namespace onedrive::sync::detail {
@@ -63,7 +63,7 @@ struct LocalMoveDiscovery {
 [[nodiscard]] bool enforce_remote_deletion_limit(
     const DeletionPlan& plan,
     RemoteDeletionGuard guard,
-    const cli::Console& console,
+    const events::Observer& observer,
     ExecutionMode execution_mode
 );
 [[nodiscard]] LocalMoveDiscovery discover_local_moves(

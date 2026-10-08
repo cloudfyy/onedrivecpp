@@ -8,8 +8,8 @@
 #include <filesystem>
 #include <string>
 
-namespace onedrive::cli {
-class Console;
+namespace onedrive::events {
+class Observer;
 }
 
 namespace onedrive::sync::detail {
@@ -44,7 +44,7 @@ struct RemoteDeletionGuard {
     storage::ItemStore& items,
     const FilesystemMetadata& metadata,
     const SyncList* sync_list,
-    const cli::Console& console,
+    const events::Observer& observer,
     SyncCapabilities capabilities,
     RemoteDeletionGuard deletion_guard,
     std::size_t upload_concurrency
@@ -55,13 +55,13 @@ void recover_pending_uploads(
     graph::GraphClient& graph,
     storage::ItemStore& items,
     const FilesystemMetadata& metadata,
-    const cli::Console& console
+    const events::Observer& observer
 );
 void recover_pending_deletes(
     const std::string& drive_id,
     graph::GraphClient& graph,
     storage::ItemStore& items,
-    const cli::Console& console,
+    const events::Observer& observer,
     RemoteDeletionGuard deletion_guard
 );
 void recover_pending_remote_moves(
@@ -69,7 +69,7 @@ void recover_pending_remote_moves(
     const std::string& drive_id,
     graph::GraphClient& graph,
     storage::ItemStore& items,
-    const cli::Console& console
+    const events::Observer& observer
 );
 
 }  // namespace onedrive::sync::detail

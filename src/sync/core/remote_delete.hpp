@@ -5,8 +5,8 @@
 #include <cstddef>
 #include <string>
 
-namespace onedrive::cli {
-class Console;
+namespace onedrive::events {
+class Observer;
 }
 
 namespace onedrive::sync::detail {
@@ -23,7 +23,7 @@ std::size_t execute_removals(
     const std::string& drive_id,
     storage::ItemStore& items,
     detail::ItemOperationCoordinator& operations,
-    const cli::Console& console
+    const events::Observer& observer
 );
 
 }  // namespace onedrive::sync::engine_detail

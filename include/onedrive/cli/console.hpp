@@ -1,6 +1,7 @@
 #pragma once
 
 #include "onedrive/cli/backend.hpp"
+#include "onedrive/events/observer.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -12,15 +13,9 @@
 
 namespace onedrive::cli {
 
-[[nodiscard]] unsigned download_progress_percentage(
-    std::size_t completed_files,
-    std::size_t file_count,
-    std::uint64_t downloaded,
-    std::uint64_t total,
-    util::ProgressState state
-) noexcept;
+using events::download_progress_percentage;
 
-class Console {
+class Console : public events::Observer {
 public:
     explicit Console(
         ConsoleOptions options = {},
@@ -28,41 +23,13 @@ public:
         std::ostream& error = default_error()
     );
     explicit Console(std::unique_ptr<ConsoleBackend> backend);
-    ~Console();
+    ~Console() override;
     void finish() const;
 
     Console(const Console&) = delete;
     Console& operator=(const Console&) = delete;
-    void message(
-        MessageKind kind,
-        std::string_view event,
-        std::string_view text
-    ) const;
-    void section(
-        std::string_view event,
-        std::string_view title,
-        const std::vector<Field>& fields
-    ) const;
-    void delta_progress(
-        std::size_t pages,
-        std::size_t items,
-        util::ProgressState state
-    ) const;
-    void delta_summary(const DeltaSummary& summary) const;
-    void blocked_item(
-        std::string_view path,
-        std::string_view reason_code,
-        std::string_view reason_message
-    ) const;
-    void download_progress(
-        std::size_t completed_files,
-        std::size_t file_count,
-        std::uint64_t downloaded,
-        std::uint64_t total,
-        util::ProgressState state,
-        const DownloadProgressMetrics& metrics = {}
-    ) const;
-    void end_download_progress() const;
+    Console(Console&&) = delete;
+    Console& operator=(Console&&) = delete;
     [[nodiscard]] bool confirm(
         std::string_view event,
         std::string_view prompt,
@@ -77,11 +44,11 @@ public:
     [[nodiscard]] static TuiTheme parse_tui_theme(std::string_view value);
 
 private:
+    void on_event(const events::Event& event) const override;
     [[nodiscard]] static std::ostream& default_output();
     [[nodiscard]] static std::ostream& default_error();
 
     std::unique_ptr<ConsoleBackend> backend_;
-    mutable std::mutex backend_mutex_;
 };
 
 }  // namespace onedrive::cli

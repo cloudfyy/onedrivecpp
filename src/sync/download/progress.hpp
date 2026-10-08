@@ -1,6 +1,6 @@
 #pragma once
 
-#include "onedrive/cli/console.hpp"
+#include "onedrive/events/observer.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -16,7 +16,7 @@ public:
         Clock::time_point started_at = Clock::now()
     );
 
-    [[nodiscard]] cli::DownloadProgressMetrics sample(
+    [[nodiscard]] events::DownloadProgressMetrics sample(
         std::uint64_t downloaded,
         std::uint64_t total,
         Clock::time_point sampled_at = Clock::now()

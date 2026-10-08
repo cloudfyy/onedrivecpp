@@ -1,6 +1,6 @@
 #include "sync/core/plan_execute.hpp"
 
-#include "onedrive/cli/console.hpp"
+#include "onedrive/events/observer.hpp"
 #include "sync/core/delta_plan.hpp"
 #include "sync/core/downloads.hpp"
 #include "sync/core/item_ops.hpp"
@@ -31,7 +31,7 @@ ExecutionSummary execute_plan(
     graph::GraphClient& graph,
     storage::ItemStore& items,
     const detail::FilesystemMetadata& metadata,
-    const cli::Console& console,
+    const events::Observer& observer,
     SyncCapabilities capabilities,
     std::size_t download_concurrency,
     config::TransferOrder transfer_order,
@@ -46,12 +46,7 @@ ExecutionSummary execute_plan(
     std::size_t removed_count = 0;
     if (capabilities.removes_local_items()) {
         removed_count = engine_detail::execute_removals(
-            plan,
-            safe_root,
-            drive_id,
-            items,
-            operations,
-            console
+            plan, safe_root, drive_id, items, operations, observer
         );
     } else if (capabilities.sync_mode() == SyncMode::download_only) {
         for (std::size_t index = 0; index < plan.removal_count(); ++index) {
@@ -59,13 +54,7 @@ ExecutionSummary execute_plan(
         }
     }
     auto move_summary = engine_detail::execute_moves(
-        plan,
-        safe_root,
-        drive_id,
-        items,
-        operations,
-        console,
-        permissions
+        plan, safe_root, drive_id, items, operations, observer, permissions
     );
     std::unordered_set<std::string> blocked_ids =
         std::move(move_summary.blocked);
@@ -92,8 +81,7 @@ ExecutionSummary execute_plan(
             );
             blocked_directories.push_back(item.remote_path);
             engine_detail::report_blocked(
-                plan.blocked(plan.blocked_count() - 1),
-                console
+                plan.blocked(plan.blocked_count() - 1), observer
             );
             continue;
         }
@@ -115,15 +103,13 @@ ExecutionSummary execute_plan(
             plan.block(item, "local_path_conflict", error.what());
             blocked_directories.push_back(item.remote_path);
             engine_detail::report_blocked(
-                plan.blocked(plan.blocked_count() - 1),
-                console
+                plan.blocked(plan.blocked_count() - 1), observer
             );
         } catch (const detail::SafePathConflictError& error) {
             plan.block(item, "local_path_conflict", error.what());
             blocked_directories.push_back(item.remote_path);
             engine_detail::report_blocked(
-                plan.blocked(plan.blocked_count() - 1),
-                console
+                plan.blocked(plan.blocked_count() - 1), observer
             );
         }
     }
@@ -145,8 +131,7 @@ ExecutionSummary execute_plan(
                 "a parent remote directory is blocked"
             );
             engine_detail::report_blocked(
-                plan.blocked(plan.blocked_count() - 1),
-                console
+                plan.blocked(plan.blocked_count() - 1), observer
             );
             continue;
         }
@@ -160,15 +145,13 @@ ExecutionSummary execute_plan(
         } catch (const detail::LocalPathConflictError& error) {
             plan.block(item, "local_path_conflict", error.what());
             engine_detail::report_blocked(
-                plan.blocked(plan.blocked_count() - 1),
-                console
+                plan.blocked(plan.blocked_count() - 1), observer
             );
             continue;
         } catch (const detail::SafePathConflictError& error) {
             plan.block(item, "local_path_conflict", error.what());
             engine_detail::report_blocked(
-                plan.blocked(plan.blocked_count() - 1),
-                console
+                plan.blocked(plan.blocked_count() - 1), observer
             );
             continue;
         }
@@ -181,8 +164,7 @@ ExecutionSummary execute_plan(
                 "local file path is a symbolic link: " + destination.string()
             );
             engine_detail::report_blocked(
-                plan.blocked(plan.blocked_count() - 1),
-                console
+                plan.blocked(plan.blocked_count() - 1), observer
             );
             continue;
         }
@@ -208,8 +190,7 @@ ExecutionSummary execute_plan(
                 "local modification conflict: " + destination.string()
             );
             engine_detail::report_blocked(
-                plan.blocked(plan.blocked_count() - 1),
-                console
+                plan.blocked(plan.blocked_count() - 1), observer
             );
             continue;
         }
@@ -241,15 +222,13 @@ ExecutionSummary execute_plan(
             } catch (const detail::LocalModificationConflictError& error) {
                 plan.block(item, "local_modification", error.what());
                 engine_detail::report_blocked(
-                    plan.blocked(plan.blocked_count() - 1),
-                    console
+                    plan.blocked(plan.blocked_count() - 1), observer
                 );
                 continue;
             } catch (const detail::LocalPathConflictError& error) {
                 plan.block(item, "local_path_conflict", error.what());
                 engine_detail::report_blocked(
-                    plan.blocked(plan.blocked_count() - 1),
-                    console
+                    plan.blocked(plan.blocked_count() - 1), observer
                 );
                 continue;
             }
@@ -271,8 +250,7 @@ ExecutionSummary execute_plan(
                         destination.string();
                     plan.block(item, "local_modification", reason);
                     engine_detail::report_blocked(
-                        plan.blocked(plan.blocked_count() - 1),
-                        console
+                        plan.blocked(plan.blocked_count() - 1), observer
                     );
                     continue;
                 }
@@ -327,13 +305,13 @@ ExecutionSummary execute_plan(
         operations,
         space,
         metadata,
-        console,
+        observer,
         safe_root,
         local_conflict
     );
     for (const auto& error : downloads.errors) {
         if (error) {
-            console.end_download_progress();
+            observer.end_download_progress();
             std::rethrow_exception(error);
         }
     }
@@ -346,14 +324,13 @@ ExecutionSummary execute_plan(
                 conflict.value()
             );
             engine_detail::report_blocked(
-                plan.blocked(plan.blocked_count() - 1),
-                console
+                plan.blocked(plan.blocked_count() - 1), observer
             );
             continue;
         }
         auto state = std::move(downloads.states[index]);
         if (!state) {
-            console.end_download_progress();
+            observer.end_download_progress();
             throw std::runtime_error(
                 "download execution stopped before all earlier tasks completed"
             );

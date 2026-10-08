@@ -1,6 +1,6 @@
 #pragma once
 
-#include "onedrive/cli/console.hpp"
+#include "onedrive/events/observer.hpp"
 #include "onedrive/config/config.hpp"
 #include "onedrive/graph/graph_client.hpp"
 #include "onedrive/storage/item_store.hpp"
@@ -13,14 +13,14 @@ namespace onedrive::sync {
     const config::Config& config,
     const std::string& remote_path,
     graph::GraphClient& graph,
-    const cli::Console& console
+    const events::Observer& observer
 );
 [[nodiscard]] int download_single_file(
     const config::Config& config,
     const std::string& remote_path,
     graph::GraphClient& graph,
     storage::ItemStore& items,
-    const cli::Console& console
+    const events::Observer& observer
 );
 
 }  // namespace onedrive::sync

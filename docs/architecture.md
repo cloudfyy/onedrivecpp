@@ -67,11 +67,26 @@ does not maintain duplicate mutable item caches.
 
 ## Presentation boundary
 
-Synchronization, upload, Delta, monitor, and command orchestration publish
-typed console events through the `Console` facade. The facade serializes calls
-from worker threads and forwards each event to a `ConsoleBackend`; it contains
-no text or JSON rendering policy. The built-in text, JSON, and FTXUI backends render the same event model
-independently, while confirmations use a separate typed request.
+Synchronization, upload, and Delta publish typed `events::Event` values through
+the core `events::Observer` interface. It serializes callbacks from workers
+without depending on a terminal or GUI toolkit. An event reference is valid only
+during its callback: asynchronous frontends must copy it before posting it to
+their main thread, and callbacks must not re-enter the same observer. Exceptions
+propagate to the publishing caller.
+
+`cli::Console` adapts this interface to the text, JSON, and FTXUI
+`ConsoleBackend` implementations. Confirmation and terminal completion remain
+CLI operations and share the same lock. Existing `cli` event names remain
+aliases, preserving output fields and formats. `SyncEngine` requires an explicit,
+non-null observer instead of constructing a default Console. The observer must
+outlive the engine and its synchronization work.
+
+`onedrive_core` no longer links `onedrive_cli` or FTXUI. `onedrive_cli` links the
+core event implementation; `onedrive_app` temporarily links both core and CLI
+because argument parsing, confirmations, and terminal lifecycle still live in
+application orchestration. Extracting application services will move those CLI
+entry-point responsibilities out. Terminal preferences and their parsers live
+in `config`, so TOML loading does not construct or link a terminal backend.
 
 This boundary preserves JSON, redirected text, quiet mode, and interactive
 terminal behavior without coupling business code to a specific renderer. The

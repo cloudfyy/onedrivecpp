@@ -12,8 +12,8 @@
 #include <string>
 #include <vector>
 
-namespace onedrive::cli {
-class Console;
+namespace onedrive::events {
+class Observer;
 }
 
 namespace onedrive::sync::detail {
@@ -53,7 +53,7 @@ DownloadBatch download_files(
     detail::ItemOperationCoordinator& operations,
     detail::DownloadSpaceCoordinator& space,
     const detail::FilesystemMetadata& metadata,
-    const cli::Console& console,
+    const events::Observer& observer,
     const detail::SafeSyncRoot& sync_root,
     config::LocalConflictPolicy local_conflict
 );

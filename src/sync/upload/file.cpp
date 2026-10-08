@@ -3,7 +3,7 @@
 #include "sync/upload/errors.hpp"
 #include "sync/upload/orchestration.hpp"
 
-#include "onedrive/cli/console.hpp"
+#include "onedrive/events/observer.hpp"
 #include "onedrive/util/path_security.hpp"
 #include "onedrive/util/system_error.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"
@@ -546,7 +546,7 @@ void recover_pending_uploads(
     graph::GraphClient& graph,
     storage::ItemStore& items,
     const FilesystemMetadata& metadata,
-    const cli::Console& console
+    const events::Observer& observer
 ) {
     for (auto upload : items.pending_uploads(drive_id)) {
         if (!upload.failure_code.empty() && upload.snapshot_path.empty() &&
@@ -571,8 +571,8 @@ void recover_pending_uploads(
                 recover_pending_directory(
                     sync_root, upload, graph, items, metadata
                 );
-                console.message(
-                    cli::MessageKind::information,
+                observer.message(
+                    events::MessageKind::information,
                     "pending_upload_recovered",
                     "Recovered pending directory creation '" +
                         upload.remote_path + "'."
@@ -613,8 +613,8 @@ void recover_pending_uploads(
             static_cast<void>(
                 remove_no_symlinks(upload.snapshot_path)
             );
-            console.message(
-                cli::MessageKind::information,
+            observer.message(
+                events::MessageKind::information,
                 "pending_upload_recovered",
                 "Recovered pending upload '" + upload.remote_path + "'."
             );
@@ -623,11 +623,11 @@ void recover_pending_uploads(
             upload.failure_message = error.what();
             ++upload.failure_attempt_count;
             items.save_pending_upload(upload);
-            console.message(
-                cli::MessageKind::warning,
+            observer.message(
+                events::MessageKind::warning,
                 "pending_upload_resource_blocked",
-                "Deferred pending upload '" + upload.remote_path + "': " +
-                    error.what()
+                "Deferred pending upload '" + upload.remote_path +
+                    "': " + error.what()
             );
         } catch (const RemoteUploadConflictError& error) {
             items.remove_pending_upload(
@@ -639,8 +639,8 @@ void recover_pending_uploads(
                     remove_no_symlinks(upload.snapshot_path)
                 );
             }
-            console.message(
-                cli::MessageKind::warning,
+            observer.message(
+                events::MessageKind::warning,
                 "pending_upload_conflict_deferred",
                 std::string{error.what()} +
                     "; reconciling it through the remote delta."

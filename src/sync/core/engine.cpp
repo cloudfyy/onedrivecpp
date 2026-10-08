@@ -1,6 +1,6 @@
 #include "onedrive/sync/core/engine.hpp"
 
-#include "onedrive/cli/console.hpp"
+#include "onedrive/events/observer.hpp"
 #include "onedrive/util/mount.hpp"
 #include "onedrive/util/path_security.hpp"
 #include "sync/core/delta_plan.hpp"
@@ -119,9 +119,9 @@ void discard_orphaned_partial_files(
 void report_dry_run_configuration(
     const config::Config& config,
     storage::ItemStore& items,
-    const cli::Console& console
+    const events::Observer& observer
 ) {
-    console.section(
+    observer.section(
         "dry_run_configuration",
         "Dry run configuration:",
         {
@@ -162,9 +162,9 @@ void report_dry_run_configuration(
             {
                 .label = "per-download rate:",
                 .key = "download_rate_limit",
-                .value =
-                    std::to_string(config.download_maximum_rate_bytes_per_second
-                    ),
+                .value = std::to_string(
+                    config.download_maximum_rate_bytes_per_second
+                ),
             },
             {
                 .label = "total download rate:",
@@ -208,9 +208,9 @@ void report_dry_run_configuration(
 void report_upload_plan(
     const config::Config& config,
     const detail::UploadSummary& summary,
-    const cli::Console& console
+    const events::Observer& observer
 ) {
-    console.section(
+    observer.section(
         "upload_plan",
         "Local upload plan:",
         {
@@ -262,9 +262,9 @@ void report_execution_summary(
     const engine_detail::ExecutionSummary& execution,
     const detail::UploadSummary& upload,
     std::size_t blocked,
-    const cli::Console& console
+    const events::Observer& observer
 ) {
-    console.section(
+    observer.section(
         "execution_summary",
         "Synchronization summary:",
         {
@@ -331,7 +331,7 @@ void report_completion(
     std::size_t blocked,
     bool preview,
     std::chrono::steady_clock::time_point started_at,
-    const cli::Console& console
+    const events::Observer& observer
 ) {
     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now() - started_at
@@ -343,8 +343,8 @@ void report_completion(
             blocked,
             elapsed.count()
         );
-        console.message(
-            cli::MessageKind::warning,
+        observer.message(
+            events::MessageKind::warning,
             "sync_completed_with_issues",
             std::format(
                 "Synchronization completed with {} blocked items in {} "
@@ -359,8 +359,8 @@ void report_completion(
         preview ? "Synchronization dry run completed"
                 : "Synchronization state update completed";
     spdlog::info("{} in {} milliseconds", message, elapsed.count());
-    console.message(
-        cli::MessageKind::success,
+    observer.message(
+        events::MessageKind::success,
         "sync_completed",
         std::format("{} in {} milliseconds", message, elapsed.count())
     );
@@ -376,8 +376,7 @@ int SyncEngine::synchronize() {
             outcome, std::chrono::steady_clock::now() - started_at
         );
     };
-    cli::Console fallback_console;
-    const auto& console = console_ == nullptr ? fallback_console : *console_;
+    const auto& observer = *observer_;
     const auto capabilities = capabilities_for(
         config_.sync_mode,
         config_.delete_policy,
@@ -393,7 +392,7 @@ int SyncEngine::synchronize() {
         std::optional<detail::SafeSyncRoot> safe_root;
         std::optional<detail::FilesystemMetadata> metadata;
         if (capabilities.previews()) {
-            report_dry_run_configuration(config_, items_, console);
+            report_dry_run_configuration(config_, items_, observer);
             const auto pending = items_.pending_downloads(config_.drive_id);
             if (!pending.empty()) {
                 spdlog::info(
@@ -429,14 +428,14 @@ int SyncEngine::synchronize() {
             }
             if (capabilities.uploads()) {
                 detail::recover_pending_remote_moves(
-                    *safe_root, config_.drive_id, graph_, items_, console
+                    *safe_root, config_.drive_id, graph_, items_, observer
                 );
                 if (capabilities.removes_remote_items()) {
                     detail::recover_pending_deletes(
                         config_.drive_id,
                         graph_,
                         items_,
-                        console,
+                        observer,
                         {
                             .maximum_affected_items =
                                 config_.maximum_remote_deletions,
@@ -450,7 +449,7 @@ int SyncEngine::synchronize() {
                     graph_,
                     items_,
                     *metadata,
-                    console
+                    observer
                 );
             }
         }
@@ -479,8 +478,8 @@ int SyncEngine::synchronize() {
                 "Selective synchronization rules changed; fetching the full "
                 "remote state"
             );
-            console.message(
-                cli::MessageKind::information,
+            observer.message(
+                events::MessageKind::information,
                 "sync_filter_changed",
                 "Selective synchronization rules changed; fetching the full "
                 "remote state..."
@@ -513,8 +512,8 @@ int SyncEngine::synchronize() {
             items_.size(),
             query_delta_link ? "present" : "absent"
         );
-        console.message(
-            cli::MessageKind::information,
+        observer.message(
+            events::MessageKind::information,
             "delta_query_started",
             "Fetching Microsoft Graph changes..."
         );
@@ -525,12 +524,12 @@ int SyncEngine::synchronize() {
         std::size_t delta_pages = 0;
         std::size_t delta_scanned_items = 0;
         const auto delta_progress =
-            [&console, &delta_pages, &delta_scanned_items](
+            [&observer, &delta_pages, &delta_scanned_items](
                 std::size_t pages, std::size_t items, util::ProgressState state
             ) {
                 delta_pages = pages;
                 delta_scanned_items = items;
-                console.delta_progress(pages, items, state);
+                observer.delta_progress(pages, items, state);
             };
         try {
             delta = graph_.list_delta(query_delta_link, delta_progress);
@@ -539,8 +538,8 @@ int SyncEngine::synchronize() {
                 "{}; retrying with a full Microsoft Graph delta query",
                 error.what()
             );
-            console.message(
-                cli::MessageKind::warning,
+            observer.message(
+                events::MessageKind::warning,
                 "delta_cursor_invalid",
                 "The saved Microsoft Graph cursor is no longer valid; "
                 "fetching the full remote state..."
@@ -548,7 +547,7 @@ int SyncEngine::synchronize() {
             delta = graph_.list_delta(std::nullopt, delta_progress);
             apply_mode = storage::DeltaApplyMode::replace;
         }
-        cli::DeltaSummary delta_summary{
+        events::DeltaSummary delta_summary{
             .pages = delta_pages,
             .scanned_items = delta_scanned_items,
             .unique_changes = delta.changes.size(),
@@ -562,7 +561,7 @@ int SyncEngine::synchronize() {
                 ++delta_summary.files;
             }
         }
-        console.delta_summary(delta_summary);
+        observer.delta_summary(delta_summary);
         const auto tracked_items = items_.drive_items(config_.drive_id);
         std::vector<storage::UploadSuppression> upload_suppressions;
         if (apply_mode == storage::DeltaApplyMode::replace) {
@@ -664,7 +663,7 @@ int SyncEngine::synchronize() {
             plan.remove_partial_download(partial.item.remote_id);
         }
         engine_detail::report_plan(
-            plan, config_.drive_id, console, capabilities
+            plan, config_.drive_id, observer, capabilities
         );
 
         std::size_t blocked_count = plan.blocked_count();
@@ -678,7 +677,7 @@ int SyncEngine::synchronize() {
                     items_,
                     *metadata,
                     &sync_filter,
-                    console,
+                    observer,
                     capabilities,
                     {
                         .maximum_affected_items =
@@ -688,15 +687,15 @@ int SyncEngine::synchronize() {
                     config_.upload_concurrency
                 );
                 blocked_count += upload_summary.blocked;
-                report_upload_plan(config_, upload_summary, console);
+                report_upload_plan(config_, upload_summary, observer);
             }
             spdlog::debug(
                 "Dry run left synchronization state unchanged for drive '{}'",
                 config_.drive_id
             );
         } else {
-            console.message(
-                cli::MessageKind::information,
+            observer.message(
+                events::MessageKind::information,
                 "execution_started",
                 "Executing synchronization plan..."
             );
@@ -707,7 +706,7 @@ int SyncEngine::synchronize() {
                 graph_,
                 items_,
                 *metadata,
-                console,
+                observer,
                 capabilities,
                 config_.download_concurrency,
                 config_.transfer_order,
@@ -728,7 +727,7 @@ int SyncEngine::synchronize() {
                     items_,
                     *metadata,
                     &sync_filter,
-                    console,
+                    observer,
                     capabilities,
                     {
                         .maximum_affected_items =
@@ -740,13 +739,13 @@ int SyncEngine::synchronize() {
                 blocked_count += upload_summary.blocked;
             }
             report_execution_summary(
-                summary, upload_summary, blocked_count, console
+                summary, upload_summary, blocked_count, observer
             );
         }
 
         record_result(metrics::SyncRunOutcome::succeeded);
         report_completion(
-            blocked_count, capabilities.previews(), started_at, console
+            blocked_count, capabilities.previews(), started_at, observer
         );
         return blocked_count == 0 ? 0 : 2;
     } catch (const onedrive::util::SyncMountUnavailableError& error) {
@@ -759,8 +758,8 @@ int SyncEngine::synchronize() {
                 .count(),
             error.what()
         );
-        console.message(
-            cli::MessageKind::error, "sync_mount_unavailable", error.what()
+        observer.message(
+            events::MessageKind::error, "sync_mount_unavailable", error.what()
         );
         return 1;
     } catch (...) {

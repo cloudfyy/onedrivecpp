@@ -1,6 +1,6 @@
 #include "sync/core/plan_report.hpp"
 
-#include "onedrive/cli/console.hpp"
+#include "onedrive/events/observer.hpp"
 #include "sync/core/reporting.hpp"
 
 #include <spdlog/spdlog.h>
@@ -13,7 +13,7 @@ namespace onedrive::sync::engine_detail {
 void report_plan(
     const detail::SyncPlan& plan,
     const std::string& drive_id,
-    const cli::Console& console,
+    const events::Observer& observer,
     SyncCapabilities capabilities
 ) {
     const auto directory_count =
@@ -27,8 +27,8 @@ void report_plan(
     const auto removal_count =
         capabilities.plans_local_deletions() ? plan.removal_count() : 0;
     const auto upsert_count = directory_count + download_count;
-    console.message(
-        cli::MessageKind::information,
+    observer.message(
+        events::MessageKind::information,
         "remote_delta",
         std::format(
             "Remote delta contains {} changes ({} upserts, {} removals, {} "
@@ -64,7 +64,7 @@ void report_plan(
             removal_count
         );
     }
-    console.section(
+    observer.section(
         "synchronization_plan",
         "Synchronization plan:",
         {
@@ -101,7 +101,7 @@ void report_plan(
         }
     );
     for (std::size_t index = 0; index < plan.blocked_count(); ++index) {
-        engine_detail::report_blocked(plan.blocked(index), console);
+        engine_detail::report_blocked(plan.blocked(index), observer);
     }
 }
 

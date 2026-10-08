@@ -5,6 +5,7 @@ namespace {
 using namespace onedrive::test::sync;
 
 int test_remote_deletions() {
+    const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
 
     const auto unchanged_root = temporary.path() / "unchanged";
@@ -25,7 +26,8 @@ int test_remote_deletions() {
             config_for(unchanged_root, false),
             unchanged_graph,
             unchanged_items,
-            unchanged_metrics
+            unchanged_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         std::filesystem::exists(unchanged_root / "deleted.txt") ||
@@ -53,7 +55,11 @@ int test_remote_deletions() {
     );
     FakeMetrics dry_metrics;
     if (onedrive::sync::SyncEngine{
-            config_for(dry_root, true), dry_graph, dry_items, dry_metrics
+            config_for(dry_root, true),
+            dry_graph,
+            dry_items,
+            dry_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         !std::filesystem::exists(dry_root / "deleted.txt") ||
@@ -77,7 +83,8 @@ int test_remote_deletions() {
             config_for(refreshed_root, false),
             refreshed_graph,
             refreshed_items,
-            refreshed_metrics
+            refreshed_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         std::filesystem::exists(refreshed_root / "gone.txt") ||
@@ -146,7 +153,8 @@ int test_remote_deletions() {
             config_for(partial_root, false),
             partial_graph,
             partial_items,
-            partial_metrics
+            partial_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         std::filesystem::exists(removed_partial) ||
@@ -192,7 +200,8 @@ int test_remote_deletions() {
             config_for(refresh_partial_root, false),
             refresh_partial_graph,
             refresh_partial_items,
-            refresh_partial_metrics
+            refresh_partial_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         std::filesystem::exists(refresh_partial) ||
@@ -236,7 +245,8 @@ int test_remote_deletions() {
             config_for(retained_refresh_root, true),
             retained_refresh_graph,
             retained_refresh_items,
-            retained_refresh_metrics
+            retained_refresh_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         !std::filesystem::exists(retained_refresh_partial) ||
@@ -284,7 +294,8 @@ int test_remote_deletions() {
             config_for(unsafe_partial_root, false),
             unsafe_partial_graph,
             unsafe_partial_items,
-            unsafe_partial_metrics
+            unsafe_partial_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         !std::filesystem::exists(unsafe_partial_file) ||
@@ -326,7 +337,8 @@ int test_remote_deletions() {
             config_for(failed_partial_root, false),
             failed_partial_graph,
             failed_partial_items,
-            failed_partial_metrics
+            failed_partial_metrics,
+            &default_console
         }
                               .synchronize());
         return fail("delta commit failure did not interrupt partial cleanup");
@@ -359,7 +371,11 @@ int test_remote_deletions() {
     modified_config.local_conflict =
         onedrive::config::LocalConflictPolicy::backup;
     if (onedrive::sync::SyncEngine{
-            modified_config, modified_graph, modified_items, modified_metrics
+            modified_config,
+            modified_graph,
+            modified_items,
+            modified_metrics,
+            &default_console
         }
                 .synchronize() != 2 ||
         !std::filesystem::exists(modified_root / "modified.txt") ||
@@ -382,7 +398,8 @@ int test_remote_deletions() {
             config_for(modified_root, false),
             retry_graph,
             retry_items,
-            retry_metrics
+            retry_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         retry_items.applied_delta.removals !=
@@ -413,7 +430,11 @@ int test_remote_deletions() {
     };
     FakeMetrics tree_metrics;
     if (onedrive::sync::SyncEngine{
-            config_for(tree_root, false), tree_graph, tree_items, tree_metrics
+            config_for(tree_root, false),
+            tree_graph,
+            tree_items,
+            tree_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         std::filesystem::exists(tree_root / "Folder") ||
@@ -439,7 +460,8 @@ int test_remote_deletions() {
             config_for(nonempty_root, false),
             nonempty_graph,
             nonempty_items,
-            nonempty_metrics
+            nonempty_metrics,
+            &default_console
         }
                 .synchronize() != 2 ||
         !std::filesystem::exists(nonempty_root / "Folder" / "local.txt") ||
@@ -478,7 +500,8 @@ int test_remote_deletions() {
             config_for(symlink_root, false),
             symlink_graph,
             symlink_items,
-            symlink_metrics
+            symlink_metrics,
+            &default_console
         }
                 .synchronize() != 2 ||
         !std::filesystem::is_symlink(symlink_root / "linked.txt") ||
@@ -511,7 +534,8 @@ int test_remote_deletions() {
             config_for(missing_root, false),
             missing_graph,
             missing_items,
-            missing_metrics
+            missing_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         missing_items.applied_delta.removals !=
@@ -531,7 +555,8 @@ int test_remote_deletions() {
             config_for(untracked_root, false),
             untracked_graph,
             untracked_items,
-            untracked_metrics
+            untracked_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         untracked_items.applied_delta.removals !=
@@ -542,6 +567,7 @@ int test_remote_deletions() {
 }
 
 int test_local_deletions() {
+    const onedrive::cli::Console default_console;
     onedrive::test::TemporaryDirectory temporary;
     const auto root = temporary.path() / "deletions";
     std::filesystem::create_directories(root);
@@ -580,9 +606,10 @@ int test_local_deletions() {
     FakeMetrics metrics;
     auto config = config_for(root, false);
     config.sync_mode = onedrive::sync::SyncMode::bidirectional;
-    static_cast<void>(
-        onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize()
-    );
+    static_cast<void>(onedrive::sync::SyncEngine{
+        config, graph, items, metrics, &default_console
+    }
+                          .synchronize());
     if (graph.deleted_items !=
             std::vector<std::pair<std::string, std::string>>{
                 {"removed-directory", "etag"},
@@ -612,7 +639,7 @@ int test_local_deletions() {
     auto dry_config = config_for(dry_root, true);
     dry_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     static_cast<void>(onedrive::sync::SyncEngine{
-        dry_config, dry_graph, dry_items, dry_metrics
+        dry_config, dry_graph, dry_items, dry_metrics, &default_console
     }
                           .synchronize());
     if (!dry_graph.deleted_items.empty() ||
@@ -779,7 +806,8 @@ int test_local_deletions() {
             pending_guard_config,
             pending_guard_graph,
             pending_guard_items,
-            pending_guard_metrics
+            pending_guard_metrics,
+            &default_console
         }
                               .synchronize());
         return fail("pending deletions bypassed the large-delete guard");
@@ -834,7 +862,11 @@ int test_local_deletions() {
         )
             .fingerprint();
     static_cast<void>(onedrive::sync::SyncEngine{
-        selective_config, selective_graph, selective_items, selective_metrics
+        selective_config,
+        selective_graph,
+        selective_items,
+        selective_metrics,
+        &default_console
     }
                           .synchronize());
     if (selective_graph.deleted_items !=
@@ -897,7 +929,11 @@ int test_local_deletions() {
         )
             .fingerprint();
     static_cast<void>(onedrive::sync::SyncEngine{
-        policy_config, policy_graph, policy_items, policy_metrics
+        policy_config,
+        policy_graph,
+        policy_items,
+        policy_metrics,
+        &default_console
     }
                           .synchronize());
     if (!policy_graph.deleted_items.empty() || policy_items.size() != 3) {
@@ -930,7 +966,8 @@ int test_local_deletions() {
             journal_failure_config,
             journal_failure_graph,
             journal_failure_items,
-            journal_failure_metrics
+            journal_failure_metrics,
+            &default_console
         }
                               .synchronize());
         return fail("deletion journal failure was accepted");
@@ -946,7 +983,8 @@ int test_local_deletions() {
         journal_failure_config,
         journal_failure_graph,
         journal_failure_items,
-        journal_failure_metrics
+        journal_failure_metrics,
+        &default_console
     }
                           .synchronize());
     if (journal_failure_graph.deleted_items !=
@@ -978,7 +1016,11 @@ int test_local_deletions() {
     recovery_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     try {
         static_cast<void>(onedrive::sync::SyncEngine{
-            recovery_config, recovery_graph, recovery_items, recovery_metrics
+            recovery_config,
+            recovery_graph,
+            recovery_items,
+            recovery_metrics,
+            &default_console
         }
                               .synchronize());
         return fail("deletion commit failure was accepted");
@@ -990,7 +1032,11 @@ int test_local_deletions() {
     }
     recovery_items.fail_commit_delete = false;
     static_cast<void>(onedrive::sync::SyncEngine{
-        recovery_config, recovery_graph, recovery_items, recovery_metrics
+        recovery_config,
+        recovery_graph,
+        recovery_items,
+        recovery_metrics,
+        &default_console
     }
                           .synchronize());
     if (recovery_graph.deleted_items.size() != 2 ||
@@ -1029,7 +1075,8 @@ int test_local_deletions() {
             reappeared_config,
             reappeared_graph,
             reappeared_items,
-            reappeared_metrics
+            reappeared_metrics,
+            &default_console
         }
                               .synchronize());
         return fail("reappeared local item was deleted remotely");
@@ -1061,7 +1108,11 @@ int test_local_deletions() {
     conflict_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     try {
         static_cast<void>(onedrive::sync::SyncEngine{
-            conflict_config, conflict_graph, conflict_items, conflict_metrics
+            conflict_config,
+            conflict_graph,
+            conflict_items,
+            conflict_metrics,
+            &default_console
         }
                               .synchronize());
         return fail("remote deletion conflict was accepted");

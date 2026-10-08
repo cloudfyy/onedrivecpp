@@ -67,10 +67,20 @@ SQLite ItemStore 使用专用数据库线程。下载、监控和上传工作线
 
 ## 界面输出边界
 
-同步、上传、Delta、monitor 和命令编排都通过 `Console` facade 发布强类型界面
-事件。facade 会将不同 worker 线程的调用串行化，再把事件交给
-`ConsoleBackend`；它自身不负责文本或 JSON 的渲染策略。内置 Text 与 JSON
-backend 分别消费同一套事件，交互确认则使用独立的强类型请求。
+同步、上传和 Delta 通过核心层的 `events::Observer` 发布强类型 `events::Event`。
+观察者将不同 worker 线程的回调串行化，不依赖终端或任何 GUI 框架。回调接收到的
+事件引用只在调用期间有效；异步前端必须复制事件后再投递到主线程，且不得在回调
+内重入同一个观察者。异常会返回发布事件的调用方。
+
+`cli::Console` 是该观察者的终端适配器，将事件交给 Text、JSON 或 FTXUI
+`ConsoleBackend`；交互确认和终端结束操作仍属于 CLI，并使用同一把锁。现有
+`cli` 事件类型名保留为别名，输出字段和格式不变。`SyncEngine` 要求调用方显式
+传入非空观察者，不再自行构造默认 Console；观察者必须比引擎及其同步任务活得更久。
+
+构建层面，`onedrive_core` 不再依赖 `onedrive_cli` 或 FTXUI。`onedrive_cli`
+链接核心事件实现，`onedrive_app` 暂时同时链接核心和 CLI，因为参数解析、确认和
+终端生命周期仍在应用编排中。下一阶段提取应用服务后，再将这些 CLI 入口职责移出。
+配置中的终端偏好类型和解析位于 `config`，加载 TOML 不会构造或链接终端后端。
 
 这条边界在保留 JSON、重定向文本、quiet 模式和交互式终端行为的同时，让业务
 代码不再依赖具体渲染器。内置 Text、JSON 与 FTXUI backend 独立消费同一套事件。

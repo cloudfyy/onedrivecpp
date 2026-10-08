@@ -7,6 +7,7 @@ namespace {
 using namespace onedrive::test::sync;
 
 int test_local_file_uploads() {
+    const onedrive::cli::Console default_console;
     onedrive::test::TemporaryDirectory temporary;
     const auto dry_root = temporary.path() / "dry-uploads";
     std::filesystem::create_directories(dry_root);
@@ -21,7 +22,7 @@ int test_local_file_uploads() {
     auto dry_config = config_for(dry_root, true);
     dry_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     if (onedrive::sync::SyncEngine{
-            dry_config, dry_graph, dry_items, dry_metrics
+            dry_config, dry_graph, dry_items, dry_metrics, &default_console
         }
                 .synchronize() != 0 ||
         dry_graph.upload_count != 0 || dry_items.apply_count != 0) {
@@ -78,7 +79,10 @@ int test_local_file_uploads() {
     auto config = config_for(root, false);
     config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     const auto result =
-        onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize();
+        onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+            .synchronize();
     std::ranges::sort(graph.uploaded_paths);
     bool upload_snapshot_found = false;
     for (const auto& entry : std::filesystem::directory_iterator{root}) {
@@ -122,7 +126,8 @@ int test_local_file_uploads() {
             concurrent_config,
             concurrent_graph,
             concurrent_items,
-            concurrent_metrics
+            concurrent_metrics,
+            &default_console
         }
             .synchronize();
     if (concurrent_result != 0 || concurrent_graph.upload_count != 4 ||
@@ -163,7 +168,8 @@ int test_local_file_uploads() {
             cancelled_config,
             cancelled_graph,
             cancelled_items,
-            cancelled_metrics
+            cancelled_metrics,
+            &default_console
         }
                               .synchronize());
         return fail("fatal parallel upload failure was ignored");
@@ -198,7 +204,11 @@ int test_local_file_uploads() {
     auto resource_config = config_for(resource_root, false);
     resource_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     static_cast<void>(onedrive::sync::SyncEngine{
-        resource_config, resource_graph, resource_items, resource_metrics
+        resource_config,
+        resource_graph,
+        resource_items,
+        resource_metrics,
+        &default_console
     }
                           .synchronize());
     const auto quota_pending = resource_items.pending_uploads("me");
@@ -212,7 +222,11 @@ int test_local_file_uploads() {
         );
     }
     static_cast<void>(onedrive::sync::SyncEngine{
-        resource_config, resource_graph, resource_items, resource_metrics
+        resource_config,
+        resource_graph,
+        resource_items,
+        resource_metrics,
+        &default_console
     }
                           .synchronize());
     if (resource_items.pending_uploads("me").size() != 1 ||
@@ -221,7 +235,11 @@ int test_local_file_uploads() {
     }
     resource_graph.upload_resource_error_path.clear();
     static_cast<void>(onedrive::sync::SyncEngine{
-        resource_config, resource_graph, resource_items, resource_metrics
+        resource_config,
+        resource_graph,
+        resource_items,
+        resource_metrics,
+        &default_console
     }
                           .synchronize());
     if (!resource_items.pending_uploads("me").empty() ||
@@ -255,7 +273,11 @@ int test_local_file_uploads() {
     auto storage_config = config_for(storage_root, false);
     storage_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     static_cast<void>(onedrive::sync::SyncEngine{
-        storage_config, storage_graph, storage_items, storage_metrics
+        storage_config,
+        storage_graph,
+        storage_items,
+        storage_metrics,
+        &default_console
     }
                           .synchronize());
     const auto storage_pending = storage_items.pending_uploads("me");
@@ -270,7 +292,11 @@ int test_local_file_uploads() {
         );
     }
     static_cast<void>(onedrive::sync::SyncEngine{
-        storage_config, storage_graph, storage_items, storage_metrics
+        storage_config,
+        storage_graph,
+        storage_items,
+        storage_metrics,
+        &default_console
     }
                           .synchronize());
     const auto retried_storage_pending = storage_items.pending_uploads("me");
@@ -282,7 +308,11 @@ int test_local_file_uploads() {
         std::filesystem::remove(collision);
     }
     static_cast<void>(onedrive::sync::SyncEngine{
-        storage_config, storage_graph, storage_items, storage_metrics
+        storage_config,
+        storage_graph,
+        storage_items,
+        storage_metrics,
+        &default_console
     }
                           .synchronize());
     if (!storage_items.pending_uploads("me").empty() ||
@@ -312,7 +342,8 @@ int test_local_file_uploads() {
             permission_config,
             permission_graph,
             permission_items,
-            permission_metrics
+            permission_metrics,
+            &default_console
         }
                               .synchronize());
         const auto permission_pending = permission_items.pending_uploads("me");
@@ -329,7 +360,8 @@ int test_local_file_uploads() {
             permission_config,
             permission_graph,
             permission_items,
-            permission_metrics
+            permission_metrics,
+            &default_console
         }
                               .synchronize());
         if (!permission_items.pending_uploads("me").empty() ||
@@ -355,7 +387,11 @@ int test_local_file_uploads() {
     auto removed_config = config_for(removed_root, false);
     removed_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     static_cast<void>(onedrive::sync::SyncEngine{
-        removed_config, removed_graph, removed_items, removed_metrics
+        removed_config,
+        removed_graph,
+        removed_items,
+        removed_metrics,
+        &default_console
     }
                           .synchronize());
     if (!removed_items.pending_uploads("me").empty()) {
@@ -365,6 +401,7 @@ int test_local_file_uploads() {
 }
 
 int test_local_directory_uploads() {
+    const onedrive::cli::Console default_console;
     onedrive::test::TemporaryDirectory temporary;
 
     const auto journal_failure_root =
@@ -382,7 +419,8 @@ int test_local_directory_uploads() {
             journal_failure_config,
             journal_failure_graph,
             journal_failure_items,
-            journal_failure_metrics
+            journal_failure_metrics,
+            &default_console
         }
                               .synchronize());
         return fail("directory journal failure was accepted");
@@ -397,7 +435,8 @@ int test_local_directory_uploads() {
             journal_failure_config,
             journal_failure_graph,
             journal_failure_items,
-            journal_failure_metrics
+            journal_failure_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         journal_failure_graph.created_directory_paths !=
@@ -419,8 +458,10 @@ int test_local_directory_uploads() {
     FakeMetrics metrics;
     auto config = config_for(root, false);
     config.sync_mode = onedrive::sync::SyncMode::bidirectional;
-    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
-        ) != 0 ||
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != 0 ||
         graph.created_directory_paths !=
             std::vector<std::string>{
                 "Empty",
@@ -457,7 +498,11 @@ int test_local_directory_uploads() {
     auto resource_config = config_for(resource_root, false);
     resource_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     static_cast<void>(onedrive::sync::SyncEngine{
-        resource_config, resource_graph, resource_items, resource_metrics
+        resource_config,
+        resource_graph,
+        resource_items,
+        resource_metrics,
+        &default_console
     }
                           .synchronize());
     const auto resource_pending = resource_items.pending_uploads("me");
@@ -473,7 +518,11 @@ int test_local_directory_uploads() {
     }
     resource_graph.directory_resource_error_path.clear();
     static_cast<void>(onedrive::sync::SyncEngine{
-        resource_config, resource_graph, resource_items, resource_metrics
+        resource_config,
+        resource_graph,
+        resource_items,
+        resource_metrics,
+        &default_console
     }
                           .synchronize());
     if (!resource_items.pending_uploads("me").empty() ||
@@ -492,7 +541,11 @@ int test_local_directory_uploads() {
     conflict_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     try {
         static_cast<void>(onedrive::sync::SyncEngine{
-            conflict_config, conflict_graph, conflict_items, conflict_metrics
+            conflict_config,
+            conflict_graph,
+            conflict_items,
+            conflict_metrics,
+            &default_console
         }
                               .synchronize());
         return fail("remote directory conflict was accepted");
@@ -514,7 +567,11 @@ int test_local_directory_uploads() {
     recovery_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     try {
         static_cast<void>(onedrive::sync::SyncEngine{
-            recovery_config, recovery_graph, recovery_items, recovery_metrics
+            recovery_config,
+            recovery_graph,
+            recovery_items,
+            recovery_metrics,
+            &default_console
         }
                               .synchronize());
         return fail("directory commit failure was not reported");
@@ -535,7 +592,11 @@ int test_local_directory_uploads() {
         .directory = true,
     };
     if (onedrive::sync::SyncEngine{
-            recovery_config, recovery_graph, recovery_items, recovery_metrics
+            recovery_config,
+            recovery_graph,
+            recovery_items,
+            recovery_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         recovery_graph.directory_create_count != 2 ||
@@ -565,7 +626,8 @@ int test_local_directory_uploads() {
             selective_config,
             selective_graph,
             selective_items,
-            selective_metrics
+            selective_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         selective_graph.created_directory_paths !=
@@ -586,7 +648,7 @@ int test_local_directory_uploads() {
     auto type_config = config_for(type_root, false);
     type_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     static_cast<void>(onedrive::sync::SyncEngine{
-        type_config, type_graph, type_items, type_metrics
+        type_config, type_graph, type_items, type_metrics, &default_console
     }
                           .synchronize());
     if (type_graph.directory_create_count != 0 || type_items.size() != 1) {
@@ -607,7 +669,11 @@ int test_local_directory_uploads() {
     changing_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     try {
         static_cast<void>(onedrive::sync::SyncEngine{
-            changing_config, changing_graph, changing_items, changing_metrics
+            changing_config,
+            changing_graph,
+            changing_items,
+            changing_metrics,
+            &default_console
         }
                               .synchronize());
         return fail("removed local directory was committed after creation");
@@ -646,7 +712,8 @@ int test_local_directory_uploads() {
             recovery_conflict_config,
             recovery_conflict_graph,
             recovery_conflict_items,
-            recovery_conflict_metrics
+            recovery_conflict_metrics,
+            &default_console
         }
                 .synchronize() != 2 ||
         !recovery_conflict_items.pending_uploads_by_path.empty() ||
@@ -662,6 +729,7 @@ int test_local_directory_uploads() {
 }
 
 int test_local_change_during_upload() {
+    const onedrive::cli::Console default_console;
     onedrive::test::TemporaryDirectory temporary;
     const auto root = temporary.path() / "changing-upload";
     std::filesystem::create_directories(root);
@@ -680,13 +748,17 @@ int test_local_change_during_upload() {
     FakeMetrics metrics;
     auto config = config_for(root, false);
     config.sync_mode = onedrive::sync::SyncMode::bidirectional;
-    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
-        ) != 0 ||
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != 0 ||
         graph.upload_count != 1) {
         return fail("initial changing local file upload failed");
     }
-    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
-        ) != 0 ||
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != 0 ||
         graph.upload_count != 2) {
         return fail("local change during upload was marked as synchronized");
     }
@@ -699,6 +771,7 @@ int test_local_change_during_upload() {
 }
 
 int test_pending_upload_recovery() {
+    const onedrive::cli::Console default_console;
     onedrive::test::TemporaryDirectory temporary;
     const auto root = temporary.path() / "pending-upload";
     std::filesystem::create_directories(root);
@@ -715,10 +788,10 @@ int test_pending_upload_recovery() {
     auto config = config_for(root, false);
     config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     try {
-        static_cast<void>(
-            onedrive::sync::SyncEngine{config, graph, items, metrics}
-                .synchronize()
-        );
+        static_cast<void>(onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                              .synchronize());
         return fail("upload commit failure was not reported");
     } catch (const std::runtime_error&) {
     }
@@ -734,8 +807,10 @@ int test_pending_upload_recovery() {
     graph.upload_conflict = true;
     graph.lookup_item = file("recovered-upload", "recover.txt", 7);
     graph.contents.emplace("recovered-upload", "payload");
-    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
-        ) != 0 ||
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != 0 ||
         graph.upload_count != 2 || graph.download_count != 1 ||
         !items.pending_uploads_by_path.empty() ||
         !items.find("me", "recovered-upload") ||
@@ -754,6 +829,7 @@ int test_pending_upload_recovery() {
 }
 
 int test_upload_checkpoint_recovery() {
+    const onedrive::cli::Console default_console;
     onedrive::test::TemporaryDirectory temporary;
     const auto root = temporary.path() / "upload-checkpoint";
     std::filesystem::create_directories(root);
@@ -774,10 +850,10 @@ int test_upload_checkpoint_recovery() {
     auto config = config_for(root, false);
     config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     try {
-        static_cast<void>(
-            onedrive::sync::SyncEngine{config, graph, items, metrics}
-                .synchronize()
-        );
+        static_cast<void>(onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                              .synchronize());
         return fail("interrupted upload session was not reported");
     } catch (const std::runtime_error&) {
     }
@@ -789,8 +865,10 @@ int test_upload_checkpoint_recovery() {
     }
 
     graph.fail_after_upload_checkpoint = false;
-    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
-        ) != 0 ||
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != 0 ||
         graph.upload_count != 2 || graph.upload_sessions.size() != 2 ||
         !graph.upload_sessions[1] ||
         graph.upload_sessions[1]->completed_bytes != 4 ||
@@ -820,7 +898,11 @@ int test_upload_checkpoint_recovery() {
     failing_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     try {
         static_cast<void>(onedrive::sync::SyncEngine{
-            failing_config, failing_graph, failing_items, failing_metrics
+            failing_config,
+            failing_graph,
+            failing_items,
+            failing_metrics,
+            &default_console
         }
                               .synchronize());
         return fail("upload checkpoint persistence failure was ignored");
@@ -841,6 +923,7 @@ int test_upload_checkpoint_recovery() {
 }
 
 int test_pending_upload_recovery_conflict() {
+    const onedrive::cli::Console default_console;
     onedrive::test::TemporaryDirectory temporary;
     const auto prepare_conflict = [](const std::filesystem::path& root,
                                      FakeItemStore& items) {
@@ -889,7 +972,11 @@ int test_pending_upload_recovery_conflict() {
     auto block_config = config_for(block_root, false);
     block_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     if (onedrive::sync::SyncEngine{
-            block_config, block_graph, block_items, block_metrics
+            block_config,
+            block_graph,
+            block_items,
+            block_metrics,
+            &default_console
         }
                 .synchronize() != 2 ||
         !block_items.pending_uploads_by_path.empty() ||
@@ -923,7 +1010,11 @@ int test_pending_upload_recovery_conflict() {
     backup_config.local_conflict =
         onedrive::config::LocalConflictPolicy::backup;
     if (onedrive::sync::SyncEngine{
-            backup_config, backup_graph, backup_items, backup_metrics
+            backup_config,
+            backup_graph,
+            backup_items,
+            backup_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         !backup_items.pending_uploads_by_path.empty() ||
@@ -968,7 +1059,7 @@ int test_pending_upload_recovery_conflict() {
     auto size_config = config_for(size_root, false);
     size_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     if (onedrive::sync::SyncEngine{
-            size_config, size_graph, size_items, size_metrics
+            size_config, size_graph, size_items, size_metrics, &default_console
         }
                 .synchronize() != 2 ||
         !size_items.pending_uploads_by_path.empty() ||

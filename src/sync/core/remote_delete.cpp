@@ -1,6 +1,6 @@
 #include "sync/core/remote_delete.hpp"
 
-#include "onedrive/cli/console.hpp"
+#include "onedrive/events/observer.hpp"
 #include "sync/core/item_ops.hpp"
 #include "sync/core/reporting.hpp"
 #include "sync/core/plan.hpp"
@@ -23,7 +23,7 @@ std::size_t execute_removals(
     const std::string& drive_id,
     storage::ItemStore& items,
     detail::ItemOperationCoordinator& operations,
-    const cli::Console& console
+    const events::Observer& observer
 ) {
     struct Removal {
         graph::RemoteItem item;
@@ -77,10 +77,7 @@ std::size_t execute_removals(
                 std::move(code),
                 std::move(message)
             );
-            report_blocked(
-                plan.blocked(plan.blocked_count() - 1),
-                console
-            );
+            report_blocked(plan.blocked(plan.blocked_count() - 1), observer);
         };
         try {
             auto operation = operations.acquire(drive_id, previous.remote_id);
@@ -202,8 +199,8 @@ std::size_t execute_removals(
                         detail::filesystem_item_kind(previous.directory)
                     )) {
                     ++removed;
-                    console.message(
-                        cli::MessageKind::information,
+                    observer.message(
+                        events::MessageKind::information,
                         "local_item_removed",
                         "Removed remotely deleted local item '" +
                             local_path.string() + "'."

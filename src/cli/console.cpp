@@ -3,8 +3,6 @@
 #include "cli/backend_factory.hpp"
 #include "cli/terminal.hpp"
 
-#include <algorithm>
-#include <cmath>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -12,9 +10,6 @@
 
 namespace onedrive::cli {
 namespace {
-
-constexpr unsigned completed_percentage = 100;
-constexpr unsigned maximum_incomplete_percentage = 99;
 
 std::unique_ptr<ConsoleBackend> make_backend(
     ConsoleOptions options,
@@ -67,43 +62,6 @@ std::unique_ptr<ConsoleBackend> make_backend(
 
 }  // namespace
 
-unsigned download_progress_percentage(
-    std::size_t completed_files,
-    std::size_t file_count,
-    std::uint64_t downloaded,
-    std::uint64_t total,
-    util::ProgressState state
-) noexcept {
-    const bool completed = state == util::ProgressState::completed;
-    auto percentage =
-        total == 0 ?
-            (file_count == 0 ?
-                (completed ? completed_percentage : 0U) :
-                static_cast<unsigned>(
-                    std::min(
-                        static_cast<double>(completed_percentage),
-                        std::floor(
-                            static_cast<double>(completed_files) * 100.0 /
-                            static_cast<double>(file_count)
-                        )
-                    )
-                )) :
-            static_cast<unsigned>(std::min(
-                static_cast<double>(completed_percentage),
-                std::floor(
-                    static_cast<double>(downloaded) * 100.0 /
-                    static_cast<double>(total)
-                )
-            ));
-    if (!completed) {
-        percentage = std::min(
-            percentage,
-            maximum_incomplete_percentage
-        );
-    }
-    return percentage;
-}
-
 Console::Console(
     ConsoleOptions options,
     std::ostream& output,
@@ -123,89 +81,12 @@ Console::Console(std::unique_ptr<ConsoleBackend> backend)
 Console::~Console() = default;
 
 void Console::finish() const {
-    const std::scoped_lock lock{backend_mutex_};
+    const auto guard = lock();
     backend_->finish();
 }
 
-void Console::message(
-    MessageKind kind,
-    std::string_view event,
-    std::string_view text
-) const {
-    const std::scoped_lock lock{backend_mutex_};
-    backend_->emit(MessageEvent{
-        .kind = kind,
-        .event = std::string{event},
-        .text = std::string{text},
-    });
-}
-
-void Console::section(
-    std::string_view event,
-    std::string_view title,
-    const std::vector<Field>& fields
-) const {
-    const std::scoped_lock lock{backend_mutex_};
-    backend_->emit(SectionEvent{
-        .event = std::string{event},
-        .title = std::string{title},
-        .fields = fields,
-    });
-}
-
-void Console::delta_progress(
-    std::size_t pages,
-    std::size_t items,
-    util::ProgressState state
-) const {
-    const std::scoped_lock lock{backend_mutex_};
-    backend_->emit(DeltaProgressEvent{
-        .pages = pages,
-        .items = items,
-        .state = state,
-    });
-}
-
-void Console::delta_summary(const DeltaSummary& summary) const {
-    const std::scoped_lock lock{backend_mutex_};
-    backend_->emit(DeltaSummaryEvent{.summary = summary});
-}
-
-void Console::blocked_item(
-    std::string_view path,
-    std::string_view reason_code,
-    std::string_view reason_message
-) const {
-    const std::scoped_lock lock{backend_mutex_};
-    backend_->emit(BlockedItemEvent{
-        .path = std::string{path},
-        .reason_code = std::string{reason_code},
-        .reason_message = std::string{reason_message},
-    });
-}
-
-void Console::download_progress(
-    std::size_t completed_files,
-    std::size_t file_count,
-    std::uint64_t downloaded,
-    std::uint64_t total,
-    util::ProgressState state,
-    const DownloadProgressMetrics& metrics
-) const {
-    const std::scoped_lock lock{backend_mutex_};
-    backend_->emit(DownloadProgressEvent{
-        .completed_files = completed_files,
-        .file_count = file_count,
-        .downloaded = downloaded,
-        .total = total,
-        .state = state,
-        .metrics = metrics,
-    });
-}
-
-void Console::end_download_progress() const {
-    const std::scoped_lock lock{backend_mutex_};
-    backend_->emit(EndDownloadProgressEvent{});
+void Console::on_event(const events::Event& event) const {
+    backend_->emit(event);
 }
 
 bool Console::confirm(
@@ -218,9 +99,9 @@ bool Console::confirm(
         .prompt = std::string{prompt},
         .expected = std::string{expected},
     };
-    bool matched;
+    bool matched{false};
     {
-        const std::scoped_lock lock{backend_mutex_};
+        const auto guard = lock();
         matched = backend_->confirm(request);
     }
     if (!matched) {
@@ -242,16 +123,7 @@ UiMode Console::ui_mode() const noexcept {
 }
 
 ColorMode Console::parse_color_mode(std::string_view value) {
-    if (value == "auto") {
-        return ColorMode::automatic;
-    }
-    if (value == "always") {
-        return ColorMode::always;
-    }
-    if (value == "never") {
-        return ColorMode::never;
-    }
-    throw std::invalid_argument{"invalid color mode"};
+    return config::parse_color_mode(value);
 }
 
 OutputMode Console::parse_output_mode(std::string_view value) {
@@ -265,32 +137,11 @@ OutputMode Console::parse_output_mode(std::string_view value) {
 }
 
 UiMode Console::parse_ui_mode(std::string_view value) {
-    if (value == "auto") {
-        return UiMode::automatic;
-    }
-    if (value == "console") {
-        return UiMode::console;
-    }
-    if (value == "tui") {
-        return UiMode::tui;
-    }
-    throw std::invalid_argument("invalid UI mode: " + std::string{value});
+    return config::parse_ui_mode(value);
 }
 
 TuiTheme Console::parse_tui_theme(std::string_view value) {
-    if (value == "hacker") {
-        return TuiTheme::hacker;
-    }
-    if (value == "ocean") {
-        return TuiTheme::ocean;
-    }
-    if (value == "amber") {
-        return TuiTheme::amber;
-    }
-    if (value == "synthwave") {
-        return TuiTheme::synthwave;
-    }
-    throw std::invalid_argument("invalid TUI theme: " + std::string{value});
+    return config::parse_tui_theme(value);
 }
 
 std::ostream& Console::default_output() {

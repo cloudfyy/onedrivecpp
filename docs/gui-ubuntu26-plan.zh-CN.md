@@ -27,6 +27,8 @@
 
 ## 当前阻碍
 
+以下记录最初评估时的架构；已完成的改造与剩余工作见 P0 清单。
+
 ### 核心 target 混合多层职责
 
 `onedrive_core` 当前同时包含：
@@ -230,8 +232,8 @@ GUI 包还需要：
 ### P0：GUI-ready 架构
 
 - [x] 将 `onedrive_core` 拆分为核心、应用和 CLI target。
-- [ ] 将强类型界面事件迁移为 UI 中立的应用事件。
-- [ ] 消除同步和下载代码对 `cli::Console` 的直接依赖。
+- [x] 将强类型界面事件迁移为 UI 中立的应用事件。
+- [x] 消除同步和下载代码对 `cli::Console` 的直接依赖。
 - [ ] 提取登录、状态、同步和监控应用服务。
 - [ ] 为长时间操作增加统一的 `std::stop_token` 取消语义。
 - [ ] 建立明确的应用操作状态机。
@@ -240,11 +242,23 @@ GUI 包还需要：
 - [ ] 为新边界补充应用服务和取消路径测试。
 - [ ] 将 clang-tidy 按 target 运行并排除第三方生成代码。
 
-当前已完成 `onedrive_core`、`onedrive_app` 和 `onedrive_cli` 的物理 target 拆分，
-应用可执行文件只直接链接 `onedrive_app`。由于同步与配置代码仍使用
-`cli::Console` 和相关枚举，`onedrive_core` 暂时仍传递链接 `onedrive_cli`。
-下一步迁移 UI 中立事件后应解除这项过渡依赖，使最终依赖方向变为
-`onedrive_cli -> onedrive_app -> onedrive_core`。
+当前已完成三个 target 的物理拆分及 UI 中立事件迁移：
+
+- `events::Event` 和线程安全的 `events::Observer` 位于核心层，不引入新的
+  target，也不依赖 `onedrive_app`。
+- `cli::Console` 继承观察者接口，现有 CLI 事件名称保留兼容别名。
+- `SyncEngine` 必须显式传入非空观察者；CLI 继续传入 Console，其他前端可注入
+  自己的观察者，不会隐式启动终端界面。
+- 终端配置类型和解析迁入 `config`；TOML 配置键及取值保持不变。
+- `onedrive_core` 已解除对 CLI、CLI11 和 FTXUI 的链接依赖。
+- 新增仅链接核心的观察者测试，覆盖全部事件载荷、并发串行化、异常传播，以及
+  通过非 Console 观察者完成真实本地文件写入的模拟 Graph 同步。
+
+应用可执行文件仍只直接链接 `onedrive_app`。当前 `onedrive_app` 同时依赖
+`onedrive_core` 和 `onedrive_cli`，而 `onedrive_cli` 依赖 `onedrive_core`。
+下一步提取应用服务并移动 CLI 参数解析和生命周期职责，才能形成最终的
+`onedrive_cli -> onedrive_app -> onedrive_core` 方向。异步取消和确认请求的 GUI
+适配尚未实现，本阶段不代表完整 P0 已完成。
 
 ### P1：最小 Qt GUI
 

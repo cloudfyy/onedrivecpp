@@ -12,7 +12,7 @@ bool upload_directory(
     graph::GraphClient& graph,
     storage::ItemStore& items,
     const FilesystemMetadata& metadata,
-    const cli::Console& console,
+    const events::Observer& observer,
     UploadSummary& summary
 );
 void recover_pending_directory(

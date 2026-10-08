@@ -75,10 +75,10 @@ int plan_single_file_download(
     const config::Config& config,
     const std::string& remote_path,
     graph::GraphClient& graph,
-    const cli::Console& console
+    const events::Observer& observer
 ) {
     const auto target = resolve_target(config, remote_path, graph);
-    console.section(
+    observer.section(
         "single_download_plan",
         "Single-file download plan:",
         {
@@ -101,10 +101,9 @@ int plan_single_file_download(
                 .label = "local conflict:",
                 .key = "local_conflict",
                 .value =
-                    config.local_conflict ==
-                            config::LocalConflictPolicy::backup ?
-                        "preserve as safeBackup" :
-                        "block",
+                    config.local_conflict == config::LocalConflictPolicy::backup
+                        ? "preserve as safeBackup"
+                        : "block",
             },
         }
     );
@@ -116,7 +115,7 @@ int download_single_file(
     const std::string& remote_path,
     graph::GraphClient& graph,
     storage::ItemStore& items,
-    const cli::Console& console
+    const events::Observer& observer
 ) {
     auto target = resolve_target(config, remote_path, graph);
     auto& item = target.item;
@@ -151,8 +150,8 @@ int download_single_file(
         );
     }
     if (target_status.current_remote_file) {
-        console.message(
-            cli::MessageKind::success,
+        observer.message(
+            events::MessageKind::success,
             "single_download_reused",
             "Local file is already current: " + destination.string()
         );
@@ -183,14 +182,13 @@ int download_single_file(
             space,
             {},
             [&](std::uint64_t downloaded, std::uint64_t total) {
-                console.download_progress(
+                observer.download_progress(
                     downloaded >= total ? 1U : 0U,
                     1,
                     downloaded,
                     total,
-                    downloaded >= total ?
-                        util::ProgressState::completed :
-                        util::ProgressState::ongoing,
+                    downloaded >= total ? util::ProgressState::completed
+                                        : util::ProgressState::ongoing,
                     progress_estimator.sample(downloaded, total)
                 );
             }
@@ -198,15 +196,13 @@ int download_single_file(
         {
             .local_conflict = config.local_conflict,
             .preserve_local = target_status.preserve_local,
-            .backup_created =
-                [&](const std::filesystem::path& backup) {
-                    console.message(
-                        cli::MessageKind::warning,
-                        "local_conflict_backed_up",
-                        "Preserved local conflict as '" +
-                            backup.string() + "'."
-                    );
-                },
+            .backup_created = [&](const std::filesystem::path& backup) {
+                observer.message(
+                    events::MessageKind::warning,
+                    "local_conflict_backed_up",
+                    "Preserved local conflict as '" + backup.string() + "'."
+                );
+            },
         }
     );
     spdlog::info(
@@ -214,8 +210,8 @@ int download_single_file(
         item.remote_path,
         installed.local_path.string()
     );
-    console.message(
-        cli::MessageKind::success,
+    observer.message(
+        events::MessageKind::success,
         "single_download_completed",
         std::format(
             "Downloaded '{}' to '{}'.",

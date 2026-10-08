@@ -6,7 +6,7 @@
 #include "sync/upload/remote_move.hpp"
 
 #include "onedrive/util/unique_file_descriptor.hpp"
-#include "onedrive/cli/console.hpp"
+#include "onedrive/events/observer.hpp"
 #include "onedrive/util/path_security.hpp"
 #include "util/typestate.hpp"
 #include "sync/filesystem/operations.hpp"
@@ -55,7 +55,7 @@ std::vector<UploadCandidate> discover_uploads(
     storage::ItemStore& items,
     const SyncList* sync_list,
     std::size_t& blocked,
-    const cli::Console& console,
+    const events::Observer& observer,
     bool cleanup_suppressions,
     const std::unordered_set<std::string>& skipped_local_paths = {}
 ) {
@@ -179,8 +179,8 @@ std::vector<UploadCandidate> discover_uploads(
             const auto path = entry.path();
             if (std::filesystem::is_symlink(status)) {
                 ++blocked;
-                console.message(
-                    cli::MessageKind::warning,
+                observer.message(
+                    events::MessageKind::warning,
                     "local_upload_blocked",
                     "Refusing to upload symbolic link '" + path.string() + "'."
                 );
@@ -226,8 +226,8 @@ std::vector<UploadCandidate> discover_uploads(
                 );
                 failed != resource_blocked_uploads.end()) {
                 ++blocked;
-                console.message(
-                    cli::MessageKind::warning,
+                observer.message(
+                    events::MessageKind::warning,
                     "local_upload_resource_blocked",
                     "Upload remains deferred for '" + remote_path + "' (" +
                         failed->second.failure_code + ", attempt " +
@@ -253,8 +253,8 @@ std::vector<UploadCandidate> discover_uploads(
             if (directory && previous != tracked.end() &&
                 !previous->second.directory) {
                 ++blocked;
-                console.message(
-                    cli::MessageKind::warning,
+                observer.message(
+                    events::MessageKind::warning,
                     "local_upload_blocked",
                     "Refusing to replace tracked remote file '" + remote_path +
                         "' with a local directory."
@@ -266,8 +266,8 @@ std::vector<UploadCandidate> discover_uploads(
                     return TreeWalkAction::continue_walk;
                 }
                 ++blocked;
-                console.message(
-                    cli::MessageKind::warning,
+                observer.message(
+                    events::MessageKind::warning,
                     "local_upload_blocked",
                     "Refusing to replace tracked remote directory '" +
                         remote_path + "' with a local file."
@@ -317,7 +317,7 @@ UploadSummary upload_local_changes(
     storage::ItemStore& items,
     const FilesystemMetadata& metadata,
     const SyncList* sync_list,
-    const cli::Console& console,
+    const events::Observer& observer,
     SyncCapabilities capabilities,
     RemoteDeletionGuard deletion_guard,
     std::size_t upload_concurrency
@@ -343,10 +343,7 @@ UploadSummary upload_local_changes(
     summary.planned_deletions = deletion_plan.operations.size();
     summary.affected_deletions = deletion_plan.affected_items;
     summary.large_delete_blocked = enforce_remote_deletion_limit(
-        deletion_plan,
-        deletion_guard,
-        console,
-        capabilities.execution_mode()
+        deletion_plan, deletion_guard, observer, capabilities.execution_mode()
     );
     if (capabilities.previews()) {
         const auto uploads = discover_uploads(
@@ -355,7 +352,7 @@ UploadSummary upload_local_changes(
             items,
             sync_list,
             summary.blocked,
-            console,
+            observer,
             false,
             moves.moved_local_paths
         );
@@ -380,15 +377,15 @@ UploadSummary upload_local_changes(
     summary.planned_directories = move_parents.size();
     for (const auto& parent : move_parents) {
         if (!upload_directory(
-            parent,
-            sync_root,
-            drive_id,
-            graph,
-            items,
-            metadata,
-            console,
-            summary
-        )) {
+                parent,
+                sync_root,
+                drive_id,
+                graph,
+                items,
+                metadata,
+                observer,
+                summary
+            )) {
             return summary;
         }
     }
@@ -404,11 +401,10 @@ UploadSummary upload_local_changes(
         );
         moves.moved_remote_ids.erase(move.remote_id);
         ++summary.moved;
-        console.message(
-            cli::MessageKind::information,
+        observer.message(
+            events::MessageKind::information,
             "local_move_uploaded",
-            "Moved remote item to '" +
-                move.destination_remote_path + "'."
+            "Moved remote item to '" + move.destination_remote_path + "'."
         );
     }
     deletion_plan = capabilities.plans_remote_deletions() ?
@@ -419,19 +415,10 @@ UploadSummary upload_local_changes(
     summary.planned_deletions = deletion_plan.operations.size();
     summary.affected_deletions = deletion_plan.affected_items;
     summary.large_delete_blocked = enforce_remote_deletion_limit(
-        deletion_plan,
-        deletion_guard,
-        console,
-        capabilities.execution_mode()
+        deletion_plan, deletion_guard, observer, capabilities.execution_mode()
     );
     auto uploads = discover_uploads(
-        sync_root,
-        drive_id,
-        items,
-        sync_list,
-        summary.blocked,
-        console,
-        true
+        sync_root, drive_id, items, sync_list, summary.blocked, observer, true
     );
     summary.planned = static_cast<std::size_t>(std::ranges::count(
         uploads,
@@ -453,8 +440,8 @@ UploadSummary upload_local_changes(
     for (const auto& deletion : deletion_plan.operations) {
         execute_new_remote_delete(deletion, graph, items);
         ++summary.deleted;
-        console.message(
-            cli::MessageKind::information,
+        observer.message(
+            events::MessageKind::information,
             "local_item_deleted",
             "Deleted remote item '" + deletion.remote_path + "'."
         );
@@ -469,7 +456,7 @@ UploadSummary upload_local_changes(
                 graph,
                 items,
                 metadata,
-                console,
+                observer,
                 summary
             )) {
             return summary;
@@ -508,19 +495,19 @@ UploadSummary upload_local_changes(
             return;
         case FileUploadStatus::uploaded:
             ++summary.uploaded;
-            console.message(
-                cli::MessageKind::information,
+            observer.message(
+                events::MessageKind::information,
                 "local_item_uploaded",
                 "Uploaded local file '" + upload.remote_path + "'."
             );
             return;
         case FileUploadStatus::blocked:
             ++summary.blocked;
-            console.message(
-                cli::MessageKind::warning,
+            observer.message(
+                events::MessageKind::warning,
                 "local_upload_resource_blocked",
-                "Deferred upload '" + upload.remote_path + "': " +
-                    result.message
+                "Deferred upload '" + upload.remote_path +
+                    "': " + result.message
             );
             return;
         }

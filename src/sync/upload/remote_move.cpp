@@ -1,6 +1,6 @@
 #include "sync/upload/remote_move.hpp"
 #include "sync/upload/planning.hpp"
-#include "onedrive/cli/console.hpp"
+#include "onedrive/events/observer.hpp"
 #include "util/typestate.hpp"
 #include "sync/filesystem/operations.hpp"
 #include "sync/filesystem/safe_sync_root.hpp"
@@ -509,7 +509,7 @@ void recover_pending_remote_moves(
     const std::string& drive_id,
     graph::GraphClient& graph,
     storage::ItemStore& items,
-    const cli::Console& console
+    const events::Observer& observer
 ) {
     for (const auto& move : items.pending_remote_moves(drive_id)) {
         const auto previous = items.find(drive_id, move.remote_id);
@@ -528,11 +528,10 @@ void recover_pending_remote_moves(
         static_cast<void>(execute_pending_remote_move(
             sync_root, std::move(journaled), graph, items
         ));
-        console.message(
-            cli::MessageKind::information,
+        observer.message(
+            events::MessageKind::information,
             "pending_remote_move_recovered",
-            "Recovered remote move to '" +
-                move.destination_remote_path + "'."
+            "Recovered remote move to '" + move.destination_remote_path + "'."
         );
     }
 }

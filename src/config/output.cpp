@@ -19,7 +19,7 @@ void load_output_options(
                 *console, "color", "console.color", "a string"
             )) {
             try {
-                config.console_color = cli::Console::parse_color_mode(*value);
+                config.console_color = parse_color_mode(*value);
             } catch (const std::invalid_argument&) {
                 throw std::runtime_error(
                     "invalid TOML configuration value for 'console.color'"
@@ -30,7 +30,7 @@ void load_output_options(
                 *console, "ui", "console.ui", "a string"
             )) {
             try {
-                config.console_ui = cli::Console::parse_ui_mode(*value);
+                config.console_ui = parse_ui_mode(*value);
             } catch (const std::invalid_argument&) {
                 throw std::runtime_error(
                     "invalid TOML configuration value for 'console.ui'"
@@ -41,8 +41,7 @@ void load_output_options(
                 *console, "theme", "console.theme", "a string"
             )) {
             try {
-                config.console_theme =
-                    cli::Console::parse_tui_theme(*value);
+                config.console_theme = parse_tui_theme(*value);
             } catch (const std::invalid_argument&) {
                 throw std::runtime_error(
                     "invalid TOML configuration value for 'console.theme'"

@@ -43,10 +43,8 @@ DownloadProgressEstimator::DownloadProgressEstimator(
     : started_at_{started_at},
       last_sample_at_{started_at} {}
 
-cli::DownloadProgressMetrics DownloadProgressEstimator::sample(
-    std::uint64_t downloaded,
-    std::uint64_t total,
-    Clock::time_point sampled_at
+events::DownloadProgressMetrics DownloadProgressEstimator::sample(
+    std::uint64_t downloaded, std::uint64_t total, Clock::time_point sampled_at
 ) {
     if (sampled_at < last_sample_at_) {
         throw std::invalid_argument(
@@ -76,20 +74,19 @@ cli::DownloadProgressMetrics DownloadProgressEstimator::sample(
     last_sample_at_ = sampled_at;
     last_downloaded_ = downloaded;
 
-    cli::DownloadProgressMetrics metrics{
-        .bytes_per_second =
-            smoothed_bytes_per_second_.has_value() ?
-                bounded_round(*smoothed_bytes_per_second_) :
-                0,
+    events::DownloadProgressMetrics metrics{
+        .bytes_per_second = smoothed_bytes_per_second_.has_value()
+                                ? bounded_round(*smoothed_bytes_per_second_)
+                                : 0,
         .estimated_seconds_remaining = std::nullopt,
-        .elapsed_milliseconds = static_cast<std::uint64_t>(
-            std::max<std::int64_t>(
+        .elapsed_milliseconds =
+            static_cast<std::uint64_t>(std::max<std::int64_t>(
                 0,
                 std::chrono::duration_cast<std::chrono::milliseconds>(
                     sampled_at - started_at_
-                ).count()
-            )
-        ),
+                )
+                    .count()
+            )),
     };
     if (downloaded < total &&
         smoothed_bytes_per_second_.has_value() &&
@@ -126,12 +123,8 @@ bool DownloadProgressReporter::should_report(
     last_observed_completed_files_ = completed_files;
     last_observed_downloaded_ = downloaded;
 
-    const auto percentage = cli::download_progress_percentage(
-        completed_files,
-        file_count,
-        downloaded,
-        total,
-        state
+    const auto percentage = events::download_progress_percentage(
+        completed_files, file_count, downloaded, total, state
     );
     const bool completed = state == util::ProgressState::completed;
     const bool due =

@@ -7,6 +7,7 @@ namespace {
 using namespace onedrive::test::sync;
 
 int test_remote_moves() {
+    const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
 
     const auto renamed_root = temporary.path() / "renamed";
@@ -27,7 +28,8 @@ int test_remote_moves() {
             config_for(renamed_root, false),
             renamed_graph,
             renamed_items,
-            renamed_metrics
+            renamed_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         std::filesystem::exists(renamed_root / "old.txt") ||
@@ -63,7 +65,8 @@ int test_remote_moves() {
         journal_failure_config,
         journal_failure_graph,
         journal_failure_items,
-        journal_failure_metrics
+        journal_failure_metrics,
+        &default_console
     }
                           .synchronize());
     std::filesystem::rename(
@@ -75,7 +78,8 @@ int test_remote_moves() {
             journal_failure_config,
             journal_failure_graph,
             journal_failure_items,
-            journal_failure_metrics
+            journal_failure_metrics,
+            &default_console
         }
                               .synchronize());
         return fail("remote move journal failure was accepted");
@@ -90,7 +94,8 @@ int test_remote_moves() {
         journal_failure_config,
         journal_failure_graph,
         journal_failure_items,
-        journal_failure_metrics
+        journal_failure_metrics,
+        &default_console
     }
                           .synchronize());
     if (journal_failure_graph.moved_remote_items !=
@@ -123,7 +128,8 @@ int test_remote_moves() {
             config_for(recovery_root, false),
             failed_move_graph,
             failed_move_items,
-            failed_move_metrics
+            failed_move_metrics,
+            &default_console
         }
                               .synchronize());
         return fail("delta commit failure did not interrupt remote move");
@@ -149,7 +155,8 @@ int test_remote_moves() {
             config_for(recovery_root, false),
             recovered_move_graph,
             recovered_move_items,
-            recovered_move_metrics
+            recovered_move_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         recovered_move_graph.download_count != 0 ||
@@ -171,7 +178,8 @@ int test_remote_moves() {
             config_for(recovery_root, false),
             deleted_move_graph,
             deleted_move_items,
-            deleted_move_metrics
+            deleted_move_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         std::filesystem::exists(recovery_root / "new.txt") ||
@@ -201,7 +209,8 @@ int test_remote_moves() {
             config_for(adopted_root, false),
             adopted_graph,
             adopted_items,
-            adopted_metrics
+            adopted_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         adopted_graph.download_count != 0 ||
@@ -247,7 +256,8 @@ int test_remote_moves() {
             config_for(mismatched_root, false),
             mismatched_graph,
             mismatched_items,
-            mismatched_metrics
+            mismatched_metrics,
+            &default_console
         }
                 .synchronize() != 2 ||
         mismatched_items.applied_delta.blocked_upserts.size() != 1 ||
@@ -284,7 +294,8 @@ int test_remote_moves() {
             config_for(changed_root, false),
             changed_graph,
             changed_items,
-            changed_metrics
+            changed_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         std::filesystem::exists(changed_root / "old.txt") ||
@@ -332,7 +343,8 @@ int test_remote_moves() {
             config_for(directory_root, false),
             directory_graph,
             directory_items,
-            directory_metrics
+            directory_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         std::filesystem::exists(directory_root / "Old") ||
@@ -378,7 +390,8 @@ int test_remote_moves() {
             config_for(ordered_root, false),
             ordered_graph,
             ordered_items,
-            ordered_metrics
+            ordered_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         std::filesystem::exists(ordered_root / "A.txt") ||
@@ -435,7 +448,8 @@ int test_remote_moves() {
             config_for(ordered_recovery_root, false),
             failed_ordered_graph,
             failed_ordered_items,
-            failed_ordered_metrics
+            failed_ordered_metrics,
+            &default_console
         }
                               .synchronize());
         return fail("dependent move commit failure did not interrupt sync");
@@ -456,7 +470,8 @@ int test_remote_moves() {
             config_for(ordered_recovery_root, false),
             recovered_ordered_graph,
             recovered_ordered_items,
-            recovered_ordered_metrics
+            recovered_ordered_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         recovered_ordered_graph.download_count != 0 ||
@@ -498,7 +513,8 @@ int test_remote_moves() {
             config_for(nested_root, false),
             nested_graph,
             nested_items,
-            nested_metrics
+            nested_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         std::filesystem::exists(nested_root / "Old") ||
@@ -537,7 +553,8 @@ int test_remote_moves() {
             config_for(cycle_root, false),
             cycle_graph,
             cycle_items,
-            cycle_metrics
+            cycle_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         !std::filesystem::exists(cycle_root / "A.txt") ||
@@ -604,7 +621,8 @@ int test_remote_moves() {
             config_for(three_cycle_root, false),
             three_cycle_graph,
             three_cycle_items,
-            three_cycle_metrics
+            three_cycle_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         !three_cycle_items.pending_moves_by_id.empty() ||
@@ -688,7 +706,8 @@ int test_remote_moves() {
             config_for(directory_cycle_root, false),
             directory_cycle_graph,
             directory_cycle_items,
-            directory_cycle_metrics
+            directory_cycle_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         !std::filesystem::exists(directory_cycle_root / "A" / "second.txt") ||
@@ -752,7 +771,8 @@ int test_remote_moves() {
             config_for(journaled_staging_root, false),
             journaled_staging_graph,
             journaled_staging_items,
-            journaled_staging_metrics
+            journaled_staging_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         std::filesystem::exists(journaled_staging_path) ||
@@ -826,7 +846,8 @@ int test_remote_moves() {
             config_for(staged_recovery_root, false),
             staged_recovery_graph,
             staged_recovery_items,
-            staged_recovery_metrics
+            staged_recovery_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         std::filesystem::exists(staged_path) ||
@@ -881,7 +902,8 @@ int test_remote_moves() {
             config_for(staged_deletion_root, false),
             staged_deletion_graph,
             staged_deletion_items,
-            staged_deletion_metrics
+            staged_deletion_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         std::filesystem::exists(staged_deletion_path) ||
@@ -921,7 +943,8 @@ int test_remote_moves() {
             config_for(cycle_recovery_root, false),
             failed_cycle_graph,
             failed_cycle_items,
-            failed_cycle_metrics
+            failed_cycle_metrics,
+            &default_console
         }
                               .synchronize());
         return fail("staged cycle commit failure did not interrupt sync");
@@ -942,7 +965,8 @@ int test_remote_moves() {
             config_for(cycle_recovery_root, false),
             recovered_cycle_graph,
             recovered_cycle_items,
-            recovered_cycle_metrics
+            recovered_cycle_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         !recovered_cycle_items.pending_moves_by_id.empty() ||
@@ -986,7 +1010,8 @@ int test_remote_moves() {
             config_for(blocked_dependency_root, false),
             blocked_dependency_graph,
             blocked_dependency_items,
-            blocked_dependency_metrics
+            blocked_dependency_metrics,
+            &default_console
         }
                 .synchronize() != 2 ||
         !std::filesystem::exists(
@@ -1026,7 +1051,8 @@ int test_remote_moves() {
             config_for(modified_root, false),
             modified_graph,
             modified_items,
-            modified_metrics
+            modified_metrics,
+            &default_console
         }
                 .synchronize() != 2 ||
         !std::filesystem::exists(modified_root / "old.txt") ||
@@ -1057,7 +1083,8 @@ int test_remote_moves() {
             config_for(collision_root, false),
             collision_graph,
             collision_items,
-            collision_metrics
+            collision_metrics,
+            &default_console
         }
                 .synchronize() != 2 ||
         !std::filesystem::exists(collision_root / "old.txt") ||
@@ -1080,7 +1107,11 @@ int test_remote_moves() {
     dry_graph.changes = {file("dry", "new.txt", 4)};
     FakeMetrics dry_metrics;
     if (onedrive::sync::SyncEngine{
-            config_for(dry_root, true), dry_graph, dry_items, dry_metrics
+            config_for(dry_root, true),
+            dry_graph,
+            dry_items,
+            dry_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         !std::filesystem::exists(dry_root / "old.txt") ||
@@ -1109,7 +1140,8 @@ int test_remote_moves() {
             config_for(symlink_root, false),
             symlink_graph,
             symlink_items,
-            symlink_metrics
+            symlink_metrics,
+            &default_console
         }
                 .synchronize() != 2 ||
         !std::filesystem::is_symlink(symlink_root / "old.txt") ||
@@ -1163,7 +1195,11 @@ int test_remote_moves() {
         cross_config.sync_permissions =
             onedrive::config::SyncPermissionsMode::umask;
         if (onedrive::sync::SyncEngine{
-                cross_config, cross_graph, cross_items, cross_metrics
+                cross_config,
+                cross_graph,
+                cross_items,
+                cross_metrics,
+                &default_console
             }
                     .synchronize() != 2 ||
             !std::filesystem::exists(cross_source) ||
@@ -1180,6 +1216,7 @@ int test_remote_moves() {
 }
 
 int test_local_move_uploads() {
+    const onedrive::cli::Console default_console;
     onedrive::test::TemporaryDirectory temporary;
     const auto root = temporary.path() / "local-moves";
     std::filesystem::create_directories(root);
@@ -1196,18 +1233,20 @@ int test_local_move_uploads() {
     FakeMetrics metrics;
     auto config = config_for(root, false);
     config.sync_mode = onedrive::sync::SyncMode::bidirectional;
-    static_cast<void>(
-        onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize()
-    );
+    static_cast<void>(onedrive::sync::SyncEngine{
+        config, graph, items, metrics, &default_console
+    }
+                          .synchronize());
     const auto before = items.find("me", "moved-file");
     if (!before || before->local_device == 0 || before->local_inode == 0) {
         return fail("local move baseline identity was not persisted");
     }
 
     std::filesystem::rename(root / "old.txt", root / "renamed.txt");
-    static_cast<void>(
-        onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize()
-    );
+    static_cast<void>(onedrive::sync::SyncEngine{
+        config, graph, items, metrics, &default_console
+    }
+                          .synchronize());
     const auto moved = items.find("me", "moved-file");
     if (graph.moved_remote_items !=
             std::vector<std::pair<std::string, std::string>>{
@@ -1225,10 +1264,10 @@ int test_local_move_uploads() {
     std::filesystem::rename(root / "renamed.txt", root / "dry-run.txt");
     auto dry_config = config;
     dry_config.dry_run = true;
-    static_cast<void>(
-        onedrive::sync::SyncEngine{dry_config, graph, items, metrics}
-            .synchronize()
-    );
+    static_cast<void>(onedrive::sync::SyncEngine{
+        dry_config, graph, items, metrics, &default_console
+    }
+                          .synchronize());
     if (graph.moved_remote_items.size() != 1 ||
         !items.pending_remote_moves_by_id.empty() ||
         items.find("me", "moved-file")->remote_path != "renamed.txt") {
@@ -1239,9 +1278,10 @@ int test_local_move_uploads() {
         std::ofstream output{root / "dry-run.txt", std::ios::app};
         output << "-changed";
     }
-    static_cast<void>(
-        onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize()
-    );
+    static_cast<void>(onedrive::sync::SyncEngine{
+        config, graph, items, metrics, &default_console
+    }
+                          .synchronize());
     if (graph.moved_remote_items.size() != 2 ||
         graph.moved_remote_items.back() !=
             std::pair<std::string, std::string>{
@@ -1273,7 +1313,8 @@ int test_local_move_uploads() {
         new_parent_config,
         new_parent_graph,
         new_parent_items,
-        new_parent_metrics
+        new_parent_metrics,
+        &default_console
     }
                           .synchronize());
     std::filesystem::create_directories(new_parent_root / "New" / "Nested");
@@ -1326,7 +1367,8 @@ int test_local_move_uploads() {
         new_parent_config,
         new_parent_graph,
         new_parent_items,
-        new_parent_metrics
+        new_parent_metrics,
+        &default_console
     }
                           .synchronize());
     const auto new_parent_file = new_parent_items.find("me", "new-parent-file");
@@ -1369,7 +1411,8 @@ int test_local_move_uploads() {
         tracked_parent_config,
         tracked_parent_graph,
         tracked_parent_items,
-        tracked_parent_metrics
+        tracked_parent_metrics,
+        &default_console
     }
                           .synchronize());
     std::filesystem::rename(
@@ -1380,7 +1423,8 @@ int test_local_move_uploads() {
         tracked_parent_config,
         tracked_parent_graph,
         tracked_parent_items,
-        tracked_parent_metrics
+        tracked_parent_metrics,
+        &default_console
     }
                           .synchronize());
     if (tracked_parent_graph.remote_mutations !=
@@ -1423,7 +1467,8 @@ int test_local_move_uploads() {
         new_directory_parent_config,
         new_directory_parent_graph,
         new_directory_parent_items,
-        new_directory_parent_metrics
+        new_directory_parent_metrics,
+        &default_console
     }
                           .synchronize());
     std::filesystem::create_directories(
@@ -1437,7 +1482,8 @@ int test_local_move_uploads() {
         new_directory_parent_config,
         new_directory_parent_graph,
         new_directory_parent_items,
-        new_directory_parent_metrics
+        new_directory_parent_metrics,
+        &default_console
     }
                           .synchronize());
     const auto new_parent_moved_child =
@@ -1474,7 +1520,11 @@ int test_local_move_uploads() {
     auto recovery_config = config_for(recovery_root, false);
     recovery_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     static_cast<void>(onedrive::sync::SyncEngine{
-        recovery_config, recovery_graph, recovery_items, recovery_metrics
+        recovery_config,
+        recovery_graph,
+        recovery_items,
+        recovery_metrics,
+        &default_console
     }
                           .synchronize());
     std::filesystem::rename(
@@ -1483,7 +1533,11 @@ int test_local_move_uploads() {
     recovery_items.fail_commit_remote_move = true;
     try {
         static_cast<void>(onedrive::sync::SyncEngine{
-            recovery_config, recovery_graph, recovery_items, recovery_metrics
+            recovery_config,
+            recovery_graph,
+            recovery_items,
+            recovery_metrics,
+            &default_console
         }
                               .synchronize());
         return fail("remote move commit failure was accepted");
@@ -1503,7 +1557,11 @@ int test_local_move_uploads() {
         .last_modified = "2026-10-05T02:00:00Z",
     };
     static_cast<void>(onedrive::sync::SyncEngine{
-        recovery_config, recovery_graph, recovery_items, recovery_metrics
+        recovery_config,
+        recovery_graph,
+        recovery_items,
+        recovery_metrics,
+        &default_console
     }
                           .synchronize());
     const auto recovered = recovery_items.find("me", "recovery-move");
@@ -1534,12 +1592,20 @@ int test_local_move_uploads() {
     auto directory_config = config_for(directory_root, false);
     directory_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     static_cast<void>(onedrive::sync::SyncEngine{
-        directory_config, directory_graph, directory_items, directory_metrics
+        directory_config,
+        directory_graph,
+        directory_items,
+        directory_metrics,
+        &default_console
     }
                           .synchronize());
     std::filesystem::rename(directory_root / "Old", directory_root / "New");
     static_cast<void>(onedrive::sync::SyncEngine{
-        directory_config, directory_graph, directory_items, directory_metrics
+        directory_config,
+        directory_graph,
+        directory_items,
+        directory_metrics,
+        &default_console
     }
                           .synchronize());
     const auto moved_directory = directory_items.find("me", "move-directory");
@@ -1587,7 +1653,11 @@ int test_local_move_uploads() {
         )
             .fingerprint();
     static_cast<void>(onedrive::sync::SyncEngine{
-        selective_config, selective_graph, selective_items, selective_metrics
+        selective_config,
+        selective_graph,
+        selective_items,
+        selective_metrics,
+        &default_console
     }
                           .synchronize());
     std::filesystem::rename(
@@ -1595,7 +1665,11 @@ int test_local_move_uploads() {
         selective_root / "Excluded" / "retained.txt"
     );
     static_cast<void>(onedrive::sync::SyncEngine{
-        selective_config, selective_graph, selective_items, selective_metrics
+        selective_config,
+        selective_graph,
+        selective_items,
+        selective_metrics,
+        &default_console
     }
                           .synchronize());
     if (!selective_graph.moved_remote_items.empty() ||
@@ -1639,7 +1713,8 @@ int test_local_move_uploads() {
         selective_parent_config,
         selective_parent_graph,
         selective_parent_items,
-        selective_parent_metrics
+        selective_parent_metrics,
+        &default_console
     }
                           .synchronize());
     selective_parent_graph.remote_mutations.clear();
@@ -1654,7 +1729,8 @@ int test_local_move_uploads() {
         selective_parent_config,
         selective_parent_graph,
         selective_parent_items,
-        selective_parent_metrics
+        selective_parent_metrics,
+        &default_console
     }
                           .synchronize());
     if (selective_parent_graph.remote_mutations !=
@@ -1688,7 +1764,8 @@ int test_local_move_uploads() {
         parent_recovery_config,
         parent_recovery_graph,
         parent_recovery_items,
-        parent_recovery_metrics
+        parent_recovery_metrics,
+        &default_console
     }
                           .synchronize());
     std::filesystem::create_directories(
@@ -1711,7 +1788,8 @@ int test_local_move_uploads() {
             parent_recovery_config,
             parent_recovery_graph,
             parent_recovery_items,
-            parent_recovery_metrics
+            parent_recovery_metrics,
+            &default_console
         }
                               .synchronize());
         return fail("new-parent move conflict was accepted");
@@ -1729,7 +1807,8 @@ int test_local_move_uploads() {
         parent_recovery_config,
         parent_recovery_graph,
         parent_recovery_items,
-        parent_recovery_metrics
+        parent_recovery_metrics,
+        &default_console
     }
                           .synchronize());
     const auto parent_recovered =

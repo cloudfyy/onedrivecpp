@@ -1,6 +1,6 @@
 #pragma once
 
-#include "onedrive/cli/console.hpp"
+#include "onedrive/config/console.hpp"
 #include "onedrive/http/http_options.hpp"
 #include "onedrive/logging/logging.hpp"
 #include "onedrive/sync/capabilities.hpp"
@@ -50,9 +50,9 @@ enum class TransferOrder {
 };
 
 struct Config {
-    cli::ColorMode console_color{cli::ColorMode::automatic};
-    cli::UiMode console_ui{cli::UiMode::automatic};
-    cli::TuiTheme console_theme{cli::TuiTheme::hacker};
+    ColorMode console_color{ColorMode::automatic};
+    UiMode console_ui{UiMode::automatic};
+    TuiTheme console_theme{TuiTheme::hacker};
     logging::Options logging;
     std::filesystem::path sync_data_directory;
     std::optional<std::filesystem::path> sync_data_mount_point;
@@ -66,9 +66,7 @@ struct Config {
     std::string application_id;
     std::string azure_tenant_id{"common"};
     std::string auth_endpoint{"https://login.microsoftonline.com"};
-    std::string auth_scope{
-        "User.Read Files.ReadWrite offline_access"
-    };
+    std::string auth_scope{"User.Read Files.ReadWrite offline_access"};
     std::string graph_endpoint{"https://graph.microsoft.com/v1.0"};
     std::size_t graph_maximum_throttle_retries{4};
     std::chrono::seconds graph_initial_throttle_delay{1};
@@ -98,12 +96,8 @@ struct Config {
     std::size_t upload_concurrency{1};
     std::uint64_t upload_maximum_rate_bytes_per_second{0};
     std::uint64_t upload_maximum_total_rate_bytes_per_second{0};
-    DownloadValidationMode download_validation{
-        DownloadValidationMode::strict
-    };
-    SyncPermissionsMode sync_permissions{
-        SyncPermissionsMode::private_access
-    };
+    DownloadValidationMode download_validation{DownloadValidationMode::strict};
+    SyncPermissionsMode sync_permissions{SyncPermissionsMode::private_access};
     LocalConflictPolicy local_conflict{LocalConflictPolicy::block};
     sync::SyncMode sync_mode{sync::SyncMode::bidirectional};
     sync::DeletePolicy delete_policy{sync::DeletePolicy::propagate};
@@ -118,10 +112,8 @@ struct Config {
     [[nodiscard]] static Config load(const std::filesystem::path& path);
 };
 
-[[nodiscard]] bool has_auth_scope(
-    std::string_view scopes,
-    std::string_view expected
-);
+[[nodiscard]] bool
+has_auth_scope(std::string_view scopes, std::string_view expected);
 [[nodiscard]] bool has_broad_auth_scope(std::string_view scopes);
 
-}  // namespace onedrive::config
+} // namespace onedrive::config

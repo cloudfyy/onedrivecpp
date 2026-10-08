@@ -33,13 +33,16 @@ public:
 };
 
 int test_engine_owns_configuration() {
+    const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "owned-config";
     FakeGraphClient graph;
     FakeItemStore items;
     FakeMetrics metrics;
     auto config = config_for(root, false);
-    onedrive::sync::SyncEngine engine{config, graph, items, metrics};
+    onedrive::sync::SyncEngine engine{
+        config, graph, items, metrics, &default_console
+    };
     config.sync_data_mount_point = temporary.path() / "missing-mount";
     config.drive_id = "mutated";
 
@@ -53,6 +56,7 @@ int test_engine_owns_configuration() {
 }
 
 int test_dry_run_and_success() {
+    const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
     const auto guarded_root = temporary.path() / "guarded";
     FakeGraphClient guarded_graph;
@@ -97,7 +101,7 @@ int test_dry_run_and_success() {
     FakeMetrics dry_metrics;
     const auto dry_config = config_for(dry_root, true);
     if (onedrive::sync::SyncEngine{
-            dry_config, dry_graph, dry_items, dry_metrics
+            dry_config, dry_graph, dry_items, dry_metrics, &default_console
         }
                 .synchronize() != 0 ||
         dry_graph.download_count != 0 || dry_items.apply_count != 0 ||
@@ -156,6 +160,7 @@ int test_dry_run_and_success() {
 }
 
 int test_remote_content_tag_strategy() {
+    const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
     const auto reused_root = temporary.path() / "ctag-reused";
     std::filesystem::create_directories(reused_root);
@@ -182,7 +187,8 @@ int test_remote_content_tag_strategy() {
             config_for(reused_root, false),
             reused_graph,
             reused_items,
-            reused_metrics
+            reused_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         reused_graph.download_count != 0 ||
@@ -216,7 +222,8 @@ int test_remote_content_tag_strategy() {
             config_for(changed_root, false),
             changed_graph,
             changed_items,
-            changed_metrics
+            changed_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         changed_graph.download_count != 1) {
@@ -246,7 +253,8 @@ int test_remote_content_tag_strategy() {
             config_for(missing_root, false),
             missing_graph,
             missing_items,
-            missing_metrics
+            missing_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         missing_graph.download_count != 1) {
@@ -256,6 +264,7 @@ int test_remote_content_tag_strategy() {
 }
 
 int test_selective_sync_refreshes_delta_state() {
+    const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "files";
     const auto sync_list = temporary.path() / "sync_list";
@@ -296,8 +305,10 @@ int test_selective_sync_refreshes_delta_state() {
     auto config = config_for(root, false);
     config.sync_list = sync_list;
 
-    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
-        ) != 0 ||
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != 0 ||
         graph.delta_requests !=
             std::vector<std::optional<std::string>>{std::nullopt} ||
         graph.download_count != 1 || items.applied_delta.upserts.size() != 2 ||
@@ -314,8 +325,10 @@ int test_selective_sync_refreshes_delta_state() {
     items.saved_sync_filter_fingerprint =
         items.applied_delta.sync_filter_fingerprint;
     graph.delta_requests.clear();
-    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
-        ) != 0 ||
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != 0 ||
         graph.delta_requests != std::vector<std::optional<std::string>>{
                                     "https://graph.example.test/delta"
                                 }) {
@@ -329,8 +342,10 @@ int test_selective_sync_refreshes_delta_state() {
         items.applied_delta.sync_filter_fingerprint;
     graph.delta_requests.clear();
     config.sync_root_files = true;
-    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
-        ) != 0 ||
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != 0 ||
         graph.delta_requests !=
             std::vector<std::optional<std::string>>{std::nullopt} ||
         graph.download_count != 2 ||
@@ -345,6 +360,7 @@ int test_selective_sync_refreshes_delta_state() {
 }
 
 int test_filter_policies_apply_in_both_directions() {
+    const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "filter-policies";
     std::filesystem::create_directories(root / "Ignored");
@@ -387,8 +403,10 @@ int test_filter_policies_apply_in_both_directions() {
     config.dotfiles = onedrive::config::DotfilePolicy::exclude;
     config.maximum_file_size_bytes = 4;
 
-    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
-        ) != 0 ||
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != 0 ||
         graph.delta_requests !=
             std::vector<std::optional<std::string>>{std::nullopt} ||
         graph.download_count != 1 ||
@@ -409,8 +427,10 @@ int test_filter_policies_apply_in_both_directions() {
     graph.uploaded_paths.clear();
     const auto downloads_before = graph.download_count.load();
     std::filesystem::remove(root / "Ignored" / ".nosync");
-    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
-        ) != 0 ||
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != 0 ||
         graph.delta_requests !=
             std::vector<std::optional<std::string>>{std::nullopt} ||
         graph.download_count != downloads_before + 1 ||
@@ -422,6 +442,7 @@ int test_filter_policies_apply_in_both_directions() {
 }
 
 int test_selective_sync_remote_moves() {
+    const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
     const auto sync_list = temporary.path() / "sync_list";
     {
@@ -447,8 +468,10 @@ int test_selective_sync_remote_moves() {
     auto config = config_for(root, false);
     config.sync_list = sync_list;
     config.sync_mode = onedrive::sync::SyncMode::bidirectional;
-    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
-        ) != 0 ||
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != 0 ||
         !std::filesystem::exists(root / "Documents" / "A.txt") ||
         std::filesystem::exists(root / "Archive" / "A.txt") ||
         graph.upload_count != 0 ||
@@ -467,8 +490,10 @@ int test_selective_sync_remote_moves() {
         output << "user";
     }
     graph.changes.clear();
-    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
-        ) != 0 ||
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != 0 ||
         graph.upload_count != 0 ||
         items.upload_suppressions_by_path.size() != 1) {
         return fail(
@@ -480,8 +505,10 @@ int test_selective_sync_remote_moves() {
         file("selective-move", "Documents/B.txt", 4),
     };
     graph.contents["selective-move"] = "data";
-    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
-        ) != 0 ||
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != 0 ||
         graph.download_count != 1 || graph.upload_count != 0 ||
         !std::filesystem::exists(root / "Documents" / "A.txt") ||
         !std::filesystem::exists(root / "Documents" / "B.txt") ||
@@ -499,8 +526,10 @@ int test_selective_sync_remote_moves() {
         output << "new!";
     }
     graph.changes.clear();
-    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
-        ) != 0 ||
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != 0 ||
         graph.upload_count != 1 ||
         graph.uploaded_paths != std::vector<std::string>{"Documents/A.txt"} ||
         !items.upload_suppressions_by_path.empty()) {
@@ -565,7 +594,8 @@ int test_selective_sync_remote_moves() {
             directory_config,
             directory_graph,
             directory_items,
-            directory_metrics
+            directory_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         directory_graph.upload_count != 0 ||
@@ -602,7 +632,7 @@ int test_selective_sync_remote_moves() {
     dry_config.sync_list = sync_list;
     dry_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     if (onedrive::sync::SyncEngine{
-            dry_config, dry_graph, dry_items, dry_metrics
+            dry_config, dry_graph, dry_items, dry_metrics, &default_console
         }
                 .synchronize() != 0 ||
         dry_items.apply_count != 0 ||
@@ -615,6 +645,7 @@ int test_selective_sync_remote_moves() {
 }
 
 int test_malware_file_is_blocked_without_overwriting_local_data() {
+    const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "files";
     std::filesystem::create_directories(root);
@@ -632,7 +663,7 @@ int test_malware_file_is_blocked_without_overwriting_local_data() {
     FakeItemStore items;
     FakeMetrics metrics;
     if (onedrive::sync::SyncEngine{
-            config_for(root, false), graph, items, metrics
+            config_for(root, false), graph, items, metrics, &default_console
         }
                 .synchronize() != 2 ||
         graph.download_count != 0 || items.applied_delta.upserts.size() != 0 ||
@@ -653,6 +684,7 @@ int test_malware_file_is_blocked_without_overwriting_local_data() {
 }
 
 int test_failure_and_conflict() {
+    const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "files";
     FakeGraphClient graph;
@@ -666,10 +698,10 @@ int test_failure_and_conflict() {
     FakeMetrics metrics;
     const auto config = config_for(root, false);
     try {
-        static_cast<void>(
-            onedrive::sync::SyncEngine{config, graph, items, metrics}
-                .synchronize()
-        );
+        static_cast<void>(onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                              .synchronize());
         return fail("download failure was accepted");
     } catch (const std::runtime_error&) {
     }
@@ -697,7 +729,8 @@ int test_failure_and_conflict() {
             independent_config,
             independent_graph,
             independent_items,
-            independent_metrics
+            independent_metrics,
+            &default_console
         }
                               .synchronize());
         return fail("concurrent download failure was accepted");
@@ -786,7 +819,8 @@ int test_failure_and_conflict() {
             config_for(changed_root, false),
             changed_graph,
             changed_items,
-            changed_metrics
+            changed_metrics,
+            &default_console
         }
                 .synchronize() != 2 ||
         changed_items.upsert_count != 0 || changed_items.apply_count != 1 ||
@@ -820,7 +854,11 @@ int test_failure_and_conflict() {
     FakeMetrics conflict_metrics;
     const auto conflict_config = config_for(conflict_root, false);
     if (onedrive::sync::SyncEngine{
-            conflict_config, conflict_graph, conflict_items, conflict_metrics
+            conflict_config,
+            conflict_graph,
+            conflict_items,
+            conflict_metrics,
+            &default_console
         }
                 .synchronize() != 2 ||
         conflict_graph.download_count != 0 || conflict_items.apply_count != 1 ||
@@ -846,7 +884,11 @@ int test_failure_and_conflict() {
     backup_config.local_conflict =
         onedrive::config::LocalConflictPolicy::backup;
     if (onedrive::sync::SyncEngine{
-            backup_config, backup_graph, backup_items, backup_metrics
+            backup_config,
+            backup_graph,
+            backup_items,
+            backup_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         backup_graph.download_count != 1 || backup_items.upsert_count != 1 ||
@@ -899,7 +941,8 @@ int test_failure_and_conflict() {
             late_backup_config,
             late_backup_graph,
             late_backup_items,
-            late_backup_metrics
+            late_backup_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         late_backup_items.upsert_count != 1 ||
@@ -939,7 +982,11 @@ int test_failure_and_conflict() {
     FakeMetrics symlink_metrics;
     const auto symlink_config = config_for(symlink_root, false);
     if (onedrive::sync::SyncEngine{
-            symlink_config, symlink_graph, symlink_items, symlink_metrics
+            symlink_config,
+            symlink_graph,
+            symlink_items,
+            symlink_metrics,
+            &default_console
         }
                 .synchronize() != 2 ||
         symlink_graph.download_count != 0 || symlink_items.apply_count != 1 ||
@@ -966,7 +1013,11 @@ int test_failure_and_conflict() {
     bool layout_symlink_rejected = false;
     try {
         static_cast<void>(onedrive::sync::SyncEngine{
-            layout_config, layout_graph, layout_items, layout_metrics
+            layout_config,
+            layout_graph,
+            layout_items,
+            layout_metrics,
+            &default_console
         }
                               .synchronize());
     } catch (const std::runtime_error& error) {
@@ -982,6 +1033,7 @@ int test_failure_and_conflict() {
 }
 
 int test_blocked_items_continue_and_retry() {
+    const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "files";
     FakeGraphClient graph;
@@ -993,7 +1045,7 @@ int test_blocked_items_continue_and_retry() {
     FakeItemStore items;
     FakeMetrics metrics;
     if (onedrive::sync::SyncEngine{
-            config_for(root, false), graph, items, metrics
+            config_for(root, false), graph, items, metrics, &default_console
         }
                 .synchronize() != 2 ||
         graph.download_count != 1 ||
@@ -1030,7 +1082,8 @@ int test_blocked_items_continue_and_retry() {
             config_for(parent_root, false),
             parent_graph,
             parent_items,
-            parent_metrics
+            parent_metrics,
+            &default_console
         }
                 .synchronize() != 2 ||
         parent_graph.download_count != 1 ||
@@ -1069,7 +1122,8 @@ int test_blocked_items_continue_and_retry() {
             config_for(retry_root, false),
             retry_graph,
             retry_items,
-            retry_metrics
+            retry_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         retry_graph.download_count != 1 ||
@@ -1113,7 +1167,8 @@ int test_blocked_items_continue_and_retry() {
             config_for(hash_retry_root, false),
             hash_retry_graph,
             hash_retry_items,
-            hash_retry_metrics
+            hash_retry_metrics,
+            &default_console
         }
                               .synchronize());
         return fail("blocked retry ignored its persisted content hash");
@@ -1151,7 +1206,8 @@ int test_blocked_items_continue_and_retry() {
             config_for(malware_retry_root, false),
             malware_retry_graph,
             malware_retry_items,
-            malware_retry_metrics
+            malware_retry_metrics,
+            &default_console
         }
                 .synchronize() != 2 ||
         malware_retry_graph.download_count != 0 ||
@@ -1192,7 +1248,8 @@ int test_blocked_items_continue_and_retry() {
             config_for(cleared_root, false),
             cleared_graph,
             cleared_items,
-            cleared_metrics
+            cleared_metrics,
+            &default_console
         }
                 .synchronize() != 0 ||
         cleared_graph.download_count != 1 ||
@@ -1207,6 +1264,7 @@ int test_blocked_items_continue_and_retry() {
 }
 
 int test_invalid_delta_cursor_restarts_full_query() {
+    const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "files";
     FakeGraphClient graph;
@@ -1226,7 +1284,7 @@ int test_invalid_delta_cursor_restarts_full_query() {
     FakeMetrics metrics;
 
     if (onedrive::sync::SyncEngine{
-            config_for(root, false), graph, items, metrics
+            config_for(root, false), graph, items, metrics, &default_console
         }
                 .synchronize() != 0 ||
         graph.delta_requests !=

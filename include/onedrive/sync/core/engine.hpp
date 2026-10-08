@@ -5,10 +5,12 @@
 #include "onedrive/metrics/metrics.hpp"
 #include "onedrive/storage/item_store.hpp"
 
+#include <gsl/pointers>
+
 #include <utility>
 
-namespace onedrive::cli {
-class Console;
+namespace onedrive::events {
+class Observer;
 }
 
 namespace onedrive::sync {
@@ -18,20 +20,20 @@ public:
     template <
         typename GraphImplementation,
         typename StoreImplementation,
-        typename MetricsImplementation
-    >
+        typename MetricsImplementation>
     SyncEngine(
         config::Config config,
         GraphImplementation& graph,
         StoreImplementation& items,
         MetricsImplementation& metrics,
-        const cli::Console* console = nullptr
+        gsl::not_null<const events::Observer*> observer
     )
         : config_{std::move(config)},
           graph_{onedrive::util::borrowed_proxy, graph},
           items_{onedrive::util::borrowed_proxy, items},
           metrics_{onedrive::util::borrowed_proxy, metrics},
-          console_{console} {}
+          observer_{observer} {
+    }
 
     [[nodiscard]] int synchronize();
 
@@ -40,7 +42,7 @@ private:
     graph::GraphClient graph_;
     storage::ItemStore items_;
     metrics::Metrics metrics_;
-    const cli::Console* console_;
+    gsl::not_null<const events::Observer*> observer_;
 };
 
-}  // namespace onedrive::sync
+} // namespace onedrive::sync

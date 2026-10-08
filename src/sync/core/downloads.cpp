@@ -1,6 +1,6 @@
 #include "sync/core/downloads.hpp"
 
-#include "onedrive/cli/console.hpp"
+#include "onedrive/events/observer.hpp"
 #include "sync/core/item_ops.hpp"
 #include "sync/download/progress.hpp"
 #include "sync/download/space.hpp"
@@ -28,7 +28,7 @@ DownloadBatch download_files(
     detail::ItemOperationCoordinator& operations,
     detail::DownloadSpaceCoordinator& space,
     const detail::FilesystemMetadata& metadata,
-    const cli::Console& console,
+    const events::Observer& observer,
     const detail::SafeSyncRoot& sync_root,
     config::LocalConflictPolicy local_conflict
 ) {
@@ -45,7 +45,7 @@ DownloadBatch download_files(
 
     std::atomic_size_t next_task{0};
     std::stop_source stop;
-    std::mutex console_mutex;
+    std::mutex observer_mutex;
     std::vector<std::uint64_t> task_downloaded(tasks.size());
     enum class DownloadTaskState {
         active,
@@ -79,7 +79,7 @@ DownloadBatch download_files(
             initial_state,
             started_at
         )) {
-        console.download_progress(
+        observer.download_progress(
             completed_files,
             file_count,
             downloaded_bytes,
@@ -95,7 +95,7 @@ DownloadBatch download_files(
         [&](std::size_t index,
             std::uint64_t downloaded,
             util::ProgressState state) {
-            const std::scoped_lock lock{console_mutex};
+            const std::scoped_lock lock{observer_mutex};
             const bool completed = state == util::ProgressState::completed;
             const auto expected_size =
                 static_cast<std::uint64_t>(tasks[index].item.size);
@@ -131,7 +131,7 @@ DownloadBatch download_files(
                 total_bytes,
                 sampled_at
             );
-            console.download_progress(
+            observer.download_progress(
                 completed_files,
                 file_count,
                 downloaded_bytes,
@@ -181,59 +181,60 @@ DownloadBatch download_files(
                     preserve_local = baseline.existed;
                 }
                 {
-                    const std::scoped_lock lock{console_mutex};
-                    console.end_download_progress();
+                    const std::scoped_lock lock{observer_mutex};
+                    observer.end_download_progress();
                     spdlog::info(
                         "Downloading '{}' ({} bytes)",
                         task.item.remote_path,
                         task.item.size
                     );
                 }
-                batch.states[index].emplace(detail::commit_download(
-                    items,
-                    sync_root,
-                    metadata,
-                    detail::prepare_download(
-                        graph,
+                batch.states[index].emplace(
+                    detail::commit_download(
                         items,
-                        task.item,
-                        task.state,
-                        task.destination,
-                        baseline,
+                        sync_root,
                         metadata,
-                        space,
-                        stop.get_token(),
-                        [&](std::uint64_t downloaded,
-                            std::uint64_t reported_total) {
-                            const auto total =
-                                expected_size == 0 ?
-                                    reported_total :
-                                    expected_size;
-                            if (total == 0 || downloaded >= total) {
-                                return;
-                            }
-                            report_progress(
-                                index,
-                                downloaded,
-                                util::ProgressState::ongoing
-                            );
-                        }
-                    ),
-                    {
-                        .local_conflict = local_conflict,
-                        .preserve_local = preserve_local,
-                        .backup_created =
-                            [&](const std::filesystem::path& backup) {
-                                const std::scoped_lock lock{console_mutex};
-                                console.message(
-                                    cli::MessageKind::warning,
-                                    "local_conflict_backed_up",
-                                    "Preserved local conflict as '" +
-                                        backup.string() + "'."
+                        detail::prepare_download(
+                            graph,
+                            items,
+                            task.item,
+                            task.state,
+                            task.destination,
+                            baseline,
+                            metadata,
+                            space,
+                            stop.get_token(),
+                            [&](std::uint64_t downloaded,
+                                std::uint64_t reported_total) {
+                                const auto total = expected_size == 0
+                                                       ? reported_total
+                                                       : expected_size;
+                                if (total == 0 || downloaded >= total) {
+                                    return;
+                                }
+                                report_progress(
+                                    index,
+                                    downloaded,
+                                    util::ProgressState::ongoing
                                 );
-                            },
-                    }
-                ));
+                            }
+                        ),
+                        {
+                            .local_conflict = local_conflict,
+                            .preserve_local = preserve_local,
+                            .backup_created =
+                                [&](const std::filesystem::path& backup) {
+                                    const std::scoped_lock lock{observer_mutex};
+                                    observer.message(
+                                        events::MessageKind::warning,
+                                        "local_conflict_backed_up",
+                                        "Preserved local conflict as '" +
+                                            backup.string() + "'."
+                                    );
+                                },
+                        }
+                    )
+                );
                 report_progress(
                     index,
                     expected_size,

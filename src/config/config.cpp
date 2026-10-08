@@ -26,9 +26,9 @@ Config Config::defaults() {
     }
 
     return {
-        .console_color = cli::ColorMode::automatic,
-        .console_ui = cli::UiMode::automatic,
-        .console_theme = cli::TuiTheme::hacker,
+        .console_color = ColorMode::automatic,
+        .console_ui = UiMode::automatic,
+        .console_theme = TuiTheme::hacker,
         .logging = {},
         .sync_data_directory = std::filesystem::path{home} / "OneDrive",
         .sync_data_mount_point = std::nullopt,

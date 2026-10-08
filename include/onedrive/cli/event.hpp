@@ -1,6 +1,7 @@
 #pragma once
 
-#include "onedrive/util/progress.hpp"
+#include "onedrive/config/console.hpp"
+#include "onedrive/events/event.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -11,29 +12,16 @@
 
 namespace onedrive::cli {
 
-enum class ColorMode {
-    automatic,
-    always,
-    never,
-};
+using config::ColorMode;
 
 enum class OutputMode {
     text,
     json,
 };
 
-enum class UiMode {
-    automatic,
-    console,
-    tui,
-};
+using config::UiMode;
 
-enum class TuiTheme {
-    hacker,
-    ocean,
-    amber,
-    synthwave,
-};
+using config::TuiTheme;
 
 enum class TuiView {
     auth,
@@ -53,12 +41,7 @@ enum class TuiView {
     watch,
 };
 
-enum class MessageKind {
-    information,
-    success,
-    warning,
-    error,
-};
+using events::MessageKind;
 
 struct ConsoleOptions {
     ColorMode color{ColorMode::automatic};
@@ -69,75 +52,17 @@ struct ConsoleOptions {
     bool quiet{false};
 };
 
-struct Field {
-    std::string label;
-    std::string key;
-    std::string value;
-};
-
-struct DownloadProgressMetrics {
-    std::uint64_t bytes_per_second{0};
-    std::optional<std::uint64_t> estimated_seconds_remaining;
-    std::uint64_t elapsed_milliseconds{0};
-};
-
-struct DeltaSummary {
-    std::size_t pages{0};
-    std::size_t scanned_items{0};
-    std::size_t unique_changes{0};
-    std::size_t files{0};
-    std::size_t directories{0};
-    std::size_t deletions{0};
-};
-
-struct MessageEvent {
-    MessageKind kind;
-    std::string event;
-    std::string text;
-};
-
-struct SectionEvent {
-    std::string event;
-    std::string title;
-    std::vector<Field> fields;
-};
-
-struct DeltaProgressEvent {
-    std::size_t pages;
-    std::size_t items;
-    util::ProgressState state;
-};
-
-struct DeltaSummaryEvent {
-    DeltaSummary summary;
-};
-
-struct BlockedItemEvent {
-    std::string path;
-    std::string reason_code;
-    std::string reason_message;
-};
-
-struct DownloadProgressEvent {
-    std::size_t completed_files;
-    std::size_t file_count;
-    std::uint64_t downloaded;
-    std::uint64_t total;
-    util::ProgressState state;
-    DownloadProgressMetrics metrics;
-};
-
-struct EndDownloadProgressEvent {};
-
-using ConsoleEvent = std::variant<
-    MessageEvent,
-    SectionEvent,
-    DeltaProgressEvent,
-    DeltaSummaryEvent,
-    BlockedItemEvent,
-    DownloadProgressEvent,
-    EndDownloadProgressEvent
->;
+using events::BlockedItemEvent;
+using events::DeltaProgressEvent;
+using events::DeltaSummary;
+using events::DeltaSummaryEvent;
+using events::DownloadProgressEvent;
+using events::DownloadProgressMetrics;
+using events::EndDownloadProgressEvent;
+using events::Field;
+using events::MessageEvent;
+using events::SectionEvent;
+using ConsoleEvent = events::Event;
 
 struct ConfirmationRequest {
     std::string event;

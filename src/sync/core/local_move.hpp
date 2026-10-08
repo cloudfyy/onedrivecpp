@@ -7,8 +7,8 @@
 #include <string>
 #include <unordered_set>
 
-namespace onedrive::cli {
-class Console;
+namespace onedrive::events {
+class Observer;
 }
 
 namespace onedrive::sync::detail {
@@ -31,7 +31,7 @@ MoveSummary execute_moves(
     const std::string& drive_id,
     storage::ItemStore& items,
     detail::ItemOperationCoordinator& operations,
-    const cli::Console& console,
+    const events::Observer& observer,
     config::SyncPermissionsMode permissions
 );
 

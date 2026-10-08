@@ -100,6 +100,7 @@ int test_upload_only() {
 }
 
 int test_download_only_propagates_remote_deletions() {
+    const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "download-only-propagate";
     std::filesystem::create_directories(root);
@@ -147,8 +148,10 @@ int test_download_only_propagates_remote_deletions() {
     auto config = config_for(root, false);
     config.delete_policy = onedrive::sync::DeletePolicy::propagate;
 
-    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
-        ) != 0 ||
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != 0 ||
         std::filesystem::exists(root / "deleted.txt") ||
         onedrive::test::read_file(root / "remote-only.txt") != "remote" ||
         graph.upload_count != 0 || !graph.deleted_items.empty() ||
@@ -163,6 +166,7 @@ int test_download_only_propagates_remote_deletions() {
 }
 
 int test_download_only_preserves_and_untracks_local_items() {
+    const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "download-only-preserve";
     std::filesystem::create_directories(root);
@@ -186,8 +190,10 @@ int test_download_only_preserves_and_untracks_local_items() {
     FakeMetrics metrics;
     auto config = config_for(root, false);
     config.delete_policy = onedrive::sync::DeletePolicy::propagate;
-    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
-        ) != 2 ||
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != 2 ||
         !std::filesystem::exists(root / "modified.txt") ||
         !items.find("me", "modified") || items.blocked.size() != 1 ||
         items.blocked.front().reason_code != "local_modification") {
@@ -198,8 +204,10 @@ int test_download_only_preserves_and_untracks_local_items() {
 
     graph.changes.clear();
     config.delete_policy = onedrive::sync::DeletePolicy::preserve;
-    if (onedrive::sync::SyncEngine{config, graph, items, metrics}.synchronize(
-        ) != 0 ||
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != 0 ||
         onedrive::test::read_file(root / "modified.txt") != "local-change" ||
         items.find("me", "modified") || !items.blocked.empty() ||
         graph.upload_count != 0 || !graph.deleted_items.empty() ||

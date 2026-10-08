@@ -1,6 +1,6 @@
 #include "sync/core/local_move.hpp"
 
-#include "onedrive/cli/console.hpp"
+#include "onedrive/events/observer.hpp"
 #include "sync/core/item_ops.hpp"
 #include "sync/core/reporting.hpp"
 #include "sync/core/plan.hpp"
@@ -231,7 +231,7 @@ struct MoveExecutionContext {
     const std::string& drive_id;
     storage::ItemStore& items;
     detail::ItemOperationCoordinator& operations;
-    const cli::Console& console;
+    const events::Observer& observer;
     config::SyncPermissionsMode permissions;
     const std::vector<LocalMoveCandidate>& moves;
     std::unordered_map<std::string, storage::PendingMove>& pending_moves;
@@ -246,7 +246,7 @@ struct MoveExecutionContext {
     ) {
         plan.block(move.item, std::move(code), std::move(message));
         summary.blocked.insert(move.item.id);
-        report_blocked(plan.blocked(plan.blocked_count() - 1), console);
+        report_blocked(plan.blocked(plan.blocked_count() - 1), observer);
     }
 };
 
@@ -644,11 +644,11 @@ void execute_staging_action(
         if (move.previous.directory) {
             context.paths.record(source, staging);
         }
-        context.console.message(
-            cli::MessageKind::information,
+        context.observer.message(
+            events::MessageKind::information,
             "local_item_move_staged",
-            "Staged remotely moved item from '" + source.string() +
-                "' at '" + staging.string() + "'."
+            "Staged remotely moved item from '" + source.string() + "' at '" +
+                staging.string() + "'."
         );
     } catch (const detail::CrossDeviceMoveError& error) {
         static_cast<void>(discard_journal());
@@ -965,8 +965,8 @@ void execute_install_action(
                 );
             }
             ++context.summary.moved;
-            context.console.message(
-                cli::MessageKind::information,
+            context.observer.message(
+                events::MessageKind::information,
                 "local_item_moved",
                 "Moved remotely renamed item from '" + source.string() +
                     "' to '" + destination.string() + "'."
@@ -1014,7 +1014,7 @@ MoveSummary execute_moves(
     const std::string& drive_id,
     storage::ItemStore& items,
     detail::ItemOperationCoordinator& operations,
-    const cli::Console& console,
+    const events::Observer& observer,
     config::SyncPermissionsMode permissions
 ) {
     std::vector<LocalMoveCandidate> moves;
@@ -1043,7 +1043,7 @@ MoveSummary execute_moves(
         .drive_id = drive_id,
         .items = items,
         .operations = operations,
-        .console = console,
+        .observer = observer,
         .permissions = permissions,
         .moves = moves,
         .pending_moves = pending_moves,

@@ -9,8 +9,8 @@
 #include <cstddef>
 #include <string>
 
-namespace onedrive::cli {
-class Console;
+namespace onedrive::events {
+class Observer;
 }
 
 namespace onedrive::sync::detail {
@@ -35,7 +35,7 @@ struct ExecutionSummary {
     graph::GraphClient& graph,
     storage::ItemStore& items,
     const detail::FilesystemMetadata& metadata,
-    const cli::Console& console,
+    const events::Observer& observer,
     SyncCapabilities capabilities,
     std::size_t download_concurrency,
     config::TransferOrder transfer_order,
