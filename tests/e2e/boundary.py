@@ -20,6 +20,7 @@ from .base import (
 )
 from .graph import GraphMoveFixture, refresh_graph_access_token
 from .monitor import run_monitor_scenarios
+from .progress import E2EProgress
 from .proxy import ConnectionDropProxy
 from .run import (
     reset_copied_state,
@@ -78,7 +79,9 @@ def run_boundary(
             + secrets.token_hex(8)
         )
         boundary_local_root: Path | None = None
+        progress = E2EProgress(4)
         try:
+            progress.step(f"Preparing isolated {scenario} boundary state")
             reset = reset_copied_state(client, config, home)
             completed.append(reset)
             if reset.returncode != 0:
@@ -86,6 +89,7 @@ def run_boundary(
                     f"{scenario} boundary state reset failed with "
                     f"{reset.returncode}"
                 )
+            progress.step(f"Establishing {scenario} boundary baseline")
             baseline = run_sync(client, config, home, log_file)
             completed.append(baseline)
             if baseline.returncode != 0:
@@ -163,6 +167,7 @@ def run_boundary(
                     )
                 fixture.root_id = item_id
 
+            progress.step(f"Exercising {scenario} boundary")
             if scenario == "network":
                 with ConnectionDropProxy() as proxy:
                     network_config = workspace / "network-failure.toml"
@@ -387,6 +392,7 @@ def run_boundary(
                     raise E2EError(
                         "monitor boundary did not settle its Graph delta"
                     )
+            progress.step(f"{scenario} boundary completed")
         except Exception:
             save_artifacts(completed, log_file)
             raise

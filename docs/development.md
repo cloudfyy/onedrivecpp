@@ -56,9 +56,16 @@ cmake --build --preset e2e
 ctest --preset e2e -R graph_sync_e2e
 ```
 
+The runner emits numbered stage and percentage progress. CTest keeps passing
+test output quiet by default; add `--verbose` only when live progress needs to
+remain visible.
+
 The stable `graph_sync_e2e.py` entry point delegates to the Python modules in
 `tests/e2e/`, which separate live Graph scenarios, system-boundary scenarios,
-process orchestration, state fixtures, and runner self-tests.
+process orchestration, state fixtures, and runner self-tests. The live runner
+keeps its baseline flow in `live.py` and delegates upload, remote-move, and
+supplemental coverage scenarios to focused `live_*` modules. Configuration and
+Graph helper self-tests are likewise separated from the main self-test driver.
 
 ### Test data and artifact safety
 

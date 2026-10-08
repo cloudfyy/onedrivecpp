@@ -47,8 +47,13 @@ cmake --build --preset e2e
 ctest --preset e2e -R graph_sync_e2e
 ```
 
-稳定入口 `graph_sync_e2e.py` 会委托给 `tests/e2e/` 中的 Python 模块；真实
+runner 会输出阶段编号和百分比进度。CTest 默认不显示通过中测试的输出；只有
+需要实时观察进度时才增加 `--verbose`。
+
+稳定入口 `graph_sync_e2e.py` 会委托给 `tests/e2e/` 中的 Python模块；真实
 Graph 场景、系统边界场景、进程编排、状态 fixture 和 runner 自测分别维护。
+`live.py` 只保留基线流程，上传、远端移动和补充覆盖场景分别委托给职责单一的
+`live_*` 模块；配置与 Graph helper 自测也与主自测 driver 分离。
 
 ### 测试数据与产物安全
 
