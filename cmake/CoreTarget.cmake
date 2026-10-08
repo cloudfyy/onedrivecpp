@@ -1,20 +1,4 @@
-add_library(onedrive_core
-    src/util/atomic_file.cpp
-    src/util/mount.cpp
-    src/util/private_file.cpp
-    src/account/account_state.cpp
-    src/app/app.cpp
-    src/app/args.cpp
-    src/app/checks.cpp
-    src/app/commands.cpp
-    src/app/discover.cpp
-    src/app/drive_fields.cpp
-    src/app/lock.cpp
-    src/app/preflight.cpp
-    src/app/factory.cpp
-    src/app/info.cpp
-    src/auth/device_auth.cpp
-    src/auth/token_store.cpp
+add_library(onedrive_cli
     src/cli/console.cpp
     src/cli/format.cpp
     src/cli/ftxui_backend.cpp
@@ -22,6 +6,36 @@ add_library(onedrive_core
     src/cli/message.cpp
     src/cli/terminal.cpp
     src/cli/text_backend.cpp
+)
+
+target_include_directories(onedrive_cli
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    PRIVATE
+        ${CMAKE_CURRENT_BINARY_DIR}/generated
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_link_libraries(onedrive_cli
+    PRIVATE
+        ftxui::component
+        ftxui::dom
+        ftxui::screen
+        nlohmann_json::nlohmann_json
+)
+
+target_compile_options(onedrive_cli PRIVATE
+    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall;-Wextra;-Wpedantic;-Wconversion;-Wshadow>
+)
+
+add_library(onedrive_core
+    src/util/atomic_file.cpp
+    src/util/mount.cpp
+    src/util/private_file.cpp
+    src/account/account_state.cpp
+    src/auth/device_auth.cpp
+    src/auth/token_store.cpp
     src/config/config.cpp
     src/config/network.cpp
     src/config/output.cpp
@@ -126,12 +140,9 @@ target_link_libraries(onedrive_core
     PUBLIC
         Microsoft.GSL::GSL
         msft_proxy4::proxy
+        onedrive_cli
     PRIVATE
-        CLI11::CLI11
         CURL::libcurl
-        ftxui::component
-        ftxui::dom
-        ftxui::screen
         nlohmann_json::nlohmann_json
         OpenSSL::Crypto
         spdlog::spdlog
@@ -143,8 +154,42 @@ target_compile_options(onedrive_core PRIVATE
     $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall;-Wextra;-Wpedantic;-Wconversion;-Wshadow>
 )
 
+add_library(onedrive_app
+    src/app/app.cpp
+    src/app/args.cpp
+    src/app/checks.cpp
+    src/app/commands.cpp
+    src/app/discover.cpp
+    src/app/drive_fields.cpp
+    src/app/lock.cpp
+    src/app/preflight.cpp
+    src/app/factory.cpp
+    src/app/info.cpp
+)
+
+target_include_directories(onedrive_app
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+    PRIVATE
+        ${CMAKE_CURRENT_BINARY_DIR}/generated
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+target_link_libraries(onedrive_app
+    PUBLIC
+        onedrive_core
+    PRIVATE
+        CLI11::CLI11
+        spdlog::spdlog
+)
+
+target_compile_options(onedrive_app PRIVATE
+    $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall;-Wextra;-Wpedantic;-Wconversion;-Wshadow>
+)
+
 add_executable(onedrive-cpp src/main.cpp)
-target_link_libraries(onedrive-cpp PRIVATE onedrive_core)
+target_link_libraries(onedrive-cpp PRIVATE onedrive_app)
 
 if(ONEDRIVE_ENABLE_CLANG_TIDY)
     set(CMAKE_CXX_CLANG_TIDY "")

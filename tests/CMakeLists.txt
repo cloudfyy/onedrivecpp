@@ -49,6 +49,7 @@ add_onedrive_test(
     tui_tests
     SOURCES tests/cli/tui.cpp
     INCLUDE_DIRS src tests
+    LIBRARIES onedrive_app
 )
 add_onedrive_test(
     tui_paging_tests
@@ -117,7 +118,7 @@ add_onedrive_test(
     app_migrate_tests
     SOURCES tests/app/migrate.cpp
     INCLUDE_DIRS src tests tests/app
-    LIBRARIES db_test_support
+    LIBRARIES db_test_support onedrive_app
 )
 add_onedrive_test(
     device_auth_tests
@@ -165,6 +166,7 @@ foreach(APP_TEST IN ITEMS args doctor factory flow inspection drives)
         app_${APP_TEST}_tests
         SOURCES tests/app/${APP_TEST}.cpp
         INCLUDE_DIRS tests tests/app
+        LIBRARIES onedrive_app
     )
 endforeach()
 target_include_directories(app_args_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
@@ -172,7 +174,7 @@ add_onedrive_test(
     app_cleanup_tests
     SOURCES tests/app/cleanup.cpp
     INCLUDE_DIRS src tests tests/app
-    LIBRARIES db_test_support
+    LIBRARIES db_test_support onedrive_app
 )
 foreach(MONITOR_TEST IN ITEMS state notify socket remote local timing stop input)
     add_onedrive_test(
@@ -186,6 +188,7 @@ foreach(PREFLIGHT_TEST IN ITEMS state sync invalid)
         preflight_${PREFLIGHT_TEST}_tests
         SOURCES tests/preflight/${PREFLIGHT_TEST}.cpp
         INCLUDE_DIRS src tests tests/preflight
+        LIBRARIES onedrive_app
     )
 endforeach()
 foreach(SYNC_TEST IN ITEMS base delete move download upload mode)

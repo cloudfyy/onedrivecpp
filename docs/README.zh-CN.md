@@ -26,10 +26,12 @@
 
 1. [架构](architecture.zh-CN.md)
 2. [开发与测试](development.zh-CN.md)
-3. [许可证、法律与品牌](project.zh-CN.md)
+3. [Ubuntu 26 GUI 支持准备与实施计划](gui-ubuntu26-plan.zh-CN.md)
+4. [许可证、法律与品牌](project.zh-CN.md)
 
 这些章节介绍依赖边界、事务状态机、源码目录职责、真实 Graph 测试、系统边界
-测试，以及项目采用的 C++ Core Guidelines 检查。
+测试、项目采用的 C++ Core Guidelines 检查，以及 Ubuntu 26 桌面 GUI 的架构与
+交付路线。
 
 ## 快速链接
 
@@ -42,3 +44,5 @@
   [同步与恢复](synchronization.zh-CN.md#状态重置与-delta-重建)
 - 故障诊断输出：[使用与命令输出](usage.zh-CN.md)
 - 开发检查：[开发与测试](development.zh-CN.md#c-core-guidelines-检查)
+- Ubuntu 26 GUI 路线：
+  [GUI 支持准备与实施计划](gui-ubuntu26-plan.zh-CN.md)
