@@ -187,7 +187,10 @@ Ubuntu 26.04 包仍必须在 Ubuntu 26.04 环境中构建和测试；仅修改�
 安装打包依赖：
 
 ```bash
-sudo apt install -y build-essential devscripts debhelper ninja-build clang-20
+sudo apt install -y build-essential devscripts debhelper cmake ninja-build \
+  clang-20 libcli11-dev libcurl4-openssl-dev libfmt-dev libspdlog-dev \
+  libmsgsl-dev libsqlite3-dev libssl-dev libtomlplusplus-dev \
+  nlohmann-json3-dev
 ```
 
 在项目根目录执行：

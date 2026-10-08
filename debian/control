@@ -11,6 +11,7 @@ Build-Depends:
  libcurl4-openssl-dev,
  libfmt-dev,
  libspdlog-dev,
+ libmsgsl-dev,
  libsqlite3-dev,
  libssl-dev,
  libtomlplusplus-dev,
