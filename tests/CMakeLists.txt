@@ -162,6 +162,12 @@ foreach(APP_TEST IN ITEMS args doctor factory flow inspection drives)
     )
 endforeach()
 target_include_directories(app_args_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
+add_onedrive_test(
+    app_cleanup_tests
+    SOURCES tests/app/cleanup.cpp
+    INCLUDE_DIRS src tests tests/app
+    LIBRARIES db_test_support
+)
 foreach(MONITOR_TEST IN ITEMS state notify socket remote local timing stop input)
     add_onedrive_test(
         monitor_${MONITOR_TEST}_tests

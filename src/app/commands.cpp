@@ -344,7 +344,7 @@ int execute_command(
             config,
             runtime_factory,
             console,
-            arguments.force_dry_run,
+            config.dry_run,
             arguments.assume_yes
         );
     }

@@ -646,10 +646,20 @@ public:
     [[nodiscard]] std::unique_ptr<onedrive::storage::ItemStore>
     create_item_store(
         const onedrive::config::Config& config,
-        const onedrive::account::DriveIdentity&
+        const onedrive::account::DriveIdentity& identity
     ) const {
         ++item_store_count;
         last_item_store_sync_directory = config.sync_data_directory;
+        if (use_real_item_store) {
+            return std::make_unique<onedrive::storage::ItemStore>(
+                std::in_place_type<onedrive::storage::ItemDatabase>,
+                onedrive::account::AccountState::locate(
+                    config.state_directory, identity
+                )
+                    .drive_directory,
+                identity
+            );
+        }
         return std::make_unique<onedrive::storage::ItemStore>(
             std::in_place_type<FakeItemStore>,
             item_store_open_count,
@@ -697,6 +707,7 @@ public:
     bool empty_shared{false};
     bool empty_sites{false};
     bool include_configured_drive{false};
+    bool use_real_item_store{false};
     mutable int token_store_count{0};
     mutable int graph_client_count{0};
     mutable int graph_info_client_count{0};

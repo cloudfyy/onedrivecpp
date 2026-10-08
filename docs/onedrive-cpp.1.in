@@ -220,6 +220,18 @@ to preview and
 for non-interactive confirmation. Paths outside the Drive root, symbolic
 links, non-regular files, and files that do not match the destination partial
 pattern are never deleted.
+Configured sync.dry_run also prevents deletion, including with --yes.
+Only the current Drive is scanned. Names must match
+.<filename>.onedrive-partial-<PID>-<sequence> with positive decimal numbers
+without leading zeros. Saved items and unfinished operation references are protected.
+Unsafe, multiply linked, foreign-owned, or ambiguously referenced files and their
+records are retained and reported as skipped. Incomplete scans abort before deletion.
+Files are rechecked against the preview and deleted before their records;
+deletion failures retain records for retry. Summaries report planned and actual
+record/file removals, logical file bytes, retained entries, skips, and failures.
+Any skip or failure returns status 1. Whole Drive directories are not removed.
+Stop other programs or configurations writing to the same data directory;
+the runtime lock only covers processes sharing the state directory.
 .TP
 .B state migrate
 Upgrade all existing state databases offline, including legacy databases.

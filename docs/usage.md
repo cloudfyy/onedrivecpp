@@ -195,12 +195,34 @@ transfer limits, output settings, and whether a proxy is configured. It never
 prints application credentials, authentication tokens, proxy credentials, or
 proxy URLs.
 
-`state cleanup --dry-run` lists invalid partial-download records and orphaned
-`.onedrive-partial-*` regular files without changing state. Run
-`state cleanup --yes` to remove them. Files outside the resolved Drive root,
-paths that do not match the destination's partial-file pattern, symbolic
-links, and non-regular files are never deleted; invalid database records for
-such paths can still be removed so they cannot be resumed.
+`state cleanup --dry-run` previews cleanup within the current account's configured
+Drive only; it does not delete whole Drive directories or completed files.
+Configured `sync.dry_run = true` also prevents cleanup, even with `--yes`.
+Without dry-run, `--yes` confirms deletion; otherwise text output asks for the
+configured Drive reference. JSON requires `--yes`.
+
+Valid resumable downloads are retained, including files larger than their saved
+progress. Missing temporary files need only a record removal. Truncated files
+and invalid saved sizes/progress are removed with their records when the paths
+are safe. Orphan candidates must match `.<filename>.onedrive-partial-<PID>-<sequence>`
+with positive decimal numbers (no leading zeros) and have no references from
+saved items or pending download/upload/delete/move operations.
+
+Out-of-root paths, symlinks, non-regular files, multiply linked or foreign-owned
+files, ambiguous references, and unrecognized recorded names are retained
+**together with their records** and reported as skipped. An incomplete directory
+scan aborts before deletion. Files are checked again against the preview before
+removal; deletion is flushed before its record is removed. A deletion failure
+keeps the record for retry. Rerunning after an interruption safely handles records
+whose files have already been removed.
+
+The plan reports retained entries, record-only removals, file counts, total file
+bytes, and skips. The result reports actual removed records/files/bytes, skips,
+and failures; any skip or failure returns exit status 1, even if other candidates
+were cleaned. Byte counts are logical file sizes, not guaranteed recovered disk
+blocks. An orphan-only cleanup does not create a missing database.
+The runtime lock covers processes sharing the same state directory; stop other
+tools or configurations that might write to the same data directory before cleanup.
 
 ## Offline database upgrades
 

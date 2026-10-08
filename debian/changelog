@@ -1,3 +1,14 @@
+onedrive-cpp (0.10.20-1~ubuntu24.04) noble; urgency=medium
+
+  * Honor configured dry-run for partial cleanup and strictly recognize
+    temporary names while protecting saved items and unfinished operations.
+  * Retain unsafe files and records, abort incomplete scans before deletion,
+    recheck files, and report planned/actual removals, skips, and failures.
+  * Remove safe invalid files before records for retryable cleanup, avoid
+    creating databases for orphan-only cleanup, and add real SQLite tests.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Thu, 08 Oct 2026 07:52:43 +0000
+
 onedrive-cpp (0.10.19-1~ubuntu24.04) noble; urgency=medium
 
   * Clarify partial-download sizes as saved download progress, total file size,

@@ -518,7 +518,7 @@ int test_inspection() {
             "json",
         }
     );
-    if (cleanup_plan.exit_code != 0 ||
+    if (cleanup_plan.exit_code != 1 ||
         !cleanup_plan.standard_output.contains(R"("mode":"dry-run")") ||
         !cleanup_plan.standard_output.contains(R"("orphaned_files":"1")") ||
         !std::filesystem::exists(orphan) ||
@@ -557,8 +557,8 @@ int test_inspection() {
             "json",
         }
     );
-    if (cleanup.exit_code != 0 ||
-        !cleanup.standard_output.contains(R"("event":"cleanup_completed")") ||
+    if (cleanup.exit_code != 1 ||
+        !cleanup.standard_output.contains(R"("event":"cleanup_incomplete")") ||
         std::filesystem::exists(orphan) ||
         std::filesystem::exists(truncated_partial_path) ||
         !std::filesystem::exists(type_changed_partial_path)) {
