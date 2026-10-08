@@ -129,6 +129,7 @@ target_link_libraries(onedrive_core
     PRIVATE
         CLI11::CLI11
         CURL::libcurl
+        ftxui::component
         ftxui::dom
         ftxui::screen
         nlohmann_json::nlohmann_json

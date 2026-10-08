@@ -1,3 +1,14 @@
+onedrive-cpp (0.10.15-1~ubuntu24.04) noble; urgency=medium
+
+  * Retain all Drive inspection results in a one-Drive-per-page TUI, starting
+    on the first page with Left/Right or n/p navigation and Enter/q exit.
+  * Reuse FTXUI input and terminal lifecycle handling while leaving console
+    and JSON output complete and non-interactive.
+  * Test page boundaries, compact layouts, real terminal keys, and terminal
+    restoration; document navigation in English and Chinese.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Thu, 08 Oct 2026 01:44:18 +0000
+
 onedrive-cpp (0.10.14-1~ubuntu24.04) noble; urgency=medium
 
   * Show configured Drive references such as me alongside canonical IDs.

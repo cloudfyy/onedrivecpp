@@ -88,6 +88,10 @@ Drive。`reference` 单独显示配置中的引用（例如 `me`），同时保�
 其他 Drive 不会误标为 `me`。每个 Drive 显示总容量、已用、剩余、回收站占用及配额
 状态，复用 `inspect quota` 的格式；缺失配额信息显示 `unavailable`。
 
+TUI 每页显示一个 Drive，查询完成后从第一页开始，并显示 `Drive 1/3` 这样的页码。
+按左右方向键或 `p`/`n` 切换，无需再按 Enter；首尾不循环。
+按 Enter、`q` 或 `Q` 退出。Console 和 JSON 仍完整输出全部 Drive，不分页、不等待按键。
+
 文件统计明确标注 `local state (not cloud totals)`，不遍历云端：
 `known_files` 对已保存的文件快照、待下载、断点下载和未删除的 blocked item 按文件
 ID 去重，排除目录。`downloaded_files` 表示受跟踪且仍存在于本地 Drive 根目录内的

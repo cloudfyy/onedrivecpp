@@ -115,6 +115,10 @@ downloaded files are tracked regular files still present locally, including
 modified or previously uploaded files. Pending downloads are deduplicated across
 pending and partial records. Directories are excluded and status counts may
 overlap. Missing databases or quota data are reported as unavailable, not zero.
+The TUI opens on the first drive and shows one drive per page with a counter
+such as Drive 1/3. Left/Right or p/n switches pages immediately, without wrapping
+at the first or last page. Enter, q, or Q exits. Console and JSON output still
+include all drives without pagination or waiting for input.
 The command reads Microsoft Graph metadata and local state without changing
 remote or local synchronization state.
 .TP

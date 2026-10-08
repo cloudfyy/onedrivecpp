@@ -100,6 +100,12 @@ marks the configured drive. Its `reference` field shows the configured reference
 `me`. Each drive includes total, used, remaining, deleted, and quota-state values,
 reusing `inspect quota` formatting. Missing quota values are `unavailable`.
 
+In the TUI, results open on the first drive, one drive per page, with a counter
+such as `Drive 1/3`. Press Left/Right or `p`/`n` to switch pages without Enter;
+navigation stops at the first and last pages rather than wrapping. Press Enter,
+`q`, or `Q` to exit. Console and JSON output still include all drives without
+pagination or waiting for input.
+
 File statistics are explicitly labelled `local state (not cloud totals)`:
 `known_files` counts distinct file IDs recorded in item snapshots, pending or
 partial downloads, and non-deleted blocked items. Directories are excluded.

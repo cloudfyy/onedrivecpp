@@ -51,6 +51,11 @@ add_onedrive_test(
     INCLUDE_DIRS src tests
 )
 add_onedrive_test(
+    tui_paging_tests
+    SOURCES tests/cli/tui_paging.cpp
+    INCLUDE_DIRS src tests
+)
+add_onedrive_test(
     metrics_status_tests
     SOURCES tests/metrics/status.cpp
     INCLUDE_DIRS tests

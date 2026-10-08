@@ -107,7 +107,7 @@ int test_inspection_completion() {
     return EXIT_SUCCESS;
 }
 
-int test_drive_details(std::size_t rows) {
+int test_drive_details(std::size_t rows, int pages) {
     using namespace onedrive::cli;
     std::ostringstream output;
     std::ostringstream error;
@@ -160,14 +160,18 @@ int test_drive_details(std::size_t rows) {
              .value = "present"},
         }
     );
-    console.section("drive", "OneDrive drive:", std::move(fields));
+    for (int page = 0; page < pages; ++page) {
+        console.section("drive", "OneDrive drive:", fields);
+    }
     std::istringstream input{"\n"};
     auto* original = std::cin.rdbuf(input.rdbuf());
     console.finish();
     std::cin.rdbuf(original);
     const auto rendered = output.str();
     const auto frame = rendered.substr(rendered.rfind("\033[H"));
-    if (!frame.contains("Press Enter to exit") || frame.contains("CLOSE")) {
+    if (!frame.contains("Press Enter to exit") || frame.contains("CLOSE") ||
+        !frame.contains("Drive 1/" + std::to_string(pages)) ||
+        frame.contains("Left/Right or n/p") != (pages > 1)) {
         return fail("drive TUI hid or retained the ambiguous exit prompt");
     }
     if (rows < 30) {
@@ -193,6 +197,83 @@ int test_drive_details(std::size_t rows) {
     }
     if (frame.contains("CLOSE")) {
         return fail("drive TUI retained the ambiguous exit prompt");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_drive_pagination() {
+    using namespace onedrive::cli;
+    struct Case {
+        std::string_view input;
+        int page;
+    };
+    constexpr std::array cases{
+        Case{"\n", 1},
+        Case{"q\n", 1},
+        Case{"Q\n", 1},
+        Case{"p\nq\n", 1},
+        Case{"n\nq\n", 2},
+        Case{"n\nn\nn\nq\n", 3},
+        Case{"n\np\np\nq\n", 1},
+        Case{"\033[C\nq\n", 2},
+        Case{"n\n\033[D\nq\n", 1},
+        Case{"x\nq\n", 1},
+        Case{"", 1},
+        Case{"\033[D\nq\n", 1},
+        Case{"n\nn\n\033[C\nq\n", 3},
+        Case{"q\nuntouched\n", 1},
+    };
+    for (const auto& test : cases) {
+        std::ostringstream output;
+        std::ostringstream error;
+        const Console console{detail::make_ftxui_console_backend(
+            {.color = ColorMode::never,
+             .ui = UiMode::tui,
+             .view = TuiView::drives},
+            output,
+            error,
+            100,
+            12
+        )};
+        console.section("account", "Account:", {});
+        for (int page = 1; page <= 3; ++page) {
+            console.section(
+                "drive",
+                "OneDrive drive:",
+                {
+                    {.label = "name:",
+                     .key = "name",
+                     .value = "Drive-name-" + std::to_string(page)},
+                    {.label = "id:",
+                     .key = "id",
+                     .value = std::to_string(page)},
+                }
+            );
+        }
+        std::istringstream input{std::string{test.input}};
+        auto* original = std::cin.rdbuf(input.rdbuf());
+        console.finish();
+        console.finish();
+        std::cin.rdbuf(original);
+        if (test.input.ends_with("untouched\n") && input.peek() != 'u') {
+            return fail("Drive paging read input after completion");
+        }
+        const auto rendered = output.str();
+        const auto frame = rendered.substr(rendered.rfind("\033[H"));
+        if (!frame.contains("Drive " + std::to_string(test.page) + "/3") ||
+            !frame.contains("Drive-name-" + std::to_string(test.page)) ||
+            !frame.contains("Left/Right or n/p") ||
+            !frame.contains("Press Enter to exit (or q)")) {
+            return fail(
+                "Drive paging lost results or selected an incorrect page"
+            );
+        }
+        for (int page = 1; page <= 3; ++page) {
+            if (page != test.page &&
+                frame.contains("Drive-name-" + std::to_string(page))) {
+                return fail("Drive paging mixed details from different drives");
+            }
+        }
     }
     return EXIT_SUCCESS;
 }
@@ -560,6 +641,9 @@ int test_tui_dashboard() {
 }  // namespace
 
 int main() {
+    if (const auto result = test_drive_pagination(); result != EXIT_SUCCESS) {
+        return result;
+    }
     if (const auto result = test_drive_field_helpers();
         result != EXIT_SUCCESS) {
         return result;
@@ -568,9 +652,11 @@ int main() {
         return result;
     }
     for (const auto rows : {12U, 24U, 30U}) {
-        if (const auto result = test_drive_details(rows);
-            result != EXIT_SUCCESS) {
-            return result;
+        for (const auto pages : {1, 3}) {
+            if (const auto result = test_drive_details(rows, pages);
+                result != EXIT_SUCCESS) {
+                return result;
+            }
         }
     }
     return test_tui_dashboard();

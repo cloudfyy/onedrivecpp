@@ -6,6 +6,9 @@
 #include "onedrive/version.hpp"
 
 #include <fmt/format.h>
+#include <ftxui/component/component.hpp>
+#include <ftxui/component/event.hpp>
+#include <ftxui/component/screen_interactive.hpp>
 #include <ftxui/dom/elements.hpp>
 #include <ftxui/screen/screen.hpp>
 
@@ -17,6 +20,7 @@
 #include <string_view>
 #include <utility>
 #include <vector>
+#include <unistd.h>
 
 namespace onedrive::cli::detail {
 namespace {
@@ -204,9 +208,25 @@ public:
             return;
         }
         finished_ = true;
+        if (!drive_pages_.empty()) {
+            drive_page_ = 0;
+            if (&output_ == &std::cout && ::isatty(STDIN_FILENO) != 0 &&
+                ::isatty(STDOUT_FILENO) != 0) {
+                browse_drives();
+                return;
+            }
+        }
         render();
         std::string input;
-        std::getline(std::cin, input);
+        while (std::getline(std::cin, input)) {
+            if (drive_pages_.empty() ||
+                handle_drive_key(
+                    input.empty() ? Event::Return : Event::Special(input)
+                )) {
+                break;
+            }
+            render();
+        }
         if (std::cin.bad()) {
             throw std::runtime_error("cannot read terminal completion input");
         }
@@ -244,6 +264,38 @@ private:
         MessageKind kind;
         std::string text;
     };
+
+    bool handle_drive_key(const Event& event) {
+        if (event == Event::Return || event == Event::Character('q') ||
+            event == Event::Character('Q')) {
+            return true;
+        }
+        if ((event == Event::ArrowRight || event == Event::Character('n')) &&
+            drive_page_ + 1 < drive_pages_.size()) {
+            ++drive_page_;
+        } else if ((event == Event::ArrowLeft || event == Event::Character('p')
+                   ) &&
+                   drive_page_ > 0) {
+            --drive_page_;
+        }
+        return false;
+    }
+
+    void browse_drives() {
+        auto screen = ScreenInteractive::Fullscreen();
+        screen.TrackMouse(false);
+        auto component = CatchEvent(
+            Renderer([this] { return dashboard(); }),
+            [&](const Event& event) {
+                if (handle_drive_key(event)) {
+                    screen.Exit();
+                }
+                return true;
+            }
+        );
+        leave_fullscreen();
+        screen.Loop(std::move(component));
+    }
 
     Element with_color(Element element, Color value) const {
         return styled_ ?
@@ -283,10 +335,14 @@ private:
     }
 
     void update(const SectionEvent& event) {
-        section_title_ = friendly_text(event.title);
-        section_fields_ = event.fields;
-        for (auto& field : section_fields_) {
+        section_ = event;
+        section_.title = friendly_text(event.title);
+        for (auto& field : section_.fields) {
             field.label = friendly_text(std::move(field.label));
+        }
+        if (view_ == TuiView::drives && event.event == "drive") {
+            drive_pages_.push_back(section_);
+            drive_page_ = drive_pages_.size() - 1;
         }
     }
 
@@ -443,11 +499,21 @@ private:
         if (download_) {
             content.push_back(download_status());
         }
-        if (!section_title_.empty()) {
+        const auto& section =
+            drive_pages_.empty() ? section_ : drive_pages_[drive_page_];
+        if (!section.title.empty()) {
             Elements fields{
-                emphasized(text(section_title_)),
+                emphasized(text(
+                    drive_pages_.empty() ? section.title
+                                         : fmt::format(
+                                               "{}  [Drive {}/{}]",
+                                               section.title,
+                                               drive_page_ + 1,
+                                               drive_pages_.size()
+                                           )
+                )),
             };
-            for (const auto& field : section_fields_) {
+            for (const auto& field : section.fields) {
                 fields.push_back(text(
                     field.label + " " + field.value
                 ));
@@ -487,9 +553,19 @@ private:
         }
         if (finished_) {
             content.push_back(separator());
-            content.push_back(
-                with_color(text(" Press Enter to exit "), palette_.accent)
-            );
+            if (drive_pages_.size() > 1) {
+                content.push_back(with_color(
+                    text(" Left/Right or n/p: previous/next Drive "),
+                    palette_.accent
+                ));
+            }
+            content.push_back(with_color(
+                text(
+                    drive_pages_.empty() ? " Press Enter to exit "
+                                         : " Press Enter to exit (or q) "
+                ),
+                palette_.accent
+            ));
         }
         return vbox(std::move(content)) | border;
     }
@@ -504,6 +580,7 @@ private:
             return;
         }
         output_ << "\033[?25h\033[?1049l" << std::flush;
+        fullscreen_active_ = false;
         fullscreen_active_ = false;
     }
 
@@ -528,8 +605,9 @@ private:
     bool fullscreen_active_{false};
     bool finished_{false};
     std::vector<DashboardMessage> messages_;
-    std::string section_title_;
-    std::vector<Field> section_fields_;
+    SectionEvent section_;
+    std::vector<SectionEvent> drive_pages_;
+    std::size_t drive_page_{0};
     std::size_t delta_items_{0};
     std::size_t delta_changes_{0};
     bool delta_complete_{false};
