@@ -66,6 +66,12 @@ add_onedrive_test(
     INCLUDE_DIRS tests
     LIBRARIES spdlog::spdlog
 )
+add_onedrive_test(
+    fmt_compatibility_tests
+    SOURCES tests/logging/format.cpp
+    INCLUDE_DIRS tests
+    LIBRARIES fmt::fmt spdlog::spdlog
+)
 
 add_test(
     NAME bash_completion_tests
@@ -99,13 +105,13 @@ add_onedrive_test(
     db_sqlite_tests
     SOURCES tests/db/sqlite.cpp
     INCLUDE_DIRS src tests
-    LIBRARIES SQLite3::SQLite3
+    LIBRARIES SQLite::SQLite3
 )
 add_onedrive_test(
     db_maintenance_tests
     SOURCES tests/db/maintenance.cpp
     INCLUDE_DIRS src tests tests/db
-    LIBRARIES db_test_support SQLite3::SQLite3
+    LIBRARIES db_test_support SQLite::SQLite3
 )
 add_onedrive_test(
     app_migrate_tests

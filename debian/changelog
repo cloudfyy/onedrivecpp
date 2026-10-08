@@ -1,3 +1,15 @@
+onedrive-cpp (0.11.0-1~ubuntu24.04) noble; urgency=medium
+
+  * Bump the upstream version to 0.11.0.
+  * Document Ubuntu 26.04 development requirements alongside Ubuntu 24.04,
+    including the Clang 20 toolchain and pinned dependency setup.
+  * Use the standard FindSQLite3 imported target for the core library and
+    database tests so CMake can generate the build with system SQLite.
+  * Backport the fmt 10 compile-time format check fix into build-local headers
+    only when needed, retaining format validation and system shared libraries.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Thu, 08 Oct 2026 19:36:50 +0800
+
 onedrive-cpp (0.10.20-1~ubuntu24.04) noble; urgency=medium
 
   * Honor configured dry-run for partial cleanup and strictly recognize

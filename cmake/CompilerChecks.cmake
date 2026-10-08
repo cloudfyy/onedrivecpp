@@ -6,6 +6,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+include(${CMAKE_CURRENT_LIST_DIR}/FmtCompatibility.cmake)
+
 check_cxx_source_compiles(
     "
     #include <linux/openat2.h>

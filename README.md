@@ -105,6 +105,15 @@ After installation, use the Debug or Release build and CTest commands below.
 Installing packages alone does not verify that the project builds or its tests
 pass on the machine.
 
+CMake checks system fmt/spdlog with the selected compiler. When Clang encounters
+the known fmt 10 compile-time format-string bug, it applies a small backport of
+the [upstream fix](https://github.com/fmtlib/fmt/commit/6797f0c) to a build-local
+copy of the installed headers. System headers are not modified, and the program
+still links to system fmt/spdlog shared libraries. Configuration verifies that
+valid format strings compile and invalid ones are rejected; it stops if the
+patch cannot be applied safely. Once the system headers pass the check, the
+compatibility copy is no longer used.
+
 Format modified C or C++ lines before committing. Stage the source/header
 changes, then run the versioned Git integration from the repository root so it
 uses the checked-in `.clang-format` without reformatting unrelated legacy

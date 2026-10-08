@@ -135,7 +135,7 @@ target_link_libraries(onedrive_core
         nlohmann_json::nlohmann_json
         OpenSSL::Crypto
         spdlog::spdlog
-        SQLite3::SQLite3
+        SQLite::SQLite3
         tomlplusplus::tomlplusplus
 )
 
