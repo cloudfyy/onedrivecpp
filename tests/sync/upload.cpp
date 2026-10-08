@@ -439,6 +439,13 @@ int test_local_directory_uploads() {
         );
     }
 
+    for (const auto* id : {"directory-1", "directory-2", "directory-3"}) {
+        const auto directory = items.find("me", id);
+        if (!directory || !directory->directory || directory->content_hash) {
+            return fail("uploaded directory state should not have a content hash");
+        }
+    }
+
     const auto resource_root = temporary.path() / "directory-resource";
     std::filesystem::create_directories(resource_root / "Continued");
     std::filesystem::create_directories(resource_root / "Quota");
@@ -534,6 +541,7 @@ int test_local_directory_uploads() {
         recovery_graph.directory_create_count != 2 ||
         !recovery_items.pending_uploads_by_path.empty() ||
         !recovery_items.find("me", "recovered-directory") ||
+        recovery_items.find("me", "recovered-directory")->content_hash ||
         !recovery_metrics.last_success) {
         return fail("pending directory creation was not recovered");
     }

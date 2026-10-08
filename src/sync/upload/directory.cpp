@@ -8,6 +8,7 @@
 #include "util/typestate.hpp"
 
 #include <filesystem>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -42,6 +43,7 @@ storage::ItemState uploaded_directory_state(
         .size = item.size,
         .local_size = 0,
         .local_modified_ticks = 0,
+        .content_hash = std::nullopt,
         .directory = true,
     };
 }

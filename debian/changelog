@@ -1,3 +1,11 @@
+onedrive-cpp (0.10.12-1~ubuntu24.04) noble; urgency=medium
+
+  * Explicitly initialize uploaded directory content hashes to remove the
+    missing-field compiler warning without changing directory state semantics.
+  * Verify newly uploaded and recovered directories have no content hash.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Thu, 08 Oct 2026 00:38:24 +0000
+
 onedrive-cpp (0.10.11-1~ubuntu24.04) noble; urgency=medium
 
   * Keep inspection TUI results visible until Enter is pressed.
