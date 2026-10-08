@@ -2,15 +2,14 @@
 #include "onedrive/util/path_security.hpp"
 #include "onedrive/util/system_error.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"
+#include "util/ascii.hpp"
 
 #include <spdlog/logger.h>
 #include <spdlog/sinks/base_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
-#include <algorithm>
 #include <cerrno>
-#include <cctype>
 #include <cstring>
 #include <fcntl.h>
 #include <format>
@@ -274,33 +273,29 @@ private:
     std::uintmax_t size_{0};
 };
 
-spdlog::level::level_enum parse_level(std::string level) {
-    std::ranges::transform(level, level.begin(), [](unsigned char character) {
-        return static_cast<char>(std::tolower(character));
-    });
-
-    if (level == "trace") {
+spdlog::level::level_enum parse_level(std::string_view level) {
+    if (util::ascii_iequals(level, "trace")) {
         return spdlog::level::trace;
     }
-    if (level == "debug") {
+    if (util::ascii_iequals(level, "debug")) {
         return spdlog::level::debug;
     }
-    if (level == "info") {
+    if (util::ascii_iequals(level, "info")) {
         return spdlog::level::info;
     }
-    if (level == "warn") {
+    if (util::ascii_iequals(level, "warn")) {
         return spdlog::level::warn;
     }
-    if (level == "error") {
+    if (util::ascii_iequals(level, "error")) {
         return spdlog::level::err;
     }
-    if (level == "critical") {
+    if (util::ascii_iequals(level, "critical")) {
         return spdlog::level::critical;
     }
-    if (level == "off") {
+    if (util::ascii_iequals(level, "off")) {
         return spdlog::level::off;
     }
-    throw std::invalid_argument("invalid log level: " + level);
+    throw std::invalid_argument(std::format("invalid log level: {}", level));
 }
 
 }  // namespace

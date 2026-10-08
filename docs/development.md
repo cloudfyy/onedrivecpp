@@ -124,3 +124,9 @@ The policy excludes only reviewed noise from required C/POSIX APIs, protocol
 constants, and checked buffer boundaries. Microsoft GSL is used to express
 non-null borrowed dependencies at API and RAII boundaries. ngcpp/proxy
 provides type-erased runtime ports with explicit owning and borrowed adapters.
+
+Prefer shared, locale-independent ASCII comparison for protocol tokens and
+log levels instead of allocating and lowercasing copies. Use `std::string_view`
+for synchronous borrowed text and `std::span` subviews for remaining I/O buffers.
+Keep POSIX calls behind RAII owners; newer syntax must not weaken checked
+close, durability, or error-reporting behavior.

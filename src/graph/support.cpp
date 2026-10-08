@@ -6,7 +6,6 @@
 
 #include <algorithm>
 #include <charconv>
-#include <cctype>
 #include <format>
 #include <stdexcept>
 #include <utility>
@@ -75,13 +74,10 @@ bool upload_quota_error(const Json& response, long status_code) {
     if (status_code == 507) {
         return true;
     }
-    auto code = graph_error_code(response);
-    std::ranges::transform(code, code.begin(), [](unsigned char value) {
-        return static_cast<char>(std::tolower(value));
-    });
-    return code == "quotalimitreached" ||
-           code == "storagelimitexceeded" ||
-           code == "insufficientstorage";
+    const auto code = graph_error_code(response);
+    return util::ascii_iequals(code, "quotaLimitReached") ||
+           util::ascii_iequals(code, "storageLimitExceeded") ||
+           util::ascii_iequals(code, "insufficientStorage");
 }
 
 [[noreturn]] void throw_upload_response_error(

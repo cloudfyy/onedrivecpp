@@ -102,3 +102,8 @@ cmake --build --preset lint-deep
 策略只排除经过审查的必要 C/POSIX API、协议常量和已检查缓冲区边界噪声。
 项目使用 Microsoft GSL 在 API 和 RAII 边界表达非空借用依赖，并使用
 ngcpp/proxy 提供具有明确拥有/借用适配方式的类型擦除运行时端口。
+
+协议标识和日志级别应优先复用不依赖 locale 的 ASCII 比较，而非复制字符串后
+转小写。同步借用文本使用 `std::string_view`，剩余 I/O 缓冲区使用 `std::span`
+子视图。POSIX 调用继续由 RAII 对象管理；新语法不能削弱关闭错误检查、持久化
+和错误报告行为。

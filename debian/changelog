@@ -1,3 +1,12 @@
+onedrive-cpp (0.10.9-1~ubuntu24.04) noble; urgency=medium
+
+  * Reuse locale-independent ASCII comparison for Graph quota errors and log
+    levels, avoiding a copied log-level string.
+  * Use span subviews for atomic writes and test binary and empty buffers.
+  * Cover mixed-case and invalid log levels and Graph quota error codes.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Thu, 08 Oct 2026 00:02:45 +0000
+
 onedrive-cpp (0.10.8-1~ubuntu24.04) noble; urgency=medium
 
   * Split the large live Graph and runner self-test modules by scenario

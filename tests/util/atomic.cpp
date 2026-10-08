@@ -1,9 +1,12 @@
 #include "util/atomic_file.hpp"
 #include "support/common.hpp"
 
+#include <array>
+#include <cstddef>
 #include <cstdlib>
 #include <filesystem>
 #include <string>
+#include <span>
 #include <sys/stat.h>
 #include <thread>
 
@@ -47,6 +50,29 @@ int main() {
     );
     if (onedrive::test::read_file(destination) != "second") {
         return fail("atomic test file was not replaced");
+    }
+
+    const std::array binary{
+        std::byte{0xff}, std::byte{'a'}, std::byte{0},
+        std::byte{'b'}, std::byte{0xff},
+    };
+    onedrive::util::write_file_atomically(
+        destination,
+        std::span{binary}.subspan(1, 3),
+        S_IRUSR | S_IWUSR,
+        "binary test file"
+    );
+    if (onedrive::test::read_file(destination) != std::string("a\0b", 3)) {
+        return fail("atomic write did not respect binary span boundaries");
+    }
+    onedrive::util::write_file_atomically(
+        destination,
+        std::span<const std::byte>{},
+        S_IRUSR | S_IWUSR,
+        "empty test file"
+    );
+    if (!onedrive::test::read_file(destination).empty()) {
+        return fail("empty atomic write retained previous contents");
     }
 
     std::jthread first{[&] {

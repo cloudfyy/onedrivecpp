@@ -137,12 +137,12 @@ void write_file_atomically(
         );
     }
 
-    std::size_t written = 0;
-    while (written < contents.size()) {
+    auto remaining = contents;
+    while (!remaining.empty()) {
         const auto count = ::write(
             temporary.get(),
-            contents.data() + written,
-            contents.size() - written
+            remaining.data(),
+            remaining.size()
         );
         if (count == -1 && errno == EINTR) {
             continue;
@@ -161,7 +161,7 @@ void write_file_atomically(
                 temporary_name
             );
         }
-        written += static_cast<std::size_t>(count);
+        remaining = remaining.subspan(static_cast<std::size_t>(count));
     }
 
     if (::fsync(temporary.get()) == -1) {

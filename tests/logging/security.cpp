@@ -3,10 +3,12 @@
 
 #include <spdlog/spdlog.h>
 
+#include <array>
 #include <cstdlib>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <utility>
@@ -26,6 +28,40 @@ using onedrive::test::TemporaryDirectory;
            status.st_uid == ::geteuid() &&
            status.st_nlink == 1 &&
            (status.st_mode & 0777) == 0600;
+}
+
+int test_level_parsing() {
+    const std::array levels{
+        std::pair{"TrAcE", spdlog::level::trace},
+        std::pair{"DeBuG", spdlog::level::debug},
+        std::pair{"INFO", spdlog::level::info},
+        std::pair{"WaRn", spdlog::level::warn},
+        std::pair{"ERROR", spdlog::level::err},
+        std::pair{"CrItIcAl", spdlog::level::critical},
+        std::pair{"OFF", spdlog::level::off},
+    };
+    for (const auto& [name, expected] : levels) {
+        const onedrive::logging::Session session{{.level = name}};
+        if (spdlog::get_level() != expected) {
+            return fail("case-insensitive log level was parsed incorrectly");
+        }
+    }
+    for (const std::string_view invalid : std::array<std::string_view, 7>{
+             "", " INFO", "info ", "WARNing", "\xc4", "invalid",
+             std::string_view{"info\0extra", 10},
+         }) {
+        try {
+            const onedrive::logging::Session session{
+                {.level = std::string{invalid}}
+            };
+            return fail("invalid log level was accepted");
+        } catch (const std::invalid_argument& error) {
+            if (std::string_view{error.what()}.find("invalid log level:") != 0) {
+                return fail("invalid log level lost its diagnostic");
+            }
+        }
+    }
+    return EXIT_SUCCESS;
 }
 
 int test_private_log_and_rotation() {
@@ -155,6 +191,9 @@ int test_message_sink() {
 }  // namespace
 
 int main() {
+    if (const int result = test_level_parsing(); result != EXIT_SUCCESS) {
+        return result;
+    }
     if (const int result = test_private_log_and_rotation();
         result != EXIT_SUCCESS) {
         return result;

@@ -62,6 +62,25 @@ int test_paths_and_errors() {
     const Json error = {
         {"error", {{"code", "quotaLimitReached"}, {"message", "full"}}},
     };
+    for (const auto* code : {
+             "QUOTALIMITREACHED", "sToRaGeLiMiTeXcEeDeD", "INSUFFICIENTSTORAGE",
+         }) {
+        const Json response{{"error", {{"code", code}}}};
+        if (!detail::upload_quota_error(response, 403) ||
+            detail::graph_error_code(response) != code) {
+            return fail("Graph quota comparison changed or rejected its code");
+        }
+    }
+    for (const auto* code : {
+             "quotaLimitReachedExtra", " quotaLimitReached",
+             "insufficientStorage ", "\xc4", "",
+         }) {
+        if (detail::upload_quota_error(
+                Json{{"error", {{"code", code}}}}, 403
+            )) {
+            return fail("non-quota Graph code was classified as quota");
+        }
+    }
     if (detail::graph_error_message(error, 400) != "full" ||
         detail::graph_error_code(error) != "quotaLimitReached" ||
         detail::graph_error_message(Json::object(), 418) !=
