@@ -17,6 +17,14 @@ int main() {
         fmt::format("{:.1f} {}", 1.25, "KiB") != "1.2 KiB") {
         return onedrive::test::fail("fmt compatibility formatting mismatch");
     }
+    if (fmt::format(FMT_STRING("{0:0{1}d}"), 7, 3) != "007" ||
+        fmt::format(FMT_STRING("{:.{}f}"), 1.25, 2) != "1.25" ||
+        fmt::format(FMT_STRING("{:>5}"), "ok") != "   ok" ||
+        fmt::format("{0:0{1}d}", 7, 3) != "007") {
+        return onedrive::test::fail(
+            "fmt format-specifier compatibility mismatch"
+        );
+    }
 
     std::ostringstream output;
     auto sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(output);
@@ -28,14 +36,11 @@ int main() {
         return onedrive::test::fail("spdlog compatibility formatting mismatch");
     }
 
-    if (!onedrive::test::throws_with<fmt::format_error>(
-            [] {
-                static_cast<void>(
-                    fmt::format(fmt::runtime("{:d}"), "not an integer")
-                );
-            },
-            "invalid format specifier"
-        )) {
+    if (!onedrive::test::throws_with<fmt::format_error>([] {
+            static_cast<void>(
+                fmt::format(fmt::runtime("{:d}"), "not an integer")
+            );
+        })) {
         return onedrive::test::fail("fmt must report invalid runtime formats");
     }
     return EXIT_SUCCESS;

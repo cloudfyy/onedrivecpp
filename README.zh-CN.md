@@ -92,7 +92,7 @@ ninja --version
 安装完成后，使用下文的 Debug 或 Release 构建与 CTest 命令验证。
 仅完成软件包安装，并不代表项目已在本机通过编译和测试。
 
-CMake 会使用所选编译器检查系统 fmt/spdlog。当 Clang 遇到 fmt 10 已知的
+CMake 会使用所选编译器检查系统 fmt/spdlog。当 Clang 遇到 fmt 9/10 已知的
 编译期格式字符串问题时，会将一个小范围的
 [上游修复](https://github.com/fmtlib/fmt/commit/6797f0c) 回移到构建目录中的
 已安装头文件副本。系统头文件不会被修改，程序仍动态链接系统 fmt/spdlog 库。

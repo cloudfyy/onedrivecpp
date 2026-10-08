@@ -20,7 +20,7 @@ function(onedrive_check_fmt)
     if(NOT ONEDRIVE_SYSTEM_FMT_COMPILES)
         if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR
            NOT TARGET fmt::fmt OR
-           NOT fmt_VERSION VERSION_GREATER_EQUAL 10 OR
+           NOT fmt_VERSION VERSION_GREATER_EQUAL 9 OR
            NOT fmt_VERSION VERSION_LESS 11)
             message(FATAL_ERROR "System fmt/spdlog failed the compile check")
         endif()
@@ -31,13 +31,18 @@ function(onedrive_check_fmt)
         )
         cmake_path(SET FMT_HEADER_DIR NORMALIZE "${FMT_INCLUDE_DIR}/fmt")
         file(READ "${FMT_HEADER_DIR}/core.h" FMT_CORE)
-        set(FMT_OLD "detail::parse_format_string<true>(str_, checker(s));")
-        set(FMT_NEW "detail::parse_format_string<true>(str_, checker(str_));")
+        if(fmt_VERSION VERSION_LESS 10)
+            set(FMT_OLD "detail::parse_format_string<true>(str_, checker(s, {}));")
+            set(FMT_NEW "detail::parse_format_string<true>(str_, checker(str_, {}));")
+        else()
+            set(FMT_OLD "detail::parse_format_string<true>(str_, checker(s));")
+            set(FMT_NEW "detail::parse_format_string<true>(str_, checker(str_));")
+        endif()
         string(FIND "${FMT_CORE}" "${FMT_OLD}" FMT_PATCH_POSITION)
         if(FMT_PATCH_POSITION EQUAL -1)
             message(FATAL_ERROR
                 "System fmt failed the compile check, but its header does not "
-                "match the supported fmt 10 compatibility patch"
+                "match the supported fmt 9/10 compatibility patch"
             )
         endif()
 
@@ -60,11 +65,11 @@ function(onedrive_check_fmt)
             "${FMT_PROBE}" ONEDRIVE_PATCHED_FMT_COMPILES
         )
         if(NOT ONEDRIVE_PATCHED_FMT_COMPILES)
-            message(FATAL_ERROR "The fmt 10 compatibility patch failed verification")
+            message(FATAL_ERROR "The fmt 9/10 compatibility patch failed verification")
         endif()
         target_include_directories(fmt::fmt BEFORE INTERFACE "${FMT_OVERLAY}")
         message(STATUS
-            "Using build-local fmt 10 header compatibility patch; "
+            "Using build-local fmt ${fmt_VERSION} header compatibility patch; "
             "system fmt/spdlog libraries remain dynamically linked"
         )
     endif()

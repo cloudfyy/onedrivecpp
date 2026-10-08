@@ -106,7 +106,7 @@ Installing packages alone does not verify that the project builds or its tests
 pass on the machine.
 
 CMake checks system fmt/spdlog with the selected compiler. When Clang encounters
-the known fmt 10 compile-time format-string bug, it applies a small backport of
+the known fmt 9/10 compile-time format-string bug, it applies a small backport of
 the [upstream fix](https://github.com/fmtlib/fmt/commit/6797f0c) to a build-local
 copy of the installed headers. System headers are not modified, and the program
 still links to system fmt/spdlog shared libraries. Configuration verifies that
