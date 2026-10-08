@@ -522,7 +522,7 @@ private:
         )));
         content.push_back(hbox({
             text("  PATH") | xflex,
-            text("STATUS  COMPLETED / EXPECTED"),
+            text("STATUS  SAVED PROGRESS / TOTAL"),
         }));
         Elements rows;
         for (std::size_t index = 0; index < result_pages_.size(); ++index) {

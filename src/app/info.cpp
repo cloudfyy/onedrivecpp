@@ -876,25 +876,26 @@ int show_partials(
                     .value = std::string{status_name(inspected.status)},
                 },
                 {
-                    .label = "completed:",
+                    .label = "saved download progress:",
                     .key = "completed_bytes",
                     .value = format_bytes(partial.completed_bytes),
                 },
                 {
-                    .label = "expected:",
+                    .label = "total file size:",
                     .key = "expected_bytes",
-                    .value = partial.item.size < 0
-                               ? "invalid"
-                               : format_bytes(static_cast<std::uint64_t>(
-                                     partial.item.size
-                                 )),
+                    .value =
+                        partial.item.size < 0
+                            ? "invalid"
+                            : format_bytes(
+                                  static_cast<std::uint64_t>(partial.item.size)
+                              ),
                 },
                 {
-                    .label = "actual:",
+                    .label = "local temporary file size:",
                     .key = "actual_bytes",
                     .value = inspected.actual_size
-                               ? format_bytes(*inspected.actual_size)
-                               : "unavailable",
+                                 ? format_bytes(*inspected.actual_size)
+                                 : "unavailable",
                 },
             }
         );
@@ -926,7 +927,7 @@ int show_partials(
                 .value = std::to_string(partials.size() - resumable),
             },
             {
-                .label = "actual bytes:",
+                .label = "temporary files total:",
                 .key = "actual_bytes",
                 .value = format_bytes(actual_bytes),
             },

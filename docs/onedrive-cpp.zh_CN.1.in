@@ -140,11 +140,15 @@ fingerprint、状态数据库可用性和 WebSocket 配置。已有 SQLite 状�
 partial download 数量和字节数以及状态数据库路径。
 .TP
 .B inspect partials
-列出保存的 partial download、目标和临时路径、已完成/预期/实际字节数，并判断各
-checkpoint 是否可续传或无效。
-TUI 保留顶部汇总及可滚动的文件列表，显示路径、状态、已完成/预期大小。
+列出保存的 partial download、目标和临时路径、已保存的下载进度、文件总大小和
+本地临时文件大小，并判断各 checkpoint 是否可续传或无效。
+saved download progress 是程序上次记住已经下载了多少；total file size 是记录中
+保存的云端文件完整大小，不是剩余下载量；local temporary file size 是未下载完的
+临时文件现在在本机上的大小。进度不是每写入一点数据就立即保存，因此两个本地
+数值有时不同。unavailable 表示未能确认大小，不等于零。JSON 字段名和数值不变。
+TUI 保留顶部汇总及可滚动的文件列表，显示路径、状态、已保存进度/文件总大小。
 上下方向键或 k/j 选择文件，首尾不循环。终端至少 18 行时，下方显示选中文件的
-远端路径、目标路径、临时路径和实际大小；小窗口优先保留列表和操作提示。
+远端路径、目标路径、临时路径和本地临时文件大小；小窗口优先保留列表和操作提示。
 路径被裁剪时，可扩大终端或使用 Console 查看完整信息。
 Enter、q 或 Q 退出；Console 和 JSON 仍完整输出每条记录。
 .TP

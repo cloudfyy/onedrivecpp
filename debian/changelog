@@ -1,3 +1,12 @@
+onedrive-cpp (0.10.19-1~ubuntu24.04) noble; urgency=medium
+
+  * Clarify partial-download sizes as saved download progress, total file size,
+    and local temporary file size without changing JSON fields or values.
+  * Update TUI headings, summary labels, and bilingual explanations; cover
+    available, missing, and truncated files and compact terminal layouts.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Thu, 08 Oct 2026 02:27:08 +0000
+
 onedrive-cpp (0.10.18-1~ubuntu24.04) noble; urgency=medium
 
   * Show readable named UI and theme choices in command help without exposing

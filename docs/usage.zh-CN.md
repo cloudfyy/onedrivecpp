@@ -123,12 +123,23 @@ selective-sync fingerprint 和 WebSocket 配置。
 `inspect storage` 显示解析后的 Drive 数据目录、文件系统容量和可用空间、tracked
 文件字节数、partial download 占用以及状态数据库路径。`inspect partials` 列出每个
 partial download，并将其标记为可续传、缺失、类型变化、位于同步根之外、路径不匹配
-或 checkpoint 无效。TUI 顶部保留记录数、可续传数、异常数和实际占用，下面显示完整
-文件列表，包括远端路径、状态和已完成 / 预期大小。上下方向键或 `k`/`j` 选择文件，
+或 checkpoint 无效。TUI 顶部保留记录数、可续传数、异常数和本地临时文件大小合计，
+下面显示完整文件列表，包括远端路径、状态和已保存的下载进度 / 文件总大小。
+上下方向键或 `k`/`j` 选择文件，
 列表自动滚动以显示选中项，首尾不循环。终端至少 18 行时，下方同时显示选中文件的
-远端路径、目标路径、临时路径和实际大小；更小的窗口优先保留列表与操作提示。
+远端路径、目标路径、临时路径和本地临时文件大小；更小的窗口优先保留列表与操作提示。
 路径过长被裁剪时，可扩大终端或使用 Console 查看完整信息。
 Enter、`q` 或 `Q` 退出；Console 和 JSON 仍完整输出每条记录。
+
+三个大小字段的区别：
+
+- `saved download progress`（已保存的下载进度）：程序上次记住已经下载了多少。
+- `total file size`（文件总大小）：记录中保存的云端文件完整大小，不是剩余下载量。
+- `local temporary file size`（本地临时文件大小）：未下载完的临时文件现在有多大，
+  不是云端文件大小，也不是最终目标文件大小。
+
+下载进度不是每写入一点数据就立即保存，因此它有时会与临时文件现在的大小不同。
+`unavailable` 表示未能确认大小，不等于零。JSON 字段名和数值保持不变。
 
 `inspect files [PATH]` 使用保存的大小和修改时间检查 tracked
 普通文件；可用 `--status ok|missing|modified|type-changed|outside-root` 过滤输出。

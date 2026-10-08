@@ -344,7 +344,8 @@ int test_partial_list() {
                     !frame.contains("recorded: 20") ||
                     !frame.contains("resumable: 10") ||
                     !frame.contains("invalid: 10") ||
-                    !frame.contains("actual bytes: 40 B") ||
+                    !frame.contains("temporary files total: 40 B") ||
+                    !frame.contains("SAVED PROGRESS / TOTAL") ||
                     !frame.contains("4 B / 8 B") ||
                     !frame.contains("Up/Down or k/j") ||
                     !frame.contains("Press Enter to exit (or q)")) {
@@ -360,8 +361,9 @@ int test_partial_list() {
                          "temporary file: /sync/" + path + ".partial"
                      ) ||
                      !frame.contains(
-                         test.selected == 1 ? "actual: 4 B"
-                                            : "actual: unavailable"
+                         test.selected == 1
+                             ? "local temporary file size: 4 B"
+                             : "local temporary file size: unavailable"
                      ))) {
                     return fail(
                         "partial list lost selected file details\n" + frame

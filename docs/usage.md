@@ -146,13 +146,25 @@ database path. `inspect partials` lists each saved partial download and
 classifies it as resumable, missing, type-changed, outside the sync root,
 path-mismatched, or an invalid checkpoint.
 Its TUI retains the complete list below the recorded/resumable/invalid counts
-and actual disk usage. Each row shows the remote path, status, and completed /
-expected bytes. Up/Down or `k`/`j` selects a file and scrolls it into view;
+and the combined local temporary-file sizes. Each row shows the remote path,
+status, and saved download progress / total file size.
+Up/Down or `k`/`j` selects a file and scrolls it into view;
 selection stops at the first and last files. At 18 terminal rows or more, a
 details area also shows the selected file's remote, destination, and temporary
-paths and actual size. Smaller windows prioritize the list and controls; enlarge
+paths and local temporary file size. Smaller windows prioritize the list and controls; enlarge
 the terminal or use console output for long paths that are clipped.
 Enter, `q`, or `Q` exits. Console and JSON output still include every record.
+
+The size labels distinguish what the app remembers from what is on this computer:
+
+- `saved download progress`: how much downloading the app last saved as complete.
+- `total file size`: the full size saved for the cloud file, not the amount left.
+- `local temporary file size`: the size of the unfinished download file on this
+  computer now, not a cloud file or the final destination file.
+
+Progress is saved from time to time, so it may differ from the temporary file's
+current size. `unavailable` means its size could not be confirmed, not zero.
+The JSON field names and values are unchanged.
 
 `inspect files [PATH]` compares
 tracked regular files with saved size and modification metadata. Use

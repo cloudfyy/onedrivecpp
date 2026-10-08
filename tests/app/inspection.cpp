@@ -1,7 +1,11 @@
 #include "support.hpp"
 #include "onedrive/util/sha256.hpp"
 
+#include <fmt/format.h>
+
 #include <chrono>
+#include <string_view>
+#include <utility>
 
 namespace {
 
@@ -245,11 +249,55 @@ int test_inspection() {
         "untouched\n"
     );
     if (partials_console.exit_code != 0 ||
-        !partials_console.standard_output.contains("recorded:     7") ||
-        !partials_console.standard_output.contains("invalid:      6") ||
+        !partials_console.standard_output.contains(
+            fmt::format(
+                "  {:<{}} {}\n",
+                "recorded:",
+                std::string_view{"temporary files total:"}.size(),
+                7
+            )
+        ) ||
+        !partials_console.standard_output.contains(
+            fmt::format(
+                "  {:<{}} {}\n",
+                "invalid:",
+                std::string_view{"temporary files total:"}.size(),
+                6
+            )
+        ) ||
         partials_console.standard_output.contains("Press Enter to exit")) {
         return fail(
             "partial console output lost its summary or became interactive"
+        );
+    }
+    for (const auto& [label, value] : {
+             std::pair{"saved download progress:", "4 B"},
+             {"total file size:", "10 B"},
+             {"local temporary file size:", "4 B"},
+             {"local temporary file size:", "2 B"},
+             {"local temporary file size:", "unavailable"},
+         }) {
+        if (!partials_console.standard_output.contains(
+                fmt::format(
+                    "  {:<{}} {}\n",
+                    label,
+                    std::string_view{"local temporary file size:"}.size(),
+                    value
+                )
+            )) {
+            return fail(
+                "partial sizes did not use clear labels and preserve values"
+            );
+        }
+    }
+    if (!partials.standard_output.contains(R"("completed_bytes":"4 B")") ||
+        !partials.standard_output.contains(R"("expected_bytes":"10 B")") ||
+        !partials.standard_output.contains(R"("actual_bytes":"4 B")") ||
+        !partials.standard_output.contains(R"("actual_bytes":"2 B")") ||
+        !partials.standard_output.contains(R"("actual_bytes":"unavailable")") ||
+        partials.standard_output.contains("saved download progress")) {
+        return fail(
+            "clear size labels changed the partial JSON field contract"
         );
     }
     for (const auto& partial :
@@ -263,6 +311,42 @@ int test_inspection() {
             return fail("partial console or JSON output omitted a saved file");
         }
     }
+
+    const auto original_size = std::exchange(
+        fixture.runtime_factory.partial_download_states.front().item.size, -1
+    );
+    for (const bool json : {false, true}) {
+        const auto invalid_size = run_application(
+            fixture.runtime_factory,
+            {
+                "onedrive-cpp",
+                "inspect",
+                "partials",
+                "--config",
+                fixture.config_path.string(),
+                "--ui",
+                "console",
+                "--output",
+                json ? "json" : "text",
+            }
+        );
+        const auto expected =
+            json ? std::string{R"("expected_bytes":"invalid")"}
+                 : fmt::format(
+                       "  {:<{}} {}\n",
+                       "total file size:",
+                       std::string_view{"local temporary file size:"}.size(),
+                       "invalid"
+                   );
+        if (invalid_size.exit_code != 0 ||
+            !invalid_size.standard_output.contains(expected)) {
+            return fail(
+                "partial size labels hid an invalid recorded file size"
+            );
+        }
+    }
+    fixture.runtime_factory.partial_download_states.front().item.size =
+        original_size;
 
     const auto files = run_application(
         fixture.runtime_factory,

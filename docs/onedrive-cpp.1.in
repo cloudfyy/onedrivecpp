@@ -158,12 +158,18 @@ tracked file count and bytes, partial-download count and bytes, and state
 database path.
 .TP
 .B inspect partials
-List saved partial downloads, their destination and temporary paths, completed,
-expected, and actual byte counts, and whether each checkpoint is resumable or
-invalid.
+List saved partial downloads, their destination and temporary paths, saved
+download progress, total file size, local temporary file size, and whether
+each checkpoint is resumable or invalid.
+Saved download progress is how much the app last saved as complete. Total file
+size is the full size saved for the cloud file, not the amount left. Local
+temporary file size is the unfinished file's size on this computer now.
+Progress is saved from time to time, so the two local numbers may differ.
+Unavailable means the size could not be confirmed, not zero.
+JSON field names and values are unchanged.
 The TUI keeps the summary above a scrollable list of paths, statuses, and
-completed/expected sizes. Up/Down or k/j selects a file without wrapping at
-the ends. At 18 terminal rows or more, selected-file paths and actual size
+saved progress/total size. Up/Down or k/j selects a file without wrapping at
+the ends. At 18 terminal rows or more, selected-file paths and local temporary file size
 appear below the list. Smaller windows prioritize the list and controls;
 enlarge the terminal or use console output to see clipped paths.
 Enter, q, or Q exits. Console and JSON output include every record.
