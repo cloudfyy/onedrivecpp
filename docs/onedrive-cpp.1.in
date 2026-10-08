@@ -285,7 +285,10 @@ mode displays an FTXUI status dashboard only when both standard streams are
 terminals, terminal controls are supported, and the window is at least 60 by
 12. Unsupported terminals, redirection, pipes, JSON, and quiet mode
 automatically retain normal console output.
-Inspection dashboards retain their final results and show Press Enter to exit.
+Inspection dashboards retain their final results and show Press Enter to exit (or q).
+Enter, q, or Q exits immediately; q and Q do not require Enter.
+Other keys do not dismiss the results. Controls for running synchronization,
+transfers, and login are unchanged.
 Small terminals clip details while retaining this prompt; enlarge the terminal
 or use console output to read all fields.
 Console and JSON output exit immediately after completion. Use

@@ -29,7 +29,10 @@ using onedrive::util::UniqueFD;
 class TerminalPager {
 public:
     explicit TerminalPager(
-        int pages, unsigned short rows = 30, int redirected_descriptor = -1
+        int pages,
+        unsigned short rows = 30,
+        int redirected_descriptor = -1,
+        onedrive::cli::TuiView view = onedrive::cli::TuiView::drives
     )
         : master_{::posix_openpt(O_RDWR | O_NOCTTY)},
           output_redirected_{redirected_descriptor == STDOUT_FILENO} {
@@ -54,7 +57,7 @@ public:
             throw_errno_error("cannot fork paging test");
         }
         if (child_ == 0) {
-            run_child(pages, redirected_descriptor);
+            run_child(pages, redirected_descriptor, view);
         }
     }
 
@@ -73,17 +76,25 @@ public:
         const auto counter =
             "Drive " + std::to_string(page) + "/" + std::to_string(pages);
         const auto name = "Test-drive-" + std::to_string(page);
+        expect_result(counter, name);
+    }
+
+    void expect_result(
+        std::string_view title = "Inspection result retained",
+        std::string_view detail = {}
+    ) {
         if (!wait_until(
                 [&] {
                     drain();
-                    return output_.contains(counter) &&
-                           output_.contains(name) &&
+                    return output_.contains(title) &&
+                           output_.contains(detail) &&
                            output_.contains("Press Enter to exit (or q)");
                 },
                 std::chrono::seconds{5}
             )) {
             throw std::runtime_error(
-                "paging test did not display " + counter + "\n" + output_
+                "inspection test did not display " + std::string{title} + "\n" +
+                output_
             );
         }
     }
@@ -133,7 +144,9 @@ public:
     }
 
 private:
-    [[noreturn]] void run_child(int pages, int redirected_descriptor) {
+    [[noreturn]] void run_child(
+        int pages, int redirected_descriptor, onedrive::cli::TuiView view
+    ) {
         for (const int descriptor :
              {STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO}) {
             if (::dup2(slave_.get(), descriptor) == -1) {
@@ -155,14 +168,17 @@ private:
             }
             using namespace onedrive::cli;
             const Console console{detail::make_ftxui_console_backend(
-                {.color = ColorMode::never,
-                 .ui = UiMode::tui,
-                 .view = TuiView::drives},
+                {.color = ColorMode::never, .ui = UiMode::tui, .view = view},
                 std::cout,
                 std::cerr,
                 100,
                 30
             )};
+            if (pages == 0) {
+                console.message(
+                    MessageKind::success, "result", "Inspection result retained"
+                );
+            }
             for (int page = 1; page <= pages; ++page) {
                 console.section(
                     "drive",
@@ -220,6 +236,27 @@ private:
 
 int main() {
     try {
+        using onedrive::cli::TuiView;
+        for (const auto view : {
+                 TuiView::health,
+                 TuiView::status,
+                 TuiView::drives,
+                 TuiView::shared,
+                 TuiView::sites,
+                 TuiView::quota,
+                 TuiView::storage,
+                 TuiView::partials,
+                 TuiView::files,
+                 TuiView::verify,
+                 TuiView::config,
+             }) {
+            for (const auto* key : {"\r", "q", "Q"}) {
+                TerminalPager terminal{0, 30, -1, view};
+                terminal.expect_result();
+                terminal.send(key);
+                terminal.expect_exit();
+            }
+        }
         {
             TerminalPager pager{3, 12};
             pager.expect_page(1, 3);

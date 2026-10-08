@@ -243,7 +243,9 @@ eTag 前置条件、HTTPS 重定向、Range 传输、持久 checkpoint、完整�
 仅在标准输入与输出均连接终端、支持终端控制且窗口至少为 60 列 × 12 行时显示
 FTXUI 实时状态面板。终端不支持、重定向、管道、JSON 和 quiet 模式会自动保留
 普通 Console 输出。
-检查命令的面板会保留最终结果，显示 Press Enter to exit，按 Enter 后退出。
+检查命令的面板会保留最终结果，统一显示 Press Enter to exit (or q)。
+按 Enter、q 或 Q 即时退出，q 和 Q 无需再按回车；其他按键不会关闭结果页。
+运行中的同步、传输和登录流程的按键行为保持不变。
 小窗口裁剪详情时仍保留提示，可扩大终端或使用 Console 查看全部字段。
 Console 和 JSON 输出在完成后
 立即退出。使用

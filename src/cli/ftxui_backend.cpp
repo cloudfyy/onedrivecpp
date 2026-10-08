@@ -208,19 +208,16 @@ public:
             return;
         }
         finished_ = true;
-        if (!drive_pages_.empty()) {
-            drive_page_ = 0;
-            if (&output_ == &std::cout && ::isatty(STDIN_FILENO) != 0 &&
-                ::isatty(STDOUT_FILENO) != 0) {
-                browse_drives();
-                return;
-            }
+        drive_page_ = 0;
+        if (&output_ == &std::cout && ::isatty(STDIN_FILENO) != 0 &&
+            ::isatty(STDOUT_FILENO) != 0) {
+            browse_results();
+            return;
         }
         render();
         std::string input;
         while (std::getline(std::cin, input)) {
-            if (drive_pages_.empty() ||
-                handle_drive_key(
+            if (handle_result_key(
                     input.empty() ? Event::Return : Event::Special(input)
                 )) {
                 break;
@@ -265,7 +262,7 @@ private:
         std::string text;
     };
 
-    bool handle_drive_key(const Event& event) {
+    bool handle_result_key(const Event& event) {
         if (event == Event::Return || event == Event::Character('q') ||
             event == Event::Character('Q')) {
             return true;
@@ -281,13 +278,13 @@ private:
         return false;
     }
 
-    void browse_drives() {
+    void browse_results() {
         auto screen = ScreenInteractive::Fullscreen();
         screen.TrackMouse(false);
         auto component = CatchEvent(
             Renderer([this] { return dashboard(); }),
             [&](const Event& event) {
-                if (handle_drive_key(event)) {
+                if (handle_result_key(event)) {
                     screen.Exit();
                 }
                 return true;
@@ -560,11 +557,7 @@ private:
                 ));
             }
             content.push_back(with_color(
-                text(
-                    drive_pages_.empty() ? " Press Enter to exit "
-                                         : " Press Enter to exit (or q) "
-                ),
-                palette_.accent
+                text(" Press Enter to exit (or q) "), palette_.accent
             ));
         }
         return vbox(std::move(content)) | border;
@@ -580,7 +573,6 @@ private:
             return;
         }
         output_ << "\033[?25h\033[?1049l" << std::flush;
-        fullscreen_active_ = false;
         fullscreen_active_ = false;
     }
 

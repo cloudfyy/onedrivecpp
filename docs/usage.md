@@ -76,7 +76,10 @@ reports a clear error instead of falling back when the terminal cannot support
 it. In the watch dashboard, press `q`, `Q`, or `Esc` to stop cleanly.
 
 Inspection dashboards keep their final results visible with the prompt
-`Press Enter to exit`. The prompt stays visible even when a small terminal
+`Press Enter to exit (or q)`. Press Enter, `q`, or `Q` to exit immediately;
+`q` and `Q` do not require Enter. Other keys do not dismiss the results.
+This does not change controls for running synchronization, transfers, or login.
+The prompt stays visible even when a small terminal
 clips the details; enlarge the terminal or use console output to see all fields.
 Console and JSON output still exit immediately; use `--ui console` to retain
 inspection results in the terminal scrollback without an interactive pause.

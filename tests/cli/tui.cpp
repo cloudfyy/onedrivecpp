@@ -23,31 +23,47 @@ int test_inspection_completion() {
         TuiView::files, TuiView::verify, TuiView::config,
     };
     for (const auto view : inspection_views) {
-        std::ostringstream output;
-        std::ostringstream error;
-        {
-            const Console console{detail::make_ftxui_console_backend(
-                {.color = ColorMode::never, .ui = UiMode::tui, .view = view},
-                output, error, 100, 30
-            )};
-            console.message(
-                MessageKind::success, "result", "Inspection result retained"
-            );
-            std::istringstream input{"\nremaining\n"};
-            auto* original = std::cin.rdbuf(input.rdbuf());
-            console.finish();
-            console.finish();
-            std::cin.rdbuf(original);
-            const auto rendered = output.str();
-            const auto frame = rendered.substr(rendered.rfind("\033[H"));
-            if (!frame.contains("Press Enter to exit") ||
-                !frame.contains("Inspection result retained") ||
-                rendered.contains("\033[?1049l") || input.peek() != 'r') {
-                return fail("inspection completion lost results or read twice");
+        for (const auto* keys : {
+                 "\nremaining\n",
+                 "q\nremaining\n",
+                 "Q\nremaining\n",
+                 "x\nn\np\nq\nremaining\n",
+             }) {
+            std::ostringstream output;
+            std::ostringstream error;
+            {
+                const Console console{detail::make_ftxui_console_backend(
+                    {.color = ColorMode::never,
+                     .ui = UiMode::tui,
+                     .view = view},
+                    output,
+                    error,
+                    100,
+                    30
+                )};
+                console.message(
+                    MessageKind::success, "result", "Inspection result retained"
+                );
+                std::istringstream input{keys};
+                auto* original = std::cin.rdbuf(input.rdbuf());
+                console.finish();
+                console.finish();
+                std::cin.rdbuf(original);
+                const auto rendered = output.str();
+                const auto frame = rendered.substr(rendered.rfind("\033[H"));
+                if (!frame.contains("Press Enter to exit (or q)") ||
+                    !frame.contains("Inspection result retained") ||
+                    rendered.contains("\033[?1049l") || input.peek() != 'r') {
+                    return fail(
+                        "inspection completion lost results or read twice"
+                    );
+                }
             }
-        }
-        if (!output.str().contains("\033[?1049l")) {
-            return fail("inspection completion did not restore the terminal");
+            if (!output.str().contains("\033[?1049l")) {
+                return fail(
+                    "inspection completion did not restore the terminal"
+                );
+            }
         }
     }
     for (const auto view :
