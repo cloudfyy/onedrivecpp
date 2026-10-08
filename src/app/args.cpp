@@ -251,7 +251,8 @@ ParseResult parse_arguments(int argc, char* argv[]) {
             ->add_option(
                 "--ui", arguments.ui_mode, "Interface: auto, console, or tui"
             )
-            ->transform(CLI::CheckedTransformer(ui_modes))
+            ->transform(CLI::CheckedTransformer(ui_modes).description(""))
+            ->type_name("{auto,console,tui}")
             ->default_str("auto");
         command
             ->add_option(
@@ -259,7 +260,8 @@ ParseResult parse_arguments(int argc, char* argv[]) {
                 arguments.tui_theme,
                 "TUI theme: hacker, ocean, amber, or synthwave"
             )
-            ->transform(CLI::CheckedTransformer(tui_themes))
+            ->transform(CLI::CheckedTransformer(tui_themes).description(""))
+            ->type_name("{hacker,ocean,amber,synthwave}")
             ->default_str("hacker");
     }
     transfer_download

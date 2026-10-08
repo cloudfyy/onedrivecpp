@@ -82,6 +82,12 @@ download 面板复用同步期间持久显示的进度、传输速率和 ETA。�
 可选择默认的荧光绿 `hacker`、青蓝 `ocean`、琥珀 `amber` 或洋红/青色
 `synthwave`；`--theme` 只覆盖本次运行。`--color=never` 和 `NO_COLOR` 会保留
 所选布局，但关闭主题颜色。
+命令帮助只显示名称选项，不展示内部枚举编号：
+
+```text
+--ui {auto,console,tui} [auto]
+--theme {hacker,ocean,amber,synthwave} [hacker]
+```
 
 ## 只读账号与同步信息
 

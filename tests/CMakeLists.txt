@@ -161,6 +161,7 @@ foreach(APP_TEST IN ITEMS args doctor factory flow inspection drives)
         INCLUDE_DIRS tests tests/app
     )
 endforeach()
+target_include_directories(app_args_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 foreach(MONITOR_TEST IN ITEMS state notify socket remote local timing stop input)
     add_onedrive_test(
         monitor_${MONITOR_TEST}_tests

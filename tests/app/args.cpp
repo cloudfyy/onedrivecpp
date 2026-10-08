@@ -1,8 +1,111 @@
 #include "support.hpp"
+#include "app/args.hpp"
+
+#include <array>
+#include <utility>
 
 namespace {
 
 using namespace onedrive::test::app;
+
+onedrive::app::detail::ParseResult
+parse_test_arguments(std::vector<std::string> arguments) {
+    std::vector<char*> pointers;
+    pointers.reserve(arguments.size());
+    for (auto& argument : arguments) {
+        pointers.push_back(argument.data());
+    }
+    return onedrive::app::detail::parse_arguments(
+        static_cast<int>(pointers.size()), pointers.data()
+    );
+}
+
+int test_ui_option_help() {
+    FakeRuntimeFactory runtime_factory;
+    for (const auto& [group, action] : {
+             std::pair{"account", "login"},
+             {"transfer", "sync"},
+             {"transfer", "download"},
+             {"transfer", "watch"},
+             {"inspect", "health"},
+             {"inspect", "status"},
+             {"inspect", "drives"},
+             {"inspect", "shared"},
+             {"inspect", "sites"},
+             {"inspect", "quota"},
+             {"inspect", "storage"},
+             {"inspect", "partials"},
+             {"inspect", "files"},
+             {"inspect", "verify"},
+             {"inspect", "config"},
+         }) {
+        const auto help = run_application(
+            runtime_factory, {"onedrive-cpp", group, action, "--help"}
+        );
+        if (help.exit_code != 0 ||
+            !help.standard_output.contains("--ui {auto,console,tui} [auto]") ||
+            !help.standard_output.contains(
+                "--theme {hacker,ocean,amber,synthwave} [hacker]"
+            )) {
+            return fail(
+                std::string{group} + " " + action +
+                " help did not show readable UI/theme choices\n" +
+                help.standard_output
+            );
+        }
+    }
+    using onedrive::cli::TuiTheme;
+    using onedrive::cli::UiMode;
+    constexpr std::array modes{
+        std::pair{"auto", UiMode::automatic},
+        std::pair{"console", UiMode::console},
+        std::pair{"tui", UiMode::tui},
+    };
+    constexpr std::array themes{
+        std::pair{"hacker", TuiTheme::hacker},
+        std::pair{"ocean", TuiTheme::ocean},
+        std::pair{"amber", TuiTheme::amber},
+        std::pair{"synthwave", TuiTheme::synthwave},
+    };
+    for (std::size_t mode = 0; mode < modes.size(); ++mode) {
+        for (std::size_t theme = 0; theme < themes.size(); ++theme) {
+            for (const bool numeric : {false, true}) {
+                const auto result = parse_test_arguments({
+                    "onedrive-cpp",
+                    "inspect",
+                    "config",
+                    "--ui",
+                    numeric ? std::to_string(mode) : modes[mode].first,
+                    "--theme",
+                    numeric ? std::to_string(theme) : themes[theme].first,
+                });
+                if (result.exit_code ||
+                    result.arguments.ui_mode != modes[mode].second ||
+                    result.arguments.tui_theme != themes[theme].second) {
+                    return fail(
+                        "readable help changed UI/theme argument mapping"
+                    );
+                }
+            }
+        }
+    }
+    const auto defaults =
+        parse_test_arguments({"onedrive-cpp", "inspect", "config"});
+    if (defaults.exit_code || defaults.arguments.ui_mode ||
+        defaults.arguments.tui_theme) {
+        return fail("UI/theme help defaults overrode configured preferences");
+    }
+    for (const auto* option : {"--ui", "--theme"}) {
+        const auto result = run_application(
+            runtime_factory,
+            {"onedrive-cpp", "inspect", "config", option, "999"}
+        );
+        if (result.exit_code != 2 || !result.standard_error.contains(option)) {
+            return fail("readable help disabled numeric enum validation");
+        }
+    }
+    return EXIT_SUCCESS;
+}
 
 int test_args() {
     FakeRuntimeFactory runtime_factory;
@@ -373,5 +476,8 @@ int test_args() {
 } // namespace
 
 int main() {
+    if (const auto result = test_ui_option_help(); result != EXIT_SUCCESS) {
+        return result;
+    }
     return test_args();
 }

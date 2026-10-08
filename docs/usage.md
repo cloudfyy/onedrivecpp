@@ -94,6 +94,12 @@ and file terminology rather than API names.
 `console.theme` selects `hacker` (the green default), `ocean`, `amber`, or
 `synthwave`; `--theme` overrides it for one run. `--color=never` and
 `NO_COLOR` keep the selected layout but suppress theme colors.
+Command help shows named choices, without internal enum numbers:
+
+```text
+--ui {auto,console,tui} [auto]
+--theme {hacker,ocean,amber,synthwave} [hacker]
+```
 
 ## Read-only account and synchronization information
 

@@ -1,3 +1,12 @@
+onedrive-cpp (0.10.18-1~ubuntu24.04) noble; urgency=medium
+
+  * Show readable named UI and theme choices in command help without exposing
+    internal enum mappings, preserving existing argument parsing.
+  * Test all TUI-capable help pages, named and numeric argument compatibility,
+    omitted-option precedence, and invalid values; update bilingual usage.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Thu, 08 Oct 2026 02:20:02 +0000
+
 onedrive-cpp (0.10.17-1~ubuntu24.04) noble; urgency=medium
 
   * Retain partial-download results in a scrollable TUI file list with summary
