@@ -41,19 +41,19 @@
 
 ### 支持平台
 
-- Ubuntu 24.04 LTS 及更新版本。
+- Ubuntu 24.04 LTS 及更新版本，包括 Ubuntu 26.04 LTS。
 - x86_64 或 arm64（取决于 LLVM 和 Ubuntu 构建环境）。
 - Clang 20，使用 `-std=c++2c`/CMake `CXX_STANDARD 26`。
 - CMake 3.28 或更高版本。
 - 使用系统包管理器提供 CLI11、libcurl/OpenSSL、Microsoft GSL、
   nlohmann/json、spdlog/fmt、SQLite 和 toml++ 开发包。
 
-Ubuntu 24.04 的官方仓库已经提供项目所需的 CMake、Ninja 和 Clang 20。
-项目不使用默认的 GCC 13，因为它的 C++26 支持不足以满足当前配置。
+仓库中的 CMake preset 明确使用 `clang++-20` 和 Ninja。
+仅安装 `build-essential` 或发行版默认编译器，不能满足这些 preset 的要求。
 
 ### 构建环境
 
-从 Ubuntu 24.04 官方仓库安装构建工具：
+在 Ubuntu 24.04 或 26.04 上，从官方仓库安装构建工具：
 
 ```bash
 sudo apt update
@@ -70,8 +70,27 @@ sudo apt install -y build-essential ca-certificates curl git \
 ```bash
 clang++-20 --version
 clang-format-20 --version
+clang-tidy-20 --version
 cmake --version
+ninja --version
 ```
+
+#### Ubuntu 26.04 开发要求
+
+- 安装上述软件包前，需要启用官方 `universe` 仓库；Ninja、Clang 20 和部分
+  开发库由该仓库提供。安装软件包需要管理员（`sudo`）权限。
+- 即使系统已安装其他编译器，也应使用带版本后缀的 Clang 20 编译器、格式化
+  和 lint 工具。Ubuntu 26.04 提供的 CMake 4.2 和 Ninja 1.13 满足项目的
+  构建工具要求，无需修改 CMake preset。
+- 安装 Clang 时仍需保留 `build-essential`，以提供系统 C++ 标准库头文件
+  和构建工具。
+- 首次配置 CMake 时需要通过 HTTPS 访问 GitHub，供 FetchContent 下载固定
+  版本的 FTXUI 7.0.3 和 Proxy 4.1.0。不要在这套环境中额外安装 Ubuntu 26.04
+  提供的 `libftxui-dev` 5.0 软件包，否则 CMake 会优先使用较旧的系统版本，
+  而非下载固定版本。
+
+安装完成后，使用下文的 Debug 或 Release 构建与 CTest 命令验证。
+仅完成软件包安装，并不代表项目已在本机通过编译和测试。
 
 提交前必须格式化本次改动涉及的 C/C++ 代码行。先暂存源文件和头文件，再从仓库
 根目录运行指定版本的 Git 集成。该命令会读取仓库中的 `.clang-format`，且不会

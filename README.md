@@ -49,7 +49,7 @@ chapters:
 
 ### Supported platforms
 
-- Ubuntu 24.04 LTS and later.
+- Ubuntu 24.04 LTS and later, including Ubuntu 26.04 LTS.
 - x86_64 or arm64, depending on the LLVM and Ubuntu build environment.
 - Clang 20 with `-std=c++2c` / CMake `CXX_STANDARD 26`.
 - CMake 3.28 or later.
@@ -57,13 +57,13 @@ chapters:
   nlohmann/json, spdlog/fmt, SQLite, and toml++ from the system package
   manager.
 
-Ubuntu 24.04 provides the required CMake, Ninja, and Clang 20 packages through
-its official repositories. GCC 13 is not used because its C++26 support is not
-sufficient for this project configuration.
+The checked-in CMake presets select `clang++-20` and Ninja explicitly.
+Installing only `build-essential` or the distribution's default compiler does
+not satisfy these presets.
 
 ### Build environment
 
-Install the build tools from the Ubuntu 24.04 repositories:
+Install the build tools from the Ubuntu repositories on 24.04 or 26.04:
 
 ```bash
 sudo apt update
@@ -80,8 +80,30 @@ Verify the installed versions:
 ```bash
 clang++-20 --version
 clang-format-20 --version
+clang-tidy-20 --version
 cmake --version
+ninja --version
 ```
+
+#### Ubuntu 26.04 development requirements
+
+- Enable the official `universe` repository before installing the packages
+  above; it supplies Ninja, Clang 20, and several development libraries.
+  Package installation requires administrator (`sudo`) access.
+- Use the versioned Clang 20 compiler, formatter, and lint tools even if a
+  different compiler is already installed. The Ubuntu 26.04 CMake 4.2 and
+  Ninja 1.13 packages meet the project's build-tool requirements; no CMake
+  preset changes are needed.
+- Keep `build-essential` installed alongside Clang for the system C++ standard
+  library headers and build tools.
+- Allow HTTPS access to GitHub during the first CMake configuration so
+  FetchContent can download the pinned FTXUI 7.0.3 and Proxy 4.1.0 dependencies.
+  Do not add Ubuntu 26.04's `libftxui-dev` 5.0 package to this setup: CMake would
+  prefer that older system package over the pinned download.
+
+After installation, use the Debug or Release build and CTest commands below.
+Installing packages alone does not verify that the project builds or its tests
+pass on the machine.
 
 Format modified C or C++ lines before committing. Stage the source/header
 changes, then run the versioned Git integration from the repository root so it
