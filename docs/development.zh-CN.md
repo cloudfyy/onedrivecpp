@@ -6,16 +6,17 @@
 ## 离线代码覆盖率
 
 启用 `ONEDRIVE_ENABLE_COVERAGE=ON` 可使用 Clang 的源码覆盖率插桩，
-同时要求 `BUILD_TESTING=ON`。正常构建默认关闭此选项。有 Qt 时同时开启
-`ONEDRIVE_BUILD_GUI`，通过 VS Code CMake Tools 构建并运行全部离线测试；
-不要自动启用需要专用账号的真实 Graph 测试。
+同时要求 `BUILD_TESTING=ON`。正常构建默认关闭此选项。在 VS Code CMake Tools
+中选择 `coverage` 配置、构建和测试 preset，即可使用独立的 `build/coverage`
+目录，默认禁用真实 Graph 测试。Qt 为可选依赖；有 Qt 时可在此配置中开启
+`ONEDRIVE_BUILD_GUI=ON`，纳入 GUI 代码和测试。
 
-CTest 在构建目录的 `coverage/profiles` 下生成分进程 profile。
+CTest 在 `build/coverage/coverage/profiles` 下生成分进程 profile。
 每次全新测量应使用空的 profile 目录，不要混用不同源码版本的结果。
 运行完测试后，用以下命令生成合并数据、详细 JSON 和按文件统计的文本报告：
 
 ```bash
-python3 tools/coverage_report.py build/debug
+python3 tools/coverage_report.py build/coverage
 ```
 
 默认要求 `llvm-cov-20`、`llvm-profdata-20` 和 `readelf`，可通过命令行参数指定
@@ -25,7 +26,8 @@ JSON（含未覆盖行号）及文本摘要。报告排除测试、依赖与生�
 已构建 GUI 与程序入口计入未覆盖范围。工具不访问外部 debuginfod，
 并拒绝混入旧 Build ID。LCOV 按源码位置合并行和分支，与 LLVM 按模板实例统计
 的百分比口径不同。不能以测试通过代替覆盖率或真实桌面行为验证。
-测量结束后关闭覆盖率选项并重新构建，可恢复正常开发。
+测量结束后切换回 `debug` 或 `release` preset 即可恢复正常开发；
+它们的独立构建目录不受覆盖率 preset 影响。
 
 ## 真实 Graph 端到端测试
 

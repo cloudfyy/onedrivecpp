@@ -104,18 +104,18 @@ ctest --test-dir build/e2e --output-on-failure -L boundary
 
 `ONEDRIVE_ENABLE_COVERAGE=ON` enables Clang source-based instrumentation.
 It requires `BUILD_TESTING=ON`. Normal builds remain uninstrumented.
-Enable it in an existing Debug configuration (including
-`ONEDRIVE_BUILD_GUI=ON` when Qt is available), then build and run all tests
-using CMake Tools in VS Code. Leave live Graph E2E tests disabled unless using
-a dedicated test account.
+Select the `coverage` configure, build, and test presets in VS Code CMake Tools.
+The preset uses a separate `build/coverage` directory and disables live Graph
+E2E tests. Qt is optional; enable `ONEDRIVE_BUILD_GUI=ON` in this configuration
+to include GUI code and tests when Qt is available.
 
-CTest writes process-specific profiles under `build/debug/coverage/profiles`.
+CTest writes process-specific profiles under `build/coverage/coverage/profiles`.
 Start each fresh measurement with an empty profiles directory; never mix
 profiles from different source revisions or build configurations.
 After the test run, generate a report without rerunning tests:
 
 ```bash
-python3 tools/coverage_report.py build/debug
+python3 tools/coverage_report.py build/coverage
 ```
 
 The reporter requires matching `llvm-cov` and `llvm-profdata` versions
@@ -132,7 +132,8 @@ are rejected rather than silently included. LCOV lines and branches are merged
 by source location; these totals differ from LLVM's per-instantiation summaries.
 A passing suite does not imply complete coverage: real desktop behavior,
 live Graph integration, and system-call failure paths need separate validation.
-Disable `ONEDRIVE_ENABLE_COVERAGE` and rebuild to return to normal development.
+Select the `debug` or `release` presets to return to normal development;
+their separate build directories are not affected by the coverage preset.
 
 ## C++ Core Guidelines checks
 

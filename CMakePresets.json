@@ -25,6 +25,15 @@
       }
     },
     {
+      "name": "coverage",
+      "displayName": "Debug with LLVM test coverage",
+      "inherits": "debug",
+      "cacheVariables": {
+        "ONEDRIVE_ENABLE_COVERAGE": "ON",
+        "ONEDRIVE_ENABLE_GRAPH_E2E": "OFF"
+      }
+    },
+    {
       "name": "release",
       "displayName": "Release with system libraries",
       "inherits": "base",
@@ -59,6 +68,10 @@
   ],
   "buildPresets": [
     {
+      "name": "coverage",
+      "configurePreset": "coverage"
+    },
+    {
       "name": "debug",
       "configurePreset": "debug"
     },
@@ -80,6 +93,16 @@
     }
   ],
   "testPresets": [
+    {
+      "name": "coverage",
+      "configurePreset": "coverage",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
     {
       "name": "debug",
       "configurePreset": "debug",
