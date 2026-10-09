@@ -3,7 +3,9 @@
 English | [简体中文](authentication.zh-CN.md) |
 [Documentation index](README.md)
 
-The client uses the OAuth 2.0 Device Authorization Grant. You must register
+The CLI uses the OAuth 2.0 Device Authorization Grant. The GUI uses the system
+browser with Authorization Code + PKCE (S256) and a loopback callback.
+You must register
 your own public client application in Microsoft Entra; do not create a client
 secret.
 
@@ -35,7 +37,13 @@ Application Developer role.
 7. Open **Authentication > Advanced settings**, set
    **Allow public client flows** to **Yes**, and save.
 
-Device code flow does not require a redirect URI. Because this is a public
+8. For GUI login, open **Authentication > Add a platform > Mobile and desktop
+   applications**, add the redirect URI `http://localhost`, and save. The GUI
+   listens on IPv4 loopback with a random port and uses `http://localhost:PORT/`;
+   Microsoft ignores the port when matching a localhost redirect registration.
+   Do not register this as a Web application.
+
+CLI device code flow does not require a redirect URI. Because this is a public
 client, do not add a client secret: a secret embedded in a desktop or CLI
 application cannot be kept confidential.
 
@@ -44,6 +52,7 @@ Microsoft's corresponding documentation is:
 - [Register an application in Microsoft Entra ID](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app)
 - [Configure desktop and public client applications](https://learn.microsoft.com/en-us/entra/identity-platform/scenario-desktop-app-configuration)
 - [OAuth 2.0 device authorization grant](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-device-code)
+- [OAuth 2.0 authorization code flow](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow)
 
 ## Configure permissions
 
@@ -118,7 +127,35 @@ prints a warning when a broader organizational scope is configured.
 
 ## Authorize the client
 
-Run the device authorization flow:
+In the GUI, click **Sign in**. Complete sign-in and consent in the system
+browser, then return to the application. No device code is shown. The GUI
+validates a fresh random state and exchanges the code using a fresh PKCE
+verifier. It waits up to five minutes; **Cancel login** or closing the window
+cancels the wait and joins the login worker. **Open browser** retries opening
+the same pending authorization page. Settings are disabled during login.
+Existing credentials are not replaced if authorization fails or is cancelled
+before account activation. Once account activation starts, it is allowed to
+complete its atomic writes.
+
+GUI Auth Code and CLI Device Code share the same account refresh token when
+using the same state directory and application registration. Signing in again
+updates that account's shared credentials; CLI logout also affects the GUI.
+Both login services hold the existing state-directory runtime lock through
+authorization, token exchange and account activation. CLI operations that
+refresh or remove credentials use the same lock. A competing operation fails
+explicitly without modifying credentials; stop an active CLI monitor before
+logging in from the GUI. Access tokens remain in memory; only the refresh token
+is persisted atomically with owner-only (0600) permissions. Do not share a state
+directory between configurations using different application IDs.
+
+The Qt-independent Core `AuthCodeSession` is a single-use state machine:
+`created → awaiting_callback → authorized → exchanging_token → completed`.
+Cancellation, expiry and failure are terminal states. Core owns PKCE secrets,
+authorization URL construction and callback validation; the desktop adapter
+only opens the browser and receives the loopback HTTP request. Custom protocol
+redirect handlers are not implemented yet.
+
+In the CLI, run the device authorization flow:
 
 ```bash
 onedrive-cpp account login

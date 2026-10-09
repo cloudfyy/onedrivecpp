@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <array>
 #include <memory>
 #include <span>
 #include <string>
@@ -21,6 +22,7 @@ public:
 
     void update(std::span<const std::byte> data);
     [[nodiscard]] std::string finish_hex();
+    [[nodiscard]] std::array<unsigned char, 32> finish();
 
 private:
     class Impl;
@@ -28,5 +30,6 @@ private:
 };
 
 [[nodiscard]] std::string sha256_hex(std::string_view value);
+[[nodiscard]] std::array<unsigned char, 32> sha256(std::string_view value);
 
 }  // namespace onedrive::util

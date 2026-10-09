@@ -1,6 +1,7 @@
 #include "onedrive/auth/device_auth.hpp"
 
 #include "util/uri.hpp"
+#include "auth/options.hpp"
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -9,7 +10,6 @@
 #include <chrono>
 #include <condition_variable>
 #include <format>
-#include <sstream>
 #include <string_view>
 #include <thread>
 #include <mutex>
@@ -22,22 +22,7 @@ namespace {
 using Json = nlohmann::json;
 using FormValues = std::vector<std::pair<std::string_view, std::string_view>>;
 
-bool has_offline_access(std::string_view scope) {
-    std::istringstream values{std::string{scope}};
-    std::string value;
-    while (values >> value) {
-        if (value == "offline_access") {
-            return true;
-        }
-    }
-    return false;
-}
-
-bool valid_options(const DeviceAuthOptions& options) {
-    return !options.application_id.empty() && !options.tenant_id.empty() &&
-           !options.scope.empty() && has_offline_access(options.scope) &&
-           options.auth_endpoint.starts_with("https://");
-}
+using detail::valid_options;
 
 AuthError invalid_configuration_error() {
     return {
@@ -53,19 +38,6 @@ AuthError cancelled_error() {
         .code = AuthErrorCode::cancelled,
         .message = "device authorization cancelled",
     };
-}
-
-std::string encode_form(const FormValues& values) {
-    std::string body;
-    for (const auto& [name, value] : values) {
-        if (!body.empty()) {
-            body.push_back('&');
-        }
-        body += onedrive::util::percent_encode_uri_component(name);
-        body.push_back('=');
-        body += onedrive::util::percent_encode_uri_component(value);
-    }
-    return body;
 }
 
 AuthResult<Json> parse_json(const http::HttpResponse& response) {
@@ -94,7 +66,7 @@ AuthResult<http::HttpResponse> post_form(
             .method = http::HttpMethod::post,
             .url = url,
             .headers = {"Content-Type: application/x-www-form-urlencoded"},
-            .body = encode_form(values),
+            .body = util::encode_uri_parameters(values),
             .stop_token = stop_token,
         }
     );
@@ -384,15 +356,68 @@ AuthResult<OAuthTokens> DeviceAuthClient::refresh_access_token(
     return parse_tokens(*json, refresh_token);
 }
 
+AuthResult<OAuthTokens> DeviceAuthClient::exchange_authorization_code(
+    const std::string& code,
+    const std::string& redirect_uri,
+    const std::string& verifier,
+    std::stop_token stop_token
+) const {
+    if (!valid_options(options_)) {
+        return std::unexpected(invalid_configuration_error());
+    }
+    if (code.empty() || redirect_uri.empty() || verifier.size() < 43 ||
+        verifier.size() > 128 ||
+        verifier.find_first_not_of(
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
+        ) != std::string::npos) {
+        return std::unexpected(
+            AuthError{
+                .code = AuthErrorCode::invalid_configuration,
+                .message = "authorization code exchange requires a code, "
+                           "redirect URI, and a 43-128 character PKCE verifier",
+            }
+        );
+    }
+    auto response = post_form(
+        *transport_,
+        token_url(),
+        {
+            {"client_id", options_.application_id},
+            {"grant_type", "authorization_code"},
+            {"code", code},
+            {"redirect_uri", redirect_uri},
+            {"code_verifier", verifier},
+            {"scope", options_.scope},
+        },
+        stop_token
+    );
+    if (!response) {
+        return std::unexpected(response.error());
+    }
+    const auto json = parse_json(*response);
+    if (!json) {
+        return std::unexpected(json.error());
+    }
+    if (response->status_code < 200 || response->status_code >= 300) {
+        return std::unexpected(
+            AuthError{
+                .code = AuthErrorCode::server,
+                .message = error_description(
+                    *json, "authorization code exchange failed"
+                ),
+            }
+        );
+    }
+    return parse_tokens(*json);
+}
+
 std::string DeviceAuthClient::device_code_url() const {
     std::string endpoint = options_.auth_endpoint;
     while (endpoint.ends_with('/')) {
         endpoint.pop_back();
     }
     return std::format(
-        "{}/{}/oauth2/v2.0/devicecode",
-        endpoint,
-        options_.tenant_id
+        "{}/{}/oauth2/v2.0/devicecode", endpoint, options_.tenant_id
     );
 }
 

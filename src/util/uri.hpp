@@ -2,6 +2,8 @@
 
 #include <string>
 #include <string_view>
+#include <span>
+#include <utility>
 
 namespace onedrive::util {
 
@@ -25,6 +27,21 @@ namespace onedrive::util {
             encoded.push_back(hex[character >> 4U]);
             encoded.push_back(hex[character & 0x0FU]);
         }
+    }
+    return encoded;
+}
+
+[[nodiscard]] inline std::string encode_uri_parameters(
+    std::span<const std::pair<std::string_view, std::string_view>> values
+) {
+    std::string encoded;
+    for (const auto& [name, value] : values) {
+        if (!encoded.empty()) {
+            encoded.push_back('&');
+        }
+        encoded += percent_encode_uri_component(name);
+        encoded.push_back('=');
+        encoded += percent_encode_uri_component(value);
     }
     return encoded;
 }

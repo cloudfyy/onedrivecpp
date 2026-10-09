@@ -1,9 +1,8 @@
 #include "sync/download/integrity.hpp"
 
 #include "util/ascii.hpp"
+#include "util/base64.hpp"
 #include "onedrive/util/sha256.hpp"
-
-#include <openssl/evp.h>
 
 #include <array>
 #include <cstddef>
@@ -53,22 +52,7 @@ public:
                 static_cast<unsigned char>(length_ >> (index * 8));
         }
 
-        std::array<
-            unsigned char,
-            4 * ((quick_xor_width_bytes + 2) / 3) + 1
-        > encoded{};
-        const int encoded_size = EVP_EncodeBlock(
-            encoded.data(),
-            hash.data(),
-            static_cast<int>(hash.size())
-        );
-        if (encoded_size <= 0) {
-            throw std::runtime_error("cannot encode QuickXorHash");
-        }
-        return {
-            reinterpret_cast<const char*>(encoded.data()),
-            static_cast<std::size_t>(encoded_size)
-        };
+        return util::base64_encode(hash);
     }
 
 private:

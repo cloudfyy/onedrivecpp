@@ -124,9 +124,10 @@ int Application::run(int argc, char* argv[]) {
         if (arguments.operation == detail::Operation::monitor) {
             monitor_signal_mask.emplace();
         }
-        const detail::RuntimePreflight runtime_preflight{
-            config, arguments.operation
-        };
+        std::optional<detail::RuntimePreflight> runtime_preflight;
+        if (arguments.operation != detail::Operation::authenticate) {
+            runtime_preflight.emplace(config, arguments.operation);
+        }
         const auto result = detail::execute_command(
             arguments, std::move(config), *runtime_factory_, console
         );

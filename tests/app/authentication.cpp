@@ -1,8 +1,12 @@
 #include "support.hpp"
 #include "onedrive/app/authentication.hpp"
 #include "onedrive/ui/common/observer.hpp"
+#include "app/preflight.hpp"
 
 #include <vector>
+#include <cerrno>
+#include <sys/wait.h>
+#include <unistd.h>
 
 namespace {
 
@@ -31,6 +35,340 @@ private:
 
     mutable std::vector<onedrive::events::Event> events;
 };
+
+onedrive::auth::AuthResult<void>
+authorize_browser(onedrive::auth::AuthCodeSession& session) {
+    const auto url = session.begin("http://localhost:54321/");
+    if (!url)
+        return std::unexpected(url.error());
+    const auto start = url->find("&state=") + 7;
+    const auto state = url->substr(start, url->find('&', start) - start);
+    return session.accept_callback(
+        "http://localhost:54321/?state=" + state + "&code=code"
+    );
+}
+
+int test_auth_code_authentication() {
+    CliFixture fixture;
+    const auto config = onedrive::config::Config::load(fixture.config_path);
+    const onedrive::app::RuntimeFactory factory{
+        onedrive::util::borrowed_proxy, fixture.runtime_factory
+    };
+    bool exchanged = false;
+    fixture.runtime_factory.authentication_response_override =
+        [&](
+            const onedrive::http::HttpRequest& request
+        ) -> std::optional<onedrive::http::HttpResult> {
+        if (request.url.ends_with("/devicecode")) {
+            throw std::logic_error{"browser authentication used device flow"};
+        }
+        if (request.url.ends_with("/token")) {
+            exchanged =
+                request.body.contains("grant_type=authorization_code") &&
+                request.body.contains("code_verifier=");
+        }
+        return std::nullopt;
+    };
+    RecordingObserver observer;
+    const auto result = onedrive::app::authenticate_auth_code_account(
+        config,
+        factory,
+        observer,
+        [](onedrive::auth::AuthCodeSession& session, std::stop_token) {
+            return authorize_browser(session);
+        }
+    );
+    if (!result || !exchanged || result->identity.drive_id != "drive-id" ||
+        onedrive::test::read_file(result->token_directory / "refresh_token") !=
+            "refresh-token" ||
+        observer.operation_states() !=
+            std::vector{
+                onedrive::events::OperationState::authenticating,
+                onedrive::events::OperationState::ready,
+            }) {
+        return fail(
+            "browser authentication did not activate the account or report "
+            "state"
+        );
+    }
+    for (const auto error :
+         {onedrive::auth::AuthErrorCode::cancelled,
+          onedrive::auth::AuthErrorCode::authorization_declined}) {
+        RecordingObserver failure_observer;
+        exchanged = false;
+        const auto failed = onedrive::app::authenticate_auth_code_account(
+            config,
+            factory,
+            failure_observer,
+            [error](
+                onedrive::auth::AuthCodeSession&, std::stop_token
+            ) -> onedrive::auth::AuthResult<void> {
+                return std::unexpected(
+                    onedrive::auth::AuthError{
+                        .code = error, .message = "callback failed"
+                    }
+                );
+            }
+        );
+        if (failed || exchanged || failed.error().code != error ||
+            failure_observer.operation_states().back() !=
+                (error == onedrive::auth::AuthErrorCode::cancelled
+                     ? onedrive::events::OperationState::idle
+                     : onedrive::events::OperationState::failed) ||
+            onedrive::test::read_file(
+                result->token_directory / "refresh_token"
+            ) != "refresh-token") {
+            return fail(
+                "browser callback failure exchanged a code or changed saved "
+                "credentials"
+            );
+        }
+    }
+    std::stop_source stop;
+    stop.request_stop();
+    const auto cancelled = onedrive::app::authenticate_auth_code_account(
+        config,
+        factory,
+        [](onedrive::auth::AuthCodeSession&,
+           std::stop_token) -> onedrive::auth::AuthResult<void> {
+            throw std::logic_error{"pre-cancelled browser callback invoked"};
+        },
+        stop.get_token()
+    );
+    if (cancelled ||
+        cancelled.error().code != onedrive::auth::AuthErrorCode::cancelled ||
+        !onedrive::test::throws_with<std::invalid_argument>(
+            [&] {
+                static_cast<void>(onedrive::app::authenticate_auth_code_account(
+                    config, factory, {}
+                ));
+            },
+            "authorization callback"
+        )) {
+        return fail(
+            "browser authentication did not reject cancellation or a missing "
+            "callback"
+        );
+    }
+    for (const bool callback_cancelled : {true, false}) {
+        std::stop_source cancellation;
+        fixture.runtime_factory.authentication_response_override =
+            [](
+                const onedrive::http::HttpRequest&
+            ) -> std::optional<onedrive::http::HttpResult> {
+            return std::unexpected(
+                onedrive::http::HttpError{
+                    .message = "exchange transport failed"
+                }
+            );
+        };
+        RecordingObserver failure_observer;
+        const auto failed = onedrive::app::authenticate_auth_code_account(
+            config,
+            factory,
+            failure_observer,
+            [&](onedrive::auth::AuthCodeSession& session,
+                std::stop_token token) -> onedrive::auth::AuthResult<void> {
+                if (token != cancellation.get_token()) {
+                    throw std::logic_error{
+                        "browser callback lost the stop token"
+                    };
+                }
+                const auto result = authorize_browser(session);
+                if (callback_cancelled) {
+                    cancellation.request_stop();
+                }
+                return result;
+            },
+            cancellation.get_token()
+        );
+        if (failed ||
+            failed.error().code !=
+                (callback_cancelled
+                     ? onedrive::auth::AuthErrorCode::cancelled
+                     : onedrive::auth::AuthErrorCode::transport) ||
+            failure_observer.operation_states().back() !=
+                (callback_cancelled
+                     ? onedrive::events::OperationState::idle
+                     : onedrive::events::OperationState::failed) ||
+            onedrive::test::read_file(
+                result->token_directory / "refresh_token"
+            ) != "refresh-token") {
+            return fail(
+                "cancelled or failed browser code exchange changed saved "
+                "credentials"
+            );
+        }
+    }
+    RecordingObserver exception_observer;
+    if (!onedrive::test::throws_with<std::runtime_error>(
+            [&] {
+                static_cast<void>(onedrive::app::authenticate_auth_code_account(
+                    config,
+                    factory,
+                    exception_observer,
+                    [](onedrive::auth::AuthCodeSession&,
+                       std::stop_token) -> onedrive::auth::AuthResult<void> {
+                        throw std::runtime_error{"browser callback failed"};
+                    }
+                ));
+            },
+            "browser callback failed"
+        ) ||
+        exception_observer.operation_states().back() !=
+            onedrive::events::OperationState::failed) {
+        return fail(
+            "browser callback exception was swallowed or did not report failure"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_shared_credentials_and_runtime_lock() {
+    CliFixture fixture;
+    const auto config = onedrive::config::Config::load(fixture.config_path);
+    const onedrive::app::RuntimeFactory factory{
+        onedrive::util::borrowed_proxy, fixture.runtime_factory
+    };
+    const auto device = onedrive::app::authenticate_account(
+        config, factory, [](const onedrive::app::DeviceAuthorization&) {}
+    );
+    if (!device)
+        return fail("device login could not initialize shared credentials");
+    {
+        const onedrive::app::detail::RuntimePreflight lock{
+            config, onedrive::app::detail::Operation::logout
+        };
+        const auto child = ::fork();
+        if (child == -1) {
+            return fail("could not fork competing authentication process");
+        }
+        if (child == 0) {
+            const bool rejected =
+                onedrive::test::throws_with<std::runtime_error>(
+                    [&] {
+                        static_cast<
+                            void>(onedrive::app::authenticate_auth_code_account(
+                            config,
+                            factory,
+                            [](onedrive::auth::AuthCodeSession&,
+                               std::stop_token)
+                                -> onedrive::auth::AuthResult<void> {
+                                throw std::logic_error{
+                                    "competing process started authorization"
+                                };
+                            }
+                        ));
+                    },
+                    "another onedrive-cpp process"
+                );
+            ::_exit(rejected ? EXIT_SUCCESS : EXIT_FAILURE);
+        }
+        int status = 0;
+        pid_t waited;
+        do {
+            waited = ::waitpid(child, &status, 0);
+        } while (waited == -1 && errno == EINTR);
+        if (waited != child || !WIFEXITED(status) ||
+            WEXITSTATUS(status) != EXIT_SUCCESS) {
+            return fail(
+                "competing process was not rejected by the shared "
+                "authentication lock"
+            );
+        }
+        if (!onedrive::test::throws_with<std::runtime_error>(
+                [&] {
+                    static_cast<void>(
+                        onedrive::app::authenticate_auth_code_account(
+                            config,
+                            factory,
+                            [](onedrive::auth::AuthCodeSession&,
+                               std::stop_token)
+                                -> onedrive::auth::AuthResult<void> {
+                                throw std::logic_error{
+                                    "locked login invoked authorization"
+                                };
+                            }
+                        )
+                    );
+                },
+                "another onedrive-cpp process"
+            ) ||
+            !onedrive::test::throws_with<std::runtime_error>(
+                [&] {
+                    static_cast<void>(onedrive::app::authenticate_account(
+                        config,
+                        factory,
+                        [](const onedrive::app::DeviceAuthorization&) {
+                            throw std::logic_error{
+                                "locked device login invoked "
+                                "authorization"
+                            };
+                        }
+                    ));
+                },
+                "another onedrive-cpp process"
+            ) ||
+            onedrive::test::read_file(
+                device->token_directory / "refresh_token"
+            ) != "refresh-token") {
+            return fail(
+                "locked login changed shared credentials or started "
+                "authentication"
+            );
+        }
+    }
+    fixture.runtime_factory.authentication_response_override =
+        [](
+            const onedrive::http::HttpRequest& request
+        ) -> std::optional<onedrive::http::HttpResult> {
+        if (request.url.ends_with("/token")) {
+            return onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"access_token":"access","refresh_token":"auth-code-refresh","expires_in":3600})",
+            };
+        }
+        return std::nullopt;
+    };
+    const auto code = onedrive::app::authenticate_auth_code_account(
+        config,
+        factory,
+        [&](onedrive::auth::AuthCodeSession& session, std::stop_token) {
+            // The login holds the same lock used by CLI logout and
+            // refresh.
+            if (!onedrive::test::throws_with<std::runtime_error>(
+                    [&] {
+                        const onedrive::app::detail::RuntimePreflight other{
+                            config, onedrive::app::detail::Operation::logout
+                        };
+                    },
+                    "another onedrive-cpp process"
+                )) {
+                throw std::logic_error{
+                    "auth code login did not hold runtime lock"
+                };
+            }
+            return authorize_browser(session);
+        }
+    );
+    if (!code || code->token_directory != device->token_directory ||
+        onedrive::test::read_file(
+            onedrive::account::AccountState::active_token_directory(
+                config.state_directory
+            ) /
+            "refresh_token"
+        ) != "auth-code-refresh") {
+        return fail(
+            "auth code and device login did not share account "
+            "credentials"
+        );
+    }
+    const onedrive::app::detail::RuntimePreflight released{
+        config, onedrive::app::detail::Operation::logout
+    };
+    return EXIT_SUCCESS;
+}
 
 int test_authentication_service() {
     CliFixture fixture;
@@ -287,7 +625,9 @@ int test_identity_cancellation_and_failures() {
 } // namespace
 
 int main() {
-    if (test_authentication_service() != EXIT_SUCCESS ||
+    if (test_shared_credentials_and_runtime_lock() != EXIT_SUCCESS ||
+        test_auth_code_authentication() != EXIT_SUCCESS ||
+        test_authentication_service() != EXIT_SUCCESS ||
         test_cancelled_and_throwing_callbacks() != EXIT_SUCCESS ||
         test_identity_cancellation_and_failures() != EXIT_SUCCESS) {
         return EXIT_FAILURE;

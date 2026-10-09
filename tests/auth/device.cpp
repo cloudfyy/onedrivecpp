@@ -52,6 +52,73 @@ int test_queued_transport_contract() {
     return EXIT_SUCCESS;
 }
 
+int test_authorization_code_exchange() {
+    FakeTransport transport{{
+        onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body =
+                R"({"expires_in":3600,"access_token":"access","refresh_token":"refresh"})",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 400, .body = R"({"error":"invalid_grant"})"
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 200, .body = "invalid JSON"
+        },
+    }};
+    onedrive::http::HttpTransport proxy{
+        onedrive::util::borrowed_proxy, transport
+    };
+    onedrive::auth::DeviceAuthClient client{&proxy, test_options()};
+    const std::string verifier(43, 'a');
+    std::stop_source stop;
+    const auto result = client.exchange_authorization_code(
+        "code+secret", "http://localhost:54321/", verifier, stop.get_token()
+    );
+    if (!result || result->refresh_token != "refresh" ||
+        transport.requests.size() != 1 ||
+        transport.requests[0].stop_token != stop.get_token() ||
+        !transport.requests[0].body.contains("grant_type=authorization_code") ||
+        !transport.requests[0].body.contains("code=code%2Bsecret") ||
+        !transport.requests[0].body.contains(
+            "redirect_uri=http%3A%2F%2Flocalhost%3A54321%2F"
+        ) ||
+        !transport.requests[0].body.contains("code_verifier=" + verifier) ||
+        transport.requests[0].body.contains("client_secret")) {
+        return fail(
+            "PKCE exchange lost or incorrectly encoded public-client parameters"
+        );
+    }
+    if (!has_error(
+            client.exchange_authorization_code("code", "redirect", verifier),
+            onedrive::auth::AuthErrorCode::server
+        ) ||
+        client.exchange_authorization_code("code", "redirect", verifier)) {
+        return fail("PKCE exchange accepted server errors or malformed JSON");
+    }
+    for (const auto& invalid :
+         {std::string(42, 'a'), std::string(129, 'a'), std::string(43, '!')}) {
+        if (client.exchange_authorization_code("code", "redirect", invalid)) {
+            return fail("PKCE exchange accepted an invalid verifier");
+        }
+    }
+    if (client.exchange_authorization_code("", "redirect", verifier) ||
+        client.exchange_authorization_code("code", "", verifier)) {
+        return fail("PKCE exchange accepted missing authorization parameters");
+    }
+    stop.request_stop();
+    if (!has_error(
+            client.exchange_authorization_code(
+                "code", "redirect", verifier, stop.get_token()
+            ),
+            onedrive::auth::AuthErrorCode::cancelled
+        ) ||
+        transport.requests.size() != 3) {
+        return fail("cancelled or invalid PKCE exchange sent an HTTP request");
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_device_flow() {
     FakeTransport transport{{
         onedrive::http::HttpResponse{
@@ -598,6 +665,9 @@ int test_cancellation() {
 } // namespace
 
 int main() {
+    if (test_authorization_code_exchange() != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
     if (test_cancellation() != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }

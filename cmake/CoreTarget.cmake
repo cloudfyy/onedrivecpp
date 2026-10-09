@@ -45,6 +45,7 @@ add_library(onedrive_core
     src/util/private_file.cpp
     src/account/account_state.cpp
     src/auth/device_auth.cpp
+    src/auth/auth_code.cpp
     src/auth/token_store.cpp
     src/ui/common/observer.cpp
     src/config/console.cpp
@@ -200,7 +201,7 @@ add_executable(onedrive-cpp src/main.cpp)
 target_link_libraries(onedrive-cpp PRIVATE onedrive_cli)
 
 if(ONEDRIVE_BUILD_GUI)
-    find_package(Qt6 6.8 REQUIRED COMPONENTS Core DBus Gui Widgets)
+    find_package(Qt6 6.8 REQUIRED COMPONENTS Core DBus Gui Network Widgets)
 
     add_executable(
         onedrive-cpp-gui
@@ -208,6 +209,8 @@ if(ONEDRIVE_BUILD_GUI)
         src/ui/gui/app_state_view_model.cpp
         src/ui/gui/main.cpp
         src/ui/gui/main_window.cpp
+        src/ui/gui/login_controller.cpp
+        src/ui/gui/login_controller.hpp
         src/ui/gui/system_appearance.cpp
         src/ui/gui/system_appearance.hpp
     )
@@ -222,6 +225,7 @@ if(ONEDRIVE_BUILD_GUI)
             Qt6::Core
             Qt6::DBus
             Qt6::Gui
+            Qt6::Network
             Qt6::Widgets
     )
     target_compile_options(onedrive-cpp-gui PRIVATE

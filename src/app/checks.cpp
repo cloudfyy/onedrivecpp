@@ -1,4 +1,6 @@
 #include "checks.hpp"
+#include "auth/options.hpp"
+#include "onedrive/app/options.hpp"
 
 #include "onedrive/util/mount.hpp"
 #include "onedrive/util/path_security.hpp"
@@ -285,11 +287,8 @@ void prepare_sync_directory(
 }
 
 void validate_authentication_config(const config::Config& config) {
-    if (config.application_id.empty() || config.azure_tenant_id.empty() ||
-        config.auth_scope.empty() ||
-    !config::has_auth_scope(config.auth_scope, "User.Read") ||
-    !config::has_auth_scope(config.auth_scope, "offline_access") ||
-        !config.auth_endpoint.starts_with("https://")) {
+    if (!auth::detail::valid_options(device_auth_options(config)) ||
+        !config::has_auth_scope(config.auth_scope, "User.Read")) {
         throw std::runtime_error(
             "authentication requires auth.application_id, auth.tenant_id, an "
             "HTTPS auth.endpoint, and User.Read and offline_access scopes"

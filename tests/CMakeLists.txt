@@ -46,6 +46,12 @@ add_onedrive_test(
     SOURCES tests/util/ascii.cpp
     INCLUDE_DIRS src tests
 )
+add_onedrive_test(
+    encoding_tests
+    SOURCES tests/util/encoding.cpp
+    INCLUDE_DIRS src tests
+    LIBRARIES OpenSSL::Crypto
+)
 foreach(CONFIG_TEST IN ITEMS base proxy valid schema)
     add_onedrive_test(
         config_${CONFIG_TEST}_tests
@@ -73,6 +79,21 @@ add_onedrive_test(
     INCLUDE_DIRS src src/ui/gui tests
 )
 if(ONEDRIVE_BUILD_GUI)
+    add_onedrive_test(
+        gui_login_tests
+        SOURCES
+            src/ui/gui/login_controller.cpp
+            src/ui/gui/login_controller.hpp
+            src/ui/gui/main_window.cpp
+            src/ui/gui/configuration.cpp
+            src/ui/gui/app_state_view_model.cpp
+            tests/gui/login.cpp
+        INCLUDE_DIRS src src/ui/gui tests
+        LIBRARIES onedrive_app Qt6::Widgets Qt6::Network
+    )
+    set_target_properties(gui_login_tests PROPERTIES AUTOMOC ON)
+    set_tests_properties(gui_login_tests PROPERTIES TIMEOUT 20)
+    set_property(TEST gui_login_tests APPEND PROPERTY ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_onedrive_test(
         gui_system_appearance_tests
         SOURCES
@@ -175,6 +196,12 @@ add_onedrive_test(
     SOURCES tests/auth/device.cpp
     INCLUDE_DIRS tests
 )
+add_onedrive_test(
+    auth_code_tests
+    SOURCES tests/auth/auth_code.cpp
+    INCLUDE_DIRS tests
+    LIBRARIES OpenSSL::Crypto
+)
 foreach(HTTP_TEST IN ITEMS req redirect download cancel reuse)
     add_onedrive_test(
         http_${HTTP_TEST}_tests
@@ -229,6 +256,7 @@ add_onedrive_test(
     LIBRARIES onedrive_cli
 )
 target_include_directories(app_args_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_include_directories(app_authentication_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 add_onedrive_test(
     app_cleanup_tests
     SOURCES tests/app/cleanup.cpp
