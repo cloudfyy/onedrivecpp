@@ -103,6 +103,73 @@ int test_recursive_deletion_protection() {
     return EXIT_SUCCESS;
 }
 
+int test_full_refresh_retains_blocked_deletion_snapshot() {
+    const onedrive::cli::Console console;
+    TemporaryDirectory temporary;
+    for (const bool expired_cursor : {false, true}) {
+        const auto root =
+            temporary.path() / (expired_cursor ? "expired" : "reset");
+        std::filesystem::create_directories(root);
+        std::ofstream{root / "file.txt"} << "data";
+        FakeItemStore items;
+        items.items.emplace("file", tracked_item(root, "file", "file.txt"));
+        if (expired_cursor) {
+            items.saved_delta_link = "expired";
+        }
+        std::ofstream{root / "file.txt"} << "modified-local";
+        FakeGraphClient graph;
+        graph.reject_saved_cursor = expired_cursor;
+        FakeMetrics metrics;
+        auto config = config_for(root, false);
+        config.sync_mode = onedrive::sync::SyncMode::bidirectional;
+        if (expired_cursor) {
+            items.saved_sync_filter_fingerprint =
+                onedrive::sync::detail::SyncList::configured(
+                    {
+                        .rules_path = config.sync_list,
+                        .sync_root = root,
+                        .include_root_files = config.sync_root_files,
+                        .nosync_enabled = config.nosync_enabled,
+                        .dotfiles = config.dotfiles,
+                        .maximum_file_size_bytes =
+                            config.maximum_file_size_bytes,
+                    }
+                )
+                    .fingerprint();
+        }
+        const auto synchronize = [&] {
+            return onedrive::sync::SyncEngine{
+                config, graph, items, metrics, &console
+            }
+                .synchronize();
+        };
+        if (synchronize() != 2 || !items.find("me", "file") ||
+            items.find("me", "file")->local_size != 4 ||
+            items.blocked.size() != 1) {
+            return fail("full refresh lost a blocked deletion snapshot");
+        }
+        if (expired_cursor && (graph.delta_requests.size() != 2 ||
+                               graph.delta_requests.front() !=
+                                   std::optional<std::string>{"expired"} ||
+                               graph.delta_requests.back())) {
+            return fail("blocked deletion did not exercise cursor expiry");
+        }
+        graph.reject_saved_cursor = false;
+        if (synchronize() != 2 || graph.upload_count != 0 ||
+            items.blocked.size() != 1 || !items.find("me", "file")) {
+            return fail(
+                "blocked deletion was cleared and resurrected remotely"
+            );
+        }
+        std::filesystem::remove(root / "file.txt");
+        if (synchronize() != 0 || items.find("me", "file") ||
+            !items.blocked.empty() || graph.upload_count != 0) {
+            return fail("resolved blocked deletion did not clear its snapshot");
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_remote_deletions() {
     const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
@@ -1289,6 +1356,11 @@ int test_local_deletions() {
 } // namespace
 
 int main() {
+    if (const int result =
+            test_full_refresh_retains_blocked_deletion_snapshot();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
     if (const int result = test_recursive_deletion_protection();
         result != EXIT_SUCCESS) {
         return result;

@@ -486,7 +486,13 @@ public:
         }
         ++apply_count;
         if (delta.apply_mode == onedrive::storage::DeltaApplyMode::replace) {
-            items.clear();
+            std::erase_if(items, [&delta](const auto& entry) {
+                return std::ranges::none_of(
+                    delta.blocked_upserts, [&entry](const auto& item) {
+                        return item.remote_id == entry.first;
+                    }
+                );
+            });
             blocked.clear();
         }
         for (const auto& remote_id : delta.removals) {

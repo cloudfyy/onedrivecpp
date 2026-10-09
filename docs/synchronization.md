@@ -194,6 +194,11 @@ the complete Graph inventory with prior snapshots so deleted remote items are
 not lost after cursor reset or expiry. Items merely excluded by `sync_list`
 lose their database snapshot but keep their local files.
 
+Full refreshes retain the prior trusted local snapshot and pending-move journal
+for each still-blocked tracked item. The new remote metadata stays in its blocked
+record until the conflict is resolved; retries do not treat retained local
+content as a new upload.
+
 Local directory deletions propagate only when their tracked descendants are
 also eligible for deletion and no blocked descendant is covered. Excluded or
 moved descendants protect their parent directory. The large-delete safeguard

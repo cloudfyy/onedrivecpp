@@ -41,6 +41,12 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
 
     Transaction transaction{database};
     if (delta.apply_mode == DeltaApplyMode::replace) {
+        std::vector<ItemState> retained_items;
+        for (const auto& blocked : delta.blocked_upserts) {
+            if (auto item = find_on_worker(delta.drive_id, blocked.remote_id)) {
+                retained_items.push_back(std::move(*item));
+            }
+        }
         Statement replace_statement{
             database, "DELETE FROM item WHERE drive_id = ?1;"
         };
@@ -53,6 +59,9 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         replace_blocked_statement.execute(
             "cannot replace blocked drive items"
         );
+        for (const auto& item : retained_items) {
+            upsert_on_worker(item);
+        }
     }
     Statement upsert_statement{
         database,

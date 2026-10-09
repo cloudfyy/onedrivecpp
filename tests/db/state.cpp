@@ -23,9 +23,108 @@ using namespace onedrive::test::db;
 using onedrive::test::fail;
 using onedrive::test::TemporaryDirectory;
 
+int test_full_refresh_preserves_blocked_snapshots() {
+    TemporaryDirectory temporary;
+    onedrive::storage::ItemDatabase database{temporary.path(), identity()};
+    database.open();
+    const onedrive::storage::ItemState baseline{
+        .drive_id = "me",
+        .remote_id = "blocked",
+        .etag = "trusted-etag",
+        .remote_path = "old.txt",
+        .local_path = temporary.path() / "old.txt",
+        .local_size = 42,
+        .local_modified_ticks = 123,
+        .local_device = 1,
+        .local_inode = 2,
+        .content_hash = onedrive::util::FileHash{
+            .algorithm = onedrive::util::FileHashAlgorithm::sha256,
+            .value = "trusted-hash",
+        },
+    };
+    database.upsert(baseline);
+    database.upsert({.drive_id = "me", .remote_id = "discard"});
+    database.upsert({.drive_id = "other", .remote_id = "blocked"});
+    database.save_pending_move({
+        .drive_id = "me",
+        .remote_id = "blocked",
+        .source_path = baseline.local_path,
+        .destination_path = temporary.path() / "new.txt",
+        .source_device = 1,
+        .source_inode = 2,
+    });
+    database.apply_delta({
+        .drive_id = "me",
+        .blocked_upserts =
+            {
+                {.remote_id = "blocked",
+                 .etag = "new-etag",
+                 .remote_path = "new.txt",
+                 .reason_code = "local_modification",
+                 .reason_message = "local file changed"},
+                {.remote_id = "untracked",
+                 .reason_code = "malware_detected",
+                 .reason_message = "remote file marked as malware"},
+            },
+        .delta_link = "refreshed",
+        .apply_mode = onedrive::storage::DeltaApplyMode::replace,
+    });
+    const auto retained = database.find("me", "blocked");
+    if (!retained || retained->etag != baseline.etag ||
+        retained->local_path != baseline.local_path ||
+        retained->local_size != baseline.local_size ||
+        retained->local_modified_ticks != baseline.local_modified_ticks ||
+        retained->local_device != 1 || retained->local_inode != 2 ||
+        !retained->content_hash ||
+        retained->content_hash->value != "trusted-hash" ||
+        database.find("me", "discard") || database.find("me", "untracked") ||
+        !database.find("other", "blocked") ||
+        database.pending_moves("me").size() != 1 ||
+        database.blocked_items("me").size() != 2) {
+        return fail("full refresh did not preserve trusted blocked state");
+    }
+    try {
+        database.apply_delta({
+            .drive_id = "me",
+            .blocked_upserts =
+                {
+                    {.remote_id = "blocked",
+                     .reason_code = "local_modification",
+                     .reason_message = "local file changed"},
+                    {.remote_id = "invalid"},
+                },
+            .delta_link = "invalid",
+            .apply_mode = onedrive::storage::DeltaApplyMode::replace,
+        });
+        return fail("invalid full refresh was accepted");
+    } catch (const std::invalid_argument&) {
+    }
+    if (!database.find("me", "blocked") ||
+        database.delta_link("me") != std::optional<std::string>{"refreshed"} ||
+        database.blocked_items("me").size() != 2) {
+        return fail("failed refresh did not roll back retained blocked state");
+    }
+    database.apply_delta({
+        .drive_id = "me",
+        .removals = {"blocked"},
+        .blocked_removals = {"blocked"},
+        .delta_link = "resolved",
+    });
+    if (database.find("me", "blocked") ||
+        !database.pending_moves("me").empty() ||
+        database.blocked_items("me").size() != 1) {
+        return fail("resolved blocked snapshot or move journal was retained");
+    }
+    return EXIT_SUCCESS;
+}
+
 } // namespace
 
 int main() {
+    if (const int result = test_full_refresh_preserves_blocked_snapshots();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
     TemporaryDirectory temporary_directory;
     const auto absent_summary = onedrive::storage::read_state_summary(
         temporary_directory.path() / "missing-drive",
