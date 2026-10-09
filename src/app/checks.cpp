@@ -148,29 +148,6 @@ void validate_private_file(
     }
 }
 
-void validate_distinct_directories(
-    const std::filesystem::path& sync_data_directory,
-    const std::filesystem::path& state_directory
-) {
-    const auto sync = std::filesystem::weakly_canonical(
-        onedrive::util::normalized_absolute(sync_data_directory)
-    );
-    const auto state = std::filesystem::weakly_canonical(
-        onedrive::util::normalized_absolute(state_directory)
-    );
-    if (sync == sync.root_path()) {
-        throw std::runtime_error(
-            "sync.data_directory must not be the filesystem root"
-        );
-    }
-    if (onedrive::util::path_contains(sync, state) ||
-        onedrive::util::path_contains(state, sync)) {
-        throw std::runtime_error(
-            "sync.data_directory and state.directory must not contain one another"
-        );
-    }
-}
-
 void probe_writable_directory(const std::filesystem::path& directory) {
     const auto probe = directory /
         std::format(
@@ -254,7 +231,7 @@ void prepare_sync_directory(
     if (config.sync_data_directory.empty()) {
         throw std::runtime_error("sync.data_directory must not be empty");
     }
-    validate_distinct_directories(
+    config::validate_sync_state_directories(
         config.sync_data_directory,
         config.state_directory
     );

@@ -1,4 +1,5 @@
 #include "onedrive/config/config.hpp"
+#include "onedrive/util/path_security.hpp"
 #include "config/parse.hpp"
 
 #include <spdlog/spdlog.h>
@@ -12,12 +13,169 @@
 #include <initializer_list>
 #include <limits>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace onedrive::config {
+namespace {
+
+Config load_document(const std::filesystem::path& path, toml::table root) {
+    Config config = Config::defaults();
+
+    detail::validate_keys(
+        root,
+        {
+            "config_version",
+            "console",
+            "logging",
+            "sync",
+            "proxy",
+            "transfer",
+            "download",
+            "upload",
+            "monitor",
+            "state",
+            "auth",
+            "graph",
+            "filesystem",
+        },
+        ""
+    );
+    const auto config_version = detail::optional_value<std::int64_t>(
+        root, "config_version", "config_version", "an integer"
+    );
+    if (!config_version || *config_version != 2) {
+        throw std::runtime_error(
+            "TOML configuration requires config_version = 2"
+        );
+    }
+
+    detail::load_sync_options(config, root, path);
+    detail::load_output_options(config, root, path);
+    detail::load_proxy_options(config, root, path);
+    detail::load_transfer_options(config, root);
+    detail::load_download_options(config, root);
+    detail::load_upload_options(config, root);
+    detail::load_monitor_options(config, root);
+    detail::load_state_options(config, root);
+    detail::load_auth_options(config, root);
+    detail::load_graph_options(config, root);
+    detail::load_filesystem_options(config, root);
+    return config;
+}
+
+std::size_t
+byte_offset(std::string_view contents, toml::source_position position) {
+    std::size_t offset = 0;
+    std::uint32_t line = 1;
+    std::uint32_t column = 1;
+    while (offset < contents.size() &&
+           (line < position.line || column < position.column)) {
+        const auto byte = static_cast<unsigned char>(contents[offset]);
+        if (byte == '\n') {
+            ++line;
+            column = 1;
+            ++offset;
+            continue;
+        }
+        if ((byte & 0xC0U) != 0x80U) {
+            ++column;
+        }
+        ++offset;
+    }
+    if (line != position.line || column != position.column) {
+        throw std::runtime_error(
+            "cannot safely update the configuration source location"
+        );
+    }
+    return offset;
+}
+
+std::string quoted_toml_string(std::string value) {
+    std::ostringstream output;
+    output << toml::toml_formatter{toml::value<std::string>{std::move(value)}};
+    return output.str();
+}
+
+toml::node* find_path_value(
+    toml::table& root, std::string_view table_name, std::string_view key
+) {
+    auto* table_node = root.get(table_name);
+    auto* table = table_node == nullptr ? nullptr : table_node->as_table();
+    return table == nullptr ? nullptr : table->get(key);
+}
+
+struct TextEdit {
+    std::size_t begin;
+    std::size_t end;
+    std::string replacement;
+};
+
+TextEdit path_edit(
+    std::string_view contents,
+    toml::table& root,
+    std::string_view table_name,
+    std::string_view key,
+    const std::filesystem::path& value
+) {
+    const auto formatted = quoted_toml_string(value.string());
+    if (auto* node = find_path_value(root, table_name, key)) {
+        if (!node->is_string()) {
+            throw std::runtime_error(
+                "configuration path '" + std::string{table_name} + "." +
+                std::string{key} + "' must be a string"
+            );
+        }
+        const auto source = node->source();
+        return {
+            byte_offset(contents, source.begin),
+            byte_offset(contents, source.end),
+            formatted,
+        };
+    }
+
+    const auto header = "[" + std::string{table_name} + "]";
+    std::size_t line_start = 0;
+    while (line_start < contents.size()) {
+        const auto newline = contents.find('\n', line_start);
+        const auto line_end =
+            newline == std::string::npos ? contents.size() : newline;
+        auto line = std::string_view{contents}.substr(
+            line_start, line_end - line_start
+        );
+        while (!line.empty() && (line.front() == ' ' || line.front() == '\t' ||
+                                 line.front() == '\r')) {
+            line.remove_prefix(1);
+        }
+        while (!line.empty() && (line.back() == ' ' || line.back() == '\t' ||
+                                 line.back() == '\r')) {
+            line.remove_suffix(1);
+        }
+        if (line == header) {
+            const auto insert_at =
+                newline == std::string::npos ? contents.size() : newline + 1;
+            const auto insertion = std::string{key} + " = " + formatted + "\n";
+            return {insert_at, insert_at, insertion};
+        }
+        if (newline == std::string::npos) {
+            break;
+        }
+        line_start = newline + 1;
+    }
+
+    std::string suffix;
+    if (!contents.empty()) {
+        suffix = contents.back() == '\n' ? "\n" : "\n\n";
+    }
+    suffix += "[" + std::string{table_name} + "]\n" + std::string{key} + " = " +
+              formatted + "\n";
+    return {contents.size(), contents.size(), suffix};
+}
+
+} // namespace
 
 Config Config::defaults() {
     const char* home = std::getenv("HOME");
@@ -89,89 +247,86 @@ std::filesystem::path default_config_path() {
 }
 
 Config Config::load(const std::filesystem::path& path) {
-    Config config = defaults();
     if (!std::filesystem::exists(path)) {
         if (const auto logger = spdlog::default_logger()) {
-            logger->debug(
-                "Configuration file not found; using default values"
-            );
+            logger->debug("Configuration file not found; using default values");
         }
-        return config;
+        return defaults();
     }
 
     if (const auto logger = spdlog::default_logger()) {
         logger->debug("Loading configuration file");
     }
-    toml::table root;
     try {
-        root = toml::parse_file(path.string());
+        return load_document(path, toml::parse_file(path.string()));
     } catch (const toml::parse_error& error) {
         throw std::runtime_error(
             "cannot parse TOML configuration '" + path.string() +
             "': " + std::string{error.description()}
         );
     }
-
-    detail::validate_keys(
-        root,
-        {
-            "config_version",
-            "console",
-            "logging",
-            "sync",
-            "proxy",
-            "transfer",
-            "download",
-            "upload",
-            "monitor",
-            "state",
-            "auth",
-            "graph",
-            "filesystem",
-        },
-        ""
-    );
-    const auto config_version = detail::optional_value<std::int64_t>(
-        root,
-        "config_version",
-        "config_version",
-        "an integer"
-    );
-    if (!config_version || *config_version != 2) {
-        throw std::runtime_error(
-            "TOML configuration requires config_version = 2"
-        );
-    }
-
-    detail::load_sync_options(config, root, path);
-
-    detail::load_output_options(config, root, path);
-
-    detail::load_proxy_options(config, root, path);
-
-    detail::load_transfer_options(config, root);
-
-    detail::load_download_options(config, root);
-
-    detail::load_upload_options(config, root);
-
-    detail::load_monitor_options(config, root);
-
-    detail::load_state_options(config, root);
-
-    detail::load_auth_options(config, root);
-
-    detail::load_graph_options(config, root);
-
-    detail::load_filesystem_options(config, root);
-
-    return config;
 }
 
-bool has_auth_scope(
-    std::string_view scopes,
-    std::string_view expected
+Config Config::load_from_string(
+    const std::filesystem::path& path, std::string_view contents
 ) {
+    try {
+        return load_document(path, toml::parse(contents, path.string()));
+    } catch (const toml::parse_error& error) {
+        throw std::runtime_error(
+            "cannot parse TOML configuration '" + path.string() +
+            "': " + std::string{error.description()}
+        );
+    }
+}
+
+std::string update_basic_paths(
+    const std::filesystem::path& config_path,
+    std::string_view source,
+    const std::filesystem::path& sync_directory,
+    const std::filesystem::path& state_directory
+) {
+    std::string contents{source};
+    auto root = toml::parse(source, config_path.string());
+
+    std::array edits{
+        path_edit(contents, root, "sync", "data_directory", sync_directory),
+        path_edit(contents, root, "state", "directory", state_directory),
+    };
+    std::ranges::sort(edits, [](const auto& left, const auto& right) {
+        return left.begin > right.begin;
+    });
+    for (const auto& edit : edits) {
+        contents.replace(edit.begin, edit.end - edit.begin, edit.replacement);
+    }
+    static_cast<void>(Config::load_from_string(config_path, contents));
+    return contents;
+}
+
+void validate_sync_state_directories(
+    const std::filesystem::path& sync_directory,
+    const std::filesystem::path& state_directory
+) {
+    const auto sync = std::filesystem::weakly_canonical(
+        util::normalized_absolute(sync_directory)
+    );
+    const auto state = std::filesystem::weakly_canonical(
+        util::normalized_absolute(state_directory)
+    );
+    if (sync == sync.root_path()) {
+        throw std::runtime_error(
+            "sync.data_directory must not be the filesystem root"
+        );
+    }
+    if (util::path_contains(sync, state) || util::path_contains(state, sync)) {
+        throw std::runtime_error(
+            "sync.data_directory and state.directory must not contain one "
+            "another"
+        );
+    }
+}
+
+bool has_auth_scope(std::string_view scopes, std::string_view expected) {
     std::size_t position = 0;
     while (position < scopes.size()) {
         const auto start = scopes.find_first_not_of(" \t\r\n", position);
@@ -193,4 +348,4 @@ bool has_broad_auth_scope(std::string_view scopes) {
            has_auth_scope(scopes, "Sites.ReadWrite.All");
 }
 
-}  // namespace onedrive::config
+} // namespace onedrive::config

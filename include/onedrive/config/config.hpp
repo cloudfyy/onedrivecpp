@@ -110,7 +110,21 @@ struct Config {
 
     [[nodiscard]] static Config defaults();
     [[nodiscard]] static Config load(const std::filesystem::path& path);
+    [[nodiscard]] static Config load_from_string(
+        const std::filesystem::path& path, std::string_view contents
+    );
 };
+
+[[nodiscard]] std::string update_basic_paths(
+    const std::filesystem::path& config_path,
+    std::string_view contents,
+    const std::filesystem::path& sync_directory,
+    const std::filesystem::path& state_directory
+);
+void validate_sync_state_directories(
+    const std::filesystem::path& sync_directory,
+    const std::filesystem::path& state_directory
+);
 
 [[nodiscard]] std::filesystem::path default_config_path();
 

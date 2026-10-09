@@ -131,7 +131,7 @@ GUI 构建必须可选，headless 环境不应需要安装 Qt：
 option(ONEDRIVE_BUILD_GUI "Build the Qt desktop application" OFF)
 
 if(ONEDRIVE_BUILD_GUI)
-    find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+    find_package(Qt6 6.8 REQUIRED COMPONENTS Core Gui Widgets)
 
     add_executable(onedrive-cpp-gui ...)
     target_link_libraries(onedrive-cpp-gui
@@ -143,6 +143,9 @@ if(ONEDRIVE_BUILD_GUI)
     )
 endif()
 ```
+
+GUI 使用 Qt 6.8 及以上版本，以便将应用颜色方案留给桌面平台并跟随系统主题。
+Ubuntu 26 的 `qt6-base-dev` 提供所需的 Qt Core、Gui 和 Widgets 开发组件。
 
 如果后续需要大量动画、触摸交互或移动端支持，再单独评估 Qt Quick/QML。
 
@@ -310,6 +313,8 @@ CLI 参数解析和生命周期编排现归属 `onedrive_cli`；目标依赖方�
 - [x] 增加独立 `onedrive-cpp-gui` target 和最小 Qt Widgets 窗口入口。
 - [x] 建立主窗口和应用状态视图模型。
 - [x] 显示配置路径、同步目录、状态目录和本地账号凭据状态。
+- [x] 增加跟随系统浅色/深色方案的 Qt Widgets 外观。
+- [x] 增加同步目录和状态目录设置、目录选择、TOML 导入预览及安全保存。
 - [ ] 实现设备代码登录，并调用系统浏览器打开验证地址。
 - [ ] 实现一次手动同步的启动和停止。
 - [ ] 展示消息、Delta、下载进度、阻塞项和最终错误。
@@ -317,8 +322,15 @@ CLI 参数解析和生命周期编排现归属 `onedrive_cli`；目标依赖方�
 - [ ] 验证关闭窗口时取消并回收所有 worker。
 
 GUI 窗口展示当前配置路径、同步/状态目录和本地凭据状态；它不访问网络，也不
-将“本地存在凭据”误报为远端登录有效。配置或安全状态读取失败时显示错误对话框。
-登录和同步操作仍待后续实现。
+将“本地存在凭据”误报为远端登录有效。基础设置仅更新两个目录，其他 TOML 内容
+及注释保留；保存前校验配置和目录关系、以原子方式写入并备份旧配置。导入会先显示
+同步目录、状态目录、同步模式和删除策略预览；导入的相对文件引用按活动配置目录
+解析。Qt Widgets 不覆盖系统调色板，应用颜色方案保持平台默认，跟随桌面主题。
+配置或安全状态读取失败时显示错误对话框。登录和同步操作仍待后续实现。
+
+配置导入复用核心 `Config::load_from_string` 与共享配置目录关系校验；文件内容通过
+通用受限读取工具加载，保留 1 MiB 配置上限及单硬链接/无符号链接要求，配置写入继续
+复用原子文件工具。基本路径更新保留注释，并在修改后进行一次完整配置校验。
 
 ### P2：Ubuntu 26 桌面交付
 

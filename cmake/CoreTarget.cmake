@@ -200,13 +200,17 @@ add_executable(onedrive-cpp src/main.cpp)
 target_link_libraries(onedrive-cpp PRIVATE onedrive_cli)
 
 if(ONEDRIVE_BUILD_GUI)
-    find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+    find_package(Qt6 6.8 REQUIRED COMPONENTS Core Gui Widgets)
 
     add_executable(
         onedrive-cpp-gui
+        src/ui/gui/configuration.cpp
         src/ui/gui/app_state_view_model.cpp
         src/ui/gui/main.cpp
         src/ui/gui/main_window.cpp
+    )
+    target_include_directories(onedrive-cpp-gui PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
     )
     target_link_libraries(
         onedrive-cpp-gui

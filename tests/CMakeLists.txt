@@ -49,6 +49,7 @@ add_onedrive_test(
 add_onedrive_test(
     gui_state_view_model_tests
     SOURCES
+        src/ui/gui/configuration.cpp
         src/ui/gui/app_state_view_model.cpp
         tests/gui/state_view_model.cpp
     INCLUDE_DIRS src src/ui/gui tests

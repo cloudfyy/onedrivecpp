@@ -33,7 +33,9 @@ std::string read_private_file(
     std::string_view description,
     PrivateFileRequirements requirements
 ) {
-    const UniqueFD descriptor{open_path_no_symlinks(path, O_RDONLY)};
+    const UniqueFD descriptor{
+        open_path_no_symlinks(path, O_RDONLY | O_NONBLOCK)
+    };
     struct stat status{};
     if (::fstat(descriptor.get(), &status) == -1) {
         throw_errno_error(
@@ -45,6 +47,12 @@ std::string read_private_file(
         throw std::runtime_error(
             std::string{description} +
             " path is not a regular file: " + path.string()
+        );
+    }
+    if (requirements.require_single_link && status.st_nlink != 1) {
+        throw std::runtime_error(
+            std::string{description} +
+            " file must have exactly one hard link: " + path.string()
         );
     }
     if (requirements.required_owner &&
@@ -62,11 +70,12 @@ std::string read_private_file(
         );
     }
     if (status.st_size < 0 || static_cast<std::uint64_t>(status.st_size) >
-                                  maximum_private_file_size) {
+                                  requirements.maximum_size) {
         throw std::runtime_error(
             std::format(
-                "{} file exceeds the 64 KiB size limit: {}",
+                "{} file exceeds the {} byte size limit: {}",
                 description,
+                requirements.maximum_size,
                 path.string()
             )
         );
@@ -91,11 +100,12 @@ std::string read_private_file(
             break;
         }
         if (contents.size() + static_cast<std::size_t>(count) >
-            maximum_private_file_size) {
+            requirements.maximum_size) {
             throw std::runtime_error(
                 std::format(
-                    "{} file exceeds the 64 KiB size limit: {}",
+                    "{} file exceeds the {} byte size limit: {}",
                     description,
+                    requirements.maximum_size,
                     path.string()
                 )
             );

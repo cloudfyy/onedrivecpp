@@ -18,6 +18,8 @@ struct PrivateFileRequirements {
     std::optional<mode_t> exact_permissions;
     mode_t forbidden_permissions{0};
     std::string_view permission_requirement;
+    std::size_t maximum_size{maximum_private_file_size};
+    bool require_single_link{false};
 };
 
 [[nodiscard]] std::string read_private_file(
