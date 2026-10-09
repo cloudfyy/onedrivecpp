@@ -38,8 +38,12 @@ using namespace client_detail;
 
 DeltaResult MicrosoftGraphClient::list_delta(
     const std::optional<std::string>& delta_link,
-    const DeltaProgress& progress
+    const DeltaProgress& progress,
+    std::stop_token stop_token
 ) const {
+    if (stop_token.stop_requested()) {
+        throw RequestCancelledError{"Microsoft Graph delta request cancelled"};
+    }
     spdlog::debug("Loading saved Microsoft authentication");
     const auto refresh_token = token_store_->load_refresh_token();
     if (!refresh_token) {
@@ -50,13 +54,24 @@ DeltaResult MicrosoftGraphClient::list_delta(
     }
 
     spdlog::debug("Refreshing Microsoft access token");
-    auto tokens = auth_client_->refresh_access_token(*refresh_token);
+    auto tokens = auth_client_->refresh_access_token(
+        *refresh_token, stop_token
+    );
     if (!tokens) {
+        if (tokens.error().code == auth::AuthErrorCode::cancelled ||
+            stop_token.stop_requested()) {
+            throw RequestCancelledError{
+                "Microsoft Graph delta request cancelled"
+            };
+        }
         throw std::runtime_error(
             "cannot refresh Microsoft access token: " + tokens.error().message
         );
     }
     spdlog::debug("Microsoft access token refreshed");
+    if (stop_token.stop_requested()) {
+        throw RequestCancelledError{"Microsoft Graph delta request cancelled"};
+    }
     cached_access_token_ = tokens->access_token;
     access_token_expires_at_ = tokens->expires_at;
     if (tokens->refresh_token != *refresh_token) {
@@ -79,6 +94,11 @@ DeltaResult MicrosoftGraphClient::list_delta(
     std::size_t page_number = 1;
     std::size_t scanned_item_count = 0;
     while (!next_url.empty()) {
+        if (stop_token.stop_requested()) {
+            throw RequestCancelledError{
+                "Microsoft Graph delta request cancelled"
+            };
+        }
         record_graph_page_url(
             next_url, options_.endpoint, visited_urls, "delta"
         );
@@ -97,19 +117,31 @@ DeltaResult MicrosoftGraphClient::list_delta(
                     "Authorization: Bearer " + tokens->access_token,
                 },
                 .body = {},
-                .stop_token = {},
+                .stop_token = stop_token,
             });
             },
             options_,
             options_.maximum_throttle_retries,
             sleep_,
-            std::format("Microsoft Graph delta page {}", page_number)
+            std::format("Microsoft Graph delta page {}", page_number),
+            stop_token
         );
         if (!response) {
+            if (stop_token.stop_requested() ||
+                response.error().code == http::HttpErrorCode::cancelled) {
+                throw RequestCancelledError{
+                    "Microsoft Graph delta request cancelled"
+                };
+            }
             throw std::runtime_error(
                 "Microsoft Graph delta request failed: " +
                 response.error().message
             );
+        }
+        if (stop_token.stop_requested()) {
+            throw RequestCancelledError{
+                "Microsoft Graph delta request cancelled"
+            };
         }
 
         const auto json = parse_graph_json(*response, "delta");
@@ -126,6 +158,11 @@ DeltaResult MicrosoftGraphClient::list_delta(
                 require_graph_page_values(json, "delta");
             const std::size_t page_item_count = values.size();
             for (const auto& value : values) {
+                if (stop_token.stop_requested()) {
+                    throw RequestCancelledError{
+                        "Microsoft Graph delta request cancelled"
+                    };
+                }
                 RemoteItem item{};
                 item.validate_content =
                     !options_.relaxed_download_validation;

@@ -345,7 +345,8 @@ AuthResult<OAuthTokens> DeviceAuthClient::poll_for_token(
 }
 
 AuthResult<OAuthTokens> DeviceAuthClient::refresh_access_token(
-    const std::string& refresh_token
+    const std::string& refresh_token,
+    std::stop_token stop_token
 ) const {
     if (!valid_options(options_) || refresh_token.empty()) {
         return std::unexpected(AuthError{
@@ -363,7 +364,8 @@ AuthResult<OAuthTokens> DeviceAuthClient::refresh_access_token(
             {"grant_type", "refresh_token"},
             {"refresh_token", refresh_token},
             {"scope", options_.scope},
-        }
+        },
+        stop_token
     );
     if (!response) {
         return std::unexpected(response.error());

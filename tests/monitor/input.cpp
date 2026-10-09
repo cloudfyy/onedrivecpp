@@ -160,7 +160,7 @@ int test_monitor_keyboard_exit(char key) {
     int synchronization_count = 0;
     const onedrive::monitor::Monitor monitor{
         root.path(),
-        [&synchronization_count] {
+        [&synchronization_count](const std::stop_token&) {
             ++synchronization_count;
             return 0;
         },
@@ -215,7 +215,7 @@ int test_keyboard_exit_during_initial_sync() {
     bool raw_during_sync = false;
     const onedrive::monitor::Monitor monitor{
         root.path(),
-        [&raw_during_sync] {
+        [&raw_during_sync](const std::stop_token&) {
             termios active{};
             raw_during_sync =
                 ::tcgetattr(STDIN_FILENO, &active) == 0 &&

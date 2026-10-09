@@ -11,7 +11,7 @@ int test_local() {
     std::atomic_int local_runs{0};
     onedrive::monitor::Monitor local_monitor{
         root,
-        [&] {
+        [&](const std::stop_token&) {
             ++local_runs;
             return 0;
         },

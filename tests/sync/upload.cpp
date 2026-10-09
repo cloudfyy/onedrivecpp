@@ -1072,10 +1072,56 @@ int test_pending_upload_recovery_conflict() {
     return EXIT_SUCCESS;
 }
 
+int test_external_cancellation_preserves_upload_journal() {
+    const onedrive::cli::Console default_console;
+    TemporaryDirectory temporary;
+    const auto root = temporary.path() / "cancelled-upload";
+    std::filesystem::create_directories(root);
+    {
+        std::ofstream output{root / "new.txt"};
+        output << "new upload";
+    }
+    FakeGraphClient graph;
+    graph.upload_checkpoint = onedrive::graph::UploadSession{
+        .upload_url = "https://upload.example.test/session",
+        .expiration = "2099-10-09T11:00:00Z",
+        .completed_bytes = 0,
+    };
+    std::stop_source stop;
+    graph.during_upload = [&] { stop.request_stop(); };
+    FakeItemStore items;
+    items.saved_delta_link = "saved";
+    FakeMetrics metrics;
+    auto config = config_for(root, false);
+    config.sync_mode = onedrive::sync::SyncMode::bidirectional;
+
+    const int result = onedrive::sync::SyncEngine{
+        config, graph, items, metrics, &default_console
+    }
+                             .synchronize(stop.get_token());
+    const auto pending = items.pending_uploads("me");
+    if (result != 130 ||
+        metrics.last_outcome !=
+            onedrive::metrics::SyncRunOutcome::cancelled ||
+        pending.size() != 1 || pending.front().upload_url.empty() ||
+        !std::filesystem::exists(pending.front().snapshot_path)) {
+        return fail(
+            "cancelled upload did not retain its checkpoint journal and "
+            "snapshot"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
 } // namespace
 
 int main() {
     if (const int result = test_local_file_uploads(); result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result =
+            test_external_cancellation_preserves_upload_journal();
+        result != EXIT_SUCCESS) {
         return result;
     }
     if (const int result = test_local_directory_uploads();

@@ -27,7 +27,15 @@ std::filesystem::path status_path(
 }
 
 std::string_view outcome_name(SyncRunOutcome outcome) {
-    return outcome == SyncRunOutcome::succeeded ? "succeeded" : "failed";
+    switch (outcome) {
+    case SyncRunOutcome::succeeded:
+        return "succeeded";
+    case SyncRunOutcome::failed:
+        return "failed";
+    case SyncRunOutcome::cancelled:
+        return "cancelled";
+    }
+    return "failed";
 }
 
 }  // namespace
@@ -91,7 +99,8 @@ load_sync_run_status(const std::filesystem::path& state_directory) {
             document.at("completed_at_unix_seconds").get<std::int64_t>();
         const auto duration =
             document.at("duration_milliseconds").get<std::uint64_t>();
-        if ((outcome != "succeeded" && outcome != "failed") ||
+        if ((outcome != "succeeded" && outcome != "failed" &&
+             outcome != "cancelled") ||
             completed < 0) {
             throw std::runtime_error(
                 "synchronization status file contains invalid values"
@@ -100,7 +109,8 @@ load_sync_run_status(const std::filesystem::path& state_directory) {
         return SyncRunStatus{
             .outcome = outcome == "succeeded" ?
                 SyncRunOutcome::succeeded :
-                SyncRunOutcome::failed,
+                outcome == "cancelled" ? SyncRunOutcome::cancelled :
+                                         SyncRunOutcome::failed,
             .completed_at_unix_seconds = completed,
             .duration_milliseconds = duration,
         };

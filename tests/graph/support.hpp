@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <fstream>
 #include <format>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -114,6 +115,9 @@ public:
 
     onedrive::http::HttpResult
     perform(const onedrive::http::HttpRequest& request) const {
+        if (on_perform) {
+            on_perform(request);
+        }
         return queued.perform(request);
     }
 
@@ -224,6 +228,7 @@ public:
     mutable std::vector<onedrive::http::HttpRequest> requests;
     mutable onedrive::test::QueuedHttpTransport queued;
     mutable std::vector<onedrive::http::HttpRequest> download_requests;
+    std::function<void(const onedrive::http::HttpRequest&)> on_perform;
     mutable std::deque<onedrive::http::HttpResult> download_responses;
     mutable std::size_t download_response_gate_count{0};
     mutable std::uint64_t partial_failure_bytes{0};

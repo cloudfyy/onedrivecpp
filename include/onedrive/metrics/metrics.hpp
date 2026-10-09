@@ -16,6 +16,7 @@ namespace onedrive::metrics {
 enum class SyncRunOutcome {
     succeeded,
     failed,
+    cancelled,
 };
 
 struct SyncRunStatus {

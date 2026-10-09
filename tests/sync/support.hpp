@@ -64,7 +64,8 @@ public:
 
     [[nodiscard]] onedrive::graph::DeltaResult list_delta(
         const std::optional<std::string>& delta_link,
-        const onedrive::graph::DeltaProgress& progress
+        const onedrive::graph::DeltaProgress& progress,
+        std::stop_token
     ) const {
         delta_requests.push_back(delta_link);
         if (delta_link && reject_saved_cursor) {
@@ -76,6 +77,9 @@ public:
             progress(
                 1, changes.size(), onedrive::util::ProgressState::completed
             );
+        }
+        if (stop_on_delta != nullptr) {
+            stop_on_delta->request_stop();
         }
         return {
             .changes = changes,
@@ -193,7 +197,7 @@ public:
         const std::filesystem::path& source,
         const std::optional<onedrive::graph::UploadSession>& session,
         const onedrive::graph::UploadCheckpoint& checkpoint,
-        std::stop_token
+        std::stop_token stop_token
     ) const {
         int upload_number = 0;
         {
@@ -232,6 +236,20 @@ public:
                     "simulated interrupted upload session"
                 };
             }
+        }
+        if (during_upload) {
+            std::function<void()> callback;
+            {
+                const std::scoped_lock lock{upload_mutex};
+                callback = std::move(during_upload);
+                during_upload = {};
+            }
+            callback();
+        }
+        if (stop_token.stop_requested()) {
+            throw onedrive::graph::RequestCancelledError{
+                "simulated upload cancellation"
+            };
         }
         if (upload_conflict) {
             throw onedrive::graph::UploadConflictError{
@@ -338,6 +356,7 @@ public:
     std::string cancellable_id;
     std::function<void(const std::string&)> before_download_write;
     mutable std::function<void()> before_upload_return;
+    mutable std::function<void()> during_upload;
     mutable std::function<void()> before_directory_return;
     mutable std::optional<onedrive::graph::UploadSession> upload_checkpoint;
     bool reject_saved_cursor{false};
@@ -373,6 +392,7 @@ public:
     mutable std::atomic_int maximum_concurrent_uploads{0};
     mutable std::atomic_uint64_t last_download_offset{0};
     mutable std::vector<std::optional<std::string>> delta_requests;
+    std::stop_source* stop_on_delta{nullptr};
 };
 
 class FakeItemStore final {
@@ -786,10 +806,12 @@ public:
     void record_sync_run(
         onedrive::metrics::SyncRunOutcome outcome, std::chrono::duration<double>
     ) noexcept {
+        last_outcome = outcome;
         last_success = outcome == onedrive::metrics::SyncRunOutcome::succeeded;
     }
 
     bool last_success{false};
+    std::optional<onedrive::metrics::SyncRunOutcome> last_outcome;
 };
 
 using onedrive::test::fail;

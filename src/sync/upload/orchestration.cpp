@@ -5,6 +5,7 @@
 #include "sync/upload/remote_delete.hpp"
 #include "sync/upload/remote_move.hpp"
 
+#include "onedrive/sync/cancellation.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"
 #include "onedrive/ui/common/observer.hpp"
 #include "onedrive/util/path_security.hpp"
@@ -320,8 +321,10 @@ UploadSummary upload_local_changes(
     const events::Observer& observer,
     SyncCapabilities capabilities,
     RemoteDeletionGuard deletion_guard,
-    std::size_t upload_concurrency
+    std::size_t upload_concurrency,
+    const std::stop_token& stop_token
 ) {
+    throw_if_cancelled(stop_token);
     if (upload_concurrency == 0) {
         throw std::invalid_argument(
             "upload concurrency must be greater than zero"
@@ -376,6 +379,7 @@ UploadSummary upload_local_changes(
     );
     summary.planned_directories = move_parents.size();
     for (const auto& parent : move_parents) {
+        throw_if_cancelled(stop_token);
         if (!upload_directory(
                 parent,
                 sync_root,
@@ -390,6 +394,7 @@ UploadSummary upload_local_changes(
         }
     }
     for (const auto& move : moves.moves) {
+        throw_if_cancelled(stop_token);
         const auto previous = items.find(drive_id, move.remote_id);
         if (!previous) {
             throw std::runtime_error(
@@ -438,6 +443,7 @@ UploadSummary upload_local_changes(
         }
     }
     for (const auto& deletion : deletion_plan.operations) {
+        throw_if_cancelled(stop_token);
         execute_new_remote_delete(deletion, graph, items);
         ++summary.deleted;
         observer.message(
@@ -449,6 +455,7 @@ UploadSummary upload_local_changes(
     std::size_t first_file = 0;
     while (first_file < uploads.size() &&
            uploads[first_file].directory) {
+        throw_if_cancelled(stop_token);
         if (!upload_directory(
                 uploads[first_file],
                 sync_root,
@@ -466,6 +473,10 @@ UploadSummary upload_local_changes(
 
     std::atomic_size_t next_upload{first_file};
     std::stop_source stop;
+    std::stop_callback cancel_workers{
+        stop_token,
+        [&stop] { stop.request_stop(); }
+    };
     std::mutex result_mutex;
     std::exception_ptr first_error;
     const auto previous_failure_count =
@@ -555,6 +566,7 @@ UploadSummary upload_local_changes(
     if (first_error) {
         std::rethrow_exception(first_error);
     }
+    throw_if_cancelled(stop_token);
     return summary;
 }
 

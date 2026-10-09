@@ -379,6 +379,61 @@ int test_invalid_delta_cursor_error() {
     return EXIT_SUCCESS;
 }
 
+int test_delta_request_cancellation() {
+    const auto run_cancelled_request = [](std::size_t cancel_on_call) {
+        auto transport = std::make_unique<FakeTransport>(
+            std::deque<onedrive::http::HttpResult>{
+                token_response(),
+                graph_page(
+                    "[]",
+                    std::nullopt,
+                    "https://graph.example.test/v1.0/delta"
+                ),
+            }
+        );
+        auto* transport_pointer = transport.get();
+        std::stop_source stop;
+        std::size_t calls = 0;
+        transport_pointer->on_perform =
+            [&](const onedrive::http::HttpRequest&) {
+                if (++calls == cancel_on_call) {
+                    stop.request_stop();
+                }
+            };
+        onedrive::graph::MicrosoftGraphClient client{
+            wrap_transport(std::move(transport)),
+            wrap_token_store(std::make_unique<FakeTokenStore>(
+                std::string{"existing-refresh"}
+            )),
+            auth_options(),
+            {
+                .drive_id = "drive id",
+                .endpoint = "https://graph.example.test/v1.0",
+            },
+        };
+
+        try {
+            static_cast<void>(
+                client.list_delta(std::nullopt, {}, stop.get_token())
+            );
+            return false;
+        } catch (const onedrive::graph::RequestCancelledError&) {
+            return transport_pointer->queued.requests.size() ==
+                       cancel_on_call &&
+                   transport_pointer->queued.requests.back()
+                       .stop_token.stop_possible();
+        }
+    };
+
+    if (!run_cancelled_request(1) || !run_cancelled_request(2)) {
+        return fail(
+            "Graph delta did not propagate cancellation through token refresh "
+            "and page requests"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
 } // namespace
 
 int main() {
@@ -404,6 +459,10 @@ int main() {
         return result;
     }
     if (const int result = test_invalid_delta_cursor_error();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_delta_request_cancellation();
         result != EXIT_SUCCESS) {
         return result;
     }

@@ -7,6 +7,7 @@
 #include "sync/core/plan.hpp"
 
 #include <cstddef>
+#include <stop_token>
 #include <string>
 
 namespace onedrive::events {
@@ -40,7 +41,8 @@ struct ExecutionSummary {
     std::size_t download_concurrency,
     config::TransferOrder transfer_order,
     config::LocalConflictPolicy local_conflict,
-    config::SyncPermissionsMode permissions
+    config::SyncPermissionsMode permissions,
+    const std::stop_token& stop_token
 );
 
 }  // namespace onedrive::sync::engine_detail

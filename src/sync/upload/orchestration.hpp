@@ -6,6 +6,7 @@
 
 #include <cstddef>
 #include <filesystem>
+#include <stop_token>
 #include <string>
 
 namespace onedrive::events {
@@ -47,7 +48,8 @@ struct RemoteDeletionGuard {
     const events::Observer& observer,
     SyncCapabilities capabilities,
     RemoteDeletionGuard deletion_guard,
-    std::size_t upload_concurrency
+    std::size_t upload_concurrency,
+    const std::stop_token& stop_token
 );
 void recover_pending_uploads(
     const SafeSyncRoot& sync_root,

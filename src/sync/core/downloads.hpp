@@ -9,6 +9,7 @@
 #include <exception>
 #include <filesystem>
 #include <optional>
+#include <stop_token>
 #include <string>
 #include <vector>
 
@@ -55,7 +56,8 @@ DownloadBatch download_files(
     const detail::FilesystemMetadata& metadata,
     const events::Observer& observer,
     const detail::SafeSyncRoot& sync_root,
-    config::LocalConflictPolicy local_conflict
+    config::LocalConflictPolicy local_conflict,
+    const std::stop_token& stop_token
 );
 
 }  // namespace onedrive::sync::engine_detail

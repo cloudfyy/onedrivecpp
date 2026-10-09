@@ -669,7 +669,10 @@ int show_status(
                     !last_run ? "unavailable"
                     : last_run->outcome == metrics::SyncRunOutcome::succeeded
                         ? "succeeded"
-                        : "failed",
+                        : last_run->outcome ==
+                                  metrics::SyncRunOutcome::cancelled
+                              ? "cancelled"
+                              : "failed",
             },
             {
                 .label = "tracked:",

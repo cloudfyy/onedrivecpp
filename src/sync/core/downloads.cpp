@@ -1,5 +1,6 @@
 #include "sync/core/downloads.hpp"
 
+#include "onedrive/sync/cancellation.hpp"
 #include "onedrive/ui/common/observer.hpp"
 #include "sync/core/item_ops.hpp"
 #include "sync/download/progress.hpp"
@@ -30,8 +31,10 @@ DownloadBatch download_files(
     const detail::FilesystemMetadata& metadata,
     const events::Observer& observer,
     const detail::SafeSyncRoot& sync_root,
-    config::LocalConflictPolicy local_conflict
+    config::LocalConflictPolicy local_conflict,
+    const std::stop_token& stop_token
 ) {
+    throw_if_cancelled(stop_token);
     DownloadBatch batch{
         .states = std::vector<std::optional<storage::ItemState>>(
             tasks.size()
@@ -45,6 +48,10 @@ DownloadBatch download_files(
 
     std::atomic_size_t next_task{0};
     std::stop_source stop;
+    std::stop_callback cancel_workers{
+        stop_token,
+        [&stop] { stop.request_stop(); }
+    };
     std::mutex observer_mutex;
     std::vector<std::uint64_t> task_downloaded(tasks.size());
     enum class DownloadTaskState {
@@ -277,6 +284,7 @@ DownloadBatch download_files(
     for (auto& thread : workers) {
         thread.join();
     }
+    throw_if_cancelled(stop_token);
     return batch;
 }
 

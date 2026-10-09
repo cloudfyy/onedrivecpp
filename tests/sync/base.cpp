@@ -1,6 +1,7 @@
 #include "support.hpp"
 
 #include "onedrive/ui/cli/backend.hpp"
+#include "onedrive/ui/common/observer.hpp"
 
 namespace {
 
@@ -32,6 +33,31 @@ public:
     std::vector<onedrive::cli::DownloadProgressEvent> downloads;
 };
 
+class StopAtMessageObserver final : public onedrive::events::Observer {
+public:
+    StopAtMessageObserver(
+        std::stop_source& stop, std::string target_event
+    )
+        : stop_{stop},
+          target_event_{std::move(target_event)} {}
+
+protected:
+    void on_event(const onedrive::events::Event& event) const override {
+        const auto* message = std::get_if<onedrive::events::MessageEvent>(&event);
+        if (message && message->event == target_event_) {
+            stop_.request_stop();
+            triggered = true;
+        }
+    }
+
+public:
+    mutable bool triggered{false};
+
+private:
+    std::stop_source& stop_;
+    std::string target_event_;
+};
+
 int test_engine_owns_configuration() {
     const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
@@ -51,6 +77,77 @@ int test_engine_owns_configuration() {
             std::vector<std::optional<std::string>>{std::nullopt} ||
         items.applied_delta.drive_id != "me") {
         return fail("sync engine did not preserve its owned configuration");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_sync_cancellation_does_not_commit_delta() {
+    const onedrive::cli::Console default_console;
+    TemporaryDirectory temporary;
+    auto config = config_for(temporary.path() / "cancelled-sync", false);
+    FakeGraphClient graph;
+    FakeItemStore items;
+    FakeMetrics metrics;
+    std::stop_source stop;
+    graph.stop_on_delta = &stop;
+    onedrive::sync::SyncEngine engine{
+        config, graph, items, metrics, &default_console
+    };
+
+    if (engine.synchronize(stop.get_token()) != 130 ||
+        items.apply_count != 0 ||
+        metrics.last_outcome !=
+            onedrive::metrics::SyncRunOutcome::cancelled) {
+        return fail("cancelled synchronization committed its delta state");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_pre_cancelled_sync_does_not_start() {
+    const onedrive::cli::Console default_console;
+    TemporaryDirectory temporary;
+    auto config = config_for(temporary.path() / "pre-cancelled-sync", false);
+    FakeGraphClient graph;
+    FakeItemStore items;
+    FakeMetrics metrics;
+    std::stop_source stop;
+    stop.request_stop();
+    onedrive::sync::SyncEngine engine{
+        config, graph, items, metrics, &default_console
+    };
+
+    if (engine.synchronize(stop.get_token()) != 130 ||
+        !graph.delta_requests.empty() || items.apply_count != 0 ||
+        metrics.last_outcome !=
+            onedrive::metrics::SyncRunOutcome::cancelled) {
+        return fail("pre-cancelled synchronization performed work");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_sync_cancellation_at_execution_boundary() {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path() / "cancel-before-execution";
+    auto config = config_for(root, false);
+    FakeGraphClient graph;
+    graph.changes = {file("remote-file", "remote.txt", 4)};
+    graph.contents["remote-file"] = "data";
+    FakeItemStore items;
+    FakeMetrics metrics;
+    std::stop_source stop;
+    StopAtMessageObserver observer{stop, "execution_started"};
+    onedrive::sync::SyncEngine engine{
+        config, graph, items, metrics, &observer
+    };
+
+    if (engine.synchronize(stop.get_token()) != 130 || !observer.triggered ||
+        graph.delta_requests.size() != 1 || items.apply_count != 0 ||
+        std::filesystem::exists(root / "remote.txt") ||
+        metrics.last_outcome !=
+            onedrive::metrics::SyncRunOutcome::cancelled) {
+        return fail(
+            "cancellation at the execution boundary applied the pending delta"
+        );
     }
     return EXIT_SUCCESS;
 }
@@ -1307,6 +1404,18 @@ int test_invalid_delta_cursor_restarts_full_query() {
 
 int main() {
     if (const int result = test_engine_owns_configuration();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_sync_cancellation_does_not_commit_delta();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_pre_cancelled_sync_does_not_start();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_sync_cancellation_at_execution_boundary();
         result != EXIT_SUCCESS) {
         return result;
     }

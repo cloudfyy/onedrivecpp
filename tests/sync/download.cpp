@@ -297,6 +297,52 @@ int test_concurrent_failure_cancels_active_download() {
     return EXIT_SUCCESS;
 }
 
+int test_external_cancellation_stops_active_download() {
+    const onedrive::cli::Console default_console;
+    TemporaryDirectory temporary;
+    const auto root = temporary.path() / "files";
+    FakeGraphClient graph;
+    graph.changes = {file("interrupted", "interrupted.txt", 4)};
+    graph.contents["interrupted"] = "data";
+    graph.cancellable_id = "interrupted";
+    graph.cancellation_checkpoint = 2;
+    FakeItemStore items;
+    FakeMetrics metrics;
+    auto config = config_for(root, false);
+    std::stop_source stop;
+    std::jthread cancellation{[&](std::stop_token thread_stop) {
+        while (graph.checkpoint_count.load(std::memory_order_relaxed) == 0 &&
+               !thread_stop.stop_requested()) {
+            std::this_thread::yield();
+        }
+        if (!thread_stop.stop_requested()) {
+            stop.request_stop();
+        }
+    }};
+
+    const int result = onedrive::sync::SyncEngine{
+        config, graph, items, metrics, &default_console
+    }
+                             .synchronize(stop.get_token());
+    cancellation.join();
+
+    const auto partial = items.partials.find("interrupted");
+    if (result != 130 || items.apply_count != 0 ||
+        metrics.last_outcome !=
+            onedrive::metrics::SyncRunOutcome::cancelled ||
+        partial == items.partials.end() ||
+        partial->second.completed_bytes != 2 ||
+        !std::filesystem::exists(partial->second.temporary_path) ||
+        std::filesystem::file_size(partial->second.temporary_path) != 2 ||
+        std::filesystem::exists(root / "interrupted.txt")) {
+        return fail(
+            "external cancellation did not stop and preserve the active "
+            "download checkpoint"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_bounded_concurrent_downloads() {
     const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
@@ -464,6 +510,10 @@ int main() {
         return result;
     }
     if (const int result = test_concurrent_failure_cancels_active_download();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_external_cancellation_stops_active_download();
         result != EXIT_SUCCESS) {
         return result;
     }

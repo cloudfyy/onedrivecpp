@@ -73,7 +73,8 @@ public:
         const DeviceCode& code, std::stop_token stop_token = {}
     ) const;
     [[nodiscard]] AuthResult<OAuthTokens> refresh_access_token(
-        const std::string& refresh_token
+        const std::string& refresh_token,
+        std::stop_token stop_token = {}
     ) const;
 
 private:

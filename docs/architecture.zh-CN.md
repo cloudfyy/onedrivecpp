@@ -100,6 +100,14 @@ SQLite 或工厂对象，其生命周期与创建它的请求独立。
 取消检查，进入持久化阶段后不再中途打断账号文件写入。CLI 保持原有授权消息和退出码，
 GUI 线程与窗口生命周期管理仍须由未来前端实现。
 
+`SyncEngine::synchronize` 和 `Monitor` 回调接受 stop token。同步取消会作为退出码
+130 返回，并以 `cancelled` 记录运行指标，不会把取消报告为成功或普通失败。Graph
+Delta 会将 token 传给 OAuth 刷新、分页 HTTP 请求和重试等待；下载与上传 worker 会将
+外部停止请求桥接到现有 worker stop source，等待 worker 收尾后返回。同步计划在安全
+边界检查取消；未完成的上传继续保留持久化 journal，未完成 Delta 不推进本地游标。
+已经提交的单个下载或远端变化不会回滚。远端删除、移动及恢复阶段的单个 Graph 请求
+目前仍不可中断；Qt 前端应在 UI 中区分“正在停止”和“已停止”。
+
 这条边界在保留 JSON、重定向文本、quiet 模式和交互式终端行为的同时，让业务
 代码不再依赖具体渲染器。内置 Text、JSON 与 FTXUI backend 独立消费同一套事件。
 `account login`、全部 `inspect` 命令和全部 `transfer` 命令使用 FTXUI 面板聚合认证、诊断、状态、云端检查、下载、摘要、阻塞项和最近消息；它

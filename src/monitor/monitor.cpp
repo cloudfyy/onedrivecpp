@@ -388,7 +388,7 @@ int Monitor::run_loop(
         "Running synchronization triggered by {}",
         detail::synchronization_reason_name(initial_reason)
     );
-    const int initial_result = synchronize_();
+    const int initial_result = synchronize_(stop_token);
     if (initial_result != 0) {
         spdlog::warn(
             "Initial monitor synchronization completed with status {}",
@@ -726,7 +726,7 @@ int Monitor::run_loop(
             "Monitor synchronization triggered by {}",
             detail::synchronization_reason_name(reason)
         );
-        const int result = synchronize_();
+        const int result = synchronize_(stop_token);
         if (result != 0) {
             spdlog::warn(
                 "Monitor synchronization completed with status {}",

@@ -477,6 +477,12 @@ RemoteItem MicrosoftGraphClient::upload_file(
             stop_token
         );
         if (!response) {
+            if (stop_token.stop_requested() ||
+                response.error().code == http::HttpErrorCode::cancelled) {
+                throw RequestCancelledError{
+                    "Microsoft Graph upload was cancelled"
+                };
+            }
             throw std::runtime_error(
                 "Microsoft Graph upload failed: " +
                 response.error().message
@@ -570,6 +576,12 @@ RemoteItem MicrosoftGraphClient::upload_file(
             stop_token
         );
         if (!response) {
+            if (stop_token.stop_requested() ||
+                response.error().code == http::HttpErrorCode::cancelled) {
+                throw RequestCancelledError{
+                    "Microsoft Graph upload session creation was cancelled"
+                };
+            }
             throw std::runtime_error(
                 "Microsoft Graph upload session creation failed: " +
                 response.error().message
@@ -633,6 +645,12 @@ RemoteItem MicrosoftGraphClient::upload_file(
             TransportErrorRetry::enabled
         );
         if (!response) {
+            if (stop_token.stop_requested() ||
+                response.error().code == http::HttpErrorCode::cancelled) {
+                throw RequestCancelledError{
+                    "Microsoft Graph upload session status was cancelled"
+                };
+            }
             throw std::runtime_error(
                 "Microsoft Graph upload session status failed: " +
                 response.error().message
@@ -769,6 +787,13 @@ RemoteItem MicrosoftGraphClient::upload_file(
             TransportErrorRetry::enabled
         );
         if (!chunk_response) {
+            if (stop_token.stop_requested() ||
+                chunk_response.error().code ==
+                    http::HttpErrorCode::cancelled) {
+                throw RequestCancelledError{
+                    "Microsoft Graph upload fragment was cancelled"
+                };
+            }
             throw std::runtime_error(
                 "Microsoft Graph upload fragment failed: " +
                 chunk_response.error().message

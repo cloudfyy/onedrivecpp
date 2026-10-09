@@ -22,7 +22,7 @@ int test_stop() {
         }};
         onedrive::monitor::Monitor signal_monitor{
             root,
-            [&] {
+            [&](const std::stop_token&) {
                 std::ofstream{signal_ready} << "ready";
                 return 0;
             },
@@ -69,7 +69,7 @@ int test_stop() {
     int stopped_runs = 0;
     onedrive::monitor::Monitor stopped_monitor{
         root,
-        [&] {
+        [&](const std::stop_token&) {
             ++stopped_runs;
             return 0;
         },
@@ -84,7 +84,7 @@ int test_stop() {
     int initial_runs = 0;
     onedrive::monitor::Monitor stop_after_initial_monitor{
         root,
-        [&] {
+        [&](const std::stop_token&) {
             ++initial_runs;
             stopped_after_initial.request_stop();
             return 0;
@@ -98,6 +98,27 @@ int test_stop() {
         return fail("monitor did not honor stop after initial synchronization");
     }
 
+    std::stop_source cancel_during_sync;
+    onedrive::monitor::Monitor cancel_sync_monitor{
+        root,
+        [](const std::stop_token& stop_token) {
+            while (!stop_token.stop_requested()) {
+                std::this_thread::sleep_for(1ms);
+            }
+            return 130;
+        },
+        1s,
+        10ms
+    };
+    std::jthread cancel_sync{[&] {
+        std::this_thread::sleep_for(10ms);
+        cancel_during_sync.request_stop();
+    }};
+    if (cancel_sync_monitor.run(cancel_during_sync.get_token()) != 0) {
+        return fail("monitor did not finish after cancelling synchronization");
+    }
+    cancel_sync.join();
+
     try {
         static_cast<void>(onedrive::monitor::Monitor{root, {}, 1s, 10ms});
         return fail("empty synchronization callback was accepted");
@@ -105,21 +126,34 @@ int test_stop() {
     }
     try {
         static_cast<void>(
-            onedrive::monitor::Monitor{root, [] { return 0; }, 0ms, 10ms}
+            onedrive::monitor::Monitor{
+                root,
+                [](const std::stop_token&) { return 0; },
+                0ms,
+                10ms
+            }
         );
         return fail("zero monitor poll interval was accepted");
     } catch (const std::invalid_argument&) {
     }
     try {
         static_cast<void>(
-            onedrive::monitor::Monitor{root, [] { return 0; }, 1s, -1ms}
+            onedrive::monitor::Monitor{
+                root,
+                [](const std::stop_token&) { return 0; },
+                1s,
+                -1ms
+            }
         );
         return fail("negative monitor settle delay was accepted");
     } catch (const std::invalid_argument&) {
     }
 
     onedrive::monitor::Monitor missing_root{
-        temporary.path() / "missing", [] { return 0; }, 1s, 10ms
+        temporary.path() / "missing",
+        [](const std::stop_token&) { return 0; },
+        1s,
+        10ms
     };
     try {
         std::stop_source stop;

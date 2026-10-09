@@ -297,7 +297,8 @@ public:
 
     [[nodiscard]] onedrive::graph::DeltaResult list_delta(
         const std::optional<std::string>&,
-        const onedrive::graph::DeltaProgress& progress
+        const onedrive::graph::DeltaProgress& progress,
+        std::stop_token
     ) const {
         if (progress) {
             progress(1, 1, onedrive::util::ProgressState::completed);
@@ -588,11 +589,15 @@ public:
 
     [[nodiscard]] int run() const {
         ++run_count_;
-        static_cast<void>(synchronize_());
+        static_cast<void>(synchronize_({}));
         return 0;
     }
     [[nodiscard]] int run(bool) const {
         return run();
+    }
+    [[nodiscard]] int run(const std::stop_token& stop_token) const {
+        ++run_count_;
+        return synchronize_(stop_token);
     }
 
 private:
@@ -701,9 +706,11 @@ public:
     ) const {
         ++monitor_count;
         auto counted_synchronize = [this,
-                                    synchronize = std::move(synchronize)] {
+                                    synchronize = std::move(synchronize)](
+                                       const std::stop_token& stop_token
+                                   ) {
             ++monitor_sync_count;
-            return synchronize();
+            return synchronize(stop_token);
         };
         return std::make_unique<onedrive::monitor::FileMonitor>(
             std::in_place_type<FakeMonitor>,

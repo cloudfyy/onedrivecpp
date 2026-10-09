@@ -15,7 +15,7 @@ int test_timing() {
     std::atomic_int periodic_runs{0};
     onedrive::monitor::Monitor periodic_monitor{
         root,
-        [&] {
+        [&](const std::stop_token&) {
             const int run = ++periodic_runs;
             return run <= 2 ? 2 : 0;
         },
@@ -41,7 +41,7 @@ int test_timing() {
     std::chrono::steady_clock::time_point changed_at;
     onedrive::monitor::Monitor settle_monitor{
         root,
-        [&] {
+        [&](const std::stop_token&) {
             const int run = ++settled_runs;
             if (run == 2) {
                 settled_elapsed =

@@ -35,10 +35,18 @@ int test_production_factory() {
 
     config.monitor_websocket_enabled = false;
     auto polling_monitor =
-        factory.create_monitor(config, [] { return 0; }, *graph);
+        factory.create_monitor(
+            config,
+            [](const std::stop_token&) { return 0; },
+            *graph
+        );
     config.monitor_websocket_enabled = true;
     auto notification_monitor =
-        factory.create_monitor(config, [] { return 0; }, *graph);
+        factory.create_monitor(
+            config,
+            [](const std::stop_token&) { return 0; },
+            *graph
+        );
 
     if (!transport || !authentication || !tokens || !graph || !graph_info ||
         !items || !metrics || !polling_monitor || !notification_monitor) {

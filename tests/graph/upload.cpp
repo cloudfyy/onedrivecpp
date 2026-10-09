@@ -76,6 +76,189 @@ int test_simple_file_uploads() {
     }
     return EXIT_SUCCESS;
 }
+
+int test_simple_upload_cancellation_is_not_a_resource_failure() {
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            token_response(),
+            std::unexpected(onedrive::http::HttpError{
+                .code = onedrive::http::HttpErrorCode::cancelled,
+                .message = "upload transport cancelled",
+            }),
+        }
+    );
+    auto* transport_pointer = transport.get();
+    std::stop_source stop;
+    transport_pointer->on_perform =
+        [&](const onedrive::http::HttpRequest& request) {
+            if (request.method == onedrive::http::HttpMethod::put) {
+                stop.request_stop();
+            }
+        };
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(std::make_unique<FakeTokenStore>(
+            std::string{"existing-refresh"}
+        )),
+        auth_options(),
+        {
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+        },
+    };
+    const auto source = test_directory() / "cancelled-upload-source.txt";
+    {
+        std::ofstream output{source, std::ios::binary};
+        output << "payload";
+    }
+
+    try {
+        static_cast<void>(client.upload_file(
+            "cancelled.txt",
+            std::nullopt,
+            "",
+            source,
+            std::nullopt,
+            {},
+            stop.get_token()
+        ));
+        return fail("cancelled Graph upload was accepted");
+    } catch (const onedrive::graph::RequestCancelledError&) {
+    } catch (const onedrive::graph::UploadResourceError&) {
+        return fail("Graph upload cancellation was reported as a resource error");
+    }
+
+    if (transport_pointer->queued.requests.size() != 2 ||
+        transport_pointer->queued.requests.back().stop_token !=
+            stop.get_token()) {
+        return fail("Graph upload cancellation retried or lost its stop token");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_upload_session_cancellation_stages() {
+    const auto run_cancelled_upload = [](
+                                          std::deque<onedrive::http::HttpResult>
+                                              responses,
+                                          std::size_t cancel_on_request,
+                                          std::size_t expected_requests,
+                                          std::optional<
+                                              onedrive::graph::UploadSession
+                                          > session
+                                      ) {
+        auto transport = std::make_unique<FakeTransport>(
+            std::move(responses)
+        );
+        auto* transport_pointer = transport.get();
+        std::stop_source stop;
+        std::size_t calls = 0;
+        transport_pointer->on_perform =
+            [&](const onedrive::http::HttpRequest&) {
+                if (++calls == cancel_on_request) {
+                    stop.request_stop();
+                }
+            };
+        onedrive::graph::GraphOptions graph_options{
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+            .simple_upload_threshold_bytes = 1,
+        };
+        onedrive::graph::MicrosoftGraphClient client{
+            wrap_transport(std::move(transport)),
+            wrap_token_store(std::make_unique<FakeTokenStore>(
+                std::string{"existing-refresh"}
+            )),
+            auth_options(),
+            graph_options,
+        };
+        const auto source =
+            test_directory() / "cancelled-session-upload-source.bin";
+        {
+            std::ofstream output{source, std::ios::binary};
+            output << "xx";
+        }
+        std::size_t checkpoints = 0;
+        try {
+            static_cast<void>(client.upload_file(
+                "cancelled-session.bin",
+                std::nullopt,
+                "",
+                source,
+                std::move(session),
+                [&](const onedrive::graph::UploadSession&) {
+                    ++checkpoints;
+                },
+                stop.get_token()
+            ));
+            return false;
+        } catch (const onedrive::graph::RequestCancelledError&) {
+            if (transport_pointer->queued.requests.size() !=
+                    expected_requests ||
+                transport_pointer->queued.requests.back().stop_token !=
+                    stop.get_token() ||
+                checkpoints != (cancel_on_request == 3 ? 1U : 0U)) {
+                return false;
+            }
+            return true;
+        } catch (const onedrive::graph::UploadResourceError&) {
+            return false;
+        } catch (const std::exception&) {
+            return false;
+        }
+    };
+    const auto cancelled = [] {
+        return std::unexpected(onedrive::http::HttpError{
+            .code = onedrive::http::HttpErrorCode::cancelled,
+            .message = "upload transport cancelled",
+        });
+    };
+    constexpr auto existing_token =
+        R"({"token_type":"Bearer","expires_in":3600,"access_token":"access-secret","refresh_token":"existing-refresh"})";
+    constexpr auto created_session =
+        R"({"uploadUrl":"https://upload.example.test/session","expirationDateTime":"2099-10-09T11:00:00Z","nextExpectedRanges":["0-"]})";
+
+    if (!run_cancelled_upload(
+            {token_response(), cancelled()}, 2, 2, std::nullopt)) {
+        return fail("simple Graph upload did not map cancellation correctly");
+    }
+    if (!run_cancelled_upload(
+            {
+                json_response(200, existing_token),
+                cancelled(),
+            },
+            2,
+            2,
+            std::nullopt
+        )) {
+        return fail("upload-session creation did not map cancellation");
+    }
+    if (!run_cancelled_upload(
+            {cancelled()},
+            1,
+            1,
+            onedrive::graph::UploadSession{
+                .upload_url = "https://upload.example.test/session",
+                .expiration = "2099-10-09T11:00:00Z",
+                .completed_bytes = 0,
+            }
+        )) {
+        return fail("upload-session status did not map cancellation");
+    }
+    if (!run_cancelled_upload(
+            {
+                json_response(200, existing_token),
+                json_response(200, created_session),
+                cancelled(),
+            },
+            3,
+            3,
+            std::nullopt
+        )) {
+        return fail("upload-session fragment did not map cancellation");
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_upload_sessions() {
     constexpr std::size_t chunk_size = 320U * 1024U;
     constexpr std::size_t total_size = chunk_size + 7U;
@@ -659,6 +842,15 @@ int test_invalid_upload_session_responses() {
 
 int main() {
     if (const int result = test_simple_file_uploads(); result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result =
+            test_simple_upload_cancellation_is_not_a_resource_failure();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_upload_session_cancellation_stages();
+        result != EXIT_SUCCESS) {
         return result;
     }
     if (const int result = test_upload_sessions(); result != EXIT_SUCCESS) {

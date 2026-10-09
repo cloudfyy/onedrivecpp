@@ -507,9 +507,11 @@ int execute_command(
     }
     auto metrics = runtime_factory.create_metrics(config, identity);
     monitor::SyncCallback synchronize{
-        [&config, &graph, &items, &metrics, &console] {
+        [&config, &graph, &items, &metrics, &console](
+            const std::stop_token& stop_token
+        ) {
             return sync::SyncEngine{config, *graph, *items, *metrics, &console}
-                .synchronize();
+                .synchronize(stop_token);
         }
     };
     if (operation == Operation::monitor) {
@@ -543,7 +545,7 @@ int execute_command(
             .create_monitor(config, std::move(synchronize), *graph)
             ->run(console.ui_mode() == cli::UiMode::tui);
     }
-    return synchronize();
+    return synchronize({});
 }
 
 } // namespace onedrive::app::detail

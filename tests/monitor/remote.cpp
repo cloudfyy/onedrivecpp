@@ -11,7 +11,7 @@ int test_notification_authentication_and_connection() {
     std::atomic_int token_refreshes{0};
     onedrive::monitor::Monitor monitor{
         fixture.root,
-        [&] {
+        [&](const std::stop_token&) {
             ++sync_runs;
             return 0;
         },

@@ -1,5 +1,6 @@
 #include "onedrive/sync/core/engine.hpp"
 
+#include "onedrive/sync/cancellation.hpp"
 #include "onedrive/ui/common/observer.hpp"
 #include "onedrive/util/mount.hpp"
 #include "onedrive/util/path_security.hpp"
@@ -368,7 +369,7 @@ void report_completion(
 
 } // namespace
 
-int SyncEngine::synchronize() {
+int SyncEngine::synchronize(std::stop_token stop_token) {
     const auto started_at = std::chrono::steady_clock::now();
     const auto record_result = [this,
                                 started_at](metrics::SyncRunOutcome outcome) {
@@ -384,6 +385,7 @@ int SyncEngine::synchronize() {
     );
 
     try {
+        throw_if_cancelled(stop_token);
         onedrive::util::require_sync_mount(
             config_.sync_data_directory, config_.sync_data_mount_point
         );
@@ -418,6 +420,7 @@ int SyncEngine::synchronize() {
                 )
             );
             if (capabilities.downloads()) {
+                throw_if_cancelled(stop_token);
                 detail::recover_pending_downloads(
                     items_,
                     *safe_root,
@@ -427,6 +430,7 @@ int SyncEngine::synchronize() {
                 );
             }
             if (capabilities.uploads()) {
+                throw_if_cancelled(stop_token);
                 detail::recover_pending_remote_moves(
                     *safe_root, config_.drive_id, graph_, items_, observer
                 );
@@ -517,6 +521,7 @@ int SyncEngine::synchronize() {
             "delta_query_started",
             "Fetching Microsoft Graph changes..."
         );
+        throw_if_cancelled(stop_token);
         auto apply_mode = query_delta_link.has_value()
                               ? storage::DeltaApplyMode::merge
                               : storage::DeltaApplyMode::replace;
@@ -532,7 +537,9 @@ int SyncEngine::synchronize() {
                 observer.delta_progress(pages, items, state);
             };
         try {
-            delta = graph_.list_delta(query_delta_link, delta_progress);
+            delta = graph_.list_delta(
+                query_delta_link, delta_progress, stop_token
+            );
         } catch (const graph::DeltaCursorInvalidError& error) {
             spdlog::warn(
                 "{}; retrying with a full Microsoft Graph delta query",
@@ -544,9 +551,12 @@ int SyncEngine::synchronize() {
                 "The saved Microsoft Graph cursor is no longer valid; "
                 "fetching the full remote state..."
             );
-            delta = graph_.list_delta(std::nullopt, delta_progress);
+            delta = graph_.list_delta(
+                std::nullopt, delta_progress, stop_token
+            );
             apply_mode = storage::DeltaApplyMode::replace;
         }
+        throw_if_cancelled(stop_token);
         events::DeltaSummary delta_summary{
             .pages = delta_pages,
             .scanned_items = delta_scanned_items,
@@ -659,6 +669,7 @@ int SyncEngine::synchronize() {
             tracked_items,
             std::move(upload_suppressions)
         );
+        throw_if_cancelled(stop_token);
         for (const auto& partial : orphaned_partials) {
             plan.remove_partial_download(partial.item.remote_id);
         }
@@ -684,7 +695,8 @@ int SyncEngine::synchronize() {
                             config_.maximum_remote_deletions,
                         .force = config_.force_large_delete,
                     },
-                    config_.upload_concurrency
+                    config_.upload_concurrency,
+                    stop_token
                 );
                 blocked_count += upload_summary.blocked;
                 report_upload_plan(config_, upload_summary, observer);
@@ -711,12 +723,15 @@ int SyncEngine::synchronize() {
                 config_.download_concurrency,
                 config_.transfer_order,
                 config_.local_conflict,
-                config_.sync_permissions
+                config_.sync_permissions,
+                stop_token
             );
+            throw_if_cancelled(stop_token);
             spdlog::debug(
                 "Persisting remote delta for drive '{}'", config_.drive_id
             );
             blocked_count = plan.blocked_count();
+            throw_if_cancelled(stop_token);
             items_.apply_delta(plan.release_state_delta());
             discard_orphaned_partial_files(orphaned_partials);
             if (capabilities.uploads()) {
@@ -734,7 +749,8 @@ int SyncEngine::synchronize() {
                             config_.maximum_remote_deletions,
                         .force = config_.force_large_delete,
                     },
-                    config_.upload_concurrency
+                    config_.upload_concurrency,
+                    stop_token
                 );
                 blocked_count += upload_summary.blocked;
             }
@@ -743,11 +759,28 @@ int SyncEngine::synchronize() {
             );
         }
 
+        throw_if_cancelled(stop_token);
         record_result(metrics::SyncRunOutcome::succeeded);
         report_completion(
             blocked_count, capabilities.previews(), started_at, observer
         );
         return blocked_count == 0 ? 0 : 2;
+    } catch (const SyncCancelledError&) {
+        record_result(metrics::SyncRunOutcome::cancelled);
+        observer.message(
+            events::MessageKind::information,
+            "sync_cancelled",
+            "Synchronization cancelled."
+        );
+        return 130;
+    } catch (const graph::RequestCancelledError&) {
+        record_result(metrics::SyncRunOutcome::cancelled);
+        observer.message(
+            events::MessageKind::information,
+            "sync_cancelled",
+            "Synchronization cancelled."
+        );
+        return 130;
     } catch (const onedrive::util::SyncMountUnavailableError& error) {
         record_result(metrics::SyncRunOutcome::failed);
         const auto elapsed = std::chrono::steady_clock::now() - started_at;

@@ -112,6 +112,17 @@ account activation. Once persistence begins, it is allowed to finish rather than
 interrupting account file writes. CLI messages and exit codes remain unchanged;
 GUI worker and window lifetimes are still the frontend's responsibility.
 
+`SyncEngine::synchronize` and Monitor callbacks accept a stop token. A cancelled
+sync returns exit code 130 and records a distinct `cancelled` outcome rather
+than reporting success or an ordinary failure. Graph Delta forwards the token
+through OAuth refresh, paged HTTP requests, and retry waits. Download and upload
+workers bridge external stop requests to their existing worker stop sources and
+join before returning. The sync plan checks cancellation at safe boundaries;
+incomplete uploads retain their durable journal, and an incomplete Delta does
+not advance the local cursor. Already committed individual downloads or remote
+operations are not rolled back. Single Graph requests in remote-move, remote-
+delete, and startup-recovery operations are not yet interruptible.
+
 This boundary preserves JSON, redirected text, quiet mode, and interactive
 terminal behavior without coupling business code to a specific renderer. The
 account login, all inspect commands, and all transfer commands use the FTXUI dashboard to aggregate authorization, diagnostics, status, cloud checks, download, summary, blocked-item,

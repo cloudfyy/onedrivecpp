@@ -15,7 +15,7 @@
 
 namespace onedrive::monitor {
 
-using SyncCallback = std::function<int()>;
+using SyncCallback = std::function<int(const std::stop_token&)>;
 
 struct NotificationChannel {
     std::string url;
@@ -42,7 +42,12 @@ struct NotificationCallbacks {
 PRO_DEF_MEM_DISPATCH(MonitorRunDispatch, run);
 
 struct FileMonitorFacade : pro::facade_builder
-    ::add_convention<MonitorRunDispatch, int() const, int(bool) const>
+    ::add_convention<
+        MonitorRunDispatch,
+        int() const,
+        int(bool) const,
+        int(const std::stop_token&) const
+    >
     ::build {};
 
 class FileMonitor : private onedrive::util::ProxyService<FileMonitorFacade> {
@@ -56,6 +61,9 @@ public:
     }
     [[nodiscard]] int run(bool keyboard_exit) const {
         return implementation()->run(keyboard_exit);
+    }
+    [[nodiscard]] int run(const std::stop_token& stop_token) const {
+        return implementation()->run(stop_token);
     }
 };
 

@@ -39,6 +39,19 @@ int test_file_metrics() {
             "file metrics did not persist a failed synchronization status"
         );
     }
+    metrics.record_sync_run(
+        onedrive::metrics::SyncRunOutcome::cancelled,
+        std::chrono::milliseconds{50}
+    );
+    const auto cancelled =
+        onedrive::metrics::load_sync_run_status(temporary.path());
+    if (!cancelled ||
+        cancelled->outcome != onedrive::metrics::SyncRunOutcome::cancelled ||
+        cancelled->duration_milliseconds != 50) {
+        return onedrive::test::fail(
+            "file metrics did not persist a cancelled synchronization status"
+        );
+    }
 
     const auto missing = temporary.path() / "missing";
     if (onedrive::metrics::load_sync_run_status(missing)) {

@@ -92,7 +92,9 @@ public:
     }
 
     [[nodiscard]] onedrive::graph::DeltaResult list_delta(
-        const std::optional<std::string>&, const onedrive::graph::DeltaProgress&
+        const std::optional<std::string>&,
+        const onedrive::graph::DeltaProgress&,
+        std::stop_token
     ) const {
         return {};
     }

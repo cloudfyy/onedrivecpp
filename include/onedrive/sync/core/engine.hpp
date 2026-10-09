@@ -7,6 +7,7 @@
 
 #include <gsl/pointers>
 
+#include <stop_token>
 #include <utility>
 
 namespace onedrive::events {
@@ -35,7 +36,7 @@ public:
           observer_{observer} {
     }
 
-    [[nodiscard]] int synchronize();
+    [[nodiscard]] int synchronize(std::stop_token stop_token = {});
 
 private:
     config::Config config_;

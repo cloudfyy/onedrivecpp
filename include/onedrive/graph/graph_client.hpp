@@ -151,6 +151,11 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+class RequestCancelledError final : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
 class RemoteItemChangedError final : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
@@ -240,7 +245,8 @@ struct GraphClientFacade : pro::facade_builder
         GraphListDeltaDispatch,
         DeltaResult(
             const std::optional<std::string>&,
-            const DeltaProgress&
+            const DeltaProgress&,
+            std::stop_token
         ) const
     >
     ::add_convention<
@@ -314,9 +320,12 @@ public:
 
     [[nodiscard]] DeltaResult list_delta(
         const std::optional<std::string>& delta_link,
-        const DeltaProgress& progress = {}
+        const DeltaProgress& progress = {},
+        std::stop_token stop_token = {}
     ) const {
-        return implementation()->list_delta(delta_link, progress);
+        return implementation()->list_delta(
+            delta_link, progress, stop_token
+        );
     }
 
     [[nodiscard]] NotificationChannel notification_channel() const {
@@ -523,7 +532,8 @@ public:
     ) const;
     [[nodiscard]] DeltaResult list_delta(
         const std::optional<std::string>& delta_link,
-        const DeltaProgress& progress = {}
+        const DeltaProgress& progress = {},
+        std::stop_token stop_token = {}
     ) const;
     [[nodiscard]] NotificationChannel notification_channel() const;
     void refresh_access_token() const;

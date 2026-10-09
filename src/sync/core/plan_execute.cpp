@@ -1,5 +1,6 @@
 #include "sync/core/plan_execute.hpp"
 
+#include "onedrive/sync/cancellation.hpp"
 #include "onedrive/ui/common/observer.hpp"
 #include "sync/core/delta_plan.hpp"
 #include "sync/core/downloads.hpp"
@@ -36,8 +37,10 @@ ExecutionSummary execute_plan(
     std::size_t download_concurrency,
     config::TransferOrder transfer_order,
     config::LocalConflictPolicy local_conflict,
-    config::SyncPermissionsMode permissions
+    config::SyncPermissionsMode permissions,
+    const std::stop_token& stop_token
 ) {
+    throw_if_cancelled(stop_token);
     if (!capabilities.downloads()) {
         return {};
     }
@@ -69,6 +72,7 @@ ExecutionSummary execute_plan(
 
     std::size_t prepared_directory_count = 0;
     for (std::size_t index = 0; index < plan.directory_count(); ++index) {
+        throw_if_cancelled(stop_token);
         const auto& item = plan.directory(index);
         if (blocked_ids.contains(item.id)) {
             continue;
@@ -120,6 +124,7 @@ ExecutionSummary execute_plan(
     std::vector<engine_detail::DownloadTask> download_tasks;
     download_tasks.reserve(plan.download_count());
     for (std::size_t index = 0; index < plan.download_count(); ++index) {
+        throw_if_cancelled(stop_token);
         const auto& item = plan.download(index);
         if (blocked_ids.contains(item.id)) {
             continue;
@@ -307,7 +312,8 @@ ExecutionSummary execute_plan(
         metadata,
         observer,
         safe_root,
-        local_conflict
+        local_conflict,
+        stop_token
     );
     for (const auto& error : downloads.errors) {
         if (error) {
