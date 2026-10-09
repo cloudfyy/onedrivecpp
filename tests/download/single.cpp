@@ -1,5 +1,5 @@
 #include "support.hpp"
-#include "onedrive/cli/console.hpp"
+#include "onedrive/ui/cli/console.hpp"
 
 namespace {
 

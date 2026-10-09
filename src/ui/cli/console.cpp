@@ -1,7 +1,7 @@
-#include "onedrive/cli/console.hpp"
+#include "onedrive/ui/cli/console.hpp"
 
-#include "cli/backend_factory.hpp"
-#include "cli/terminal.hpp"
+#include "ui/cli/backend_factory.hpp"
+#include "ui/cli/terminal.hpp"
 
 #include <iostream>
 #include <stdexcept>

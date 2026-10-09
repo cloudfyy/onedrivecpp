@@ -1,5 +1,5 @@
-#include "cli/backend_factory.hpp"
-#include "onedrive/cli/console.hpp"
+#include "ui/cli/backend_factory.hpp"
+#include "onedrive/ui/cli/console.hpp"
 #include "onedrive/util/system_error.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"
 #include "support/common.hpp"

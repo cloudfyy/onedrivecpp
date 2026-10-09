@@ -154,10 +154,16 @@ Socket.IO framing、心跳处理和 eventfd 唤醒。
 目录与参考项目中的 `main/config/curlEngine/onedrive/sync/itemdb/monitor`
 职责相对应：
 
-- `src/app`：CLI 解析、应用生命周期和运行时依赖工厂。
+- `src/app`：结构化应用查询、运行时依赖工厂和预检。
 - `src/account`：稳定账号与 Drive 身份、元数据和路径。
 - `src/auth`：设备代码 OAuth、Token 刷新和安全持久化。
-- `src/cli`：文本、JSON、FTXUI 用户输出及终端能力探测。
+- `src/ui/common`：前端共用的事件报告实现，不依赖终端或 Qt。
+- `src/ui/cli`：文本、JSON、FTXUI 用户输出及终端能力探测。
+- `src/ui/cli/app`：CLI 参数解析、入口生命周期、命令编排和输出格式化；
+  其中尚未提取的业务用例仍会在后续迁入 `src/app`。
+- `src/ui/gui`：为 Qt 前端预留的目录，目前不包含实现或 Qt 依赖。
+- `include/onedrive/ui`：按 `common`、`cli`、`gui` 对应组织的公共头文件；
+  文件归属调整不改变现有 `events`、`cli` 和 `app` 命名空间。
 - `src/config`：配置文件加载和校验。
 - `src/graph`：Microsoft Graph API 访问边界。
 - `src/http`：强类型 libcurl HTTP 传输层。

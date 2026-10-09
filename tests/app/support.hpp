@@ -1,4 +1,4 @@
-#include "onedrive/app/app.hpp"
+#include "onedrive/ui/cli/app.hpp"
 #include "onedrive/app/factory.hpp"
 #include "onedrive/app/options.hpp"
 #include "onedrive/account/account_state.hpp"

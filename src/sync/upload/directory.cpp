@@ -1,7 +1,7 @@
 #include "sync/upload/directory.hpp"
 #include "sync/upload/errors.hpp"
 
-#include "onedrive/events/observer.hpp"
+#include "onedrive/ui/common/observer.hpp"
 #include "sync/filesystem/metadata.hpp"
 #include "sync/filesystem/operations.hpp"
 #include "sync/filesystem/safe_sync_root.hpp"

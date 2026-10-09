@@ -1,7 +1,7 @@
 #include "sync/upload/orchestration.hpp"
 #include "sync/upload/remote_delete.hpp"
 #include "sync/upload/planning.hpp"
-#include "onedrive/events/observer.hpp"
+#include "onedrive/ui/common/observer.hpp"
 #include "util/typestate.hpp"
 #include "sync/filesystem/operations.hpp"
 #include "sync/filesystem/safe_sync_root.hpp"

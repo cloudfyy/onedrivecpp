@@ -1,6 +1,6 @@
 #include "onedrive/sync/core/engine.hpp"
 
-#include "onedrive/events/observer.hpp"
+#include "onedrive/ui/common/observer.hpp"
 #include "onedrive/util/mount.hpp"
 #include "onedrive/util/path_security.hpp"
 #include "sync/core/delta_plan.hpp"

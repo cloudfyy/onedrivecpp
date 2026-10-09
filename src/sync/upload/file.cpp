@@ -3,7 +3,7 @@
 #include "sync/upload/errors.hpp"
 #include "sync/upload/orchestration.hpp"
 
-#include "onedrive/events/observer.hpp"
+#include "onedrive/ui/common/observer.hpp"
 #include "onedrive/util/path_security.hpp"
 #include "onedrive/util/system_error.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"

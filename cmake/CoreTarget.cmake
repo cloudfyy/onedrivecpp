@@ -1,11 +1,11 @@
 add_library(onedrive_cli
-    src/cli/console.cpp
-    src/cli/format.cpp
-    src/cli/ftxui_backend.cpp
-    src/cli/json_backend.cpp
-    src/cli/message.cpp
-    src/cli/terminal.cpp
-    src/cli/text_backend.cpp
+    src/ui/cli/console.cpp
+    src/ui/cli/format.cpp
+    src/ui/cli/ftxui_backend.cpp
+    src/ui/cli/json_backend.cpp
+    src/ui/cli/message.cpp
+    src/ui/cli/terminal.cpp
+    src/ui/cli/text_backend.cpp
 )
 
 target_include_directories(onedrive_cli
@@ -38,7 +38,7 @@ add_library(onedrive_core
     src/account/account_state.cpp
     src/auth/device_auth.cpp
     src/auth/token_store.cpp
-    src/events/observer.cpp
+    src/ui/common/observer.cpp
     src/config/console.cpp
     src/config/config.cpp
     src/config/network.cpp
@@ -158,16 +158,16 @@ target_compile_options(onedrive_core PRIVATE
 )
 
 add_library(onedrive_app
-    src/app/app.cpp
-    src/app/args.cpp
+    src/ui/cli/app/app.cpp
+    src/ui/cli/app/args.cpp
     src/app/checks.cpp
-    src/app/commands.cpp
-    src/app/discover.cpp
-    src/app/drive_fields.cpp
+    src/ui/cli/app/commands.cpp
+    src/ui/cli/app/discover.cpp
+    src/ui/cli/app/drive_fields.cpp
     src/app/lock.cpp
     src/app/preflight.cpp
     src/app/factory.cpp
-    src/app/info.cpp
+    src/ui/cli/app/info.cpp
     src/app/queries.cpp
 )
 

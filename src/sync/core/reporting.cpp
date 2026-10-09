@@ -1,6 +1,6 @@
 #include "sync/core/reporting.hpp"
 
-#include "onedrive/events/observer.hpp"
+#include "onedrive/ui/common/observer.hpp"
 #include "onedrive/storage/item_store.hpp"
 
 #include <spdlog/spdlog.h>

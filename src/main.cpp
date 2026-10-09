@@ -1,4 +1,4 @@
-#include "onedrive/app/app.hpp"
+#include "onedrive/ui/cli/app.hpp"
 #include "onedrive/app/factory.hpp"
 
 int main(int argc, char* argv[]) {

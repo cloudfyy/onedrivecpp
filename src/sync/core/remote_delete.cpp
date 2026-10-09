@@ -1,6 +1,6 @@
 #include "sync/core/remote_delete.hpp"
 
-#include "onedrive/events/observer.hpp"
+#include "onedrive/ui/common/observer.hpp"
 #include "sync/core/item_ops.hpp"
 #include "sync/core/reporting.hpp"
 #include "sync/core/plan.hpp"

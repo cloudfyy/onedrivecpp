@@ -1,6 +1,6 @@
 #include "sync/core/plan_report.hpp"
 
-#include "onedrive/events/observer.hpp"
+#include "onedrive/ui/common/observer.hpp"
 #include "sync/core/reporting.hpp"
 
 #include <spdlog/spdlog.h>

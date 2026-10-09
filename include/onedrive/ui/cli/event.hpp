@@ -1,7 +1,7 @@
 #pragma once
 
 #include "onedrive/config/console.hpp"
-#include "onedrive/events/event.hpp"
+#include "onedrive/ui/common/event.hpp"
 
 #include <cstddef>
 #include <cstdint>

@@ -1,5 +1,5 @@
 #include "support.hpp"
-#include "app/info.hpp"
+#include "ui/cli/app/info.hpp"
 #include "db/support.hpp"
 #include "onedrive/logging/logging.hpp"
 #include "sync/filesystem/operations.hpp"

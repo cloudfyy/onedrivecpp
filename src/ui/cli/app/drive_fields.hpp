@@ -1,6 +1,6 @@
 #pragma once
 
-#include "onedrive/cli/event.hpp"
+#include "onedrive/ui/cli/event.hpp"
 #include "onedrive/graph/graph_client.hpp"
 
 #include <optional>

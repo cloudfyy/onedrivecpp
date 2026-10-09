@@ -1,6 +1,6 @@
 #include "sync/core/plan_execute.hpp"
 
-#include "onedrive/events/observer.hpp"
+#include "onedrive/ui/common/observer.hpp"
 #include "sync/core/delta_plan.hpp"
 #include "sync/core/downloads.hpp"
 #include "sync/core/item_ops.hpp"

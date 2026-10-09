@@ -1,6 +1,6 @@
 #pragma once
 
-#include "onedrive/events/event.hpp"
+#include "onedrive/ui/common/event.hpp"
 
 #include <mutex>
 #include <string_view>

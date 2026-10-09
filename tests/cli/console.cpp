@@ -1,4 +1,4 @@
-#include "onedrive/cli/console.hpp"
+#include "onedrive/ui/cli/console.hpp"
 #include "support/common.hpp"
 
 #include <nlohmann/json.hpp>

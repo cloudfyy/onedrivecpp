@@ -1,6 +1,6 @@
 #pragma once
 
-#include "onedrive/cli/console.hpp"
+#include "onedrive/ui/cli/console.hpp"
 #include "onedrive/config/config.hpp"
 #include "onedrive/graph/graph_client.hpp"
 #include "onedrive/metrics/metrics.hpp"

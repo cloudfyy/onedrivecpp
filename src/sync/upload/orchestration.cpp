@@ -6,7 +6,7 @@
 #include "sync/upload/remote_move.hpp"
 
 #include "onedrive/util/unique_file_descriptor.hpp"
-#include "onedrive/events/observer.hpp"
+#include "onedrive/ui/common/observer.hpp"
 #include "onedrive/util/path_security.hpp"
 #include "util/typestate.hpp"
 #include "sync/filesystem/operations.hpp"

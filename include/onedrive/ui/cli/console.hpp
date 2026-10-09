@@ -1,7 +1,7 @@
 #pragma once
 
-#include "onedrive/cli/backend.hpp"
-#include "onedrive/events/observer.hpp"
+#include "onedrive/ui/cli/backend.hpp"
+#include "onedrive/ui/common/observer.hpp"
 
 #include <cstddef>
 #include <cstdint>

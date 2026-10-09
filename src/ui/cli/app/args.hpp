@@ -1,7 +1,7 @@
 #pragma once
 
-#include "onedrive/cli/console.hpp"
-#include "operation.hpp"
+#include "onedrive/ui/cli/console.hpp"
+#include "app/operation.hpp"
 
 #include <filesystem>
 #include <optional>

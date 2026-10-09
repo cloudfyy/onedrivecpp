@@ -1,7 +1,7 @@
-#include "cli/backend_factory.hpp"
-#include "cli/message.hpp"
+#include "ui/cli/backend_factory.hpp"
+#include "ui/cli/message.hpp"
 
-#include "onedrive/cli/console.hpp"
+#include "onedrive/ui/cli/console.hpp"
 
 #include <nlohmann/json.hpp>
 

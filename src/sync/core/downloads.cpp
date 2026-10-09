@@ -1,6 +1,6 @@
 #include "sync/core/downloads.hpp"
 
-#include "onedrive/events/observer.hpp"
+#include "onedrive/ui/common/observer.hpp"
 #include "sync/core/item_ops.hpp"
 #include "sync/download/progress.hpp"
 #include "sync/download/space.hpp"

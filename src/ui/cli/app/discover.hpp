@@ -1,7 +1,7 @@
 #pragma once
 
 #include "onedrive/app/factory.hpp"
-#include "onedrive/cli/console.hpp"
+#include "onedrive/ui/cli/console.hpp"
 #include "onedrive/config/config.hpp"
 
 #include <string>

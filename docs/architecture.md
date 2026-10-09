@@ -168,11 +168,21 @@ WebSocket-only transport, including heartbeat handling and eventfd wakeups.
 The directories correspond to the responsibilities of
 `main/config/curlEngine/onedrive/sync/itemdb/monitor` in the reference project:
 
-- `src/app`: CLI parsing, application lifecycle, and runtime dependency factory.
+- `src/app`: Structured application queries, runtime dependency factory, and
+  preflight checks.
 - `src/account`: Stable account and Drive identity, metadata, and paths.
 - `src/auth`: Device-code OAuth, token refresh, and secure token persistence.
-- `src/cli`: Text, JSON, and FTXUI user output plus terminal capability
+- `src/ui/common`: Shared event reporting implementation without terminal or Qt
+  dependencies.
+- `src/ui/cli`: Text, JSON, and FTXUI user output plus terminal capability
   detection.
+- `src/ui/cli/app`: CLI argument parsing, entry-point lifecycle, command
+  orchestration, and formatting. Remaining embedded use cases will move into
+  `src/app` as application services are extracted.
+- `src/ui/gui`: Reserved for the Qt frontend; no implementation or Qt dependency
+  has been added yet.
+- `include/onedrive/ui`: Public headers grouped into `common`, `cli`, and `gui`.
+  Directory changes preserve the existing `events`, `cli`, and `app` namespaces.
 - `src/config`: Configuration file loading and validation.
 - `src/graph`: Microsoft Graph API boundary.
 - `src/http`: Typed libcurl HTTP transport.

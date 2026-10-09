@@ -1,6 +1,6 @@
 #include "support.hpp"
 
-#include "onedrive/cli/backend.hpp"
+#include "onedrive/ui/cli/backend.hpp"
 
 namespace {
 

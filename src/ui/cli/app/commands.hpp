@@ -2,7 +2,7 @@
 
 #include "args.hpp"
 #include "onedrive/app/factory.hpp"
-#include "onedrive/cli/console.hpp"
+#include "onedrive/ui/cli/console.hpp"
 #include "onedrive/config/config.hpp"
 
 namespace onedrive::app::detail {

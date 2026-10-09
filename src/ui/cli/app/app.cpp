@@ -1,10 +1,10 @@
-#include "onedrive/app/app.hpp"
+#include "onedrive/ui/cli/app.hpp"
 
 #include "args.hpp"
 #include "commands.hpp"
 #include "monitor/signal.hpp"
 #include "onedrive/logging/logging.hpp"
-#include "preflight.hpp"
+#include "app/preflight.hpp"
 
 #include <spdlog/spdlog.h>
 

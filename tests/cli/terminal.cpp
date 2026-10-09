@@ -1,4 +1,4 @@
-#include "cli/terminal.hpp"
+#include "ui/cli/terminal.hpp"
 #include "support/common.hpp"
 
 #include <cstdlib>

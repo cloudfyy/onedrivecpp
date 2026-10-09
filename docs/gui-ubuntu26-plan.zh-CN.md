@@ -244,6 +244,9 @@ GUI 包还需要：
 
 当前已完成三个 target 的物理拆分及 UI 中立事件迁移：
 
+- UI 源码和公共头文件已按 `ui/common`、`ui/cli`、`ui/gui` 分组。共用事件接口和
+  实现位于 `common`，终端后端以及 CLI 编排和格式化位于 `cli`，Qt 的 `gui`
+  目录已预留。运行时工厂、结构化查询和预检仍在应用层；本次重组不引入 Qt。
 - `events::Event` 和线程安全的 `events::Observer` 位于核心层，不引入新的
   target，也不依赖 `onedrive_app`。
 - `cli::Console` 继承观察者接口，现有 CLI 事件名称保留兼容别名。

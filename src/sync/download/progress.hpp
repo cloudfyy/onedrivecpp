@@ -1,6 +1,6 @@
 #pragma once
 
-#include "onedrive/events/observer.hpp"
+#include "onedrive/ui/common/observer.hpp"
 
 #include <chrono>
 #include <cstdint>

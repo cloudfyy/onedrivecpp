@@ -1,6 +1,6 @@
-#include "cli/backend_factory.hpp"
-#include "app/drive_fields.hpp"
-#include "onedrive/cli/console.hpp"
+#include "ui/cli/backend_factory.hpp"
+#include "ui/cli/app/drive_fields.hpp"
+#include "onedrive/ui/cli/console.hpp"
 #include "support/common.hpp"
 #include "cli/partials_fixture.hpp"
 
