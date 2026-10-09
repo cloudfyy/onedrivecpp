@@ -5,6 +5,7 @@
 #include "onedrive/account/account_state.hpp"
 #include "onedrive/app/options.hpp"
 #include "onedrive/app/authentication.hpp"
+#include "onedrive/app/synchronization.hpp"
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
 #include "onedrive/graph/graph_client.hpp"
@@ -483,6 +484,11 @@ int execute_command(
                                         : "synchronization",
         config.dry_run ? " dry run" : ""
     );
+    if (operation == Operation::synchronize) {
+        return synchronize_account(
+            std::move(config), runtime_factory, console
+        );
+    }
     auto graph = runtime_factory.create_graph_client(config);
     const auto identity = graph->drive_identity();
     config.drive_id = identity.drive_id;
