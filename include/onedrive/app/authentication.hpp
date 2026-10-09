@@ -10,6 +10,10 @@ namespace onedrive::config {
 struct Config;
 }
 
+namespace onedrive::events {
+class Observer;
+}
+
 namespace onedrive::app {
 
 class RuntimeFactory;
@@ -29,6 +33,13 @@ struct AuthenticationResult {
     std::filesystem::path token_directory;
 };
 
+[[nodiscard]] auth::AuthResult<AuthenticationResult> authenticate_account(
+    const config::Config& config,
+    const RuntimeFactory& runtime_factory,
+    const events::Observer& observer,
+    const AuthorizationCallback& authorization,
+    std::stop_token stop_token = {}
+);
 [[nodiscard]] auth::AuthResult<AuthenticationResult> authenticate_account(
     const config::Config& config,
     const RuntimeFactory& runtime_factory,

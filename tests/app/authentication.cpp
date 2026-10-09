@@ -1,9 +1,36 @@
 #include "support.hpp"
 #include "onedrive/app/authentication.hpp"
+#include "onedrive/ui/common/observer.hpp"
+
+#include <vector>
 
 namespace {
 
 using namespace onedrive::test::app;
+
+class RecordingObserver final : public onedrive::events::Observer {
+public:
+    [[nodiscard]] std::vector<onedrive::events::OperationState>
+    operation_states() const {
+        std::vector<onedrive::events::OperationState> states;
+        for (const auto& event : events) {
+            if (const auto* state =
+                    std::get_if<onedrive::events::OperationStateEvent>(
+                        &event
+                    )) {
+                states.push_back(state->state);
+            }
+        }
+        return states;
+    }
+
+private:
+    void on_event(const onedrive::events::Event& event) const override {
+        events.push_back(event);
+    }
+
+    mutable std::vector<onedrive::events::Event> events;
+};
 
 int test_authentication_service() {
     CliFixture fixture;
@@ -11,15 +38,23 @@ int test_authentication_service() {
     const onedrive::app::RuntimeFactory factory{
         onedrive::util::borrowed_proxy, fixture.runtime_factory
     };
+    RecordingObserver observer;
     std::optional<onedrive::app::DeviceAuthorization> authorization;
     const auto result = onedrive::app::authenticate_account(
         config,
         factory,
+        observer,
         [&authorization](const onedrive::app::DeviceAuthorization& value) {
             authorization = value;
         }
     );
-    if (!result || !authorization || authorization->user_code != "ABCD-EFGH" ||
+    if (!result ||
+        observer.operation_states() !=
+            std::vector<onedrive::events::OperationState>{
+                onedrive::events::OperationState::authenticating,
+                onedrive::events::OperationState::ready,
+            } ||
+        !authorization || authorization->user_code != "ABCD-EFGH" ||
         authorization->verification_uri != "https://microsoft.com/link" ||
         authorization->expires_in != std::chrono::seconds{900} ||
         authorization->message != "Authenticate the test account" ||
@@ -33,10 +68,12 @@ int test_authentication_service() {
     const auto original_token =
         onedrive::test::read_file(result->token_directory / "refresh_token");
     std::stop_source stop;
+    RecordingObserver cancellation_observer;
     bool callback_called{false};
     const auto cancelled = onedrive::app::authenticate_account(
         config,
         factory,
+        cancellation_observer,
         [&stop, &callback_called](const onedrive::app::DeviceAuthorization&) {
             callback_called = true;
             stop.request_stop();
@@ -45,6 +82,11 @@ int test_authentication_service() {
     );
     if (cancelled ||
         cancelled.error().code != onedrive::auth::AuthErrorCode::cancelled ||
+        cancellation_observer.operation_states() !=
+            std::vector<onedrive::events::OperationState>{
+                onedrive::events::OperationState::authenticating,
+                onedrive::events::OperationState::idle,
+            } ||
         !callback_called ||
         onedrive::test::read_file(result->token_directory / "refresh_token") !=
             original_token) {

@@ -163,6 +163,7 @@ int authenticate(
     const auto result = authenticate_account(
         config,
         runtime_factory,
+        console,
         [&console, &received_code](const DeviceAuthorization& code) {
             received_code = true;
             console.message(

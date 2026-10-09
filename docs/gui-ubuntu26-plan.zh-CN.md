@@ -239,8 +239,8 @@ GUI 包还需要：
 - [x] 提取 Monitor 应用服务。
 - [x] 为认证、同步、Monitor、Delta、下载和上传主路径贯通 `std::stop_token`。
 - [x] 将取消贯通到启动恢复、远端移动/删除及目录和路径查询 Graph 请求。
-- [ ] 定义长操作的 GUI 状态转换。
-- [ ] 建立明确的应用操作状态机。
+- [x] 定义长操作的 GUI 状态转换。
+- [x] 建立明确的应用操作状态机。
 - [ ] 让 CLI、JSON 和 FTXUI 通过 adapter 使用新的应用服务。
 - [ ] 保持现有 CLI 输出、退出码、确认行为和配置兼容。
 - [x] 为认证、状态查询及已贯通取消路径补充测试。
@@ -275,14 +275,22 @@ GUI 包还需要：
   删除和上传 journal 保留用于恢复。
 - 取消覆盖包含同步启动与执行边界、Delta/OAuth、Graph 上传各阶段、下载 checkpoint、
   启动恢复、远端移动/删除的 HTTP 请求与 journal 保留，以及 Monitor 停止传播；相关
-  测试覆盖 Graph 请求 token 和取消时保留移动/删除 journal。Monitor stop token 与
-  进程信号、键盘退出可同时生效。
+  测试覆盖 Graph 请求 token 和取消时保留移动/删除 journal。Graph 测试还覆盖有效
+  Access Token 跨操作复用、进入一分钟安全余量时提前刷新及 Refresh Token 轮换持久化。
+  同时覆盖 Graph 客户端无效配置和依赖拒绝、身份查询各阶段的取消、头像服务异常，
+  以及 Refresh Token 失效时的应用层错误映射。Monitor stop token 与进程信号、键盘退出
+  可同时生效。
 - 手动同步已提取为 `app::synchronize_account`：它负责创建 Graph、状态存储和指标适配器，
   解析账号对应的同步目录，并把 UI 中立观察者与取消 token 传给同步引擎。CLI 手动同步
   已改为调用该服务；应用服务测试覆盖 dry-run 事件、依赖装配和预先取消。
 - Monitor 已提取为 `app::monitor_account`，由应用层装配共享的 Graph、状态存储、指标
   和同步回调；服务支持 stop token，并通过 UI 中立事件报告 Monitor 状态。CLI 仍保留
   原有 TUI 键盘退出选项，Monitor 同时接受 stop token、SIGINT/SIGTERM 和键盘退出。
+- 应用观察者现收到类型化操作状态事件，状态机验证认证、同步和 Monitor 的合法迁移：
+  认证为 `idle -> authenticating -> ready/idle/failed`，同步为
+  `idle -> syncing -> ready/failed` 或经 `stopping` 后结束，Monitor 为
+  `idle -> watching -> ready/failed` 或经 `stopping` 后结束。取消与完成不会报告为失败；
+  CLI 文本、JSON 和 FTXUI adapter 忽略该状态事件，输出行为保持不变。
 
 应用可执行文件仍只直接链接 `onedrive_app`。当前 `onedrive_app` 同时依赖
 `onedrive_core` 和 `onedrive_cli`，而 `onedrive_cli` 依赖 `onedrive_core`。
@@ -291,8 +299,7 @@ GUI 包还需要：
 适配尚未实现，本阶段不代表完整 P0 已完成。
 
 认证、配额、状态查询、手动同步和 Monitor 已有可复用应用接口。底层恢复和远端
-移动/删除操作现可响应取消；应用操作状态机、CLI 生命周期迁移和 Qt 前端取消/
-确认适配尚未完成。
+移动/删除操作现可响应取消；CLI 生命周期迁移和 Qt 前端取消/确认适配尚未完成。
 
 ### P1：最小 Qt GUI
 

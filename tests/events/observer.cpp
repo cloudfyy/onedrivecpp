@@ -56,10 +56,13 @@ int test_payloads() {
         }
     );
     observer.end_download_progress();
+    observer.operation_state(
+        OperationKind::synchronization, OperationState::syncing
+    );
     text = "Changed";
     fields.front().value = "0";
 
-    if (observer.events.size() != 7) {
+    if (observer.events.size() != 8) {
         return fail("observer did not publish every event");
     }
     const auto& message = std::get<MessageEvent>(observer.events[0]);
@@ -86,7 +89,11 @@ int test_payloads() {
         download.metrics.bytes_per_second != 2'048 ||
         download.metrics.estimated_seconds_remaining != 65 ||
         download.metrics.elapsed_milliseconds != 500 ||
-        !std::holds_alternative<EndDownloadProgressEvent>(observer.events[6])) {
+        !std::holds_alternative<EndDownloadProgressEvent>(observer.events[6]) ||
+        std::get<OperationStateEvent>(observer.events[7]).operation !=
+            OperationKind::synchronization ||
+        std::get<OperationStateEvent>(observer.events[7]).state !=
+            OperationState::syncing) {
         return fail("observer changed or borrowed event payloads");
     }
     if (download_progress_percentage(1, 2, 10, 10, ProgressState::ongoing) !=

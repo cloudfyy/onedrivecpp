@@ -41,6 +41,9 @@ public:
         const DownloadProgressMetrics& metrics = {}
     ) const;
     void end_download_progress() const;
+    void operation_state(
+        OperationKind operation, OperationState state
+    ) const;
 
 protected:
     Observer() = default;

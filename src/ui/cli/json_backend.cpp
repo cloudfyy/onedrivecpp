@@ -156,6 +156,8 @@ private:
 
     void render(const EndDownloadProgressEvent&) {}
 
+    void render(const OperationStateEvent&) {}
+
     ConsoleOptions options_;
     std::ostream& output_;
     std::ostream& error_;

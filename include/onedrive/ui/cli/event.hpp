@@ -61,6 +61,9 @@ using events::DownloadProgressMetrics;
 using events::EndDownloadProgressEvent;
 using events::Field;
 using events::MessageEvent;
+using events::OperationKind;
+using events::OperationState;
+using events::OperationStateEvent;
 using events::SectionEvent;
 using ConsoleEvent = events::Event;
 

@@ -78,6 +78,27 @@ struct DownloadProgressEvent {
 
 struct EndDownloadProgressEvent {};
 
+enum class OperationKind {
+    authentication,
+    synchronization,
+    monitoring,
+};
+
+enum class OperationState {
+    idle,
+    authenticating,
+    ready,
+    syncing,
+    watching,
+    stopping,
+    failed,
+};
+
+struct OperationStateEvent {
+    OperationKind operation;
+    OperationState state;
+};
+
 using Event = std::variant<
     MessageEvent,
     SectionEvent,
@@ -85,7 +106,8 @@ using Event = std::variant<
     DeltaSummaryEvent,
     BlockedItemEvent,
     DownloadProgressEvent,
-    EndDownloadProgressEvent>;
+    EndDownloadProgressEvent,
+    OperationStateEvent>;
 
 [[nodiscard]] unsigned download_progress_percentage(
     std::size_t completed_files,

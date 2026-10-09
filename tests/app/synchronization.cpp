@@ -13,6 +13,20 @@ using namespace onedrive::test::app;
 
 class RecordingObserver final : public onedrive::events::Observer {
 public:
+    [[nodiscard]] std::vector<onedrive::events::OperationState>
+    operation_states() const {
+        std::vector<onedrive::events::OperationState> states;
+        for (const auto& event : events) {
+            if (const auto* state =
+                    std::get_if<onedrive::events::OperationStateEvent>(
+                        &event
+                    )) {
+                states.push_back(state->state);
+            }
+        }
+        return states;
+    }
+
     [[nodiscard]] bool has_delta_summary() const {
         return std::ranges::any_of(events, [](const auto& event) {
             return std::holds_alternative<
@@ -54,6 +68,11 @@ int test_synchronization_service() {
             config.sync_data_directory, identity
         );
     if (result != 0 || !observer.has_delta_summary() ||
+        observer.operation_states() !=
+            std::vector<onedrive::events::OperationState>{
+                onedrive::events::OperationState::syncing,
+                onedrive::events::OperationState::ready,
+            } ||
         implementation.graph_client_count != 1 ||
         implementation.item_store_count != 1 ||
         implementation.item_store_open_count != 1 ||
@@ -86,6 +105,12 @@ int test_synchronization_service_cancellation() {
         config, runtime_factory, observer, stop.get_token()
     );
     if (result != 130 || implementation.graph_client_count != 1 ||
+        observer.operation_states() !=
+            std::vector<onedrive::events::OperationState>{
+                onedrive::events::OperationState::syncing,
+                onedrive::events::OperationState::stopping,
+                onedrive::events::OperationState::ready,
+            } ||
         implementation.item_store_count != 1 ||
         implementation.metrics_count != 1) {
         return fail("synchronization service did not preserve cancellation");

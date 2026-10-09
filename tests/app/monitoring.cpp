@@ -14,6 +14,20 @@ using namespace onedrive::test::app;
 
 class RecordingObserver final : public onedrive::events::Observer {
 public:
+    [[nodiscard]] std::vector<onedrive::events::OperationState>
+    operation_states() const {
+        std::vector<onedrive::events::OperationState> states;
+        for (const auto& event : events) {
+            if (const auto* state =
+                    std::get_if<onedrive::events::OperationStateEvent>(
+                        &event
+                    )) {
+                states.push_back(state->state);
+            }
+        }
+        return states;
+    }
+
     [[nodiscard]] bool has_message(std::string_view event) const {
         return std::ranges::any_of(events, [event](const auto& item) {
             const auto* message =
@@ -50,6 +64,11 @@ int test_monitoring_service() {
 
     if (result != 0 || !observer.has_message("monitor_ready") ||
         !observer.has_message("monitor_status") ||
+        observer.operation_states() !=
+            std::vector<onedrive::events::OperationState>{
+                onedrive::events::OperationState::watching,
+                onedrive::events::OperationState::ready,
+            } ||
         implementation.graph_client_count != 1 ||
         implementation.item_store_count != 1 ||
         implementation.item_store_open_count != 1 ||
@@ -81,6 +100,12 @@ int test_monitoring_service_cancellation() {
         config, runtime_factory, observer, false, stop.get_token()
     );
     if (result != 0 || implementation.monitor_run_count != 1 ||
+        observer.operation_states() !=
+            std::vector<onedrive::events::OperationState>{
+                onedrive::events::OperationState::watching,
+                onedrive::events::OperationState::stopping,
+                onedrive::events::OperationState::ready,
+            } ||
         implementation.monitor_sync_count != 0 ||
         !implementation.monitor_stop_requested ||
         implementation.monitor_keyboard_exit) {

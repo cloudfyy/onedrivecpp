@@ -134,4 +134,11 @@ void Observer::end_download_progress() const {
     on_event(EndDownloadProgressEvent{});
 }
 
+void Observer::operation_state(
+    OperationKind operation, OperationState state
+) const {
+    const std::scoped_lock lock{mutex_};
+    on_event(OperationStateEvent{.operation = operation, .state = state});
+}
+
 } // namespace onedrive::events

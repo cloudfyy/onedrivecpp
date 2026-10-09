@@ -2,6 +2,8 @@
 
 #include "onedrive/app/factory.hpp"
 #include "onedrive/app/options.hpp"
+#include "onedrive/ui/common/observer.hpp"
+#include "operation_state.hpp"
 
 #include <stdexcept>
 
@@ -17,19 +19,17 @@ auto cancelled() {
     );
 }
 
-} // namespace
+class NullObserver final : public events::Observer {
+private:
+    void on_event(const events::Event&) const override {}
+};
 
-auth::AuthResult<AuthenticationResult> authenticate_account(
+auth::AuthResult<AuthenticationResult> authenticate_account_impl(
     const config::Config& config,
     const RuntimeFactory& runtime_factory,
     const AuthorizationCallback& authorization,
     std::stop_token stop_token
 ) {
-    if (!authorization) {
-        throw std::invalid_argument{
-            "authentication requires an authorization callback"
-        };
-    }
     if (stop_token.stop_requested()) {
         return cancelled();
     }
@@ -76,6 +76,54 @@ auth::AuthResult<AuthenticationResult> authenticate_account(
         .identity = std::move(identity),
         .token_directory = paths.token_directory,
     };
+}
+
+} // namespace
+
+auth::AuthResult<AuthenticationResult> authenticate_account(
+    const config::Config& config,
+    const RuntimeFactory& runtime_factory,
+    const events::Observer& observer,
+    const AuthorizationCallback& authorization,
+    std::stop_token stop_token
+) {
+    if (!authorization) {
+        throw std::invalid_argument{
+            "authentication requires an authorization callback"
+        };
+    }
+    detail::OperationStateMachine state{
+        observer, events::OperationKind::authentication
+    };
+    state.transition(events::OperationState::authenticating);
+    try {
+        auto result = authenticate_account_impl(
+            config, runtime_factory, authorization, stop_token
+        );
+        if (result) {
+            state.transition(events::OperationState::ready);
+        } else if (result.error().code == auth::AuthErrorCode::cancelled) {
+            state.transition(events::OperationState::idle);
+        } else {
+            state.transition(events::OperationState::failed);
+        }
+        return result;
+    } catch (...) {
+        state.transition(events::OperationState::failed);
+        throw;
+    }
+}
+
+auth::AuthResult<AuthenticationResult> authenticate_account(
+    const config::Config& config,
+    const RuntimeFactory& runtime_factory,
+    const AuthorizationCallback& authorization,
+    std::stop_token stop_token
+) {
+    static const NullObserver observer;
+    return authenticate_account(
+        config, runtime_factory, observer, authorization, stop_token
+    );
 }
 
 } // namespace onedrive::app

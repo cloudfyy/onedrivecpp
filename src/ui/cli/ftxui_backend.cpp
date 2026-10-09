@@ -387,6 +387,8 @@ private:
 
     void update(const EndDownloadProgressEvent&) {}
 
+    void update(const OperationStateEvent&) {}
+
     Element header() const {
         const auto view_name = [&] {
             switch (view_) {

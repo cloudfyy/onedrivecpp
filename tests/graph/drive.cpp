@@ -129,6 +129,54 @@ int test_access_token_is_reused_across_graph_operations() {
     return EXIT_SUCCESS;
 }
 
+int test_access_token_is_refreshed_before_expiry_margin() {
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body = R"({"expires_in":30,"access_token":"short-lived",)"
+                        R"("refresh_token":"rotated-once"})",
+            },
+            graph_page("[]"),
+            token_response("long-lived", "rotated-twice"),
+            graph_page("[]"),
+            graph_page("[]"),
+        }
+    );
+    auto* transport_pointer = transport.get();
+    auto token_store =
+        std::make_unique<FakeTokenStore>(std::string{"existing-refresh"});
+    auto* token_store_pointer = token_store.get();
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(std::move(token_store)),
+        auth_options(),
+        {
+            .drive_id = "drive/id",
+            .endpoint = "https://graph.example.test/v1.0",
+        },
+    };
+
+    static_cast<void>(client.list_root());
+    static_cast<void>(client.list_root());
+    static_cast<void>(client.list_root());
+
+    const auto& requests = transport_pointer->queued.requests;
+    if (requests.size() != 5 ||
+        requests[0].method != onedrive::http::HttpMethod::post ||
+        requests[1].method != onedrive::http::HttpMethod::get ||
+        requests[2].method != onedrive::http::HttpMethod::post ||
+        requests[3].method != onedrive::http::HttpMethod::get ||
+        requests[4].method != onedrive::http::HttpMethod::get ||
+        token_store_pointer->saved_tokens !=
+            std::vector<std::string>{"rotated-once", "rotated-twice"}) {
+        return fail(
+            "Graph did not refresh a token inside the expiry safety margin"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_drive_information_and_quota() {
     auto transport = std::make_unique<
         FakeTransport>(std::deque<onedrive::http::HttpResult>{
@@ -751,6 +799,124 @@ int test_drive_identity_and_profile_photo() {
     return EXIT_SUCCESS;
 }
 
+int test_drive_identity_cancellation() {
+    const auto cancellation_is_observed = [](std::size_t cancel_on_request) {
+        std::stop_source cancellation;
+        FakeTransport transport{std::deque<onedrive::http::HttpResult>{
+            json_response(
+                200, R"({"id":"user-id","displayName":"Alice Example"})"
+            ),
+            json_response(
+                200, R"({"id":"drive-id","name":"Alice Drive"})"
+            ),
+            json_response(200, "photo-bytes", {{"Content-Type", "image/png"}}),
+        }};
+        std::size_t perform_count = 0;
+        transport.on_perform = [&](const auto&) {
+            ++perform_count;
+            if (perform_count == cancel_on_request) {
+                cancellation.request_stop();
+            }
+        };
+        onedrive::http::HttpTransport transport_proxy{
+            onedrive::util::borrowed_proxy, transport
+        };
+
+        if (cancel_on_request == 0) {
+            cancellation.request_stop();
+        }
+        try {
+            static_cast<void>(onedrive::graph::fetch_drive_identity(
+                transport_proxy,
+                "access-token",
+                {
+                    .drive_id = "me",
+                    .endpoint = "https://graph.example.test/v1.0",
+                },
+                cancellation.get_token()
+            ));
+            return false;
+        } catch (const std::runtime_error& error) {
+            if (!std::string{error.what()}.contains("cancelled")) {
+                return false;
+            }
+        }
+
+        const auto expected_requests = cancel_on_request;
+        return transport.queued.requests.size() == expected_requests &&
+               std::ranges::all_of(
+                   transport.queued.requests,
+                   [&](const auto& request) {
+                       return request.stop_token == cancellation.get_token() &&
+                              request.stop_token.stop_requested();
+                   }
+               );
+    };
+
+    if (!cancellation_is_observed(0) ||
+        !cancellation_is_observed(1) ||
+        !cancellation_is_observed(2)) {
+        return fail(
+            "Graph identity query did not observe cancellation at each stage"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_profile_photo_rejects_invalid_responses() {
+    const auto rejected_photo_response = [](onedrive::http::HttpResult photo,
+                                            std::string_view expected_error) {
+        FakeTransport transport{std::deque<onedrive::http::HttpResult>{
+            json_response(
+                200, R"({"id":"user-id","displayName":"Alice Example"})"
+            ),
+            json_response(
+                200, R"({"id":"drive-id","name":"Alice Drive"})"
+            ),
+            std::move(photo),
+        }};
+        onedrive::http::HttpTransport transport_proxy{
+            onedrive::util::borrowed_proxy, transport
+        };
+        try {
+            static_cast<void>(onedrive::graph::fetch_drive_identity(
+                transport_proxy,
+                "access-token",
+                {
+                    .drive_id = "me",
+                    .endpoint = "https://graph.example.test/v1.0",
+                }
+            ));
+            return false;
+        } catch (const std::runtime_error& error) {
+            return std::string{error.what()}.contains(expected_error) &&
+                   transport.queued.requests.size() == 3 &&
+                   transport.queued.requests.back().url ==
+                       "https://graph.example.test/v1.0/me/photo/$value";
+        }
+    };
+
+    if (!rejected_photo_response(
+            json_response(
+                200, "not a photo", {{"Content-Type", "text/plain"}}
+            ),
+            "invalid content type"
+        ) ||
+        !rejected_photo_response(
+            json_response(500, R"({"error":"internalError"})"),
+            "failed with HTTP 500"
+        ) ||
+        !rejected_photo_response(
+            std::unexpected(onedrive::http::HttpError{
+                .message = "simulated profile photo transport failure",
+            }),
+            "simulated profile photo transport failure"
+        )) {
+        return fail("Graph profile photo error response was mishandled");
+    }
+    return EXIT_SUCCESS;
+}
+
 } // namespace
 
 int main() {
@@ -759,6 +925,11 @@ int main() {
         return result;
     }
     if (const int result = test_access_token_is_reused_across_graph_operations();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result =
+            test_access_token_is_refreshed_before_expiry_margin();
         result != EXIT_SUCCESS) {
         return result;
     }
@@ -788,6 +959,14 @@ int main() {
         return result;
     }
     if (const int result = test_drive_identity_and_profile_photo();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_drive_identity_cancellation();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_profile_photo_rejects_invalid_responses();
         result != EXIT_SUCCESS) {
         return result;
     }

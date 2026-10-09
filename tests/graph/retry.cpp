@@ -30,6 +30,167 @@ int test_missing_authentication() {
     }
     return EXIT_SUCCESS;
 }
+
+int test_refresh_token_failure_is_reported_by_graph_client() {
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            json_response(
+                400,
+                R"({"error":"invalid_grant","error_description":"refresh token has expired"})"
+            ),
+        }
+    );
+    auto* transport_pointer = transport.get();
+    auto token_store =
+        std::make_unique<FakeTokenStore>(std::string{"expired-refresh"});
+    auto* token_store_pointer = token_store.get();
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(std::move(token_store)),
+        auth_options(),
+    };
+
+    try {
+        static_cast<void>(client.list_root());
+        return fail("an expired Graph refresh token was accepted");
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains(
+                "cannot refresh Microsoft access token"
+            ) ||
+            !std::string{error.what()}.contains("refresh token has expired")) {
+            return fail("Graph refresh failure lost its actionable error");
+        }
+    }
+    if (transport_pointer->queued.requests.size() != 1 ||
+        transport_pointer->queued.requests.front().method !=
+            onedrive::http::HttpMethod::post ||
+        token_store_pointer->saved_tokens.size() != 0) {
+        return fail("Graph refresh failure continued or changed saved tokens");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_graph_client_rejects_invalid_configuration() {
+    const auto rejects_options = [](auto configure) {
+        auto options = onedrive::graph::GraphOptions{};
+        configure(options);
+        try {
+            onedrive::graph::MicrosoftGraphClient client{
+                wrap_transport(std::make_unique<FakeTransport>(
+                    std::deque<onedrive::http::HttpResult>{}
+                )),
+                wrap_token_store(std::make_unique<FakeTokenStore>(
+                    std::string{"existing-refresh"}
+                )),
+                auth_options(),
+                std::move(options),
+            };
+            static_cast<void>(client);
+            return false;
+        } catch (const std::invalid_argument&) {
+            return true;
+        }
+    };
+
+    if (!rejects_options([](auto& options) { options.drive_id.clear(); }) ||
+        !rejects_options([](auto& options) {
+            options.endpoint = "http://graph.example.test/v1.0";
+        }) ||
+        !rejects_options([](auto& options) {
+            options.initial_throttle_delay = std::chrono::seconds{-1};
+        }) ||
+        !rejects_options([](auto& options) {
+            options.maximum_throttle_delay = std::chrono::seconds{0};
+        }) ||
+        !rejects_options([](auto& options) {
+            options.initial_throttle_delay = std::chrono::seconds{2};
+            options.maximum_throttle_delay = std::chrono::seconds{1};
+        }) ||
+        !rejects_options([](auto& options) {
+            options.notification_request_timeout =
+                std::chrono::seconds::zero();
+        }) ||
+        !rejects_options([](auto& options) {
+            options.download_chunk_threshold_bytes = 0;
+        }) ||
+        !rejects_options([](auto& options) {
+            options.download_checkpoint_interval_bytes = 0;
+        }) ||
+        !rejects_options([](auto& options) {
+            options.download_transport.transfer.connect_timeout =
+                std::chrono::seconds::zero();
+        }) ||
+        !rejects_options([](auto& options) {
+            options.download_transport.transfer.operation_timeout =
+                std::chrono::seconds::zero();
+        }) ||
+        !rejects_options([](auto& options) {
+            options.download_transport.transfer.low_speed_timeout =
+                std::chrono::seconds{-1};
+        }) ||
+        !rejects_options([](auto& options) {
+            options.download_transport.transfer.low_speed_limit_bytes_per_second =
+                0;
+        }) ||
+        !rejects_options([](auto& options) {
+            options.upload_chunk_size_bytes = 0;
+        }) ||
+        !rejects_options([](auto& options) {
+            options.upload_chunk_size_bytes = 1;
+        }) ||
+        !rejects_options([](auto& options) {
+            options.upload_chunk_size_bytes =
+                std::uint64_t{60} * 1024U * 1024U;
+        }) ||
+        !rejects_options([](auto& options) {
+            options.simple_upload_threshold_bytes = 0;
+        }) ||
+        !rejects_options([](auto& options) {
+            options.upload_transport.transfer.connect_timeout =
+                std::chrono::seconds::zero();
+        }) ||
+        !rejects_options([](auto& options) {
+            options.upload_transport.transfer.operation_timeout =
+                std::chrono::seconds::zero();
+        }) ||
+        !rejects_options([](auto& options) {
+            options.upload_transport.transfer.low_speed_timeout =
+                std::chrono::seconds{-1};
+        }) ||
+        !rejects_options([](auto& options) {
+            options.upload_transport.transfer.low_speed_limit_bytes_per_second =
+                0;
+        })) {
+        return fail("Graph client accepted an invalid configuration option");
+    }
+
+    try {
+        onedrive::graph::MicrosoftGraphClient client{
+            std::unique_ptr<onedrive::http::HttpTransport>{},
+            wrap_token_store(std::make_unique<FakeTokenStore>(
+                std::string{"existing-refresh"}
+            )),
+            auth_options(),
+        };
+        static_cast<void>(client);
+        return fail("Graph client accepted a missing HTTP transport");
+    } catch (const std::invalid_argument&) {
+    }
+    try {
+        onedrive::graph::MicrosoftGraphClient client{
+            wrap_transport(std::make_unique<FakeTransport>(
+                std::deque<onedrive::http::HttpResult>{}
+            )),
+            std::unique_ptr<onedrive::auth::TokenStore>{},
+            auth_options(),
+        };
+        static_cast<void>(client);
+        return fail("Graph client accepted a missing token store");
+    } catch (const std::invalid_argument&) {
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_invalid_file_hash() {
     auto transport = std::make_unique<
         FakeTransport>(std::deque<onedrive::http::HttpResult>{
@@ -221,6 +382,15 @@ int test_transient_service_retries() {
 
 int main() {
     if (const int result = test_missing_authentication();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result =
+            test_refresh_token_failure_is_reported_by_graph_client();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_graph_client_rejects_invalid_configuration();
         result != EXIT_SUCCESS) {
         return result;
     }

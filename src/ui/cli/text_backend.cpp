@@ -236,6 +236,8 @@ private:
         }
     }
 
+    void render(const OperationStateEvent&) {}
+
     ConsoleOptions options_;
     std::ostream& output_;
     std::ostream& error_;
