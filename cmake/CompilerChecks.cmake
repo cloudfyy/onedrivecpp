@@ -49,6 +49,22 @@ option(
     "Build the optional Qt 6 desktop application"
     OFF
 )
+option(
+    ONEDRIVE_ENABLE_COVERAGE
+    "Instrument project code for LLVM source-based coverage"
+    OFF
+)
+if(ONEDRIVE_ENABLE_COVERAGE)
+    if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+        message(FATAL_ERROR "ONEDRIVE_ENABLE_COVERAGE requires Clang")
+    endif()
+    if(NOT BUILD_TESTING)
+        message(FATAL_ERROR "ONEDRIVE_ENABLE_COVERAGE requires BUILD_TESTING")
+    endif()
+    add_compile_options(-fprofile-instr-generate -fcoverage-mapping)
+    add_link_options(-fprofile-instr-generate)
+    file(MAKE_DIRECTORY "${PROJECT_BINARY_DIR}/coverage/profiles")
+endif()
 if(ONEDRIVE_ENABLE_CLANG_TIDY)
     find_program(
         ONEDRIVE_CLANG_TIDY

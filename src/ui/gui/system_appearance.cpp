@@ -80,7 +80,7 @@ void SystemAppearance::setting_changed(
     }
 }
 
-void SystemAppearance::apply_portal_color_scheme(const QVariant& value) {
+std::optional<Qt::ColorScheme> desktop_color_scheme(const QVariant& value) {
     auto setting_value = value;
     while (setting_value.metaType() == QMetaType::fromType<QDBusVariant>()) {
         setting_value = setting_value.value<QDBusVariant>().variant();
@@ -88,16 +88,23 @@ void SystemAppearance::apply_portal_color_scheme(const QVariant& value) {
 
     bool valid = false;
     const auto scheme_id = setting_value.toUInt(&valid);
-    if (!valid || scheme_id > 2 || QApplication::instance() == nullptr) {
+    if (!valid || scheme_id > 2) {
+        return std::nullopt;
+    }
+    return scheme_id == 1   ? Qt::ColorScheme::Dark
+           : scheme_id == 2 ? Qt::ColorScheme::Light
+                            : Qt::ColorScheme::Unknown;
+}
+
+void SystemAppearance::apply_portal_color_scheme(const QVariant& value) {
+    const auto scheme = desktop_color_scheme(value);
+    if (!scheme || QApplication::instance() == nullptr) {
         qCDebug(QLoggingCategory{"onedrive.gui.appearance"})
-            << "Ignoring invalid desktop color-scheme value:" << setting_value;
+            << "Ignoring invalid desktop color-scheme value:" << value;
         return;
     }
 
-    const auto scheme = scheme_id == 1   ? Qt::ColorScheme::Dark
-                        : scheme_id == 2 ? Qt::ColorScheme::Light
-                                         : Qt::ColorScheme::Unknown;
-    QGuiApplication::styleHints()->setColorScheme(scheme);
+    QGuiApplication::styleHints()->setColorScheme(*scheme);
 }
 
 } // namespace onedrive::gui

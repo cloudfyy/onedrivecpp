@@ -33,7 +33,7 @@ int test_socks() {
         return fail("proxy password containing NUL was accepted");
     }
     write_file(password_path, std::string(std::size_t{64} * 1024U + 1U, 'x'));
-    if (!proxy_password_rejected(password_path, "64 KiB")) {
+    if (!proxy_password_rejected(password_path, "65536 byte size limit")) {
         return fail("oversized proxy password file was accepted");
     }
 

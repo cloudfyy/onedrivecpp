@@ -19,6 +19,24 @@ add_onedrive_test(
     INCLUDE_DIRS src tests
 )
 add_onedrive_test(
+    private_file_tests
+    SOURCES tests/util/private_file.cpp
+    INCLUDE_DIRS src tests
+)
+set_tests_properties(private_file_tests PROPERTIES TIMEOUT 10)
+add_onedrive_test(
+    monitor_overflow_tests
+    SOURCES tests/monitor/overflow.cpp
+    INCLUDE_DIRS src tests tests/monitor
+    LIBRARIES spdlog::spdlog
+)
+set_tests_properties(monitor_overflow_tests PROPERTIES TIMEOUT 30 SKIP_RETURN_CODE 77)
+add_onedrive_test(
+    token_store_tests
+    SOURCES tests/auth/token_store.cpp
+    INCLUDE_DIRS tests
+)
+add_onedrive_test(
     path_security_tests
     SOURCES tests/util/path_security.cpp
     INCLUDE_DIRS tests
@@ -54,6 +72,22 @@ add_onedrive_test(
         tests/gui/state_view_model.cpp
     INCLUDE_DIRS src src/ui/gui tests
 )
+if(ONEDRIVE_BUILD_GUI)
+    add_onedrive_test(
+        gui_system_appearance_tests
+        SOURCES
+            src/ui/gui/system_appearance.cpp
+            src/ui/gui/system_appearance.hpp
+            tests/gui/system_appearance.cpp
+        INCLUDE_DIRS src/ui/gui
+        LIBRARIES Qt6::Widgets Qt6::DBus
+    )
+    set_target_properties(gui_system_appearance_tests PROPERTIES AUTOMOC ON)
+    set_property(TEST gui_system_appearance_tests APPEND PROPERTY ENVIRONMENT
+        "QT_QPA_PLATFORM=offscreen"
+        "DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent-onedrive-test-bus"
+    )
+endif()
 add_onedrive_test(
     terminal_tests
     SOURCES tests/cli/terminal.cpp
@@ -342,4 +376,18 @@ if(ONEDRIVE_ENABLE_GRAPH_E2E)
         ${ONEDRIVE_BOUNDARY_E2E_TESTS}
         PROPERTIES LABELS "e2e;graph;boundary"
     )
+endif()
+
+if(ONEDRIVE_ENABLE_COVERAGE)
+    find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    add_test(
+        NAME coverage_report_tests
+        COMMAND ${Python3_EXECUTABLE} -B ${PROJECT_SOURCE_DIR}/tools/test_coverage_report.py
+    )
+    get_property(ONEDRIVE_TESTS DIRECTORY PROPERTY TESTS)
+    foreach(ONEDRIVE_TEST IN LISTS ONEDRIVE_TESTS)
+        set_property(TEST ${ONEDRIVE_TEST} APPEND PROPERTY ENVIRONMENT
+            "LLVM_PROFILE_FILE=${PROJECT_BINARY_DIR}/coverage/profiles/%m-%p.profraw"
+        )
+    endforeach()
 endif()

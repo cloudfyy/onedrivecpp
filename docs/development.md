@@ -100,6 +100,40 @@ Each boundary is a separate CTest entry. Run all five with:
 ctest --test-dir build/e2e --output-on-failure -L boundary
 ```
 
+## Offline code coverage
+
+`ONEDRIVE_ENABLE_COVERAGE=ON` enables Clang source-based instrumentation.
+It requires `BUILD_TESTING=ON`. Normal builds remain uninstrumented.
+Enable it in an existing Debug configuration (including
+`ONEDRIVE_BUILD_GUI=ON` when Qt is available), then build and run all tests
+using CMake Tools in VS Code. Leave live Graph E2E tests disabled unless using
+a dedicated test account.
+
+CTest writes process-specific profiles under `build/debug/coverage/profiles`.
+Start each fresh measurement with an empty profiles directory; never mix
+profiles from different source revisions or build configurations.
+After the test run, generate a report without rerunning tests:
+
+```bash
+python3 tools/coverage_report.py build/debug
+```
+
+The reporter requires matching `llvm-cov` and `llvm-profdata` versions
+(version 20 by default; override with `--llvm-cov` and `--llvm-profdata`).
+It matches profiles to executable Build IDs using `readelf`, then writes
+per-executable LLVM LCOV exports, JSON summaries with uncovered line numbers,
+and a per-file text summary under the build's `coverage` directory.
+This avoids mixing counters from different executables with identically named
+functions such as `main`. Tests, dependencies, and
+generated files are excluded from project totals. Application entry points and
+GUI code not exercised by tests are included as uncovered when built.
+LLVM tools perform no external debuginfod lookups. Stale profile Build IDs
+are rejected rather than silently included. LCOV lines and branches are merged
+by source location; these totals differ from LLVM's per-instantiation summaries.
+A passing suite does not imply complete coverage: real desktop behavior,
+live Graph integration, and system-call failure paths need separate validation.
+Disable `ONEDRIVE_ENABLE_COVERAGE` and rebuild to return to normal development.
+
 ## C++ Core Guidelines checks
 
 The `lint` preset runs the faster Clang-Tidy policy during compilation.

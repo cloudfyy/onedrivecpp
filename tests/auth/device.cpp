@@ -163,7 +163,7 @@ int test_refresh_and_token_store() {
         static_cast<void>(store.load_refresh_token());
         return fail("oversized refresh token file was accepted");
     } catch (const std::runtime_error& error) {
-        if (!std::string_view{error.what()}.contains("64 KiB")) {
+        if (!std::string_view{error.what()}.contains("65536 byte size limit")) {
             return fail("oversized refresh token reported the wrong error");
         }
     }

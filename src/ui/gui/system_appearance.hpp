@@ -7,8 +7,12 @@
 #include <QString>
 
 #include <cstdint>
+#include <optional>
 
 namespace onedrive::gui {
+
+[[nodiscard]] std::optional<Qt::ColorScheme>
+desktop_color_scheme(const QVariant& value);
 
 class SystemAppearance final : public QObject {
     Q_OBJECT
