@@ -199,6 +199,23 @@ target_compile_options(onedrive_app PRIVATE
 add_executable(onedrive-cpp src/main.cpp)
 target_link_libraries(onedrive-cpp PRIVATE onedrive_cli)
 
+if(ONEDRIVE_BUILD_GUI)
+    find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+
+    add_executable(onedrive-cpp-gui src/ui/gui/main.cpp)
+    target_link_libraries(
+        onedrive-cpp-gui
+        PRIVATE
+            onedrive_app
+            Qt6::Core
+            Qt6::Gui
+            Qt6::Widgets
+    )
+    target_compile_options(onedrive-cpp-gui PRIVATE
+        $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall;-Wextra;-Wpedantic;-Wconversion;-Wshadow>
+    )
+endif()
+
 if(ONEDRIVE_ENABLE_CLANG_TIDY)
     set(CMAKE_CXX_CLANG_TIDY "")
 endif()

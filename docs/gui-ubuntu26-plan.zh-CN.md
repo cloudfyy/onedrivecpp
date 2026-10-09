@@ -306,8 +306,8 @@ CLI 参数解析和生命周期编排现归属 `onedrive_cli`；目标依赖方�
 
 ### P1：最小 Qt GUI
 
-- [ ] 增加默认关闭的 `ONEDRIVE_BUILD_GUI` CMake 选项。
-- [ ] 增加独立 `onedrive-cpp-gui` target。
+- [x] 增加默认关闭的 `ONEDRIVE_BUILD_GUI` CMake 选项；关闭时不查找 Qt。
+- [x] 增加独立 `onedrive-cpp-gui` target 和最小 Qt Widgets 窗口入口。
 - [ ] 建立主窗口和应用状态视图模型。
 - [ ] 显示当前配置和账号状态。
 - [ ] 实现设备代码登录，并调用系统浏览器打开验证地址。
@@ -315,6 +315,9 @@ CLI 参数解析和生命周期编排现归属 `onedrive_cli`；目标依赖方�
 - [ ] 展示消息、Delta、下载进度、阻塞项和最终错误。
 - [ ] 提供打开同步目录和日志目录的操作。
 - [ ] 验证关闭窗口时取消并回收所有 worker。
+
+GUI 构建入口已接入 CMake，默认 headless 构建不依赖 Qt。当前窗口仅验证独立
+Qt Widgets target 的启动路径；账号状态、登录和同步操作仍待后续实现。
 
 ### P2：Ubuntu 26 桌面交付
 

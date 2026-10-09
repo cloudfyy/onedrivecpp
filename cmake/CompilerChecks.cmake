@@ -44,6 +44,11 @@ option(
     "Enable live Microsoft Graph end-to-end tests"
     OFF
 )
+option(
+    ONEDRIVE_BUILD_GUI
+    "Build the optional Qt 6 desktop application"
+    OFF
+)
 if(ONEDRIVE_ENABLE_CLANG_TIDY)
     find_program(
         ONEDRIVE_CLANG_TIDY
