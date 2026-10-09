@@ -46,7 +46,8 @@ struct FileMonitorFacade : pro::facade_builder
         MonitorRunDispatch,
         int() const,
         int(bool) const,
-        int(const std::stop_token&) const
+        int(const std::stop_token&) const,
+        int(bool, const std::stop_token&) const
     >
     ::build {};
 
@@ -65,6 +66,11 @@ public:
     [[nodiscard]] int run(const std::stop_token& stop_token) const {
         return implementation()->run(stop_token);
     }
+    [[nodiscard]] int run(
+        bool keyboard_exit, const std::stop_token& stop_token
+    ) const {
+        return implementation()->run(keyboard_exit, stop_token);
+    }
 };
 
 class Monitor final {
@@ -79,6 +85,9 @@ public:
     [[nodiscard]] int run() const;
     [[nodiscard]] int run(bool keyboard_exit) const;
     [[nodiscard]] int run(const std::stop_token& stop_token) const;
+    [[nodiscard]] int run(
+        bool keyboard_exit, const std::stop_token& stop_token
+    ) const;
 
 private:
     [[nodiscard]] int run_loop(

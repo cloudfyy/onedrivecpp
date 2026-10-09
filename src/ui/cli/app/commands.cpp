@@ -5,20 +5,19 @@
 #include "onedrive/account/account_state.hpp"
 #include "onedrive/app/options.hpp"
 #include "onedrive/app/authentication.hpp"
+#include "onedrive/app/monitoring.hpp"
 #include "onedrive/app/synchronization.hpp"
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
 #include "onedrive/graph/graph_client.hpp"
 #include "onedrive/http/http_client.hpp"
-#include "onedrive/metrics/metrics.hpp"
-#include "onedrive/monitor/monitor.hpp"
 #include "onedrive/storage/item_database.hpp"
 #include "onedrive/storage/item_store.hpp"
 #include "onedrive/sync/download/single_file.hpp"
-#include "onedrive/sync/core/engine.hpp"
 #include <spdlog/spdlog.h>
 
 #include <format>
+#include <stdexcept>
 #include <string>
 #include <utility>
 
@@ -489,6 +488,14 @@ int execute_command(
             std::move(config), runtime_factory, console
         );
     }
+    if (operation == Operation::monitor) {
+        return monitor_account(
+            std::move(config),
+            runtime_factory,
+            console,
+            console.ui_mode() == cli::UiMode::tui
+        );
+    }
     auto graph = runtime_factory.create_graph_client(config);
     const auto identity = graph->drive_identity();
     config.drive_id = identity.drive_id;
@@ -511,47 +518,7 @@ int execute_command(
             config, arguments.remote_download_path, *graph, *items, console
         );
     }
-    auto metrics = runtime_factory.create_metrics(config, identity);
-    monitor::SyncCallback synchronize{
-        [&config, &graph, &items, &metrics, &console](
-            const std::stop_token& stop_token
-        ) {
-            return sync::SyncEngine{config, *graph, *items, *metrics, &console}
-                .synchronize(stop_token);
-        }
-    };
-    if (operation == Operation::monitor) {
-        console.message(
-            cli::MessageKind::success,
-            "monitor_ready",
-            "Monitoring local and Microsoft Graph changes for: " +
-                config.sync_data_directory.string()
-        );
-        console.message(
-            cli::MessageKind::information,
-            "monitor_status",
-            config.monitor_websocket_enabled
-                ? std::format(
-                      "Local changes settle for {} milliseconds; remote "
-                      "WebSocket notifications trigger Delta "
-                      "synchronization, with Graph polling every {} seconds "
-                      "as fallback.",
-                      config.monitor_settle_delay.count(),
-                      config.monitor_poll_interval.count()
-                  )
-                : std::format(
-                      "Local changes settle for {} milliseconds; remote "
-                      "WebSocket notifications are disabled, and Graph is "
-                      "polled every {} seconds.",
-                      config.monitor_settle_delay.count(),
-                      config.monitor_poll_interval.count()
-                  )
-        );
-        return runtime_factory
-            .create_monitor(config, std::move(synchronize), *graph)
-            ->run(console.ui_mode() == cli::UiMode::tui);
-    }
-    return synchronize({});
+    throw std::logic_error{"unsupported operation in transfer command"};
 }
 
 } // namespace onedrive::app::detail

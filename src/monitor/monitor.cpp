@@ -335,6 +335,12 @@ int Monitor::run() const {
 }
 
 int Monitor::run(bool keyboard_exit) const {
+    return run(keyboard_exit, {});
+}
+
+int Monitor::run(
+    bool keyboard_exit, const std::stop_token& stop_token
+) const {
     detail::TerminationSignalMask signal_mask;
     onedrive::util::UniqueFD signal_descriptor{
         ::signalfd(
@@ -346,7 +352,7 @@ int Monitor::run(bool keyboard_exit) const {
     if (signal_descriptor.get() < 0) {
         util::throw_errno_error("signalfd failed");
     }
-    return run_loop({}, signal_descriptor.get(), keyboard_exit);
+    return run_loop(stop_token, signal_descriptor.get(), keyboard_exit);
 }
 
 int Monitor::run(const std::stop_token& stop_token) const {

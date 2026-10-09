@@ -76,7 +76,8 @@ int test_stop() {
         1s,
         10ms
     };
-    if (stopped_monitor.run(stopped.get_token()) != 0 || stopped_runs != 0) {
+    if (stopped_monitor.run(false, stopped.get_token()) != 0 ||
+        stopped_runs != 0) {
         return fail("pre-stopped monitor ran synchronization");
     }
 

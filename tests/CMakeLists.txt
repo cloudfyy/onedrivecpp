@@ -171,7 +171,7 @@ add_onedrive_test(
 )
 foreach(
     APP_TEST
-    IN ITEMS args doctor factory flow inspection drives authentication synchronization
+    IN ITEMS args doctor factory flow inspection drives authentication synchronization monitoring
 )
     add_onedrive_test(
         app_${APP_TEST}_tests

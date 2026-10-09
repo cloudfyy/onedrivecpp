@@ -582,8 +582,15 @@ private:
 
 class FakeMonitor final {
 public:
-    FakeMonitor(int& run_count, onedrive::monitor::SyncCallback synchronize)
+    FakeMonitor(
+        int& run_count,
+        bool& keyboard_exit,
+        bool& stop_requested,
+        onedrive::monitor::SyncCallback synchronize
+    )
         : run_count_{run_count},
+          keyboard_exit_{keyboard_exit},
+          stop_requested_{stop_requested},
           synchronize_{std::move(synchronize)} {
     }
 
@@ -599,9 +606,22 @@ public:
         ++run_count_;
         return synchronize_(stop_token);
     }
+    [[nodiscard]] int run(
+        bool keyboard_exit, const std::stop_token& stop_token
+    ) const {
+        keyboard_exit_ = keyboard_exit;
+        stop_requested_ = stop_token.stop_requested();
+        ++run_count_;
+        if (!stop_requested_) {
+            static_cast<void>(synchronize_(stop_token));
+        }
+        return 0;
+    }
 
 private:
     int& run_count_;
+    bool& keyboard_exit_;
+    bool& stop_requested_;
     onedrive::monitor::SyncCallback synchronize_;
 };
 
@@ -715,6 +735,8 @@ public:
         return std::make_unique<onedrive::monitor::FileMonitor>(
             std::in_place_type<FakeMonitor>,
             monitor_run_count,
+            monitor_keyboard_exit,
+            monitor_stop_requested,
             std::move(counted_synchronize)
         );
     }
@@ -748,6 +770,8 @@ public:
     mutable int monitor_count{0};
     mutable int monitor_run_count{0};
     mutable int monitor_sync_count{0};
+    mutable bool monitor_keyboard_exit{false};
+    mutable bool monitor_stop_requested{false};
     mutable int metrics_count{0};
     mutable std::filesystem::path last_item_store_sync_directory;
     std::vector<onedrive::storage::ItemState> item_states;
