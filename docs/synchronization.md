@@ -229,6 +229,17 @@ timestamp are rejected before download. New download files are created with
 permissions derived from `0666` and the process `umask` (normally `0644` with
 `umask 0022`); executable bits are never added.
 
+A completed upload can commit its trusted snapshot even if the original local
+file was deleted or renamed during transfer or before journal recovery. The
+client reports the missing source, skips its inode and xattr updates, and clears
+the completed upload journal. Subsequent local scanning reconciles deletion
+according to `delete_policy` and uploads any renamed local copy. Symbolic links,
+unexpected path types, and inspection failures still stop recovery and retain
+the journal.
+In bidirectional mode, Delta echoes with the already-committed ETag do not
+recreate a missing local file before this reconciliation. Download-only mode
+continues to restore missing files.
+
 After a download completes, the client writes the temporary path, destination,
 remote metadata, size, and SHA-256 content fingerprint to a SQLite
 `pending_download` journal before the atomic replacement. Startup recovery

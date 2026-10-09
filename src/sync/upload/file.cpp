@@ -369,6 +369,46 @@ storage::ItemState uploaded_state(
     };
 }
 
+bool commit_uploaded_file(
+    const storage::PendingUpload& upload,
+    storage::ItemState state,
+    const graph::RemoteItem& remote,
+    const SafeSyncRoot& sync_root,
+    storage::ItemStore& items,
+    const FilesystemMetadata& metadata
+) {
+    static_cast<void>(sync_root.relative_path(upload.local_path));
+    std::error_code error;
+    const auto status =
+        std::filesystem::symlink_status(upload.local_path, error);
+    const bool missing = error == std::errc::no_such_file_or_directory ||
+                         (!error && !std::filesystem::exists(status));
+    if (error && !missing) {
+        throw std::runtime_error(
+            "cannot inspect local upload source '" +
+            upload.local_path.string() + "': " + error.message()
+        );
+    }
+    if (!missing) {
+        const auto identity =
+            sync_root.identity(upload.local_path, FilesystemItemKind::file);
+        state.local_device = identity.device;
+        state.local_inode = identity.inode;
+    }
+    items.commit_upload(upload, std::move(state));
+    if (!missing) {
+        metadata.write_remote_identity(remote, upload.local_path);
+    } else {
+        spdlog::warn(
+            "Committed upload '{}' after its local source disappeared; "
+            "continuing local change reconciliation",
+            upload.remote_path
+        );
+    }
+    static_cast<void>(remove_no_symlinks(upload.snapshot_path));
+    return !missing;
+}
+
 graph::RemoteItem recover_uploaded_item(
     storage::PendingUpload& upload,
     graph::GraphClient& graph,
@@ -513,22 +553,21 @@ FileUploadResult execute_file_upload(
             remote_committed.baseline,
             drive_id
         );
-        const auto identity = sync_root.identity(
-            upload.path,
-            FilesystemItemKind::file
+        const bool source_present = commit_uploaded_file(
+            pending_upload(remote_committed),
+            std::move(state),
+            remote_committed.remote,
+            sync_root,
+            items,
+            metadata
         );
-        state.local_device = identity.device;
-        state.local_inode = identity.inode;
-        items.commit_upload(
-            pending_upload(remote_committed), std::move(state)
-        );
-        metadata.write_remote_identity(
-            remote_committed.remote, upload.path
-        );
-        static_cast<void>(remove_no_symlinks(
-            pending_upload(remote_committed).snapshot_path
-        ));
-        return {FileUploadStatus::uploaded, {}};
+        return {
+            FileUploadStatus::uploaded,
+            source_present ? std::string{}
+                           : "Local source disappeared after uploading '" +
+                                 upload.remote_path +
+                                 "'; continuing local change reconciliation.",
+        };
     } catch (const LocalUploadResourceError& error) {
         pending.failure_code = error.reason_code();
         pending.failure_message = error.what();
@@ -614,21 +653,19 @@ void recover_pending_uploads(
                 },
                 drive_id
             );
-            const auto identity = sync_root.identity(
-                upload.local_path,
-                FilesystemItemKind::file
-            );
-            state.local_device = identity.device;
-            state.local_inode = identity.inode;
-            items.commit_upload(upload, state);
-            metadata.write_remote_identity(remote, upload.local_path);
-            static_cast<void>(
-                remove_no_symlinks(upload.snapshot_path)
+            const bool source_present = commit_uploaded_file(
+                upload, std::move(state), remote, sync_root, items, metadata
             );
             observer.message(
-                events::MessageKind::information,
-                "pending_upload_recovered",
-                "Recovered pending upload '" + upload.remote_path + "'."
+                source_present ? events::MessageKind::information
+                               : events::MessageKind::warning,
+                source_present ? "pending_upload_recovered"
+                               : "pending_upload_source_missing",
+                "Recovered pending upload '" + upload.remote_path + "'." +
+                    (source_present ? std::string{}
+                                    : " Its local source is missing; "
+                                      "continuing local change "
+                                      "reconciliation.")
             );
         } catch (const graph::UploadResourceError& error) {
             upload.failure_code = error.reason_code();

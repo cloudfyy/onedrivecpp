@@ -508,6 +508,13 @@ UploadSummary upload_local_changes(
             return;
         case FileUploadStatus::uploaded:
             ++summary.uploaded;
+            if (!result.message.empty()) {
+                observer.message(
+                    events::MessageKind::warning,
+                    "local_upload_source_missing",
+                    result.message
+                );
+            }
             observer.message(
                 events::MessageKind::information,
                 "local_item_uploaded",

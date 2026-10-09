@@ -6,6 +6,50 @@ namespace {
 
 using namespace onedrive::test::sync;
 
+int test_missing_file_delta_echo() {
+    TemporaryDirectory temporary;
+    const onedrive::cli::Console console;
+    for (const bool download_only : {false, true}) {
+        for (const bool remote_changed : {false, true}) {
+            const auto root =
+                temporary.path() / (std::to_string(download_only) +
+                                    std::to_string(remote_changed));
+            std::filesystem::create_directories(root);
+            std::ofstream{root / "file.txt"} << "data";
+            FakeItemStore items;
+            items.saved_delta_link = "saved";
+            items.items.emplace("file", tracked_item(root, "file", "file.txt"));
+            std::filesystem::remove(root / "file.txt");
+            FakeGraphClient graph;
+            auto remote = file("file", "file.txt", 4);
+            if (remote_changed) {
+                remote.etag = "new-etag";
+            }
+            graph.changes = {remote};
+            graph.contents["file"] = "data";
+            FakeMetrics metrics;
+            auto config = config_for(root, false);
+            config.sync_mode = download_only
+                                   ? onedrive::sync::SyncMode::download_only
+                                   : onedrive::sync::SyncMode::bidirectional;
+            const bool restores = download_only || remote_changed;
+            if (onedrive::sync::SyncEngine{
+                    config, graph, items, metrics, &console
+                }
+                        .synchronize() != 0 ||
+                graph.download_count != (restores ? 1 : 0) ||
+                std::filesystem::exists(root / "file.txt") != restores ||
+                graph.deleted_items.size() != (restores ? 0U : 1U)) {
+                return fail(
+                    "missing-file Delta echo changed download or conflict "
+                    "semantics"
+                );
+            }
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_upload_only() {
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "upload-only";
@@ -225,6 +269,10 @@ int test_download_only_preserves_and_untracks_local_items() {
 } // namespace
 
 int main() {
+    if (const auto result = test_missing_file_delta_echo();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
     if (const auto result = test_upload_only(); result != EXIT_SUCCESS) {
         return result;
     }

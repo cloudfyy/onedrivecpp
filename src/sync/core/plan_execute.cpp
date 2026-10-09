@@ -14,6 +14,7 @@
 #include "sync/filesystem/metadata.hpp"
 #include "sync/filesystem/operations.hpp"
 #include "sync/filesystem/safe_sync_root.hpp"
+#include "sync/upload/planning.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -142,6 +143,21 @@ ExecutionSummary execute_plan(
         }
         auto& state = plan.state_for(item.id);
         const auto destination = state.local_path;
+        const auto previous = items.find(drive_id, item.id);
+        if (capabilities.uploads() && previous &&
+            previous->local_path == destination &&
+            previous->etag == item.etag &&
+            detail::local_path_is_missing(destination)) {
+            state.local_size = previous->local_size;
+            state.local_modified_ticks = previous->local_modified_ticks;
+            state.local_device = previous->local_device;
+            state.local_inode = previous->local_inode;
+            spdlog::info(
+                "Retaining local deletion of unchanged remote file '{}'",
+                item.remote_path
+            );
+            continue;
+        }
         try {
             safe_root.ensure_directory_tree(
                 destination.parent_path(),
@@ -174,7 +190,6 @@ ExecutionSummary execute_plan(
             continue;
         }
 
-        const auto previous = items.find(drive_id, item.id);
         if (move_summary.reusable_files.contains(item.id)) {
             ++reused_count;
             reused_bytes += static_cast<std::uint64_t>(item.size);
