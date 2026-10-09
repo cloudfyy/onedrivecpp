@@ -81,6 +81,13 @@ Config Config::defaults() {
     };
 }
 
+std::filesystem::path default_config_path() {
+    if (const char* home = std::getenv("HOME"); home != nullptr) {
+        return std::filesystem::path{home} / ".config/onedrive-cpp/config.toml";
+    }
+    return "/etc/onedrive-cpp/onedrive-cpp.toml";
+}
+
 Config Config::load(const std::filesystem::path& path) {
     Config config = defaults();
     if (!std::filesystem::exists(path)) {

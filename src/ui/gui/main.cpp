@@ -1,21 +1,28 @@
+#include "main_window.hpp"
+
+#include "onedrive/config/config.hpp"
+
 #include <QApplication>
-#include <QLabel>
-#include <QMainWindow>
+#include <QMessageBox>
+
+#include <exception>
 
 int main(int argc, char* argv[]) {
     QApplication application{argc, argv};
+    QCoreApplication::setApplicationName("OneDrive C++");
 
-    QMainWindow window;
-    window.setWindowTitle("OneDrive C++");
-    window.resize(800, 600);
-
-    auto* status = new QLabel(
-        "The desktop interface is ready for account and synchronization "
-        "features."
-    );
-    status->setAlignment(Qt::AlignCenter);
-    window.setCentralWidget(status);
-
-    window.show();
-    return application.exec();
+    try {
+        onedrive::gui::MainWindow window{
+            onedrive::gui::load_app_state_view_model(
+                onedrive::config::default_config_path()
+            )
+        };
+        window.show();
+        return application.exec();
+    } catch (const std::exception& error) {
+        QMessageBox::critical(
+            nullptr, "OneDrive C++", QString::fromUtf8(error.what())
+        );
+        return 1;
+    }
 }

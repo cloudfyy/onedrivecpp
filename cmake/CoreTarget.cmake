@@ -202,7 +202,12 @@ target_link_libraries(onedrive-cpp PRIVATE onedrive_cli)
 if(ONEDRIVE_BUILD_GUI)
     find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
 
-    add_executable(onedrive-cpp-gui src/ui/gui/main.cpp)
+    add_executable(
+        onedrive-cpp-gui
+        src/ui/gui/app_state_view_model.cpp
+        src/ui/gui/main.cpp
+        src/ui/gui/main_window.cpp
+    )
     target_link_libraries(
         onedrive-cpp-gui
         PRIVATE

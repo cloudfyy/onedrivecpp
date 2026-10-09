@@ -112,6 +112,8 @@ struct Config {
     [[nodiscard]] static Config load(const std::filesystem::path& path);
 };
 
+[[nodiscard]] std::filesystem::path default_config_path();
+
 [[nodiscard]] bool
 has_auth_scope(std::string_view scopes, std::string_view expected);
 [[nodiscard]] bool has_broad_auth_scope(std::string_view scopes);

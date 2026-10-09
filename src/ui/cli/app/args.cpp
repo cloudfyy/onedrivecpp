@@ -1,5 +1,6 @@
 #include "args.hpp"
 
+#include "onedrive/config/config.hpp"
 #include "onedrive/version.hpp"
 
 #include <CLI/CLI.hpp>
@@ -11,21 +12,11 @@
 #include <utility>
 
 namespace onedrive::app::detail {
-namespace {
-
-std::filesystem::path default_config_path() {
-    if (const char* home = std::getenv("HOME"); home != nullptr) {
-        return std::filesystem::path{home} / ".config/onedrive-cpp/config.toml";
-    }
-    return "/etc/onedrive-cpp/onedrive-cpp.toml";
-}
-
-} // namespace
 
 ParseResult parse_arguments(int argc, char* argv[]) {
     ParseResult result;
     auto& arguments = result.arguments;
-    arguments.config_path = default_config_path();
+    arguments.config_path = config::default_config_path();
     const std::map<std::string, cli::ColorMode> color_modes{
         {"auto", cli::ColorMode::automatic},
         {"always", cli::ColorMode::always},

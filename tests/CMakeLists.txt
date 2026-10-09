@@ -47,6 +47,13 @@ add_onedrive_test(
     INCLUDE_DIRS src tests
 )
 add_onedrive_test(
+    gui_state_view_model_tests
+    SOURCES
+        src/ui/gui/app_state_view_model.cpp
+        tests/gui/state_view_model.cpp
+    INCLUDE_DIRS src src/ui/gui tests
+)
+add_onedrive_test(
     terminal_tests
     SOURCES tests/cli/terminal.cpp
     INCLUDE_DIRS src tests
