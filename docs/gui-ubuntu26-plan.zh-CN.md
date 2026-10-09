@@ -241,8 +241,8 @@ GUI 包还需要：
 - [x] 将取消贯通到启动恢复、远端移动/删除及目录和路径查询 Graph 请求。
 - [x] 定义长操作的 GUI 状态转换。
 - [x] 建立明确的应用操作状态机。
-- [ ] 让 CLI、JSON 和 FTXUI 通过 adapter 使用新的应用服务。
-- [ ] 保持现有 CLI 输出、退出码、确认行为和配置兼容。
+- [x] 让 CLI、JSON 和 FTXUI 通过 adapter 使用新的应用服务。
+- [x] 保持现有 CLI 输出、退出码、确认行为和配置兼容。
 - [x] 为认证、状态查询及已贯通取消路径补充测试。
 - [x] 为手动同步应用服务边界补充测试。
 - [x] 为 Monitor 应用服务边界补充测试。
@@ -260,6 +260,11 @@ GUI 包还需要：
   自己的观察者，不会隐式启动终端界面。
 - 终端配置类型和解析迁入 `config`；TOML 配置键及取值保持不变。
 - `onedrive_core` 已解除对 CLI、CLI11 和 FTXUI 的链接依赖。
+- CLI 参数解析、命令分发、展示编排及 `Application::run()` 生命周期已移入
+  `onedrive_cli`；依赖方向为 `onedrive_cli -> onedrive_app -> onedrive_core`，
+  `onedrive_app` 不再反向依赖 CLI、CLI11 或 FTXUI。
+- CLI、JSON、FTXUI 命令流程及配置相关回归测试在调整 target 依赖后通过；覆盖
+  参数帮助、命令流程、确认/退出行为和配置解析。
 - 新增仅链接核心的观察者测试，覆盖全部事件载荷、并发串行化、异常传播，以及
   通过非 Console 观察者完成真实本地文件写入的模拟 Graph 同步。
 - 配额和同步状态已提取为拥有数据的公共查询快照。CLI 继续生成相同 section 和
@@ -289,17 +294,15 @@ GUI 包还需要：
 - 应用观察者现收到类型化操作状态事件，状态机验证认证、同步和 Monitor 的合法迁移：
   认证为 `idle -> authenticating -> ready/idle/failed`，同步为
   `idle -> syncing -> ready/failed` 或经 `stopping` 后结束，Monitor 为
-  `idle -> watching -> ready/failed` 或经 `stopping` 后结束。取消与完成不会报告为失败；
-  CLI 文本、JSON 和 FTXUI adapter 忽略该状态事件，输出行为保持不变。
+  `idle -> watching -> stopping -> ready` 或以 `failed` 结束。取消与完成不会报告为
+  失败；CLI 文本、JSON 和 FTXUI adapter 忽略该状态事件，输出行为保持不变。
 
-应用可执行文件仍只直接链接 `onedrive_app`。当前 `onedrive_app` 同时依赖
-`onedrive_core` 和 `onedrive_cli`，而 `onedrive_cli` 依赖 `onedrive_core`。
-下一步移动 CLI 参数解析和生命周期职责，才能形成最终的
-`onedrive_cli -> onedrive_app -> onedrive_core` 方向。异步取消和确认请求的 GUI
-适配尚未实现，本阶段不代表完整 P0 已完成。
+CLI 参数解析和生命周期编排现归属 `onedrive_cli`；目标依赖方向为
+`onedrive_cli -> onedrive_app -> onedrive_core`。应用服务不再依赖 CLI 或终端库；
+异步取消和确认请求的 GUI 适配尚未实现，本阶段不代表完整 P0 已完成。
 
 认证、配额、状态查询、手动同步和 Monitor 已有可复用应用接口。底层恢复和远端
-移动/删除操作现可响应取消；CLI 生命周期迁移和 Qt 前端取消/确认适配尚未完成。
+移动/删除操作现可响应取消；Qt 前端取消/确认适配尚未完成。
 
 ### P1：最小 Qt GUI
 

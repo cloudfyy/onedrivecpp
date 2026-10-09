@@ -67,6 +67,7 @@ int test_monitoring_service() {
         observer.operation_states() !=
             std::vector<onedrive::events::OperationState>{
                 onedrive::events::OperationState::watching,
+                onedrive::events::OperationState::stopping,
                 onedrive::events::OperationState::ready,
             } ||
         implementation.graph_client_count != 1 ||

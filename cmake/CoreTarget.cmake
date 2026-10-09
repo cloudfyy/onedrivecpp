@@ -1,4 +1,10 @@
 add_library(onedrive_cli
+    src/ui/cli/app/app.cpp
+    src/ui/cli/app/args.cpp
+    src/ui/cli/app/commands.cpp
+    src/ui/cli/app/discover.cpp
+    src/ui/cli/app/drive_fields.cpp
+    src/ui/cli/app/info.cpp
     src/ui/cli/console.cpp
     src/ui/cli/format.cpp
     src/ui/cli/ftxui_backend.cpp
@@ -19,12 +25,14 @@ target_include_directories(onedrive_cli
 
 target_link_libraries(onedrive_cli
     PUBLIC
-        onedrive_core
+        onedrive_app
     PRIVATE
+        CLI11::CLI11
         ftxui::component
         ftxui::dom
         ftxui::screen
         nlohmann_json::nlohmann_json
+        spdlog::spdlog
 )
 
 target_compile_options(onedrive_cli PRIVATE
@@ -161,16 +169,10 @@ add_library(onedrive_app
     src/app/authentication.cpp
     src/app/monitoring.cpp
     src/app/synchronization.cpp
-    src/ui/cli/app/app.cpp
-    src/ui/cli/app/args.cpp
     src/app/checks.cpp
-    src/ui/cli/app/commands.cpp
-    src/ui/cli/app/discover.cpp
-    src/ui/cli/app/drive_fields.cpp
     src/app/lock.cpp
     src/app/preflight.cpp
     src/app/factory.cpp
-    src/ui/cli/app/info.cpp
     src/app/queries.cpp
 )
 
@@ -187,8 +189,6 @@ target_link_libraries(onedrive_app
     PUBLIC
         onedrive_core
     PRIVATE
-        onedrive_cli
-        CLI11::CLI11
         spdlog::spdlog
 )
 
@@ -197,7 +197,7 @@ target_compile_options(onedrive_app PRIVATE
 )
 
 add_executable(onedrive-cpp src/main.cpp)
-target_link_libraries(onedrive-cpp PRIVATE onedrive_app)
+target_link_libraries(onedrive-cpp PRIVATE onedrive_cli)
 
 if(ONEDRIVE_ENABLE_CLANG_TIDY)
     set(CMAKE_CXX_CLANG_TIDY "")

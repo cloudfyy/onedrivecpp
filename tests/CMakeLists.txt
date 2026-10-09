@@ -56,7 +56,7 @@ add_onedrive_test(
     tui_tests
     SOURCES tests/cli/tui.cpp
     INCLUDE_DIRS src tests
-    LIBRARIES onedrive_app
+    LIBRARIES onedrive_cli
 )
 add_onedrive_test(
     tui_paging_tests
@@ -126,7 +126,7 @@ add_onedrive_test(
     app_migrate_tests
     SOURCES tests/app/migrate.cpp
     INCLUDE_DIRS src tests tests/app
-    LIBRARIES db_test_support onedrive_app
+    LIBRARIES db_test_support onedrive_cli
 )
 add_onedrive_test(
     device_auth_tests
@@ -177,21 +177,21 @@ foreach(
         app_${APP_TEST}_tests
         SOURCES tests/app/${APP_TEST}.cpp
         INCLUDE_DIRS tests tests/app
-        LIBRARIES onedrive_app
+        LIBRARIES onedrive_cli
     )
 endforeach()
 add_onedrive_test(
     app_queries_tests
     SOURCES tests/app/queries.cpp
     INCLUDE_DIRS tests tests/app
-    LIBRARIES onedrive_app
+    LIBRARIES onedrive_cli
 )
 target_include_directories(app_args_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 add_onedrive_test(
     app_cleanup_tests
     SOURCES tests/app/cleanup.cpp
     INCLUDE_DIRS src tests tests/app
-    LIBRARIES db_test_support onedrive_app
+    LIBRARIES db_test_support onedrive_cli
 )
 foreach(MONITOR_TEST IN ITEMS state notify socket remote local timing stop input)
     add_onedrive_test(
