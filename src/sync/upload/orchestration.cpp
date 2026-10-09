@@ -388,7 +388,8 @@ UploadSummary upload_local_changes(
                 items,
                 metadata,
                 observer,
-                summary
+                summary,
+                stop_token
             )) {
             return summary;
         }
@@ -402,7 +403,7 @@ UploadSummary upload_local_changes(
             );
         }
         execute_new_remote_move(
-            sync_root, move, *previous, graph, items
+            sync_root, move, *previous, graph, items, stop_token
         );
         moves.moved_remote_ids.erase(move.remote_id);
         ++summary.moved;
@@ -444,7 +445,7 @@ UploadSummary upload_local_changes(
     }
     for (const auto& deletion : deletion_plan.operations) {
         throw_if_cancelled(stop_token);
-        execute_new_remote_delete(deletion, graph, items);
+        execute_new_remote_delete(deletion, graph, items, stop_token);
         ++summary.deleted;
         observer.message(
             events::MessageKind::information,
@@ -464,7 +465,8 @@ UploadSummary upload_local_changes(
                 items,
                 metadata,
                 observer,
-                summary
+                summary,
+                stop_token
             )) {
             return summary;
         }

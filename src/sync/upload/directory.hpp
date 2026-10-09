@@ -13,14 +13,16 @@ bool upload_directory(
     storage::ItemStore& items,
     const FilesystemMetadata& metadata,
     const events::Observer& observer,
-    UploadSummary& summary
+    UploadSummary& summary,
+    const std::stop_token& stop_token = {}
 );
 void recover_pending_directory(
     const SafeSyncRoot& sync_root,
     storage::PendingUpload upload,
     graph::GraphClient& graph,
     storage::ItemStore& items,
-    const FilesystemMetadata& metadata
+    const FilesystemMetadata& metadata,
+    const std::stop_token& stop_token = {}
 );
 
 }  // namespace onedrive::sync::detail

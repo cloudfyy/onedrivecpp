@@ -432,7 +432,12 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
             if (capabilities.uploads()) {
                 throw_if_cancelled(stop_token);
                 detail::recover_pending_remote_moves(
-                    *safe_root, config_.drive_id, graph_, items_, observer
+                    *safe_root,
+                    config_.drive_id,
+                    graph_,
+                    items_,
+                    observer,
+                    stop_token
                 );
                 if (capabilities.removes_remote_items()) {
                     detail::recover_pending_deletes(
@@ -444,7 +449,8 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
                             .maximum_affected_items =
                                 config_.maximum_remote_deletions,
                             .force = config_.force_large_delete,
-                        }
+                        },
+                        stop_token
                     );
                 }
                 detail::recover_pending_uploads(
@@ -453,7 +459,8 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
                     graph_,
                     items_,
                     *metadata,
-                    observer
+                    observer,
+                    stop_token
                 );
             }
         }

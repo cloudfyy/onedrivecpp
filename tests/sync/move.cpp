@@ -106,6 +106,65 @@ int test_remote_moves() {
         return fail("remote move did not recover after journal failure");
     }
 
+    const auto cancelled_move_root = temporary.path() / "cancelled-move";
+    std::filesystem::create_directories(cancelled_move_root);
+    {
+        std::ofstream output{cancelled_move_root / "before.txt"};
+        output << "data";
+    }
+    FakeItemStore cancelled_move_items;
+    cancelled_move_items.saved_delta_link = "saved";
+    cancelled_move_items.items.emplace(
+        "cancelled-move",
+        tracked_item(cancelled_move_root, "cancelled-move", "before.txt")
+    );
+    FakeGraphClient cancelled_move_graph;
+    FakeMetrics cancelled_move_metrics;
+    auto cancelled_move_config = config_for(cancelled_move_root, false);
+    cancelled_move_config.sync_mode =
+        onedrive::sync::SyncMode::bidirectional;
+    onedrive::sync::SyncEngine cancelled_move_engine{
+        cancelled_move_config,
+        cancelled_move_graph,
+        cancelled_move_items,
+        cancelled_move_metrics,
+        &default_console
+    };
+    if (cancelled_move_engine.synchronize() != 0) {
+        return fail("could not prepare remote move cancellation test");
+    }
+    std::filesystem::rename(
+        cancelled_move_root / "before.txt",
+        cancelled_move_root / "after.txt"
+    );
+    std::stop_source move_cancellation;
+    cancelled_move_graph.during_remote_move =
+        [&move_cancellation] { move_cancellation.request_stop(); };
+    if (cancelled_move_engine.synchronize(
+            move_cancellation.get_token()
+        ) != 130 ||
+        cancelled_move_items.pending_remote_moves_by_id.size() != 1 ||
+        !cancelled_move_graph.moved_remote_items.empty() ||
+        cancelled_move_metrics.last_outcome !=
+            onedrive::metrics::SyncRunOutcome::cancelled) {
+        return fail("cancelled remote move did not retain its recovery journal");
+    }
+    std::stop_source move_recovery_cancellation;
+    cancelled_move_graph.during_remote_move =
+        [&move_recovery_cancellation] {
+            move_recovery_cancellation.request_stop();
+        };
+    if (cancelled_move_engine.synchronize(
+            move_recovery_cancellation.get_token()
+        ) != 130 ||
+        cancelled_move_items.pending_remote_moves_by_id.size() != 1 ||
+        cancelled_move_metrics.last_outcome !=
+            onedrive::metrics::SyncRunOutcome::cancelled) {
+        return fail(
+            "cancelled pending move recovery did not retain its journal"
+        );
+    }
+
     const auto recovery_root = temporary.path() / "move-recovery";
     std::filesystem::create_directories(recovery_root);
     {

@@ -57,21 +57,24 @@ void recover_pending_uploads(
     graph::GraphClient& graph,
     storage::ItemStore& items,
     const FilesystemMetadata& metadata,
-    const events::Observer& observer
+    const events::Observer& observer,
+    const std::stop_token& stop_token = {}
 );
 void recover_pending_deletes(
     const std::string& drive_id,
     graph::GraphClient& graph,
     storage::ItemStore& items,
     const events::Observer& observer,
-    RemoteDeletionGuard deletion_guard
+    RemoteDeletionGuard deletion_guard,
+    const std::stop_token& stop_token = {}
 );
 void recover_pending_remote_moves(
     const SafeSyncRoot& sync_root,
     const std::string& drive_id,
     graph::GraphClient& graph,
     storage::ItemStore& items,
-    const events::Observer& observer
+    const events::Observer& observer,
+    const std::stop_token& stop_token = {}
 );
 
 }  // namespace onedrive::sync::detail

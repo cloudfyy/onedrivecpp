@@ -1,5 +1,7 @@
 #include "support.hpp"
 
+#include <stop_token>
+
 namespace {
 
 using namespace onedrive::test::graph;
@@ -497,6 +499,77 @@ int test_item_move() {
     }
     return EXIT_SUCCESS;
 }
+int test_drive_operations_propagate_cancellation() {
+    const auto verify_cancelled = [](auto operation) {
+        std::stop_source cancellation;
+        auto transport = std::make_unique<FakeTransport>(
+            std::deque<onedrive::http::HttpResult>{
+                token_response(),
+                std::unexpected(onedrive::http::HttpError{
+                    .code = onedrive::http::HttpErrorCode::cancelled,
+                    .message = "simulated Graph request cancellation",
+                }),
+            }
+        );
+        auto* transport_pointer = transport.get();
+        transport_pointer->on_perform = [&](const auto& request) {
+            if (request.url.starts_with("https://graph.example.test")) {
+                cancellation.request_stop();
+            }
+        };
+        onedrive::graph::MicrosoftGraphClient client{
+            wrap_transport(std::move(transport)),
+            wrap_token_store(
+                std::make_unique<FakeTokenStore>(
+                    std::string{"existing-refresh"}
+                )
+            ),
+            auth_options(),
+            {
+                .drive_id = "drive/id",
+                .endpoint = "https://graph.example.test/v1.0",
+            },
+        };
+        try {
+            operation(client, cancellation.get_token());
+            return fail("Graph operation ignored request cancellation");
+        } catch (const onedrive::graph::RequestCancelledError&) {
+        }
+        const auto& requests = transport_pointer->queued.requests;
+        if (requests.size() != 2 ||
+            !requests.back().stop_token.stop_requested()) {
+            return fail("Graph operation did not pass its stop token");
+        }
+        return EXIT_SUCCESS;
+    };
+
+    if (const int result = verify_cancelled([](auto& client, auto stop_token) {
+            static_cast<void>(
+                client.item_by_path("Folder/file.txt", stop_token)
+            );
+        });
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = verify_cancelled([](auto& client, auto stop_token) {
+            static_cast<void>(client.create_directory("Folder", stop_token));
+        });
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = verify_cancelled([](auto& client, auto stop_token) {
+            client.delete_item("file-id", "file-etag", stop_token);
+        });
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return verify_cancelled([](auto& client, auto stop_token) {
+        static_cast<void>(
+            client.move_item("file-id", "file-etag", "Folder/file.txt",
+                             stop_token)
+        );
+    });
+}
 int test_drive_identity_and_profile_photo() {
     FakeTransport transport{std::deque<onedrive::http::HttpResult>{
         onedrive::http::HttpResponse{
@@ -651,6 +724,10 @@ int main() {
         return result;
     }
     if (const int result = test_item_move(); result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_drive_operations_propagate_cancellation();
+        result != EXIT_SUCCESS) {
         return result;
     }
     if (const int result = test_drive_identity_and_profile_photo();

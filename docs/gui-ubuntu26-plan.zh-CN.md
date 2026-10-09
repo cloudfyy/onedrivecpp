@@ -238,7 +238,8 @@ GUI 包还需要：
 - [x] 提取手动同步应用服务。
 - [x] 提取 Monitor 应用服务。
 - [x] 为认证、同步、Monitor、Delta、下载和上传主路径贯通 `std::stop_token`。
-- [ ] 让恢复、远端移动/删除等所有长操作都支持中断，并定义其 GUI 状态转换。
+- [x] 将取消贯通到启动恢复、远端移动/删除及目录和路径查询 Graph 请求。
+- [ ] 定义长操作的 GUI 状态转换。
 - [ ] 建立明确的应用操作状态机。
 - [ ] 让 CLI、JSON 和 FTXUI 通过 adapter 使用新的应用服务。
 - [ ] 保持现有 CLI 输出、退出码、确认行为和配置兼容。
@@ -267,12 +268,15 @@ GUI 包还需要：
   消息和有效期。默认轮询等待及认证、身份和头像 HTTP 请求支持 stop token；
   取消在账号激活前生效，持久化开始后允许其完成。CLI 授权文本与退出码保持不变。
 - 同步入口和 Monitor 回调现接受 stop token，并将停止请求传递给 Delta OAuth 刷新、
-  分页请求、下载与上传 worker。取消返回 130，指标单独记录为 `cancelled`；同步计划
-  仅在安全边界响应取消，worker 会 join，未完成 Delta 不推进本地游标，上传 journal
-  保留用于恢复。当前远端移动、删除和启动恢复中的单次 Graph 操作尚不能中断。
+  分页请求、下载与上传 worker，以及启动恢复中的 Graph 操作。远端移动、删除、目录
+  创建和路径查询也将 token 传入 HTTP 请求与重试循环；取消映射为正常的
+  `RequestCancelledError`。取消返回 130，指标单独记录为 `cancelled`；同步计划仅在
+  安全边界响应取消，worker 会 join，未完成 Delta 不推进本地游标，未完成的移动、
+  删除和上传 journal 保留用于恢复。
 - 取消覆盖包含同步启动与执行边界、Delta/OAuth、Graph 上传各阶段、下载 checkpoint、
-  上传 journal 和 Monitor 停止传播；这部分测试已完成。Monitor stop token 与进程信号、
-  键盘退出可同时生效。
+  启动恢复、远端移动/删除的 HTTP 请求与 journal 保留，以及 Monitor 停止传播；相关
+  测试覆盖 Graph 请求 token 和取消时保留移动/删除 journal。Monitor stop token 与
+  进程信号、键盘退出可同时生效。
 - 手动同步已提取为 `app::synchronize_account`：它负责创建 Graph、状态存储和指标适配器，
   解析账号对应的同步目录，并把 UI 中立观察者与取消 token 传给同步引擎。CLI 手动同步
   已改为调用该服务；应用服务测试覆盖 dry-run 事件、依赖装配和预先取消。
@@ -286,8 +290,8 @@ GUI 包还需要：
 `onedrive_cli -> onedrive_app -> onedrive_core` 方向。异步取消和确认请求的 GUI
 适配尚未实现，本阶段不代表完整 P0 已完成。
 
-认证、配额、状态查询、手动同步和 Monitor 已有可复用应用接口。恢复和远端
-移动/删除操作仍不能响应取消，应用操作状态机、CLI 生命周期迁移和 Qt 前端取消/
+认证、配额、状态查询、手动同步和 Monitor 已有可复用应用接口。底层恢复和远端
+移动/删除操作现可响应取消；应用操作状态机、CLI 生命周期迁移和 Qt 前端取消/
 确认适配尚未完成。
 
 ### P1：最小 Qt GUI

@@ -215,7 +215,8 @@ bool upload_directory(
     storage::ItemStore& items,
     const FilesystemMetadata& metadata,
     const events::Observer& observer,
-    UploadSummary& summary
+    UploadSummary& summary,
+    const std::stop_token& stop_token
 ) {
     auto prepared = PreparedDirectoryUpload{
         PendingDirectoryUploadPayload{
@@ -243,7 +244,7 @@ bool upload_directory(
     auto journaled = journal_directory_upload(std::move(prepared));
     graph::RemoteItem remote;
     try {
-        remote = graph.create_directory(upload.remote_path);
+        remote = graph.create_directory(upload.remote_path, stop_token);
     } catch (const graph::UploadConflictError&) {
         items.remove_pending_upload(drive_id, upload.remote_path);
         throw LocalModificationConflictError(
@@ -280,15 +281,17 @@ bool upload_directory(
 }
 
 GraphCreatedDirectoryUpload recover_created_directory(
-    JournaledDirectoryUpload transaction, graph::GraphClient& graph
+    JournaledDirectoryUpload transaction,
+    graph::GraphClient& graph,
+    const std::stop_token& stop_token
 ) {
     const auto& upload = transaction.pending;
     require_local_directory(upload);
     graph::RemoteItem remote;
     try {
-        remote = graph.create_directory(upload.remote_path);
+        remote = graph.create_directory(upload.remote_path, stop_token);
     } catch (const graph::UploadConflictError&) {
-        remote = graph.item_by_path(upload.remote_path);
+        remote = graph.item_by_path(upload.remote_path, stop_token);
         if (!remote.directory) {
             throw RemoteUploadConflictError(
                 "remote directory recovery conflicts with '" +
@@ -306,13 +309,16 @@ void recover_pending_directory(
     storage::PendingUpload upload,
     graph::GraphClient& graph,
     storage::ItemStore& items,
-    const FilesystemMetadata& metadata
+    const FilesystemMetadata& metadata,
+    const std::stop_token& stop_token
 ) {
     auto journaled = JournaledDirectoryUpload{
         PendingDirectoryUploadPayload{std::move(upload)},
     };
     auto graph_created =
-        recover_created_directory(std::move(journaled), graph);
+        recover_created_directory(
+            std::move(journaled), graph, stop_token
+        );
     static_cast<void>(commit_created_directory(
         sync_root, std::move(graph_created), items, metadata
     ));

@@ -4,6 +4,7 @@
 #include "sync/upload/orchestration.hpp"
 
 #include "onedrive/ui/common/observer.hpp"
+#include "onedrive/sync/cancellation.hpp"
 #include "onedrive/util/path_security.hpp"
 #include "onedrive/util/system_error.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"
@@ -371,7 +372,8 @@ storage::ItemState uploaded_state(
 graph::RemoteItem recover_uploaded_item(
     storage::PendingUpload& upload,
     graph::GraphClient& graph,
-    storage::ItemStore& items
+    storage::ItemStore& items,
+    const std::stop_token& stop_token
 ) {
     const auto session = upload.upload_url.empty() ?
         std::nullopt :
@@ -394,10 +396,13 @@ graph::RemoteItem recover_uploaded_item(
             upload.expected_etag,
             upload.snapshot_path,
             session,
-            checkpoint
+            checkpoint,
+            stop_token
         );
     } catch (const graph::UploadConflictError&) {
-        const auto remote = graph.item_by_path(upload.remote_path);
+        const auto remote = graph.item_by_path(
+            upload.remote_path, stop_token
+        );
         if (remote.size != upload.local_size) {
             throw RemoteUploadConflictError(
                 "remote upload recovery conflicts with '" +
@@ -410,7 +415,12 @@ graph::RemoteItem recover_uploaded_item(
                 remote.id,
                 remote.etag,
                 static_cast<std::uint64_t>(remote.size),
-                verification
+                verification,
+                0,
+                stop_token,
+                {},
+                {},
+                {}
             );
             const bool matches =
                 content_fingerprint(verification) ==
@@ -546,9 +556,11 @@ void recover_pending_uploads(
     graph::GraphClient& graph,
     storage::ItemStore& items,
     const FilesystemMetadata& metadata,
-    const events::Observer& observer
+    const events::Observer& observer,
+    const std::stop_token& stop_token
 ) {
     for (auto upload : items.pending_uploads(drive_id)) {
+        throw_if_cancelled(stop_token);
         if (!upload.failure_code.empty() && upload.snapshot_path.empty() &&
             !upload.directory) {
             std::error_code status_error;
@@ -569,7 +581,7 @@ void recover_pending_uploads(
         try {
             if (upload.directory) {
                 recover_pending_directory(
-                    sync_root, upload, graph, items, metadata
+                    sync_root, upload, graph, items, metadata, stop_token
                 );
                 observer.message(
                     events::MessageKind::information,
@@ -590,7 +602,7 @@ void recover_pending_uploads(
                 );
             }
             const auto remote =
-                recover_uploaded_item(upload, graph, items);
+                recover_uploaded_item(upload, graph, items, stop_token);
             auto state = uploaded_state(
                 remote,
                 upload.local_path,

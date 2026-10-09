@@ -61,6 +61,16 @@ public:
         }
         throw std::logic_error{"single path lookup was not expected"};
     }
+    [[nodiscard]] onedrive::graph::RemoteItem item_by_path(
+        const std::string& path, std::stop_token stop_token
+    ) const {
+        if (stop_token.stop_requested()) {
+            throw onedrive::graph::RequestCancelledError{
+                "simulated path lookup cancellation"
+            };
+        }
+        return item_by_path(path);
+    }
 
     [[nodiscard]] onedrive::graph::DeltaResult list_delta(
         const std::optional<std::string>& delta_link,
@@ -312,6 +322,16 @@ public:
             .directory = true,
         };
     }
+    [[nodiscard]] onedrive::graph::RemoteItem create_directory(
+        const std::string& remote_path, std::stop_token stop_token
+    ) const {
+        if (stop_token.stop_requested()) {
+            throw onedrive::graph::RequestCancelledError{
+                "simulated directory creation cancellation"
+            };
+        }
+        return create_directory(remote_path);
+    }
 
     void delete_item(
         const std::string& remote_id, const std::string& expected_etag
@@ -322,6 +342,28 @@ public:
                 "simulated deletion conflict"
             };
         }
+    }
+    void delete_item(
+        const std::string& remote_id,
+        const std::string& expected_etag,
+        std::stop_token stop_token
+    ) const {
+        if (stop_token.stop_requested()) {
+            throw onedrive::graph::RequestCancelledError{
+                "simulated item deletion cancellation"
+            };
+        }
+        if (during_remote_delete) {
+            auto callback = std::move(during_remote_delete);
+            during_remote_delete = {};
+            callback();
+        }
+        if (stop_token.stop_requested()) {
+            throw onedrive::graph::RequestCancelledError{
+                "simulated item deletion cancellation"
+            };
+        }
+        delete_item(remote_id, expected_etag);
     }
 
     [[nodiscard]] onedrive::graph::RemoteItem move_item(
@@ -348,6 +390,29 @@ public:
             .directory = moved_item_directory,
         };
     }
+    [[nodiscard]] onedrive::graph::RemoteItem move_item(
+        const std::string& remote_id,
+        const std::string& expected_etag,
+        const std::string& destination_path,
+        std::stop_token stop_token
+    ) const {
+        if (stop_token.stop_requested()) {
+            throw onedrive::graph::RequestCancelledError{
+                "simulated item move cancellation"
+            };
+        }
+        if (during_remote_move) {
+            auto callback = std::move(during_remote_move);
+            during_remote_move = {};
+            callback();
+        }
+        if (stop_token.stop_requested()) {
+            throw onedrive::graph::RequestCancelledError{
+                "simulated item move cancellation"
+            };
+        }
+        return move_item(remote_id, expected_etag, destination_path);
+    }
 
     std::vector<onedrive::graph::RemoteItem> changes;
     std::optional<onedrive::graph::RemoteItem> lookup_item;
@@ -358,6 +423,8 @@ public:
     mutable std::function<void()> before_upload_return;
     mutable std::function<void()> during_upload;
     mutable std::function<void()> before_directory_return;
+    mutable std::function<void()> during_remote_delete;
+    mutable std::function<void()> during_remote_move;
     mutable std::optional<onedrive::graph::UploadSession> upload_checkpoint;
     bool reject_saved_cursor{false};
     bool upload_conflict{false};

@@ -274,6 +274,13 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
 RemoteItem MicrosoftGraphClient::item_by_path(
     const std::string& remote_path
 ) const {
+    return item_by_path(remote_path, {});
+}
+
+RemoteItem MicrosoftGraphClient::item_by_path(
+    const std::string& remote_path,
+    std::stop_token stop_token
+) const {
     const auto encoded_path = percent_encode_remote_path(remote_path);
     const std::string url =
         graph_drive_prefix(options_) + "/root:/" + encoded_path +
@@ -289,15 +296,22 @@ RemoteItem MicrosoftGraphClient::item_by_path(
                     "Authorization: Bearer " + access_token(),
                 },
                 .body = {},
-                .stop_token = {},
+                .stop_token = stop_token,
             });
         },
         options_,
         options_.maximum_throttle_retries,
         sleep_,
-        "Microsoft Graph path lookup"
+        "Microsoft Graph path lookup",
+        stop_token
     );
     if (!response) {
+        if (stop_token.stop_requested() ||
+            response.error().code == http::HttpErrorCode::cancelled) {
+            throw RequestCancelledError{
+                "Microsoft Graph path lookup was cancelled"
+            };
+        }
         throw std::runtime_error(
             "Microsoft Graph path lookup failed: " + response.error().message
         );
@@ -318,6 +332,13 @@ RemoteItem MicrosoftGraphClient::item_by_path(
 
 RemoteItem MicrosoftGraphClient::create_directory(
     const std::string& remote_path
+) const {
+    return create_directory(remote_path, {});
+}
+
+RemoteItem MicrosoftGraphClient::create_directory(
+    const std::string& remote_path,
+    std::stop_token stop_token
 ) const {
     const auto separator = remote_path.rfind('/');
     const auto name = separator == std::string::npos ?
@@ -363,15 +384,22 @@ RemoteItem MicrosoftGraphClient::create_directory(
                 .http_version = transfer.http_version,
                 .ip_version = transfer.ip_version,
                 .maximum_response_size = std::size_t{1024} * 1024U,
-                .stop_token = {},
+                .stop_token = stop_token,
             });
         },
         options_,
         options_.maximum_throttle_retries,
         sleep_,
-        "Microsoft Graph directory creation"
+        "Microsoft Graph directory creation",
+        stop_token
     );
     if (!response) {
+        if (stop_token.stop_requested() ||
+            response.error().code == http::HttpErrorCode::cancelled) {
+            throw RequestCancelledError{
+                "Microsoft Graph directory creation was cancelled"
+            };
+        }
         throw std::runtime_error(
             "Microsoft Graph directory creation failed: " +
             response.error().message
@@ -406,6 +434,14 @@ void MicrosoftGraphClient::delete_item(
     const std::string& remote_id,
     const std::string& expected_etag
 ) const {
+    delete_item(remote_id, expected_etag, {});
+}
+
+void MicrosoftGraphClient::delete_item(
+    const std::string& remote_id,
+    const std::string& expected_etag,
+    std::stop_token stop_token
+) const {
     if (remote_id.empty() || expected_etag.empty() ||
         expected_etag.find_first_of("\r\n") != std::string::npos) {
         throw std::invalid_argument(
@@ -436,15 +472,22 @@ void MicrosoftGraphClient::delete_item(
                 .http_version = transfer.http_version,
                 .ip_version = transfer.ip_version,
                 .maximum_response_size = std::size_t{1024} * 1024U,
-                .stop_token = {},
+                .stop_token = stop_token,
             });
         },
         options_,
         options_.maximum_throttle_retries,
         sleep_,
-        "Microsoft Graph item deletion"
+        "Microsoft Graph item deletion",
+        stop_token
     );
     if (!response) {
+        if (stop_token.stop_requested() ||
+            response.error().code == http::HttpErrorCode::cancelled) {
+            throw RequestCancelledError{
+                "Microsoft Graph item deletion was cancelled"
+            };
+        }
         throw std::runtime_error(
             "Microsoft Graph item deletion failed: " +
             response.error().message
@@ -469,6 +512,15 @@ RemoteItem MicrosoftGraphClient::move_item(
     const std::string& remote_id,
     const std::string& expected_etag,
     const std::string& destination_path
+) const {
+    return move_item(remote_id, expected_etag, destination_path, {});
+}
+
+RemoteItem MicrosoftGraphClient::move_item(
+    const std::string& remote_id,
+    const std::string& expected_etag,
+    const std::string& destination_path,
+    std::stop_token stop_token
 ) const {
     const auto separator = destination_path.rfind('/');
     const auto name = separator == std::string::npos ?
@@ -516,15 +568,22 @@ RemoteItem MicrosoftGraphClient::move_item(
                 .http_version = transfer.http_version,
                 .ip_version = transfer.ip_version,
                 .maximum_response_size = std::size_t{1024} * 1024U,
-                .stop_token = {},
+                .stop_token = stop_token,
             });
         },
         options_,
         options_.maximum_throttle_retries,
         sleep_,
-        "Microsoft Graph item move"
+        "Microsoft Graph item move",
+        stop_token
     );
     if (!response) {
+        if (stop_token.stop_requested() ||
+            response.error().code == http::HttpErrorCode::cancelled) {
+            throw RequestCancelledError{
+                "Microsoft Graph item move was cancelled"
+            };
+        }
         throw std::runtime_error(
             "Microsoft Graph item move failed: " +
             response.error().message

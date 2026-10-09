@@ -1,5 +1,6 @@
 #include "sync/upload/remote_move.hpp"
 #include "sync/upload/planning.hpp"
+#include "onedrive/sync/cancellation.hpp"
 #include "onedrive/ui/common/observer.hpp"
 #include "util/typestate.hpp"
 #include "sync/filesystem/operations.hpp"
@@ -421,7 +422,8 @@ LocalCommittedRemoteMove execute_pending_remote_move(
     const SafeSyncRoot& sync_root,
     JournaledRemoteMove transaction,
     graph::GraphClient& graph,
-    storage::ItemStore& items
+    storage::ItemStore& items,
+    std::stop_token stop_token
 ) {
     const auto& move = transaction.move;
     if (!local_move_identity_matches(sync_root, move)) {
@@ -436,11 +438,13 @@ LocalCommittedRemoteMove execute_pending_remote_move(
         remote = graph.move_item(
             move.remote_id,
             move.expected_etag,
-            move.destination_remote_path
+            move.destination_remote_path,
+            stop_token
         );
     } catch (const graph::UploadConflictError&) {
-        const auto existing =
-            graph.item_by_path(move.destination_remote_path);
+        const auto existing = graph.item_by_path(
+            move.destination_remote_path, stop_token
+        );
         if (existing.id != move.remote_id ||
             existing.directory != move.directory) {
             items.remove_pending_remote_move(
@@ -489,7 +493,8 @@ void execute_new_remote_move(
     storage::PendingRemoteMove move,
     storage::ItemState previous,
     graph::GraphClient& graph,
-    storage::ItemStore& items
+    storage::ItemStore& items,
+    std::stop_token stop_token
 ) {
     auto prepared = PreparedRemoteMove{
         PendingRemoteMovePayload{
@@ -500,7 +505,7 @@ void execute_new_remote_move(
     items.save_pending_remote_move(prepared.move);
     auto journaled = journal_remote_move(std::move(prepared));
     static_cast<void>(execute_pending_remote_move(
-        sync_root, std::move(journaled), graph, items
+        sync_root, std::move(journaled), graph, items, stop_token
     ));
 }
 
@@ -509,9 +514,11 @@ void recover_pending_remote_moves(
     const std::string& drive_id,
     graph::GraphClient& graph,
     storage::ItemStore& items,
-    const events::Observer& observer
+    const events::Observer& observer,
+    const std::stop_token& stop_token
 ) {
     for (const auto& move : items.pending_remote_moves(drive_id)) {
+        throw_if_cancelled(stop_token);
         const auto previous = items.find(drive_id, move.remote_id);
         if (!previous) {
             throw std::runtime_error(
@@ -526,7 +533,7 @@ void recover_pending_remote_moves(
             },
         };
         static_cast<void>(execute_pending_remote_move(
-            sync_root, std::move(journaled), graph, items
+            sync_root, std::move(journaled), graph, items, stop_token
         ));
         observer.message(
             events::MessageKind::information,

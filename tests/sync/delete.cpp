@@ -996,6 +996,67 @@ int test_local_deletions() {
         return fail("deletion did not recover after journal failure");
     }
 
+    const auto cancelled_delete_root =
+        temporary.path() / "cancelled-delete";
+    std::filesystem::create_directories(cancelled_delete_root);
+    {
+        std::ofstream output{cancelled_delete_root / "removed.txt"};
+        output << "removed";
+    }
+    FakeItemStore cancelled_delete_items;
+    cancelled_delete_items.saved_delta_link = "saved";
+    cancelled_delete_items.items.emplace(
+        "cancelled-delete",
+        tracked_item(
+            cancelled_delete_root, "cancelled-delete", "removed.txt"
+        )
+    );
+    FakeGraphClient cancelled_delete_graph;
+    FakeMetrics cancelled_delete_metrics;
+    auto cancelled_delete_config = config_for(cancelled_delete_root, false);
+    cancelled_delete_config.sync_mode =
+        onedrive::sync::SyncMode::bidirectional;
+    onedrive::sync::SyncEngine cancelled_delete_engine{
+        cancelled_delete_config,
+        cancelled_delete_graph,
+        cancelled_delete_items,
+        cancelled_delete_metrics,
+        &default_console
+    };
+    if (cancelled_delete_engine.synchronize() != 0) {
+        return fail("could not prepare remote deletion cancellation test");
+    }
+    std::filesystem::remove(cancelled_delete_root / "removed.txt");
+    std::stop_source delete_cancellation;
+    cancelled_delete_graph.during_remote_delete =
+        [&delete_cancellation] { delete_cancellation.request_stop(); };
+    if (cancelled_delete_engine.synchronize(
+            delete_cancellation.get_token()
+        ) != 130 ||
+        cancelled_delete_items.pending_deletes_by_id.size() != 1 ||
+        !cancelled_delete_graph.deleted_items.empty() ||
+        cancelled_delete_metrics.last_outcome !=
+            onedrive::metrics::SyncRunOutcome::cancelled) {
+        return fail(
+            "cancelled remote deletion did not retain its recovery journal"
+        );
+    }
+    std::stop_source delete_recovery_cancellation;
+    cancelled_delete_graph.during_remote_delete =
+        [&delete_recovery_cancellation] {
+            delete_recovery_cancellation.request_stop();
+        };
+    if (cancelled_delete_engine.synchronize(
+            delete_recovery_cancellation.get_token()
+        ) != 130 ||
+        cancelled_delete_items.pending_deletes_by_id.size() != 1 ||
+        cancelled_delete_metrics.last_outcome !=
+            onedrive::metrics::SyncRunOutcome::cancelled) {
+        return fail(
+            "cancelled pending deletion recovery did not retain its journal"
+        );
+    }
+
     const auto recovery_root = temporary.path() / "delete-recovery";
     std::filesystem::create_directories(recovery_root);
     {

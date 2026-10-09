@@ -90,6 +90,16 @@ public:
         }
         return lookup_item;
     }
+    [[nodiscard]] onedrive::graph::RemoteItem item_by_path(
+        const std::string& path, std::stop_token stop_token
+    ) const {
+        if (stop_token.stop_requested()) {
+            throw onedrive::graph::RequestCancelledError{
+                "simulated path lookup cancellation"
+            };
+        }
+        return item_by_path(path);
+    }
 
     [[nodiscard]] onedrive::graph::DeltaResult list_delta(
         const std::optional<std::string>&,
@@ -164,13 +174,48 @@ public:
     create_directory(const std::string&) const {
         throw std::logic_error{"directory creation was not expected"};
     }
+    [[nodiscard]] onedrive::graph::RemoteItem create_directory(
+        const std::string& remote_path, std::stop_token stop_token
+    ) const {
+        if (stop_token.stop_requested()) {
+            throw onedrive::graph::RequestCancelledError{
+                "simulated directory creation cancellation"
+            };
+        }
+        return create_directory(remote_path);
+    }
 
     void delete_item(const std::string&, const std::string&) const {
+    }
+    void delete_item(
+        const std::string& remote_id,
+        const std::string& expected_etag,
+        std::stop_token stop_token
+    ) const {
+        if (stop_token.stop_requested()) {
+            throw onedrive::graph::RequestCancelledError{
+                "simulated item deletion cancellation"
+            };
+        }
+        delete_item(remote_id, expected_etag);
     }
     [[nodiscard]] onedrive::graph::RemoteItem move_item(
         const std::string&, const std::string&, const std::string&
     ) const {
         return {};
+    }
+    [[nodiscard]] onedrive::graph::RemoteItem move_item(
+        const std::string& remote_id,
+        const std::string& expected_etag,
+        const std::string& destination_path,
+        std::stop_token stop_token
+    ) const {
+        if (stop_token.stop_requested()) {
+            throw onedrive::graph::RequestCancelledError{
+                "simulated item move cancellation"
+            };
+        }
+        return move_item(remote_id, expected_etag, destination_path);
     }
 
     std::string contents{"data"};

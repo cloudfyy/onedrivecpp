@@ -1,6 +1,7 @@
 #include "sync/upload/orchestration.hpp"
 #include "sync/upload/remote_delete.hpp"
 #include "sync/upload/planning.hpp"
+#include "onedrive/sync/cancellation.hpp"
 #include "onedrive/ui/common/observer.hpp"
 #include "util/typestate.hpp"
 #include "sync/filesystem/operations.hpp"
@@ -334,7 +335,8 @@ static_assert(!HasPendingRemoteDelete<LocalCommittedRemoteDelete>);
 LocalCommittedRemoteDelete execute_pending_delete(
     JournaledRemoteDelete transaction,
     graph::GraphClient& graph,
-    storage::ItemStore& items
+    storage::ItemStore& items,
+    std::stop_token stop_token
 ) {
     const auto& deletion = transaction.deletion;
     if (!local_path_is_missing(deletion.local_path)) {
@@ -348,7 +350,9 @@ LocalCommittedRemoteDelete execute_pending_delete(
         );
     }
     try {
-        graph.delete_item(deletion.remote_id, deletion.expected_etag);
+        graph.delete_item(
+            deletion.remote_id, deletion.expected_etag, stop_token
+        );
     } catch (const graph::UploadConflictError&) {
         items.remove_pending_delete(
             deletion.drive_id,
@@ -368,7 +372,8 @@ LocalCommittedRemoteDelete execute_pending_delete(
 void execute_new_remote_delete(
     storage::PendingDelete deletion,
     graph::GraphClient& graph,
-    storage::ItemStore& items
+    storage::ItemStore& items,
+    std::stop_token stop_token
 ) {
     auto prepared = PreparedRemoteDelete{
         PendingRemoteDeletePayload{std::move(deletion)},
@@ -376,7 +381,7 @@ void execute_new_remote_delete(
     items.save_pending_delete(prepared.deletion);
     auto journaled = journal_remote_delete(std::move(prepared));
     static_cast<void>(
-        execute_pending_delete(std::move(journaled), graph, items)
+        execute_pending_delete(std::move(journaled), graph, items, stop_token)
     );
 }
 
@@ -385,10 +390,12 @@ void recover_pending_deletes(
     graph::GraphClient& graph,
     storage::ItemStore& items,
     const events::Observer& observer,
-    RemoteDeletionGuard deletion_guard
+    RemoteDeletionGuard deletion_guard,
+    const std::stop_token& stop_token
 ) {
     std::vector<storage::PendingDelete> active;
     for (const auto& deletion : items.pending_deletes(drive_id)) {
+        throw_if_cancelled(stop_token);
         if (local_path_is_missing(deletion.local_path)) {
             active.push_back(deletion);
             continue;
@@ -397,7 +404,9 @@ void recover_pending_deletes(
             PendingRemoteDeletePayload{deletion},
         };
         static_cast<void>(
-            execute_pending_delete(std::move(journaled), graph, items)
+            execute_pending_delete(
+                std::move(journaled), graph, items, stop_token
+            )
         );
         observer.message(
             events::MessageKind::information,
@@ -413,11 +422,14 @@ void recover_pending_deletes(
         plan, deletion_guard, observer, ExecutionMode::apply
     ));
     for (const auto& deletion : plan.operations) {
+        throw_if_cancelled(stop_token);
         auto journaled = JournaledRemoteDelete{
             PendingRemoteDeletePayload{deletion},
         };
         static_cast<void>(
-            execute_pending_delete(std::move(journaled), graph, items)
+            execute_pending_delete(
+                std::move(journaled), graph, items, stop_token
+            )
         );
         observer.message(
             events::MessageKind::information,

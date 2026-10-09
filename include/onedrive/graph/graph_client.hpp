@@ -242,6 +242,10 @@ struct GraphClientFacade : pro::facade_builder
         RemoteItem(const std::string&) const
     >
     ::add_convention<
+        GraphItemByPathDispatch,
+        RemoteItem(const std::string&, std::stop_token) const
+    >
+    ::add_convention<
         GraphListDeltaDispatch,
         DeltaResult(
             const std::optional<std::string>&,
@@ -280,8 +284,16 @@ struct GraphClientFacade : pro::facade_builder
         RemoteItem(const std::string&) const
     >
     ::add_convention<
+        GraphCreateDirectoryDispatch,
+        RemoteItem(const std::string&, std::stop_token) const
+    >
+    ::add_convention<
         GraphDeleteItemDispatch,
         void(const std::string&, const std::string&) const
+    >
+    ::add_convention<
+        GraphDeleteItemDispatch,
+        void(const std::string&, const std::string&, std::stop_token) const
     >
     ::add_convention<
         GraphMoveItemDispatch,
@@ -289,6 +301,15 @@ struct GraphClientFacade : pro::facade_builder
             const std::string&,
             const std::string&,
             const std::string&
+        ) const
+    >
+    ::add_convention<
+        GraphMoveItemDispatch,
+        RemoteItem(
+            const std::string&,
+            const std::string&,
+            const std::string&,
+            std::stop_token
         ) const
     >
     ::add_convention<
@@ -316,6 +337,12 @@ public:
         const std::string& remote_path
     ) const {
         return implementation()->item_by_path(remote_path);
+    }
+    [[nodiscard]] RemoteItem item_by_path(
+        const std::string& remote_path,
+        std::stop_token stop_token
+    ) const {
+        return implementation()->item_by_path(remote_path, stop_token);
     }
 
     [[nodiscard]] DeltaResult list_delta(
@@ -385,12 +412,25 @@ public:
     ) const {
         return implementation()->create_directory(remote_path);
     }
+    [[nodiscard]] RemoteItem create_directory(
+        const std::string& remote_path,
+        std::stop_token stop_token
+    ) const {
+        return implementation()->create_directory(remote_path, stop_token);
+    }
 
     void delete_item(
         const std::string& remote_id,
         const std::string& expected_etag
     ) const {
         implementation()->delete_item(remote_id, expected_etag);
+    }
+    void delete_item(
+        const std::string& remote_id,
+        const std::string& expected_etag,
+        std::stop_token stop_token
+    ) const {
+        implementation()->delete_item(remote_id, expected_etag, stop_token);
     }
 
     [[nodiscard]] RemoteItem move_item(
@@ -402,6 +442,16 @@ public:
             remote_id,
             expected_etag,
             destination_path
+        );
+    }
+    [[nodiscard]] RemoteItem move_item(
+        const std::string& remote_id,
+        const std::string& expected_etag,
+        const std::string& destination_path,
+        std::stop_token stop_token
+    ) const {
+        return implementation()->move_item(
+            remote_id, expected_etag, destination_path, stop_token
         );
     }
 
@@ -522,13 +572,32 @@ public:
         const std::string& remote_id,
         const std::string& expected_etag
     ) const;
+    void delete_item(
+        const std::string& remote_id,
+        const std::string& expected_etag,
+        std::stop_token stop_token
+    ) const;
     [[nodiscard]] RemoteItem move_item(
         const std::string& remote_id,
         const std::string& expected_etag,
         const std::string& destination_path
     ) const;
+    [[nodiscard]] RemoteItem move_item(
+        const std::string& remote_id,
+        const std::string& expected_etag,
+        const std::string& destination_path,
+        std::stop_token stop_token
+    ) const;
     [[nodiscard]] RemoteItem create_directory(
         const std::string& remote_path
+    ) const;
+    [[nodiscard]] RemoteItem create_directory(
+        const std::string& remote_path,
+        std::stop_token stop_token
+    ) const;
+    [[nodiscard]] RemoteItem item_by_path(
+        const std::string& remote_path,
+        std::stop_token stop_token
     ) const;
     [[nodiscard]] DeltaResult list_delta(
         const std::optional<std::string>& delta_link,
