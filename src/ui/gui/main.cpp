@@ -1,17 +1,17 @@
 #include "main_window.hpp"
+#include "system_appearance.hpp"
 
 #include "onedrive/config/config.hpp"
 
 #include <QApplication>
 #include <QMessageBox>
-#include <QStyleHints>
 
 #include <exception>
 
 int main(int argc, char* argv[]) {
     QApplication application{argc, argv};
     QCoreApplication::setApplicationName("OneDrive C++");
-    application.styleHints()->setColorScheme(Qt::ColorScheme::Unknown);
+    onedrive::gui::SystemAppearance system_appearance{&application};
 
     try {
         onedrive::gui::MainWindow window{
