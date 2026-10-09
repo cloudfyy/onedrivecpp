@@ -30,6 +30,23 @@ using util::TransactionState;
 using util::TransactionStateFor;
 using util::transition_transaction;
 
+namespace {
+
+bool covers_blocked_item(
+    const storage::PendingDelete& deletion,
+    const std::vector<storage::BlockedItem>& blocked
+) {
+    return std::ranges::any_of(blocked, [&](const auto& item) {
+        return item.remote_id == deletion.remote_id ||
+               item.remote_path == deletion.remote_path ||
+               (deletion.directory && remote_path_is_descendant(
+                                          item.remote_path, deletion.remote_path
+                                      ));
+    });
+}
+
+} // namespace
+
 bool local_path_is_missing(const std::filesystem::path& path) {
     std::error_code error;
     const auto status = std::filesystem::symlink_status(path, error);
@@ -53,7 +70,8 @@ DeletionPlan discover_deletions(
 ) {
     std::unordered_set<std::string> blocked_ids;
     std::unordered_set<std::string> blocked_paths;
-    for (const auto& item : items.blocked_items(drive_id)) {
+    const auto blocked = items.blocked_items(drive_id);
+    for (const auto& item : blocked) {
         blocked_ids.insert(item.remote_id);
         blocked_paths.insert(item.remote_path);
     }
@@ -108,6 +126,20 @@ DeletionPlan discover_deletions(
             .directory = item.directory,
         });
     }
+    std::unordered_set<std::string> candidate_ids;
+    for (const auto& candidate : candidates) {
+        candidate_ids.insert(candidate.remote_id);
+    }
+    std::erase_if(candidates, [&](const auto& candidate) {
+        return covers_blocked_item(candidate, blocked) ||
+               (candidate.directory &&
+                std::ranges::any_of(tracked_items, [&](const auto& item) {
+                    return remote_path_is_descendant(
+                               item.remote_path, candidate.remote_path
+                           ) &&
+                           !candidate_ids.contains(item.remote_id);
+                }));
+    });
     std::ranges::sort(
         candidates,
         [](const auto& left, const auto& right) {
@@ -136,10 +168,7 @@ DeletionPlan discover_deletions(
             deletions.push_back(std::move(candidate));
         }
     }
-    return {
-        .operations = std::move(deletions),
-        .affected_items = candidates.size(),
-    };
+    return deletion_plan_for(std::move(deletions), tracked_items);
 }
 
 DeletionPlan deletion_plan_for(
@@ -394,8 +423,19 @@ void recover_pending_deletes(
     const std::stop_token& stop_token
 ) {
     std::vector<storage::PendingDelete> active;
+    const auto blocked = items.blocked_items(drive_id);
     for (const auto& deletion : items.pending_deletes(drive_id)) {
         throw_if_cancelled(stop_token);
+        if (covers_blocked_item(deletion, blocked)) {
+            observer.message(
+                events::MessageKind::warning,
+                "pending_delete_blocked",
+                "Deferred pending remote deletion because it covers a blocked "
+                "item: '" +
+                    deletion.remote_path + "'."
+            );
+            continue;
+        }
         if (local_path_is_missing(deletion.local_path)) {
             active.push_back(deletion);
             continue;

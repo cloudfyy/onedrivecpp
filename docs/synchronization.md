@@ -194,6 +194,12 @@ the complete Graph inventory with prior snapshots so deleted remote items are
 not lost after cursor reset or expiry. Items merely excluded by `sync_list`
 lose their database snapshot but keep their local files.
 
+Local directory deletions propagate only when their tracked descendants are
+also eligible for deletion and no blocked descendant is covered. Excluded or
+moved descendants protect their parent directory. The large-delete safeguard
+counts the complete tracked subtree covered by each remote directory deletion.
+Pending deletions covering blocked items remain journaled and deferred.
+
 ## Integrity, journals, and resumable recovery
 
 When Microsoft Graph supplies a file content hash, the completed temporary

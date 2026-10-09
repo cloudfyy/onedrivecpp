@@ -1,8 +1,107 @@
 #include "support.hpp"
+#include "sync/upload/planning.hpp"
+#include "sync/upload/orchestration.hpp"
 
 namespace {
 
 using namespace onedrive::test::sync;
+
+int test_recursive_deletion_protection() {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path();
+    FakeItemStore items;
+    items.items.emplace("dir", tracked_item(root, "dir", "Missing", true));
+    items.items.emplace("other", tracked_item(root, "other", "Other", true));
+    for (const auto* id : {"a", "b"}) {
+        items.items.emplace(
+            id,
+            onedrive::storage::ItemState{
+                .drive_id = "me",
+                .remote_id = id,
+                .remote_path = std::string{"Missing/"} + id,
+                .local_path = root / "Missing" / id,
+                .size = 4,
+            }
+        );
+    }
+    onedrive::storage::ItemStore store{onedrive::util::borrowed_proxy, items};
+    auto plan =
+        onedrive::sync::detail::discover_deletions("me", store, nullptr);
+    if (plan.operations.size() != 2 || plan.affected_items != 4) {
+        return fail("recursive deletion did not count the complete subtree");
+    }
+    items.blocked.push_back({
+        .drive_id = "me",
+        .remote_id = "a",
+        .remote_path = "Missing/a",
+        .reason_code = "malware_detected",
+    });
+    plan = onedrive::sync::detail::discover_deletions("me", store, nullptr);
+    if (plan.affected_items != 2 ||
+        std::ranges::any_of(plan.operations, [](const auto& deletion) {
+            return deletion.remote_id == "dir" || deletion.remote_id == "a";
+        })) {
+        return fail("parent deletion covered a blocked descendant");
+    }
+    items.blocked.clear();
+    plan =
+        onedrive::sync::detail::discover_deletions("me", store, nullptr, {"a"});
+    if (std::ranges::any_of(plan.operations, [](const auto& deletion) {
+            return deletion.remote_id == "dir" || deletion.remote_id == "a";
+        })) {
+        return fail("parent deletion covered a moved descendant");
+    }
+    const auto rules = root / "rules";
+    std::ofstream{rules} << "/Missing/\n/Other/\n!/Missing/a\n";
+    const auto filter = onedrive::sync::detail::SyncList::load(rules);
+    plan = onedrive::sync::detail::discover_deletions("me", store, &filter);
+    if (std::ranges::any_of(plan.operations, [](const auto& deletion) {
+            return deletion.remote_id == "dir" || deletion.remote_id == "a";
+        })) {
+        return fail("parent deletion covered an excluded descendant");
+    }
+    items.blocked.push_back({
+        .drive_id = "me",
+        .remote_id = "untracked",
+        .remote_path = "Missing/untracked",
+        .reason_code = "malware_detected",
+    });
+    items.save_pending_delete({
+        .drive_id = "me",
+        .remote_id = "dir",
+        .remote_path = "Missing",
+        .local_path = root / "Missing",
+        .directory = true,
+    });
+    items.save_pending_delete({
+        .drive_id = "me",
+        .remote_id = "other",
+        .remote_path = "Other",
+        .local_path = root / "Other",
+        .directory = true,
+    });
+    FakeGraphClient graph;
+    onedrive::graph::GraphClient graph_port{
+        onedrive::util::borrowed_proxy, graph
+    };
+    const onedrive::cli::Console console;
+    onedrive::sync::detail::recover_pending_deletes(
+        "me", graph_port, store, console, {}
+    );
+    if (graph.deleted_items.size() != 1 ||
+        graph.deleted_items.front().first != "other" ||
+        !items.pending_deletes_by_id.contains("dir") ||
+        !items.find("me", "a")) {
+        return fail("pending deletion bypassed a blocked descendant");
+    }
+    plan = onedrive::sync::detail::discover_deletions("me", store, nullptr);
+    if (std::ranges::any_of(plan.operations, [](const auto& deletion) {
+            return deletion.remote_id == "dir";
+        })) {
+        return fail("parent deletion covered an untracked blocked descendant");
+    }
+    return EXIT_SUCCESS;
+}
 
 int test_remote_deletions() {
     const onedrive::cli::Console default_console;
@@ -1190,6 +1289,10 @@ int test_local_deletions() {
 } // namespace
 
 int main() {
+    if (const int result = test_recursive_deletion_protection();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
     if (const int result = test_remote_deletions(); result != EXIT_SUCCESS) {
         return result;
     }
