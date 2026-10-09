@@ -132,6 +132,22 @@ are rejected rather than silently included. LCOV lines and branches are merged
 by source location; these totals differ from LLVM's per-instantiation summaries.
 A passing suite does not imply complete coverage: real desktop behavior,
 live Graph integration, and system-call failure paths need separate validation.
+
+The offline failure regression targets use executable-local linker `--wrap`
+options, not production fault-injection hooks. Atomic-write tests cover retries,
+the rename commit boundary, and cleanup failures. Metadata tests simulate xattr
+probe round trips, unavailable/error fallback, and identity-write failures without
+requiring host xattr support. HTTP tests use loopback-only responses to exercise
+checkpoint exceptions, close failures, and rollback error precedence. Move tests
+use the fake item store to introduce conflicts at the journal boundary and verify
+safe recovery. Run this bounded group with:
+
+```bash
+cmake --build build/debug --target atomic_file_failure_tests filesystem_metadata_failure_tests http_download_failure_tests sync_move_recovery_tests
+ctest --test-dir build/debug -R '^(atomic_file_failure|filesystem_metadata_failure|http_download_failure|sync_move_recovery)_tests$' --output-on-failure
+```
+
+These tests do not require Graph credentials, a browser, or resource exhaustion.
 Select the `debug` or `release` presets to return to normal development;
 their separate build directories are not affected by the coverage preset.
 

@@ -26,6 +26,19 @@ JSON（含未覆盖行号）及文本摘要。报告排除测试、依赖与生�
 已构建 GUI 与程序入口计入未覆盖范围。工具不访问外部 debuginfod，
 并拒绝混入旧 Build ID。LCOV 按源码位置合并行和分支，与 LLVM 按模板实例统计
 的百分比口径不同。不能以测试通过代替覆盖率或真实桌面行为验证。
+
+离线故障回归测试使用测试程序专属的链接器 `--wrap`，不修改生产代码。
+原子写入测试验证重试、rename 提交边界和清理错误；元数据测试模拟 xattr
+探测、降级和写入错误，不依赖宿主文件系统支持 xattr。HTTP 测试仅使用
+loopback 响应，覆盖 checkpoint 异常、close 失败和回滚错误优先级；
+移动恢复测试通过模拟存储在持久化边界制造冲突，验证安全恢复。
+
+```bash
+cmake --build build/debug --target atomic_file_failure_tests filesystem_metadata_failure_tests http_download_failure_tests sync_move_recovery_tests
+ctest --test-dir build/debug -R '^(atomic_file_failure|filesystem_metadata_failure|http_download_failure|sync_move_recovery)_tests$' --output-on-failure
+```
+
+这些测试无需 Graph 凭据、浏览器或资源耗尽。
 测量结束后切换回 `debug` 或 `release` preset 即可恢复正常开发；
 它们的独立构建目录不受覆盖率 preset 影响。
 

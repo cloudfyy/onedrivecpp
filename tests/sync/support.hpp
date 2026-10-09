@@ -752,11 +752,18 @@ public:
 
     void save_pending_move(onedrive::storage::PendingMove move) {
         const std::scoped_lock lock{mutex};
+        if (before_pending_move_save) {
+            before_pending_move_save(move);
+        }
         pending_moves_by_id.insert_or_assign(move.remote_id, std::move(move));
     }
 
     void remove_pending_move(const std::string&, const std::string& remote_id) {
         const std::scoped_lock lock{mutex};
+        if (fail_pending_move_remove) {
+            throw std::runtime_error{"simulated move journal cleanup failure"};
+        }
+        removed_pending_moves.push_back(remote_id);
         pending_moves_by_id.erase(remote_id);
     }
 
@@ -871,6 +878,10 @@ public:
     bool fail_pending_remote_move_save{false};
     bool fail_upload_checkpoint_save{false};
     bool fail_apply_delta{false};
+    bool fail_pending_move_remove{false};
+    std::function<void(const onedrive::storage::PendingMove&)>
+        before_pending_move_save;
+    std::vector<std::string> removed_pending_moves;
     mutable std::mutex mutex;
 };
 

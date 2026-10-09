@@ -19,6 +19,20 @@ add_onedrive_test(
     INCLUDE_DIRS src tests
 )
 add_onedrive_test(
+    atomic_file_failure_tests
+    SOURCES tests/util/atomic_failure.cpp
+    INCLUDE_DIRS src tests
+)
+target_link_options(atomic_file_failure_tests PRIVATE
+    -Wl,--wrap=openat
+    -Wl,--wrap=fchmod
+    -Wl,--wrap=write
+    -Wl,--wrap=fsync
+    -Wl,--wrap=close
+    -Wl,--wrap=renameat
+    -Wl,--wrap=unlinkat
+)
+add_onedrive_test(
     private_file_tests
     SOURCES tests/util/private_file.cpp
     INCLUDE_DIRS src tests
@@ -211,6 +225,16 @@ foreach(HTTP_TEST IN ITEMS req redirect download cancel reuse)
     )
 endforeach()
 add_onedrive_test(
+    http_download_failure_tests
+    SOURCES tests/http/download_failure.cpp
+    INCLUDE_DIRS src tests
+)
+target_link_options(http_download_failure_tests PRIVATE
+    -Wl,--wrap=close
+    -Wl,--wrap=ftruncate
+)
+set_tests_properties(http_download_failure_tests PROPERTIES TIMEOUT 30)
+add_onedrive_test(
     transfer_rate_limiter_tests
     SOURCES tests/transfer/rate.cpp
     INCLUDE_DIRS tests
@@ -278,7 +302,7 @@ foreach(PREFLIGHT_TEST IN ITEMS state sync invalid)
         LIBRARIES onedrive_app
     )
 endforeach()
-foreach(SYNC_TEST IN ITEMS base delete move download upload mode)
+foreach(SYNC_TEST IN ITEMS base delete move move_recovery download upload mode)
     add_onedrive_test(
         sync_${SYNC_TEST}_tests
         SOURCES tests/sync/${SYNC_TEST}.cpp
@@ -295,6 +319,18 @@ add_onedrive_test(
     filesystem_metadata_tests
     SOURCES tests/fs/metadata.cpp
     INCLUDE_DIRS src tests
+)
+add_onedrive_test(
+    filesystem_metadata_failure_tests
+    SOURCES tests/fs/metadata_failure.cpp
+    INCLUDE_DIRS src tests
+)
+target_link_options(filesystem_metadata_failure_tests PRIVATE
+    -Wl,--wrap=setxattr
+    -Wl,--wrap=getxattr
+    -Wl,--wrap=removexattr
+    -Wl,--wrap=fsetxattr
+    -Wl,--wrap=close
 )
 add_onedrive_test(
     sync_plan_tests
