@@ -76,6 +76,59 @@ int test_list_root_with_refresh_and_pagination() {
     return EXIT_SUCCESS;
 }
 
+int test_access_token_is_reused_across_graph_operations() {
+    auto transport = std::make_unique<FakeTransport>(
+        std::deque<onedrive::http::HttpResult>{
+            token_response("cached-access", "rotated-refresh"),
+            graph_page("[]"),
+            graph_page("[]"),
+            graph_page("[]", std::nullopt,
+                       "https://graph.example.test/v1.0/delta?token=next"),
+        }
+    );
+    auto* transport_pointer = transport.get();
+    auto token_store =
+        std::make_unique<FakeTokenStore>(std::string{"existing-refresh"});
+    auto* token_store_pointer = token_store.get();
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(std::move(token_store)),
+        auth_options(),
+        {
+            .drive_id = "drive/id",
+            .endpoint = "https://graph.example.test/v1.0",
+        },
+    };
+
+    static_cast<void>(client.list_root());
+    static_cast<void>(client.list_root());
+    static_cast<void>(client.list_delta(std::nullopt));
+
+    const auto& requests = transport_pointer->queued.requests;
+    if (requests.size() != 4 ||
+        requests.front().method != onedrive::http::HttpMethod::post ||
+        !requests.front().body.contains(
+            "refresh_token=existing-refresh"
+        ) ||
+        token_store_pointer->saved_tokens !=
+            std::vector<std::string>{"rotated-refresh"}) {
+        return fail(
+            "Graph operations refreshed a still-valid access token"
+        );
+    }
+    for (std::size_t index = 1; index < requests.size(); ++index) {
+        if (requests[index].method != onedrive::http::HttpMethod::get ||
+            !has_header(
+            requests[index], "Authorization: ******"
+            )) {
+            return fail(
+                "Graph operations did not reuse the cached access token"
+            );
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_drive_information_and_quota() {
     auto transport = std::make_unique<
         FakeTransport>(std::deque<onedrive::http::HttpResult>{
@@ -702,6 +755,10 @@ int test_drive_identity_and_profile_photo() {
 
 int main() {
     if (const int result = test_list_root_with_refresh_and_pagination();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = test_access_token_is_reused_across_graph_operations();
         result != EXIT_SUCCESS) {
         return result;
     }

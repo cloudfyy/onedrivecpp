@@ -44,40 +44,7 @@ DeltaResult MicrosoftGraphClient::list_delta(
     if (stop_token.stop_requested()) {
         throw RequestCancelledError{"Microsoft Graph delta request cancelled"};
     }
-    spdlog::debug("Loading saved Microsoft authentication");
-    const auto refresh_token = token_store_->load_refresh_token();
-    if (!refresh_token) {
-        throw std::runtime_error(
-            "no saved Microsoft authentication is available; run "
-            "'onedrive-cpp account login'"
-        );
-    }
-
-    spdlog::debug("Refreshing Microsoft access token");
-    auto tokens = auth_client_->refresh_access_token(
-        *refresh_token, stop_token
-    );
-    if (!tokens) {
-        if (tokens.error().code == auth::AuthErrorCode::cancelled ||
-            stop_token.stop_requested()) {
-            throw RequestCancelledError{
-                "Microsoft Graph delta request cancelled"
-            };
-        }
-        throw std::runtime_error(
-            "cannot refresh Microsoft access token: " + tokens.error().message
-        );
-    }
-    spdlog::debug("Microsoft access token refreshed");
-    if (stop_token.stop_requested()) {
-        throw RequestCancelledError{"Microsoft Graph delta request cancelled"};
-    }
-    cached_access_token_ = tokens->access_token;
-    access_token_expires_at_ = tokens->expires_at;
-    if (tokens->refresh_token != *refresh_token) {
-        token_store_->save_refresh_token(tokens->refresh_token);
-        spdlog::debug("Persisted rotated Microsoft refresh token");
-    }
+    const auto token = access_token(stop_token);
 
     std::string next_url;
     if (delta_link) {
@@ -114,7 +81,7 @@ DeltaResult MicrosoftGraphClient::list_delta(
                 .url = next_url,
                 .headers = {
                     "Accept: application/json",
-                    "Authorization: Bearer " + tokens->access_token,
+                    "Authorization: Bearer " + token,
                 },
                 .body = {},
                 .stop_token = stop_token,

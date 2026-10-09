@@ -649,7 +649,9 @@ private:
     mutable std::string cached_access_token_;
     mutable std::chrono::system_clock::time_point access_token_expires_at_{};
 
-    [[nodiscard]] std::string access_token() const;
+    [[nodiscard]] std::string access_token(
+        std::stop_token stop_token = {}
+    ) const;
     [[nodiscard]] http::HttpResponse graph_get(
         const std::string& url,
         std::string_view description

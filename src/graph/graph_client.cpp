@@ -304,12 +304,17 @@ account::DriveIdentity fetch_drive_identity(
     return identity;
 }
 
-std::string MicrosoftGraphClient::access_token() const {
+std::string MicrosoftGraphClient::access_token(
+    std::stop_token stop_token
+) const {
     const std::scoped_lock lock{access_token_mutex_};
     constexpr auto expiry_margin = std::chrono::minutes{1};
     if (!cached_access_token_.empty() &&
         access_token_expires_at_ > std::chrono::system_clock::now() + expiry_margin) {
         return cached_access_token_;
+    }
+    if (stop_token.stop_requested()) {
+        throw RequestCancelledError{"Microsoft access token refresh cancelled"};
     }
 
     spdlog::debug("Loading saved Microsoft authentication");
@@ -321,11 +326,22 @@ std::string MicrosoftGraphClient::access_token() const {
         );
     }
     spdlog::debug("Refreshing Microsoft access token");
-    auto tokens = auth_client_->refresh_access_token(*refresh_token);
+    auto tokens = auth_client_->refresh_access_token(
+        *refresh_token, stop_token
+    );
     if (!tokens) {
+        if (tokens.error().code == auth::AuthErrorCode::cancelled ||
+            stop_token.stop_requested()) {
+            throw RequestCancelledError{
+                "Microsoft access token refresh cancelled"
+            };
+        }
         throw std::runtime_error(
             "cannot refresh Microsoft access token: " + tokens.error().message
         );
+    }
+    if (stop_token.stop_requested()) {
+        throw RequestCancelledError{"Microsoft access token refresh cancelled"};
     }
     if (tokens->refresh_token != *refresh_token) {
         token_store_->save_refresh_token(tokens->refresh_token);

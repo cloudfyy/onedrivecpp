@@ -148,29 +148,7 @@ DriveInfo MicrosoftGraphClient::drive_info() const {
 }
 
 std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
-    spdlog::debug("Loading saved Microsoft authentication");
-    const auto refresh_token = token_store_->load_refresh_token();
-    if (!refresh_token) {
-        throw std::runtime_error(
-            "no saved Microsoft authentication is available; run "
-            "'onedrive-cpp account login'"
-        );
-    }
-
-    spdlog::debug("Refreshing Microsoft access token");
-    auto tokens = auth_client_->refresh_access_token(*refresh_token);
-    if (!tokens) {
-        throw std::runtime_error(
-            "cannot refresh Microsoft access token: " + tokens.error().message
-        );
-    }
-    spdlog::debug("Microsoft access token refreshed");
-    cached_access_token_ = tokens->access_token;
-    access_token_expires_at_ = tokens->expires_at;
-    if (tokens->refresh_token != *refresh_token) {
-        token_store_->save_refresh_token(tokens->refresh_token);
-        spdlog::debug("Persisted rotated Microsoft refresh token");
-    }
+    const auto token = access_token();
 
     spdlog::info("Starting Microsoft Graph root directory listing");
     std::string next_url =
@@ -195,7 +173,7 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
                 .url = next_url,
                 .headers = {
                     "Accept: application/json",
-                    "Authorization: Bearer " + tokens->access_token,
+                    "Authorization: Bearer " + token,
                 },
                 .body = {},
                 .stop_token = {},
