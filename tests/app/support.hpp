@@ -74,8 +74,22 @@ private:
 
 class FakeAuthenticationTransport final {
 public:
+    using ResponseOverride = std::function<std::optional<
+        onedrive::http::HttpResult>(const onedrive::http::HttpRequest&)>;
+
+    explicit FakeAuthenticationTransport(
+        ResponseOverride response_override = {}
+    )
+        : response_override_{std::move(response_override)} {
+    }
+
     [[nodiscard]] onedrive::http::HttpResult
     perform(const onedrive::http::HttpRequest& request) const {
+        if (response_override_) {
+            if (auto result = response_override_(request)) {
+                return std::move(*result);
+            }
+        }
         if (request.url.ends_with("/oauth2/v2.0/devicecode")) {
             return onedrive::http::HttpResponse{
                 .status_code = 200,
@@ -137,6 +151,9 @@ public:
             }
         );
     }
+
+private:
+    ResponseOverride response_override_;
 };
 
 class FakeGraphClient final {
@@ -596,7 +613,8 @@ public:
     [[nodiscard]] std::unique_ptr<onedrive::http::HttpTransport>
     create_http_transport(const onedrive::config::Config&) const {
         return std::make_unique<onedrive::http::HttpTransport>(
-            std::in_place_type<FakeAuthenticationTransport>
+            std::in_place_type<FakeAuthenticationTransport>,
+            authentication_response_override
         );
     }
 
@@ -704,6 +722,8 @@ public:
     }
 
     std::string configured_drive_id{"me"};
+    FakeAuthenticationTransport::ResponseOverride
+        authentication_response_override;
     bool empty_shared{false};
     bool empty_sites{false};
     bool include_configured_drive{false};

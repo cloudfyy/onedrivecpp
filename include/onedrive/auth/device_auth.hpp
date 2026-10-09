@@ -8,6 +8,7 @@
 #include <expected>
 #include <functional>
 #include <string>
+#include <stop_token>
 
 namespace onedrive::auth {
 
@@ -43,6 +44,7 @@ enum class AuthErrorCode {
     authorization_declined,
     expired,
     server,
+    cancelled,
 };
 
 struct AuthError {
@@ -65,8 +67,11 @@ public:
         ClockFunction now = {}
     );
 
-    [[nodiscard]] AuthResult<DeviceCode> request_device_code() const;
-    [[nodiscard]] AuthResult<OAuthTokens> poll_for_token(const DeviceCode& code) const;
+    [[nodiscard]] AuthResult<DeviceCode>
+    request_device_code(std::stop_token stop_token = {}) const;
+    [[nodiscard]] AuthResult<OAuthTokens> poll_for_token(
+        const DeviceCode& code, std::stop_token stop_token = {}
+    ) const;
     [[nodiscard]] AuthResult<OAuthTokens> refresh_access_token(
         const std::string& refresh_token
     ) const;

@@ -581,7 +581,8 @@ private:
 [[nodiscard]] account::DriveIdentity fetch_drive_identity(
     const http::HttpTransport& transport,
     std::string_view access_token,
-    GraphOptions options = {}
+    GraphOptions options = {},
+    std::stop_token stop_token = {}
 );
 
 }  // namespace onedrive::graph

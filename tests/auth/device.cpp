@@ -7,6 +7,8 @@
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <future>
+#include <thread>
 
 #include <stdexcept>
 #include <string>
@@ -507,9 +509,98 @@ int test_invalid_refresh_responses() {
     return EXIT_SUCCESS;
 }
 
+int test_cancellation() {
+    FakeTransport transport{{}};
+    onedrive::http::HttpTransport proxy{
+        onedrive::util::borrowed_proxy, transport
+    };
+    const onedrive::auth::DeviceCode code{
+        .device_code = "secret",
+        .user_code = "code",
+        .verification_uri = "https://example.test",
+        .expires_in = std::chrono::seconds{900},
+        .polling_interval = std::chrono::seconds{60},
+    };
+    std::stop_source stop;
+    std::promise<void> entered_poll;
+    auto entered = entered_poll.get_future();
+    int clock_calls{0};
+    onedrive::auth::DeviceAuthClient client{
+        &proxy, test_options(), {}, [&] {
+            if (++clock_calls == 2) {
+                entered_poll.set_value();
+            }
+            return std::chrono::steady_clock::now();
+        }
+    };
+    std::promise<onedrive::auth::AuthResult<onedrive::auth::OAuthTokens>>
+        promise;
+    auto result = promise.get_future();
+    std::jthread worker{[&] {
+        promise.set_value(client.poll_for_token(code, stop.get_token()));
+    }};
+    entered.wait();
+    stop.request_stop();
+    if (result.wait_for(std::chrono::seconds{2}) != std::future_status::ready ||
+        !has_error(result.get(), onedrive::auth::AuthErrorCode::cancelled) ||
+        !transport.requests.empty()) {
+        return fail("default authorization wait did not stop promptly");
+    }
+    if (!has_error(
+            client.request_device_code(stop.get_token()),
+            onedrive::auth::AuthErrorCode::cancelled
+        ) ||
+        !transport.requests.empty()) {
+        return fail("pre-cancelled device request performed HTTP");
+    }
+
+    FakeTransport cancelled_transport{{
+        std::unexpected(
+            onedrive::http::HttpError{
+                .code = onedrive::http::HttpErrorCode::cancelled,
+                .message = "HTTP cancelled",
+            }
+        ),
+    }};
+    onedrive::http::HttpTransport cancelled_proxy{
+        onedrive::util::borrowed_proxy, cancelled_transport
+    };
+    std::stop_source active_stop;
+    onedrive::auth::DeviceAuthClient cancelled_client{
+        &cancelled_proxy, test_options()
+    };
+    if (!has_error(
+            cancelled_client.request_device_code(active_stop.get_token()),
+            onedrive::auth::AuthErrorCode::cancelled
+        ) ||
+        cancelled_transport.requests.size() != 1 ||
+        cancelled_transport.requests.front().stop_token !=
+            active_stop.get_token()) {
+        return fail("HTTP cancellation was not mapped or token not forwarded");
+    }
+
+    std::stop_source sleep_stop;
+    onedrive::auth::DeviceAuthClient sleep_client{
+        &proxy, test_options(), [&sleep_stop](std::chrono::seconds) {
+            sleep_stop.request_stop();
+        }
+    };
+    if (!has_error(
+            sleep_client.poll_for_token(code, sleep_stop.get_token()),
+            onedrive::auth::AuthErrorCode::cancelled
+        ) ||
+        !transport.requests.empty()) {
+        return fail("cancellation during polling wait performed HTTP");
+    }
+    return EXIT_SUCCESS;
+}
+
 } // namespace
 
 int main() {
+    if (test_cancellation() != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
     if (const int result = test_queued_transport_contract();
         result != EXIT_SUCCESS) {
         return result;

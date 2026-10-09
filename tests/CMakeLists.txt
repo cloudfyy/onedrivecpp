@@ -169,7 +169,7 @@ add_onedrive_test(
     INCLUDE_DIRS src tests
     LIBRARIES spdlog::spdlog
 )
-foreach(APP_TEST IN ITEMS args doctor factory flow inspection drives)
+foreach(APP_TEST IN ITEMS args doctor factory flow inspection drives authentication)
     add_onedrive_test(
         app_${APP_TEST}_tests
         SOURCES tests/app/${APP_TEST}.cpp

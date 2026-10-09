@@ -97,6 +97,21 @@ frontends can consume numbers, enums, and optionals without parsing English
 labels or JSON output. Snapshots do not borrow Graph, SQLite, or factory
 objects, so they outlive the request that created them.
 
+`authenticate_account` provides a Console-independent authentication use case.
+A synchronous callback receives an owning `DeviceAuthorization` containing the
+user code, verification URL, message, and expiry, never device secrets or tokens.
+Qt adapters must copy callback data before posting it to the main thread rather
+than accessing widgets from the worker. Success returns the account identity and
+token directory. OAuth failures and cancellation use `AuthResult`; identity,
+persistence, and callback exceptions propagate to the caller.
+
+The service forwards a stop token through device authorization, polling, and
+identity/photo HTTP requests. The default polling wait is interruptible; injected
+test waits remain responsible for returning. A final cancellation check precedes
+account activation. Once persistence begins, it is allowed to finish rather than
+interrupting account file writes. CLI messages and exit codes remain unchanged;
+GUI worker and window lifetimes are still the frontend's responsibility.
+
 This boundary preserves JSON, redirected text, quiet mode, and interactive
 terminal behavior without coupling business code to a specific renderer. The
 account login, all inspect commands, and all transfer commands use the FTXUI dashboard to aggregate authorization, diagnostics, status, cloud checks, download, summary, blocked-item,

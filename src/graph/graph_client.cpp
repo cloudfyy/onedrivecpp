@@ -179,7 +179,8 @@ http::HttpResponse MicrosoftGraphClient::graph_get(
 account::DriveIdentity fetch_drive_identity(
     const http::HttpTransport& transport,
     std::string_view access_token,
-    GraphOptions options
+    GraphOptions options,
+    std::stop_token stop_token
 ) {
     options.endpoint = normalized_endpoint(std::move(options.endpoint));
     if (access_token.empty() || !options.endpoint.starts_with("https://") ||
@@ -190,6 +191,9 @@ account::DriveIdentity fetch_drive_identity(
         );
     }
     const auto request_json = [&](const std::string& url, std::string_view name) {
+        if (stop_token.stop_requested()) {
+            throw std::runtime_error{"Microsoft Graph identity query cancelled"};
+        }
         const auto response = transport.perform(http::HttpRequest{
             .method = http::HttpMethod::get,
             .url = url,
@@ -201,7 +205,7 @@ account::DriveIdentity fetch_drive_identity(
             .connect_timeout = std::chrono::seconds{30},
             .operation_timeout = std::chrono::seconds{60},
             .maximum_response_size = std::size_t{1024} * 1024U,
-            .stop_token = {},
+            .stop_token = stop_token,
         });
         if (!response) {
             throw std::runtime_error(
@@ -250,6 +254,9 @@ account::DriveIdentity fetch_drive_identity(
         identity.drive_name = "OneDrive";
     }
 
+    if (stop_token.stop_requested()) {
+        throw std::runtime_error{"Microsoft Graph identity query cancelled"};
+    }
     const auto photo = transport.perform(http::HttpRequest{
         .method = http::HttpMethod::get,
         .url = options.endpoint + "/me/photo/$value",
@@ -261,7 +268,7 @@ account::DriveIdentity fetch_drive_identity(
         .connect_timeout = std::chrono::seconds{30},
         .operation_timeout = std::chrono::seconds{60},
         .maximum_response_size = std::size_t{8} * 1024U * 1024U,
-        .stop_token = {},
+        .stop_token = stop_token,
     });
     if (!photo) {
         throw std::runtime_error(

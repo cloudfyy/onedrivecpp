@@ -4,6 +4,7 @@
 
 #include "onedrive/account/account_state.hpp"
 #include "onedrive/app/options.hpp"
+#include "onedrive/app/authentication.hpp"
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
 #include "onedrive/graph/graph_client.hpp"
@@ -158,58 +159,41 @@ int authenticate(
     const RuntimeFactory& runtime_factory,
     const cli::Console& console
 ) {
-    auto transport = runtime_factory.create_http_transport(config);
-    auto client = runtime_factory.create_device_auth_client(config, *transport);
-
-    auto device_code = client->request_device_code();
-    if (!device_code) {
+    bool received_code{false};
+    const auto result = authenticate_account(
+        config,
+        runtime_factory,
+        [&console, &received_code](const DeviceAuthorization& code) {
+            received_code = true;
+            console.message(
+                cli::MessageKind::information,
+                "device_authorization",
+                code.message.empty() ? "Open " + code.verification_uri +
+                                           " and enter code " + code.user_code
+                                     : code.message
+            );
+            console.message(
+                cli::MessageKind::information,
+                "authorization_wait",
+                "Waiting for authorization..."
+            );
+        }
+    );
+    if (!result) {
         spdlog::error(
-            "Microsoft device authorization request failed: {}",
-            device_code.error().message
+            "{}: {}",
+            received_code ? "Microsoft device authorization failed"
+                          : "Microsoft device authorization request failed",
+            result.error().message
         );
         return 1;
     }
-
-    if (!device_code->message.empty()) {
-        console.message(
-            cli::MessageKind::information,
-            "device_authorization",
-            device_code->message
-        );
-    } else {
-        console.message(
-            cli::MessageKind::information,
-            "device_authorization",
-            "Open " + device_code->verification_uri + " and enter code " +
-                device_code->user_code
-        );
-    }
-    console.message(
-        cli::MessageKind::information,
-        "authorization_wait",
-        "Waiting for authorization..."
-    );
-
-    auto tokens = client->poll_for_token(*device_code);
-    if (!tokens) {
-        spdlog::error(
-            "Microsoft device authorization failed: {}", tokens.error().message
-        );
-        return 1;
-    }
-
-    const auto identity = graph::fetch_drive_identity(
-        *transport, tokens->access_token, graph_options(config)
-    );
-    const auto paths = account::AccountState::activate(
-        config.state_directory, identity, tokens->refresh_token
-    );
     spdlog::info("Microsoft authentication succeeded");
     console.message(
         cli::MessageKind::success,
         "authentication_succeeded",
         "Authentication succeeded. Refresh token saved to " +
-            (paths.token_directory / "refresh_token").string()
+            (result->token_directory / "refresh_token").string()
     );
     return 0;
 }

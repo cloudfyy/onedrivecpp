@@ -7,10 +7,12 @@
 
 #include <algorithm>
 #include <chrono>
+#include <condition_variable>
 #include <format>
 #include <sstream>
 #include <string_view>
 #include <thread>
+#include <mutex>
 #include <utility>
 #include <vector>
 
@@ -46,6 +48,13 @@ AuthError invalid_configuration_error() {
     };
 }
 
+AuthError cancelled_error() {
+    return {
+        .code = AuthErrorCode::cancelled,
+        .message = "device authorization cancelled",
+    };
+}
+
 std::string encode_form(const FormValues& values) {
     std::string body;
     for (const auto& [name, value] : values) {
@@ -74,15 +83,26 @@ AuthResult<Json> parse_json(const http::HttpResponse& response) {
 AuthResult<http::HttpResponse> post_form(
     const http::HttpTransport& transport,
     const std::string& url,
-    const FormValues& values
+    const FormValues& values,
+    std::stop_token stop_token = {}
 ) {
-    auto response = transport.perform(http::HttpRequest{
-        .method = http::HttpMethod::post,
-        .url = url,
-        .headers = {"Content-Type: application/x-www-form-urlencoded"},
-        .body = encode_form(values),
-        .stop_token = {},
-    });
+    if (stop_token.stop_requested()) {
+        return std::unexpected(cancelled_error());
+    }
+    auto response = transport.perform(
+        http::HttpRequest{
+            .method = http::HttpMethod::post,
+            .url = url,
+            .headers = {"Content-Type: application/x-www-form-urlencoded"},
+            .body = encode_form(values),
+            .stop_token = stop_token,
+        }
+    );
+    if (stop_token.stop_requested() ||
+        (!response &&
+         response.error().code == http::HttpErrorCode::cancelled)) {
+        return std::unexpected(cancelled_error());
+    }
     if (!response) {
         return std::unexpected(AuthError{
             .code = AuthErrorCode::transport,
@@ -152,18 +172,14 @@ DeviceAuthClient::DeviceAuthClient(
 )
     : transport_{transport},
       options_{std::move(options)},
-      sleep_{
-          sleep ? std::move(sleep) :
-                  SleepFunction{[](std::chrono::seconds duration) {
-                      std::this_thread::sleep_for(duration);
-                  }}
-      },
-      now_{
-          now ? std::move(now) :
-                ClockFunction{[] { return std::chrono::steady_clock::now(); }}
-      } {}
+      sleep_{std::move(sleep)},
+      now_{now ? std::move(now) : ClockFunction{[] {
+          return std::chrono::steady_clock::now();
+      }}} {
+}
 
-AuthResult<DeviceCode> DeviceAuthClient::request_device_code() const {
+AuthResult<DeviceCode>
+DeviceAuthClient::request_device_code(std::stop_token stop_token) const {
     if (!valid_options(options_)) {
         return std::unexpected(invalid_configuration_error());
     }
@@ -175,7 +191,8 @@ AuthResult<DeviceCode> DeviceAuthClient::request_device_code() const {
         {
             {"client_id", options_.application_id},
             {"scope", options_.scope},
-        }
+        },
+        stop_token
     );
     if (!response) {
         return std::unexpected(response.error());
@@ -226,7 +243,12 @@ AuthResult<DeviceCode> DeviceAuthClient::request_device_code() const {
     }
 }
 
-AuthResult<OAuthTokens> DeviceAuthClient::poll_for_token(const DeviceCode& code) const {
+AuthResult<OAuthTokens> DeviceAuthClient::poll_for_token(
+    const DeviceCode& code, std::stop_token stop_token
+) const {
+    if (stop_token.stop_requested()) {
+        return std::unexpected(cancelled_error());
+    }
     if (!valid_options(options_)) {
         return std::unexpected(invalid_configuration_error());
     }
@@ -236,7 +258,19 @@ AuthResult<OAuthTokens> DeviceAuthClient::poll_for_token(const DeviceCode& code)
     spdlog::debug("Waiting for Microsoft device authorization");
 
     while (now_() < deadline) {
-        sleep_(interval);
+        if (sleep_) {
+            sleep_(interval);
+        } else {
+            std::mutex mutex;
+            std::unique_lock lock{mutex};
+            std::condition_variable_any condition;
+            condition.wait_for(lock, stop_token, interval, [] {
+                return false;
+            });
+        }
+        if (stop_token.stop_requested()) {
+            return std::unexpected(cancelled_error());
+        }
         if (now_() >= deadline) {
             break;
         }
@@ -253,7 +287,8 @@ AuthResult<OAuthTokens> DeviceAuthClient::poll_for_token(const DeviceCode& code)
                 {"client_id", options_.application_id},
                 {"grant_type", "urn:ietf:params:oauth:grant-type:device_code"},
                 {"device_code", code.device_code},
-            }
+            },
+            stop_token
         );
         if (!response) {
             return std::unexpected(response.error());

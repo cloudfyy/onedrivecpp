@@ -158,6 +158,7 @@ target_compile_options(onedrive_core PRIVATE
 )
 
 add_library(onedrive_app
+    src/app/authentication.cpp
     src/ui/cli/app/app.cpp
     src/ui/cli/app/args.cpp
     src/app/checks.cpp
