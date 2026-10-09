@@ -163,6 +163,17 @@ int test_stop() {
     } catch (const std::runtime_error&) {
     }
 
+    const auto regular_file = temporary.path() / "not-a-directory";
+    std::ofstream{regular_file} << "file";
+    onedrive::monitor::Monitor regular_file_root{
+        regular_file, [](const std::stop_token&) { return 0; }, 1s, 10ms
+    };
+    try {
+        static_cast<void>(regular_file_root.run(std::stop_token{}));
+        return fail("regular file was accepted as the monitor root");
+    } catch (const std::runtime_error&) {
+    }
+
     return EXIT_SUCCESS;
 }
 
