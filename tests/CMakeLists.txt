@@ -177,6 +177,12 @@ foreach(APP_TEST IN ITEMS args doctor factory flow inspection drives)
         LIBRARIES onedrive_app
     )
 endforeach()
+add_onedrive_test(
+    app_queries_tests
+    SOURCES tests/app/queries.cpp
+    INCLUDE_DIRS tests tests/app
+    LIBRARIES onedrive_app
+)
 target_include_directories(app_args_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 add_onedrive_test(
     app_cleanup_tests

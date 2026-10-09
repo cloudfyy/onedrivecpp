@@ -82,6 +82,13 @@ SQLite ItemStore 使用专用数据库线程。下载、监控和上传工作线
 终端生命周期仍在应用编排中。下一阶段提取应用服务后，再将这些 CLI 入口职责移出。
 配置中的终端偏好类型和解析位于 `config`，加载 TOML 不会构造或链接终端后端。
 
+只读应用查询返回拥有数据的快照，再由前端决定展示方式。
+`load_quota_snapshot` 返回 Drive 与原始配额数值；
+`load_sync_status_snapshot` 返回账号、同步模式、删除策略、最近同步结果、数据库
+摘要和 WebSocket 配置。CLI 将这些快照格式化为原有 section 字段，Qt 等前端可以
+直接使用数值、枚举和可选值，不需要解析英文标签或 JSON 输出。快照不借用 Graph、
+SQLite 或工厂对象，其生命周期与创建它的请求独立。
+
 这条边界在保留 JSON、重定向文本、quiet 模式和交互式终端行为的同时，让业务
 代码不再依赖具体渲染器。内置 Text、JSON 与 FTXUI backend 独立消费同一套事件。
 `account login`、全部 `inspect` 命令和全部 `transfer` 命令使用 FTXUI 面板聚合认证、诊断、状态、云端检查、下载、摘要、阻塞项和最近消息；它

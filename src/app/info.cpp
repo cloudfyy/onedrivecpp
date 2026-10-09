@@ -2,6 +2,7 @@
 #include "drive_fields.hpp"
 
 #include "onedrive/account/account_state.hpp"
+#include "onedrive/app/queries.hpp"
 #include "onedrive/graph/graph_client.hpp"
 #include "onedrive/metrics/metrics.hpp"
 #include "onedrive/storage/status.hpp"
@@ -608,8 +609,8 @@ int show_quota(
     const RuntimeFactory& runtime_factory,
     const cli::Console& console
 ) {
-    const auto drive =
-        runtime_factory.create_graph_info_client(config)->drive_info();
+    const auto snapshot = load_quota_snapshot(config, runtime_factory);
+    const auto& drive = snapshot.drive;
     std::vector<cli::Field> fields{
         {.label = "drive:", .key = "drive", .value = drive.name},
         {.label = "drive id:", .key = "drive_id", .value = drive.id},
@@ -624,13 +625,10 @@ int show_status(
     const RuntimeFactory& runtime_factory,
     const cli::Console& console
 ) {
-    auto graph = runtime_factory.create_graph_info_client(config);
-    const auto identity = graph->drive_identity();
-    const auto paths =
-        account::AccountState::locate(config.state_directory, identity);
-    const auto state =
-        storage::read_state_summary(paths.drive_directory, identity.drive_id);
-    const auto last_run = metrics::load_sync_run_status(paths.drive_directory);
+    const auto snapshot = load_sync_status_snapshot(config, runtime_factory);
+    const auto& identity = snapshot.identity;
+    const auto& state = snapshot.state;
+    const auto& last_run = snapshot.last_run;
     console.section(
         "status",
         "Synchronization status:",
@@ -649,12 +647,12 @@ int show_status(
             {
                 .label = "mode:",
                 .key = "mode",
-                .value = sync_mode_name(config.sync_mode),
+                .value = sync_mode_name(snapshot.sync_mode),
             },
             {
                 .label = "delete policy:",
                 .key = "delete_policy",
-                .value = delete_policy_name(config.delete_policy),
+                .value = delete_policy_name(snapshot.delete_policy),
             },
             {
                 .label = "last sync:",
@@ -734,7 +732,7 @@ int show_status(
                 .label = "WebSocket:",
                 .key = "websocket_enabled",
                 .value =
-                    config.monitor_websocket_enabled ? "enabled" : "disabled",
+                    snapshot.websocket_enabled ? "enabled" : "disabled",
             },
         }
     );

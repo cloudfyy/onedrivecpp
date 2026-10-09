@@ -253,12 +253,17 @@ GUI 包还需要：
 - `onedrive_core` 已解除对 CLI、CLI11 和 FTXUI 的链接依赖。
 - 新增仅链接核心的观察者测试，覆盖全部事件载荷、并发串行化、异常传播，以及
   通过非 Console 观察者完成真实本地文件写入的模拟 Graph 同步。
+- 配额和同步状态已提取为拥有数据的公共查询快照。CLI 继续生成相同 section 和
+  JSON 字段，Qt 可以直接读取原始字节数、枚举、最近运行结果和数据库摘要。
 
 应用可执行文件仍只直接链接 `onedrive_app`。当前 `onedrive_app` 同时依赖
 `onedrive_core` 和 `onedrive_cli`，而 `onedrive_cli` 依赖 `onedrive_core`。
 下一步提取应用服务并移动 CLI 参数解析和生命周期职责，才能形成最终的
 `onedrive_cli -> onedrive_app -> onedrive_core` 方向。异步取消和确认请求的 GUI
 适配尚未实现，本阶段不代表完整 P0 已完成。
+
+“提取登录、状态、同步和监控应用服务”仍保持未完成：本阶段只完成了状态和配额
+这两个只读切片，登录、同步、Monitor 生命周期及统一取消仍需后续实现。
 
 ### P1：最小 Qt GUI
 

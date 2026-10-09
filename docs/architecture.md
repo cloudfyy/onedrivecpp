@@ -88,6 +88,15 @@ application orchestration. Extracting application services will move those CLI
 entry-point responsibilities out. Terminal preferences and their parsers live
 in `config`, so TOML loading does not construct or link a terminal backend.
 
+Read-only application queries return owning snapshots before a frontend chooses
+how to present them. `load_quota_snapshot` returns the Drive and raw quota
+values; `load_sync_status_snapshot` returns the account, synchronization mode,
+deletion policy, latest run, database summary, and WebSocket setting. The CLI
+formats these snapshots into its existing section fields, while Qt and other
+frontends can consume numbers, enums, and optionals without parsing English
+labels or JSON output. Snapshots do not borrow Graph, SQLite, or factory
+objects, so they outlive the request that created them.
+
 This boundary preserves JSON, redirected text, quiet mode, and interactive
 terminal behavior without coupling business code to a specific renderer. The
 account login, all inspect commands, and all transfer commands use the FTXUI dashboard to aggregate authorization, diagnostics, status, cloud checks, download, summary, blocked-item,

@@ -168,6 +168,7 @@ add_library(onedrive_app
     src/app/preflight.cpp
     src/app/factory.cpp
     src/app/info.cpp
+    src/app/queries.cpp
 )
 
 target_include_directories(onedrive_app
