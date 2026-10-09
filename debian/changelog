@@ -1,11 +1,11 @@
-onedrive-cpp (0.11.1-1~ubuntu24.04) noble; urgency=medium
+onedrive-cpp (0.11.2-1~ubuntu24.04) noble; urgency=medium
 
   * Support Ubuntu 26.04 development and builds alongside Ubuntu 24.04,
     using Clang 20, pinned dependencies, and standard CMake SQLite targets.
   * Preserve compile-time format checking and system shared libraries while
     handling fmt 9 and 10 compatibility in build-local headers.
 
- -- cloudfyy <cloudfyy@hotmail.com>  Thu, 08 Oct 2026 12:25:00 +0000
+ -- cloudfyy <cloudfyy@hotmail.com>  Fri, 09 Oct 2026 12:58:00 +0000
 
 onedrive-cpp (0.10.20-1~ubuntu24.04) noble; urgency=medium
 
