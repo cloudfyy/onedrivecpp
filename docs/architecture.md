@@ -142,6 +142,14 @@ Monitor adds stdin to its existing poll loop only while the TUI is active.
 tokens, so socket shutdown, terminal restoration, and state cleanup share one
 path.
 
+## Shared directory security
+
+Application preflight, SQLite state directories, GUI configuration directories,
+and private synchronization roots share the path-based `secure_owned_directory`
+helper. It opens without following any symlink component, checks ownership and
+type, applies permissions through the descriptor, and reports close failures.
+Callers retain their own creation, dry-run, mount, and logging policies.
+
 ## Transaction state machines
 
 Download and upload transactions reuse a small template typestate core that

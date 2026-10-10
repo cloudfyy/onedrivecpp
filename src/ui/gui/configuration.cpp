@@ -51,14 +51,9 @@ void ensure_private_parent(const std::filesystem::path& path) {
     util::reject_symlink_components(parent, "configuration directory");
     std::filesystem::create_directories(parent);
     util::reject_symlink_components(parent, "configuration directory");
-    auto directory =
-        util::open_path_no_symlinks(parent, O_RDONLY | O_DIRECTORY);
-    static_cast<void>(util::secure_owned_directory(
-        directory.get(),
-        parent,
-        private_directory_mode,
-        "configuration directory"
-    ));
+    util::secure_owned_directory(
+        parent, private_directory_mode, "configuration directory"
+    );
 }
 
 std::optional<std::filesystem::path>

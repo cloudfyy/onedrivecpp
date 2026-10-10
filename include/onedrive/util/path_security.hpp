@@ -40,6 +40,9 @@ void reject_symlink_components(
     mode_t mode,
     std::string_view description
 );
+void secure_owned_directory(
+    const std::filesystem::path& path, mode_t mode, std::string_view description
+);
 [[nodiscard]] struct stat secure_owned_regular_file(
     int descriptor,
     const std::filesystem::path& path,

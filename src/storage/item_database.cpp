@@ -131,17 +131,9 @@ void activate_database_pragmas(
 void secure_directory(
     const std::filesystem::path& path, std::string_view description
 ) {
-    onedrive::util::UniqueFD descriptor{
-        onedrive::util::open_path_no_symlinks(
-            path, O_RDONLY | O_DIRECTORY
-        )
-    };
-    static_cast<void>(onedrive::util::secure_owned_directory(
-        descriptor.get(),
-        path,
-        private_directory_mode,
-        description
-    ));
+    onedrive::util::secure_owned_directory(
+        path, private_directory_mode, description
+    );
 }
 
 void secure_database_file(

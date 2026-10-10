@@ -55,6 +55,7 @@ add_onedrive_test(
     SOURCES tests/util/path_security.cpp
     INCLUDE_DIRS tests
 )
+target_link_options(path_security_tests PRIVATE -Wl,--wrap=close)
 add_onedrive_test(
     ascii_tests
     SOURCES tests/util/ascii.cpp

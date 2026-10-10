@@ -37,62 +37,13 @@ void secure_state_directory(const std::filesystem::path& directory) {
         "state directory"
     );
 
-    onedrive::util::UniqueFD descriptor{
-        ::open(
-            directory.c_str(),
-            O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
-        )
-    };
-    if (!descriptor) {
-        throw std::runtime_error(
-            "cannot open state directory '" + directory.string() + "': " +
-            onedrive::util::system_error_message(errno)
-        );
-    }
-
-    static_cast<void>(onedrive::util::secure_owned_directory(
-        descriptor.get(),
-        directory,
-        private_directory_mode,
-        "state directory"
-    ));
-    if (const auto error = descriptor.close(); error) {
-        throw std::runtime_error(
-            "cannot close state directory '" + directory.string() + "': " +
-            error.message()
-        );
-    }
+    onedrive::util::secure_owned_directory(
+        directory, private_directory_mode, "state directory"
+    );
     if (created) {
         spdlog::debug(
             "Created private state directory '{}'",
             directory.string()
-        );
-    }
-}
-
-void secure_sync_directory(const std::filesystem::path& directory) {
-    onedrive::util::UniqueFD descriptor{
-        ::open(
-            directory.c_str(),
-            O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
-        )
-    };
-    if (!descriptor) {
-        throw std::runtime_error(
-            "cannot open sync directory '" + directory.string() + "': " +
-            onedrive::util::system_error_message(errno)
-        );
-    }
-    static_cast<void>(onedrive::util::secure_owned_directory(
-        descriptor.get(),
-        directory,
-        private_directory_mode,
-        "sync directory"
-    ));
-    if (const auto error = descriptor.close(); error) {
-        throw std::runtime_error(
-            "cannot close sync directory '" + directory.string() + "': " +
-            error.message()
         );
     }
 }
@@ -281,7 +232,9 @@ void prepare_sync_directory(
     );
     if (config.sync_permissions ==
         config::SyncPermissionsMode::private_access) {
-        secure_sync_directory(config.sync_data_directory);
+        onedrive::util::secure_owned_directory(
+            config.sync_data_directory, private_directory_mode, "sync directory"
+        );
     }
     probe_writable_directory(config.sync_data_directory);
 }

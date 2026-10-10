@@ -114,11 +114,9 @@ std::filesystem::path prepare_sync_root(
         absolute_root,
         "synchronization directory"
     );
-    if (permissions == config::SyncPermissionsMode::private_access &&
-        ::chmod(absolute_root.c_str(), S_IRWXU) == -1) {
-        throw std::runtime_error(
-            "cannot secure synchronization root '" +
-            absolute_root.string() + "': " + onedrive::util::system_error_message(errno)
+    if (permissions == config::SyncPermissionsMode::private_access) {
+        onedrive::util::secure_owned_directory(
+            absolute_root, S_IRWXU, "synchronization directory"
         );
     }
     const auto root = std::filesystem::weakly_canonical(absolute_root);

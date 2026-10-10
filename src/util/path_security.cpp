@@ -208,4 +208,16 @@ struct stat secure_owned_regular_file(
     );
 }
 
+void secure_owned_directory(
+    const std::filesystem::path& path, mode_t mode, std::string_view description
+) {
+    auto descriptor = open_path_no_symlinks(path, O_RDONLY | O_DIRECTORY);
+    static_cast<void>(
+        secure_owned_directory(descriptor.get(), path, mode, description)
+    );
+    if (const auto error = descriptor.close(); error) {
+        throw_path_error("close", description, path, error.value());
+    }
+}
+
 }  // namespace onedrive::util
