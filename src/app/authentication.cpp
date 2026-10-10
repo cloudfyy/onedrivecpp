@@ -82,7 +82,7 @@ auth::AuthResult<AuthenticationResult> activate_authorized_account(
     };
 }
 
-auth::AuthResult<AuthenticationResult> authenticate_account_impl(
+auth::AuthResult<AuthenticationResult> authenticate_device_code_account_impl(
     const config::Config& config,
     const RuntimeFactory& runtime_factory,
     const AuthorizationCallback& authorization,
@@ -198,7 +198,7 @@ auth::AuthResult<AuthenticationResult> authenticate_account(
         };
     }
     return observe_authentication(observer, [&] {
-        return authenticate_account_impl(
+        return authenticate_device_code_account_impl(
             config, runtime_factory, authorization, stop_token
         );
     });
