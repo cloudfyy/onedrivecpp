@@ -104,6 +104,11 @@ Qt adapters must copy callback data before posting it to the main thread rather
 than accessing widgets from the worker. Success returns the account identity and
 token directory. OAuth failures and cancellation use `AuthResult`; identity,
 persistence, and callback exceptions propagate to the caller.
+Device-code and authorization-code implementations share a private template
+pipeline for preflight, transport/client creation, token error handling, and
+account activation. Each supplies its own token acquisition callback; the
+runtime lock stays held throughout authorization and activation. PKCE session
+failure handling remains in the authorization-code callback.
 
 The service forwards a stop token through device authorization, polling, and
 identity/photo HTTP requests. The default polling wait is interruptible; injected

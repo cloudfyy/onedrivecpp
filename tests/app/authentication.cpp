@@ -478,7 +478,15 @@ int test_cancelled_and_throwing_callbacks() {
 }
 
 int test_identity_cancellation_and_failures() {
-    for (const std::string_view stage : {"token", "identity", "photo"}) {
+    for (const auto& [browser, stage] :
+         std::vector<std::pair<bool, std::string_view>>{
+             {false, "token"},
+             {false, "identity"},
+             {false, "photo"},
+             {true, "token"},
+             {true, "identity"},
+             {true, "photo"},
+         }) {
         CliFixture fixture;
         const auto config = onedrive::config::Config::load(fixture.config_path);
         std::stop_source stop;
@@ -491,6 +499,18 @@ int test_identity_cancellation_and_failures() {
             if (request.stop_token != stop.get_token()) {
                 throw std::logic_error{
                     "authentication request lost stop token"
+                };
+            }
+            if (!onedrive::test::throws_with<std::runtime_error>(
+                    [&] {
+                        const onedrive::app::detail::RuntimePreflight other{
+                            config, onedrive::app::detail::Operation::logout
+                        };
+                    },
+                    "another onedrive-cpp process"
+                )) {
+                throw std::logic_error{
+                    "authentication request did not retain the runtime lock"
                 };
             }
             if ((stage == "token" && request.url.ends_with("/token")) ||
@@ -511,15 +531,26 @@ int test_identity_cancellation_and_failures() {
         const onedrive::app::RuntimeFactory factory{
             onedrive::util::borrowed_proxy, fixture.runtime_factory
         };
-        const auto result = onedrive::app::authenticate_account(
-            config,
-            factory,
-            [](const onedrive::app::DeviceAuthorization&) {},
-            stop.get_token()
-        );
-        const int expected_requests = stage == "token"      ? 2
-                                      : stage == "identity" ? 3
-                                                            : 5;
+        const auto result =
+            browser ? onedrive::app::authenticate_auth_code_account(
+                          config,
+                          factory,
+                          [](onedrive::auth::AuthCodeSession& session,
+                             std::stop_token) {
+                              return authorize_browser(session);
+                          },
+                          stop.get_token()
+                      )
+                    : onedrive::app::authenticate_account(
+                          config,
+                          factory,
+                          [](const onedrive::app::DeviceAuthorization&) {},
+                          stop.get_token()
+                      );
+        const int expected_requests = (stage == "token"      ? 2
+                                       : stage == "identity" ? 3
+                                                             : 5) -
+                                      (browser ? 1 : 0);
         if (result ||
             result.error().code != onedrive::auth::AuthErrorCode::cancelled ||
             requests != expected_requests ||
@@ -531,6 +562,9 @@ int test_identity_cancellation_and_failures() {
                 "requests"
             );
         }
+        const onedrive::app::detail::RuntimePreflight released{
+            config, onedrive::app::detail::Operation::logout
+        };
     }
 
     CliFixture fixture;

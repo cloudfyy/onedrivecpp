@@ -7,6 +7,8 @@
 #include "preflight.hpp"
 
 #include <stdexcept>
+#include <functional>
+#include <utility>
 
 namespace onedrive::app {
 namespace {
@@ -82,10 +84,11 @@ auth::AuthResult<AuthenticationResult> activate_authorized_account(
     };
 }
 
-auth::AuthResult<AuthenticationResult> authenticate_device_code_account_impl(
+template <typename AcquireTokens>
+auth::AuthResult<AuthenticationResult> authenticate_account_impl(
     const config::Config& config,
     const RuntimeFactory& runtime_factory,
-    const AuthorizationCallback& authorization,
+    AcquireTokens&& acquire_tokens,
     std::stop_token stop_token
 ) {
     if (stop_token.stop_requested()) {
@@ -96,20 +99,9 @@ auth::AuthResult<AuthenticationResult> authenticate_device_code_account_impl(
     };
     auto transport = runtime_factory.create_http_transport(config);
     auto client = runtime_factory.create_device_auth_client(config, *transport);
-    const auto code = client->request_device_code(stop_token);
-    if (!code) {
-        return std::unexpected(code.error());
-    }
-    if (stop_token.stop_requested()) {
-        return cancelled();
-    }
-    authorization({
-        .user_code = code->user_code,
-        .verification_uri = code->verification_uri,
-        .message = code->message,
-        .expires_in = code->expires_in,
-    });
-    const auto tokens = client->poll_for_token(*code, stop_token);
+    const auto tokens = std::invoke(
+        std::forward<AcquireTokens>(acquire_tokens), *client, stop_token
+    );
     if (!tokens) {
         return std::unexpected(tokens.error());
     }
@@ -117,6 +109,37 @@ auth::AuthResult<AuthenticationResult> authenticate_device_code_account_impl(
         return cancelled();
     }
     return activate_authorized_account(config, *transport, *tokens, stop_token);
+}
+
+auth::AuthResult<AuthenticationResult> authenticate_device_code_account_impl(
+    const config::Config& config,
+    const RuntimeFactory& runtime_factory,
+    const AuthorizationCallback& authorization,
+    std::stop_token stop_token
+) {
+    return authenticate_account_impl(
+        config,
+        runtime_factory,
+        [&](
+            const auth::DeviceAuthClient& client, const std::stop_token& token
+        ) -> auth::AuthResult<auth::OAuthTokens> {
+            const auto code = client.request_device_code(token);
+            if (!code) {
+                return std::unexpected(code.error());
+            }
+            if (token.stop_requested()) {
+                return cancelled();
+            }
+            authorization({
+                .user_code = code->user_code,
+                .verification_uri = code->verification_uri,
+                .message = code->message,
+                .expires_in = code->expires_in,
+            });
+            return client.poll_for_token(*code, token);
+        },
+        stop_token
+    );
 }
 
 auth::AuthResult<AuthenticationResult> authenticate_auth_code_account_impl(
@@ -130,31 +153,28 @@ auth::AuthResult<AuthenticationResult> authenticate_auth_code_account_impl(
             "browser authentication requires an authorization callback"
         };
     }
-    if (stop_token.stop_requested()) {
-        return cancelled();
-    }
-    const detail::RuntimePreflight preflight{
-        config, detail::Operation::authenticate
-    };
-    auto transport = runtime_factory.create_http_transport(config);
-    auto client = runtime_factory.create_device_auth_client(config, *transport);
-    auth::AuthCodeSession session{device_auth_options(config)};
-    auth::AuthResult<void> request;
-    try {
-        request = authorization(session, stop_token);
-    } catch (...) {
-        session.fail();
-        throw;
-    }
-    if (!request) {
-        session.fail(request.error());
-        return std::unexpected(request.error());
-    }
-    const auto tokens = session.exchange(*client, stop_token);
-    if (!tokens) {
-        return std::unexpected(tokens.error());
-    }
-    return activate_authorized_account(config, *transport, *tokens, stop_token);
+    return authenticate_account_impl(
+        config,
+        runtime_factory,
+        [&](
+            const auth::DeviceAuthClient& client, const std::stop_token& token
+        ) -> auth::AuthResult<auth::OAuthTokens> {
+            auth::AuthCodeSession session{device_auth_options(config)};
+            auth::AuthResult<void> request;
+            try {
+                request = authorization(session, token);
+            } catch (...) {
+                session.fail();
+                throw;
+            }
+            if (!request) {
+                session.fail(request.error());
+                return std::unexpected(request.error());
+            }
+            return session.exchange(client, token);
+        },
+        stop_token
+    );
 }
 
 } // namespace
