@@ -2,7 +2,7 @@
 
 #include "onedrive/auth/device_auth.hpp"
 
-#include <optional>
+#include <memory>
 
 namespace onedrive::auth {
 
@@ -50,19 +50,14 @@ public:
     );
 
 private:
-    AuthError terminate(AuthCodeState state, AuthError error);
-    void clear_secrets();
+    const AuthError& terminate(AuthCodeState state, AuthError error);
+    void fail_exception() noexcept;
+    class Implementation;
 
     DeviceAuthOptions options_;
     ClockFunction now_;
     std::chrono::seconds timeout_;
-    std::chrono::steady_clock::time_point deadline_;
-    AuthCodeState state_{AuthCodeState::created};
-    std::string redirect_uri_;
-    std::string verifier_;
-    std::string csrf_state_;
-    std::string code_;
-    std::optional<AuthError> error_;
+    std::unique_ptr<Implementation> implementation_;
 };
 
 } // namespace onedrive::auth

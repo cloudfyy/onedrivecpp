@@ -1,4 +1,5 @@
 #include "login_controller.hpp"
+#include "browser_request.hpp"
 
 #include "onedrive/app/factory.hpp"
 
@@ -42,6 +43,12 @@ auth::AuthResult<void> request_browser_authorization(
         return std::unexpected(url.error());
     }
     open_browser(QString::fromStdString(*url));
+    detail::BrowserRequest request;
+    QElapsedTimer timer;
+    timer.start();
+    const auto now = [&] {
+        return detail::BrowserRequest::Time{timer.elapsed()};
+    };
     while (true) {
         if (const auto ready = session.check(token); !ready) {
             return ready;
@@ -61,74 +68,111 @@ auth::AuthResult<void> request_browser_authorization(
             continue;
         }
         socket->setReadBufferSize(8192);
-        QByteArray request;
-        QElapsedTimer request_timer;
-        request_timer.start();
-        while (!request.contains("\r\n\r\n") && request.size() < 8192 &&
-               request_timer.elapsed() < 2000 && !token.stop_requested() &&
-               (socket->bytesAvailable() > 0 ||
-                socket->state() == QAbstractSocket::ConnectedState)) {
-            if (socket->bytesAvailable() == 0) {
-                socket->waitForReadyRead(100);
-            }
-            request += socket->read(8192 - request.size());
-        }
-        const auto first_line =
-            request.left(request.indexOf("\r\n")).split(' ');
-        const auto target =
-            first_line.size() == 3
-                ? QUrl::fromEncoded(first_line[1], QUrl::StrictMode)
-                : QUrl{};
-        int host_count = 0;
-        bool host_matches = false;
-        for (const auto& header : request.split('\n')) {
-            if (header.toLower().startsWith("host:")) {
-                ++host_count;
-                host_matches = header.mid(5).trimmed().compare(
-                                   QString{"localhost:%1"}
-                                       .arg(server.serverPort())
-                                       .toLatin1(),
-                                   Qt::CaseInsensitive
-                               ) == 0;
-            }
-        }
-        const bool valid_http =
-            request.size() < 8192 && request.contains("\r\n\r\n") &&
-            host_count == 1 && host_matches && first_line.size() == 3 &&
-            first_line[2] == "HTTP/1.1" && first_line[0] == "GET" &&
-            target.isValid() && target.isRelative() &&
-            target.authority().isEmpty() && !target.hasFragment() &&
-            first_line[1].startsWith('/');
         auth::AuthResult<void> callback = std::unexpected(
             auth::AuthError{
                 .code = auth::AuthErrorCode::invalid_response,
                 .message = "invalid authorization callback HTTP request",
             }
         );
-        if (valid_http) {
-            callback = session.accept_callback(
-                "http://localhost:" + std::to_string(server.serverPort()) +
-                    first_line[1].toStdString(),
-                token
-            );
-        }
-        const bool valid = callback.has_value() ||
-                           session.state() == auth::AuthCodeState::failed;
-        const QByteArray body = valid ? "Authorization received. Return to "
-                                        "OneDrive C++. You may close this tab."
-                                      : "Invalid authorization callback.";
-        const QByteArray reply =
-            (valid ? QByteArray{"HTTP/1.1 200 OK\r\n"}
-                   : QByteArray{"HTTP/1.1 400 Bad Request\r\n"}) +
-            "Content-Type: text/plain; charset=utf-8\r\nCache-Control: "
-            "no-store\r\nConnection: close\r\nContent-Length: " +
-            QByteArray::number(body.size()) + "\r\n\r\n" + body;
-        socket->write(reply);
-        socket->waitForBytesWritten(100);
-        socket->disconnectFromHost();
-        if (callback ||
-            session.state() != auth::AuthCodeState::awaiting_callback) {
-            return callback;
+        auto commands = request.connected(now());
+        while (!commands.empty()) {
+            auto next = std::vector<detail::BrowserCommand>{};
+            for (const auto command : commands) {
+                using Command = detail::BrowserCommand;
+                switch (command) {
+                case Command::read: {
+                    if (const auto ready = session.check(token); !ready) {
+                        callback = ready;
+                        next = request.cancel();
+                        break;
+                    }
+                    if (socket->bytesAvailable() == 0)
+                        socket->waitForReadyRead(100);
+                    const auto bytes = socket->read(
+                        static_cast<qint64>(
+                            detail::BrowserRequest::request_limit -
+                            request.request().size()
+                        )
+                    );
+                    if (!bytes.isEmpty())
+                        next = request.bytes(
+                            std::string_view{
+                                bytes.constData(),
+                                static_cast<std::size_t>(bytes.size())
+                            },
+                            now()
+                        );
+                    else if (socket->state() != QAbstractSocket::ConnectedState)
+                        next = request.peer_closed(now());
+                    else
+                        next = request.tick(now());
+                    break;
+                }
+                case Command::validate: {
+                    const auto target = detail::browser_request_target(
+                        request.request(),
+                        "localhost:" + std::to_string(server.serverPort())
+                    );
+                    if (target) {
+                        const auto encoded =
+                            QByteArray::fromStdString(std::string{*target});
+                        const auto parsed =
+                            QUrl::fromEncoded(encoded, QUrl::StrictMode);
+                        if (parsed.isValid() && parsed.isRelative() &&
+                            parsed.authority().isEmpty() &&
+                            !parsed.hasFragment()) {
+                            callback = session.accept_callback(
+                                "http://localhost:" +
+                                    std::to_string(server.serverPort()) +
+                                    std::string{*target},
+                                token
+                            );
+                        }
+                    }
+                    const auto outcome =
+                        callback ? detail::CallbackOutcome::accepted
+                        : session.state() == auth::AuthCodeState::failed
+                            ? detail::CallbackOutcome::rejected
+                        : session.state() !=
+                                auth::AuthCodeState::awaiting_callback
+                            ? detail::CallbackOutcome::interrupted
+                            : detail::CallbackOutcome::invalid;
+                    next = request.validated(outcome, now());
+                    break;
+                }
+                case Command::write: {
+                    const auto remaining = request.remaining_reply();
+                    const auto accepted = socket->write(
+                        remaining.data(), static_cast<qint64>(remaining.size())
+                    );
+                    if (accepted < 0) {
+                        next = request.peer_closed(now());
+                    } else {
+                        if (accepted == 0)
+                            socket->waitForBytesWritten(10);
+                        next = request.accepted(
+                            static_cast<std::size_t>(accepted), now()
+                        );
+                    }
+                    break;
+                }
+                case Command::flush:
+                    if (socket->bytesToWrite() > 0)
+                        socket->waitForBytesWritten(10);
+                    next = request.flushed(
+                        static_cast<std::size_t>(socket->bytesToWrite()), now()
+                    );
+                    break;
+                case Command::close_connection:
+                    socket->disconnectFromHost();
+                    break;
+                case Command::listen:
+                    break;
+                case Command::finish:
+                    return callback;
+                }
+            }
+            commands = std::move(next);
         }
     }
 }

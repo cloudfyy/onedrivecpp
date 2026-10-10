@@ -92,6 +92,11 @@ add_onedrive_test(
         tests/gui/state_view_model.cpp
     INCLUDE_DIRS src src/ui/gui tests
 )
+add_onedrive_test(
+    browser_request_tests
+    SOURCES tests/gui/browser_request.cpp
+    INCLUDE_DIRS src tests
+)
 if(ONEDRIVE_BUILD_GUI)
     add_onedrive_test(
         gui_login_tests
@@ -216,6 +221,26 @@ add_onedrive_test(
     INCLUDE_DIRS tests
     LIBRARIES OpenSSL::Crypto
 )
+add_onedrive_test(
+    auth_code_typestate_tests
+    SOURCES tests/auth/code_transaction.cpp
+    INCLUDE_DIRS src tests
+    LIBRARIES OpenSSL::Crypto
+)
+target_link_options(auth_code_typestate_tests PRIVATE -Wl,--wrap=OPENSSL_cleanse)
+add_onedrive_test(
+    auth_code_failure_tests
+    SOURCES tests/auth/auth_code_failure.cpp
+    INCLUDE_DIRS tests
+    LIBRARIES CURL::libcurl OpenSSL::Crypto
+)
+target_link_options(auth_code_failure_tests PRIVATE
+    -Wl,--wrap=curl_url
+    -Wl,--wrap=curl_url_set
+    -Wl,--wrap=curl_url_get
+    -Wl,--wrap=RAND_bytes
+    -Wl,--wrap=OPENSSL_cleanse
+)
 foreach(HTTP_TEST IN ITEMS req redirect download cancel reuse)
     add_onedrive_test(
         http_${HTTP_TEST}_tests
@@ -294,6 +319,19 @@ foreach(MONITOR_TEST IN ITEMS state notify socket remote local timing stop input
         INCLUDE_DIRS src tests tests/monitor
     )
 endforeach()
+add_onedrive_test(
+    monitor_socket_transport_tests
+    SOURCES tests/monitor/socket_transport.cpp
+    INCLUDE_DIRS src tests
+    LIBRARIES CURL::libcurl spdlog::spdlog
+)
+target_link_options(monitor_socket_transport_tests PRIVATE
+    -Wl,--wrap=curl_easy_perform
+    -Wl,--wrap=curl_easy_getinfo
+    -Wl,--wrap=curl_ws_recv
+    -Wl,--wrap=curl_ws_send
+    -Wl,--wrap=poll
+)
 foreach(PREFLIGHT_TEST IN ITEMS state sync invalid)
     add_onedrive_test(
         preflight_${PREFLIGHT_TEST}_tests

@@ -152,6 +152,23 @@ Graph 大文件上传会话也在同步层之外复用这一核心。不存在�
 会话，程序先返回 absent，再创建新会话。每个已接受的分片只有在 checkpoint
 成功后才会推进 active 状态；也只有 active 会话能够生成包含远端条目的
 finalized 状态。
+
+授权码 PKCE 会话也使用独立状态族的 `StateTransaction`：
+created → awaiting callback → authorized → exchanging token → completed。
+公开的 `AuthCodeSession` API 仍在运行时选择状态；私有 variant 持有各阶段专属
+载荷。只有 awaiting 阶段持有 CSRF state，只有 authorized/exchanging 阶段持有
+授权码。仅可移动的秘密所有者让字符串存储在状态转换时保持原址，并在消费、
+终止、析构和异常展开时清零。取消、过期和失败均为终态；无关或无效回调继续等待，
+携带正确 CSRF state 的授权服务器拒绝则终止会话。
+
+GUI loopback 监听器通过私有、独立于 Qt 的 `BrowserRequest` 归约器管理
+listening、reading、validating、writing 和 closed 生命周期。显式时间事件约束
+8192 字节请求上限、两秒请求期限和有界的 100 毫秒回复排空。Qt 适配器执行
+读写与关闭命令，并保留严格的 QUrl 目标检查。请求必须使用 HTTP/1.1 GET，
+且恰好包含一个匹配 loopback 的 Host。无效连接收到 400 后继续监听；
+有效回调和授权终态错误结束流程。Qt 写入缓冲区的接受量与实际排空分别建模，
+部分写入会保留尚未接受的后缀。
+
 ## 通知架构
 
 远端变更通知使用纯连接状态机，与 Monitor 的调度状态机相互独立。连接归约器
@@ -167,6 +184,14 @@ finalized 状态。
 网络适配器只执行 reducer 产生的 effect，不负责决定状态转换策略。生产适配器
 通过 Graph 获取 channel，并基于 libcurl 的纯 WebSocket 传输实现 Engine.IO 4 /
 Socket.IO framing、心跳处理和 eventfd 唤醒。
+其私有 `SocketProtocol` 归约器严格位于 channel/租约归约器下层，不负责重试、
+续订或 token 刷新。WebSocket 已连接、Engine.IO open、根 Socket.IO ready 与
+通知 namespace listening 是不同阶段。Engine.IO open 产生两条 namespace
+握手命令及原有的 connected 唤醒；ack 不会重复发布 connected。携带时间的事件
+驱动 Engine.IO 心跳 pong 和过期；拒绝、协议/传输错误与对端关闭只发布一次
+disconnected，主动停止则关闭而不发布断线唤醒。适配器排空 libcurl 数据块；
+文本重组可跨越 `CURLE_AGAIN`、多个 WebSocket frame 以及穿插的 WebSocket
+ping/pong 控制帧，完整消息限制为一 MiB。
 
 ## 源码目录
 

@@ -568,6 +568,35 @@ int test_explicit_failures_and_clock_exception() {
             "begin exception did not terminate the session and propagate"
         );
     }
+    for (const bool authorized : {false, true}) {
+        bool throw_now = false;
+        auth::AuthCodeSession session{
+            options(), [&] {
+                if (throw_now)
+                    throw std::runtime_error{"waiting clock failure"};
+                return std::chrono::steady_clock::time_point{};
+            }
+        };
+        const auto url = session.begin("http://localhost/");
+        if (!url)
+            return test::fail("waiting clock test could not begin");
+        if (authorized && !session.accept_callback(
+                              "http://localhost/?state=" +
+                              parameter(*url, "state") + "&code=a"
+                          )) {
+            return test::fail("waiting clock test could not authorize");
+        }
+        throw_now = true;
+        if (!test::throws_with<std::runtime_error>(
+                [&] { static_cast<void>(session.check()); },
+                "waiting clock failure"
+            ) ||
+            session.state() != auth::AuthCodeState::failed || session.check()) {
+            return test::fail(
+                "waiting clock exception did not terminate and propagate"
+            );
+        }
+    }
     return EXIT_SUCCESS;
 }
 

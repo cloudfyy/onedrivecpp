@@ -1,4 +1,5 @@
 #include "monitor/socket.hpp"
+#include "monitor/socket_protocol.hpp"
 
 #include "http/curl.hpp"
 #include "http/proxy.hpp"
@@ -48,37 +49,30 @@ void send_text(CURL* curl, std::string_view text) {
     }
 }
 
-std::optional<std::string> receive_text(CURL* curl) {
+struct ReceivedChunk {
+    std::string text;
+    int flags;
+    bool final;
+};
+
+std::optional<ReceivedChunk> receive_chunk(CURL* curl) {
     std::array<char, 16 * 1024> buffer{};
-    std::string message;
-    while (true) {
-        std::size_t received = 0;
-        const curl_ws_frame* frame = nullptr;
-        const CURLcode result = ::curl_ws_recv(
-            curl, buffer.data(), buffer.size(), &received, &frame
-        );
-        if (result == CURLE_AGAIN) {
-            return message.empty() ? std::nullopt
-                                   : std::optional{std::move(message)};
-        }
-        throw_if_curl_error(result, "cannot receive Socket.IO frame");
-        if (frame == nullptr) {
-            throw std::runtime_error("Socket.IO frame metadata is missing");
-        }
-        if ((frame->flags & CURLWS_CLOSE) != 0U) {
-            throw std::runtime_error("Socket.IO peer closed the connection");
-        }
-        if ((frame->flags & (CURLWS_TEXT | CURLWS_CONT)) == 0U) {
-            if ((frame->flags & CURLWS_PING) != 0U) {
-                continue;
-            }
-            throw std::runtime_error("unexpected binary Socket.IO frame");
-        }
-        message.append(buffer.data(), received);
-        if (frame->bytesleft == 0) {
-            return message;
-        }
+    std::size_t received = 0;
+    const curl_ws_frame* frame = nullptr;
+    const CURLcode result =
+        ::curl_ws_recv(curl, buffer.data(), buffer.size(), &received, &frame);
+    if (result == CURLE_AGAIN) {
+        return std::nullopt;
     }
+    throw_if_curl_error(result, "cannot receive Socket.IO frame");
+    if (frame == nullptr) {
+        throw std::runtime_error("Socket.IO frame metadata is missing");
+    }
+    return ReceivedChunk{
+        std::string{buffer.data(), received},
+        frame->flags,
+        frame->bytesleft == 0 && (frame->flags & CURLWS_CONT) == 0,
+    };
 }
 
 } // namespace
@@ -155,10 +149,10 @@ socket_io_heartbeat_timeout(std::string_view frame) {
     }
     const auto interval_value = interval->get<std::uint64_t>();
     const auto timeout_value = timeout->get<std::uint64_t>();
-    if (interval_value == 0 || timeout_value == 0 ||
-        interval_value >
-            static_cast<std::uint64_t>(std::chrono::milliseconds::max().count()
-            ) - timeout_value) {
+    const auto maximum =
+        static_cast<std::uint64_t>(std::chrono::milliseconds::max().count());
+    if (interval_value == 0 || timeout_value == 0 || timeout_value > maximum ||
+        interval_value > maximum - timeout_value) {
         return std::nullopt;
     }
     return std::chrono::milliseconds{interval_value + timeout_value};
@@ -329,6 +323,38 @@ private:
 
     void
     run(const std::string& url, const std::stop_token& stop_token) noexcept {
+        SocketProtocol protocol;
+        CURL* connection = nullptr;
+        const auto now = [] {
+            return std::chrono::duration_cast<SocketProtocol::Time>(
+                std::chrono::steady_clock::now().time_since_epoch()
+            );
+        };
+        const auto execute = [&](const std::vector<ProtocolCommand>& commands) {
+            for (const auto& command : commands) {
+                switch (command.effect) {
+                case ProtocolEffect::send:
+                    send_text(connection, command.text);
+                    break;
+                case ProtocolEffect::connected:
+                    publish(SocketEvent::connected);
+                    break;
+                case ProtocolEffect::notification:
+                    publish(SocketEvent::notification);
+                    break;
+                case ProtocolEffect::disconnected:
+                    publish(SocketEvent::disconnected);
+                    break;
+                case ProtocolEffect::close:
+                    if (!command.text.empty())
+                        spdlog::warn(
+                            "Notification WebSocket failed: {}", command.text
+                        );
+                    // The lease closes the transport when the loop exits.
+                    break;
+                }
+            }
+        };
         try {
             throw_if_curl_error(
                 http::detail::initialize_curl(), "cannot initialize libcurl"
@@ -342,6 +368,12 @@ private:
                 ::curl_easy_perform(handle.get()),
                 "cannot connect notification WebSocket"
             );
+            connection = handle.get();
+            if (stop_token.stop_requested()) {
+                execute(protocol.stop());
+                return;
+            }
+            execute(protocol.connected());
             curl_socket_t socket = CURL_SOCKET_BAD;
             throw_if_curl_error(
                 ::curl_easy_getinfo(
@@ -349,9 +381,6 @@ private:
                 ),
                 "cannot obtain notification WebSocket descriptor"
             );
-            bool engine_open = false;
-            auto heartbeat_timeout = std::chrono::milliseconds::zero();
-            auto last_ping = std::chrono::steady_clock::now();
             while (!stop_token.stop_requested()) {
                 pollfd descriptor{
                     .fd = socket,
@@ -370,13 +399,9 @@ private:
                     };
                 }
                 if (ready == 0) {
-                    if (engine_open &&
-                        std::chrono::steady_clock::now() - last_ping >
-                            heartbeat_timeout) {
-                        throw std::runtime_error(
-                            "Socket.IO heartbeat timed out"
-                        );
-                    }
+                    execute(protocol.tick(now()));
+                    if (protocol.phase() == SocketPhase::disconnected)
+                        return;
                     continue;
                 }
                 if ((descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) !=
@@ -385,49 +410,40 @@ private:
                         "notification WebSocket became unavailable"
                     );
                 }
-                const auto message = receive_text(handle.get());
-                if (!message) {
-                    continue;
-                }
-                if (message->starts_with('0')) {
-                    const auto timeout = socket_io_heartbeat_timeout(*message);
-                    if (!timeout) {
-                        throw std::runtime_error(
-                            "invalid Socket.IO open frame"
+                while (!stop_token.stop_requested()) {
+                    const auto chunk = receive_chunk(handle.get());
+                    if (!chunk)
+                        break;
+                    if ((chunk->flags & CURLWS_CLOSE) != 0)
+                        execute(protocol.control(WebSocketControl::close));
+                    else if ((chunk->flags & CURLWS_PING) != 0)
+                        execute(protocol.control(WebSocketControl::ping));
+                    else if ((chunk->flags & CURLWS_PONG) != 0)
+                        execute(protocol.control(WebSocketControl::pong));
+                    else if ((chunk->flags & CURLWS_TEXT) != 0)
+                        execute(
+                            protocol.text(chunk->text, chunk->final, now())
                         );
-                    }
-                    if (engine_open) {
-                        continue;
-                    }
-                    engine_open = true;
-                    heartbeat_timeout = *timeout;
-                    last_ping = std::chrono::steady_clock::now();
-                    send_text(handle.get(), "40");
-                    send_text(handle.get(), "40/notifications");
-                    publish(SocketEvent::connected);
-                } else if (message->starts_with('2')) {
-                    send_text(handle.get(), "3");
-                    last_ping = std::chrono::steady_clock::now();
-                } else if (message->starts_with("41")) {
-                    throw std::runtime_error(
-                        "Socket.IO namespace disconnected"
-                    );
-                } else if (engine_open && socket_io_notification(*message)) {
-                    publish(SocketEvent::notification);
+                    else
+                        execute(protocol.control(WebSocketControl::binary));
+                    if (protocol.phase() == SocketPhase::disconnected)
+                        return;
                 }
+                execute(protocol.tick(now()));
+                if (protocol.phase() == SocketPhase::disconnected)
+                    return;
             }
+            execute(protocol.stop());
         } catch (const std::exception& error) {
             if (!stop_token.stop_requested()) {
-                spdlog::warn("Notification WebSocket failed: {}", error.what());
-                publish(SocketEvent::disconnected);
-            }
+                execute(protocol.fail(error.what()));
+            } else
+                execute(protocol.stop());
         } catch (...) {
             if (!stop_token.stop_requested()) {
-                spdlog::warn(
-                    "Notification WebSocket failed with an unknown error"
-                );
-                publish(SocketEvent::disconnected);
-            }
+                execute(protocol.fail("unknown error"));
+            } else
+                execute(protocol.stop());
         }
     }
 

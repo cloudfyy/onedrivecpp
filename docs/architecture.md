@@ -173,6 +173,27 @@ resume; expired, missing, and gone saved sessions return to absent before a new
 session is created. Each accepted fragment advances the active state only after
 its checkpoint succeeds, and only an active session can produce a finalized
 remote item.
+
+Authorization-code PKCE sessions also use `StateTransaction` in a separate
+state family: created → awaiting callback → authorized → exchanging token →
+completed. The public `AuthCodeSession` API still selects states at runtime;
+its private variant stores phase-specific payloads. Only the awaiting phase
+owns CSRF state, and only authorized/exchanging phases own an authorization
+code. Move-only secret owners keep string storage stationary during transitions
+and cleanse it on consumption, termination, destruction, and exception unwinding.
+Cancellation, expiry, and failure are terminal; unrelated/invalid callbacks
+remain awaiting, while a server rejection with the correct CSRF state terminates.
+
+The GUI loopback listener uses the private, Qt-independent `BrowserRequest`
+reducer for listening, reading, validation, buffered writing, and closure.
+Explicit elapsed-time events enforce the 8192-byte request cap, two-second
+request deadline, and bounded 100-ms reply flush. The Qt adapter executes the
+read/write/close commands and retains strict QUrl target checks. HTTP/1.1 GET
+and exactly one matching loopback Host are required. Invalid connections receive
+400 and resume listening; accepted callbacks and terminal authorization errors
+finish the flow. Qt write acceptance and actual buffer drainage are separate
+events, so partial writes retain the unsent suffix.
+
 ## Notification architecture
 
 Remote change notifications use a separate pure connection state machine from
@@ -188,6 +209,15 @@ eventual convergence. Network adapters execute reducer effects; they do not
 make state-transition policy. The production adapter acquires the channel
 through Graph and runs Engine.IO 4 / Socket.IO framing over libcurl's
 WebSocket-only transport, including heartbeat handling and eventfd wakeups.
+Its private `SocketProtocol` reducer is strictly below the channel/lease reducer:
+WebSocket connection, Engine.IO open, root Socket.IO readiness, and notification
+namespace listening are distinct phases. Engine.IO open emits the two namespace
+handshakes and the existing connected wakeup; acknowledgements do not duplicate
+it. Time-bearing events drive Engine.IO heartbeat pongs and expiry, while
+rejections, protocol/transport errors, and peer closure publish disconnection
+once. Intentional stop closes without a disconnected wakeup. The adapter drains
+libcurl chunks; text assembly survives `CURLE_AGAIN`, multi-frame messages, and
+interleaved WebSocket ping/pong controls, with a one-MiB message bound.
 
 ## Source tree
 

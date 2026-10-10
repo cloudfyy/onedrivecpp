@@ -39,6 +39,27 @@ ctest --test-dir build/debug -R '^(atomic_file_failure|filesystem_metadata_failu
 ```
 
 这些测试无需 Graph 凭据、浏览器或资源耗尽。
+
+授权与线协议回归还在编译期检查 PKCE 的全部 64 个状态转换组合，
+验证仅可移动的秘密清理（包括短字符串和异常展开），并用确定性的事件测试
+浏览器/Socket.IO 归约器。`auth_code_failure_tests` 通过测试程序专属的
+URL 解析器/随机数包装验证异常传播、终态失败和部分随机输出清理。
+GUI 集成测试只使用本地 loopback 连接。
+`monitor_socket_transport_tests` 仅在测试程序中包装 libcurl 和 poll，
+验证生产适配器确实执行归约器命令，并跨 `CURLE_AGAIN` 保留分片文本；
+无需网络或真实浏览器。
+
+```bash
+cmake --build build/debug --target auth_code_tests auth_code_typestate_tests auth_code_failure_tests browser_request_tests gui_login_tests monitor_socket_tests monitor_socket_transport_tests monitor_notify_tests
+ctest --test-dir build/debug -R '^(auth_code_tests|auth_code_typestate_tests|auth_code_failure_tests|browser_request_tests|gui_login_tests|monitor_socket_tests|monitor_socket_transport_tests|monitor_notify_tests)$' --output-on-failure
+```
+
+重建覆盖率程序后，应归档原有的 `coverage/profiles` 目录，再新建空目录并运行
+CTest。用 `python3 tools/coverage_report.py build/coverage --name state-machines`
+生成具名报告；同时检查私有归约器头文件和适配器源文件。LLVM 模板分派/访问器的
+`no-profile-record` 警告（包括已知 hash 为零的 Proxy 访问器）与未覆盖源码分支
+不是同一口径，需单独说明，不能据此宣称每个模板实例均完全覆盖。
+
 测量结束后切换回 `debug` 或 `release` preset 即可恢复正常开发；
 它们的独立构建目录不受覆盖率 preset 影响。
 

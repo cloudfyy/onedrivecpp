@@ -148,6 +148,29 @@ ctest --test-dir build/debug -R '^(atomic_file_failure|filesystem_metadata_failu
 ```
 
 These tests do not require Graph credentials, a browser, or resource exhaustion.
+
+The authorization/wire-protocol regressions additionally check all 64 PKCE
+transition pairs at compile time, move-only secret cleanup (including small
+strings and exception unwinding), and deterministic browser/Socket.IO reducer
+events. `auth_code_failure_tests` uses executable-local URL-parser/randomness
+wrappers to verify exception propagation, terminal failure, and partial-random
+output cleanup. The GUI integration tests use only local loopback connections.
+`monitor_socket_transport_tests` wraps libcurl and poll only in its executable,
+verifying that the production adapter executes reducer commands and retains
+fragmented text across `CURLE_AGAIN`; no network or real browser is needed.
+
+```bash
+cmake --build build/debug --target auth_code_tests auth_code_typestate_tests auth_code_failure_tests browser_request_tests gui_login_tests monitor_socket_tests monitor_socket_transport_tests monitor_notify_tests
+ctest --test-dir build/debug -R '^(auth_code_tests|auth_code_typestate_tests|auth_code_failure_tests|browser_request_tests|gui_login_tests|monitor_socket_tests|monitor_socket_transport_tests|monitor_notify_tests)$' --output-on-failure
+```
+
+After rebuilding coverage binaries, archive the exact old `coverage/profiles`
+directory and create an empty replacement before running CTest. Generate a
+named report with `python3 tools/coverage_report.py build/coverage --name
+state-machines`. Inspect the private reducer headers as well as adapter source
+files. LLVM template dispatch/accessor `no-profile-record` warnings (including
+known hash-zero Proxy accessors) are separate from uncovered source branches;
+report them rather than claiming complete per-instantiation coverage.
 Select the `debug` or `release` presets to return to normal development;
 their separate build directories are not affected by the coverage preset.
 

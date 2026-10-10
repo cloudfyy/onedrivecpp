@@ -4,6 +4,7 @@
 #include "util/base64.hpp"
 #include "onedrive/util/sha256.hpp"
 #include "auth/options.hpp"
+#include "auth/code_transaction.hpp"
 
 #include <curl/curl.h>
 #include <openssl/crypto.h>
@@ -76,6 +77,12 @@ std::optional<Url> parse_url(const std::string& value) {
 
 std::string random_secret() {
     std::array<unsigned char, 32> bytes{};
+    struct CleanBytes {
+        std::array<unsigned char, 32>& bytes;
+        ~CleanBytes() {
+            OPENSSL_cleanse(bytes.data(), bytes.size());
+        }
+    } cleanup{bytes};
     if (RAND_bytes(bytes.data(), static_cast<int>(bytes.size())) != 1) {
         throw std::runtime_error{
             "cannot generate browser authorization randomness"
@@ -124,12 +131,50 @@ AuthError invalid_callback() {
 
 } // namespace
 
+class AuthCodeSession::Implementation {
+public:
+    detail::CodeStorage transaction{detail::CreatedCode{}};
+
+    [[nodiscard]] const AuthError* error() const noexcept {
+        return std::visit(
+            [](const auto& current) -> const AuthError* {
+                if constexpr (requires { current.error; })
+                    return &current.error;
+                else
+                    return nullptr;
+            },
+            transaction
+        );
+    }
+
+    template <typename Terminal> void terminate(AuthError error) noexcept {
+        std::visit(
+            [&](auto& current) {
+                using Current = std::remove_cvref_t<decltype(current)>;
+                if constexpr (util::TransactionTransitionFor<
+                                  typename Current::state_type,
+                                  Terminal,
+                                  detail::CodeFamily>) {
+                    auto next = util::transition_transaction<Terminal>(
+                        std::move(current), [&](auto&&) noexcept {
+                            return detail::CodeErrorPayload{std::move(error)};
+                        }
+                    );
+                    transaction = std::move(next);
+                }
+            },
+            transaction
+        );
+    }
+};
+
 AuthCodeSession::AuthCodeSession(
     DeviceAuthOptions options, ClockFunction now, std::chrono::seconds timeout
 )
     : options_{std::move(options)},
       now_{std::move(now)},
-      timeout_{timeout} {
+      timeout_{timeout},
+      implementation_{std::make_unique<Implementation>()} {
     if (!now_)
         now_ = [] { return std::chrono::steady_clock::now(); };
     if (timeout_ <= std::chrono::seconds::zero()) {
@@ -140,30 +185,63 @@ AuthCodeSession::AuthCodeSession(
 }
 
 AuthCodeState AuthCodeSession::state() const noexcept {
-    return state_;
+    return std::visit(
+        [](const auto& current) {
+            using State =
+                typename std::remove_cvref_t<decltype(current)>::state_type;
+            if constexpr (std::same_as<State, detail::Created>)
+                return AuthCodeState::created;
+            else if constexpr (std::same_as<State, detail::AwaitingCallback>)
+                return AuthCodeState::awaiting_callback;
+            else if constexpr (std::same_as<State, detail::Authorized>)
+                return AuthCodeState::authorized;
+            else if constexpr (std::same_as<State, detail::ExchangingToken>)
+                return AuthCodeState::exchanging_token;
+            else if constexpr (std::same_as<State, detail::Completed>)
+                return AuthCodeState::completed;
+            else if constexpr (std::same_as<State, detail::Cancelled>)
+                return AuthCodeState::cancelled;
+            else if constexpr (std::same_as<State, detail::Expired>)
+                return AuthCodeState::expired;
+            else
+                return AuthCodeState::failed;
+        },
+        implementation_->transaction
+    );
 }
 
-AuthCodeSession::~AuthCodeSession() {
-    clear_secrets();
+AuthCodeSession::~AuthCodeSession() = default;
+
+const AuthError&
+AuthCodeSession::terminate(AuthCodeState state, AuthError error) {
+    switch (state) {
+    case AuthCodeState::cancelled:
+        implementation_->terminate<detail::Cancelled>(std::move(error));
+        break;
+    case AuthCodeState::expired:
+        implementation_->terminate<detail::Expired>(std::move(error));
+        break;
+    default:
+        implementation_->terminate<detail::Failed>(std::move(error));
+        break;
+    }
+    return *implementation_->error();
 }
 
-void AuthCodeSession::clear_secrets() {
-    for (auto* secret : {&verifier_, &csrf_state_, &code_}) {
-        if (!secret->empty())
-            OPENSSL_cleanse(secret->data(), secret->size());
-        secret->clear();
+void AuthCodeSession::fail_exception() noexcept {
+    try {
+        fail();
+    } catch (...) {
+        // Termination must still cleanse secrets if constructing a message
+        // fails.
+        implementation_->terminate<detail::Failed>(
+            {.code = AuthErrorCode::server, .message = {}}
+        );
     }
 }
 
-AuthError AuthCodeSession::terminate(AuthCodeState state, AuthError error) {
-    state_ = state;
-    error_ = error;
-    clear_secrets();
-    return error;
-}
-
 void AuthCodeSession::fail(AuthError error) {
-    if (state_ == AuthCodeState::completed || error_)
+    if (state() == AuthCodeState::completed || implementation_->error())
         return;
     const auto state =
         error.code == AuthErrorCode::cancelled ? AuthCodeState::cancelled
@@ -175,7 +253,7 @@ void AuthCodeSession::fail(AuthError error) {
 AuthResult<std::string> AuthCodeSession::begin(
     const std::string& redirect_uri, std::stop_token stop_token
 ) {
-    if (state_ != AuthCodeState::created) {
+    if (state() != AuthCodeState::created) {
         throw std::logic_error{
             "browser authorization session has already started"
         };
@@ -208,9 +286,14 @@ AuthResult<std::string> AuthCodeSession::begin(
                      "valid HTTPS endpoint and an HTTP loopback redirect"}
             ));
         }
-        verifier_ = random_secret();
-        csrf_state_ = random_secret();
-        const auto challenge = util::base64url_encode(util::sha256(verifier_));
+        detail::CallbackPayload payload{
+            .redirect = redirect_uri,
+            .deadline = {},
+            .verifier = detail::CodeSecret{random_secret()},
+            .csrf = detail::CodeSecret{random_secret()},
+        };
+        const auto challenge =
+            util::base64url_encode(util::sha256(payload.verifier.get()));
         auto url = options_.auth_endpoint;
         while (url.ends_with('/'))
             url.pop_back();
@@ -223,26 +306,31 @@ AuthResult<std::string> AuthCodeSession::begin(
                 {"redirect_uri", redirect_uri},
                 {"response_mode", "query"},
                 {"scope", options_.scope},
-                {"state", csrf_state_},
+                {"state", payload.csrf.get()},
                 {"code_challenge", challenge},
                 {"code_challenge_method", "S256"},
             };
         url += "?" + util::encode_uri_parameters(parameters);
-        redirect_uri_ = redirect_uri;
-        deadline_ = now_() + timeout_;
-        state_ = AuthCodeState::awaiting_callback;
+        payload.deadline = now_() + timeout_;
+        implementation_->transaction =
+            util::transition_transaction<detail::AwaitingCallback>(
+                std::move(
+                    std::get<detail::CreatedCode>(implementation_->transaction)
+                ),
+                [&](detail::EmptyCodePayload&&) { return std::move(payload); }
+            );
         return url;
     } catch (...) {
-        fail();
+        fail_exception();
         throw;
     }
 }
 
 AuthResult<void> AuthCodeSession::check(std::stop_token stop_token) {
-    if (error_)
-        return std::unexpected(*error_);
-    if (state_ != AuthCodeState::awaiting_callback &&
-        state_ != AuthCodeState::authorized) {
+    if (const auto* error = implementation_->error())
+        return std::unexpected(*error);
+    if (state() != AuthCodeState::awaiting_callback &&
+        state() != AuthCodeState::authorized) {
         throw std::logic_error{"browser authorization session is not waiting"};
     }
     if (stop_token.stop_requested()) {
@@ -252,7 +340,23 @@ AuthResult<void> AuthCodeSession::check(std::stop_token stop_token) {
              .message = "browser login cancelled"}
         ));
     }
-    if (now_() >= deadline_) {
+    const auto deadline = std::visit(
+        [](const auto& current) {
+            if constexpr (requires { current.deadline; })
+                return current.deadline;
+            else
+                return std::chrono::steady_clock::time_point{};
+        },
+        implementation_->transaction
+    );
+    std::chrono::steady_clock::time_point current_time;
+    try {
+        current_time = now_();
+    } catch (...) {
+        fail_exception();
+        throw;
+    }
+    if (current_time >= deadline) {
         return std::unexpected(terminate(
             AuthCodeState::expired,
             {.code = AuthErrorCode::expired,
@@ -267,70 +371,93 @@ AuthResult<void> AuthCodeSession::accept_callback(
 ) {
     if (const auto ready = check(stop_token); !ready)
         return ready;
-    if (state_ != AuthCodeState::awaiting_callback) {
+    if (state() != AuthCodeState::awaiting_callback) {
         throw std::logic_error{
             "browser authorization callback was already consumed"
         };
     }
     if (callback_uri.size() > 8192)
         return std::unexpected(invalid_callback());
-    const auto callback = parse_url(callback_uri);
-    const auto redirect = parse_url(redirect_uri_);
-    if (!callback || callback->scheme != redirect->scheme ||
-        callback->host != redirect->host || callback->port != redirect->port ||
-        callback->path != redirect->path) {
-        return std::unexpected(invalid_callback());
-    }
-    std::string state, code, error;
-    unsigned int states = 0, codes = 0, errors = 0;
-    std::string_view query{callback->query};
-    while (!query.empty()) {
-        const auto end = query.find('&');
-        const auto item = query.substr(0, end);
-        const auto equal = item.find('=');
-        const auto key = decode(item.substr(0, equal));
-        const auto value = decode(
-            equal == std::string_view::npos ? std::string_view{}
-                                            : item.substr(equal + 1)
-        );
-        if (!key || !value)
+    try {
+        const auto callback = parse_url(callback_uri);
+        auto& current =
+            std::get<detail::AwaitingCode>(implementation_->transaction);
+        const auto redirect = parse_url(current.redirect);
+        if (!callback || callback->scheme != redirect->scheme ||
+            callback->host != redirect->host ||
+            callback->port != redirect->port ||
+            callback->path != redirect->path) {
             return std::unexpected(invalid_callback());
-        if (*key == "state") {
-            ++states;
-            state = *value;
         }
-        if (*key == "code") {
-            ++codes;
-            code = *value;
+        detail::CodeSecret state, code;
+        std::string error;
+        unsigned int states = 0, codes = 0, errors = 0;
+        std::string_view query{callback->query};
+        while (!query.empty()) {
+            const auto end = query.find('&');
+            const auto item = query.substr(0, end);
+            const auto equal = item.find('=');
+            const auto key = decode(item.substr(0, equal));
+            auto value = decode(
+                equal == std::string_view::npos ? std::string_view{}
+                                                : item.substr(equal + 1)
+            );
+            if (!key || !value)
+                return std::unexpected(invalid_callback());
+            const detail::CleanCodeString cleanup{*value};
+            if (*key == "state") {
+                ++states;
+                state.assign(*value);
+            }
+            if (*key == "code") {
+                ++codes;
+                code.assign(*value);
+            }
+            if (*key == "error") {
+                ++errors;
+                error = *value;
+            }
+            if (end == std::string_view::npos)
+                break;
+            query.remove_prefix(end + 1);
         }
-        if (*key == "error") {
-            ++errors;
-            error = *value;
+        if (states != 1 || state.get().size() != current.csrf.get().size() ||
+            CRYPTO_memcmp(
+                state.get().data(),
+                current.csrf.get().data(),
+                state.get().size()
+            ) != 0 ||
+            !((codes == 1 && !code.get().empty() && errors == 0) ||
+              (errors == 1 && !error.empty() && codes == 0))) {
+            return std::unexpected(invalid_callback());
         }
-        if (end == std::string_view::npos)
-            break;
-        query.remove_prefix(end + 1);
+        if (errors == 1) {
+            const bool declined = error == "access_denied";
+            return std::unexpected(terminate(
+                AuthCodeState::failed,
+                {.code = declined ? AuthErrorCode::authorization_declined
+                                  : AuthErrorCode::server,
+                 .message = declined
+                                ? "browser authorization was declined"
+                                : "authorization server rejected browser login"}
+            ));
+        }
+        implementation_->transaction =
+            util::transition_transaction<detail::Authorized>(
+                std::move(current), [&](detail::CallbackPayload&& payload) {
+                    return detail::AuthorizedPayload{
+                        std::move(payload.redirect),
+                        payload.deadline,
+                        std::move(payload.verifier),
+                        std::move(code)
+                    };
+                }
+            );
+        return {};
+    } catch (...) {
+        fail_exception();
+        throw;
     }
-    if (states != 1 || state.size() != csrf_state_.size() ||
-        CRYPTO_memcmp(state.data(), csrf_state_.data(), state.size()) != 0 ||
-        !((codes == 1 && !code.empty() && errors == 0) ||
-          (errors == 1 && !error.empty() && codes == 0))) {
-        return std::unexpected(invalid_callback());
-    }
-    if (errors == 1) {
-        const bool declined = error == "access_denied";
-        return std::unexpected(terminate(
-            AuthCodeState::failed,
-            {.code = declined ? AuthErrorCode::authorization_declined
-                              : AuthErrorCode::server,
-             .message = declined
-                            ? "browser authorization was declined"
-                            : "authorization server rejected browser login"}
-        ));
-    }
-    code_ = std::move(code);
-    state_ = AuthCodeState::authorized;
-    return {};
 }
 
 AuthResult<OAuthTokens> AuthCodeSession::exchange(
@@ -338,13 +465,30 @@ AuthResult<OAuthTokens> AuthCodeSession::exchange(
 ) {
     if (const auto ready = check(stop_token); !ready)
         return std::unexpected(ready.error());
-    if (state_ != AuthCodeState::authorized) {
+    if (state() != AuthCodeState::authorized) {
         throw std::logic_error{"browser authorization has not received a code"};
     }
-    state_ = AuthCodeState::exchanging_token;
+    implementation_->transaction =
+        util::transition_transaction<detail::ExchangingToken>(
+            std::move(
+                std::get<detail::AuthorizedCode>(implementation_->transaction)
+            ),
+            [](detail::AuthorizedPayload&& payload) {
+                return detail::ExchangePayload{
+                    std::move(payload.redirect),
+                    std::move(payload.verifier),
+                    std::move(payload.code)
+                };
+            }
+        );
     try {
+        const auto& current =
+            std::get<detail::ExchangingCode>(implementation_->transaction);
         auto result = client.exchange_authorization_code(
-            code_, redirect_uri_, verifier_, stop_token
+            current.code.get(),
+            current.redirect,
+            current.verifier.get(),
+            stop_token
         );
         if (!result) {
             return std::unexpected(terminate(
@@ -354,11 +498,16 @@ AuthResult<OAuthTokens> AuthCodeSession::exchange(
                 result.error()
             ));
         }
-        state_ = AuthCodeState::completed;
-        clear_secrets();
+        implementation_
+            ->transaction = util::transition_transaction<detail::Completed>(
+            std::move(
+                std::get<detail::ExchangingCode>(implementation_->transaction)
+            ),
+            [](detail::ExchangePayload&&) { return detail::EmptyCodePayload{}; }
+        );
         return result;
     } catch (...) {
-        fail();
+        fail_exception();
         throw;
     }
 }

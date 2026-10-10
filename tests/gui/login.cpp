@@ -210,6 +210,8 @@ int test_loopback() {
                     QThread::msleep(100);
                 }
                 slow_stop.request_stop();
+                if (socket.state() == QAbstractSocket::ConnectedState)
+                    socket.waitForDisconnected(1000);
             }};
         },
         slow_stop.get_token()
