@@ -32,8 +32,10 @@ public:
             return false;
         }
 
-        static_cast<void>(headers_.release());
-        headers_.reset(updated);
+        // Appending to a nonempty curl_slist preserves its owned head.
+        if (!headers_) {
+            headers_.reset(updated);
+        }
         return true;
     }
 

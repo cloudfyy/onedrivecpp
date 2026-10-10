@@ -159,6 +159,18 @@ cmake --preset lint-deep
 cmake --build --preset lint-deep
 ```
 
+针对性复查应保持相同的 GUI 设置和深度分析策略，只构建受影响的对象目标，例如：
+
+```bash
+cmake --preset lint-deep -DONEDRIVE_BUILD_GUI=ON
+timeout 15m cmake --build --preset lint-deep --target \
+  CMakeFiles/onedrive_core.dir/src/graph/discovery.cpp.o \
+  CMakeFiles/onedrive_core.dir/src/monitor/socket.cpp.o
+```
+
+对象复查不能证明未构建的翻译单元或超时扫描通过。第三方诊断应单独报告，
+不能修改系统头文件或关闭检查来隐藏它们。
+
 策略只排除经过审查的必要 C/POSIX API、协议常量和已检查缓冲区边界噪声。
 项目使用 Microsoft GSL 在 API 和 RAII 边界表达非空借用依赖，并使用
 ngcpp/proxy 提供具有明确拥有/借用适配方式的类型擦除运行时端口。
@@ -167,6 +179,11 @@ ngcpp/proxy 提供具有明确拥有/借用适配方式的类型擦除运行时�
 转小写。同步借用文本使用 `std::string_view`，剩余 I/O 缓冲区使用 `std::span`
 子视图。POSIX 调用继续由 RAII 对象管理；新语法不能削弱关闭错误检查、持久化
 和错误报告行为。
+
+分页和下载尝试 helper 拥有 callable，并在各页和重试之间以左值调用；
+需要借用可变 callable 状态时使用 `std::ref`。Socket.IO 工作线程同时捕获
+传输操作和失败报告中的异常。即使日志 sink 或错误处理器抛出异常，也分别
+尝试记录日志和发布断连事件；分配失败时事件发布仅尽力而为，不能导致进程终止。
 
 测试通过 `tests/support/common.hpp` 复用带错误检查的二进制文件 I/O 和异常匹配。
 `throws_with<Exception>(operation, message)` 按消息子串匹配；未抛异常时返回 false，

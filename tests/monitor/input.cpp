@@ -3,6 +3,7 @@
 #include "support/common.hpp"
 
 #include <array>
+#include <cerrno>
 #include <chrono>
 #include <cstdlib>
 #include <fcntl.h>
@@ -16,7 +17,10 @@ namespace {
 
 using onedrive::test::fail;
 
-bool exits_for(std::string_view keys) {
+int interrupted_descriptor = -1;
+unsigned interruptions = 0;
+
+bool exits_for(std::string_view keys, bool interrupt = false) {
     std::array<int, 2> pipe_descriptors{};
     if (::pipe(pipe_descriptors.data()) == -1) {
         return false;
@@ -32,6 +36,9 @@ bool exits_for(std::string_view keys) {
     const onedrive::monitor::detail::KeyboardInput input{
         pipe_descriptors[0], false
     };
+    if (interrupt) {
+        interrupted_descriptor = pipe_descriptors[0];
+    }
     const bool requested = input.exit_requested();
     static_cast<void>(::close(pipe_descriptors[0]));
     return requested;
@@ -249,12 +256,21 @@ int test_keyboard_exit_during_initial_sync() {
 
 }  // namespace
 
+extern "C" ssize_t __real_read(int, void*, std::size_t);
+extern "C" ssize_t __wrap_read(int descriptor, void* buffer, std::size_t size) {
+    if (descriptor == interrupted_descriptor && descriptor >= 0) {
+        interrupted_descriptor = -1;
+        ++interruptions;
+        errno = EINTR;
+        return -1;
+    }
+    return __real_read(descriptor, buffer, size);
+}
+
 int main() {
-    if (!exits_for("q") ||
-        !exits_for("Q") ||
-        !exits_for("\033") ||
-        !exits_for("xq") ||
-        exits_for("x")) {
+    if (!exits_for("q") || !exits_for("Q") || !exits_for("\033") ||
+        !exits_for("xq") || exits_for("x") || exits_for("") ||
+        !exits_for("q", true) || interruptions != 1) {
         return fail("monitor keyboard exit keys were handled incorrectly");
     }
     if (const int result = test_terminal_mode();

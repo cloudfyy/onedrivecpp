@@ -339,10 +339,11 @@ public:
         return implementation()->item_by_path(remote_path);
     }
     [[nodiscard]] RemoteItem item_by_path(
-        const std::string& remote_path,
-        std::stop_token stop_token
+        const std::string& remote_path, std::stop_token stop_token
     ) const {
-        return implementation()->item_by_path(remote_path, stop_token);
+        return implementation()->item_by_path(
+            remote_path, std::move(stop_token)
+        );
     }
 
     [[nodiscard]] DeltaResult list_delta(
@@ -351,7 +352,7 @@ public:
         std::stop_token stop_token = {}
     ) const {
         return implementation()->list_delta(
-            delta_link, progress, stop_token
+            delta_link, progress, std::move(stop_token)
         );
     }
 
@@ -416,7 +417,9 @@ public:
         const std::string& remote_path,
         std::stop_token stop_token
     ) const {
-        return implementation()->create_directory(remote_path, stop_token);
+        return implementation()->create_directory(
+            remote_path, std::move(stop_token)
+        );
     }
 
     void delete_item(
@@ -430,7 +433,9 @@ public:
         const std::string& expected_etag,
         std::stop_token stop_token
     ) const {
-        implementation()->delete_item(remote_id, expected_etag, stop_token);
+        implementation()->delete_item(
+            remote_id, expected_etag, std::move(stop_token)
+        );
     }
 
     [[nodiscard]] RemoteItem move_item(
@@ -451,7 +456,7 @@ public:
         std::stop_token stop_token
     ) const {
         return implementation()->move_item(
-            remote_id, expected_etag, destination_path, stop_token
+            remote_id, expected_etag, destination_path, std::move(stop_token)
         );
     }
 
@@ -649,9 +654,8 @@ private:
     mutable std::string cached_access_token_;
     mutable std::chrono::system_clock::time_point access_token_expires_at_{};
 
-    [[nodiscard]] std::string access_token(
-        std::stop_token stop_token = {}
-    ) const;
+    [[nodiscard]] std::string
+    access_token(const std::stop_token& stop_token = {}) const;
     [[nodiscard]] http::HttpResponse graph_get(
         const std::string& url,
         std::string_view description

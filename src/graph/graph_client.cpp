@@ -304,9 +304,8 @@ account::DriveIdentity fetch_drive_identity(
     return identity;
 }
 
-std::string MicrosoftGraphClient::access_token(
-    std::stop_token stop_token
-) const {
+std::string
+MicrosoftGraphClient::access_token(const std::stop_token& stop_token) const {
     const std::scoped_lock lock{access_token_mutex_};
     constexpr auto expiry_margin = std::chrono::minutes{1};
     if (!cached_access_token_.empty() &&

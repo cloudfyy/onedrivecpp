@@ -375,19 +375,15 @@ int Monitor::run_loop(
     detail::MonitorState state = detail::StartingState{};
     if (stop_token.stop_requested()) {
         state = detail::transition_monitor(
-            std::move(state),
-            detail::StopRequestedEvent{},
-            timing
-        ).state;
+                    state, detail::StopRequestedEvent{}, timing
+        )
+                    .state;
         return 0;
     }
 
-    auto transition = detail::transition_monitor(
-        std::move(state),
-        detail::StartEvent{},
-        timing
-    );
-    state = std::move(transition.state);
+    auto transition =
+        detail::transition_monitor(state, detail::StartEvent{}, timing);
+    state = transition.state;
     const auto initial_reason =
         std::get<detail::SynchronizingState>(state).reason;
     spdlog::info(
@@ -403,10 +399,9 @@ int Monitor::run_loop(
     }
     if (stop_token.stop_requested()) {
         state = detail::transition_monitor(
-            std::move(state),
-            detail::StopRequestedEvent{},
-            timing
-        ).state;
+                    state, detail::StopRequestedEvent{}, timing
+        )
+                    .state;
         return 0;
     }
     WatchSet watches{root_};
@@ -434,13 +429,14 @@ int Monitor::run_loop(
         poll_interval_.count()
     );
     state = detail::transition_monitor(
-        std::move(state),
-        detail::SynchronizationCompletedEvent{
-            .status = initial_result,
-            .completed_at = std::chrono::steady_clock::now(),
-        },
-        timing
-    ).state;
+                state,
+                detail::SynchronizationCompletedEvent{
+                    .status = initial_result,
+                    .completed_at = std::chrono::steady_clock::now(),
+                },
+                timing
+    )
+                .state;
 
     std::unique_ptr<detail::SocketIoTransport> notification_socket;
     detail::NotificationState notification_state =
@@ -548,10 +544,9 @@ int Monitor::run_loop(
     const auto shutdown = [&] {
         spdlog::info("Monitor shutdown requested");
         state = detail::transition_monitor(
-            std::move(state),
-            detail::StopRequestedEvent{},
-            timing
-        ).state;
+                    state, detail::StopRequestedEvent{}, timing
+        )
+                    .state;
         if (notification_socket) {
             advance_notification(detail::NotificationStopEvent{});
         }
@@ -666,14 +661,14 @@ int Monitor::run_loop(
         if ((descriptors[0].revents & POLLIN) != 0) {
             if (const auto changed = watches.drain(root_)) {
                 state = detail::transition_monitor(
-                    std::move(state),
-                    detail::LocalChangeEvent{
-                        .kind = *changed,
-                        .observed_at =
-                            std::chrono::steady_clock::now(),
-                    },
-                    timing
-                ).state;
+                            state,
+                            detail::LocalChangeEvent{
+                                .kind = *changed,
+                                .observed_at = std::chrono::steady_clock::now(),
+                            },
+                            timing
+                )
+                            .state;
             }
         }
 
@@ -708,20 +703,16 @@ int Monitor::run_loop(
         }
         if (notification_sync_requested) {
             transition = detail::transition_monitor(
-                std::move(state),
-                detail::RemoteChangeEvent{},
-                timing
+                state, detail::RemoteChangeEvent{}, timing
             );
             notification_sync_requested = false;
         } else {
             const auto after_events = std::chrono::steady_clock::now();
             transition = detail::transition_monitor(
-                std::move(state),
-                detail::DeadlineReachedEvent{after_events},
-                timing
+                state, detail::DeadlineReachedEvent{after_events}, timing
             );
         }
-        state = std::move(transition.state);
+        state = transition.state;
         if (transition.effect != detail::MonitorEffect::synchronize) {
             continue;
         }
@@ -741,13 +732,14 @@ int Monitor::run_loop(
         }
         watches.rebuild(root_);
         state = detail::transition_monitor(
-            std::move(state),
-            detail::SynchronizationCompletedEvent{
-                .status = result,
-                .completed_at = std::chrono::steady_clock::now(),
-            },
-            timing
-        ).state;
+                    state,
+                    detail::SynchronizationCompletedEvent{
+                        .status = result,
+                        .completed_at = std::chrono::steady_clock::now(),
+                    },
+                    timing
+        )
+                    .state;
     }
 }
 

@@ -73,6 +73,11 @@ int main() {
         onedrive::http::detail::CallbackFailureKind::allocation) {
         return fail("callback allocation failure was not preserved");
     }
+    try {
+        std::rethrow_exception(callback_failure.exception);
+        return fail("recorded callback exception could not be rethrown");
+    } catch (const std::bad_alloc&) {
+    }
     onedrive::http::UploadThrottle failing_throttle{
         [](std::size_t, const std::stop_token&) -> bool {
             throw std::bad_alloc{};

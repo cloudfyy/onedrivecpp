@@ -103,7 +103,7 @@ struct ProgressContext {
 
 void record_callback_failure(
     CallbackFailure& failure,
-    std::exception_ptr exception,
+    const std::exception_ptr& exception,
     CallbackFailureKind kind = CallbackFailureKind::internal
 ) noexcept;
 [[nodiscard]] std::string callback_failure_detail(

@@ -22,7 +22,8 @@
 namespace onedrive::config {
 namespace {
 
-Config load_document(const std::filesystem::path& path, toml::table root) {
+Config
+load_document(const std::filesystem::path& path, const toml::table& root) {
     Config config = Config::defaults();
 
     detail::validate_keys(

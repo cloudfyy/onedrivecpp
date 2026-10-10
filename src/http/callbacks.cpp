@@ -17,7 +17,7 @@ constexpr int curl_progress_abort = 1;
 
 void record_callback_failure(
     CallbackFailure& failure,
-    std::exception_ptr exception,
+    const std::exception_ptr& exception,
     CallbackFailureKind kind
 ) noexcept {
     failure.exception = exception;

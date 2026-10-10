@@ -3,19 +3,27 @@
 
 #include <curl/curl.h>
 #include <curl/websockets.h>
+#include <spdlog/sinks/sink.h>
+#include <spdlog/spdlog.h>
 
 #include <atomic>
 #include <cstdarg>
 #include <cstring>
 #include <deque>
+#include <memory>
 #include <mutex>
 #include <poll.h>
+#include <type_traits>
+#include <utility>
 
 namespace {
 
 using namespace onedrive;
 using namespace monitor::detail;
 using namespace std::chrono_literals;
+
+static_assert(!std::is_move_constructible_v<SocketIoTransport>);
+static_assert(!std::is_move_assignable_v<SocketIoTransport>);
 
 struct Receive {
     std::string text;
@@ -25,11 +33,13 @@ struct Receive {
     bool metadata{true};
 };
 enum class SendResult { complete, partial, failure };
+enum class PerformResult { success, failure, unknown_exception };
 struct Script {
     std::mutex mutex;
     std::deque<Receive> receives;
     std::vector<std::string> sends;
     SendResult send_result{SendResult::complete};
+    PerformResult perform_result{PerformResult::success};
 };
 std::atomic<Script*> active{nullptr};
 constexpr int fake_descriptor = 987654;
@@ -43,14 +53,16 @@ void run_script(
     std::deque<Receive> receives,
     std::vector<SocketEvent> expected,
     std::vector<std::string> sends,
-    SendResult send_result = SendResult::complete
+    SendResult send_result = SendResult::complete,
+    PerformResult perform_result = PerformResult::success
 ) {
     Script script;
     script.receives = std::move(receives);
     script.send_result = send_result;
+    script.perform_result = perform_result;
     active = &script;
     SocketIoTransport transport{{}, 1s};
-    transport.connect("https://notify.example.test/notifications");
+    transport.connect(std::string{"https://notify.example.test/notifications"});
     std::vector<SocketEvent> observed;
     const bool completed = test::wait_until(
         [&] {
@@ -116,6 +128,57 @@ void test_transport_failures() {
     run_script(
         {{open}}, {SocketEvent::disconnected}, {"40"}, SendResult::failure
     );
+    for (const auto result :
+         {PerformResult::failure, PerformResult::unknown_exception}) {
+        run_script(
+            {}, {SocketEvent::disconnected}, {}, SendResult::complete, result
+        );
+    }
+}
+
+class ThrowingSink final : public spdlog::sinks::sink {
+public:
+    void log(const spdlog::details::log_msg&) override {
+        ++calls;
+        throw std::runtime_error{"logging sink failed"};
+    }
+    void flush() override {
+    }
+    void set_pattern(const std::string&) override {
+    }
+    void set_formatter(std::unique_ptr<spdlog::formatter>) override {
+    }
+
+    std::atomic<unsigned> calls{0};
+};
+
+void test_failure_reporting_throws() {
+    const auto original = spdlog::default_logger();
+    const auto sink = std::make_shared<ThrowingSink>();
+    auto logger = std::make_shared<spdlog::logger>("throwing", sink);
+    logger->set_level(spdlog::level::warn);
+    logger->set_error_handler([](const std::string&) {
+        throw std::runtime_error{"logging error handler failed"};
+    });
+    spdlog::set_default_logger(logger);
+    try {
+        run_script({{"0{}"}}, {SocketEvent::disconnected}, {});
+        run_script(
+            {},
+            {SocketEvent::disconnected},
+            {},
+            SendResult::complete,
+            PerformResult::unknown_exception
+        );
+    } catch (...) {
+        spdlog::set_default_logger(original);
+        throw;
+    }
+    spdlog::set_default_logger(original);
+    require(
+        sink->calls >= 3,
+        "test did not exercise throwing failure-reporting callbacks"
+    );
 }
 
 void test_transport_stop() {
@@ -150,7 +213,15 @@ void test_transport_stop() {
 } // namespace
 
 extern "C" CURLcode __wrap_curl_easy_perform(CURL*) {
-    return CURLE_OK;
+    switch (active.load()->perform_result) {
+    case PerformResult::success:
+        return CURLE_OK;
+    case PerformResult::failure:
+        return CURLE_COULDNT_CONNECT;
+    case PerformResult::unknown_exception:
+        throw 42;
+    }
+    std::unreachable();
 }
 
 extern "C" CURLcode __real_curl_easy_getinfo(CURL*, CURLINFO, ...);
@@ -233,6 +304,7 @@ int main() {
     try {
         test_fragmented_transport();
         test_transport_failures();
+        test_failure_reporting_throws();
         test_transport_stop();
         return EXIT_SUCCESS;
     } catch (const std::exception& error) {

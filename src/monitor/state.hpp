@@ -202,8 +202,8 @@ synchronization_reason(LocalChangeKind kind) noexcept {
                 };
             },
             [&](SynchronizingState current,
-                const SynchronizationCompletedEvent& completed
-            ) -> MonitorTransition {
+                const SynchronizationCompletedEvent& completed)
+                -> MonitorTransition {
                 if (current.remote_notification_pending) {
                     return {
                         .state =
@@ -228,7 +228,7 @@ synchronization_reason(LocalChangeKind kind) noexcept {
                 };
             },
         },
-        std::move(state),
+        state,
         event
     );
 }

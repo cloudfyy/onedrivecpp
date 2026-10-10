@@ -43,10 +43,10 @@ int KeyboardInput::descriptor() const noexcept {
 
 bool KeyboardInput::exit_requested() const {
     std::array<char, 64> input{};
-    ssize_t size;
-    do {
+    auto size = ::read(descriptor_, input.data(), input.size());
+    while (size == -1 && errno == EINTR) {
         size = ::read(descriptor_, input.data(), input.size());
-    } while (size == -1 && errno == EINTR);
+    }
     if (size == -1) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) {
             return false;

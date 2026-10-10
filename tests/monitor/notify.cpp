@@ -17,6 +17,35 @@ constexpr NotificationTiming timing{
     .maximum_backoff = 8s,
 };
 
+int test_connecting_state_ignored_event() {
+    const NotificationTimePoint origin{};
+    const std::string url =
+        "https://notify.example.test/channel-with-owned-notification-url";
+    const NotificationState original = NotificationConnectingState{
+        .deadline = origin + 10s,
+        .renew_at = origin + 1h,
+        .failure_count = 3,
+        .notification_url = url,
+    };
+    const auto transition = transition_notification(
+        original, RemoteNotificationReceivedEvent{}, timing
+    );
+    const auto* connecting =
+        std::get_if<NotificationConnectingState>(&transition.state);
+    if (connecting == nullptr || connecting->notification_url != url ||
+        connecting->deadline != origin + 10s ||
+        connecting->renew_at != origin + 1h || connecting->failure_count != 3 ||
+        transition.command != NotificationCommand::none ||
+        transition.synchronize ||
+        std::get<NotificationConnectingState>(original).notification_url !=
+            url) {
+        return fail(
+            "ignored notification event lost the owned connecting state"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_happy_path_and_renewal() {
     const NotificationTimePoint origin{};
     NotificationState state = NotificationDormantState{};
@@ -355,6 +384,10 @@ int test_timeouts_and_stop() {
 } // namespace
 
 int main() {
+    if (const int status = test_connecting_state_ignored_event();
+        status != EXIT_SUCCESS) {
+        return status;
+    }
     if (const int status = test_happy_path_and_renewal();
         status != EXIT_SUCCESS) {
         return status;

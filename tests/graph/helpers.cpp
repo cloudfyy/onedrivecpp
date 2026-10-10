@@ -3,7 +3,9 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <functional>
 #include <limits>
+#include <memory>
 #include <stop_token>
 #include <string>
 #include <string_view>
@@ -16,6 +18,63 @@ using detail::Json;
 using onedrive::test::fail;
 
 using onedrive::test::throws_with;
+
+struct MoveOnlyPageFetcher {
+    std::unique_ptr<std::size_t> calls = std::make_unique<std::size_t>(0);
+
+    Json operator()(const std::string& url) & {
+        ++*calls;
+        if (*calls == 1 && url == "https://graph.example.test/page1") {
+            return {
+                {"value", Json::array({1})},
+                {"@odata.nextLink", "https://graph.example.test/page2"},
+            };
+        }
+        if (*calls == 2 && url == "https://graph.example.test/page2") {
+            return {{"value", Json::array({2})}};
+        }
+        throw std::runtime_error{"pagination callable was reused incorrectly"};
+    }
+    Json operator()(const std::string&) && = delete;
+};
+
+int test_repeated_page_fetcher() {
+    const auto fetch = [](auto operation) {
+        return detail::paged_graph_values(
+            "https://graph.example.test/page1",
+            "https://graph.example.test",
+            "test pages",
+            std::move(operation)
+        );
+    };
+    if (fetch(MoveOnlyPageFetcher{}) != std::vector<Json>{1, 2}) {
+        return fail("owned move-only pagination callable lost its state");
+    }
+    MoveOnlyPageFetcher borrowed;
+    if (fetch(std::ref(borrowed)) != std::vector<Json>{1, 2} ||
+        *borrowed.calls != 2) {
+        return fail("borrowed pagination callable lost its state");
+    }
+    std::size_t calls = 0;
+    if (!throws_with<std::runtime_error>(
+            [&] {
+                static_cast<void>(fetch([&](const std::string&) -> Json {
+                    if (++calls == 2) {
+                        throw std::runtime_error{"second page failed"};
+                    }
+                    return {
+                        {"value", Json::array({1})},
+                        {"@odata.nextLink", "https://graph.example.test/page2"},
+                    };
+                }));
+            },
+            "second page failed"
+        ) ||
+        calls != 2) {
+        return fail("pagination swallowed or retried a fetch failure");
+    }
+    return EXIT_SUCCESS;
+}
 
 int test_paths_and_errors() {
     if (detail::percent_encode_remote_path("My Folder/report #1.txt") !=
@@ -485,6 +544,10 @@ int test_hashes_and_drive_items() {
 } // namespace
 
 int main() {
+    if (const int result = test_repeated_page_fetcher();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
     if (const int result = test_paths_and_errors(); result != EXIT_SUCCESS) {
         return result;
     }

@@ -200,8 +200,8 @@ template <typename... Callables> struct NotificationOverloaded : Callables... {
                 };
             },
             [&](NotificationAcquiringState current,
-                const NotificationChannelAcquiredEvent& acquired
-            ) -> NotificationTransition {
+                const NotificationChannelAcquiredEvent& acquired)
+                -> NotificationTransition {
                 return {
                     .state =
                         NotificationConnectingState{
@@ -215,8 +215,8 @@ template <typename... Callables> struct NotificationOverloaded : Callables... {
                 };
             },
             [&](NotificationAcquiringState current,
-                const NotificationChannelFailedEvent& failed
-            ) -> NotificationTransition {
+                const NotificationChannelFailedEvent& failed)
+                -> NotificationTransition {
                 if (failed.failure == NotificationFailure::unauthorized) {
                     return {
                         .state =
@@ -236,8 +236,8 @@ template <typename... Callables> struct NotificationOverloaded : Callables... {
                 );
             },
             [&](NotificationRefreshingTokenState current,
-                const NotificationTokenRefreshedEvent& refreshed
-            ) -> NotificationTransition {
+                const NotificationTokenRefreshedEvent& refreshed)
+                -> NotificationTransition {
                 return {
                     .state =
                         NotificationAcquiringState{
@@ -249,8 +249,8 @@ template <typename... Callables> struct NotificationOverloaded : Callables... {
                 };
             },
             [&](NotificationRefreshingTokenState current,
-                const NotificationTokenRefreshFailedEvent& failed
-            ) -> NotificationTransition {
+                const NotificationTokenRefreshFailedEvent& failed)
+                -> NotificationTransition {
                 return notification_backoff_transition(
                     failed.failed_at,
                     current.failure_count,
@@ -258,9 +258,9 @@ template <typename... Callables> struct NotificationOverloaded : Callables... {
                     timing
                 );
             },
-            [](NotificationConnectingState current,
-               const NotificationSocketConnectedEvent&
-            ) -> NotificationTransition {
+            [](const NotificationConnectingState& current,
+               const NotificationSocketConnectedEvent&)
+                -> NotificationTransition {
                 return {
                     .state =
                         NotificationListeningState{
@@ -269,9 +269,9 @@ template <typename... Callables> struct NotificationOverloaded : Callables... {
                     .synchronize = true,
                 };
             },
-            [&](NotificationConnectingState current,
-                const NotificationSocketDisconnectedEvent& disconnected
-            ) -> NotificationTransition {
+            [&](const NotificationConnectingState& current,
+                const NotificationSocketDisconnectedEvent& disconnected)
+                -> NotificationTransition {
                 return notification_backoff_transition(
                     disconnected.disconnected_at,
                     current.failure_count,
@@ -280,16 +280,16 @@ template <typename... Callables> struct NotificationOverloaded : Callables... {
                 );
             },
             [](NotificationListeningState current,
-               const RemoteNotificationReceivedEvent&
-            ) -> NotificationTransition {
+               const RemoteNotificationReceivedEvent&)
+                -> NotificationTransition {
                 return {
                     .state = current,
                     .synchronize = true,
                 };
             },
             [&](NotificationListeningState,
-                const NotificationSocketDisconnectedEvent& disconnected
-            ) -> NotificationTransition {
+                const NotificationSocketDisconnectedEvent& disconnected)
+                -> NotificationTransition {
                 return notification_backoff_transition(
                     disconnected.disconnected_at,
                     0,
@@ -298,8 +298,8 @@ template <typename... Callables> struct NotificationOverloaded : Callables... {
                 );
             },
             [&](NotificationListeningState current,
-                const NotificationDeadlineReachedEvent& deadline
-            ) -> NotificationTransition {
+                const NotificationDeadlineReachedEvent& deadline)
+                -> NotificationTransition {
                 if (deadline.now < current.renew_at) {
                     return {.state = current};
                 }
@@ -313,8 +313,8 @@ template <typename... Callables> struct NotificationOverloaded : Callables... {
                 };
             },
             [&](NotificationBackoffState current,
-                const NotificationDeadlineReachedEvent& deadline
-            ) -> NotificationTransition {
+                const NotificationDeadlineReachedEvent& deadline)
+                -> NotificationTransition {
                 if (deadline.now < current.retry_at) {
                     return {.state = current};
                 }
@@ -339,8 +339,8 @@ template <typename... Callables> struct NotificationOverloaded : Callables... {
                 };
             },
             [&](NotificationAcquiringState current,
-                const NotificationDeadlineReachedEvent& deadline
-            ) -> NotificationTransition {
+                const NotificationDeadlineReachedEvent& deadline)
+                -> NotificationTransition {
                 if (deadline.now < current.deadline) {
                     return {.state = current};
                 }
@@ -352,8 +352,8 @@ template <typename... Callables> struct NotificationOverloaded : Callables... {
                 );
             },
             [&](NotificationRefreshingTokenState current,
-                const NotificationDeadlineReachedEvent& deadline
-            ) -> NotificationTransition {
+                const NotificationDeadlineReachedEvent& deadline)
+                -> NotificationTransition {
                 if (deadline.now < current.deadline) {
                     return {.state = current};
                 }
@@ -365,8 +365,8 @@ template <typename... Callables> struct NotificationOverloaded : Callables... {
                 );
             },
             [&](NotificationConnectingState current,
-                const NotificationDeadlineReachedEvent& deadline
-            ) -> NotificationTransition {
+                const NotificationDeadlineReachedEvent& deadline)
+                -> NotificationTransition {
                 if (deadline.now < current.deadline) {
                     return {.state = current};
                 }
@@ -379,9 +379,11 @@ template <typename... Callables> struct NotificationOverloaded : Callables... {
                 transition.command = NotificationCommand::disconnect_socket;
                 return transition;
             },
-            [](auto&& current, const auto&) -> NotificationTransition {
+            // A value fallback lets the specific const-reference handlers win
+            // overload resolution while still consuming unmatched owned states.
+            [](auto current, const auto&) -> NotificationTransition {
                 return {
-                    .state = std::forward<decltype(current)>(current),
+                    .state = static_cast<decltype(current)&&>(current),
                 };
             },
         },

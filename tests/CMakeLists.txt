@@ -250,6 +250,17 @@ foreach(HTTP_TEST IN ITEMS req redirect download cancel reuse)
     )
 endforeach()
 add_onedrive_test(
+    http_headers_tests
+    SOURCES tests/http/headers.cpp
+    INCLUDE_DIRS tests
+    LIBRARIES CURL::libcurl
+)
+target_link_options(http_headers_tests PRIVATE
+    -Wl,--wrap=curl_slist_append
+    -Wl,--wrap=curl_slist_free_all
+    -Wl,--wrap=curl_easy_perform
+)
+add_onedrive_test(
     http_download_failure_tests
     SOURCES tests/http/download_failure.cpp
     INCLUDE_DIRS src tests
@@ -325,6 +336,7 @@ add_onedrive_test(
     INCLUDE_DIRS src tests
     LIBRARIES CURL::libcurl spdlog::spdlog
 )
+target_link_options(monitor_input_tests PRIVATE -Wl,--wrap=read)
 target_link_options(monitor_socket_transport_tests PRIVATE
     -Wl,--wrap=curl_easy_perform
     -Wl,--wrap=curl_easy_getinfo

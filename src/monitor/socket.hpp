@@ -31,9 +31,11 @@ public:
     ~SocketIoTransport();
     SocketIoTransport(const SocketIoTransport&) = delete;
     SocketIoTransport& operator=(const SocketIoTransport&) = delete;
+    SocketIoTransport(SocketIoTransport&&) = delete;
+    SocketIoTransport& operator=(SocketIoTransport&&) = delete;
 
     [[nodiscard]] int descriptor() const noexcept;
-    void connect(std::string notification_url);
+    void connect(std::string_view notification_url);
     void disconnect();
     [[nodiscard]] std::vector<SocketEvent> drain();
 

@@ -56,7 +56,7 @@ struct ReceivedChunk {
 };
 
 std::optional<ReceivedChunk> receive_chunk(CURL* curl) {
-    std::array<char, 16 * 1024> buffer{};
+    std::array<char, std::size_t{16} * 1024> buffer{};
     std::size_t received = 0;
     const curl_ws_frame* frame = nullptr;
     const CURLcode result =
@@ -191,11 +191,16 @@ public:
         disconnect();
     }
 
+    Implementation(const Implementation&) = delete;
+    Implementation& operator=(const Implementation&) = delete;
+    Implementation(Implementation&&) = delete;
+    Implementation& operator=(Implementation&&) = delete;
+
     [[nodiscard]] int descriptor() const noexcept {
         return descriptor_.get();
     }
 
-    void connect(std::string notification_url) {
+    void connect(std::string_view notification_url) {
         disconnect();
         worker_ = std::jthread{[this, url = socket_io_url(notification_url)](
                                    const std::stop_token& stop_token
@@ -219,6 +224,29 @@ public:
     }
 
 private:
+    void report_failure(std::string_view reason) noexcept {
+        // A logger/error handler or event allocation must not terminate the
+        // worker while it is already handling a transport failure.
+        try {
+            spdlog::warn("Notification WebSocket failed: {}", reason);
+        } catch (...) {
+            constexpr std::string_view message =
+                "Cannot log notification WebSocket failure\n";
+            static_cast<void>(
+                ::write(STDERR_FILENO, message.data(), message.size())
+            );
+        }
+        try {
+            publish(SocketEvent::disconnected);
+        } catch (...) {
+            constexpr std::string_view message =
+                "Cannot publish notification WebSocket disconnection\n";
+            static_cast<void>(
+                ::write(STDERR_FILENO, message.data(), message.size())
+            );
+        }
+    }
+
     void publish(SocketEvent event) {
         {
             const std::scoped_lock lock{mutex_};
@@ -323,39 +351,42 @@ private:
 
     void
     run(const std::string& url, const std::stop_token& stop_token) noexcept {
-        SocketProtocol protocol;
-        CURL* connection = nullptr;
-        const auto now = [] {
-            return std::chrono::duration_cast<SocketProtocol::Time>(
-                std::chrono::steady_clock::now().time_since_epoch()
-            );
-        };
-        const auto execute = [&](const std::vector<ProtocolCommand>& commands) {
-            for (const auto& command : commands) {
-                switch (command.effect) {
-                case ProtocolEffect::send:
-                    send_text(connection, command.text);
-                    break;
-                case ProtocolEffect::connected:
-                    publish(SocketEvent::connected);
-                    break;
-                case ProtocolEffect::notification:
-                    publish(SocketEvent::notification);
-                    break;
-                case ProtocolEffect::disconnected:
-                    publish(SocketEvent::disconnected);
-                    break;
-                case ProtocolEffect::close:
-                    if (!command.text.empty())
-                        spdlog::warn(
-                            "Notification WebSocket failed: {}", command.text
-                        );
-                    // The lease closes the transport when the loop exits.
-                    break;
-                }
-            }
-        };
         try {
+            SocketProtocol protocol;
+            CURL* connection = nullptr;
+            const auto now = [] {
+                return std::chrono::duration_cast<SocketProtocol::Time>(
+                    std::chrono::steady_clock::now().time_since_epoch()
+                );
+            };
+            const auto execute =
+                [&](const std::vector<ProtocolCommand>& commands) {
+                    for (const auto& command : commands) {
+                        switch (command.effect) {
+                        case ProtocolEffect::send:
+                            send_text(connection, command.text);
+                            break;
+                        case ProtocolEffect::connected:
+                            publish(SocketEvent::connected);
+                            break;
+                        case ProtocolEffect::notification:
+                            publish(SocketEvent::notification);
+                            break;
+                        case ProtocolEffect::disconnected:
+                            publish(SocketEvent::disconnected);
+                            break;
+                        case ProtocolEffect::close:
+                            if (!command.text.empty())
+                                spdlog::warn(
+                                    "Notification WebSocket failed: {}",
+                                    command.text
+                                );
+                            // The lease closes the transport when the loop
+                            // exits.
+                            break;
+                        }
+                    }
+                };
             throw_if_curl_error(
                 http::detail::initialize_curl(), "cannot initialize libcurl"
             );
@@ -436,14 +467,12 @@ private:
             execute(protocol.stop());
         } catch (const std::exception& error) {
             if (!stop_token.stop_requested()) {
-                execute(protocol.fail(error.what()));
-            } else
-                execute(protocol.stop());
+                report_failure(error.what());
+            }
         } catch (...) {
             if (!stop_token.stop_requested()) {
-                execute(protocol.fail("unknown error"));
-            } else
-                execute(protocol.stop());
+                report_failure("unknown error");
+            }
         }
     }
 
@@ -471,8 +500,8 @@ int SocketIoTransport::descriptor() const noexcept {
     return implementation_->descriptor();
 }
 
-void SocketIoTransport::connect(std::string notification_url) {
-    implementation_->connect(std::move(notification_url));
+void SocketIoTransport::connect(std::string_view notification_url) {
+    implementation_->connect(notification_url);
 }
 
 void SocketIoTransport::disconnect() {

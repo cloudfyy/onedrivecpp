@@ -91,8 +91,7 @@ AbsentUploadSession discard_saved_upload_session(
     SavedUploadSession transaction
 ) noexcept {
     return util::transition_transaction<UploadSessionAbsentState>(
-        std::move(transaction),
-        [](SavedUploadSessionPayload&&) noexcept {
+        std::move(transaction), [](const SavedUploadSessionPayload&) noexcept {
             return AbsentUploadSessionPayload{};
         }
     );
@@ -103,9 +102,9 @@ ActiveUploadSession create_upload_session(
     UploadSession session
 ) noexcept {
     return util::transition_transaction<UploadSessionActiveState>(
-        std::move(transaction),
+        static_cast<AbsentUploadSession&&>(transaction),
         [session = std::move(session)](
-            AbsentUploadSessionPayload&&
+            const AbsentUploadSessionPayload&
         ) mutable noexcept {
             return ActiveUploadSessionPayload{
                 .session = std::move(session),
@@ -121,7 +120,7 @@ ActiveUploadSession resume_upload_session(
     return util::transition_transaction<UploadSessionActiveState>(
         std::move(transaction),
         [session = std::move(session)](
-            SavedUploadSessionPayload&&
+            const SavedUploadSessionPayload&
         ) mutable noexcept {
             return ActiveUploadSessionPayload{
                 .session = std::move(session),
@@ -137,7 +136,7 @@ ActiveUploadSession advance_upload_session(
     return util::transition_transaction<UploadSessionActiveState>(
         std::move(transaction),
         [session = std::move(session)](
-            ActiveUploadSessionPayload&&
+            const ActiveUploadSessionPayload&
         ) mutable noexcept {
             return ActiveUploadSessionPayload{
                 .session = std::move(session),
@@ -153,7 +152,7 @@ FinalizedUploadSession finalize_upload_session(
     return util::transition_transaction<UploadSessionFinalizedState>(
         std::move(transaction),
         [remote = std::move(remote)](
-            ActiveUploadSessionPayload&&
+            const ActiveUploadSessionPayload&
         ) mutable noexcept {
             return FinalizedUploadSessionPayload{
                 .remote = std::move(remote),
@@ -594,10 +593,7 @@ RemoteItem MicrosoftGraphClient::upload_file(
         if (checkpoint) {
             checkpoint(created);
         }
-        return create_upload_session(
-            std::move(absent),
-            std::move(created)
-        );
+        return create_upload_session(absent, std::move(created));
     };
 
     using ResolvedUploadSession =
@@ -699,9 +695,11 @@ RemoteItem MicrosoftGraphClient::upload_file(
             using Transaction =
                 std::remove_cvref_t<decltype(transaction)>;
             if constexpr (std::same_as<Transaction, ActiveUploadSession>) {
-                return std::move(transaction);
+                return std::forward<decltype(transaction)>(transaction);
             } else {
-                return create_session(std::move(transaction));
+                return create_session(
+                    std::forward<decltype(transaction)>(transaction)
+                );
             }
         },
         std::move(resolved_session)

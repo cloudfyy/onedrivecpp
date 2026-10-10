@@ -130,7 +130,7 @@ std::vector<Json> paged_graph_values(
     std::string next_url,
     const std::string& endpoint,
     std::string_view description,
-    Fetch&& fetch
+    Fetch fetch
 ) {
     std::unordered_set<std::string> visited_urls;
     std::vector<Json> values;

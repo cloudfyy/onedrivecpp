@@ -358,12 +358,14 @@ void MicrosoftGraphClient::download_file(
         std::vector<std::string> headers;
         std::uint64_t offset;
     };
-    const auto download =
-        [&]<typename MakeAttempt>(MakeAttempt&& make_attempt,
-            const DownloadProgress& chunk_progress,
-            std::string_view description,
-            const DownloadCheckpoint& chunk_checkpoint = {},
-            const http::DownloadResponseGate& response_gate = {}) {
+    const auto download = [&]<typename MakeAttempt>(
+                              MakeAttempt make_attempt,
+                              const DownloadProgress& chunk_progress,
+                              std::string_view description,
+                              const DownloadCheckpoint& chunk_checkpoint = {},
+                              const http::DownloadResponseGate& response_gate =
+                                  {}
+                          ) {
         const auto perform_download = [&] {
             return perform_with_retries(
                 [&] {

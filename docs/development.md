@@ -194,6 +194,20 @@ cmake --preset lint-deep
 cmake --build --preset lint-deep
 ```
 
+For focused rechecks, keep the same GUI setting and deep analyzer policy, but
+build only the affected object targets, for example:
+
+```bash
+cmake --preset lint-deep -DONEDRIVE_BUILD_GUI=ON
+timeout 15m cmake --build --preset lint-deep --target \
+  CMakeFiles/onedrive_core.dir/src/graph/discovery.cpp.o \
+  CMakeFiles/onedrive_core.dir/src/monitor/socket.cpp.o
+```
+
+An object recheck does not certify unbuilt translation units or a timed-out
+scan. Report third-party diagnostics separately; do not edit system headers
+or disable checks to conceal them.
+
 The policy excludes only reviewed noise from required C/POSIX APIs, protocol
 constants, and checked buffer boundaries. Microsoft GSL is used to express
 non-null borrowed dependencies at API and RAII boundaries. ngcpp/proxy
@@ -204,6 +218,13 @@ log levels instead of allocating and lowercasing copies. Use `std::string_view`
 for synchronous borrowed text and `std::span` subviews for remaining I/O buffers.
 Keep POSIX calls behind RAII owners; newer syntax must not weaken checked
 close, durability, or error-reporting behavior.
+
+Pagination and download-attempt helpers own their callables and invoke them as
+lvalues across pages/retries; pass `std::ref` when borrowing mutable callable
+state. Socket.IO workers contain exceptions from both transport work and
+failure reporting. Logging and disconnection publication are attempted
+independently, even when a logging sink/error handler throws; under allocation
+failure, publication is best-effort and must not terminate the process.
 
 Test fixtures share checked binary file I/O and exception matching through
 `tests/support/common.hpp`. `throws_with<Exception>(operation, message)` matches

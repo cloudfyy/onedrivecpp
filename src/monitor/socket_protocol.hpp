@@ -35,7 +35,7 @@ enum class WebSocketControl { ping, pong, close, binary };
 class SocketProtocol {
 public:
     using Time = std::chrono::milliseconds;
-    static constexpr std::size_t message_limit = 1024 * 1024;
+    static constexpr std::size_t message_limit = std::size_t{1024} * 1024;
 
     [[nodiscard]] SocketPhase phase() const noexcept {
         return phase_;
