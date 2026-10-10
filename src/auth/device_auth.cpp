@@ -56,7 +56,7 @@ AuthResult<http::HttpResponse> post_form(
     const http::HttpTransport& transport,
     const std::string& url,
     const FormValues& values,
-    std::stop_token stop_token = {}
+    const std::stop_token& stop_token = {}
 ) {
     if (stop_token.stop_requested()) {
         return std::unexpected(cancelled_error());
@@ -151,7 +151,7 @@ DeviceAuthClient::DeviceAuthClient(
 }
 
 AuthResult<DeviceCode>
-DeviceAuthClient::request_device_code(std::stop_token stop_token) const {
+DeviceAuthClient::request_device_code(const std::stop_token& stop_token) const {
     if (!valid_options(options_)) {
         return std::unexpected(invalid_configuration_error());
     }
@@ -216,7 +216,7 @@ DeviceAuthClient::request_device_code(std::stop_token stop_token) const {
 }
 
 AuthResult<OAuthTokens> DeviceAuthClient::poll_for_token(
-    const DeviceCode& code, std::stop_token stop_token
+    const DeviceCode& code, const std::stop_token& stop_token
 ) const {
     if (stop_token.stop_requested()) {
         return std::unexpected(cancelled_error());
@@ -317,8 +317,7 @@ AuthResult<OAuthTokens> DeviceAuthClient::poll_for_token(
 }
 
 AuthResult<OAuthTokens> DeviceAuthClient::refresh_access_token(
-    const std::string& refresh_token,
-    std::stop_token stop_token
+    const std::string& refresh_token, const std::stop_token& stop_token
 ) const {
     if (!valid_options(options_) || refresh_token.empty()) {
         return std::unexpected(AuthError{
@@ -360,7 +359,7 @@ AuthResult<OAuthTokens> DeviceAuthClient::exchange_authorization_code(
     const std::string& code,
     const std::string& redirect_uri,
     const std::string& verifier,
-    std::stop_token stop_token
+    const std::stop_token& stop_token
 ) const {
     if (!valid_options(options_)) {
         return std::unexpected(invalid_configuration_error());

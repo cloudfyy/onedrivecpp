@@ -183,6 +183,10 @@ code. Move-only secret owners keep string storage stationary during transitions
 and cleanse it on consumption, termination, destruction, and exception unwinding.
 Cancellation, expiry, and failure are terminal; unrelated/invalid callbacks
 remain awaiting, while a server rejection with the correct CSRF state terminates.
+The session and cleansing guards cannot be copied or moved. State queries and
+terminal transitions use non-throwing variant access, with compile-time checks
+that terminal payload assignment cannot throw. An invalid stored redirect is an
+internal error: it terminates the session, cleanses its secrets, and propagates.
 
 The GUI loopback listener uses the private, Qt-independent `BrowserRequest`
 reducer for listening, reading, validation, buffered writing, and closure.

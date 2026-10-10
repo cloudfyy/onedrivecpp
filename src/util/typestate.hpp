@@ -38,7 +38,7 @@ template <typename Next, typename Current, typename Family, typename Payload>
     StateTransaction<Current, Family, Payload>&& transaction
 ) noexcept(std::is_nothrow_move_constructible_v<Payload>) {
     return {
-        std::move(static_cast<Payload&>(transaction)),
+        static_cast<Payload&&>(std::move(transaction)),
     };
 }
 
@@ -60,7 +60,7 @@ template <
     return StateTransaction<Next, Family, NextPayload>{
         std::invoke(
             std::forward<Mapper>(mapper),
-            std::move(static_cast<Payload&>(transaction))
+            static_cast<Payload&&>(std::move(transaction))
         ),
     };
 }

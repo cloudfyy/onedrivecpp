@@ -94,6 +94,16 @@ static_assert(!HasMoveOnlyValue<JournaledTransaction>);
 } // namespace
 
 int main() {
+    auto retained = PreparedTransaction{
+        MoveOnlyPayload{std::make_unique<int>(17)},
+    };
+    const auto* pointer = retained.value.get();
+    auto advanced = onedrive::util::transition_transaction<JournaledState>(
+        std::move(retained)
+    );
+    if (retained.value || advanced.value.get() != pointer ||
+        *advanced.value != 17)
+        return EXIT_FAILURE;
     auto prepared = PreparedTransaction{
         MoveOnlyPayload{std::make_unique<int>(42)},
     };

@@ -30,18 +30,23 @@ public:
     ~AuthCodeSession();
     AuthCodeSession(const AuthCodeSession&) = delete;
     AuthCodeSession& operator=(const AuthCodeSession&) = delete;
+    AuthCodeSession(AuthCodeSession&&) = delete;
+    AuthCodeSession& operator=(AuthCodeSession&&) = delete;
 
     [[nodiscard]] AuthCodeState state() const noexcept;
-    [[nodiscard]] AuthResult<std::string>
-    begin(const std::string& redirect_uri, std::stop_token stop_token = {});
-    [[nodiscard]] AuthResult<void> check(std::stop_token stop_token = {});
+    [[nodiscard]] AuthResult<std::string> begin(
+        const std::string& redirect_uri, const std::stop_token& stop_token = {}
+    );
+    [[nodiscard]] AuthResult<void>
+    check(const std::stop_token& stop_token = {});
     // Invalid/unrelated callbacks leave the session waiting. A server rejection
     // with the correct state terminates it.
     [[nodiscard]] AuthResult<void> accept_callback(
-        const std::string& callback_uri, std::stop_token stop_token = {}
+        const std::string& callback_uri, const std::stop_token& stop_token = {}
     );
-    [[nodiscard]] AuthResult<OAuthTokens>
-    exchange(const DeviceAuthClient& client, std::stop_token stop_token = {});
+    [[nodiscard]] AuthResult<OAuthTokens> exchange(
+        const DeviceAuthClient& client, const std::stop_token& stop_token = {}
+    );
     void fail(
         AuthError error = {
             .code = AuthErrorCode::server,

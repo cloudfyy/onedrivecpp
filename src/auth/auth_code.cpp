@@ -11,6 +11,7 @@
 #include <openssl/rand.h>
 
 #include <array>
+#include <exception>
 #include <memory>
 #include <stdexcept>
 #include <vector>
@@ -78,6 +79,13 @@ std::optional<Url> parse_url(const std::string& value) {
 std::string random_secret() {
     std::array<unsigned char, 32> bytes{};
     struct CleanBytes {
+        explicit CleanBytes(std::array<unsigned char, 32>& buffer) noexcept
+            : bytes{buffer} {
+        }
+        CleanBytes(const CleanBytes&) = delete;
+        CleanBytes& operator=(const CleanBytes&) = delete;
+        CleanBytes(CleanBytes&&) = delete;
+        CleanBytes& operator=(CleanBytes&&) = delete;
         std::array<unsigned char, 32>& bytes;
         ~CleanBytes() {
             OPENSSL_cleanse(bytes.data(), bytes.size());
@@ -136,35 +144,44 @@ public:
     detail::CodeStorage transaction{detail::CreatedCode{}};
 
     [[nodiscard]] const AuthError* error() const noexcept {
-        return std::visit(
-            [](const auto& current) -> const AuthError* {
-                if constexpr (requires { current.error; })
-                    return &current.error;
-                else
-                    return nullptr;
-            },
-            transaction
-        );
+        if (const auto* current =
+                std::get_if<detail::CancelledCode>(&transaction))
+            return &current->error;
+        if (const auto* current =
+                std::get_if<detail::ExpiredCode>(&transaction))
+            return &current->error;
+        if (const auto* current = std::get_if<detail::FailedCode>(&transaction))
+            return &current->error;
+        if (transaction.valueless_by_exception())
+            std::terminate();
+        return nullptr;
     }
 
     template <typename Terminal> void terminate(AuthError error) noexcept {
-        std::visit(
-            [&](auto& current) {
-                using Current = std::remove_cvref_t<decltype(current)>;
-                if constexpr (util::TransactionTransitionFor<
-                                  typename Current::state_type,
-                                  Terminal,
-                                  detail::CodeFamily>) {
-                    auto next = util::transition_transaction<Terminal>(
-                        std::move(current), [&](auto&&) noexcept {
-                            return detail::CodeErrorPayload{std::move(error)};
-                        }
-                    );
-                    transaction = std::move(next);
+        const auto finish = [&](auto& current) noexcept {
+            auto next = util::transition_transaction<Terminal>(
+                std::move(current), [&](const auto&) noexcept {
+                    return detail::CodeErrorPayload{std::move(error)};
                 }
-            },
-            transaction
-        );
+            );
+            static_assert(std::is_nothrow_assignable_v<
+                          detail::CodeStorage&,
+                          decltype(next)>);
+            transaction = std::move(next);
+        };
+        if (auto* current = std::get_if<detail::CreatedCode>(&transaction))
+            finish(*current);
+        else if (auto* waiting =
+                     std::get_if<detail::AwaitingCode>(&transaction))
+            finish(*waiting);
+        else if (auto* authorized =
+                     std::get_if<detail::AuthorizedCode>(&transaction))
+            finish(*authorized);
+        else if (auto* exchanging =
+                     std::get_if<detail::ExchangingCode>(&transaction))
+            finish(*exchanging);
+        else if (transaction.valueless_by_exception())
+            std::terminate();
     }
 };
 
@@ -185,29 +202,24 @@ AuthCodeSession::AuthCodeSession(
 }
 
 AuthCodeState AuthCodeSession::state() const noexcept {
-    return std::visit(
-        [](const auto& current) {
-            using State =
-                typename std::remove_cvref_t<decltype(current)>::state_type;
-            if constexpr (std::same_as<State, detail::Created>)
-                return AuthCodeState::created;
-            else if constexpr (std::same_as<State, detail::AwaitingCallback>)
-                return AuthCodeState::awaiting_callback;
-            else if constexpr (std::same_as<State, detail::Authorized>)
-                return AuthCodeState::authorized;
-            else if constexpr (std::same_as<State, detail::ExchangingToken>)
-                return AuthCodeState::exchanging_token;
-            else if constexpr (std::same_as<State, detail::Completed>)
-                return AuthCodeState::completed;
-            else if constexpr (std::same_as<State, detail::Cancelled>)
-                return AuthCodeState::cancelled;
-            else if constexpr (std::same_as<State, detail::Expired>)
-                return AuthCodeState::expired;
-            else
-                return AuthCodeState::failed;
-        },
-        implementation_->transaction
-    );
+    const auto& transaction = implementation_->transaction;
+    if (std::holds_alternative<detail::CreatedCode>(transaction))
+        return AuthCodeState::created;
+    if (std::holds_alternative<detail::AwaitingCode>(transaction))
+        return AuthCodeState::awaiting_callback;
+    if (std::holds_alternative<detail::AuthorizedCode>(transaction))
+        return AuthCodeState::authorized;
+    if (std::holds_alternative<detail::ExchangingCode>(transaction))
+        return AuthCodeState::exchanging_token;
+    if (std::holds_alternative<detail::CompletedCode>(transaction))
+        return AuthCodeState::completed;
+    if (std::holds_alternative<detail::CancelledCode>(transaction))
+        return AuthCodeState::cancelled;
+    if (std::holds_alternative<detail::ExpiredCode>(transaction))
+        return AuthCodeState::expired;
+    if (std::holds_alternative<detail::FailedCode>(transaction))
+        return AuthCodeState::failed;
+    std::terminate();
 }
 
 AuthCodeSession::~AuthCodeSession() = default;
@@ -251,7 +263,7 @@ void AuthCodeSession::fail(AuthError error) {
 }
 
 AuthResult<std::string> AuthCodeSession::begin(
-    const std::string& redirect_uri, std::stop_token stop_token
+    const std::string& redirect_uri, const std::stop_token& stop_token
 ) {
     if (state() != AuthCodeState::created) {
         throw std::logic_error{
@@ -314,10 +326,9 @@ AuthResult<std::string> AuthCodeSession::begin(
         payload.deadline = now_() + timeout_;
         implementation_->transaction =
             util::transition_transaction<detail::AwaitingCallback>(
-                std::move(
-                    std::get<detail::CreatedCode>(implementation_->transaction)
-                ),
-                [&](detail::EmptyCodePayload&&) { return std::move(payload); }
+                detail::CreatedCode{}, [&](const detail::EmptyCodePayload&) {
+                    return std::move(payload);
+                }
             );
         return url;
     } catch (...) {
@@ -326,7 +337,7 @@ AuthResult<std::string> AuthCodeSession::begin(
     }
 }
 
-AuthResult<void> AuthCodeSession::check(std::stop_token stop_token) {
+AuthResult<void> AuthCodeSession::check(const std::stop_token& stop_token) {
     if (const auto* error = implementation_->error())
         return std::unexpected(*error);
     if (state() != AuthCodeState::awaiting_callback &&
@@ -367,7 +378,7 @@ AuthResult<void> AuthCodeSession::check(std::stop_token stop_token) {
 }
 
 AuthResult<void> AuthCodeSession::accept_callback(
-    const std::string& callback_uri, std::stop_token stop_token
+    const std::string& callback_uri, const std::stop_token& stop_token
 ) {
     if (const auto ready = check(stop_token); !ready)
         return ready;
@@ -383,6 +394,11 @@ AuthResult<void> AuthCodeSession::accept_callback(
         auto& current =
             std::get<detail::AwaitingCode>(implementation_->transaction);
         const auto redirect = parse_url(current.redirect);
+        if (!redirect) {
+            throw std::logic_error{
+                "invalid stored browser authorization redirect"
+            };
+        }
         if (!callback || callback->scheme != redirect->scheme ||
             callback->host != redirect->host ||
             callback->port != redirect->port ||
@@ -444,7 +460,7 @@ AuthResult<void> AuthCodeSession::accept_callback(
         }
         implementation_->transaction =
             util::transition_transaction<detail::Authorized>(
-                std::move(current), [&](detail::CallbackPayload&& payload) {
+                std::move(current), [&](detail::CallbackPayload payload) {
                     return detail::AuthorizedPayload{
                         std::move(payload.redirect),
                         payload.deadline,
@@ -461,7 +477,7 @@ AuthResult<void> AuthCodeSession::accept_callback(
 }
 
 AuthResult<OAuthTokens> AuthCodeSession::exchange(
-    const DeviceAuthClient& client, std::stop_token stop_token
+    const DeviceAuthClient& client, const std::stop_token& stop_token
 ) {
     if (const auto ready = check(stop_token); !ready)
         return std::unexpected(ready.error());
@@ -473,7 +489,7 @@ AuthResult<OAuthTokens> AuthCodeSession::exchange(
             std::move(
                 std::get<detail::AuthorizedCode>(implementation_->transaction)
             ),
-            [](detail::AuthorizedPayload&& payload) {
+            [](detail::AuthorizedPayload payload) {
                 return detail::ExchangePayload{
                     std::move(payload.redirect),
                     std::move(payload.verifier),
@@ -503,7 +519,9 @@ AuthResult<OAuthTokens> AuthCodeSession::exchange(
             std::move(
                 std::get<detail::ExchangingCode>(implementation_->transaction)
             ),
-            [](detail::ExchangePayload&&) { return detail::EmptyCodePayload{}; }
+            [](const detail::ExchangePayload&) {
+                return detail::EmptyCodePayload{};
+            }
         );
         return result;
     } catch (...) {

@@ -68,19 +68,18 @@ public:
     );
 
     [[nodiscard]] AuthResult<DeviceCode>
-    request_device_code(std::stop_token stop_token = {}) const;
+    request_device_code(const std::stop_token& stop_token = {}) const;
     [[nodiscard]] AuthResult<OAuthTokens> exchange_authorization_code(
         const std::string& code,
         const std::string& redirect_uri,
         const std::string& verifier,
-        std::stop_token stop_token = {}
+        const std::stop_token& stop_token = {}
     ) const;
     [[nodiscard]] AuthResult<OAuthTokens> poll_for_token(
-        const DeviceCode& code, std::stop_token stop_token = {}
+        const DeviceCode& code, const std::stop_token& stop_token = {}
     ) const;
     [[nodiscard]] AuthResult<OAuthTokens> refresh_access_token(
-        const std::string& refresh_token,
-        std::stop_token stop_token = {}
+        const std::string& refresh_token, const std::stop_token& stop_token = {}
     ) const;
 
 private:

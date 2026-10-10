@@ -160,6 +160,9 @@ created → awaiting callback → authorized → exchanging token → completed�
 授权码。仅可移动的秘密所有者让字符串存储在状态转换时保持原址，并在消费、
 终止、析构和异常展开时清零。取消、过期和失败均为终态；无关或无效回调继续等待，
 携带正确 CSRF state 的授权服务器拒绝则终止会话。
+会话和清零守卫均不可复制或移动。状态查询和终态转换使用不会抛异常的 variant
+访问，并在编译期验证终态载荷赋值不会抛异常。已保存的回调地址若无法解析，则作为
+内部错误终止会话、清零秘密并向调用方传播异常。
 
 GUI loopback 监听器通过私有、独立于 Qt 的 `BrowserRequest` 归约器管理
 listening、reading、validating、writing 和 closed 生命周期。显式时间事件约束

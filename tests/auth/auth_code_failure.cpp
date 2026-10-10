@@ -17,11 +17,13 @@ enum class Fault {
     url_allocate,
     url_set,
     url_get,
+    stored_redirect,
     first_random,
     second_random
 };
 Fault fault{Fault::none};
 int random_calls{0};
+int url_set_calls{0};
 int secret_cleanses{0};
 const void* failed_random_buffer{nullptr};
 bool failed_random_cleaned{false};
@@ -41,6 +43,7 @@ void require(bool condition, const char* message) {
 void reset(Fault next) {
     fault = next;
     random_calls = 0;
+    url_set_calls = 0;
     secret_cleanses = 0;
     failed_random_buffer = nullptr;
     failed_random_cleaned = false;
@@ -119,6 +122,34 @@ void test_callback_parser_failures() {
     }
 }
 
+void test_invalid_stored_redirect() {
+    auth::AuthCodeSession session{options()};
+    reset(Fault::none);
+    require(
+        session.begin("http://localhost/").has_value(),
+        "stored redirect test could not begin"
+    );
+    reset(Fault::stored_redirect);
+    require(
+        test::throws_with<std::logic_error>(
+            [&] {
+                static_cast<void>(
+                    session.accept_callback("http://localhost/?code=a")
+                );
+            },
+            "stored browser authorization redirect"
+        ) && secret_cleanses >= 2,
+        "invalid stored redirect was dereferenced or retained secrets"
+    );
+    reset(Fault::none);
+    const auto result = session.check();
+    require(
+        session.state() == auth::AuthCodeState::failed && !result &&
+            result.error().code == auth::AuthErrorCode::server,
+        "invalid stored redirect did not leave a terminal error"
+    );
+}
+
 } // namespace
 
 extern "C" CURLU* __real_curl_url();
@@ -131,6 +162,9 @@ __real_curl_url_set(CURLU*, CURLUPart, const char*, unsigned int);
 extern "C" CURLUcode __wrap_curl_url_set(
     CURLU* url, CURLUPart part, const char* text, unsigned int flags
 ) {
+    ++url_set_calls;
+    if (fault == Fault::stored_redirect && url_set_calls == 2)
+        return CURLUE_MALFORMED_INPUT;
     return fault == Fault::url_set
                ? CURLUE_OUT_OF_MEMORY
                : __real_curl_url_set(url, part, text, flags);
@@ -178,6 +212,7 @@ int main() {
         test_begin_failures();
         test_random_cleanup();
         test_callback_parser_failures();
+        test_invalid_stored_redirect();
         return EXIT_SUCCESS;
     } catch (const std::exception& error) {
         reset(Fault::none);

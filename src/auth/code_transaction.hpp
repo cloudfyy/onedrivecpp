@@ -11,6 +11,13 @@
 namespace onedrive::auth::detail {
 
 struct CleanCodeString {
+    explicit CleanCodeString(std::string& text) noexcept
+        : value{text} {
+    }
+    CleanCodeString(const CleanCodeString&) = delete;
+    CleanCodeString& operator=(const CleanCodeString&) = delete;
+    CleanCodeString(CleanCodeString&&) = delete;
+    CleanCodeString& operator=(CleanCodeString&&) = delete;
     std::string& value;
     ~CleanCodeString() {
         OPENSSL_cleanse(value.data(), value.size());

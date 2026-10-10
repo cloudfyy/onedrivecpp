@@ -39,6 +39,18 @@ static_assert(!HasCsrf<ExchangingCode> && HasCode<ExchangingCode>);
 static_assert(!HasCode<CompletedCode> && !HasCsrf<FailedCode>);
 static_assert(!std::copy_constructible<AwaitingCode>);
 static_assert(std::is_nothrow_move_constructible_v<AwaitingCode>);
+static_assert(!std::is_copy_constructible_v<auth::AuthCodeSession>);
+static_assert(!std::is_move_constructible_v<auth::AuthCodeSession>);
+static_assert(!std::is_copy_assignable_v<auth::AuthCodeSession>);
+static_assert(!std::is_move_assignable_v<auth::AuthCodeSession>);
+static_assert(!std::is_copy_constructible_v<CleanCodeString>);
+static_assert(!std::is_move_constructible_v<CleanCodeString>);
+static_assert(!std::is_copy_assignable_v<CleanCodeString>);
+static_assert(!std::is_move_assignable_v<CleanCodeString>);
+static_assert(noexcept(std::declval<const auth::AuthCodeSession&>().state()));
+static_assert(std::is_nothrow_assignable_v<CodeStorage&, FailedCode>);
+static_assert(std::is_nothrow_assignable_v<CodeStorage&, CancelledCode>);
+static_assert(std::is_nothrow_assignable_v<CodeStorage&, ExpiredCode>);
 
 using Transactions = std::tuple<
     CreatedCode,
@@ -95,7 +107,7 @@ bool cleaned(const char* pointer, std::size_t size) {
 
 AwaitingCode waiting() {
     return util::transition_transaction<AwaitingCallback>(
-        CreatedCode{}, [](EmptyCodePayload&&) {
+        CreatedCode{}, [](const EmptyCodePayload&) {
             return CallbackPayload{
                 "http://localhost/",
                 {},
@@ -116,7 +128,7 @@ void test_owned_moves_and_terminal_cleanup() {
     record_count = 0;
     storage = util::transition_transaction<Authorized>(
         std::move(std::get<AwaitingCode>(storage)),
-        [&](CallbackPayload&& payload) {
+        [&](CallbackPayload payload) {
             return AuthorizedPayload{
                 std::move(payload.redirect),
                 payload.deadline,
@@ -136,7 +148,7 @@ void test_owned_moves_and_terminal_cleanup() {
     );
     storage = util::transition_transaction<ExchangingToken>(
         std::move(std::get<AuthorizedCode>(storage)),
-        [](AuthorizedPayload&& payload) {
+        [](AuthorizedPayload payload) {
             return ExchangePayload{
                 std::move(payload.redirect),
                 std::move(payload.verifier),
@@ -151,7 +163,7 @@ void test_owned_moves_and_terminal_cleanup() {
     );
     storage = util::transition_transaction<Completed>(
         std::move(std::get<ExchangingCode>(storage)),
-        [](ExchangePayload&&) { return EmptyCodePayload{}; }
+        [](const ExchangePayload&) { return EmptyCodePayload{}; }
     );
     require(
         cleaned(verifier, 43) && cleaned(code_pointer, 1),
@@ -166,7 +178,7 @@ template <typename Terminal> void test_terminal() {
     const auto* csrf = std::get<AwaitingCode>(storage).csrf.get().data();
     record_count = 0;
     storage = util::transition_transaction<Terminal>(
-        std::move(std::get<AwaitingCode>(storage)), [](CallbackPayload&&) {
+        std::move(std::get<AwaitingCode>(storage)), [](const CallbackPayload&) {
             return CodeErrorPayload{
                 {.code = auth::AuthErrorCode::server, .message = "test error"}
             };
@@ -186,7 +198,8 @@ void test_unwinding_and_replacement() {
             auto current = waiting();
             verifier = current.verifier.get().data();
             static_cast<void>(util::transition_transaction<Authorized>(
-                std::move(current), [](CallbackPayload&&) -> AuthorizedPayload {
+                std::move(current),
+                [](const CallbackPayload&) -> AuthorizedPayload {
                     throw std::runtime_error{"mapper exception"};
                 }
             ));
