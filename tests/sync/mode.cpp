@@ -1,8 +1,11 @@
 #include "support.hpp"
+#include "onedrive/exit_code.hpp"
 
 #include <algorithm>
 
 namespace {
+
+namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::sync;
 
@@ -36,7 +39,7 @@ int test_missing_file_delta_echo() {
             if (onedrive::sync::SyncEngine{
                     config, graph, items, metrics, &console
                 }
-                        .synchronize() != 0 ||
+                        .synchronize() != exit_code::success ||
                 graph.download_count != (restores ? 1 : 0) ||
                 std::filesystem::exists(root / "file.txt") != restores ||
                 graph.deleted_items.size() != (restores ? 0U : 1U)) {
@@ -126,7 +129,7 @@ int test_upload_only() {
             .synchronize();
     std::ranges::sort(graph.uploaded_paths);
 
-    if (result != 0 || graph.download_count != 0 ||
+    if (result != exit_code::success || graph.download_count != 0 ||
         !graph.deleted_items.empty() ||
         graph.uploaded_paths !=
             std::vector<std::string>{"modified.txt", "new.txt"} ||
@@ -195,7 +198,7 @@ int test_download_only_propagates_remote_deletions() {
     if (onedrive::sync::SyncEngine{
             config, graph, items, metrics, &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         std::filesystem::exists(root / "deleted.txt") ||
         onedrive::test::read_file(root / "remote-only.txt") != "remote" ||
         graph.upload_count != 0 || !graph.deleted_items.empty() ||
@@ -237,7 +240,7 @@ int test_download_only_preserves_and_untracks_local_items() {
     if (onedrive::sync::SyncEngine{
             config, graph, items, metrics, &default_console
         }
-                .synchronize() != 2 ||
+                .synchronize() != exit_code::blocked ||
         !std::filesystem::exists(root / "modified.txt") ||
         !items.find("me", "modified") || items.blocked.size() != 1 ||
         items.blocked.front().reason_code != "local_modification") {
@@ -251,7 +254,7 @@ int test_download_only_preserves_and_untracks_local_items() {
     if (onedrive::sync::SyncEngine{
             config, graph, items, metrics, &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         onedrive::test::read_file(root / "modified.txt") != "local-change" ||
         items.find("me", "modified") || !items.blocked.empty() ||
         graph.upload_count != 0 || !graph.deleted_items.empty() ||

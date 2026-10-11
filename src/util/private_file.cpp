@@ -83,7 +83,8 @@ std::string read_private_file(
 
     std::string contents;
     contents.reserve(static_cast<std::size_t>(status.st_size));
-    std::array<char, 4096> buffer{};
+    constexpr std::size_t read_buffer_bytes = 4096;
+    std::array<char, read_buffer_bytes> buffer{};
     while (true) {
         const auto count =
             ::read(descriptor.get(), buffer.data(), buffer.size());

@@ -1,4 +1,5 @@
 #include "support.hpp"
+#include "onedrive/exit_code.hpp"
 
 #include "onedrive/app/synchronization.hpp"
 #include "onedrive/ui/common/observer.hpp"
@@ -8,6 +9,8 @@
 #include <vector>
 
 namespace {
+
+namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::app;
 
@@ -67,7 +70,7 @@ int test_synchronization_service() {
         onedrive::account::AccountState::drive_data_directory(
             config.sync_data_directory, identity
         );
-    if (result != 0 || !observer.has_delta_summary() ||
+    if (result != exit_code::success || !observer.has_delta_summary() ||
         observer.operation_states() !=
             std::vector<onedrive::events::OperationState>{
                 onedrive::events::OperationState::syncing,
@@ -104,7 +107,8 @@ int test_synchronization_service_cancellation() {
     const auto result = onedrive::app::synchronize_account(
         config, runtime_factory, observer, stop.get_token()
     );
-    if (result != 130 || implementation.graph_client_count != 1 ||
+    if (result != exit_code::cancelled ||
+        implementation.graph_client_count != 1 ||
         observer.operation_states() !=
             std::vector<onedrive::events::OperationState>{
                 onedrive::events::OperationState::syncing,

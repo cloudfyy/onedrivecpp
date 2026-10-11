@@ -42,7 +42,8 @@ int KeyboardInput::descriptor() const noexcept {
 }
 
 bool KeyboardInput::exit_requested() const {
-    std::array<char, 64> input{};
+    constexpr std::size_t keyboard_read_buffer_bytes = 64;
+    std::array<char, keyboard_read_buffer_bytes> input{};
     auto size = ::read(descriptor_, input.data(), input.size());
     while (size == -1 && errno == EINTR) {
         size = ::read(descriptor_, input.data(), input.size());

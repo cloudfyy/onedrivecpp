@@ -361,7 +361,7 @@ RemoteItem MicrosoftGraphClient::create_directory(
                     effective_upload_rate(options_.upload_transport),
                 .http_version = transfer.http_version,
                 .ip_version = transfer.ip_version,
-                .maximum_response_size = std::size_t{1024} * 1024U,
+                .maximum_response_size = maximum_json_response_bytes,
                 .stop_token = stop_token,
             });
         },
@@ -384,7 +384,8 @@ RemoteItem MicrosoftGraphClient::create_directory(
         );
     }
     const auto json = parse_graph_json(*response, "directory creation");
-    if (response->status_code == 409 || response->status_code == 412) {
+    if (response->status_code == http::status::conflict ||
+        response->status_code == http::status::precondition_failed) {
         throw UploadConflictError(
             graph_error_message(json, response->status_code)
         );
@@ -449,7 +450,7 @@ void MicrosoftGraphClient::delete_item(
                     effective_upload_rate(options_.upload_transport),
                 .http_version = transfer.http_version,
                 .ip_version = transfer.ip_version,
-                .maximum_response_size = std::size_t{1024} * 1024U,
+                .maximum_response_size = maximum_json_response_bytes,
                 .stop_token = stop_token,
             });
         },
@@ -471,14 +472,15 @@ void MicrosoftGraphClient::delete_item(
             response.error().message
         );
     }
-    if (response->status_code == 404) {
+    if (response->status_code == http::status::not_found) {
         return;
     }
     if (successful_status(response->status_code)) {
         return;
     }
     const auto json = parse_graph_json(*response, "item deletion");
-    if (response->status_code == 409 || response->status_code == 412) {
+    if (response->status_code == http::status::conflict ||
+        response->status_code == http::status::precondition_failed) {
         throw UploadConflictError(
             graph_error_message(json, response->status_code)
         );
@@ -545,7 +547,7 @@ RemoteItem MicrosoftGraphClient::move_item(
                     effective_upload_rate(options_.upload_transport),
                 .http_version = transfer.http_version,
                 .ip_version = transfer.ip_version,
-                .maximum_response_size = std::size_t{1024} * 1024U,
+                .maximum_response_size = maximum_json_response_bytes,
                 .stop_token = stop_token,
             });
         },
@@ -568,7 +570,8 @@ RemoteItem MicrosoftGraphClient::move_item(
         );
     }
     const auto json = parse_graph_json(*response, "item move");
-    if (response->status_code == 409 || response->status_code == 412) {
+    if (response->status_code == http::status::conflict ||
+        response->status_code == http::status::precondition_failed) {
         throw UploadConflictError(
             graph_error_message(json, response->status_code)
         );

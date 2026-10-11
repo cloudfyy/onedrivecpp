@@ -1,6 +1,9 @@
 #include "support.hpp"
+#include "onedrive/exit_code.hpp"
 
 namespace {
+
+namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::monitor;
 
@@ -13,7 +16,7 @@ int test_notification_authentication_and_connection() {
         fixture.root,
         [&](const std::stop_token&) {
             ++sync_runs;
-            return 0;
+            return exit_code::success;
         },
         5s,
         20ms,
@@ -58,7 +61,7 @@ int test_notification_authentication_and_connection() {
     }
     worker.request_stop();
     worker.join();
-    if (result != 0) {
+    if (result != exit_code::success) {
         return fail("Monitor did not stop after notification setup");
     }
     return EXIT_SUCCESS;
@@ -73,7 +76,7 @@ int test_notification_retry_after_transient_failures() {
         fixture.root,
         [&](const std::stop_token&) {
             ++sync_runs;
-            return 0;
+            return exit_code::success;
         },
         5s,
         20ms,
@@ -118,7 +121,7 @@ int test_notification_retry_after_transient_failures() {
     }
     worker.request_stop();
     worker.join();
-    if (result != 0) {
+    if (result != exit_code::success) {
         return fail("monitor did not stop after transient notification retry");
     }
     return EXIT_SUCCESS;

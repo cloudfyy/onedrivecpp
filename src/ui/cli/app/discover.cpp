@@ -2,6 +2,7 @@
 #include "drive_fields.hpp"
 
 #include "onedrive/graph/graph_client.hpp"
+#include "onedrive/exit_code.hpp"
 
 #include <string>
 
@@ -30,7 +31,7 @@ int show_shared(
             "no_shared_resources",
             "No shared resources or OneDrive shortcuts were found."
         );
-        return 0;
+        return exit_code::success;
     }
     for (const auto& resource : resources) {
         console.section(
@@ -77,7 +78,7 @@ int show_shared(
             }
         );
     }
-    return 0;
+    return exit_code::success;
 }
 
 int show_sites(
@@ -94,7 +95,7 @@ int show_sites(
             "no_sharepoint_sites",
             "No accessible SharePoint sites matched the query."
         );
-        return 0;
+        return exit_code::success;
     }
     for (const auto& site : sites) {
         console.section(
@@ -138,7 +139,7 @@ int show_sites(
             );
         }
     }
-    return 0;
+    return exit_code::success;
 }
 
 } // namespace onedrive::app::detail

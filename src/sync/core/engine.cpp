@@ -1,4 +1,5 @@
 #include "onedrive/sync/core/engine.hpp"
+#include "onedrive/exit_code.hpp"
 
 #include "onedrive/sync/cancellation.hpp"
 #include "onedrive/ui/common/observer.hpp"
@@ -771,7 +772,7 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
         report_completion(
             blocked_count, capabilities.previews(), started_at, observer
         );
-        return blocked_count == 0 ? 0 : 2;
+        return blocked_count == 0 ? exit_code::success : exit_code::blocked;
     } catch (const SyncCancelledError&) {
         record_result(metrics::SyncRunOutcome::cancelled);
         observer.message(
@@ -779,7 +780,7 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
             "sync_cancelled",
             "Synchronization cancelled."
         );
-        return 130;
+        return exit_code::cancelled;
     } catch (const graph::RequestCancelledError&) {
         record_result(metrics::SyncRunOutcome::cancelled);
         observer.message(
@@ -787,7 +788,7 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
             "sync_cancelled",
             "Synchronization cancelled."
         );
-        return 130;
+        return exit_code::cancelled;
     } catch (const onedrive::util::SyncMountUnavailableError& error) {
         record_result(metrics::SyncRunOutcome::failed);
         const auto elapsed = std::chrono::steady_clock::now() - started_at;
@@ -801,7 +802,7 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
         observer.message(
             events::MessageKind::error, "sync_mount_unavailable", error.what()
         );
-        return 1;
+        return exit_code::failure;
     } catch (...) {
         record_result(metrics::SyncRunOutcome::failed);
         const auto elapsed = std::chrono::steady_clock::now() - started_at;

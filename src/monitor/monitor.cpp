@@ -1,4 +1,5 @@
 #include "onedrive/monitor/monitor.hpp"
+#include "onedrive/exit_code.hpp"
 
 #include "monitor/signal.hpp"
 #include "monitor/input.hpp"
@@ -120,8 +121,10 @@ public:
     [[nodiscard]] std::optional<detail::LocalChangeKind> drain(
         const std::filesystem::path& root
     ) {
+        constexpr std::size_t inotify_read_buffer_bytes =
+            std::size_t{64} * 1024U;
         alignas(inotify_event)
-            std::array<char, std::size_t{64} * 1024U> buffer{};
+            std::array<char, inotify_read_buffer_bytes> buffer{};
         bool changed = false;
         bool overflow = false;
         while (true) {
@@ -378,7 +381,7 @@ int Monitor::run_loop(
                     state, detail::StopRequestedEvent{}, timing
         )
                     .state;
-        return 0;
+        return exit_code::success;
     }
 
     auto transition =
@@ -391,7 +394,7 @@ int Monitor::run_loop(
         detail::synchronization_reason_name(initial_reason)
     );
     const int initial_result = synchronize_(stop_token);
-    if (initial_result != 0) {
+    if (initial_result != exit_code::success) {
         spdlog::warn(
             "Initial monitor synchronization completed with status {}",
             initial_result
@@ -402,7 +405,7 @@ int Monitor::run_loop(
                     state, detail::StopRequestedEvent{}, timing
         )
                     .state;
-        return 0;
+        return exit_code::success;
     }
     WatchSet watches{root_};
     onedrive::util::UniqueFD stop_descriptor{
@@ -550,7 +553,7 @@ int Monitor::run_loop(
         if (notification_socket) {
             advance_notification(detail::NotificationStopEvent{});
         }
-        return 0;
+        return exit_code::success;
     };
 
     while (true) {
@@ -724,7 +727,7 @@ int Monitor::run_loop(
             detail::synchronization_reason_name(reason)
         );
         const int result = synchronize_(stop_token);
-        if (result != 0) {
+        if (result != exit_code::success) {
             spdlog::warn(
                 "Monitor synchronization completed with status {}",
                 result

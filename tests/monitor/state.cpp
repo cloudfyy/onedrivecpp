@@ -1,6 +1,9 @@
 #include "support.hpp"
+#include "onedrive/exit_code.hpp"
 
 namespace {
+
+namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::monitor;
 
@@ -40,7 +43,7 @@ int test_state_machine() {
     state = transition_monitor(
                 std::move(transition.state),
                 SynchronizationCompletedEvent{
-                    .status = 0,
+                    .status = exit_code::success,
                     .completed_at = origin + 10ms,
                 },
                 timing
@@ -149,7 +152,7 @@ int test_state_machine() {
     transition = transition_monitor(
         std::move(transition.state),
         SynchronizationCompletedEvent{
-            .status = 0,
+            .status = exit_code::success,
             .completed_at = origin + 65ms,
         },
         timing
@@ -162,7 +165,7 @@ int test_state_machine() {
     state = transition_monitor(
                 std::move(transition.state),
                 SynchronizationCompletedEvent{
-                    .status = 2,
+                    .status = exit_code::blocked,
                     .completed_at = origin + 70ms,
                 },
                 timing

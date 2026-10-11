@@ -40,6 +40,9 @@ using onedrive::util::percent_encode_uri_component;
 namespace {
 
 constexpr std::size_t maximum_download_redirects = 5;
+constexpr auto download_redirect_timeout = std::chrono::seconds{60};
+constexpr std::size_t maximum_redirect_response_bytes =
+    std::size_t{64} * 1024U;
 
 struct ContentRange {
     std::uint64_t first;
@@ -101,7 +104,7 @@ void validate_chunk_response_metadata(
     std::uint64_t expected_last,
     std::uint64_t expected_total
 ) {
-    if (response.status_code != 206) {
+    if (response.status_code != http::status::partial_content) {
         throw std::runtime_error(
             std::format(
                 "Microsoft Graph chunk download expected HTTP 206 but "
@@ -294,8 +297,8 @@ void MicrosoftGraphClient::download_file(
                     },
                     .body = {},
                     .connect_timeout = transfer.connect_timeout,
-                    .operation_timeout = std::chrono::seconds{60},
-                    .maximum_response_size = std::size_t{64} * 1024U,
+                    .operation_timeout = download_redirect_timeout,
+                    .maximum_response_size = maximum_redirect_response_bytes,
                     .stop_token = stop_token,
                 });
             },
@@ -311,12 +314,12 @@ void MicrosoftGraphClient::download_file(
                 redirect.error()
             );
         }
-        if (redirect->status_code == 412) {
+        if (redirect->status_code == http::status::precondition_failed) {
             throw RemoteItemChangedError(
                 "Microsoft Graph drive item changed before download"
             );
         }
-        if (redirect->status_code < 300 || redirect->status_code >= 400) {
+        if (!http::status::is_redirect(redirect->status_code)) {
             throw std::runtime_error(
                 std::format(
                     "Microsoft Graph download did not return a redirect "

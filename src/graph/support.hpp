@@ -2,6 +2,7 @@
 
 #include "onedrive/graph/graph_client.hpp"
 #include "onedrive/http/http_client.hpp"
+#include "http/status.hpp"
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -19,6 +20,9 @@
 namespace onedrive::graph::client_detail {
 
 using Json = nlohmann::json;
+
+inline constexpr std::size_t maximum_json_response_bytes =
+    std::size_t{1024} * 1024U;
 
 [[nodiscard]] std::string percent_encode_remote_path(std::string_view path);
 [[nodiscard]] std::string graph_error_message(const Json& response, long status_code);

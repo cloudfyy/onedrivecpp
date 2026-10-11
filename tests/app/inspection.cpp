@@ -1,4 +1,5 @@
 #include "support.hpp"
+#include "onedrive/exit_code.hpp"
 #include "onedrive/util/sha256.hpp"
 
 #include <fmt/format.h>
@@ -8,6 +9,8 @@
 #include <utility>
 
 namespace {
+
+namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::app;
 
@@ -41,7 +44,7 @@ onedrive::storage::ItemState item(
 
 int test_inspection() {
     CliFixture fixture;
-    if (fixture.authenticate().exit_code != 0) {
+    if (fixture.authenticate().exit_code != exit_code::success) {
         return fail("inspection fixture authentication failed");
     }
     const auto empty_partials = run_application(
@@ -56,7 +59,7 @@ int test_inspection() {
             "json",
         }
     );
-    if (empty_partials.exit_code != 0 ||
+    if (empty_partials.exit_code != exit_code::success ||
         !empty_partials.standard_output.contains(
             R"("event":"no_partial_downloads")"
         ) ||
@@ -198,7 +201,7 @@ int test_inspection() {
             "json",
         }
     );
-    if (storage.exit_code != 0 ||
+    if (storage.exit_code != exit_code::success ||
         !storage.standard_output.contains(R"("event":"storage")") ||
         !storage.standard_output.contains(R"("tracked_files":"6")") ||
         !storage.standard_output.contains(R"("partial_downloads":"7")") ||
@@ -219,7 +222,7 @@ int test_inspection() {
             "json",
         }
     );
-    if (partials.exit_code != 0 ||
+    if (partials.exit_code != exit_code::success ||
         !partials.standard_output.contains(R"("status":"resumable")") ||
         !partials.standard_output.contains(R"("status":"missing")") ||
         !partials.standard_output.contains(R"("status":"type-changed")") ||
@@ -248,7 +251,7 @@ int test_inspection() {
         },
         "untouched\n"
     );
-    if (partials_console.exit_code != 0 ||
+    if (partials_console.exit_code != exit_code::success ||
         !partials_console.standard_output.contains(
             fmt::format(
                 "  {:<{}} {}\n",
@@ -338,7 +341,7 @@ int test_inspection() {
                        std::string_view{"local temporary file size:"}.size(),
                        "invalid"
                    );
-        if (invalid_size.exit_code != 0 ||
+        if (invalid_size.exit_code != exit_code::success ||
             !invalid_size.standard_output.contains(expected)) {
             return fail(
                 "partial size labels hid an invalid recorded file size"
@@ -363,7 +366,7 @@ int test_inspection() {
             "json",
         }
     );
-    if (files.exit_code != 0 ||
+    if (files.exit_code != exit_code::success ||
         !files.standard_output.contains(R"("remote_path":"Documents/missing.txt")"
         ) ||
         files.standard_output.contains(R"("remote_path":"Documents/ok.txt")") ||
@@ -389,7 +392,7 @@ int test_inspection() {
             fixture.config_path.string(),
         }
     );
-    if (invalid_path.exit_code != 1 ||
+    if (invalid_path.exit_code != exit_code::failure ||
         !invalid_path.standard_error.contains("invalid component")) {
         return fail("inspect files accepted an unsafe Drive-relative path");
     }
@@ -409,7 +412,7 @@ int test_inspection() {
             "json",
         }
     );
-    if (verified.exit_code != 0 ||
+    if (verified.exit_code != exit_code::success ||
         !verified.standard_output.contains(R"("result":"verified")") ||
         !verified.standard_output.contains(R"("algorithm":"sha256")")) {
         return fail("inspect verify did not validate saved content hash");
@@ -430,7 +433,7 @@ int test_inspection() {
             "json",
         }
     );
-    if (mismatch.exit_code != 1 ||
+    if (mismatch.exit_code != exit_code::failure ||
         !mismatch.standard_output.contains(R"("result":"hash-mismatch")")) {
         return fail("inspect verify accepted mismatched content");
     }
@@ -464,11 +467,11 @@ int test_inspection() {
             "json",
         }
     );
-    if (unavailable.exit_code != 1 ||
+    if (unavailable.exit_code != exit_code::failure ||
         !unavailable.standard_output.contains(
             R"("result":"hash-unavailable")"
         ) ||
-        metadata_verified.exit_code != 0 ||
+        metadata_verified.exit_code != exit_code::success ||
         !metadata_verified.standard_output.contains(
             R"("result":"verified")"
         )) {
@@ -487,7 +490,7 @@ int test_inspection() {
             "json",
         }
     );
-    if (effective_config.exit_code != 0 ||
+    if (effective_config.exit_code != exit_code::success ||
         !effective_config.standard_output.contains(
             R"("event":"effective_config")"
         ) ||
@@ -518,7 +521,7 @@ int test_inspection() {
             "json",
         }
     );
-    if (cleanup_plan.exit_code != 1 ||
+    if (cleanup_plan.exit_code != exit_code::failure ||
         !cleanup_plan.standard_output.contains(R"("mode":"dry-run")") ||
         !cleanup_plan.standard_output.contains(R"("orphaned_files":"1")") ||
         !std::filesystem::exists(orphan) ||
@@ -537,7 +540,7 @@ int test_inspection() {
             "json",
         }
     );
-    if (unconfirmed_cleanup.exit_code != 1 ||
+    if (unconfirmed_cleanup.exit_code != exit_code::failure ||
         !unconfirmed_cleanup.standard_error.contains(
             R"("event":"confirmation_required")"
         ) ||
@@ -557,14 +560,14 @@ int test_inspection() {
             "json",
         }
     );
-    if (cleanup.exit_code != 1 ||
+    if (cleanup.exit_code != exit_code::failure ||
         !cleanup.standard_output.contains(R"("event":"cleanup_incomplete")") ||
         std::filesystem::exists(orphan) ||
         std::filesystem::exists(truncated_partial_path) ||
         !std::filesystem::exists(type_changed_partial_path)) {
         return fail("state cleanup did not safely remove partial files");
     }
-    return 0;
+    return EXIT_SUCCESS;
 }
 
 } // namespace
@@ -574,6 +577,6 @@ int main() {
         return test_inspection();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
-        return 1;
+        return EXIT_FAILURE;
     }
 }

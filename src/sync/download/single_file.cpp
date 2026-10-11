@@ -1,4 +1,5 @@
 #include "onedrive/sync/download/single_file.hpp"
+#include "onedrive/exit_code.hpp"
 
 #include "onedrive/util/mount.hpp"
 #include "onedrive/util/path_security.hpp"
@@ -107,7 +108,7 @@ int plan_single_file_download(
             },
         }
     );
-    return 0;
+    return exit_code::success;
 }
 
 int download_single_file(
@@ -155,7 +156,7 @@ int download_single_file(
             "single_download_reused",
             "Local file is already current: " + destination.string()
         );
-        return 0;
+        return exit_code::success;
     }
     const auto baseline = detail::capture_local_file_baseline(destination);
     detail::DownloadSpaceCoordinator space{
@@ -219,7 +220,7 @@ int download_single_file(
             installed.local_path.string()
         )
     );
-    return 0;
+    return exit_code::success;
 }
 
 }  // namespace onedrive::sync

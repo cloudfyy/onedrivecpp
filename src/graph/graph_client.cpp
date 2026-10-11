@@ -46,6 +46,10 @@ constexpr std::uint64_t upload_chunk_quantum =
     std::uint64_t{320} * 1024U;
 constexpr std::uint64_t maximum_upload_chunk_size =
     std::uint64_t{60} * 1024U * 1024U;
+constexpr auto identity_connect_timeout = std::chrono::seconds{30};
+constexpr auto identity_request_timeout = std::chrono::seconds{60};
+constexpr std::size_t maximum_profile_photo_bytes =
+    std::size_t{8} * 1024U * 1024U;
 
 }  // namespace
 
@@ -202,9 +206,9 @@ account::DriveIdentity fetch_drive_identity(
                 "Authorization: Bearer " + std::string{access_token},
             },
             .body = {},
-            .connect_timeout = std::chrono::seconds{30},
-            .operation_timeout = std::chrono::seconds{60},
-            .maximum_response_size = std::size_t{1024} * 1024U,
+            .connect_timeout = identity_connect_timeout,
+            .operation_timeout = identity_request_timeout,
+            .maximum_response_size = client_detail::maximum_json_response_bytes,
             .stop_token = stop_token,
         });
         if (!response) {
@@ -265,9 +269,9 @@ account::DriveIdentity fetch_drive_identity(
             "Authorization: Bearer " + std::string{access_token},
         },
         .body = {},
-        .connect_timeout = std::chrono::seconds{30},
-        .operation_timeout = std::chrono::seconds{60},
-        .maximum_response_size = std::size_t{8} * 1024U * 1024U,
+        .connect_timeout = identity_connect_timeout,
+        .operation_timeout = identity_request_timeout,
+        .maximum_response_size = maximum_profile_photo_bytes,
         .stop_token = stop_token,
     });
     if (!photo) {
@@ -276,7 +280,7 @@ account::DriveIdentity fetch_drive_identity(
             photo.error().message
         );
     }
-    if (photo->status_code == 404) {
+    if (photo->status_code == http::status::not_found) {
         spdlog::debug("Microsoft account has no profile photo");
     } else if (successful_status(photo->status_code)) {
         const auto content_type =

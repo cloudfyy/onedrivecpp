@@ -1,8 +1,11 @@
 #include "support.hpp"
+#include "onedrive/exit_code.hpp"
 
 #include <algorithm>
 
 namespace {
+
+namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::sync;
 
@@ -31,7 +34,7 @@ int test_remote_moves() {
             renamed_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         std::filesystem::exists(renamed_root / "old.txt") ||
         !std::filesystem::exists(renamed_root / "new.txt") ||
         renamed_graph.download_count != 0 ||
@@ -130,7 +133,7 @@ int test_remote_moves() {
         cancelled_move_metrics,
         &default_console
     };
-    if (cancelled_move_engine.synchronize() != 0) {
+    if (cancelled_move_engine.synchronize() != exit_code::success) {
         return fail("could not prepare remote move cancellation test");
     }
     std::filesystem::rename(
@@ -142,7 +145,7 @@ int test_remote_moves() {
         [&move_cancellation] { move_cancellation.request_stop(); };
     if (cancelled_move_engine.synchronize(
             move_cancellation.get_token()
-        ) != 130 ||
+        ) != exit_code::cancelled ||
         cancelled_move_items.pending_remote_moves_by_id.size() != 1 ||
         !cancelled_move_graph.moved_remote_items.empty() ||
         cancelled_move_metrics.last_outcome !=
@@ -156,7 +159,7 @@ int test_remote_moves() {
         };
     if (cancelled_move_engine.synchronize(
             move_recovery_cancellation.get_token()
-        ) != 130 ||
+        ) != exit_code::cancelled ||
         cancelled_move_items.pending_remote_moves_by_id.size() != 1 ||
         cancelled_move_metrics.last_outcome !=
             onedrive::metrics::SyncRunOutcome::cancelled) {
@@ -217,7 +220,7 @@ int test_remote_moves() {
             recovered_move_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         recovered_move_graph.download_count != 0 ||
         !recovered_move_items.pending_moves_by_id.empty() ||
         !recovered_move_metrics.last_success) {
@@ -240,7 +243,7 @@ int test_remote_moves() {
             deleted_move_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         std::filesystem::exists(recovery_root / "new.txt") ||
         !deleted_move_items.pending_moves_by_id.empty() ||
         deleted_move_items.applied_delta.removals !=
@@ -271,7 +274,7 @@ int test_remote_moves() {
             adopted_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         adopted_graph.download_count != 0 ||
         adopted_items.applied_delta.upserts.size() != 1 ||
         adopted_items.applied_delta.upserts[0].local_path !=
@@ -318,7 +321,7 @@ int test_remote_moves() {
             mismatched_metrics,
             &default_console
         }
-                .synchronize() != 2 ||
+                .synchronize() != exit_code::blocked ||
         mismatched_items.applied_delta.blocked_upserts.size() != 1 ||
         mismatched_items.applied_delta.blocked_upserts[0].reason_code !=
             "pending_move_conflict" ||
@@ -356,7 +359,7 @@ int test_remote_moves() {
             changed_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         std::filesystem::exists(changed_root / "old.txt") ||
         changed_graph.download_count != 1) {
         return fail("moved file with changed content was not downloaded");
@@ -405,7 +408,7 @@ int test_remote_moves() {
             directory_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         std::filesystem::exists(directory_root / "Old") ||
         !std::filesystem::exists(directory_root / "New" / "child.txt") ||
         directory_graph.download_count != 0 ||
@@ -452,7 +455,7 @@ int test_remote_moves() {
             ordered_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         std::filesystem::exists(ordered_root / "A.txt") ||
         !std::filesystem::exists(ordered_root / "B.txt") ||
         !std::filesystem::exists(ordered_root / "C.txt") ||
@@ -532,7 +535,7 @@ int test_remote_moves() {
             recovered_ordered_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         recovered_ordered_graph.download_count != 0 ||
         !recovered_ordered_items.pending_moves_by_id.empty() ||
         !recovered_ordered_metrics.last_success) {
@@ -575,7 +578,7 @@ int test_remote_moves() {
             nested_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         std::filesystem::exists(nested_root / "Old") ||
         std::filesystem::exists(nested_root / "New" / "before.txt") ||
         !std::filesystem::exists(nested_root / "New" / "after.txt") ||
@@ -615,7 +618,7 @@ int test_remote_moves() {
             cycle_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         !std::filesystem::exists(cycle_root / "A.txt") ||
         !std::filesystem::exists(cycle_root / "B.txt") ||
         !cycle_items.applied_delta.blocked_upserts.empty() ||
@@ -683,7 +686,7 @@ int test_remote_moves() {
             three_cycle_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         !three_cycle_items.pending_moves_by_id.empty() ||
         !three_cycle_items.applied_delta.blocked_upserts.empty()) {
         return fail("three-item remote move cycle was not staged safely");
@@ -768,7 +771,7 @@ int test_remote_moves() {
             directory_cycle_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         !std::filesystem::exists(directory_cycle_root / "A" / "second.txt") ||
         !std::filesystem::exists(directory_cycle_root / "B" / "first.txt") ||
         !directory_cycle_items.pending_moves_by_id.empty() ||
@@ -833,7 +836,7 @@ int test_remote_moves() {
             journaled_staging_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         std::filesystem::exists(journaled_staging_path) ||
         !journaled_staging_items.pending_moves_by_id.empty() ||
         !journaled_staging_metrics.last_success) {
@@ -908,7 +911,7 @@ int test_remote_moves() {
             staged_recovery_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         std::filesystem::exists(staged_path) ||
         !staged_recovery_items.pending_moves_by_id.empty() ||
         !staged_recovery_metrics.last_success) {
@@ -964,7 +967,7 @@ int test_remote_moves() {
             staged_deletion_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         std::filesystem::exists(staged_deletion_path) ||
         !staged_deletion_items.pending_moves_by_id.empty() ||
         staged_deletion_items.applied_delta.removals !=
@@ -1027,7 +1030,7 @@ int test_remote_moves() {
             recovered_cycle_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         !recovered_cycle_items.pending_moves_by_id.empty() ||
         recovered_cycle_graph.download_count != 0 ||
         !recovered_cycle_metrics.last_success) {
@@ -1072,7 +1075,7 @@ int test_remote_moves() {
             blocked_dependency_metrics,
             &default_console
         }
-                .synchronize() != 2 ||
+                .synchronize() != exit_code::blocked ||
         !std::filesystem::exists(
             blocked_dependency_root / "Old" / "before.txt"
         ) ||
@@ -1113,7 +1116,7 @@ int test_remote_moves() {
             modified_metrics,
             &default_console
         }
-                .synchronize() != 2 ||
+                .synchronize() != exit_code::blocked ||
         !std::filesystem::exists(modified_root / "old.txt") ||
         std::filesystem::exists(modified_root / "new.txt") ||
         modified_items.applied_delta.blocked_upserts.size() != 1 ||
@@ -1145,7 +1148,7 @@ int test_remote_moves() {
             collision_metrics,
             &default_console
         }
-                .synchronize() != 2 ||
+                .synchronize() != exit_code::blocked ||
         !std::filesystem::exists(collision_root / "old.txt") ||
         collision_items.applied_delta.blocked_upserts.size() != 1 ||
         collision_items.applied_delta.blocked_upserts[0].reason_code !=
@@ -1172,7 +1175,7 @@ int test_remote_moves() {
             dry_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         !std::filesystem::exists(dry_root / "old.txt") ||
         std::filesystem::exists(dry_root / "new.txt") ||
         dry_items.apply_count != 0) {
@@ -1202,7 +1205,7 @@ int test_remote_moves() {
             symlink_metrics,
             &default_console
         }
-                .synchronize() != 2 ||
+                .synchronize() != exit_code::blocked ||
         !std::filesystem::is_symlink(symlink_root / "old.txt") ||
         std::filesystem::exists(symlink_root / "new.txt") ||
         symlink_items.applied_delta.blocked_upserts.size() != 1 ||
@@ -1260,7 +1263,7 @@ int test_remote_moves() {
                 cross_metrics,
                 &default_console
             }
-                    .synchronize() != 2 ||
+                    .synchronize() != exit_code::blocked ||
             !std::filesystem::exists(cross_source) ||
             std::filesystem::exists(cross_destination) ||
             cross_items.applied_delta.blocked_upserts.size() != 1 ||

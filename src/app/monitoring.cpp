@@ -1,4 +1,5 @@
 #include "onedrive/app/monitoring.hpp"
+#include "onedrive/exit_code.hpp"
 
 #include "onedrive/account/account_state.hpp"
 #include "onedrive/app/factory.hpp"
@@ -77,11 +78,11 @@ int monitor_account(
             config, std::move(synchronize), *graph
         );
         const int result = monitor->run(keyboard_exit, stop_token);
-        if (result == 0 || stop_token.stop_requested()) {
+        if (result == exit_code::success || stop_token.stop_requested()) {
             state.transition(events::OperationState::stopping);
         }
         state.transition(
-            result == 0 ? events::OperationState::ready :
+            result == exit_code::success ? events::OperationState::ready :
                           events::OperationState::failed
         );
         return result;

@@ -1,15 +1,18 @@
 #include "support.hpp"
+#include "onedrive/exit_code.hpp"
 
 #include <nlohmann/json.hpp>
 
 namespace {
+
+namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::app;
 using onedrive::test::write_file;
 using Json = nlohmann::json;
 
 Json drive_results(const RunResult& result) {
-    if (result.exit_code != 0) {
+    if (result.exit_code != exit_code::success) {
         throw std::runtime_error(result.standard_error);
     }
     Json drives = Json::object();
@@ -30,7 +33,7 @@ Json drive_results(const RunResult& result) {
 
 int test_drive_statistics() {
     CliFixture fixture;
-    if (fixture.authenticate().exit_code != 0) {
+    if (fixture.authenticate().exit_code != exit_code::success) {
         return fail("cannot authenticate drive inspection fixture");
     }
     const auto run = [&] {
@@ -190,7 +193,7 @@ int test_drive_statistics() {
         outside.local_path, paths.drive_directory / "items.sqlite3"
     );
     const auto unsafe = run();
-    if (unsafe.exit_code != 1 ||
+    if (unsafe.exit_code != exit_code::failure ||
         !unsafe.standard_error.contains("not a regular file") ||
         onedrive::test::read_file(outside.local_path) != "outside") {
         return fail("drive statistics followed an unsafe database path");

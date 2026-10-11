@@ -1,4 +1,5 @@
 #include "onedrive/ui/common/observer.hpp"
+#include "onedrive/exit_code.hpp"
 #include "sync/support.hpp"
 
 #include <array>
@@ -162,7 +163,7 @@ int test_headless_sync() {
     CapturingObserver observer;
     auto config = config_for(root, false);
     if (onedrive::sync::SyncEngine{config, graph, items, metrics, &observer}
-                .synchronize() != 0 ||
+                .synchronize() != onedrive::exit_code::success ||
         onedrive::test::read_file(root / "file.txt") != "data" ||
         !metrics.last_success) {
         return fail("sync did not work with a non-console observer");

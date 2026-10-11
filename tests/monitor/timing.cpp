@@ -1,6 +1,9 @@
 #include "support.hpp"
+#include "onedrive/exit_code.hpp"
 
 namespace {
+
+namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::monitor;
 
@@ -17,7 +20,7 @@ int test_timing() {
         root,
         [&](const std::stop_token&) {
             const int run = ++periodic_runs;
-            return run <= 2 ? 2 : 0;
+            return run <= 2 ? exit_code::blocked : exit_code::success;
         },
         60ms,
         10ms
@@ -32,7 +35,7 @@ int test_timing() {
     }
     periodic_worker.request_stop();
     periodic_worker.join();
-    if (periodic_result != 0) {
+    if (periodic_result != exit_code::success) {
         return fail("periodic monitor did not stop successfully");
     }
 
@@ -50,7 +53,7 @@ int test_timing() {
                     )
                         .count();
             }
-            return 0;
+            return exit_code::success;
         },
         80ms,
         180ms

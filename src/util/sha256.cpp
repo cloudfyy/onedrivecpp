@@ -30,18 +30,18 @@ public:
         }
     }
 
-    [[nodiscard]] std::array<unsigned char, 32> finish() {
+    [[nodiscard]] std::array<unsigned char, sha256_digest_bytes> finish() {
         if (finished_) {
             throw std::logic_error(
                 "cannot finalize a SHA-256 hash more than once"
             );
         }
         finished_ = true;
-        std::array<unsigned char, 32> digest{};
+        std::array<unsigned char, sha256_digest_bytes> digest{};
         unsigned int digest_size = 0;
         if (EVP_DigestFinal_ex(context_.get(), digest.data(), &digest_size) !=
                 1 ||
-            digest_size != 32) {
+            digest_size != digest.size()) {
             throw std::runtime_error("cannot finalize SHA-256 hash");
         }
 
@@ -89,11 +89,11 @@ std::string Sha256Hasher::finish_hex() {
     return impl_->finish_hex();
 }
 
-std::array<unsigned char, 32> Sha256Hasher::finish() {
+std::array<unsigned char, sha256_digest_bytes> Sha256Hasher::finish() {
     return impl_->finish();
 }
 
-std::array<unsigned char, 32> sha256(std::string_view value) {
+std::array<unsigned char, sha256_digest_bytes> sha256(std::string_view value) {
     Sha256Hasher hasher;
     hasher.update(std::as_bytes(std::span{value}));
     return hasher.finish();

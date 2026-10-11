@@ -1,6 +1,9 @@
 #include "support.hpp"
+#include "onedrive/exit_code.hpp"
 
 namespace {
+
+namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::monitor;
 
@@ -13,7 +16,7 @@ int test_local() {
         root,
         [&](const std::stop_token&) {
             ++local_runs;
-            return 0;
+            return exit_code::success;
         },
         5s,
         60ms
@@ -97,7 +100,7 @@ int test_local() {
     }
     local_worker.request_stop();
     local_worker.join();
-    if (local_result != 0) {
+    if (local_result != exit_code::success) {
         return fail("stop token did not end local monitoring successfully");
     }
     return EXIT_SUCCESS;

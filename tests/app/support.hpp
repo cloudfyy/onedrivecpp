@@ -5,6 +5,7 @@
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
 #include "onedrive/config/config.hpp"
+#include "onedrive/exit_code.hpp"
 #include "onedrive/graph/graph_client.hpp"
 #include "onedrive/http/http_client.hpp"
 #include "onedrive/metrics/metrics.hpp"
@@ -642,7 +643,7 @@ public:
     [[nodiscard]] int run() const {
         ++run_count_;
         static_cast<void>(synchronize_({}));
-        return 0;
+        return exit_code::success;
     }
     [[nodiscard]] int run(bool) const {
         return run();
@@ -660,7 +661,7 @@ public:
         if (!stop_requested_) {
             static_cast<void>(synchronize_(stop_token));
         }
-        return 0;
+        return exit_code::success;
     }
 
 private:

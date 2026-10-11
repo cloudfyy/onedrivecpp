@@ -86,7 +86,8 @@ bool probe_xattr_support(const std::filesystem::path& root) {
         );
     }
 
-    std::array<char, 32> value{};
+    constexpr std::size_t xattr_probe_buffer_bytes = 32;
+    std::array<char, xattr_probe_buffer_bytes> value{};
     const auto size = ::getxattr(
         probe.c_str(),
         "user.onedrive.probe",

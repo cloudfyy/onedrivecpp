@@ -2,6 +2,7 @@
 
 #include "onedrive/account/account_state.hpp"
 #include "onedrive/app/factory.hpp"
+#include "onedrive/exit_code.hpp"
 #include "onedrive/metrics/metrics.hpp"
 #include "onedrive/storage/item_store.hpp"
 #include "onedrive/sync/core/engine.hpp"
@@ -37,11 +38,11 @@ int synchronize_account(
             std::move(config), *graph, *items, *metrics, &observer
         }
                                  .synchronize(stop_token);
-        if (result == 130) {
+        if (result == exit_code::cancelled) {
             state.transition(events::OperationState::stopping);
         }
         state.transition(
-            result == 0 || result == 130 ?
+            result == exit_code::success || result == exit_code::cancelled ?
                 events::OperationState::ready :
                 events::OperationState::failed
         );

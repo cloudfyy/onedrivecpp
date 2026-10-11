@@ -1,6 +1,7 @@
 #include "args.hpp"
 
 #include "onedrive/config/config.hpp"
+#include "onedrive/exit_code.hpp"
 #include "onedrive/version.hpp"
 
 #include <CLI/CLI.hpp>
@@ -302,14 +303,15 @@ ParseResult parse_arguments(int argc, char* argv[]) {
 
     if (argc < 2) {
         std::cout << application.help();
-        result.exit_code = 0;
+        result.exit_code = exit_code::success;
         return result;
     }
     try {
         application.parse(argc, argv);
     } catch (const CLI::ParseError& error) {
-        const int exit_code = application.exit(error);
-        result.exit_code = exit_code == 0 ? 0 : 2;
+        const int parsed_exit_code = application.exit(error);
+        result.exit_code = parsed_exit_code == exit_code::success ?
+            exit_code::success : exit_code::usage_error;
         return result;
     }
 

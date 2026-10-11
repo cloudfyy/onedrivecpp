@@ -1,7 +1,10 @@
 #include "support.hpp"
+#include "onedrive/exit_code.hpp"
 #include "onedrive/ui/cli/console.hpp"
 
 namespace {
+
+namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::download;
 
@@ -46,7 +49,7 @@ int test_single_file_download_coordination() {
     dry_config.dry_run = true;
     if (onedrive::sync::plan_single_file_download(
             dry_config, "Documents/single.txt", graph, console
-        ) != 0 ||
+        ) != exit_code::success ||
         graph_implementation.download_count != 0 ||
         std::filesystem::exists(root / "Documents/single.txt")) {
         return fail("single-file dry run changed local state");
@@ -54,7 +57,7 @@ int test_single_file_download_coordination() {
 
     if (onedrive::sync::download_single_file(
             config, "Documents/single.txt", graph, items, console
-        ) != 0 ||
+        ) != exit_code::success ||
         graph_implementation.download_count != 1 ||
         !std::filesystem::is_regular_file(root / "Documents/single.txt") ||
         !item_implementation.states.contains("single")) {
@@ -62,7 +65,7 @@ int test_single_file_download_coordination() {
     }
     if (onedrive::sync::download_single_file(
             config, "Documents/single.txt", graph, items, console
-        ) != 0 ||
+        ) != exit_code::success ||
         graph_implementation.download_count != 1) {
         return fail("current single-file download was not reused");
     }
@@ -109,7 +112,7 @@ int test_single_file_download_coordination() {
         onedrive::config::LocalConflictPolicy::backup;
     if (onedrive::sync::download_single_file(
             backup_config, "conflict.txt", graph, items, console
-        ) != 0 ||
+        ) != exit_code::success ||
         graph_implementation.download_count != 2) {
         return fail("single-file safeBackup download did not succeed");
     }
@@ -149,7 +152,7 @@ int test_single_file_download_coordination() {
     }
     if (onedrive::sync::download_single_file(
             backup_config, "identical.txt", graph, items, console
-        ) != 0) {
+        ) != exit_code::success) {
         return fail("content-identical local file was not adopted");
     }
     struct stat after{};

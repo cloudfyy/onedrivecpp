@@ -2,6 +2,7 @@
 #include "drive_fields.hpp"
 
 #include "onedrive/account/account_state.hpp"
+#include "onedrive/exit_code.hpp"
 #include "onedrive/app/queries.hpp"
 #include "onedrive/graph/graph_client.hpp"
 #include "onedrive/metrics/metrics.hpp"
@@ -601,7 +602,7 @@ int show_drives(
         );
         console.section("drive", "OneDrive drive:", std::move(fields));
     }
-    return 0;
+    return exit_code::success;
 }
 
 int show_quota(
@@ -617,7 +618,7 @@ int show_quota(
     };
     std::ranges::move(quota_fields(drive.quota), std::back_inserter(fields));
     console.section("quota", "OneDrive storage quota:", std::move(fields));
-    return 0;
+    return exit_code::success;
 }
 
 int show_status(
@@ -739,7 +740,7 @@ int show_status(
             },
         }
     );
-    return 0;
+    return exit_code::success;
 }
 
 int show_storage(
@@ -852,7 +853,7 @@ int show_storage(
             },
         }
     );
-    return 0;
+    return exit_code::success;
 }
 
 int show_partials(
@@ -956,7 +957,7 @@ int show_partials(
             },
         }
     );
-    return 0;
+    return exit_code::success;
 }
 
 int show_files(
@@ -1088,7 +1089,7 @@ int show_files(
             },
         }
     );
-    return 0;
+    return exit_code::success;
 }
 
 int verify_files(
@@ -1185,7 +1186,8 @@ int verify_files(
             },
         }
     );
-    return failed == 0 && unavailable == 0 ? 0 : 1;
+    return failed == 0 && unavailable == 0 ?
+        exit_code::success : exit_code::failure;
 }
 
 int show_config(
@@ -1337,7 +1339,7 @@ int show_config(
             },
         }
     );
-    return 0;
+    return exit_code::success;
 }
 
 namespace {
@@ -1641,7 +1643,7 @@ int cleanup_state(
         }
     );
     if (dry_run || candidates.empty()) {
-        return skipped == 0 ? 0 : 1;
+        return skipped == 0 ? exit_code::success : exit_code::failure;
     }
     if (!assume_yes) {
         if (console.output_mode() == cli::OutputMode::json) {
@@ -1650,7 +1652,7 @@ int cleanup_state(
                 "confirmation_required",
                 "Cleanup requires --yes with JSON output."
             );
-            return 1;
+            return exit_code::failure;
         }
         if (!console.confirm(
                 "cleanup_confirmation",
@@ -1664,7 +1666,7 @@ int cleanup_state(
                 "cleanup_cancelled",
                 "Partial cleanup cancelled."
             );
-            return 1;
+            return exit_code::failure;
         }
     }
 
@@ -1752,7 +1754,7 @@ int cleanup_state(
             failed
         )
     );
-    return complete ? 0 : 1;
+    return complete ? exit_code::success : exit_code::failure;
 }
 
 } // namespace onedrive::app::detail

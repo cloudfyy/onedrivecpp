@@ -1,6 +1,9 @@
 #include "support.hpp"
+#include "onedrive/exit_code.hpp"
 
 namespace {
+
+namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::app;
 
@@ -30,7 +33,7 @@ int test_doctor() {
             "json",
         }
     );
-    if (healthy_diagnostics.exit_code != 0 ||
+    if (healthy_diagnostics.exit_code != exit_code::success ||
         !healthy_diagnostics.standard_output.contains(
             R"("event":"database_integrity_passed")"
         ) ||
@@ -64,7 +67,7 @@ int test_doctor() {
             "json",
         }
     );
-    if (unhealthy_diagnostics.exit_code != 1 ||
+    if (unhealthy_diagnostics.exit_code != exit_code::failure ||
         !unhealthy_diagnostics.standard_error.contains(
             R"("event":"database_integrity_failed")"
         ) ||

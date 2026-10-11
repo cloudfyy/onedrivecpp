@@ -1,8 +1,11 @@
 #include "support.hpp"
+#include "onedrive/exit_code.hpp"
 
 #include <algorithm>
 
 namespace {
+
+namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::sync;
 
@@ -24,7 +27,7 @@ int test_local_file_uploads() {
     if (onedrive::sync::SyncEngine{
             dry_config, dry_graph, dry_items, dry_metrics, &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         dry_graph.upload_count != 0 || dry_items.apply_count != 0) {
         return fail("upload dry run changed remote or local state");
     }
@@ -92,7 +95,7 @@ int test_local_file_uploads() {
     }
     const auto modified = items.find("me", "modified");
     const auto unchanged = items.find("me", "unchanged");
-    if (result != 2 || graph.upload_count != 2 ||
+    if (result != exit_code::blocked || graph.upload_count != 2 ||
         graph.uploaded_paths !=
             std::vector<std::string>{"modified.txt", "new.txt"} ||
         !modified ||
@@ -130,7 +133,8 @@ int test_local_file_uploads() {
             &default_console
         }
             .synchronize();
-    if (concurrent_result != 0 || concurrent_graph.upload_count != 4 ||
+    if (concurrent_result != exit_code::success ||
+        concurrent_graph.upload_count != 4 ||
         concurrent_graph.maximum_concurrent_uploads != 2 ||
         concurrent_items.size() != 4 || !concurrent_metrics.last_success) {
         return fail(
@@ -438,7 +442,7 @@ int test_local_directory_uploads() {
             journal_failure_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         journal_failure_graph.created_directory_paths !=
             std::vector<std::string>{"Pending"} ||
         !journal_failure_items.pending_uploads_by_path.empty()) {
@@ -461,7 +465,7 @@ int test_local_directory_uploads() {
     if (onedrive::sync::SyncEngine{
             config, graph, items, metrics, &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         graph.created_directory_paths !=
             std::vector<std::string>{
                 "Empty",
@@ -598,7 +602,7 @@ int test_local_directory_uploads() {
             recovery_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         recovery_graph.directory_create_count != 2 ||
         !recovery_items.pending_uploads_by_path.empty() ||
         !recovery_items.find("me", "recovered-directory") ||
@@ -629,7 +633,7 @@ int test_local_directory_uploads() {
             selective_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         selective_graph.created_directory_paths !=
             std::vector<std::string>{"Included"} ||
         !std::filesystem::is_directory(selective_root / "Excluded")) {
@@ -715,7 +719,7 @@ int test_local_directory_uploads() {
             recovery_conflict_metrics,
             &default_console
         }
-                .synchronize() != 2 ||
+                .synchronize() != exit_code::blocked ||
         !recovery_conflict_items.pending_uploads_by_path.empty() ||
         recovery_conflict_items.applied_delta.blocked_upserts.size() != 1 ||
         recovery_conflict_items.applied_delta.blocked_upserts[0].reason_code !=
@@ -751,14 +755,14 @@ int test_local_change_during_upload() {
     if (onedrive::sync::SyncEngine{
             config, graph, items, metrics, &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         graph.upload_count != 1) {
         return fail("initial changing local file upload failed");
     }
     if (onedrive::sync::SyncEngine{
             config, graph, items, metrics, &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         graph.upload_count != 2) {
         return fail("local change during upload was marked as synchronized");
     }
@@ -810,7 +814,7 @@ int test_pending_upload_recovery() {
     if (onedrive::sync::SyncEngine{
             config, graph, items, metrics, &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         graph.upload_count != 2 || graph.download_count != 1 ||
         !items.pending_uploads_by_path.empty() ||
         !items.find("me", "recovered-upload") ||
@@ -899,7 +903,7 @@ int test_missing_upload_source() {
                     change_source();
                 } else {
                     graph.before_upload_return = change_source;
-                    if (synchronize() != 0) {
+                    if (synchronize() != exit_code::success) {
                         return fail(
                             "source removal during upload blocked its commit"
                         );
@@ -909,7 +913,7 @@ int test_missing_upload_source() {
                 echo.etag = interrupted ? "uploaded-etag-2" : "uploaded-etag-1";
                 graph.changes = {echo};
                 graph.contents["existing"] = "payload";
-                if (synchronize() != 0 ||
+                if (synchronize() != exit_code::success ||
                     !items.pending_uploads("me").empty() ||
                     graph.delta_requests.size() != 2 ||
                     graph.download_count != 0 ||
@@ -947,7 +951,8 @@ int test_missing_upload_source() {
                     );
                 }
                 graph.changes.clear();
-                if (synchronize() != 0 || graph.delta_requests.size() != 3) {
+                if (synchronize() != exit_code::success ||
+                    graph.delta_requests.size() != 3) {
                     return fail(
                         "missing upload source blocked a later synchronization"
                     );
@@ -1051,7 +1056,7 @@ int test_upload_checkpoint_recovery() {
     if (onedrive::sync::SyncEngine{
             config, graph, items, metrics, &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         graph.upload_count != 2 || graph.upload_sessions.size() != 2 ||
         !graph.upload_sessions[1] ||
         graph.upload_sessions[1]->completed_bytes != 4 ||
@@ -1161,7 +1166,7 @@ int test_pending_upload_recovery_conflict() {
             block_metrics,
             &default_console
         }
-                .synchronize() != 2 ||
+                .synchronize() != exit_code::blocked ||
         !block_items.pending_uploads_by_path.empty() ||
         std::filesystem::exists(block_snapshot) ||
         block_items.applied_delta.blocked_upserts.size() != 1 ||
@@ -1199,7 +1204,7 @@ int test_pending_upload_recovery_conflict() {
             backup_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         !backup_items.pending_uploads_by_path.empty() ||
         std::filesystem::exists(backup_snapshot) ||
         backup_graph.download_count != 2 ||
@@ -1244,7 +1249,7 @@ int test_pending_upload_recovery_conflict() {
     if (onedrive::sync::SyncEngine{
             size_config, size_graph, size_items, size_metrics, &default_console
         }
-                .synchronize() != 2 ||
+                .synchronize() != exit_code::blocked ||
         !size_items.pending_uploads_by_path.empty() ||
         std::filesystem::exists(size_snapshot) ||
         size_graph.download_count != 0 ||
@@ -1283,7 +1288,7 @@ int test_external_cancellation_preserves_upload_journal() {
     }
                              .synchronize(stop.get_token());
     const auto pending = items.pending_uploads("me");
-    if (result != 130 ||
+    if (result != exit_code::cancelled ||
         metrics.last_outcome !=
             onedrive::metrics::SyncRunOutcome::cancelled ||
         pending.size() != 1 || pending.front().upload_url.empty() ||

@@ -1,4 +1,5 @@
 #include "http/callbacks.hpp"
+#include "http/status.hpp"
 
 #include <algorithm>
 #include <cerrno>
@@ -187,7 +188,7 @@ std::size_t write_response(
                 return 0;
             }
             if (write_context.follow_redirects &&
-                status_code >= 300 && status_code < 400) {
+                status::is_redirect(status_code)) {
                 accepted = false;
             } else if (write_context.response_gate != nullptr &&
                 *write_context.response_gate) {

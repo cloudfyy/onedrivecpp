@@ -1,4 +1,5 @@
 #include "support.hpp"
+#include "onedrive/exit_code.hpp"
 #include "ui/cli/app/info.hpp"
 #include "db/support.hpp"
 #include "onedrive/logging/logging.hpp"
@@ -8,6 +9,8 @@
 #include <unistd.h>
 
 namespace {
+
+namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::app;
 using onedrive::test::read_file;
@@ -23,7 +26,7 @@ struct CleanupFixture {
     std::filesystem::path database_directory;
 
     CleanupFixture() {
-        if (cli.authenticate().exit_code != 0) {
+        if (cli.authenticate().exit_code != exit_code::success) {
             throw std::runtime_error("cleanup fixture authentication failed");
         }
         cli.runtime_factory.use_real_item_store = true;
@@ -171,7 +174,7 @@ void test_cleanup() {
     write_file(fixture.cli.config_path, config);
     const auto configured = fixture.run({"--yes", "--output", "json"});
     require(
-        configured.exit_code == 0 &&
+        configured.exit_code == exit_code::success &&
             configured.standard_output.contains(R"("mode":"dry-run")") &&
             configured.standard_output.contains(R"("planned_files":"4")") &&
             configured.standard_output.contains(R"("record_only":"1")") &&
@@ -190,24 +193,24 @@ void test_cleanup() {
     write_file(fixture.cli.config_path, original);
     require(
         fixture.run({"--dry-run", "--yes", "--output", "json"}).exit_code ==
-                0 &&
+                exit_code::success &&
             fixture.has_record(short_file),
         "explicit dry-run changed records"
     );
     require(
-        fixture.run({"--output", "json"}).exit_code == 1 &&
+        fixture.run({"--output", "json"}).exit_code == exit_code::failure &&
             fixture.has_record(invalid),
         "JSON cleanup bypassed confirmation"
     );
     require(
-        fixture.run({}, "no\n").exit_code == 1 &&
+        fixture.run({}, "no\n").exit_code == exit_code::failure &&
             std::filesystem::exists(orphan),
         "cancelled cleanup removed files"
     );
 
     const auto result = fixture.run({}, "me\n");
     require(
-        result.exit_code == 0 &&
+        result.exit_code == exit_code::success &&
             result.standard_output.contains(
                 "Removed 4 invalid partial records and 4 temporary files"
             ),
@@ -239,7 +242,7 @@ void test_cleanup() {
     );
     const auto repeat = fixture.run({"--yes", "--output", "json"});
     require(
-        repeat.exit_code == 0 &&
+        repeat.exit_code == exit_code::success &&
             repeat.standard_output.contains(R"("planned_files":"0")") &&
             repeat.standard_output.contains(R"("invalid_records":"0")"),
         "cleanup was not idempotent"
@@ -347,7 +350,7 @@ void test_unsafe_files() {
     write_file(orphan, "orphan");
     const auto result = fixture.run({"--yes", "--output", "json"});
     require(
-        result.exit_code == 1 &&
+        result.exit_code == exit_code::failure &&
             result.standard_output.contains(
                 R"("event":"cleanup_incomplete")"
             ) &&
@@ -369,7 +372,8 @@ void test_unsafe_files() {
             blocked, std::filesystem::perms::owner_all
         );
         require(
-            incomplete.exit_code == 1 && !incomplete.standard_error.empty() &&
+            incomplete.exit_code == exit_code::failure &&
+                !incomplete.standard_error.empty() &&
                 std::filesystem::exists(orphan),
             "incomplete scan deleted files or reported success"
         );
@@ -435,7 +439,7 @@ void test_references_and_missing_state() {
     });
     const auto result = fixture.run({"--yes", "--output", "json"});
     require(
-        result.exit_code == 1 &&
+        result.exit_code == exit_code::failure &&
             result.standard_output.contains(R"("skipped":"3")") &&
             result.standard_output.contains(R"("planned_files":"0")") &&
             fixture.has_record(duplicate) &&
@@ -454,7 +458,8 @@ void test_references_and_missing_state() {
     write_file(unrecorded, "orphan");
     const auto orphan_only = missing_state.run({"--yes", "--output", "json"});
     require(
-        orphan_only.exit_code == 0 && !std::filesystem::exists(unrecorded) &&
+        orphan_only.exit_code == exit_code::success &&
+            !std::filesystem::exists(unrecorded) &&
             !std::filesystem::exists(
                 missing_state.database_directory / "items.sqlite3"
             ),
@@ -462,13 +467,15 @@ void test_references_and_missing_state() {
     );
     std::filesystem::remove(missing_state.root);
     require(
-        missing_state.run({"--yes", "--output", "json"}).exit_code == 0,
+        missing_state.run({"--yes", "--output", "json"}).exit_code ==
+            exit_code::success,
         "cleanup failed on an absent Drive root"
     );
     write_file(missing_state.root, "not a directory");
     const auto bad_root = missing_state.run({"--yes", "--output", "json"});
     require(
-        bad_root.exit_code == 1 && !bad_root.standard_error.empty(),
+        bad_root.exit_code == exit_code::failure &&
+            !bad_root.standard_error.empty(),
         "cleanup accepted a non-directory Drive root"
     );
 }
@@ -488,7 +495,8 @@ void test_invalid_database_and_retry() {
     );
     const auto failed = fixture.run({"--yes", "--output", "json"});
     require(
-        failed.exit_code == 1 && !failed.standard_error.empty() &&
+        failed.exit_code == exit_code::failure &&
+            !failed.standard_error.empty() &&
             std::filesystem::exists(partial.temporary_path),
         "cleanup did not reject an unexpected database schema before deletion"
     );
@@ -504,7 +512,7 @@ void test_invalid_database_and_retry() {
     std::filesystem::remove(partial.temporary_path);
     const auto retry = fixture.run({"--yes", "--output", "json"});
     require(
-        retry.exit_code == 0 && !fixture.has_record(partial) &&
+        retry.exit_code == exit_code::success && !fixture.has_record(partial) &&
             retry.standard_output.contains(R"("removed_records":"1")") &&
             retry.standard_output.contains(R"("removed_files":"0")"),
         "cleanup could not finish a record after its file was already deleted"

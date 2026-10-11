@@ -31,7 +31,7 @@ NotificationChannel MicrosoftGraphClient::notification_channel() const {
             .body = {},
             .connect_timeout = options_.notification_request_timeout,
             .operation_timeout = options_.notification_request_timeout,
-            .maximum_response_size = std::size_t{1024} * 1024U,
+            .maximum_response_size = client_detail::maximum_json_response_bytes,
             .stop_token = {},
         }
     );
@@ -44,11 +44,11 @@ NotificationChannel MicrosoftGraphClient::notification_channel() const {
     }
     const auto json = parse_graph_json(*response, "notification channel");
     if (!successful_status(response->status_code)) {
-        if (response->status_code == 401) {
+        if (response->status_code == http::status::unauthorized) {
             invalidate_access_token();
         }
         throw NotificationChannelError{
-            response->status_code == 401 ?
+            response->status_code == http::status::unauthorized ?
                 NotificationFailureKind::unauthorized :
                 NotificationFailureKind::transient,
             std::format(

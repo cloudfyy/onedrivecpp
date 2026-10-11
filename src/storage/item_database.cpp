@@ -50,6 +50,11 @@ using item_database_detail::verify_database_integrity;
 constexpr mode_t private_directory_mode = S_IRWXU;
 constexpr mode_t private_file_mode = S_IRUSR | S_IWUSR;
 constexpr int database_busy_timeout_milliseconds = 5000;
+constexpr int maximum_value_bytes = 16 * 1024 * 1024;
+constexpr int maximum_sql_bytes = 1024 * 1024;
+constexpr int maximum_columns = 128;
+constexpr int maximum_compound_select_terms = 32;
+constexpr int maximum_bound_parameters = 128;
 
 enum class DatabaseAccess {
     read_only,
@@ -100,12 +105,16 @@ void configure_database_connection(sqlite3* database) {
         "cannot disable SQLite extension loading"
     );
 
-    sqlite3_limit(database, SQLITE_LIMIT_LENGTH, 16 * 1024 * 1024);
-    sqlite3_limit(database, SQLITE_LIMIT_SQL_LENGTH, 1024 * 1024);
-    sqlite3_limit(database, SQLITE_LIMIT_COLUMN, 128);
-    sqlite3_limit(database, SQLITE_LIMIT_COMPOUND_SELECT, 32);
+    sqlite3_limit(database, SQLITE_LIMIT_LENGTH, maximum_value_bytes);
+    sqlite3_limit(database, SQLITE_LIMIT_SQL_LENGTH, maximum_sql_bytes);
+    sqlite3_limit(database, SQLITE_LIMIT_COLUMN, maximum_columns);
+    sqlite3_limit(
+        database, SQLITE_LIMIT_COMPOUND_SELECT, maximum_compound_select_terms
+    );
     sqlite3_limit(database, SQLITE_LIMIT_ATTACHED, 0);
-    sqlite3_limit(database, SQLITE_LIMIT_VARIABLE_NUMBER, 128);
+    sqlite3_limit(
+        database, SQLITE_LIMIT_VARIABLE_NUMBER, maximum_bound_parameters
+    );
 }
 
 void activate_database_pragmas(

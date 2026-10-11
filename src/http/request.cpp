@@ -1,5 +1,6 @@
 #include "http/request.hpp"
 #include "http/curl.hpp"
+#include "http/status.hpp"
 
 #include "onedrive/util/system_error.hpp"
 #include "onedrive/version.hpp"
@@ -635,7 +636,7 @@ HttpResult perform_request(
             });
         }
     }
-    if (descriptor != -1 && status_code >= 200 && status_code < 300 &&
+    if (descriptor != -1 && status::is_success(status_code) &&
         download_state->response_accepted) {
         if (::fsync(descriptor) == -1) {
             return std::unexpected(HttpError{

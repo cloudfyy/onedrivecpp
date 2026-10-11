@@ -2,6 +2,7 @@
 #include "system_appearance.hpp"
 
 #include "onedrive/config/config.hpp"
+#include "onedrive/exit_code.hpp"
 
 #include <QApplication>
 #include <QMessageBox>
@@ -25,6 +26,6 @@ int main(int argc, char* argv[]) {
         QMessageBox::critical(
             nullptr, "OneDrive C++", QString::fromUtf8(error.what())
         );
-        return 1;
+        return onedrive::exit_code::failure;
     }
 }

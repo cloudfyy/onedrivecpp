@@ -398,8 +398,8 @@ RemoteItem MicrosoftGraphClient::upload_file(
     const auto require_upload_success = [&](const http::HttpResponse& response,
                                             const Json& json) {
         if (!successful_status(response.status_code)) {
-            if (response.status_code == 409 ||
-                response.status_code == 412) {
+            if (response.status_code == http::status::conflict ||
+                response.status_code == http::status::precondition_failed) {
                 throw UploadConflictError(
                     graph_error_message(json, response.status_code)
                 );
@@ -464,7 +464,7 @@ RemoteItem MicrosoftGraphClient::upload_file(
                         maximum_send_speed,
                     .http_version = transfer.http_version,
                     .ip_version = transfer.ip_version,
-                    .maximum_response_size = std::size_t{1024} * 1024U,
+                    .maximum_response_size = maximum_json_response_bytes,
                     .upload_throttle = upload_throttle,
                     .stop_token = stop_token,
                 });
@@ -564,7 +564,7 @@ RemoteItem MicrosoftGraphClient::upload_file(
                         maximum_send_speed,
                     .http_version = transfer.http_version,
                     .ip_version = transfer.ip_version,
-                    .maximum_response_size = std::size_t{1024} * 1024U,
+                    .maximum_response_size = maximum_json_response_bytes,
                     .stop_token = stop_token,
                 });
             },
@@ -628,8 +628,7 @@ RemoteItem MicrosoftGraphClient::upload_file(
                     .low_speed_timeout = transfer.low_speed_timeout,
                     .low_speed_limit_bytes_per_second =
                         transfer.low_speed_limit_bytes_per_second,
-                    .maximum_response_size =
-                        std::size_t{1024} * 1024U,
+                    .maximum_response_size = maximum_json_response_bytes,
                     .stop_token = stop_token,
                 });
             },
@@ -652,8 +651,8 @@ RemoteItem MicrosoftGraphClient::upload_file(
                 response.error().message
             );
         }
-        if (response->status_code == 404 ||
-            response->status_code == 410) {
+        if (response->status_code == http::status::not_found ||
+            response->status_code == http::status::gone) {
             return discard_saved_upload_session(std::move(saved));
         }
         const auto json =
@@ -772,7 +771,7 @@ RemoteItem MicrosoftGraphClient::upload_file(
                         maximum_send_speed,
                     .http_version = transfer.http_version,
                     .ip_version = transfer.ip_version,
-                    .maximum_response_size = std::size_t{1024} * 1024U,
+                    .maximum_response_size = maximum_json_response_bytes,
                     .upload_throttle = upload_throttle,
                     .stop_token = stop_token,
                 });
@@ -801,7 +800,7 @@ RemoteItem MicrosoftGraphClient::upload_file(
             parse_graph_json(*chunk_response, "upload fragment");
         require_upload_success(*chunk_response, chunk_json);
         const auto next_offset = end + 1;
-        if (chunk_response->status_code == 202) {
+        if (chunk_response->status_code == http::status::accepted) {
             if (next_offset >= total_size) {
                 throw std::runtime_error(
                     "Microsoft Graph did not finalize the last upload fragment"
@@ -839,8 +838,8 @@ RemoteItem MicrosoftGraphClient::upload_file(
             offset = next_offset;
             continue;
         }
-        if (chunk_response->status_code != 200 &&
-            chunk_response->status_code != 201) {
+        if (chunk_response->status_code != http::status::ok &&
+            chunk_response->status_code != http::status::created) {
             throw std::runtime_error(
                 "Microsoft Graph upload fragment returned an unexpected "
                 "success status"

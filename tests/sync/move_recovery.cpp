@@ -1,6 +1,9 @@
 #include "support.hpp"
+#include "onedrive/exit_code.hpp"
 
 namespace {
+
+namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::sync;
 
@@ -43,7 +46,7 @@ int journal_boundary_failures() {
                     "state"
                 );
             }
-        } else if (engine.synchronize() != 2 ||
+        } else if (engine.synchronize() != exit_code::blocked ||
                    items.applied_delta.blocked_upserts.size() != 1 ||
                    items.applied_delta.blocked_upserts[0].reason_code !=
                        "local_path_conflict" ||
@@ -67,7 +70,8 @@ int journal_boundary_failures() {
         items.before_pending_move_save = {};
         items.fail_pending_move_remove = false;
         std::filesystem::remove(destination);
-        if (engine.synchronize() != 0 || std::filesystem::exists(source) ||
+        if (engine.synchronize() != exit_code::success ||
+            std::filesystem::exists(source) ||
             onedrive::test::read_file(destination) != "data" ||
             !items.pending_moves_by_id.empty() || graph.download_count != 0 ||
             items.items.at("move").local_path != destination ||
@@ -126,7 +130,7 @@ int invalid_recovery_journals() {
         onedrive::sync::SyncEngine engine{
             config_for(temporary.path(), false), graph, items, metrics, &console
         };
-        if (engine.synchronize() != 2 ||
+        if (engine.synchronize() != exit_code::blocked ||
             items.applied_delta.blocked_upserts.size() != 1 ||
             items.applied_delta.blocked_upserts[0].reason_code !=
                 "pending_move_conflict" ||
@@ -141,7 +145,8 @@ int invalid_recovery_journals() {
             );
         }
         items.pending_moves_by_id.insert_or_assign("move", valid);
-        if (engine.synchronize() != 0 || std::filesystem::exists(source) ||
+        if (engine.synchronize() != exit_code::success ||
+            std::filesystem::exists(source) ||
             onedrive::test::read_file(destination) != "data" ||
             !items.pending_moves_by_id.empty() ||
             items.items.at("move").local_path != destination ||

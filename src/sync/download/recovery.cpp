@@ -2,6 +2,7 @@
 
 #include "sync/filesystem/operations.hpp"
 #include "onedrive/util/remote_time.hpp"
+#include "onedrive/util/sha256.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -38,7 +39,7 @@ bool recovery_file_matches(
 }
 
 bool valid_fingerprint(std::string_view fingerprint) {
-    return fingerprint.size() == 64 &&
+    return fingerprint.size() == util::sha256_hex_characters &&
            std::ranges::all_of(
                fingerprint,
                [](char value) {

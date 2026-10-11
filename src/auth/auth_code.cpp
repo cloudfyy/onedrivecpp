@@ -19,6 +19,9 @@
 namespace onedrive::auth {
 namespace {
 
+constexpr std::size_t authorization_secret_bytes = 32;
+constexpr std::size_t maximum_callback_uri_bytes = 8192;
+
 struct Url {
     std::string scheme;
     std::string host;
@@ -77,16 +80,18 @@ std::optional<Url> parse_url(const std::string& value) {
 }
 
 std::string random_secret() {
-    std::array<unsigned char, 32> bytes{};
+    std::array<unsigned char, authorization_secret_bytes> bytes{};
     struct CleanBytes {
-        explicit CleanBytes(std::array<unsigned char, 32>& buffer) noexcept
+        explicit CleanBytes(
+            std::array<unsigned char, authorization_secret_bytes>& buffer
+        ) noexcept
             : bytes{buffer} {
         }
         CleanBytes(const CleanBytes&) = delete;
         CleanBytes& operator=(const CleanBytes&) = delete;
         CleanBytes(CleanBytes&&) = delete;
         CleanBytes& operator=(CleanBytes&&) = delete;
-        std::array<unsigned char, 32>& bytes;
+        std::array<unsigned char, authorization_secret_bytes>& bytes;
         ~CleanBytes() {
             OPENSSL_cleanse(bytes.data(), bytes.size());
         }
@@ -387,7 +392,7 @@ AuthResult<void> AuthCodeSession::accept_callback(
             "browser authorization callback was already consumed"
         };
     }
-    if (callback_uri.size() > 8192)
+    if (callback_uri.size() > maximum_callback_uri_bytes)
         return std::unexpected(invalid_callback());
     try {
         const auto callback = parse_url(callback_uri);

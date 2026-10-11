@@ -2,6 +2,7 @@
 
 #include "util/uri.hpp"
 #include "auth/options.hpp"
+#include "http/status.hpp"
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -23,6 +24,12 @@ using Json = nlohmann::json;
 using FormValues = std::vector<std::pair<std::string_view, std::string_view>>;
 
 using detail::valid_options;
+
+// RFC 8628 defines both the default interval and the slow_down increment.
+constexpr auto default_polling_interval = std::chrono::seconds{5};
+constexpr auto polling_slow_down_increment = std::chrono::seconds{5};
+constexpr std::size_t minimum_pkce_verifier_length = 43;
+constexpr std::size_t maximum_pkce_verifier_length = 128;
 
 AuthError invalid_configuration_error() {
     return {
@@ -174,7 +181,7 @@ DeviceAuthClient::request_device_code(const std::stop_token& stop_token) const {
     if (!json) {
         return std::unexpected(json.error());
     }
-    if (response->status_code < 200 || response->status_code >= 300) {
+    if (!http::status::is_success(response->status_code)) {
         return std::unexpected(AuthError{
             .code = AuthErrorCode::server,
             .message = error_description(*json, "device authorization request failed"),
@@ -183,7 +190,9 @@ DeviceAuthClient::request_device_code(const std::stop_token& stop_token) const {
 
     try {
         const auto expires_in = json->at("expires_in").get<std::int64_t>();
-        const auto interval = json->value("interval", std::int64_t{5});
+        const auto interval = json->value(
+            "interval", std::int64_t{default_polling_interval.count()}
+        );
         DeviceCode result{
             .device_code = json->at("device_code").get<std::string>(),
             .user_code = json->at("user_code").get<std::string>(),
@@ -270,7 +279,7 @@ AuthResult<OAuthTokens> DeviceAuthClient::poll_for_token(
         if (!json) {
             return std::unexpected(json.error());
         }
-        if (response->status_code >= 200 && response->status_code < 300) {
+        if (http::status::is_success(response->status_code)) {
             spdlog::debug(
                 "Microsoft device authorization completed after {} polls",
                 poll_attempt
@@ -284,7 +293,7 @@ AuthResult<OAuthTokens> DeviceAuthClient::poll_for_token(
             continue;
         }
         if (error == "slow_down") {
-            interval += std::chrono::seconds{5};
+            interval += polling_slow_down_increment;
             spdlog::warn(
                 "Microsoft device authorization requested slower polling; "
                 "interval is now {} seconds",
@@ -346,7 +355,7 @@ AuthResult<OAuthTokens> DeviceAuthClient::refresh_access_token(
     if (!json) {
         return std::unexpected(json.error());
     }
-    if (response->status_code < 200 || response->status_code >= 300) {
+    if (!http::status::is_success(response->status_code)) {
         return std::unexpected(AuthError{
             .code = AuthErrorCode::server,
             .message = error_description(*json, "refresh token request failed"),
@@ -364,8 +373,9 @@ AuthResult<OAuthTokens> DeviceAuthClient::exchange_authorization_code(
     if (!valid_options(options_)) {
         return std::unexpected(invalid_configuration_error());
     }
-    if (code.empty() || redirect_uri.empty() || verifier.size() < 43 ||
-        verifier.size() > 128 ||
+    if (code.empty() || redirect_uri.empty() ||
+        verifier.size() < minimum_pkce_verifier_length ||
+        verifier.size() > maximum_pkce_verifier_length ||
         verifier.find_first_not_of(
             "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~"
         ) != std::string::npos) {
@@ -397,7 +407,7 @@ AuthResult<OAuthTokens> DeviceAuthClient::exchange_authorization_code(
     if (!json) {
         return std::unexpected(json.error());
     }
-    if (response->status_code < 200 || response->status_code >= 300) {
+    if (!http::status::is_success(response->status_code)) {
         return std::unexpected(
             AuthError{
                 .code = AuthErrorCode::server,

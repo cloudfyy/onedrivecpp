@@ -65,6 +65,14 @@ one thread owns the SQLite connection and transaction order while errors are
 returned to the caller. SQLite is the authoritative state source; the adapter
 does not maintain duplicate mutable item caches.
 
+Protocol and policy limits are named at their owning scope. HTTP, authentication,
+and Graph share status codes and status-family predicates in `src/http/status.hpp`;
+Graph JSON requests share their response-size cap in `src/graph/support.hpp`.
+SHA-256 digest and hexadecimal lengths live in `onedrive/util/sha256.hpp`.
+The browser transport reuses `BrowserRequest::request_limit`; filesystem buffers,
+name-allocation attempts, and SQLite connection limits remain local constants.
+These names do not change wire values, persisted formats, or retry behavior.
+
 ## Presentation boundary
 
 Synchronization, upload, and Delta publish typed `events::Event` values through
@@ -117,16 +125,24 @@ account activation. Once persistence begins, it is allowed to finish rather than
 interrupting account file writes. CLI messages and exit codes remain unchanged;
 GUI worker and window lifetimes are still the frontend's responsibility.
 
+Application, CLI, GUI, and synchronization integer result APIs use the
+UI-neutral constants in `onedrive/exit_code.hpp`: `success` (0), `failure` (1),
+`usage_error` (2), and `cancelled` (130). Synchronization also returns `blocked`
+(2) when items are blocked; this existing status shares a numeric value with CLI
+usage errors but has a different meaning. These published values remain
+compatible with existing callers and scripts. Graceful Monitor shutdown still
+returns `success`, including when its active synchronization was cancelled.
+
 `SyncEngine::synchronize` and Monitor callbacks accept a stop token. A cancelled
-sync returns exit code 130 and records a distinct `cancelled` outcome rather
-than reporting success or an ordinary failure. Graph Delta forwards the token
-through OAuth refresh, paged HTTP requests, and retry waits. Download and upload
-workers bridge external stop requests to their existing worker stop sources and
-join before returning. The sync plan checks cancellation at safe boundaries;
-incomplete uploads retain their durable journal, and an incomplete Delta does
-not advance the local cursor. Already committed individual downloads or remote
-operations are not rolled back. Single Graph requests in remote-move, remote-
-delete, and startup-recovery operations are not yet interruptible.
+sync returns `exit_code::cancelled` and records a distinct `cancelled` outcome
+rather than reporting success or an ordinary failure. Graph Delta forwards the
+token through OAuth refresh, paged HTTP requests, and retry waits. Download and
+upload workers bridge external stop requests to their existing worker stop
+sources and join before returning. The sync plan checks cancellation at safe
+boundaries; incomplete uploads retain their durable journal, and an incomplete
+Delta does not advance the local cursor. Already committed individual downloads
+or remote operations are not rolled back. Single Graph requests in remote-move,
+remote-delete, and startup-recovery operations are not yet interruptible.
 
 This boundary preserves JSON, redirected text, quiet mode, and interactive
 terminal behavior without coupling business code to a specific renderer. The

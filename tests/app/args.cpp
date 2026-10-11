@@ -1,10 +1,19 @@
 #include "support.hpp"
+#include "onedrive/exit_code.hpp"
 #include "ui/cli/app/args.hpp"
 
 #include <array>
 #include <utility>
 
 namespace {
+
+namespace exit_code = onedrive::exit_code;
+
+static_assert(exit_code::success == 0);
+static_assert(exit_code::failure == 1);
+static_assert(exit_code::usage_error == 2);
+static_assert(exit_code::cancelled == 130);
+static_assert(exit_code::blocked == 2);
 
 using namespace onedrive::test::app;
 
@@ -42,7 +51,7 @@ int test_ui_option_help() {
         const auto help = run_application(
             runtime_factory, {"onedrive-cpp", group, action, "--help"}
         );
-        if (help.exit_code != 0 ||
+        if (help.exit_code != exit_code::success ||
             !help.standard_output.contains("--ui {auto,console,tui} [auto]") ||
             !help.standard_output.contains(
                 "--theme {hacker,ocean,amber,synthwave} [hacker]"
@@ -100,7 +109,8 @@ int test_ui_option_help() {
             runtime_factory,
             {"onedrive-cpp", "inspect", "config", option, "999"}
         );
-        if (result.exit_code != 2 || !result.standard_error.contains(option)) {
+        if (result.exit_code != exit_code::usage_error ||
+            !result.standard_error.contains(option)) {
             return fail("readable help disabled numeric enum validation");
         }
     }
@@ -112,7 +122,8 @@ int test_args() {
 
     const auto help =
         run_application(runtime_factory, {"build/release/onedrive-cpp"});
-    if (help.exit_code != 0 || !help.standard_output.contains("account") ||
+    if (help.exit_code != exit_code::success ||
+        !help.standard_output.contains("account") ||
         !help.standard_output.contains("inspect") ||
         !help.standard_output.contains("state") ||
         !help.standard_output.contains("transfer") ||
@@ -123,14 +134,14 @@ int test_args() {
 
     const auto version =
         run_application(runtime_factory, {"onedrive-cpp", "--version"});
-    if (version.exit_code != 0 ||
+    if (version.exit_code != exit_code::success ||
         !version.standard_output.starts_with("onedrive-cpp ")) {
         return fail("--version did not print the application version");
     }
     const auto transfer_help = run_application(
         runtime_factory, {"onedrive-cpp", "transfer", "--help"}
     );
-    if (transfer_help.exit_code != 0 ||
+    if (transfer_help.exit_code != exit_code::success ||
         !transfer_help.standard_output.contains("sync") ||
         !transfer_help.standard_output.contains("download") ||
         !transfer_help.standard_output.contains("watch")) {
@@ -139,7 +150,7 @@ int test_args() {
     const auto sync_help = run_application(
         runtime_factory, {"onedrive-cpp", "transfer", "sync", "--help"}
     );
-    if (sync_help.exit_code != 0 ||
+    if (sync_help.exit_code != exit_code::success ||
         !sync_help.standard_output.contains("--force-large-delete") ||
         !sync_help.standard_output.contains("--ui") ||
         !sync_help.standard_output.contains("--theme")) {
@@ -147,7 +158,7 @@ int test_args() {
     }
     const auto account_help =
         run_application(runtime_factory, {"onedrive-cpp", "account", "--help"});
-    if (account_help.exit_code != 0 ||
+    if (account_help.exit_code != exit_code::success ||
         !account_help.standard_output.contains("login") ||
         !account_help.standard_output.contains("logout")) {
         return fail("account help did not list its authentication actions");
@@ -155,7 +166,7 @@ int test_args() {
     const auto login_help = run_application(
         runtime_factory, {"onedrive-cpp", "account", "login", "--help"}
     );
-    if (login_help.exit_code != 0 ||
+    if (login_help.exit_code != exit_code::success ||
         !login_help.standard_output.contains("--ui") ||
         !login_help.standard_output.contains("--theme")) {
         return fail("account login help did not document TUI options");
@@ -163,7 +174,7 @@ int test_args() {
     const auto watch_help = run_application(
         runtime_factory, {"onedrive-cpp", "transfer", "watch", "--help"}
     );
-    if (watch_help.exit_code != 0 ||
+    if (watch_help.exit_code != exit_code::success ||
         !watch_help.standard_output.contains("--ui") ||
         !watch_help.standard_output.contains("--theme")) {
         return fail("transfer watch help did not document TUI options");
@@ -172,14 +183,14 @@ int test_args() {
         runtime_factory,
         {"onedrive-cpp", "transfer", "download", "--help"}
     );
-    if (download_help.exit_code != 0 ||
+    if (download_help.exit_code != exit_code::success ||
         !download_help.standard_output.contains("--ui") ||
         !download_help.standard_output.contains("--theme")) {
         return fail("download help did not document TUI options");
     }
     const auto inspect_help =
         run_application(runtime_factory, {"onedrive-cpp", "inspect", "--help"});
-    if (inspect_help.exit_code != 0 ||
+    if (inspect_help.exit_code != exit_code::success ||
         !inspect_help.standard_output.contains("health") ||
         !inspect_help.standard_output.contains("status") ||
         !inspect_help.standard_output.contains("drives") ||
@@ -196,7 +207,7 @@ int test_args() {
     const auto health_help = run_application(
         runtime_factory, {"onedrive-cpp", "inspect", "health", "--help"}
     );
-    if (health_help.exit_code != 0 ||
+    if (health_help.exit_code != exit_code::success ||
         !health_help.standard_output.contains(
             "Run local synchronization-state diagnostics"
         ) ||
@@ -207,7 +218,7 @@ int test_args() {
     const auto status_help = run_application(
         runtime_factory, {"onedrive-cpp", "inspect", "status", "--help"}
     );
-    if (status_help.exit_code != 0 ||
+    if (status_help.exit_code != exit_code::success ||
         !status_help.standard_output.contains(
             "Show read-only synchronization status"
         ) ||
@@ -218,7 +229,7 @@ int test_args() {
     const auto files_help = run_application(
         runtime_factory, {"onedrive-cpp", "inspect", "files", "--help"}
     );
-    if (files_help.exit_code != 0 ||
+    if (files_help.exit_code != exit_code::success ||
         !files_help.standard_output.contains("[PATH]") ||
         !files_help.standard_output.contains("--status") ||
         !files_help.standard_output.contains("--ui")) {
@@ -227,7 +238,7 @@ int test_args() {
     const auto verify_help = run_application(
         runtime_factory, {"onedrive-cpp", "inspect", "verify", "--help"}
     );
-    if (verify_help.exit_code != 0 ||
+    if (verify_help.exit_code != exit_code::success ||
         !verify_help.standard_output.contains("--mode") ||
         !verify_help.standard_output.contains("[PATH]")) {
         return fail("inspect verify help was not available");
@@ -242,12 +253,12 @@ int test_args() {
                 "corrupt",
             }
         )
-            .exit_code != 2) {
+            .exit_code != exit_code::usage_error) {
         return fail("inspect files accepted an invalid status");
     }
     const auto state_help =
         run_application(runtime_factory, {"onedrive-cpp", "state", "--help"});
-    if (state_help.exit_code != 0 ||
+    if (state_help.exit_code != exit_code::success ||
         !state_help.standard_output.contains("reset-cursor") ||
         !state_help.standard_output.contains("cleanup") ||
         !state_help.standard_output.contains("migrate") ||
@@ -260,12 +271,12 @@ int test_args() {
     const auto migrate_help = run_application(
         runtime_factory, {"onedrive-cpp", "state", "migrate", "--help"}
     );
-    if (migrate_help.exit_code != 0 ||
+    if (migrate_help.exit_code != exit_code::success ||
         !migrate_help.standard_output.contains("--dry-run") ||
         !migrate_help.standard_output.contains("--yes")) {
         return fail("state migrate help did not document safety options");
     }
-    if (cleanup_help.exit_code != 0 ||
+    if (cleanup_help.exit_code != exit_code::success ||
         !cleanup_help.standard_output.contains("--dry-run") ||
         !cleanup_help.standard_output.contains("--yes")) {
         return fail("state cleanup help did not document safety options");
@@ -273,35 +284,35 @@ int test_args() {
     const auto reset_cursor_help = run_application(
         runtime_factory, {"onedrive-cpp", "state", "reset-cursor", "--help"}
     );
-    if (reset_cursor_help.exit_code != 0 ||
+    if (reset_cursor_help.exit_code != exit_code::success ||
         reset_cursor_help.standard_output.contains("--yes")) {
         return fail("state reset-cursor help exposed clear-only options");
     }
     const auto clear_state_help = run_application(
         runtime_factory, {"onedrive-cpp", "state", "clear", "--help"}
     );
-    if (clear_state_help.exit_code != 0 ||
+    if (clear_state_help.exit_code != exit_code::success ||
         !clear_state_help.standard_output.contains("--yes") ||
         clear_state_help.standard_output.contains("--clear-all")) {
         return fail("state clear help did not document its confirmation");
     }
 
     if (run_application(runtime_factory, {"onedrive-cpp", "unknown"})
-            .exit_code != 2) {
+            .exit_code != exit_code::usage_error) {
         return fail("unknown command did not return usage exit code 2");
     }
     if (run_application(
             runtime_factory,
             {"onedrive-cpp", "account", "login", "--config"}
         )
-            .exit_code != 2) {
+            .exit_code != exit_code::usage_error) {
         return fail("missing option value did not return usage exit code 2");
     }
     if (run_application(
             runtime_factory,
             {"onedrive-cpp", "account", "login", "--dry-run"}
         )
-            .exit_code != 2) {
+            .exit_code != exit_code::usage_error) {
         return fail(
             "command-specific option was accepted by the wrong command"
         );
@@ -315,7 +326,7 @@ int test_args() {
                 "--force-large-delete",
             }
         )
-            .exit_code != 2) {
+            .exit_code != exit_code::usage_error) {
         return fail(
             "transfer watch accepted the one-shot large-delete override"
         );
@@ -324,79 +335,79 @@ int test_args() {
             runtime_factory,
             {"onedrive-cpp", "account", "logout", "--log-level", "verbose"}
         )
-            .exit_code != 2) {
+            .exit_code != exit_code::usage_error) {
         return fail("invalid log level did not return usage exit code 2");
     }
     if (run_application(
             runtime_factory,
             {"onedrive-cpp", "account", "logout", "--color", "sometimes"}
         )
-            .exit_code != 2) {
+            .exit_code != exit_code::usage_error) {
         return fail("invalid color mode did not return usage exit code 2");
     }
     if (run_application(
             runtime_factory,
             {"onedrive-cpp", "account", "logout", "--output", "yaml"}
         )
-            .exit_code != 2) {
+            .exit_code != exit_code::usage_error) {
         return fail("invalid output mode did not return usage exit code 2");
     }
     if (run_application(
             runtime_factory,
             {"onedrive-cpp", "transfer", "sync", "--ui", "graphical"}
         )
-            .exit_code != 2) {
+            .exit_code != exit_code::usage_error) {
         return fail("invalid UI mode did not return usage exit code 2");
     }
     if (run_application(
             runtime_factory,
             {"onedrive-cpp", "transfer", "sync", "--theme", "rainbow"}
         )
-            .exit_code != 2) {
+            .exit_code != exit_code::usage_error) {
         return fail("invalid TUI theme did not return usage exit code 2");
     }
     if (run_application(runtime_factory, {"onedrive-cpp", "state"}).exit_code !=
-        2) {
+        exit_code::usage_error) {
         return fail("state command accepted a missing action");
     }
     if (run_application(runtime_factory, {"onedrive-cpp", "account"})
-            .exit_code != 2) {
+            .exit_code != exit_code::usage_error) {
         return fail("account command accepted a missing action");
     }
     if (run_application(runtime_factory, {"onedrive-cpp", "inspect"})
-            .exit_code != 2) {
+            .exit_code != exit_code::usage_error) {
         return fail("inspect command accepted a missing action");
     }
     if (run_application(runtime_factory, {"onedrive-cpp", "auth"}).exit_code !=
-            2 ||
+            exit_code::usage_error ||
         run_application(runtime_factory, {"onedrive-cpp", "logout"})
-                .exit_code != 2) {
+                .exit_code != exit_code::usage_error) {
         return fail("removed authentication commands were still accepted");
     }
     if (run_application(
             runtime_factory, {"onedrive-cpp", "state", "reset-cursor", "--yes"}
         )
-            .exit_code != 2) {
+            .exit_code != exit_code::usage_error) {
         return fail("state reset-cursor accepted the clear confirmation flag");
     }
     if (run_application(runtime_factory, {"onedrive-cpp", "reset-state"})
-            .exit_code != 2) {
+            .exit_code != exit_code::usage_error) {
         return fail("removed reset-state command was still accepted");
     }
     if (run_application(runtime_factory, {"onedrive-cpp", "transfer"})
-            .exit_code != 2) {
+            .exit_code != exit_code::usage_error) {
         return fail("transfer command accepted a missing action");
     }
     if (run_application(
             runtime_factory, {"onedrive-cpp", "transfer", "download"}
         )
-            .exit_code != 2) {
+            .exit_code != exit_code::usage_error) {
         return fail("transfer download accepted a missing remote path");
     }
     if (run_application(
             runtime_factory, {"onedrive-cpp", "inspect", "sites"}
         )
-            .exit_code != 2) {
+            .exit_code != exit_code::usage_error) {
         return fail("inspect sites accepted a missing search query");
     }
     for (const std::string_view command :
@@ -404,7 +415,7 @@ int test_args() {
         if (run_application(
                 runtime_factory, {"onedrive-cpp", std::string{command}}
             )
-                .exit_code != 2) {
+                .exit_code != exit_code::usage_error) {
             return fail("removed inspection command was still accepted");
         }
     }
@@ -412,13 +423,13 @@ int test_args() {
         if (run_application(
                 runtime_factory, {"onedrive-cpp", std::string{command}}
             )
-                .exit_code != 2) {
+                .exit_code != exit_code::usage_error) {
             return fail("removed transfer command was still accepted");
         }
     }
 
     CliFixture ui_fixture;
-    if (ui_fixture.authenticate().exit_code != 0) {
+    if (ui_fixture.authenticate().exit_code != exit_code::success) {
         return fail("UI precedence fixture could not authenticate");
     }
     auto configured = onedrive::test::read_file(ui_fixture.config_path);
@@ -466,8 +477,9 @@ int test_args() {
             "--dry-run",
         }
     );
-    if (configured_tui.exit_code != 1 || overridden_tui.exit_code != 0 ||
-        download_tui.exit_code != 1) {
+    if (configured_tui.exit_code != exit_code::failure ||
+        overridden_tui.exit_code != exit_code::success ||
+        download_tui.exit_code != exit_code::failure) {
         return fail("CLI UI mode did not override configured TUI mode");
     }
     return EXIT_SUCCESS;

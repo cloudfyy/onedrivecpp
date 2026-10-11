@@ -391,7 +391,9 @@ storage::ItemState commit_download(
     };
     try {
         auto baseline = std::get<PreparedDownload>(active).destination_baseline;
-        for (unsigned attempt = 0; attempt < 3; ++attempt) {
+        constexpr unsigned maximum_local_conflict_attempts = 3;
+        for (unsigned attempt = 0;
+             attempt < maximum_local_conflict_attempts; ++attempt) {
             auto& prepared = std::get<PreparedDownload>(active);
             if (!local_file_matches_baseline(prepared.destination, baseline)) {
                 if (options.local_conflict ==

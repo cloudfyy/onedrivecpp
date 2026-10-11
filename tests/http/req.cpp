@@ -1,6 +1,7 @@
 #include "support.hpp"
 #include "http/callbacks.hpp"
 #include "http/curl.hpp"
+#include "http/status.hpp"
 #include "onedrive/http/http_client.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"
 #include "support/network.hpp"
@@ -37,6 +38,15 @@ namespace {
 using onedrive::test::fail;
 using onedrive::test::Socket;
 using onedrive::test::http::ScopedUmask;
+
+static_assert(!onedrive::http::status::is_success(199));
+static_assert(onedrive::http::status::is_success(200));
+static_assert(onedrive::http::status::is_success(299));
+static_assert(!onedrive::http::status::is_success(300));
+static_assert(!onedrive::http::status::is_redirect(299));
+static_assert(onedrive::http::status::is_redirect(300));
+static_assert(onedrive::http::status::is_redirect(399));
+static_assert(!onedrive::http::status::is_redirect(400));
 
 } // namespace
 

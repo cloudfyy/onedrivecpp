@@ -1,6 +1,9 @@
 #include "support.hpp"
+#include "onedrive/exit_code.hpp"
 
 namespace {
+
+namespace exit_code = onedrive::exit_code;
 
 using onedrive::test::fail;
 using onedrive::test::TemporaryDirectory;
@@ -37,14 +40,14 @@ int test_production_factory() {
     auto polling_monitor =
         factory.create_monitor(
             config,
-            [](const std::stop_token&) { return 0; },
+            [](const std::stop_token&) { return exit_code::success; },
             *graph
         );
     config.monitor_websocket_enabled = true;
     auto notification_monitor =
         factory.create_monitor(
             config,
-            [](const std::stop_token&) { return 0; },
+            [](const std::stop_token&) { return exit_code::success; },
             *graph
         );
 

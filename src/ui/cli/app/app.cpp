@@ -1,4 +1,5 @@
 #include "onedrive/ui/cli/app.hpp"
+#include "onedrive/exit_code.hpp"
 
 #include "args.hpp"
 #include "commands.hpp"
@@ -139,7 +140,7 @@ int Application::run(int argc, char* argv[]) {
         } else {
             std::cerr << "onedrive-cpp: " << error.what() << '\n';
         }
-        return 1;
+        return exit_code::failure;
     }
 }
 

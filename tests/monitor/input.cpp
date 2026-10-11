@@ -1,5 +1,6 @@
 #include "monitor/input.hpp"
 #include "onedrive/monitor/monitor.hpp"
+#include "onedrive/exit_code.hpp"
 #include "support/common.hpp"
 
 #include <array>
@@ -14,6 +15,8 @@
 #include <unistd.h>
 
 namespace {
+
+namespace exit_code = onedrive::exit_code;
 
 using onedrive::test::fail;
 
@@ -169,7 +172,7 @@ int test_monitor_keyboard_exit(char key) {
         root.path(),
         [&synchronization_count](const std::stop_token&) {
             ++synchronization_count;
-            return 0;
+            return exit_code::success;
         },
         std::chrono::hours{1},
         std::chrono::milliseconds{10}
@@ -185,7 +188,8 @@ int test_monitor_keyboard_exit(char key) {
         ::dup2(saved_input, STDIN_FILENO) != -1;
     static_cast<void>(::close(saved_input));
     static_cast<void>(::close(master));
-    if (result != 0 || synchronization_count != 1 || !restored) {
+    if (result != exit_code::success || synchronization_count != 1 ||
+        !restored) {
         return fail("monitor did not stop cleanly from a keyboard exit");
     }
     return EXIT_SUCCESS;
@@ -228,7 +232,7 @@ int test_keyboard_exit_during_initial_sync() {
                 ::tcgetattr(STDIN_FILENO, &active) == 0 &&
                 (active.c_lflag & ICANON) == 0;
             std::this_thread::sleep_for(std::chrono::milliseconds{150});
-            return 0;
+            return exit_code::success;
         },
         std::chrono::hours{1},
         std::chrono::milliseconds{10}
@@ -247,7 +251,7 @@ int test_keyboard_exit_during_initial_sync() {
     static_cast<void>(::close(saved_input));
     writer.join();
     static_cast<void>(::close(master));
-    if (result != 0 || !restored || !raw_during_sync ||
+    if (result != exit_code::success || !restored || !raw_during_sync ||
         elapsed >= std::chrono::milliseconds{400}) {
         return fail("monitor lost keyboard exit during initial sync");
     }

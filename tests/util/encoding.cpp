@@ -4,8 +4,21 @@
 #include "support/common.hpp"
 
 #include <array>
+#include <type_traits>
+#include <utility>
 
 namespace {
+
+static_assert(onedrive::util::sha256_digest_bytes == 32);
+static_assert(onedrive::util::sha256_hex_characters == 64);
+static_assert(std::is_same_v<
+    decltype(onedrive::util::sha256("")),
+    std::array<unsigned char, 32>
+>);
+static_assert(std::is_same_v<
+    decltype(std::declval<onedrive::util::Sha256Hasher&>().finish()),
+    std::array<unsigned char, 32>
+>);
 
 int test_encodings() {
     using namespace onedrive;

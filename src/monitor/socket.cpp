@@ -31,6 +31,9 @@ namespace {
 using namespace std::chrono_literals;
 using http::detail::throw_if_curl_error;
 
+constexpr std::size_t receive_buffer_bytes = std::size_t{16} * 1024U;
+constexpr int socket_poll_interval_milliseconds = 250;
+
 int stop_requested(
     void* context, curl_off_t, curl_off_t, curl_off_t, curl_off_t
 ) {
@@ -56,7 +59,7 @@ struct ReceivedChunk {
 };
 
 std::optional<ReceivedChunk> receive_chunk(CURL* curl) {
-    std::array<char, std::size_t{16} * 1024> buffer{};
+    std::array<char, receive_buffer_bytes> buffer{};
     std::size_t received = 0;
     const curl_ws_frame* frame = nullptr;
     const CURLcode result =
@@ -418,7 +421,9 @@ private:
                     .events = POLLIN,
                     .revents = 0,
                 };
-                const int ready = ::poll(&descriptor, 1, 250);
+                const int ready = ::poll(
+                    &descriptor, 1, socket_poll_interval_milliseconds
+                );
                 if (ready < 0 && errno == EINTR) {
                     continue;
                 }

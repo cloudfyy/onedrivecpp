@@ -1,6 +1,9 @@
 #include "support.hpp"
+#include "onedrive/exit_code.hpp"
 
 namespace {
+
+namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::monitor;
 
@@ -24,13 +27,13 @@ int test_stop() {
             root,
             [&](const std::stop_token&) {
                 std::ofstream{signal_ready} << "ready";
-                return 0;
+                return exit_code::success;
             },
             5s,
             10ms
         };
         const int result = signal_monitor.run();
-        return result == 0 ? EXIT_SUCCESS : EXIT_FAILURE;
+        return result == exit_code::success ? EXIT_SUCCESS : EXIT_FAILURE;
     }
     if (!wait_until(
             [&] { return std::filesystem::exists(signal_ready); }, 2s, 5ms
@@ -71,12 +74,12 @@ int test_stop() {
         root,
         [&](const std::stop_token&) {
             ++stopped_runs;
-            return 0;
+            return exit_code::success;
         },
         1s,
         10ms
     };
-    if (stopped_monitor.run(false, stopped.get_token()) != 0 ||
+    if (stopped_monitor.run(false, stopped.get_token()) != exit_code::success ||
         stopped_runs != 0) {
         return fail("pre-stopped monitor ran synchronization");
     }
@@ -88,13 +91,13 @@ int test_stop() {
         [&](const std::stop_token&) {
             ++initial_runs;
             stopped_after_initial.request_stop();
-            return 0;
+            return exit_code::success;
         },
         1s,
         10ms
     };
     if (stop_after_initial_monitor.run(stopped_after_initial.get_token()) !=
-            0 ||
+            exit_code::success ||
         initial_runs != 1) {
         return fail("monitor did not honor stop after initial synchronization");
     }
@@ -106,7 +109,7 @@ int test_stop() {
             while (!stop_token.stop_requested()) {
                 std::this_thread::sleep_for(1ms);
             }
-            return 130;
+            return exit_code::cancelled;
         },
         1s,
         10ms
@@ -115,7 +118,8 @@ int test_stop() {
         std::this_thread::sleep_for(10ms);
         cancel_during_sync.request_stop();
     }};
-    if (cancel_sync_monitor.run(cancel_during_sync.get_token()) != 0) {
+    if (cancel_sync_monitor.run(cancel_during_sync.get_token()) !=
+        exit_code::success) {
         return fail("monitor did not finish after cancelling synchronization");
     }
     cancel_sync.join();
@@ -129,7 +133,7 @@ int test_stop() {
         static_cast<void>(
             onedrive::monitor::Monitor{
                 root,
-                [](const std::stop_token&) { return 0; },
+                [](const std::stop_token&) { return exit_code::success; },
                 0ms,
                 10ms
             }
@@ -141,7 +145,7 @@ int test_stop() {
         static_cast<void>(
             onedrive::monitor::Monitor{
                 root,
-                [](const std::stop_token&) { return 0; },
+                [](const std::stop_token&) { return exit_code::success; },
                 1s,
                 -1ms
             }
@@ -152,7 +156,7 @@ int test_stop() {
 
     onedrive::monitor::Monitor missing_root{
         temporary.path() / "missing",
-        [](const std::stop_token&) { return 0; },
+        [](const std::stop_token&) { return exit_code::success; },
         1s,
         10ms
     };
@@ -166,7 +170,10 @@ int test_stop() {
     const auto regular_file = temporary.path() / "not-a-directory";
     std::ofstream{regular_file} << "file";
     onedrive::monitor::Monitor regular_file_root{
-        regular_file, [](const std::stop_token&) { return 0; }, 1s, 10ms
+        regular_file,
+        [](const std::stop_token&) { return exit_code::success; },
+        1s,
+        10ms
     };
     try {
         static_cast<void>(regular_file_root.run(std::stop_token{}));

@@ -1,8 +1,11 @@
 #include "support.hpp"
+#include "onedrive/exit_code.hpp"
 #include "sync/upload/planning.hpp"
 #include "sync/upload/orchestration.hpp"
 
 namespace {
+
+namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::sync;
 
@@ -143,7 +146,7 @@ int test_full_refresh_retains_blocked_deletion_snapshot() {
             }
                 .synchronize();
         };
-        if (synchronize() != 2 || !items.find("me", "file") ||
+        if (synchronize() != exit_code::blocked || !items.find("me", "file") ||
             items.find("me", "file")->local_size != 4 ||
             items.blocked.size() != 1) {
             return fail("full refresh lost a blocked deletion snapshot");
@@ -155,14 +158,14 @@ int test_full_refresh_retains_blocked_deletion_snapshot() {
             return fail("blocked deletion did not exercise cursor expiry");
         }
         graph.reject_saved_cursor = false;
-        if (synchronize() != 2 || graph.upload_count != 0 ||
+        if (synchronize() != exit_code::blocked || graph.upload_count != 0 ||
             items.blocked.size() != 1 || !items.find("me", "file")) {
             return fail(
                 "blocked deletion was cleared and resurrected remotely"
             );
         }
         std::filesystem::remove(root / "file.txt");
-        if (synchronize() != 0 || items.find("me", "file") ||
+        if (synchronize() != exit_code::success || items.find("me", "file") ||
             !items.blocked.empty() || graph.upload_count != 0) {
             return fail("resolved blocked deletion did not clear its snapshot");
         }
@@ -195,7 +198,7 @@ int test_remote_deletions() {
             unchanged_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         std::filesystem::exists(unchanged_root / "deleted.txt") ||
         unchanged_items.applied_delta.removals !=
             std::vector<std::string>{"deleted"} ||
@@ -227,7 +230,7 @@ int test_remote_deletions() {
             dry_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         !std::filesystem::exists(dry_root / "deleted.txt") ||
         dry_items.apply_count != 0) {
         return fail("remote deletion dry run changed local state");
@@ -252,7 +255,7 @@ int test_remote_deletions() {
             refreshed_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         std::filesystem::exists(refreshed_root / "gone.txt") ||
         refreshed_items.applied_delta.removals !=
             std::vector<std::string>{"gone"} ||
@@ -322,7 +325,7 @@ int test_remote_deletions() {
             partial_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         std::filesystem::exists(removed_partial) ||
         std::filesystem::exists(child_partial) ||
         std::filesystem::exists(symlink_partial) ||
@@ -369,7 +372,7 @@ int test_remote_deletions() {
             refresh_partial_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         std::filesystem::exists(refresh_partial) ||
         !refresh_partial_items.partials.empty() ||
         refresh_partial_items.applied_delta.partial_download_removals !=
@@ -414,7 +417,7 @@ int test_remote_deletions() {
             retained_refresh_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         !std::filesystem::exists(retained_refresh_partial) ||
         !retained_refresh_items.partials.contains("retained-refresh") ||
         retained_refresh_items.apply_count != 0) {
@@ -463,7 +466,7 @@ int test_remote_deletions() {
             unsafe_partial_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         !std::filesystem::exists(unsafe_partial_file) ||
         !unsafe_partial_items.partials.empty()) {
         return fail("partial cleanup followed an unsafe parent symlink");
@@ -543,7 +546,7 @@ int test_remote_deletions() {
             modified_metrics,
             &default_console
         }
-                .synchronize() != 2 ||
+                .synchronize() != exit_code::blocked ||
         !std::filesystem::exists(modified_root / "modified.txt") ||
         !modified_items.applied_delta.removals.empty() ||
         modified_items.applied_delta.blocked_upserts.size() != 1 ||
@@ -567,7 +570,7 @@ int test_remote_deletions() {
             retry_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         retry_items.applied_delta.removals !=
             std::vector<std::string>{"modified"} ||
         retry_items.applied_delta.blocked_removals !=
@@ -602,7 +605,7 @@ int test_remote_deletions() {
             tree_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         std::filesystem::exists(tree_root / "Folder") ||
         tree_items.applied_delta.removals.size() != 2) {
         return fail("remote deletion did not remove children before parents");
@@ -629,7 +632,7 @@ int test_remote_deletions() {
             nonempty_metrics,
             &default_console
         }
-                .synchronize() != 2 ||
+                .synchronize() != exit_code::blocked ||
         !std::filesystem::exists(nonempty_root / "Folder" / "local.txt") ||
         nonempty_items.applied_delta.blocked_upserts.size() != 1 ||
         nonempty_items.applied_delta.blocked_upserts[0].reason_code !=
@@ -669,7 +672,7 @@ int test_remote_deletions() {
             symlink_metrics,
             &default_console
         }
-                .synchronize() != 2 ||
+                .synchronize() != exit_code::blocked ||
         !std::filesystem::is_symlink(symlink_root / "linked.txt") ||
         !std::filesystem::exists(outside) ||
         symlink_items.applied_delta.blocked_upserts.size() != 1 ||
@@ -703,7 +706,7 @@ int test_remote_deletions() {
             missing_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         missing_items.applied_delta.removals !=
             std::vector<std::string>{"missing"}) {
         return fail(
@@ -724,7 +727,7 @@ int test_remote_deletions() {
             untracked_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         untracked_items.applied_delta.removals !=
             std::vector<std::string>{"untracked"}) {
         return fail("untracked remote deletion did not clear stale state");
@@ -912,7 +915,7 @@ int test_local_deletions() {
             guarded_dry_metrics,
             &guarded_dry_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         !guarded_dry_graph.deleted_items.empty() ||
         guarded_dry_items.items.size() != 3 ||
         !guarded_dry_output.str().contains(
@@ -936,7 +939,7 @@ int test_local_deletions() {
             guarded_metrics,
             &guarded_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         guarded_graph.deleted_items !=
             std::vector<std::pair<std::string, std::string>>{
                 {"guard-directory", "etag"},
@@ -1189,7 +1192,7 @@ int test_local_deletions() {
         cancelled_delete_metrics,
         &default_console
     };
-    if (cancelled_delete_engine.synchronize() != 0) {
+    if (cancelled_delete_engine.synchronize() != exit_code::success) {
         return fail("could not prepare remote deletion cancellation test");
     }
     std::filesystem::remove(cancelled_delete_root / "removed.txt");
@@ -1198,7 +1201,7 @@ int test_local_deletions() {
         [&delete_cancellation] { delete_cancellation.request_stop(); };
     if (cancelled_delete_engine.synchronize(
             delete_cancellation.get_token()
-        ) != 130 ||
+        ) != exit_code::cancelled ||
         cancelled_delete_items.pending_deletes_by_id.size() != 1 ||
         !cancelled_delete_graph.deleted_items.empty() ||
         cancelled_delete_metrics.last_outcome !=
@@ -1214,7 +1217,7 @@ int test_local_deletions() {
         };
     if (cancelled_delete_engine.synchronize(
             delete_recovery_cancellation.get_token()
-        ) != 130 ||
+        ) != exit_code::cancelled ||
         cancelled_delete_items.pending_deletes_by_id.size() != 1 ||
         cancelled_delete_metrics.last_outcome !=
             onedrive::metrics::SyncRunOutcome::cancelled) {

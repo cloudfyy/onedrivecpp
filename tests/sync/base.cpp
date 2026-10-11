@@ -1,9 +1,12 @@
 #include "support.hpp"
+#include "onedrive/exit_code.hpp"
 
 #include "onedrive/ui/cli/backend.hpp"
 #include "onedrive/ui/common/observer.hpp"
 
 namespace {
+
+namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::sync;
 
@@ -72,7 +75,7 @@ int test_engine_owns_configuration() {
     config.sync_data_mount_point = temporary.path() / "missing-mount";
     config.drive_id = "mutated";
 
-    if (engine.synchronize() != 0 ||
+    if (engine.synchronize() != exit_code::success ||
         graph.delta_requests !=
             std::vector<std::optional<std::string>>{std::nullopt} ||
         items.applied_delta.drive_id != "me") {
@@ -94,7 +97,7 @@ int test_sync_cancellation_does_not_commit_delta() {
         config, graph, items, metrics, &default_console
     };
 
-    if (engine.synchronize(stop.get_token()) != 130 ||
+    if (engine.synchronize(stop.get_token()) != exit_code::cancelled ||
         items.apply_count != 0 ||
         metrics.last_outcome !=
             onedrive::metrics::SyncRunOutcome::cancelled) {
@@ -116,7 +119,7 @@ int test_pre_cancelled_sync_does_not_start() {
         config, graph, items, metrics, &default_console
     };
 
-    if (engine.synchronize(stop.get_token()) != 130 ||
+    if (engine.synchronize(stop.get_token()) != exit_code::cancelled ||
         !graph.delta_requests.empty() || items.apply_count != 0 ||
         metrics.last_outcome !=
             onedrive::metrics::SyncRunOutcome::cancelled) {
@@ -140,7 +143,8 @@ int test_sync_cancellation_at_execution_boundary() {
         config, graph, items, metrics, &observer
     };
 
-    if (engine.synchronize(stop.get_token()) != 130 || !observer.triggered ||
+    if (engine.synchronize(stop.get_token()) != exit_code::cancelled ||
+        !observer.triggered ||
         graph.delta_requests.size() != 1 || items.apply_count != 0 ||
         std::filesystem::exists(root / "remote.txt") ||
         metrics.last_outcome !=
@@ -178,7 +182,7 @@ int test_dry_run_and_success() {
             guarded_metrics,
             &guarded_console
         }
-                .synchronize() == 0 ||
+                .synchronize() == exit_code::success ||
         !guarded_graph.delta_requests.empty() ||
         std::filesystem::exists(guarded_root) ||
         guarded_metrics.last_success ||
@@ -200,7 +204,7 @@ int test_dry_run_and_success() {
     if (onedrive::sync::SyncEngine{
             dry_config, dry_graph, dry_items, dry_metrics, &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         dry_graph.download_count != 0 || dry_items.apply_count != 0 ||
         std::filesystem::exists(dry_root)) {
         return fail("dry run modified files or synchronization state");
@@ -234,7 +238,7 @@ int test_dry_run_and_success() {
         progress_error
     };
     if (onedrive::sync::SyncEngine{config, graph, items, metrics, &console}
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         graph.download_count != 1 || items.upsert_count != 1 ||
         items.apply_count != 1 || !metrics.last_success ||
         !progress_output.str().contains("DL: 0/1 files, 50% (2 B/4 B)") ||
@@ -287,7 +291,7 @@ int test_remote_content_tag_strategy() {
             reused_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         reused_graph.download_count != 0 ||
         reused_items.applied_delta.upserts.size() != 1 ||
         reused_items.applied_delta.upserts[0].etag != "new-etag" ||
@@ -322,7 +326,7 @@ int test_remote_content_tag_strategy() {
             changed_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         changed_graph.download_count != 1) {
         return fail("changed cTag did not download remote content");
     }
@@ -353,7 +357,7 @@ int test_remote_content_tag_strategy() {
             missing_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         missing_graph.download_count != 1) {
         return fail("missing cTag bypassed the eTag fallback");
     }
@@ -405,7 +409,7 @@ int test_selective_sync_refreshes_delta_state() {
     if (onedrive::sync::SyncEngine{
             config, graph, items, metrics, &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         graph.delta_requests !=
             std::vector<std::optional<std::string>>{std::nullopt} ||
         graph.download_count != 1 || items.applied_delta.upserts.size() != 2 ||
@@ -425,7 +429,7 @@ int test_selective_sync_refreshes_delta_state() {
     if (onedrive::sync::SyncEngine{
             config, graph, items, metrics, &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         graph.delta_requests != std::vector<std::optional<std::string>>{
                                     "https://graph.example.test/delta"
                                 }) {
@@ -442,7 +446,7 @@ int test_selective_sync_refreshes_delta_state() {
     if (onedrive::sync::SyncEngine{
             config, graph, items, metrics, &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         graph.delta_requests !=
             std::vector<std::optional<std::string>>{std::nullopt} ||
         graph.download_count != 2 ||
@@ -503,7 +507,7 @@ int test_filter_policies_apply_in_both_directions() {
     if (onedrive::sync::SyncEngine{
             config, graph, items, metrics, &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         graph.delta_requests !=
             std::vector<std::optional<std::string>>{std::nullopt} ||
         graph.download_count != 1 ||
@@ -527,7 +531,7 @@ int test_filter_policies_apply_in_both_directions() {
     if (onedrive::sync::SyncEngine{
             config, graph, items, metrics, &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         graph.delta_requests !=
             std::vector<std::optional<std::string>>{std::nullopt} ||
         graph.download_count != downloads_before + 1 ||
@@ -568,7 +572,7 @@ int test_selective_sync_remote_moves() {
     if (onedrive::sync::SyncEngine{
             config, graph, items, metrics, &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         !std::filesystem::exists(root / "Documents" / "A.txt") ||
         std::filesystem::exists(root / "Archive" / "A.txt") ||
         graph.upload_count != 0 ||
@@ -590,7 +594,7 @@ int test_selective_sync_remote_moves() {
     if (onedrive::sync::SyncEngine{
             config, graph, items, metrics, &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         graph.upload_count != 0 ||
         items.upload_suppressions_by_path.size() != 1) {
         return fail(
@@ -605,7 +609,7 @@ int test_selective_sync_remote_moves() {
     if (onedrive::sync::SyncEngine{
             config, graph, items, metrics, &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         graph.download_count != 1 || graph.upload_count != 0 ||
         !std::filesystem::exists(root / "Documents" / "A.txt") ||
         !std::filesystem::exists(root / "Documents" / "B.txt") ||
@@ -626,7 +630,7 @@ int test_selective_sync_remote_moves() {
     if (onedrive::sync::SyncEngine{
             config, graph, items, metrics, &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         graph.upload_count != 1 ||
         graph.uploaded_paths != std::vector<std::string>{"Documents/A.txt"} ||
         !items.upload_suppressions_by_path.empty()) {
@@ -694,7 +698,7 @@ int test_selective_sync_remote_moves() {
             directory_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         directory_graph.upload_count != 0 ||
         directory_items.upload_suppressions_by_path.size() != 2 ||
         !directory_items.items.empty() ||
@@ -731,7 +735,7 @@ int test_selective_sync_remote_moves() {
     if (onedrive::sync::SyncEngine{
             dry_config, dry_graph, dry_items, dry_metrics, &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         dry_items.apply_count != 0 ||
         !dry_items.upload_suppressions_by_path.empty() ||
         dry_graph.upload_count != 0 ||
@@ -762,7 +766,7 @@ int test_malware_file_is_blocked_without_overwriting_local_data() {
     if (onedrive::sync::SyncEngine{
             config_for(root, false), graph, items, metrics, &default_console
         }
-                .synchronize() != 2 ||
+                .synchronize() != exit_code::blocked ||
         graph.download_count != 0 || items.applied_delta.upserts.size() != 0 ||
         items.applied_delta.blocked_upserts.size() != 1 ||
         items.applied_delta.blocked_upserts[0].reason_code !=
@@ -856,7 +860,7 @@ int test_failure_and_conflict() {
             independent_metrics,
             &progress_console
         }
-            .synchronize() != 0 ||
+            .synchronize() != exit_code::success ||
         independent_graph.download_count.load(std::memory_order_relaxed) != 1 ||
         captured_progress->downloads.size() < 2 ||
         captured_progress->downloads.front().completed_files != 1 ||
@@ -887,7 +891,7 @@ int test_failure_and_conflict() {
             independent_metrics,
             &reused_console
         }
-            .synchronize() != 0 ||
+            .synchronize() != exit_code::success ||
         independent_graph.download_count.load(std::memory_order_relaxed) != 0 ||
         captured_reused->downloads.size() != 1 ||
         captured_reused->downloads.front().completed_files != 2 ||
@@ -919,7 +923,7 @@ int test_failure_and_conflict() {
             changed_metrics,
             &default_console
         }
-                .synchronize() != 2 ||
+                .synchronize() != exit_code::blocked ||
         changed_items.upsert_count != 0 || changed_items.apply_count != 1 ||
         changed_items.applied_delta.blocked_upserts.size() != 1 ||
         changed_items.applied_delta.blocked_upserts[0].reason_code !=
@@ -957,7 +961,7 @@ int test_failure_and_conflict() {
             conflict_metrics,
             &default_console
         }
-                .synchronize() != 2 ||
+                .synchronize() != exit_code::blocked ||
         conflict_graph.download_count != 0 || conflict_items.apply_count != 1 ||
         conflict_items.applied_delta.blocked_upserts.size() != 1 ||
         conflict_items.applied_delta.blocked_upserts[0].reason_code !=
@@ -987,7 +991,7 @@ int test_failure_and_conflict() {
             backup_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         backup_graph.download_count != 1 || backup_items.upsert_count != 1 ||
         !backup_items.applied_delta.blocked_upserts.empty() ||
         !backup_metrics.last_success) {
@@ -1041,7 +1045,7 @@ int test_failure_and_conflict() {
             late_backup_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         late_backup_items.upsert_count != 1 ||
         !late_backup_items.applied_delta.blocked_upserts.empty() ||
         !late_backup_metrics.last_success) {
@@ -1085,7 +1089,7 @@ int test_failure_and_conflict() {
             symlink_metrics,
             &default_console
         }
-                .synchronize() != 2 ||
+                .synchronize() != exit_code::blocked ||
         symlink_graph.download_count != 0 || symlink_items.apply_count != 1 ||
         symlink_items.applied_delta.blocked_upserts.size() != 1 ||
         symlink_items.applied_delta.blocked_upserts[0].reason_code !=
@@ -1144,7 +1148,7 @@ int test_blocked_items_continue_and_retry() {
     if (onedrive::sync::SyncEngine{
             config_for(root, false), graph, items, metrics, &default_console
         }
-                .synchronize() != 2 ||
+                .synchronize() != exit_code::blocked ||
         graph.download_count != 1 ||
         !std::filesystem::exists(root / "good.txt") || items.apply_count != 1 ||
         items.applied_delta.blocked_upserts.size() != 1 ||
@@ -1182,7 +1186,7 @@ int test_blocked_items_continue_and_retry() {
             parent_metrics,
             &default_console
         }
-                .synchronize() != 2 ||
+                .synchronize() != exit_code::blocked ||
         parent_graph.download_count != 1 ||
         !std::filesystem::exists(parent_root / "independent.txt") ||
         parent_items.applied_delta.blocked_upserts.size() != 2 ||
@@ -1222,7 +1226,7 @@ int test_blocked_items_continue_and_retry() {
             retry_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         retry_graph.download_count != 1 ||
         !std::filesystem::exists(retry_root / "retry.txt") ||
         retry_items.applied_delta.blocked_upserts.size() != 0 ||
@@ -1306,7 +1310,7 @@ int test_blocked_items_continue_and_retry() {
             malware_retry_metrics,
             &default_console
         }
-                .synchronize() != 2 ||
+                .synchronize() != exit_code::blocked ||
         malware_retry_graph.download_count != 0 ||
         malware_retry_items.applied_delta.blocked_upserts.size() != 1 ||
         malware_retry_items.applied_delta.blocked_upserts[0].reason_code !=
@@ -1348,7 +1352,7 @@ int test_blocked_items_continue_and_retry() {
             cleared_metrics,
             &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         cleared_graph.download_count != 1 ||
         !std::filesystem::exists(cleared_root / "malware-cleared.txt") ||
         !cleared_items.applied_delta.blocked_upserts.empty() ||
@@ -1383,7 +1387,7 @@ int test_invalid_delta_cursor_restarts_full_query() {
     if (onedrive::sync::SyncEngine{
             config_for(root, false), graph, items, metrics, &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         graph.delta_requests !=
             std::vector<std::optional<std::string>>{
                 items.saved_delta_link,

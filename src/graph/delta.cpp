@@ -112,7 +112,7 @@ DeltaResult MicrosoftGraphClient::list_delta(
         }
 
         const auto json = parse_graph_json(*response, "delta");
-        if (delta_link && response->status_code == 410) {
+        if (delta_link && response->status_code == http::status::gone) {
             throw DeltaCursorInvalidError(
                 "Microsoft Graph rejected the saved delta cursor: " +
                 graph_error_message(json, response->status_code)

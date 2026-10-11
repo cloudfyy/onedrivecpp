@@ -1,6 +1,7 @@
 #include "graph/support.hpp"
 
 #include "onedrive/util/remote_time.hpp"
+#include "onedrive/util/sha256.hpp"
 #include "util/ascii.hpp"
 #include "util/uri.hpp"
 
@@ -71,7 +72,7 @@ std::string graph_error_code(const Json& response) {
 }
 
 bool upload_quota_error(const Json& response, long status_code) {
-    if (status_code == 507) {
+    if (status_code == http::status::insufficient_storage) {
         return true;
     }
     const auto code = graph_error_code(response);
@@ -106,7 +107,7 @@ std::string graph_drive_prefix(const GraphOptions& options) {
 }
 
 bool successful_status(long status_code) noexcept {
-    return status_code >= 200 && status_code < 300;
+    return http::status::is_success(status_code);
 }
 
 void require_successful_graph_response(
@@ -207,12 +208,16 @@ std::chrono::seconds fallback_retry_delay(
 }
 
 bool retryable_status(long status_code) {
-    return status_code == 408 || status_code == 429 || status_code == 502 ||
-           status_code == 503 || status_code == 504;
+    return status_code == http::status::request_timeout ||
+           status_code == http::status::too_many_requests ||
+           status_code == http::status::bad_gateway ||
+           status_code == http::status::service_unavailable ||
+           status_code == http::status::gateway_timeout;
 }
 
 bool stale_download_url_status(long status_code) {
-    return status_code == 401 || status_code == 403;
+    return status_code == http::status::unauthorized ||
+           status_code == http::status::forbidden;
 }
 
 http::HttpResult cancelled_http_result() {
@@ -372,7 +377,7 @@ std::optional<util::FileHash> item_content_hash(const Json& value) {
     };
     if (auto sha256 = read_hash("sha256Hash"); sha256.has_value()) {
         const bool valid =
-            sha256.value().size() == 64 &&
+            sha256.value().size() == util::sha256_hex_characters &&
             std::ranges::all_of(
                 sha256.value(),
                 [](unsigned char character) {
@@ -391,8 +396,9 @@ std::optional<util::FileHash> item_content_hash(const Json& value) {
     }
     if (auto quick_xor = read_hash("quickXorHash");
         quick_xor.has_value()) {
+        constexpr std::size_t quick_xor_base64_characters = 28;
         const bool valid =
-            quick_xor.value().size() == 28 &&
+            quick_xor.value().size() == quick_xor_base64_characters &&
             quick_xor.value().back() == '=' &&
             std::ranges::all_of(
                 quick_xor.value().begin(),

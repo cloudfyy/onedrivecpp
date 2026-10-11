@@ -2,6 +2,7 @@
 
 #include "http/proxy.hpp"
 #include "http/request.hpp"
+#include "http/status.hpp"
 #include "onedrive/util/path_security.hpp"
 #include "onedrive/util/system_error.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"
@@ -98,8 +99,7 @@ HttpResult CurlHttpClient::download(
     std::string close_error;
     std::string truncate_error;
     const bool accepted = download_state.response_accepted;
-    if ((!response || response->status_code < 200 ||
-         response->status_code >= 300 || !accepted) &&
+    if ((!response || !status::is_success(response->status_code) || !accepted) &&
         download_state.durable_offset != 0 &&
         ::ftruncate(
             descriptor.get(),
@@ -111,8 +111,8 @@ HttpResult CurlHttpClient::download(
         close_error = error.message();
     }
     bool checkpoint_failed = false;
-    if (response && response->status_code >= 200 &&
-        response->status_code < 300 && accepted && close_error.empty() &&
+    if (response && status::is_success(response->status_code) &&
+        accepted && close_error.empty() &&
         checkpoint &&
         download_state.file_offset > download_state.durable_offset) {
         try {
@@ -144,8 +144,7 @@ HttpResult CurlHttpClient::download(
             truncate_error = error.message();
         }
     }
-    if ((!response || response->status_code < 200 ||
-         response->status_code >= 300 || !accepted ||
+    if ((!response || !status::is_success(response->status_code) || !accepted ||
          !close_error.empty()) &&
         download_state.durable_offset == 0) {
         std::error_code ignored;

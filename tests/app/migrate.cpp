@@ -1,8 +1,11 @@
 #include "support.hpp"
+#include "onedrive/exit_code.hpp"
 #include "db/support.hpp"
 #include "app/preflight.hpp"
 
 namespace {
+
+namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::app;
 using namespace onedrive::test::db;
@@ -44,7 +47,7 @@ int test_migration_command() {
         return run_application(fixture.runtime_factory, std::move(arguments));
     };
     const auto preview = run({"--dry-run", "--yes"});
-    if (preview.exit_code != 0 ||
+    if (preview.exit_code != exit_code::success ||
         !preview.standard_output.contains(R"("schema_version":"24")") ||
         !preview.standard_output.contains(R"("latest_schema_version":"26")") ||
         !preview.standard_output.contains(R"("status":"upgrade-required")") ||
@@ -67,7 +70,7 @@ int test_migration_command() {
          "--output",
          "json"}
     );
-    if (health.exit_code != 1 ||
+    if (health.exit_code != exit_code::failure ||
         !health.standard_output.contains(R"("status":"upgrade-required")") ||
         !health.standard_output.contains(R"("schema_version":"24")") ||
         !health.standard_output.contains(R"("latest_schema_version":"26")") ||
@@ -82,11 +85,12 @@ int test_migration_command() {
     onedrive::test::write_file(fixture.config_path, dry_config);
     const auto configured_preview = run({"--yes"});
     onedrive::test::write_file(fixture.config_path, original_config);
-    if (configured_preview.exit_code != 0 || !schema_version_is(path, 24)) {
+    if (configured_preview.exit_code != exit_code::success ||
+        !schema_version_is(path, 24)) {
         return fail("configured dry-run did not prevent migration");
     }
     const auto declined = run({});
-    if (declined.exit_code != 1 ||
+    if (declined.exit_code != exit_code::failure ||
         !declined.standard_error.contains("confirmation_required") ||
         !schema_version_is(path, 24)) {
         return fail("JSON migration did not require explicit confirmation");
@@ -101,7 +105,8 @@ int test_migration_command() {
              fixture.config_path.string()},
             "no\n"
         );
-        if (cancelled.exit_code != 1 || !schema_version_is(path, 24) ||
+        if (cancelled.exit_code != exit_code::failure ||
+            !schema_version_is(path, 24) ||
             !cancelled.standard_output.contains("cancelled")) {
             return fail("text migration did not respect declined confirmation");
         }
@@ -118,7 +123,8 @@ int test_migration_command() {
         std::filesystem::perms::owner_read | std::filesystem::perms::owner_write
     );
     const auto unsupported = run({"--yes"});
-    if (unsupported.exit_code != 1 || !schema_version_is(path, 24) ||
+    if (unsupported.exit_code != exit_code::failure ||
+        !schema_version_is(path, 24) ||
         !unsupported.standard_output.contains(R"("schema_version":"27")")) {
         return fail(
             "migration changed an earlier database despite failed prechecks"
@@ -132,7 +138,7 @@ int test_migration_command() {
             config, onedrive::app::detail::Operation::migrate_state
         };
         const auto locked = run({"--yes"});
-        if (locked.exit_code != 1 ||
+        if (locked.exit_code != exit_code::failure ||
             !locked.standard_error.contains(
                 "already using this state directory"
             ) ||
@@ -141,7 +147,8 @@ int test_migration_command() {
         }
     }
     const auto migrated = run({"--yes"});
-    if (migrated.exit_code != 0 || !schema_version_is(path, 26) ||
+    if (migrated.exit_code != exit_code::success ||
+        !schema_version_is(path, 26) ||
         !schema_version_is(legacy_path, 26) ||
         !migrated.standard_output.contains("database_migration_completed") ||
         !migrated.standard_output.contains("backup_path") ||
@@ -149,7 +156,7 @@ int test_migration_command() {
         return fail("offline migration failed or touched the sync directory");
     }
     const auto repeated = run({"--yes"});
-    if (repeated.exit_code != 0 ||
+    if (repeated.exit_code != exit_code::success ||
         !repeated.standard_output.contains("No databases require an upgrade")) {
         return fail("repeated migration did not skip current databases");
     }
@@ -163,13 +170,14 @@ int test_migration_command() {
         return fail("cannot create structurally invalid command fixture");
     }
     const auto failed = run({"--yes"});
-    if (failed.exit_code != 1 || !schema_version_is(path, 24) ||
+    if (failed.exit_code != exit_code::failure ||
+        !schema_version_is(path, 24) ||
         !failed.standard_error.contains("backup retained")) {
         return fail("migration failure did not report the retained backup");
     }
     onedrive::test::write_file(path, "corrupt");
     const auto invalid = run({"--yes"});
-    if (invalid.exit_code != 1 ||
+    if (invalid.exit_code != exit_code::failure ||
         !invalid.standard_error.contains("database_migration_failed") ||
         onedrive::test::read_file(path) != "corrupt") {
         return fail("migration command did not reject corruption safely");
@@ -193,7 +201,7 @@ int test_empty_and_confirmed_migration() {
         );
     };
     const auto empty = run();
-    if (empty.exit_code != 0 ||
+    if (empty.exit_code != exit_code::success ||
         !empty.standard_output.contains("No databases require an upgrade")) {
         return fail("empty state directory required migration or confirmation");
     }
@@ -206,7 +214,8 @@ int test_empty_and_confirmed_migration() {
         std::filesystem::perms::owner_read | std::filesystem::perms::owner_write
     );
     const auto confirmed = run("migrate\n");
-    if (confirmed.exit_code != 0 || !schema_version_is(path, 26) ||
+    if (confirmed.exit_code != exit_code::success ||
+        !schema_version_is(path, 26) ||
         !confirmed.standard_output.contains("Database upgrades completed")) {
         return fail("explicit text confirmation did not upgrade the database");
     }

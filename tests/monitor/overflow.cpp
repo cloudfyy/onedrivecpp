@@ -1,4 +1,5 @@
 #include "support.hpp"
+#include "onedrive/exit_code.hpp"
 
 #include <spdlog/sinks/ostream_sink.h>
 #include <spdlog/spdlog.h>
@@ -32,7 +33,7 @@ int main() {
         fixture.root,
         [&](const std::stop_token&) {
             ++sync_runs;
-            return 0;
+            return onedrive::exit_code::success;
         },
         1h,
         10ms,
@@ -93,7 +94,7 @@ int main() {
             "real inotify overflow did not trigger full resynchronization"
         );
     }
-    if (!nested_watched || result != 0) {
+    if (!nested_watched || result != onedrive::exit_code::success) {
         return fail(
             "monitor did not restore subtree watches and stop after overflow"
         );

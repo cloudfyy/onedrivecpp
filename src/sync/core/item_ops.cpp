@@ -31,18 +31,23 @@ std::string destination_key(const std::filesystem::path& destination) {
 std::size_t ItemOperationCoordinator::ItemKeyHash::operator()(
     const ItemKey& key
 ) const noexcept {
+    constexpr std::size_t hash_combine_salt = 0x9e3779b9U;
+    constexpr unsigned hash_combine_left_shift = 6;
+    constexpr unsigned hash_combine_right_shift = 2;
     const auto scope_hash = std::hash<int>{}(
         static_cast<int>(key.scope)
     );
     const auto drive_hash = std::hash<std::string>{}(key.drive_id);
     const auto remote_hash = std::hash<std::string>{}(key.remote_id);
     const auto item_hash = drive_hash ^ (
-        remote_hash + std::size_t{0x9e3779b9U} +
-        (drive_hash << 6U) + (drive_hash >> 2U)
+        remote_hash + hash_combine_salt +
+        (drive_hash << hash_combine_left_shift) +
+        (drive_hash >> hash_combine_right_shift)
     );
     return scope_hash ^ (
-        item_hash + std::size_t{0x9e3779b9U} +
-        (scope_hash << 6U) + (scope_hash >> 2U)
+        item_hash + hash_combine_salt +
+        (scope_hash << hash_combine_left_shift) +
+        (scope_hash >> hash_combine_right_shift)
     );
 }
 

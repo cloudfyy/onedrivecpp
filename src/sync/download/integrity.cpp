@@ -158,7 +158,8 @@ std::string quick_xor_hash(const std::filesystem::path& path) {
         );
     }
 
-    std::array<unsigned char, std::size_t{64} * 1024U> buffer{};
+    constexpr std::size_t hash_buffer_bytes = std::size_t{64} * 1024U;
+    std::array<unsigned char, hash_buffer_bytes> buffer{};
     QuickXorAccumulator hash;
     while (input) {
         input.read(

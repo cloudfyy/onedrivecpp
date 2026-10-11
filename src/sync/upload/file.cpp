@@ -260,7 +260,9 @@ UploadSnapshot create_upload_snapshot(
     }
     std::filesystem::path snapshot_path;
     onedrive::util::UniqueFD output;
-    for (std::size_t attempt = 1; attempt <= 100; ++attempt) {
+    constexpr std::size_t maximum_snapshot_attempts = 100;
+    for (std::size_t attempt = 1;
+         attempt <= maximum_snapshot_attempts; ++attempt) {
         snapshot_path = upload_snapshot_path(source, attempt);
         try {
             output = onedrive::util::open_path_no_symlinks(
@@ -287,7 +289,8 @@ UploadSnapshot create_upload_snapshot(
         );
     }
     UploadSnapshot snapshot{snapshot_path};
-    std::array<std::byte, std::size_t{64} * 1024U> buffer{};
+    constexpr std::size_t snapshot_copy_buffer_bytes = std::size_t{64} * 1024U;
+    std::array<std::byte, snapshot_copy_buffer_bytes> buffer{};
     while (true) {
         const auto count = ::read(input.get(), buffer.data(), buffer.size());
         if (count == -1) {

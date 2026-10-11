@@ -17,6 +17,8 @@
 namespace onedrive::util {
 namespace {
 
+constexpr unsigned maximum_temporary_file_attempts = 128;
+
 [[nodiscard]] std::string error_message(
     std::string_view action,
     std::string_view description,
@@ -57,7 +59,8 @@ namespace {
     const std::filesystem::path& destination
 ) {
     static std::atomic_uint64_t sequence_counter{0};
-    for (unsigned attempt = 0; attempt < 128; ++attempt) {
+    for (unsigned attempt = 0;
+         attempt < maximum_temporary_file_attempts; ++attempt) {
         const auto sequence =
             sequence_counter.fetch_add(1, std::memory_order_relaxed);
         temporary_name = std::format(

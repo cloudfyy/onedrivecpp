@@ -1,6 +1,9 @@
 #include "support.hpp"
+#include "onedrive/exit_code.hpp"
 
 namespace {
+
+namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::sync;
 
@@ -45,7 +48,7 @@ int test_pending_download_recovery() {
     if (onedrive::sync::SyncEngine{
             config, graph, items, metrics, &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         !items.pending.empty() || !items.find("me", "recovered") ||
         !std::filesystem::exists(destination) ||
         std::filesystem::exists(temporary_file) || graph.download_count != 0) {
@@ -85,7 +88,7 @@ int test_post_install_recovery() {
     if (onedrive::sync::SyncEngine{
             config, graph, items, metrics, &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         !items.pending.empty() || !items.find("me", "recover-after-install") ||
         graph.download_count != 1 || !metrics.last_success) {
         return fail(
@@ -235,7 +238,7 @@ int test_partial_download_resume() {
     if (onedrive::sync::SyncEngine{
             config_for(root, false), graph, items, metrics, &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         graph.last_download_offset != 4 || !items.partials.empty() ||
         items.upsert_count != 1 || !metrics.last_success) {
         return fail("partial download did not resume from its saved offset");
@@ -327,7 +330,7 @@ int test_external_cancellation_stops_active_download() {
     cancellation.join();
 
     const auto partial = items.partials.find("interrupted");
-    if (result != 130 || items.apply_count != 0 ||
+    if (result != exit_code::cancelled || items.apply_count != 0 ||
         metrics.last_outcome !=
             onedrive::metrics::SyncRunOutcome::cancelled ||
         partial == items.partials.end() ||
@@ -366,7 +369,7 @@ int test_bounded_concurrent_downloads() {
     if (onedrive::sync::SyncEngine{
             config, graph, items, metrics, &default_console
         }
-                .synchronize() != 0 ||
+                .synchronize() != exit_code::success ||
         graph.download_count != 4 || graph.maximum_concurrent_downloads != 2 ||
         items.upsert_count != 4 || items.apply_count != 1 ||
         !metrics.last_success) {
@@ -437,7 +440,7 @@ int test_configured_download_order() {
         if (onedrive::sync::SyncEngine{
                 config, graph, items, metrics, &default_console
             }
-                    .synchronize() != 0 ||
+                    .synchronize() != exit_code::success ||
             started != cases[index].second || graph.download_count != 4 ||
             items.upsert_count != 4 || !metrics.last_success) {
             return fail("downloads did not follow transfer.order");
@@ -472,7 +475,7 @@ int test_duplicate_destination_downloads_are_serialized() {
     const std::string contents{
         std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}
     };
-    if (result != 2 || graph.download_count != 1 ||
+    if (result != exit_code::blocked || graph.download_count != 1 ||
         graph.maximum_concurrent_downloads != 1 || items.upsert_count != 1 ||
         items.apply_count != 1 ||
         items.applied_delta.blocked_upserts.size() != 1 ||

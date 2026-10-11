@@ -1,4 +1,5 @@
 #include "support.hpp"
+#include "onedrive/exit_code.hpp"
 
 #include "onedrive/app/monitoring.hpp"
 #include "onedrive/ui/common/observer.hpp"
@@ -9,6 +10,8 @@
 #include <vector>
 
 namespace {
+
+namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::app;
 
@@ -62,7 +65,8 @@ int test_monitoring_service() {
         config, runtime_factory, observer, true
     );
 
-    if (result != 0 || !observer.has_message("monitor_ready") ||
+    if (result != exit_code::success ||
+        !observer.has_message("monitor_ready") ||
         !observer.has_message("monitor_status") ||
         observer.operation_states() !=
             std::vector<onedrive::events::OperationState>{
@@ -100,7 +104,7 @@ int test_monitoring_service_cancellation() {
     const auto result = onedrive::app::monitor_account(
         config, runtime_factory, observer, false, stop.get_token()
     );
-    if (result != 0 || implementation.monitor_run_count != 1 ||
+    if (result != exit_code::success || implementation.monitor_run_count != 1 ||
         observer.operation_states() !=
             std::vector<onedrive::events::OperationState>{
                 onedrive::events::OperationState::watching,

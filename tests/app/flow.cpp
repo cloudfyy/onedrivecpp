@@ -1,6 +1,9 @@
 #include "support.hpp"
+#include "onedrive/exit_code.hpp"
 
 namespace {
+
+namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::app;
 
@@ -24,7 +27,7 @@ int test_flow() {
     );
     const auto account_path =
         onedrive::account::AccountState::active_token_directory(state_path);
-    if (authentication.exit_code != 0 ||
+    if (authentication.exit_code != exit_code::success ||
         !authentication.standard_output.contains("\x1b[") ||
         !authentication.standard_output.contains("Authentication succeeded") ||
         !authentication.standard_output.contains(
@@ -51,7 +54,8 @@ int test_flow() {
             "never",
         }
     );
-    if (logout.exit_code != 0 || logout.standard_output.contains("\x1b[") ||
+    if (logout.exit_code != exit_code::success ||
+        logout.standard_output.contains("\x1b[") ||
         !logout.standard_output.contains("Saved authentication removed") ||
         runtime_factory.token_store_count != 1) {
         return fail("logout did not accept a subcommand configuration path");
@@ -76,7 +80,7 @@ int test_flow() {
                 config_path.string(),
             }
         )
-            .exit_code != 0) {
+            .exit_code != exit_code::success) {
         return fail("reauthentication did not restore account state");
     }
 
@@ -92,7 +96,7 @@ int test_flow() {
             "json",
         }
     );
-    if (drives.exit_code != 0 ||
+    if (drives.exit_code != exit_code::success ||
         !drives.standard_output.contains(R"("event":"drive")") ||
         !drives.standard_output.contains(R"("id":"drive-id")") ||
         !drives.standard_output.contains(R"("configured":"true")") ||
@@ -116,7 +120,7 @@ int test_flow() {
             "json",
         }
     );
-    if (shared.exit_code != 0 ||
+    if (shared.exit_code != exit_code::success ||
         !shared.standard_output.contains(R"("event":"shared_resource")") ||
         !shared.standard_output.contains(R"("source":"shared_with_me")") ||
         !shared.standard_output.contains(R"("source":"shortcut")") ||
@@ -138,7 +142,7 @@ int test_flow() {
             "json",
         }
     );
-    if (sites.exit_code != 0 ||
+    if (sites.exit_code != exit_code::success ||
         !sites.standard_output.contains(R"("event":"site")") ||
         !sites.standard_output.contains(R"("name":"Engineering")") ||
         !sites.standard_output.contains(R"("event":"site_drive")") ||
@@ -159,7 +163,8 @@ int test_flow() {
         }
     );
     runtime_factory.empty_shared = false;
-    if (no_shared.exit_code != 0 || !no_shared.standard_output.contains(
+    if (no_shared.exit_code != exit_code::success ||
+        !no_shared.standard_output.contains(
                                         R"("event":"no_shared_resources")"
                                     )) {
         return fail("shared command did not report an empty result");
@@ -179,7 +184,8 @@ int test_flow() {
         }
     );
     runtime_factory.empty_sites = false;
-    if (no_sites.exit_code != 0 || !no_sites.standard_output.contains(
+    if (no_sites.exit_code != exit_code::success ||
+        !no_sites.standard_output.contains(
                                        R"("event":"no_sharepoint_sites")"
                                    )) {
         return fail("sites command did not report an empty result");
@@ -197,7 +203,7 @@ int test_flow() {
             "json",
         }
     );
-    if (quota.exit_code != 0 ||
+    if (quota.exit_code != exit_code::success ||
         !quota.standard_output.contains(R"("event":"quota")") ||
         !quota.standard_output.contains(R"("total":"2.00 KiB")") ||
         !quota.standard_output.contains(R"("remaining":"600 B")") ||
@@ -217,7 +223,7 @@ int test_flow() {
             "json",
         }
     );
-    if (status.exit_code != 0 ||
+    if (status.exit_code != exit_code::success ||
         !status.standard_output.contains(R"("event":"status")") ||
         !status.standard_output.contains(R"("account":"Test User")") ||
         !status.standard_output.contains(R"("state_database":"absent")") ||
@@ -244,7 +250,7 @@ int test_flow() {
             "json",
         }
     );
-    if (failed_status.exit_code != 0 ||
+    if (failed_status.exit_code != exit_code::success ||
         !failed_status.standard_output.contains(R"("last_result":"failed")") ||
         failed_status.standard_output.contains(R"("last_sync":"never")") ||
         runtime_factory.graph_info_client_count != 8) {
@@ -263,7 +269,7 @@ int test_flow() {
             log_path.string(),
         }
     );
-    if (reset_state.exit_code != 0 ||
+    if (reset_state.exit_code != exit_code::success ||
         !reset_state.standard_output.contains(
             "Reset synchronization cursor for drive 'me' (drive-id): saved "
             "cursor removed"
@@ -315,7 +321,7 @@ int test_flow() {
         },
         "wrong-drive\n"
     );
-    if (cancelled_clear.exit_code != 1 ||
+    if (cancelled_clear.exit_code != exit_code::failure ||
         !cancelled_clear.standard_output.contains("WARNING:") ||
         !cancelled_clear.standard_output.contains(
             "Full state clear cancelled"
@@ -338,7 +344,7 @@ int test_flow() {
         },
         "me\n"
     );
-    if (confirmed_clear.exit_code != 0 ||
+    if (confirmed_clear.exit_code != exit_code::success ||
         !confirmed_clear.standard_output.contains("drive 'me' (drive-id)") ||
         !confirmed_clear.standard_output.contains(
             "Type the configured drive reference 'me'"
@@ -372,7 +378,7 @@ int test_flow() {
             config_path.string(),
         }
     );
-    if (automated_clear.exit_code != 0 ||
+    if (automated_clear.exit_code != exit_code::success ||
         automated_clear.standard_output.contains(
             "Type the configured drive reference"
         ) ||
@@ -401,7 +407,7 @@ int test_flow() {
         onedrive::account::AccountState::drive_data_directory(
             sync_path, onedrive::test::test_drive_identity()
         );
-    if (dry_run.exit_code != 0 ||
+    if (dry_run.exit_code != exit_code::success ||
         !dry_run.standard_output.contains("Dry run configuration") ||
         !dry_run.standard_output.contains(
             "Remote delta contains 1 changes (1 upserts, 0 removals, 0 moves, "
@@ -468,7 +474,7 @@ int test_flow() {
             "--dry-run",
         }
     );
-    if (single_dry_run.exit_code != 0 ||
+    if (single_dry_run.exit_code != exit_code::success ||
         !single_dry_run.standard_output.contains("Single-file download plan") ||
         std::filesystem::exists(single_destination) ||
         runtime_factory.item_store_count != stores_before_single_download ||
@@ -487,7 +493,7 @@ int test_flow() {
             config_path.string(),
         }
     );
-    if (single_download.exit_code != 0 ||
+    if (single_download.exit_code != exit_code::success ||
         !single_download.standard_output.contains(
             "Downloaded 'Documents/single file.txt'"
         ) ||
@@ -518,7 +524,7 @@ int test_flow() {
             log_path.string(),
         }
     );
-    if (trace_sync.exit_code != 0 ||
+    if (trace_sync.exit_code != exit_code::success ||
         !trace_sync.standard_output.contains(
             "Remote delta contains 1 changes (1 upserts, 0 removals, 0 moves, "
             "0 blocked)"
@@ -589,7 +595,7 @@ int test_flow() {
             "always",
         }
     );
-    if (json_dry_run.exit_code != 0 ||
+    if (json_dry_run.exit_code != exit_code::success ||
         !json_dry_run.standard_output.contains(
             "\"event\":\"dry_run_configuration\""
         ) ||
@@ -620,7 +626,7 @@ int test_flow() {
             "--quiet",
         }
     );
-    if (quiet_dry_run.exit_code != 0 ||
+    if (quiet_dry_run.exit_code != exit_code::success ||
         !quiet_dry_run.standard_output.empty()) {
         return fail("quiet output did not suppress sync information");
     }
@@ -635,7 +641,8 @@ int test_flow() {
             config_path.string(),
         }
     );
-    if (monitor.exit_code != 0 || runtime_factory.monitor_count != 1 ||
+    if (monitor.exit_code != exit_code::success ||
+        runtime_factory.monitor_count != 1 ||
         runtime_factory.monitor_run_count != 1 ||
         runtime_factory.monitor_sync_count != 1 ||
         !monitor.standard_output.contains(

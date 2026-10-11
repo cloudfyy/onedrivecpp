@@ -65,6 +65,13 @@ SQLite ItemStore 使用专用数据库线程。下载、监控和上传工作线
 管理，错误则返回调用方。SQLite 是状态的权威来源，适配器不再重复维护可变的
 条目缓存。
 
+协议与策略上限在各自所属作用域中命名。HTTP、认证和 Graph 共用
+`src/http/status.hpp` 中的状态码与状态码类别判断；Graph JSON 请求共用
+`src/graph/support.hpp` 中的响应大小上限。SHA-256 摘要与十六进制长度定义在
+`onedrive/util/sha256.hpp` 中。浏览器传输复用 `BrowserRequest::request_limit`，
+文件系统缓冲区、名称分配尝试次数和 SQLite 连接上限则保留为局部常量。
+这些命名不改变协议数值、持久化格式或重试行为。
+
 ## 界面输出边界
 
 同步、上传和 Delta 通过核心层的 `events::Observer` 发布强类型 `events::Event`。

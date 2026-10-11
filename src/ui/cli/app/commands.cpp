@@ -3,6 +3,7 @@
 #include "info.hpp"
 
 #include "onedrive/account/account_state.hpp"
+#include "onedrive/exit_code.hpp"
 #include "onedrive/app/options.hpp"
 #include "onedrive/app/authentication.hpp"
 #include "onedrive/app/monitoring.hpp"
@@ -77,7 +78,7 @@ int migrate_state(
             "Migration refused: one or more databases are unhealthy or have "
             "unsupported versions. No databases were upgraded."
         );
-        return 1;
+        return exit_code::failure;
     }
     if (!pending || arguments.force_dry_run || config.dry_run) {
         console.message(
@@ -87,7 +88,7 @@ int migrate_state(
                       "databases or backups were changed."
                     : "No databases require an upgrade."
         );
-        return 0;
+        return exit_code::success;
     }
     if (!arguments.assume_yes) {
         if (console.output_mode() == cli::OutputMode::json) {
@@ -96,7 +97,7 @@ int migrate_state(
                 "confirmation_required",
                 "Database migration requires --yes with JSON output."
             );
-            return 1;
+            return exit_code::failure;
         }
         if (!console.confirm(
                 "database_migration_confirmation",
@@ -109,7 +110,7 @@ int migrate_state(
                 "database_migration_cancelled",
                 "Database migration cancelled."
             );
-            return 1;
+            return exit_code::failure;
         }
     }
     for (const auto& result : results) {
@@ -142,7 +143,7 @@ int migrate_state(
                 "database_migration_failed",
                 "Cannot upgrade '" + result.path.string() + "': " + error.what()
             );
-            return 1;
+            return exit_code::failure;
         }
     }
     console.message(
@@ -151,7 +152,7 @@ int migrate_state(
         "Database upgrades completed; no local or remote files were "
         "synchronized."
     );
-    return 0;
+    return exit_code::success;
 }
 
 int authenticate(
@@ -187,7 +188,7 @@ int authenticate(
                           : "Microsoft device authorization request failed",
             result.error().message
         );
-        return 1;
+        return exit_code::failure;
     }
     spdlog::info("Microsoft authentication succeeded");
     console.message(
@@ -196,7 +197,7 @@ int authenticate(
         "Authentication succeeded. Refresh token saved to " +
             (result->token_directory / "refresh_token").string()
     );
-    return 0;
+    return exit_code::success;
 }
 
 } // namespace
@@ -242,7 +243,7 @@ int execute_command(
             removed ? "Saved authentication removed."
                     : "No saved authentication was present."
         );
-        return 0;
+        return exit_code::success;
     }
     if (operation == Operation::diagnose) {
         const auto results =
@@ -253,7 +254,7 @@ int execute_command(
                 "database_integrity",
                 "No synchronization state databases were found."
             );
-            return 0;
+            return exit_code::success;
         }
 
         bool healthy = true;
@@ -278,7 +279,7 @@ int execute_command(
                   "integrity or schema checks."
                 : "Database upgrade required; run 'state migrate --dry-run'."
         );
-        return healthy ? 0 : 1;
+        return healthy ? exit_code::success : exit_code::failure;
     }
     if (operation == Operation::drives) {
         return show_drives(config, runtime_factory, console);
@@ -369,7 +370,7 @@ int execute_command(
                     "Interactive confirmation is unavailable with JSON "
                     "output; use --yes to confirm explicitly."
                 );
-                return 1;
+                return exit_code::failure;
             }
             if (!console.confirm(
                     "full_state_clear_confirmation",
@@ -387,7 +388,7 @@ int execute_command(
                     "full_state_clear_cancelled",
                     "Full state clear cancelled."
                 );
-                return 1;
+                return exit_code::failure;
             }
         }
         if (clear_all) {
@@ -441,7 +442,7 @@ int execute_command(
                 "Local files were not deleted. The next sync may report "
                 "local modification conflicts."
             );
-            return 0;
+            return exit_code::success;
         }
         spdlog::info(
             "Resetting synchronization state for drive '{}'", config.drive_id
@@ -476,7 +477,7 @@ int execute_command(
             "initial_delta_scheduled",
             "The next sync will perform a full Microsoft Graph delta query."
         );
-        return 0;
+        return exit_code::success;
     }
     spdlog::info(
         "Starting {}{}",

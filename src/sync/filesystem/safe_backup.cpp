@@ -19,6 +19,11 @@ namespace {
 
 using Descriptor = onedrive::util::UniqueFD;
 
+constexpr std::size_t maximum_backup_filename_bytes = 240;
+constexpr std::size_t backup_filename_hash_characters = 16;
+constexpr unsigned maximum_backup_sequence = 9999;
+constexpr std::size_t copy_buffer_bytes = std::size_t{64} * 1024U;
+
 std::string timestamp() {
     const auto now = std::chrono::system_clock::now();
     const auto seconds = std::chrono::system_clock::to_time_t(now);
@@ -50,10 +55,14 @@ std::string backup_filename(
         time,
         sequence
     );
-    if (stem.size() + suffix.size() + extension.size() > 240) {
+    if (stem.size() + suffix.size() + extension.size() >
+        maximum_backup_filename_bytes) {
         stem = "onedrive-" +
-               util::sha256_hex(source.filename().string()).substr(0, 16);
-        if (stem.size() + suffix.size() + extension.size() > 240) {
+               util::sha256_hex(source.filename().string()).substr(
+                   0, backup_filename_hash_characters
+               );
+        if (stem.size() + suffix.size() + extension.size() >
+            maximum_backup_filename_bytes) {
             extension.clear();
         }
     }
@@ -105,7 +114,7 @@ void copy_source(
         S_IRUSR | S_IWUSR
     )};
     try {
-        std::array<char, std::size_t{64} * 1024U> buffer{};
+        std::array<char, copy_buffer_bytes> buffer{};
         while (true) {
             const auto count = ::read(
                 input.get(),
@@ -159,7 +168,8 @@ SafeBackup preserve_safe_backup(
         );
     }
     const auto time = timestamp();
-    for (unsigned sequence = 1; sequence <= 9999; ++sequence) {
+    for (unsigned sequence = 1;
+         sequence <= maximum_backup_sequence; ++sequence) {
         const auto backup = source.parent_path() /
                             backup_filename(source, time, sequence);
         const auto temporary = temporary_path_for(backup);

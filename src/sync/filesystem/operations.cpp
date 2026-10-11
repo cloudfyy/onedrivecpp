@@ -442,7 +442,8 @@ std::string content_fingerprint(const std::filesystem::path& path) {
         );
     }
     util::Sha256Hasher hasher;
-    std::array<char, std::size_t{64} * 1024U> buffer{};
+    constexpr std::size_t fingerprint_buffer_bytes = std::size_t{64} * 1024U;
+    std::array<char, fingerprint_buffer_bytes> buffer{};
     while (input) {
         input.read(buffer.data(), static_cast<std::streamsize>(buffer.size()));
         const auto count = input.gcount();

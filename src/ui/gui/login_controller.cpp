@@ -15,6 +15,13 @@
 #include <utility>
 
 namespace onedrive::gui {
+namespace {
+
+constexpr int authorization_poll_interval_milliseconds = 100;
+constexpr int reply_write_poll_interval_milliseconds = 10;
+
+} // namespace
+
 auth::AuthResult<void> request_browser_authorization(
     auth::AuthCodeSession& session,
     const std::function<void(const QString&)>& open_browser,
@@ -54,7 +61,9 @@ auth::AuthResult<void> request_browser_authorization(
             return ready;
         }
         bool timed_out = false;
-        if (!server.waitForNewConnection(100, &timed_out)) {
+        if (!server.waitForNewConnection(
+                authorization_poll_interval_milliseconds, &timed_out
+            )) {
             if (!timed_out) {
                 throw std::runtime_error{
                     "browser authorization listener failed: " +
@@ -67,7 +76,9 @@ auth::AuthResult<void> request_browser_authorization(
         if (!socket) {
             continue;
         }
-        socket->setReadBufferSize(8192);
+        socket->setReadBufferSize(
+            static_cast<qint64>(detail::BrowserRequest::request_limit)
+        );
         auth::AuthResult<void> callback = std::unexpected(
             auth::AuthError{
                 .code = auth::AuthErrorCode::invalid_response,
@@ -87,7 +98,9 @@ auth::AuthResult<void> request_browser_authorization(
                         break;
                     }
                     if (socket->bytesAvailable() == 0)
-                        socket->waitForReadyRead(100);
+                        socket->waitForReadyRead(
+                            authorization_poll_interval_milliseconds
+                        );
                     const auto bytes = socket->read(
                         static_cast<qint64>(
                             detail::BrowserRequest::request_limit -
@@ -149,7 +162,9 @@ auth::AuthResult<void> request_browser_authorization(
                         next = request.peer_closed(now());
                     } else {
                         if (accepted == 0)
-                            socket->waitForBytesWritten(10);
+                            socket->waitForBytesWritten(
+                                reply_write_poll_interval_milliseconds
+                            );
                         next = request.accepted(
                             static_cast<std::size_t>(accepted), now()
                         );
@@ -158,7 +173,9 @@ auth::AuthResult<void> request_browser_authorization(
                 }
                 case Command::flush:
                     if (socket->bytesToWrite() > 0)
-                        socket->waitForBytesWritten(10);
+                        socket->waitForBytesWritten(
+                            reply_write_poll_interval_milliseconds
+                        );
                     next = request.flushed(
                         static_cast<std::size_t>(socket->bytesToWrite()), now()
                     );

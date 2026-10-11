@@ -24,9 +24,12 @@ namespace {
 
 constexpr mode_t private_directory_mode = S_IRWXU;
 constexpr mode_t private_file_mode = S_IRUSR | S_IWUSR;
+constexpr std::size_t stable_suffix_hex_characters = 8;
+constexpr std::size_t maximum_friendly_name_bytes = 48;
+constexpr std::size_t active_account_marker_buffer_bytes = 256;
 
 std::string stable_suffix(std::string_view value) {
-    return util::sha256_hex(value).substr(0, 8);
+    return util::sha256_hex(value).substr(0, stable_suffix_hex_characters);
 }
 
 struct FriendlyComponentInput {
@@ -48,7 +51,7 @@ void validate_identity(const DriveIdentity& identity) {
 std::string friendly_component(FriendlyComponentInput input) {
     const auto [display_name, stable_id, fallback] = input;
     std::string result;
-    result.reserve(display_name.size() + 10);
+    result.reserve(display_name.size() + 2 + stable_suffix_hex_characters);
     bool separator = false;
     for (std::size_t index = 0; index < display_name.size();) {
         const auto character =
@@ -72,7 +75,8 @@ std::string friendly_component(FriendlyComponentInput input) {
                 ++index;
                 continue;
             }
-            if (result.size() + separator_size + length > 48) {
+            if (result.size() + separator_size + length >
+                maximum_friendly_name_bytes) {
                 break;
             }
             if (separator_size != 0) {
@@ -85,7 +89,8 @@ std::string friendly_component(FriendlyComponentInput input) {
         }
         if (std::isalnum(character) != 0 ||
             character == '_' || character == '-') {
-            if (result.size() + (separator && !result.empty() ? 2 : 1) > 48) {
+            if (result.size() + (separator && !result.empty() ? 2 : 1) >
+                maximum_friendly_name_bytes) {
                 break;
             }
             if (separator && !result.empty()) {
@@ -368,7 +373,7 @@ AccountState::find_active_token_directory(
             "the current user"
         );
     }
-    std::array<char, 256> buffer{};
+    std::array<char, active_account_marker_buffer_bytes> buffer{};
     const auto size =
         ::read(descriptor.get(), buffer.data(), buffer.size());
     const int read_error = errno;

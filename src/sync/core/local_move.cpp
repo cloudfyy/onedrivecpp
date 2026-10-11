@@ -554,7 +554,9 @@ void execute_staging_action(
                 );
                 return;
             }
-            for (std::size_t attempt = 0; attempt < 100; ++attempt) {
+            constexpr std::size_t maximum_staging_path_attempts = 100;
+            for (std::size_t attempt = 0;
+                 attempt < maximum_staging_path_attempts; ++attempt) {
                 const auto candidate =
                     detail::move_staging_path_for(source);
                 std::error_code candidate_error;
