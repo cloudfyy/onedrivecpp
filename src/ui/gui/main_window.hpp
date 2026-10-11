@@ -13,6 +13,8 @@ class QCloseEvent;
 namespace onedrive::gui {
 
 class MainWindow final : public QMainWindow {
+    Q_OBJECT
+
 public:
     explicit MainWindow(
         AppStateViewModel state, AuthenticationFunction authenticate = {}

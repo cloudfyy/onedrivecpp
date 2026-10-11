@@ -4,6 +4,7 @@
 #include "onedrive/app/factory.hpp"
 
 #include <QMetaObject>
+#include <QCoreApplication>
 #include <QElapsedTimer>
 #include <QTcpServer>
 #include <QTcpSocket>
@@ -29,7 +30,10 @@ auth::AuthResult<void> request_browser_authorization(
 ) {
     if (!open_browser) {
         throw std::invalid_argument{
-            "browser login requires a browser callback"
+            QCoreApplication::translate(
+                "BrowserLogin", "Browser login requires a browser callback."
+            )
+                .toStdString()
         };
     }
     if (token.stop_requested()) {
@@ -39,8 +43,11 @@ auth::AuthResult<void> request_browser_authorization(
     QTcpServer server;
     if (!server.listen(QHostAddress::LocalHost, 0)) {
         throw std::runtime_error{
-            "cannot listen for browser authorization: " +
-            server.errorString().toStdString()
+            QCoreApplication::translate(
+                "BrowserLogin", "Cannot listen for browser authorization: %1"
+            )
+                .arg(server.errorString())
+                .toStdString()
         };
     }
     const auto redirect =
@@ -50,7 +57,18 @@ auth::AuthResult<void> request_browser_authorization(
         return std::unexpected(url.error());
     }
     open_browser(QString::fromStdString(*url));
-    detail::BrowserRequest request;
+    detail::BrowserRequest request{
+        QCoreApplication::translate(
+            "BrowserLogin",
+            "Authorization received. Return to OneDrive client. "
+            "You may close this tab."
+        )
+            .toStdString(),
+        QCoreApplication::translate(
+            "BrowserLogin", "Invalid authorization callback."
+        )
+            .toStdString()
+    };
     QElapsedTimer timer;
     timer.start();
     const auto now = [&] {
@@ -66,8 +84,12 @@ auth::AuthResult<void> request_browser_authorization(
             )) {
             if (!timed_out) {
                 throw std::runtime_error{
-                    "browser authorization listener failed: " +
-                    server.errorString().toStdString()
+                    QCoreApplication::translate(
+                        "BrowserLogin",
+                        "Browser authorization listener failed: %1"
+                    )
+                        .arg(server.errorString())
+                        .toStdString()
                 };
             }
             continue;
@@ -82,7 +104,11 @@ auth::AuthResult<void> request_browser_authorization(
         auth::AuthResult<void> callback = std::unexpected(
             auth::AuthError{
                 .code = auth::AuthErrorCode::invalid_response,
-                .message = "invalid authorization callback HTTP request",
+                .message = QCoreApplication::translate(
+                               "BrowserLogin",
+                               "Invalid authorization callback HTTP request."
+                )
+                               .toStdString(),
             }
         );
         auto commands = request.connected(now());
@@ -239,7 +265,7 @@ void LoginController::cancel() {
 
 void LoginController::start(const std::filesystem::path& config_file) {
     if (running_) {
-        throw std::logic_error{"login is already running"};
+        throw std::logic_error{tr("Login is already running.").toStdString()};
     }
     running_ = true;
     try {

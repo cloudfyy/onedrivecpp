@@ -105,15 +105,49 @@ if(ONEDRIVE_BUILD_GUI)
             src/ui/gui/login_controller.cpp
             src/ui/gui/login_controller.hpp
             src/ui/gui/main_window.cpp
+            src/ui/gui/main_window.hpp
             src/ui/gui/configuration.cpp
             src/ui/gui/app_state_view_model.cpp
             tests/gui/login.cpp
         INCLUDE_DIRS src src/ui/gui tests
-        LIBRARIES onedrive_app Qt6::Widgets Qt6::Network
+        LIBRARIES onedrive_app Qt6::Widgets Qt6::Network onedrive_gui_localization
     )
     set_target_properties(gui_login_tests PROPERTIES AUTOMOC ON)
     set_tests_properties(gui_login_tests PROPERTIES TIMEOUT 20)
     set_property(TEST gui_login_tests APPEND PROPERTY ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+    add_onedrive_test(
+        gui_localization_tests
+        SOURCES
+            src/ui/gui/login_controller.cpp
+            src/ui/gui/login_controller.hpp
+            src/ui/gui/main_window.cpp
+            src/ui/gui/main_window.hpp
+            src/ui/gui/configuration.cpp
+            src/ui/gui/app_state_view_model.cpp
+            tests/gui/localization.cpp
+        INCLUDE_DIRS src src/ui/gui tests
+        LIBRARIES onedrive_app Qt6::Widgets Qt6::Network onedrive_gui_localization
+    )
+    set_target_properties(gui_localization_tests PROPERTIES AUTOMOC ON)
+    set_tests_properties(gui_localization_tests PROPERTIES
+        TIMEOUT 20
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;LC_ALL=en_US.UTF-8;LANG=en_US.UTF-8;LANGUAGE=en_US"
+    )
+    foreach(LOCALE IN ITEMS zh_CN zh_SG fr_FR zh_TW)
+        if(LOCALE MATCHES "^zh_(CN|SG)$")
+            set(EXPECTED_LANGUAGE chinese)
+        else()
+            set(EXPECTED_LANGUAGE english)
+        endif()
+        add_test(
+            NAME gui_localization_${LOCALE}_tests
+            COMMAND gui_localization_tests ${EXPECTED_LANGUAGE}
+        )
+        set_tests_properties(gui_localization_${LOCALE}_tests PROPERTIES
+            TIMEOUT 20
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;LC_ALL=${LOCALE}.UTF-8;LANG=${LOCALE}.UTF-8;LANGUAGE=${LOCALE}"
+        )
+    endforeach()
     add_onedrive_test(
         gui_system_appearance_tests
         SOURCES

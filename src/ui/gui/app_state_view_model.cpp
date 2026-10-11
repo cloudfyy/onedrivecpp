@@ -17,19 +17,19 @@ AppStateViewModel load_app_state_view_model(
             config.state_directory
         );
 
-    auto account_status = std::string{"No active account"};
+    auto account_status = AccountStatus::no_account;
     if (token_directory) {
         const auth::FileTokenStore token_store{*token_directory};
-        account_status = token_store.load_refresh_token() ?
-            "Account credentials available" :
-            "Active account has no saved credentials";
+        account_status = token_store.load_refresh_token()
+                             ? AccountStatus::credentials_available
+                             : AccountStatus::no_credentials;
     }
 
     return {
         .config_file = config_file,
         .sync_directory = config.sync_data_directory,
         .state_directory = config.state_directory,
-        .account_status = std::move(account_status),
+        .account_status = account_status,
     };
 }
 

@@ -94,28 +94,6 @@ std::string read_import_file(const std::filesystem::path& source_file) {
     return read_config_file(source_file, false);
 }
 
-std::string sync_mode_name(sync::SyncMode mode) {
-    switch (mode) {
-    case sync::SyncMode::bidirectional:
-        return "Bidirectional";
-    case sync::SyncMode::upload_only:
-        return "Upload only";
-    case sync::SyncMode::download_only:
-        return "Download only";
-    }
-    throw std::logic_error{"unknown synchronization mode"};
-}
-
-std::string delete_policy_name(sync::DeletePolicy policy) {
-    switch (policy) {
-    case sync::DeletePolicy::propagate:
-        return "Propagate deletions";
-    case sync::DeletePolicy::preserve:
-        return "Preserve destination files";
-    }
-    throw std::logic_error{"unknown deletion policy"};
-}
-
 } // namespace
 
 ConfigurationPreview preview_configuration(
@@ -131,8 +109,8 @@ ConfigurationPreview preview_configuration(
     return {
         .sync_directory = config.sync_data_directory,
         .state_directory = config.state_directory,
-        .sync_mode = sync_mode_name(config.sync_mode),
-        .delete_policy = delete_policy_name(config.delete_policy),
+        .sync_mode = config.sync_mode,
+        .delete_policy = config.delete_policy,
     };
 }
 

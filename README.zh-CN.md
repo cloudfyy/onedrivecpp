@@ -122,6 +122,30 @@ FTXUI 和 Proxy 4 可以由已安装的 CMake 包提供；如果找不到，CMak
 
 克隆仓库后请进入仓库根目录。以下所有构建命令均假定当前工作目录为项目根目录。
 
+### 可选桌面 GUI
+
+GUI 要求 Qt 6.8 或更高版本，以及 Linguist 工具和 Qt 简体中文翻译包。
+在 Ubuntu 26.04 上：
+
+```bash
+sudo apt install -y qt6-base-dev qt6-tools-dev qt6-tools-dev-tools \
+  qt6-translations-l10n
+cmake --preset release -DONEDRIVE_BUILD_GUI=ON
+cmake --build --preset release --target onedrive-cpp-gui
+./build/release/onedrive-cpp-gui
+```
+
+GUI 启动时跟随系统语言：简体中文环境显示 **OneDrive 客户端**，英语或其他
+不支持的语言环境显示 **onedrive client**。概览、设置、登录状态、对话框和
+浏览器回调消息均有翻译。应用与 Qt 翻译内嵌在可执行文件中，运行时不需要额外
+翻译文件。更改系统语言后请重启应用；原生对话框和外部浏览器可能使用各自的
+系统语言设置。
+
+配置、文件系统、后端及服务器的原始错误详情会保留，可能仍为英语；GUI 提供的
+错误上下文会翻译。CLI/TUI 文本、JSON 输出、配置键和日志保持不变。
+`ONEDRIVE_BUILD_GUI` 默认为 `OFF`；无界面构建无需 Qt 或翻译工具。
+维护和离屏验证方法见[GUI 本地化测试](docs/development.zh-CN.md#gui-本地化)。
+
 ### Release 构建
 
 ```bash

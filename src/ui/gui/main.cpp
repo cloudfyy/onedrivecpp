@@ -1,5 +1,6 @@
 #include "main_window.hpp"
 #include "system_appearance.hpp"
+#include "localization.hpp"
 
 #include "onedrive/config/config.hpp"
 #include "onedrive/exit_code.hpp"
@@ -11,7 +12,13 @@
 
 int main(int argc, char* argv[]) {
     QApplication application{argc, argv};
-    QCoreApplication::setApplicationName("OneDrive C++");
+    QCoreApplication::setApplicationName("onedrive-cpp-gui");
+    onedrive::gui::Localization localization;
+    QApplication::setApplicationDisplayName(
+        QCoreApplication::translate(
+            "onedrive::gui::MainWindow", "onedrive client"
+        )
+    );
     onedrive::gui::SystemAppearance system_appearance{&application};
 
     try {
@@ -24,7 +31,12 @@ int main(int argc, char* argv[]) {
         return application.exec();
     } catch (const std::exception& error) {
         QMessageBox::critical(
-            nullptr, "OneDrive C++", QString::fromUtf8(error.what())
+            nullptr,
+            QApplication::applicationDisplayName(),
+            QCoreApplication::translate(
+                "Application", "Cannot start OneDrive client:\n%1"
+            )
+                .arg(QString::fromUtf8(error.what()))
         );
         return onedrive::exit_code::failure;
     }

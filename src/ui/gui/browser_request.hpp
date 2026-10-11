@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace onedrive::gui::detail {
@@ -30,6 +31,16 @@ public:
     static constexpr std::size_t request_limit = 8192;
     static constexpr Time request_timeout{2000};
     static constexpr Time write_timeout{100};
+
+    explicit BrowserRequest(
+        std::string received_message =
+            "Authorization received. Return to OneDrive C++. "
+            "You may close this tab.",
+        std::string invalid_message = "Invalid authorization callback."
+    )
+        : received_message_{std::move(received_message)},
+          invalid_message_{std::move(invalid_message)} {
+    }
 
     [[nodiscard]] BrowserPhase phase() const noexcept {
         return phase_;
@@ -113,10 +124,7 @@ private:
         terminal_ = outcome != CallbackOutcome::invalid;
         const bool received = outcome == CallbackOutcome::accepted ||
                               outcome == CallbackOutcome::rejected;
-        const std::string body =
-            received ? "Authorization received. Return to OneDrive C++. "
-                       "You may close this tab."
-                     : "Invalid authorization callback.";
+        const auto& body = received ? received_message_ : invalid_message_;
         reply_ =
             received ? "HTTP/1.1 200 OK\r\n" : "HTTP/1.1 400 Bad Request\r\n";
         reply_ += "Content-Type: text/plain; charset=utf-8\r\nCache-Control: "
@@ -145,6 +153,8 @@ private:
     std::string reply_;
     std::size_t written_{0};
     bool terminal_{false};
+    std::string received_message_;
+    std::string invalid_message_;
 };
 
 inline std::optional<std::string_view>

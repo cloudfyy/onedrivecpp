@@ -1,16 +1,17 @@
 #pragma once
 
+#include "onedrive/sync/capabilities.hpp"
+
 #include <filesystem>
 #include <optional>
-#include <string>
 
 namespace onedrive::gui {
 
 struct ConfigurationPreview {
     std::filesystem::path sync_directory;
     std::filesystem::path state_directory;
-    std::string sync_mode;
-    std::string delete_policy;
+    sync::SyncMode sync_mode;
+    sync::DeletePolicy delete_policy;
 };
 
 [[nodiscard]] ConfigurationPreview preview_configuration(

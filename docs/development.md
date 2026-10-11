@@ -3,6 +3,42 @@
 English | [简体中文](development.zh-CN.md) |
 [Documentation index](README.md)
 
+## GUI localization
+
+Enable `ONEDRIVE_BUILD_GUI=ON` with Qt 6.8+ and the Linguist tools.
+`qt6-translations-l10n` supplies `qtbase_zh_CN.qm` for Qt standard buttons and
+dialogs. Missing GUI tools/catalogs fail configuration only when the GUI is
+enabled. For a custom Qt installation, CMake's `ONEDRIVE_QTBASE_ZH_CN` cache
+entry can point to its matching catalog.
+
+GUI strings use `tr()` or `QCoreApplication::translate()`; account and
+configuration view models expose enums rather than translated strings, so
+their headless tests remain Qt-independent. `Localization` installs the
+resource-bundled translators before constructing widgets and keeps them alive
+for the application's lifetime. Simplified Chinese system locales use the
+`zh_CN` catalog; all other locales fall back to the English source strings.
+Backend error details are intentionally preserved rather than translated.
+
+After changing GUI strings, extract them with Qt tooling, translate every new
+entry in `src/ui/gui/translations/onedrive_zh_CN.ts`, and rebuild:
+
+```bash
+cmake --preset debug -DONEDRIVE_BUILD_GUI=ON -DONEDRIVE_ENABLE_GRAPH_E2E=OFF
+cmake --build build/debug --target onedrive_gui_lupdate
+cmake --build build/debug --target onedrive-cpp-gui gui_localization_tests gui_login_tests gui_state_view_model_tests gui_system_appearance_tests browser_request_tests
+ctest --test-dir build/debug -R '^(gui_.*|browser_request_tests)$' --output-on-failure
+```
+
+`lrelease -nounfinished` compiles the catalog into `.qm`; Qt resources embed
+both application and Qt catalogs in the GUI and its tests. Do not hand-edit
+generated `.qm` files. Offscreen tests run in separate English, `zh_CN`,
+`zh_SG`, French, and Traditional Chinese locale environments. They verify
+resource loading, English fallback, translator lifetime, actual window
+labels, account/configuration enums, login results, settings dialogs and Qt
+buttons, placeholder substitutions, and UTF-8 loopback replies. No Graph
+credentials or real browser are needed. These tests do not replace a real
+desktop/native-dialog check.
+
 ## Live Graph end-to-end tests
 
 The `e2e` preset is disabled from normal builds and requires a dedicated test

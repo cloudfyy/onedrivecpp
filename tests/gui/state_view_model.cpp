@@ -33,7 +33,7 @@ int test_view_model_without_account() {
     if (state.config_file != config_file ||
         state.sync_directory != sync_directory ||
         state.state_directory != state_directory ||
-        state.account_status != "No active account") {
+        state.account_status != onedrive::gui::AccountStatus::no_account) {
         return onedrive::test::fail(
             "GUI view model did not report configured paths and missing account"
         );
@@ -73,7 +73,8 @@ int test_view_model_with_saved_credentials() {
     }
 
     const auto state = onedrive::gui::load_app_state_view_model(config_file);
-    if (state.account_status != "Account credentials available") {
+    if (state.account_status !=
+        onedrive::gui::AccountStatus::credentials_available) {
         return onedrive::test::fail(
             "GUI view model did not detect saved account credentials"
         );
@@ -200,7 +201,7 @@ int test_import_and_atomic_save() {
         onedrive::gui::preview_configuration(source_file, destination);
     if (preview.sync_directory != "/imported/OneDrive" ||
         preview.state_directory != "/imported/state" ||
-        preview.sync_mode != "Bidirectional") {
+        preview.sync_mode != onedrive::sync::SyncMode::bidirectional) {
         return onedrive::test::fail(
             "configuration import preview returned incorrect values"
         );

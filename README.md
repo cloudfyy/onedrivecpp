@@ -142,6 +142,34 @@ through the `ftxui` and `proxy` ports.
 After cloning the repository, change to its root directory. All build commands
 below assume the project root is the current working directory.
 
+### Optional desktop GUI
+
+The GUI requires Qt 6.8 or later, including Linguist tools and Qt's Simplified
+Chinese translation catalog. On Ubuntu 26.04:
+
+```bash
+sudo apt install -y qt6-base-dev qt6-tools-dev qt6-tools-dev-tools \
+  qt6-translations-l10n
+cmake --preset release -DONEDRIVE_BUILD_GUI=ON
+cmake --build --preset release --target onedrive-cpp-gui
+./build/release/onedrive-cpp-gui
+```
+
+The GUI follows the system locale at startup: Simplified Chinese locales
+display **OneDrive 客户端**, and English or unsupported locales display
+**onedrive client**. The overview, settings, login statuses, dialogs, and
+browser callback messages are translated. Application and Qt translations are
+embedded in the executable; no separate translation files are needed at runtime.
+Restart after changing the system language. Native dialogs and the external
+browser may follow their own system settings.
+
+Underlying configuration, filesystem, backend, and server error details are
+preserved and may still be in English; their GUI context is translated.
+CLI/TUI text, JSON output, configuration keys, and logs are unchanged.
+`ONEDRIVE_BUILD_GUI` defaults to `OFF`; headless builds need neither Qt nor
+translation tools. See [GUI localization tests](docs/development.md#gui-localization)
+for maintenance and offscreen validation.
+
 ### Release build
 
 ```bash

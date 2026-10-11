@@ -3,6 +3,35 @@
 [English](development.md) | 简体中文 |
 [文档中心](README.zh-CN.md)
 
+## GUI 本地化
+
+启用 `ONEDRIVE_BUILD_GUI=ON` 时需要 Qt 6.8+ 和 Linguist 工具；
+`qt6-translations-l10n` 提供标准按钮和对话框使用的 `qtbase_zh_CN.qm`。
+只有启用 GUI 时，缺少这些工具或翻译包才会导致配置失败。自定义 Qt 安装可以
+通过 CMake 缓存项 `ONEDRIVE_QTBASE_ZH_CN` 指向对应版本的翻译包。
+
+GUI 文本使用 `tr()` 或 `QCoreApplication::translate()`；账号与配置视图模型
+使用枚举而非已翻译字符串，其无界面测试仍不依赖 Qt。`Localization` 在构建
+控件前安装资源内嵌的翻译器，并保持到应用退出。简体中文系统语言使用 `zh_CN`
+翻译包；其他语言回退到英语源文本。后端原始错误详情保留，不进行翻译。
+
+修改 GUI 文本后，使用 Qt 工具提取字符串，在
+`src/ui/gui/translations/onedrive_zh_CN.ts` 中翻译所有新增条目，再重新构建：
+
+```bash
+cmake --preset debug -DONEDRIVE_BUILD_GUI=ON -DONEDRIVE_ENABLE_GRAPH_E2E=OFF
+cmake --build build/debug --target onedrive_gui_lupdate
+cmake --build build/debug --target onedrive-cpp-gui gui_localization_tests gui_login_tests gui_state_view_model_tests gui_system_appearance_tests browser_request_tests
+ctest --test-dir build/debug -R '^(gui_.*|browser_request_tests)$' --output-on-failure
+```
+
+`lrelease -nounfinished` 将翻译编译成 `.qm`；Qt 资源将应用和 Qt 翻译包内嵌到
+GUI 及测试程序。不要手动编辑生成的 `.qm` 文件。离屏测试分别在英语、
+`zh_CN`、`zh_SG`、法语和繁体中文环境运行，验证资源加载、英语回退、翻译器
+生命周期、真实窗口标签、账号／配置枚举、登录结果、设置对话框和 Qt 按钮、
+占位符替换及 UTF-8 loopback 回复。无需 Graph 凭据或真实浏览器，但不能替代
+真实桌面及原生对话框验证。
+
 ## 离线代码覆盖率
 
 启用 `ONEDRIVE_ENABLE_COVERAGE=ON` 可使用 Clang 的源码覆盖率插桩，

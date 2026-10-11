@@ -201,7 +201,51 @@ add_executable(onedrive-cpp src/main.cpp)
 target_link_libraries(onedrive-cpp PRIVATE onedrive_cli)
 
 if(ONEDRIVE_BUILD_GUI)
-    find_package(Qt6 6.8 REQUIRED COMPONENTS Core DBus Gui Network Widgets)
+    find_package(Qt6 6.8 REQUIRED
+        COMPONENTS Core DBus Gui Network Widgets LinguistTools
+    )
+
+    add_library(onedrive_gui_localization STATIC src/ui/gui/localization.cpp)
+    target_include_directories(onedrive_gui_localization PUBLIC
+        ${PROJECT_SOURCE_DIR}/src/ui/gui
+    )
+    target_link_libraries(onedrive_gui_localization PUBLIC onedrive_core Qt6::Core)
+    qt_add_lrelease(onedrive_gui_localization
+        LRELEASE_TARGET onedrive_gui_lrelease
+        TS_FILES ${PROJECT_SOURCE_DIR}/src/ui/gui/translations/onedrive_zh_CN.ts
+        QM_FILES_OUTPUT_VARIABLE ONEDRIVE_QM_FILES
+        OPTIONS -nounfinished
+    )
+    qt_add_lupdate(onedrive_gui_localization
+        LUPDATE_TARGET onedrive_gui_lupdate
+        SOURCES
+            ${PROJECT_SOURCE_DIR}/src/ui/gui/main.cpp
+            ${PROJECT_SOURCE_DIR}/src/ui/gui/main_window.cpp
+            ${PROJECT_SOURCE_DIR}/src/ui/gui/main_window.hpp
+            ${PROJECT_SOURCE_DIR}/src/ui/gui/localization.cpp
+            ${PROJECT_SOURCE_DIR}/src/ui/gui/login_controller.cpp
+            ${PROJECT_SOURCE_DIR}/src/ui/gui/login_controller.hpp
+        TS_FILES ${PROJECT_SOURCE_DIR}/src/ui/gui/translations/onedrive_zh_CN.ts
+        OPTIONS -no-obsolete
+    )
+    get_target_property(ONEDRIVE_QMAKE Qt6::qmake IMPORTED_LOCATION)
+    execute_process(
+        COMMAND "${ONEDRIVE_QMAKE}" -query QT_INSTALL_TRANSLATIONS
+        OUTPUT_VARIABLE ONEDRIVE_QT_TRANSLATIONS
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        COMMAND_ERROR_IS_FATAL ANY
+    )
+    find_file(ONEDRIVE_QTBASE_ZH_CN qtbase_zh_CN.qm
+        PATHS "${ONEDRIVE_QT_TRANSLATIONS}" NO_DEFAULT_PATH REQUIRED
+    )
+    set_source_files_properties("${ONEDRIVE_QTBASE_ZH_CN}"
+        PROPERTIES QT_RESOURCE_ALIAS qtbase_zh_CN.qm
+    )
+    qt_add_resources(onedrive_gui_localization onedrive_translations
+        PREFIX "/i18n"
+        BASE "${CMAKE_CURRENT_BINARY_DIR}"
+        FILES ${ONEDRIVE_QM_FILES} "${ONEDRIVE_QTBASE_ZH_CN}"
+    )
 
     add_executable(
         onedrive-cpp-gui
@@ -209,6 +253,7 @@ if(ONEDRIVE_BUILD_GUI)
         src/ui/gui/app_state_view_model.cpp
         src/ui/gui/main.cpp
         src/ui/gui/main_window.cpp
+        src/ui/gui/main_window.hpp
         src/ui/gui/login_controller.cpp
         src/ui/gui/login_controller.hpp
         src/ui/gui/system_appearance.cpp
@@ -227,6 +272,7 @@ if(ONEDRIVE_BUILD_GUI)
             Qt6::Gui
             Qt6::Network
             Qt6::Widgets
+            onedrive_gui_localization
     )
     target_compile_options(onedrive-cpp-gui PRIVATE
         $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall;-Wextra;-Wpedantic;-Wconversion;-Wshadow>
