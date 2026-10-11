@@ -55,7 +55,7 @@ MainWindow::MainWindow(
 )
     : state_{std::move(state)},
       login_{std::move(authenticate)} {
-    setWindowTitle("OneDrive C++");
+    setWindowTitle("onedrive client");
     resize(860, 520);
 
     auto* tabs = new QTabWidget{this};
