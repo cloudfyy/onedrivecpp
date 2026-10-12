@@ -231,7 +231,7 @@ PRO_DEF_MEM_DISPATCH(GraphRefreshAccessTokenDispatch, refresh_access_token);
 struct GraphClientFacade : pro::facade_builder
     ::add_convention<
         GraphDriveIdentityDispatch,
-        account::DriveIdentity() const
+        account::DriveIdentity(std::stop_token) const
     >
     ::add_convention<
         GraphListRootDispatch,
@@ -325,8 +325,9 @@ class GraphClient : private onedrive::util::ProxyService<GraphClientFacade> {
 public:
     using Base::Base;
 
-    [[nodiscard]] account::DriveIdentity drive_identity() const {
-        return implementation()->drive_identity();
+    [[nodiscard]] account::DriveIdentity
+    drive_identity(std::stop_token token = {}) const {
+        return implementation()->drive_identity(token);
     }
 
     [[nodiscard]] std::vector<RemoteItem> list_root() const {
@@ -553,7 +554,8 @@ public:
     MicrosoftGraphClient(MicrosoftGraphClient&&) = delete;
     MicrosoftGraphClient& operator=(MicrosoftGraphClient&&) = delete;
 
-    [[nodiscard]] account::DriveIdentity drive_identity() const;
+    [[nodiscard]] account::DriveIdentity
+    drive_identity(std::stop_token token = {}) const;
     [[nodiscard]] std::vector<DriveInfo> list_drives() const;
     [[nodiscard]] DriveInfo drive_info() const;
     [[nodiscard]] std::vector<SharedResource>

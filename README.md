@@ -174,7 +174,7 @@ information without opening a window.
 Use the **Language** menu to switch between **System language**, **English**, and
 **Simplified Chinese** immediately. Existing labels, status messages, settings,
 and the window title update without losing unsaved settings drafts or restarting
-an active login. The checked menu item shows the selection. Both command-line
+an active login or synchronization task. The checked menu item shows the selection. Both command-line
 and menu selections apply only to the current session and are not saved.
 Restart after changing the system language. Native dialogs and the external
 browser may follow their own system settings.
@@ -191,7 +191,20 @@ configuration**. Invalid files are not silently overwritten; imports preserve
 their contents in a backup. Saved credentials are explicitly unverified online;
 later operations refresh them and report authentication or connectivity errors.
 Sync-path validation does not prevent login when authentication/state settings
-are usable. The GUI still has no synchronization action.
+are usable; synchronization requires valid sync settings and saved credentials.
+
+In **Overview → Synchronization**, use **Preview changes** to inspect the plan
+without changing synchronized files, then **Sync now** to apply it. Both use
+saved configuration, not unsaved Settings drafts. A saved `sync.dry_run = true`
+keeps **Sync now** in preview mode; the GUI never overrides the remote-deletion
+safety limit. Tasks run in a background worker using the same service and state
+directory lock as the CLI. Messages show plans, blocked items and errors;
+download progress includes file/byte counts, speed and an estimated remaining
+time when available. Uploads currently have messages but no percentage display.
+**Stop** requests cancellation and waits for cleanup. Login, logout and settings
+changes are disabled during a task; closing the window cancels and joins it.
+The message history is limited to 500 events, with omissions explicitly shown.
+GUI monitoring and systemd service control remain deferred.
 
 Hover over any setting, its label or browse/override control for a concise tip,
 including advanced fields. Tips also provide accessibility descriptions and
@@ -204,7 +217,7 @@ reload controls. Save validates with the core TOML parser, preserves comments
 and untouched settings, backs up the original, and replaces the file atomically.
 Import and reload replace the draft; switching tabs or language preserves it.
 Directory changes do not migrate files or credentials. Changes apply to the next
-operation; settings are disabled during login.
+operation; settings are disabled during login or synchronization.
 
 The tabs cover Application/tenant/Drive IDs and directories; sync direction,
 deletion/conflict/dotfile policies, selective rules, file-size limit and advanced
@@ -224,7 +237,7 @@ security tools, not opened by the editor. Advanced account settings include
 trusted HTTPS auth/Graph endpoints, scopes (changes require signing in again),
 and a required mount point. No files, credentials or state are migrated.
 Persistent dry-run/force-delete flags and CLI themes are not GUI settings.
-GUI synchronization/monitor workers and service integration remain deferred.
+GUI monitor workers and service integration remain deferred.
 
 CLI/TUI text, JSON output, configuration keys, and logs are unchanged.
 `ONEDRIVE_BUILD_GUI` defaults to `OFF`; headless builds need neither Qt nor

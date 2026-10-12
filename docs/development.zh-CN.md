@@ -17,8 +17,8 @@ GUI 文本使用 `tr()` 或 `QCoreApplication::translate()`；账号与配置视
 GUI 专用的 `QCommandLineParser` 在安装翻译器、创建窗口前解析
 `--language auto|en|zh_CN`；`--help`／`--version` 提前退出，非法值或未知参数
 明确报错。启动时不弹出语言选择框。运行时语言菜单调用应用持有的
-`Localization` 控制器，通过 `LanguageChange` 更新现有控件和保留的登录消息，
-不重建窗口、不重置表单、不干预登录线程。语言选择仅本次运行有效，
+`Localization` 控制器，通过 `LanguageChange` 更新现有控件和保留的登录／同步消息，
+不重建窗口、不重置表单、不干预活动线程。语言选择仅本次运行有效，
 CLI/TUI 参数解析器保持不变。
 本地化回归测试还覆盖浏览器授权期间以及账号刷新成功／失败后的语言切换。
 Qt URL 处理器捕获有效浏览器请求，不启动真实浏览器；格式错误、非 HTTPS、
@@ -32,7 +32,7 @@ Qt URL 处理器捕获有效浏览器请求，不启动真实浏览器；格式�
 ```bash
 cmake --preset debug -DONEDRIVE_BUILD_GUI=ON -DONEDRIVE_ENABLE_GRAPH_E2E=OFF
 cmake --build build/debug --target onedrive_gui_lupdate
-cmake --build build/debug --target onedrive-cpp-gui gui_settings_tests gui_startup_state_tests gui_localization_tests gui_startup_options_tests gui_login_tests gui_state_view_model_tests gui_system_appearance_tests browser_request_tests
+cmake --build build/debug --target onedrive-cpp-gui gui_settings_tests gui_startup_state_tests gui_localization_tests gui_startup_options_tests gui_login_tests gui_synchronization_tests gui_state_view_model_tests gui_system_appearance_tests browser_request_tests
 ctest --test-dir build/debug -R '^(gui_.*|browser_request_tests)$' --output-on-failure
 ```
 
@@ -48,7 +48,7 @@ GUI 及测试程序。不要手动编辑生成的 `.qm` 文件。离屏测试分
 真实桌面及原生对话框验证。
 
 设置改版第一、二阶段已实现账号与目录、同步规则、传输、网络、监控、高级与日志，
-包含高级账号端点、权限范围数组及挂载要求。GUI 同步／监控任务、目录迁移与服务
+包含高级账号端点、权限范围数组及挂载要求。GUI 监控任务、目录迁移与服务
 集成仍暂缓。`SettingsEditor` 六个子页共用基于控件的草稿；枚举
 `itemData` 保存解析器值，不从翻译文本反推。数字文本框避免 Qt 32 位整数
 截断，验证 TOML 非负 int64 范围。只修改已编辑键；选择性规则留空可删除可选键，
@@ -71,12 +71,19 @@ GUI 保存／导入拒绝 URL 内联凭据及不安全的认证／Graph 端点�
 可选键删除、UTF-8／多行源码编辑、非法补丁不写入／不备份、保存／导入取消、
 非法导入及首次导入按目标配置位置解析规则文件。未知 TOML 键会被拒绝并保留原文，
 不会静默丢弃。启动／导入回归验证损坏配置恢复；本地化与
-登录测试覆盖禁用控件及工作线程／草稿保留。不代表已提供 GUI 同步、目录迁移或
+登录测试覆盖禁用控件及工作线程／草稿保留。不代表已提供目录迁移或
 在线凭据验证。第二阶段另覆盖所有新增字段、代理模式／可选状态、嵌套／内联／
 点分表与数组内部注释、超时单位、退避／限流组合约束、端点安全及错误不写入／不备份。
 覆盖率补充测试验证 GUI 空覆盖值／空 scopes、独立继承的代理凭据、NUL／空文件引用
 拒绝、安全表删除、空内联限流父表及 int64 超时／限流边界。`proxy_basic_tests`
 通过回环 Digest 挑战验证环境代理认证，并验证空代理覆盖值使用直连。
+
+`gui_synchronization_tests` 使用离线 Graph／存储适配器执行真实应用同步服务，
+验证预览保留同步文件、实际同步下载正确字节及持久化 dry-run。控制器测试覆盖
+工作线程／GUI 线程边界、运行锁、取消、重启与析构、日志恢复、500 事件队列及
+进度合并。窗口测试覆盖双语进度／历史、阻塞及失败结果、账号／设置操作互斥、
+未保存草稿、有明确省略提示的历史上限，以及关闭时取消并回收线程。
+Graph／应用服务测试还验证令牌刷新和 Drive 身份查询可在创建存储前取消。
 
 ## 离线代码覆盖率
 

@@ -2,8 +2,11 @@
 
 #include "app_state_view_model.hpp"
 #include "login_controller.hpp"
+#include "sync_controller.hpp"
 
 #include <QMainWindow>
+#include <deque>
+#include <optional>
 
 class QLabel;
 class QLineEdit;
@@ -15,6 +18,9 @@ class QTabWidget;
 class QMenu;
 class QActionGroup;
 class QAction;
+class QGroupBox;
+class QProgressBar;
+class QPlainTextEdit;
 
 namespace onedrive::gui {
 
@@ -28,7 +34,8 @@ public:
     explicit MainWindow(
         AppStateViewModel state,
         AuthenticationFunction authenticate = {},
-        Localization* localization = nullptr
+        Localization* localization = nullptr,
+        SynchronizationFunction synchronize = {}
     );
 
 private:
@@ -39,7 +46,14 @@ private:
     void start_login();
     void cancel_login();
     void logout();
-    void refresh_login_actions();
+    void refresh_actions();
+    void start_sync(bool preview);
+    void stop_sync();
+    void receive_sync_events(
+        const std::vector<events::Event>& batch, std::size_t omitted
+    );
+    void render_sync();
+    QString sync_event_text(const events::Event& event) const;
     void open_login_url();
     void refresh_settings(bool preserve_edits = false);
     void refresh_startup_status();
@@ -71,6 +85,7 @@ private:
     QLineEdit* sync_directory_edit_{};
     QLineEdit* state_directory_edit_{};
     LoginController login_;
+    SyncController synchronization_;
     QWidget* settings_{};
     QPushButton* login_button_{};
     QPushButton* account_action_button_{};
@@ -84,6 +99,36 @@ private:
     QString authorization_url_;
     bool cancelling_{false};
     bool closing_{false};
+
+    enum class SyncPhase {
+        idle,
+        preparing,
+        working,
+        scanning,
+        transferring,
+        stopping,
+        completed,
+        cancelled,
+        blocked,
+        failed
+    };
+    SyncPhase sync_phase_{SyncPhase::idle};
+    bool sync_preview_{};
+    bool sync_stopping_{};
+    int sync_result_{};
+    QString sync_error_;
+    std::optional<events::DeltaProgressEvent> sync_delta_;
+    std::optional<events::DownloadProgressEvent> sync_download_;
+    std::deque<events::Event> sync_history_;
+    std::size_t sync_omitted_{};
+    QGroupBox* sync_group_{};
+    QPushButton* preview_button_{};
+    QPushButton* sync_button_{};
+    QPushButton* stop_sync_button_{};
+    QLabel* sync_status_{};
+    QLabel* transfer_status_{};
+    QProgressBar* sync_progress_{};
+    QPlainTextEdit* sync_messages_{};
 };
 
 } // namespace onedrive::gui

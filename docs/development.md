@@ -22,8 +22,8 @@ installing translators or creating the window. `--help`/`--version` exit early;
 invalid values/options fail explicitly. There is no startup selection dialog.
 The session-only Language menu calls the application-owned `Localization`
 controller; `LanguageChange` retranslates existing widgets and retained login
-messages without reconstructing the window, resetting form values, or touching
-the login worker. The CLI/TUI parser is unchanged.
+and synchronization messages without reconstructing the window, resetting form
+values, or touching active workers. The CLI/TUI parser is unchanged.
 Backend error details are intentionally preserved rather than translated.
 The localization regressions also switch languages during browser authorization
 and after successful or failed account refresh. A Qt URL handler captures valid
@@ -39,7 +39,7 @@ entry in `src/ui/gui/translations/onedrive_zh_CN.ts`, and rebuild:
 ```bash
 cmake --preset debug -DONEDRIVE_BUILD_GUI=ON -DONEDRIVE_ENABLE_GRAPH_E2E=OFF
 cmake --build build/debug --target onedrive_gui_lupdate
-cmake --build build/debug --target onedrive-cpp-gui gui_settings_tests gui_startup_state_tests gui_localization_tests gui_startup_options_tests gui_login_tests gui_state_view_model_tests gui_system_appearance_tests browser_request_tests
+cmake --build build/debug --target onedrive-cpp-gui gui_settings_tests gui_startup_state_tests gui_localization_tests gui_startup_options_tests gui_login_tests gui_synchronization_tests gui_state_view_model_tests gui_system_appearance_tests browser_request_tests
 ctest --test-dir build/debug -R '^(gui_.*|browser_request_tests)$' --output-on-failure
 ```
 
@@ -61,8 +61,8 @@ desktop/native-dialog check.
 
 Settings phases one and two are implemented: account/directories, sync rules,
 transfers, network, monitor, and advanced/logging, including advanced account
-endpoints, scope arrays and mount requirements. GUI synchronization/monitor
-workers, directory migration and service integration remain deferred.
+endpoints, scope arrays and mount requirements. GUI monitor workers, directory
+migration and service integration remain deferred.
 `SettingsEditor` keeps one widget-backed draft across all six tabs. Enum
 `itemData` contains parser values, never translated labels. Numeric text fields
 avoid Qt's 32-bit spin-box truncation and validate nonnegative TOML int64 values.
@@ -95,6 +95,16 @@ invalid imports, and first import with destination-relative rules. Unknown TOML
 keys are rejected without modifying the source, not silently discarded.
 Startup/import regressions cover corrupt-config recovery;
 localization/login tests cover disabled controls and worker/draft preservation.
+
+`gui_synchronization_tests` exercises the real application synchronization service
+with offline Graph/storage adapters: preview preserves synchronized files, apply
+downloads the expected bytes, and persistent dry-run is honored. Controller
+regressions check worker/UI thread boundaries, runtime locks, cancellation,
+restart/destruction, logger restoration, a 500-event queue and progress
+coalescing. Window regressions cover translated progress/history, blocked and
+failed results, settings/account interlocks, unsaved drafts, bounded history
+with explicit omissions, and cancel-and-join on close. Graph/application tests
+also cancel token refresh and drive identity lookup before storage creation.
 Phase-two regressions cover every new field, proxy patterns/optional states,
 nested/inline/dotted tables and internal array comments, timeout units, backoff/throttle constraints,
 endpoint safety and rejection without writes or backups.

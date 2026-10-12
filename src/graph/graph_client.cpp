@@ -356,8 +356,20 @@ MicrosoftGraphClient::access_token(const std::stop_token& stop_token) const {
     return cached_access_token_;
 }
 
-account::DriveIdentity MicrosoftGraphClient::drive_identity() const {
-    return fetch_drive_identity(*transport_, access_token(), options_);
+account::DriveIdentity
+MicrosoftGraphClient::drive_identity(std::stop_token token) const {
+    try {
+        return fetch_drive_identity(
+            *transport_, access_token(token), options_, token
+        );
+    } catch (const std::runtime_error&) {
+        if (token.stop_requested()) {
+            throw RequestCancelledError{
+                "Microsoft Graph identity query cancelled"
+            };
+        }
+        throw;
+    }
 }
 
 }  // namespace onedrive::graph

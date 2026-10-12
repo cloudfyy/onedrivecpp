@@ -5,6 +5,7 @@
 #include "settings_editor.hpp"
 #include "onedrive/version.hpp"
 #include "onedrive/app/factory.hpp"
+#include "onedrive/exit_code.hpp"
 
 #include <QActionGroup>
 #include <QApplication>
@@ -22,12 +23,23 @@
 #include <QTabWidget>
 #include <QWidget>
 #include <QUrl>
+#include <QGroupBox>
+#include <QPlainTextEdit>
+#include <QProgressBar>
+#include <QVBoxLayout>
+#include <QScrollBar>
 
 #include <exception>
 #include <utility>
 
 namespace onedrive::gui {
 namespace {
+
+constexpr std::size_t maximum_sync_history = 500;
+
+QString number(std::uint64_t value) {
+    return QString::number(static_cast<qulonglong>(value));
+}
 
 QLabel* make_value_label(const QString& text) {
     auto* label = new QLabel{text};
@@ -42,11 +54,13 @@ QLabel* make_value_label(const QString& text) {
 MainWindow::MainWindow(
     AppStateViewModel state,
     AuthenticationFunction authenticate,
-    Localization* localization
+    Localization* localization,
+    SynchronizationFunction synchronize
 )
     : state_{std::move(state)},
       localization_{localization},
-      login_{std::move(authenticate)} {
+      login_{std::move(authenticate)},
+      synchronization_{std::move(synchronize)} {
     setWindowTitle(tr("onedrive client"));
     resize(860, 520);
 
@@ -81,6 +95,37 @@ MainWindow::MainWindow(
     startup_status_ = make_value_label({});
     startup_status_->setObjectName("startupStatus");
     overview_layout->addRow(startup_status_);
+    sync_group_ = new QGroupBox{overview};
+    sync_group_->setObjectName("synchronizationGroup");
+    auto* sync_layout = new QVBoxLayout{sync_group_};
+    auto* sync_actions = new QHBoxLayout;
+    preview_button_ = new QPushButton{sync_group_};
+    preview_button_->setObjectName("previewSyncButton");
+    sync_button_ = new QPushButton{sync_group_};
+    sync_button_->setObjectName("startSyncButton");
+    stop_sync_button_ = new QPushButton{sync_group_};
+    stop_sync_button_->setObjectName("stopSyncButton");
+    sync_actions->addWidget(preview_button_);
+    sync_actions->addWidget(sync_button_);
+    sync_actions->addWidget(stop_sync_button_);
+    sync_actions->addStretch();
+    sync_layout->addLayout(sync_actions);
+    sync_status_ = make_value_label({});
+    sync_status_->setObjectName("syncStatus");
+    sync_layout->addWidget(sync_status_);
+    sync_progress_ = new QProgressBar{sync_group_};
+    sync_progress_->setObjectName("syncProgress");
+    sync_layout->addWidget(sync_progress_);
+    transfer_status_ = make_value_label({});
+    transfer_status_->setObjectName("transferStatus");
+    sync_layout->addWidget(transfer_status_);
+    sync_messages_ = new QPlainTextEdit{sync_group_};
+    sync_messages_->setObjectName("syncMessages");
+    sync_messages_->setReadOnly(true);
+    sync_messages_->setMinimumHeight(90);
+    sync_messages_->setMaximumHeight(180);
+    sync_layout->addWidget(sync_messages_);
+    overview_layout->addRow(sync_group_);
     tabs->addTab(overview, tr("Overview"));
 
     auto* settings = new QWidget{tabs};
@@ -164,6 +209,66 @@ MainWindow::MainWindow(
             logout();
         }
     });
+    connect(preview_button_, &QPushButton::clicked, this, [this] {
+        start_sync(true);
+    });
+    connect(sync_button_, &QPushButton::clicked, this, [this] {
+        start_sync(false);
+    });
+    connect(
+        stop_sync_button_, &QPushButton::clicked, this, &MainWindow::stop_sync
+    );
+    connect(
+        &synchronization_,
+        &SyncController::started,
+        this,
+        [this](bool preview) {
+            sync_preview_ = preview;
+            if (!sync_stopping_) {
+                sync_phase_ = SyncPhase::working;
+            }
+            render_sync();
+        },
+        Qt::QueuedConnection
+    );
+    connect(
+        &synchronization_,
+        &SyncController::events_ready,
+        this,
+        &MainWindow::receive_sync_events
+    );
+    connect(
+        &synchronization_,
+        &SyncController::finished,
+        this,
+        [this](int result, const QString& error, bool preview) {
+            sync_preview_ = preview;
+            sync_result_ = result;
+            sync_error_ = error;
+            sync_stopping_ = false;
+            sync_phase_ = !error.isEmpty()               ? SyncPhase::failed
+                          : result == exit_code::success ? SyncPhase::completed
+                          : result == exit_code::cancelled
+                              ? SyncPhase::cancelled
+                          : result == exit_code::blocked ? SyncPhase::blocked
+                                                         : SyncPhase::failed;
+            if (!error.isEmpty()) {
+                receive_sync_events(
+                    {events::MessageEvent{
+                        events::MessageKind::error,
+                        "synchronization_failed",
+                        error.toStdString()
+                    }},
+                    0
+                );
+            }
+            refresh_actions();
+            render_sync();
+            if (closing_) {
+                close();
+            }
+        }
+    );
     connect(
         &login_,
         &LoginController::browser_requested,
@@ -192,7 +297,7 @@ MainWindow::MainWindow(
             login_url_->clear();
             login_url_is_instruction_ = false;
             authorization_url_.clear();
-            refresh_login_actions();
+            refresh_actions();
             settings_->setEnabled(true);
             if (closing_) {
                 close();
@@ -276,7 +381,26 @@ void MainWindow::retranslate_ui() {
     settings_editor_->retranslate();
     theme_value_->setText(tr("Follow system light/dark appearance"));
     login_button_->setText(tr("Sign in"));
-    refresh_login_actions();
+    refresh_actions();
+    sync_group_->setTitle(tr("Synchronization"));
+    preview_button_->setText(tr("Preview changes"));
+    sync_button_->setText(tr("Sync now"));
+    stop_sync_button_->setText(tr("Stop"));
+    preview_button_->setToolTip(
+        tr("Preview using saved settings; no synchronized files are changed.")
+    );
+    sync_button_->setToolTip(
+        tr("Use saved settings; files may be uploaded, downloaded or deleted.")
+    );
+    stop_sync_button_->setToolTip(
+        tr("Request cancellation and wait for the task to finish.")
+    );
+    preview_button_->setAccessibleDescription(preview_button_->toolTip());
+    sync_button_->setAccessibleDescription(sync_button_->toolTip());
+    stop_sync_button_->setAccessibleDescription(stop_sync_button_->toolTip());
+    sync_messages_->setAccessibleName(tr("Synchronization messages"));
+    sync_progress_->setAccessibleName(tr("Synchronization progress"));
+    render_sync();
     import_button_->setText(tr("Import TOML…"));
     save_button_->setText(tr("Save settings"));
     reload_button_->setText(tr("Reload configuration"));
@@ -340,10 +464,237 @@ void MainWindow::set_login_status(const char* source, const QString& detail) {
     login_status_->setText(text);
 }
 
+void MainWindow::start_sync(bool preview) {
+    if (login_.running() || synchronization_.running() ||
+        !state_.can_synchronize()) {
+        return;
+    }
+    sync_preview_ = preview;
+    sync_stopping_ = false;
+    sync_phase_ = SyncPhase::preparing;
+    sync_error_.clear();
+    sync_delta_.reset();
+    sync_download_.reset();
+    sync_history_.clear();
+    sync_omitted_ = 0;
+    try {
+        synchronization_.start(state_.config_file, preview);
+    } catch (const std::exception& error) {
+        sync_phase_ = SyncPhase::failed;
+        sync_error_ = QString::fromUtf8(error.what());
+        sync_result_ = exit_code::failure;
+    }
+    refresh_actions();
+    render_sync();
+}
+
+void MainWindow::stop_sync() {
+    if (!synchronization_.running() || sync_stopping_) {
+        return;
+    }
+    sync_stopping_ = true;
+    sync_phase_ = SyncPhase::stopping;
+    synchronization_.cancel();
+    refresh_actions();
+    render_sync();
+}
+
+void MainWindow::receive_sync_events(
+    const std::vector<events::Event>& batch, std::size_t omitted
+) {
+    sync_omitted_ += omitted;
+    for (const auto& event : batch) {
+        if (const auto* delta =
+                std::get_if<events::DeltaProgressEvent>(&event)) {
+            sync_delta_ = *delta;
+            if (!sync_stopping_) {
+                sync_phase_ = SyncPhase::scanning;
+            }
+        } else if (const auto* download =
+                       std::get_if<events::DownloadProgressEvent>(&event)) {
+            sync_download_ = *download;
+            if (!sync_stopping_) {
+                sync_phase_ = SyncPhase::transferring;
+            }
+        } else if (std::holds_alternative<events::EndDownloadProgressEvent>(
+                       event
+                   )) {
+            if (!sync_stopping_) {
+                sync_phase_ = SyncPhase::working;
+            }
+        } else if (const auto* state =
+                       std::get_if<events::OperationStateEvent>(&event)) {
+            if (!sync_stopping_ &&
+                state->operation == events::OperationKind::synchronization &&
+                state->state == events::OperationState::syncing) {
+                sync_phase_ = SyncPhase::working;
+            }
+        } else {
+            if (sync_history_.size() == maximum_sync_history) {
+                sync_history_.pop_front();
+                ++sync_omitted_;
+            }
+            sync_history_.push_back(event);
+        }
+    }
+    render_sync();
+}
+
+QString MainWindow::sync_event_text(const events::Event& event) const {
+    if (const auto* message = std::get_if<events::MessageEvent>(&event)) {
+        const auto text = QString::fromStdString(message->text);
+        switch (message->kind) {
+        case events::MessageKind::information:
+            return tr("Info: %1").arg(text);
+        case events::MessageKind::success:
+            return tr("Success: %1").arg(text);
+        case events::MessageKind::warning:
+            return tr("Warning: %1").arg(text);
+        case events::MessageKind::error:
+            return tr("Error: %1").arg(text);
+        }
+    } else if (const auto* section =
+                   std::get_if<events::SectionEvent>(&event)) {
+        auto text = QString::fromStdString(section->title);
+        for (const auto& field : section->fields) {
+            text += "\n" + QString::fromStdString(field.label) + " " +
+                    QString::fromStdString(field.value);
+        }
+        return text;
+    } else if (const auto* summary =
+                   std::get_if<events::DeltaSummaryEvent>(&event)) {
+        return tr("Remote changes: %1 files, %2 folders, %3 deletions.")
+            .arg(
+                number(summary->summary.files),
+                number(summary->summary.directories),
+                number(summary->summary.deletions)
+            );
+    } else if (const auto* blocked =
+                   std::get_if<events::BlockedItemEvent>(&event)) {
+        return tr("Blocked: %1 [%2]\n%3")
+            .arg(
+                QString::fromStdString(blocked->path),
+                QString::fromStdString(blocked->reason_code),
+                QString::fromStdString(blocked->reason_message)
+            );
+    }
+    throw std::logic_error{"non-message event in synchronization history"};
+}
+
+void MainWindow::render_sync() {
+    QString status;
+    switch (sync_phase_) {
+    case SyncPhase::idle:
+        status = state_.can_synchronize()
+                     ? tr("Ready. Tasks use saved settings.")
+                     : tr("Sign in and save valid settings to synchronize.");
+        break;
+    case SyncPhase::preparing:
+        status = sync_preview_ ? tr("Preparing preview...")
+                               : tr("Preparing synchronization...");
+        break;
+    case SyncPhase::working:
+        status = sync_preview_ ? tr("Previewing changes...")
+                               : tr("Synchronizing...");
+        break;
+    case SyncPhase::scanning:
+        status =
+            tr("Scanning remote changes: %1 pages, %2 items.")
+                .arg(number(sync_delta_->pages), number(sync_delta_->items));
+        break;
+    case SyncPhase::transferring:
+        status = tr("Downloading files...");
+        break;
+    case SyncPhase::stopping:
+        status = tr("Stopping; waiting for the task to finish...");
+        break;
+    case SyncPhase::completed:
+        status =
+            sync_preview_
+                ? tr("Preview completed. No synchronized files were changed.")
+                : tr("Synchronization completed.");
+        break;
+    case SyncPhase::cancelled:
+        status = sync_preview_ ? tr("Preview cancelled.")
+                               : tr("Synchronization cancelled.");
+        break;
+    case SyncPhase::blocked:
+        status =
+            sync_preview_
+                ? tr("Preview incomplete: some items were blocked.")
+                : tr("Synchronization incomplete: some items were blocked.");
+        break;
+    case SyncPhase::failed:
+        if (!sync_error_.isEmpty()) {
+            status = (sync_preview_ ? tr("Preview failed: %1")
+                                    : tr("Synchronization failed: %1"))
+                         .arg(sync_error_);
+        } else {
+            status =
+                (sync_preview_
+                     ? tr("Preview failed (exit code %1). See details below.")
+                     : tr("Synchronization failed (exit code %1). See details "
+                          "below."))
+                    .arg(sync_result_);
+        }
+        break;
+    }
+    sync_status_->setText(status);
+    QString transfer;
+    int percentage = 0;
+    if (sync_download_) {
+        const auto& download = *sync_download_;
+        percentage = static_cast<int>(events::download_progress_percentage(
+            download.completed_files,
+            download.file_count,
+            download.downloaded,
+            download.total,
+            download.state
+        ));
+        transfer = tr("Downloads: %1/%2 files; %3/%4 bytes; %5 B/s")
+                       .arg(
+                           number(download.completed_files),
+                           number(download.file_count),
+                           number(download.downloaded),
+                           number(download.total),
+                           number(download.metrics.bytes_per_second)
+                       );
+        if (download.metrics.estimated_seconds_remaining) {
+            transfer +=
+                tr("; about %1 seconds remaining")
+                    .arg(number(*download.metrics.estimated_seconds_remaining));
+        }
+    }
+    transfer_status_->setText(transfer);
+    if (synchronization_.running() && sync_phase_ != SyncPhase::transferring) {
+        sync_progress_->setRange(0, 0);
+    } else {
+        sync_progress_->setRange(0, 100);
+        sync_progress_->setValue(
+            sync_phase_ == SyncPhase::completed ? 100 : percentage
+        );
+    }
+    QStringList messages;
+    if (sync_omitted_ != 0) {
+        messages << tr("Earlier events omitted: %1").arg(number(sync_omitted_));
+    }
+    for (const auto& event : sync_history_) {
+        messages << sync_event_text(event);
+    }
+    const auto content = messages.join("\n");
+    if (sync_messages_->toPlainText() != content) {
+        auto* scroll = sync_messages_->verticalScrollBar();
+        const bool at_end = scroll->value() == scroll->maximum();
+        const auto position = scroll->value();
+        sync_messages_->setPlainText(content);
+        scroll->setValue(at_end ? scroll->maximum() : position);
+    }
+}
+
 void MainWindow::start_login() {
     if (!state_.can_sign_in() ||
         state_.account_status == AccountStatus::credentials_available ||
-        login_.running()) {
+        login_.running() || synchronization_.running()) {
         return;
     }
     cancelling_ = false;
@@ -352,10 +703,10 @@ void MainWindow::start_login() {
     set_login_status(QT_TR_NOOP("Starting browser login..."));
     try {
         login_.start(state_.config_file);
-        refresh_login_actions();
+        refresh_actions();
     } catch (const std::exception& error) {
         settings_->setEnabled(true);
-        refresh_login_actions();
+        refresh_actions();
         set_login_status(
             QT_TR_NOOP("Cannot start login: %1"),
             QString::fromUtf8(error.what())
@@ -368,24 +719,34 @@ void MainWindow::cancel_login() {
     login_url_->clear();
     login_url_is_instruction_ = false;
     authorization_url_.clear();
-    refresh_login_actions();
+    refresh_actions();
     set_login_status(QT_TR_NOOP("Cancelling login..."));
     login_.cancel();
 }
 
-void MainWindow::refresh_login_actions() {
+void MainWindow::refresh_actions() {
     const bool running = login_.running();
+    const bool syncing = synchronization_.running();
     const bool signed_in =
         state_.account_status == AccountStatus::credentials_available;
-    login_button_->setEnabled(!running && !signed_in && state_.can_sign_in());
+    login_button_->setEnabled(
+        !running && !syncing && !signed_in && state_.can_sign_in()
+    );
     account_action_button_->setText(
         running ? tr("Cancel login") : tr("Log out")
     );
-    account_action_button_->setEnabled(running ? !cancelling_ : signed_in);
+    account_action_button_->setEnabled(
+        !syncing && (running ? !cancelling_ : signed_in)
+    );
+    const bool can_sync = !running && !syncing && state_.can_synchronize();
+    preview_button_->setEnabled(can_sync);
+    sync_button_->setEnabled(can_sync);
+    stop_sync_button_->setEnabled(syncing && !sync_stopping_);
+    settings_->setEnabled(!running && !syncing);
 }
 
 void MainWindow::logout() {
-    if (login_.running() ||
+    if (login_.running() || synchronization_.running() ||
         state_.account_status != AccountStatus::credentials_available) {
         return;
     }
@@ -435,6 +796,12 @@ void MainWindow::closeEvent(QCloseEvent* event) {
         event->ignore();
         return;
     }
+    if (synchronization_.running()) {
+        closing_ = true;
+        stop_sync();
+        event->ignore();
+        return;
+    }
     QMainWindow::closeEvent(event);
 }
 
@@ -463,7 +830,8 @@ void MainWindow::refresh_settings(bool preserve_edits) {
     state_directory_edit_->setEnabled(editable);
     settings_editor_->setEnabled(editable);
     save_button_->setEnabled(editable);
-    refresh_login_actions();
+    refresh_actions();
+    render_sync();
     refresh_startup_status();
     if (!state_.can_sign_in()) {
         set_login_status(QT_TR_NOOP(
@@ -515,11 +883,17 @@ void MainWindow::refresh_startup_status() {
 }
 
 void MainWindow::reload_settings() {
+    if (login_.running() || synchronization_.running()) {
+        return;
+    }
     state_ = load_app_state_view_model(state_.config_file);
     refresh_settings();
 }
 
 void MainWindow::save_settings() {
+    if (login_.running() || synchronization_.running()) {
+        return;
+    }
     std::vector<config::SettingPatch> patches;
     try {
         patches = settings_editor_->patches();
@@ -594,6 +968,9 @@ void MainWindow::save_settings() {
 }
 
 void MainWindow::import_settings() {
+    if (login_.running() || synchronization_.running()) {
+        return;
+    }
     const auto selected = QFileDialog::getOpenFileName(
         this,
         tr("Import configuration"),

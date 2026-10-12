@@ -1,5 +1,7 @@
 #include "support.hpp"
 
+#include <stop_token>
+
 namespace {
 
 using namespace onedrive::test::graph;
@@ -233,6 +235,57 @@ int test_rejects_invalid_discovery_data() {
     return EXIT_SUCCESS;
 }
 
+int test_identity_startup_cancellation() {
+    for (const int stage : {0, 1, 2}) {
+        std::stop_source stop;
+        auto transport = std::make_unique<FakeTransport>(
+            std::deque<onedrive::http::HttpResult>{
+                token_response(),
+                std::unexpected(
+                    onedrive::http::HttpError{.message = "request interrupted"}
+                ),
+            }
+        );
+        auto* requests = transport.get();
+        bool forwarded = true;
+        int count = 0;
+        transport->on_perform =
+            [&](const onedrive::http::HttpRequest& request) {
+                forwarded = forwarded && request.stop_token == stop.get_token();
+                if (++count == stage) {
+                    stop.request_stop();
+                }
+            };
+        onedrive::graph::MicrosoftGraphClient client{
+            wrap_transport(std::move(transport)),
+            wrap_token_store(
+                std::make_unique<FakeTokenStore>(std::string{"refresh"})
+            ),
+            auth_options(),
+            {.drive_id = "me", .endpoint = "https://graph.example.test/v1.0"},
+        };
+        if (stage == 0) {
+            stop.request_stop();
+        }
+        if (!onedrive::test::throws_with<
+                onedrive::graph::RequestCancelledError>(
+                [&] {
+                    static_cast<void>(client.drive_identity(stop.get_token()));
+                },
+                "cancelled"
+            ) ||
+            !forwarded ||
+            requests->queued.requests.size() !=
+                static_cast<std::size_t>(stage)) {
+            return fail(
+                "Graph identity startup did not cancel token refresh or HTTP "
+                "discovery"
+            );
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
 } // namespace
 
 int main() {
@@ -244,5 +297,9 @@ int main() {
         result != EXIT_SUCCESS) {
         return result;
     }
-    return test_rejects_invalid_discovery_data();
+    if (const int result = test_rejects_invalid_discovery_data();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return test_identity_startup_cancellation();
 }

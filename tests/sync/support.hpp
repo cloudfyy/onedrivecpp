@@ -46,7 +46,8 @@ public:
     void refresh_access_token() const {
     }
 
-    [[nodiscard]] onedrive::account::DriveIdentity drive_identity() const {
+    [[nodiscard]] onedrive::account::DriveIdentity
+    drive_identity(std::stop_token = {}) const {
         return onedrive::test::test_drive_identity();
     }
 

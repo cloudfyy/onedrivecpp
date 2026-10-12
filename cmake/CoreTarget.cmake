@@ -227,6 +227,8 @@ if(ONEDRIVE_BUILD_GUI)
             ${PROJECT_SOURCE_DIR}/src/ui/gui/localization.cpp
             ${PROJECT_SOURCE_DIR}/src/ui/gui/login_controller.cpp
             ${PROJECT_SOURCE_DIR}/src/ui/gui/login_controller.hpp
+            ${PROJECT_SOURCE_DIR}/src/ui/gui/sync_controller.cpp
+            ${PROJECT_SOURCE_DIR}/src/ui/gui/sync_controller.hpp
         TS_FILES ${PROJECT_SOURCE_DIR}/src/ui/gui/translations/onedrive_zh_CN.ts
         OPTIONS -no-obsolete
     )
@@ -260,6 +262,8 @@ if(ONEDRIVE_BUILD_GUI)
         src/ui/gui/settings_editor.hpp
         src/ui/gui/login_controller.cpp
         src/ui/gui/login_controller.hpp
+        src/ui/gui/sync_controller.cpp
+        src/ui/gui/sync_controller.hpp
         src/ui/gui/system_appearance.cpp
         src/ui/gui/system_appearance.hpp
     )
@@ -278,6 +282,7 @@ if(ONEDRIVE_BUILD_GUI)
             Qt6::Network
             Qt6::Widgets
             onedrive_gui_localization
+            spdlog::spdlog
     )
     target_compile_options(onedrive-cpp-gui PRIVATE
         $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall;-Wextra;-Wpedantic;-Wconversion;-Wshadow>

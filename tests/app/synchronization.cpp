@@ -108,16 +108,81 @@ int test_synchronization_service_cancellation() {
         config, runtime_factory, observer, stop.get_token()
     );
     if (result != exit_code::cancelled ||
-        implementation.graph_client_count != 1 ||
+        implementation.graph_client_count != 0 ||
         observer.operation_states() !=
             std::vector<onedrive::events::OperationState>{
                 onedrive::events::OperationState::syncing,
                 onedrive::events::OperationState::stopping,
                 onedrive::events::OperationState::ready,
             } ||
-        implementation.item_store_count != 1 ||
-        implementation.metrics_count != 1) {
+        implementation.item_store_count != 0 ||
+        implementation.metrics_count != 0) {
         return fail("synchronization service did not preserve cancellation");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_identity_cancellation() {
+    for (const bool throws : {false, true}) {
+        auto config = onedrive::config::Config::defaults();
+        FakeRuntimeFactory implementation;
+        std::stop_source stop;
+        bool forwarded = false;
+        implementation.identity_override = [&](std::stop_token token) {
+            forwarded = token == stop.get_token();
+            stop.request_stop();
+            if (throws) {
+                throw onedrive::graph::RequestCancelledError{
+                    "identity cancelled"
+                };
+            }
+            return onedrive::test::test_drive_identity("me");
+        };
+        const onedrive::app::RuntimeFactory factory{
+            onedrive::util::borrowed_proxy, implementation
+        };
+        RecordingObserver observer;
+        if (onedrive::app::synchronize_account(
+                config, factory, observer, stop.get_token()
+            ) != exit_code::cancelled ||
+            !forwarded || implementation.graph_client_count != 1 ||
+            implementation.item_store_count != 0 ||
+            implementation.metrics_count != 0 ||
+            observer.operation_states() !=
+                std::vector<onedrive::events::OperationState>{
+                    onedrive::events::OperationState::syncing,
+                    onedrive::events::OperationState::stopping,
+                    onedrive::events::OperationState::ready,
+                }) {
+            return fail(
+                "identity cancellation created stores or failed to return "
+                "cancelled"
+            );
+        }
+    }
+    FakeRuntimeFactory implementation;
+    implementation.identity_override =
+        [](std::stop_token) -> onedrive::account::DriveIdentity {
+        throw std::runtime_error{"identity failed"};
+    };
+    const onedrive::app::RuntimeFactory factory{
+        onedrive::util::borrowed_proxy, implementation
+    };
+    RecordingObserver observer;
+    if (!onedrive::test::throws_with<std::runtime_error>(
+            [&] {
+                static_cast<void>(onedrive::app::synchronize_account(
+                    onedrive::config::Config::defaults(), factory, observer
+                ));
+            },
+            "identity failed"
+        ) ||
+        observer.operation_states() !=
+            std::vector<onedrive::events::OperationState>{
+                onedrive::events::OperationState::syncing,
+                onedrive::events::OperationState::failed,
+            }) {
+        return fail("identity failure was hidden or treated as cancellation");
     }
     return EXIT_SUCCESS;
 }
@@ -126,7 +191,8 @@ int test_synchronization_service_cancellation() {
 
 int main() {
     if (test_synchronization_service() != EXIT_SUCCESS ||
-        test_synchronization_service_cancellation() != EXIT_SUCCESS) {
+        test_synchronization_service_cancellation() != EXIT_SUCCESS ||
+        test_identity_cancellation() != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

@@ -159,19 +159,28 @@ private:
 
 class FakeGraphClient final {
 public:
+    using IdentityOverride =
+        std::function<onedrive::account::DriveIdentity(std::stop_token)>;
+
     explicit FakeGraphClient(
         std::string configured_drive_id,
         bool empty_shared = false,
         bool empty_sites = false,
-        bool include_configured_drive = false
+        bool include_configured_drive = false,
+        IdentityOverride identity_override = {}
     )
         : configured_drive_id_{std::move(configured_drive_id)},
           empty_shared_{empty_shared},
           empty_sites_{empty_sites},
-          include_configured_drive_{include_configured_drive} {
+          include_configured_drive_{include_configured_drive},
+          identity_override_{std::move(identity_override)} {
     }
 
-    [[nodiscard]] onedrive::account::DriveIdentity drive_identity() const {
+    [[nodiscard]] onedrive::account::DriveIdentity
+    drive_identity(std::stop_token token = {}) const {
+        if (identity_override_) {
+            return identity_override_(token);
+        }
         return onedrive::test::test_drive_identity(configured_drive_id_);
     }
 
@@ -419,6 +428,7 @@ private:
     bool empty_shared_;
     bool empty_sites_;
     bool include_configured_drive_;
+    IdentityOverride identity_override_;
 };
 
 class FakeItemStore final {
@@ -716,7 +726,12 @@ public:
     create_graph_client(const onedrive::config::Config&) const {
         ++graph_client_count;
         return std::make_unique<onedrive::graph::GraphClient>(
-            std::in_place_type<FakeGraphClient>, configured_drive_id
+            std::in_place_type<FakeGraphClient>,
+            configured_drive_id,
+            false,
+            false,
+            false,
+            identity_override
         );
     }
 
@@ -797,6 +812,7 @@ public:
     }
 
     std::string configured_drive_id{"me"};
+    FakeGraphClient::IdentityOverride identity_override;
     FakeAuthenticationTransport::ResponseOverride
         authentication_response_override;
     bool empty_shared{false};

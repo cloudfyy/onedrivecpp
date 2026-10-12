@@ -26,6 +26,12 @@ struct AppStateViewModel {
         return configuration_status != ConfigurationStatus::invalid &&
                authentication_error.empty() && account_error.empty();
     }
+
+    [[nodiscard]] bool can_synchronize() const {
+        return configuration_status == ConfigurationStatus::valid &&
+               can_sign_in() && sync_error.empty() &&
+               account_status == AccountStatus::credentials_available;
+    }
 };
 
 [[nodiscard]] AppStateViewModel load_app_state_view_model(
