@@ -111,6 +111,22 @@
 <context>
     <name>onedrive::gui::MainWindow</name>
     <message>
+        <source>Help</source>
+        <translation>帮助</translation>
+    </message>
+    <message>
+        <source>About</source>
+        <translation>关于</translation>
+    </message>
+    <message>
+        <source>About OneDrive client</source>
+        <translation>关于 OneDrive 客户端</translation>
+    </message>
+    <message>
+        <source>&lt;b&gt;OneDrive client&lt;/b&gt;&lt;br&gt;Version: %1&lt;br&gt;An independent, open-source OneDrive client.&lt;br&gt;License: GPL-3.0-or-later&lt;br&gt;Project: &lt;a href="https://github.com/cloudfyy/onedrivecpp"&gt;https://github.com/cloudfyy/onedrivecpp&lt;/a&gt;</source>
+        <translation>&lt;b&gt;OneDrive 客户端&lt;/b&gt;&lt;br&gt;版本：%1&lt;br&gt;独立开源的 OneDrive 客户端。&lt;br&gt;许可证：GPL-3.0-or-later&lt;br&gt;项目：&lt;a href="https://github.com/cloudfyy/onedrivecpp"&gt;https://github.com/cloudfyy/onedrivecpp&lt;/a&gt;</translation>
+    </message>
+    <message>
         <location filename="../main_window.cpp" line="114"/>
         <location filename="../main_window.cpp" line="287"/>
         <source>Reload configuration</source>

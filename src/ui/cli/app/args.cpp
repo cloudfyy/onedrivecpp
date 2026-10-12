@@ -42,8 +42,16 @@ ParseResult parse_arguments(int argc, char* argv[]) {
     CLI::App application{
         "A modern C++ OneDrive synchronization client", "onedrive-cpp"
     };
-    application.set_version_flag(
-        "--version", std::string{"onedrive-cpp "} + build_info::version
+    const auto application_version =
+        std::string{"onedrive-cpp "} + build_info::version;
+    application.set_version_flag("--version", application_version);
+    application.formatter_fn(
+        [formatter = application.get_formatter(), application_version](
+            const CLI::App* command, std::string name, CLI::AppFormatMode mode
+        ) {
+            return application_version + "\n\n" +
+                   formatter->make_help(command, std::move(name), mode);
+        }
     );
     application.require_subcommand(1);
 

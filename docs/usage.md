@@ -5,6 +5,10 @@ English | [简体中文](usage.zh-CN.md) |
 
 ## Output, logging, and automation
 
+Running without arguments or using `--help` (including subcommand help) shows
+the application name and build version above the usage details. `--version`
+prints only the application name and version.
+
 Runtime diagnostics are written to standard error with `info` severity by
 default. systemd captures that stream automatically:
 

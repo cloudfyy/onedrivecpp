@@ -3,6 +3,7 @@
 #include "configuration.hpp"
 #include "localization.hpp"
 #include "settings_editor.hpp"
+#include "onedrive/version.hpp"
 
 #include <QActionGroup>
 #include <QApplication>
@@ -143,6 +144,11 @@ MainWindow::MainWindow(
             });
         }
     }
+    help_menu_ = menuBar()->addMenu(tr("Help"));
+    help_menu_->setObjectName("helpMenu");
+    about_action_ = help_menu_->addAction(tr("About"));
+    about_action_->setObjectName("aboutAction");
+    connect(about_action_, &QAction::triggered, this, &MainWindow::show_about);
     config_path->setText(QString::fromStdString(state_.config_file.string()));
     connect(import_button, &QPushButton::clicked, this, [this] {
         import_settings();
@@ -259,6 +265,8 @@ void MainWindow::changeEvent(QEvent* event) {
 
 void MainWindow::retranslate_ui() {
     setWindowTitle(tr("onedrive client"));
+    help_menu_->setTitle(tr("Help"));
+    about_action_->setText(tr("About"));
     QApplication::setApplicationDisplayName(windowTitle());
     tabs_->setTabText(0, tr("Overview"));
     tabs_->setTabText(1, tr("Settings"));
@@ -314,6 +322,25 @@ void MainWindow::retranslate_ui() {
             action->setChecked(localization_->language() == language);
         }
     }
+}
+
+void MainWindow::show_about() {
+    QMessageBox dialog{this};
+    dialog.setObjectName("aboutDialog");
+    dialog.setWindowTitle(tr("About OneDrive client"));
+    dialog.setIcon(QMessageBox::Information);
+    dialog.setTextFormat(Qt::RichText);
+    dialog.setText(
+        tr("<b>OneDrive client</b><br>"
+           "Version: %1<br>"
+           "An independent, open-source OneDrive client.<br>"
+           "License: GPL-3.0-or-later<br>"
+           "Project: <a href=\"https://github.com/cloudfyy/onedrivecpp\">"
+           "https://github.com/cloudfyy/onedrivecpp</a>")
+            .arg(QString::fromLatin1(build_info::version))
+    );
+    dialog.setStandardButtons(QMessageBox::Ok);
+    dialog.exec();
 }
 
 void MainWindow::set_login_status(const char* source, const QString& detail) {

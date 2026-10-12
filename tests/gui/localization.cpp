@@ -1,6 +1,7 @@
 #include "localization.hpp"
 #include "main_window.hpp"
 #include "onedrive/app/options.hpp"
+#include "onedrive/version.hpp"
 #include "support/common.hpp"
 
 #include <QApplication>
@@ -959,6 +960,57 @@ void test_login_refresh_language() {
 
 } // namespace
 
+void test_about_menu() {
+    test::TemporaryDirectory fixture;
+    gui::Localization localization{gui::Language::english};
+    gui::MainWindow window{
+        gui::load_app_state_view_model(write_config(fixture.path())),
+        {},
+        &localization
+    };
+    for (const bool chinese : {false, true, false}) {
+        localization.set_language(
+            chinese ? gui::Language::simplified_chinese : gui::Language::english
+        );
+        QCoreApplication::processEvents();
+        auto* menu = window.findChild<QMenu*>("helpMenu");
+        auto* action = window.findChild<QAction*>("aboutAction");
+        require(
+            menu && action &&
+                menu->title() == expected(chinese, "Help", "帮助") &&
+                action->text() == expected(chinese, "About", "关于") &&
+                window.windowTitle() ==
+                    expected(chinese, "onedrive client", "OneDrive 客户端"),
+            "about menu did not translate or altered the window title"
+        );
+        bool valid = false;
+        QTimer::singleShot(0, [&] {
+            auto* dialog =
+                qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+            if (dialog) {
+                valid = dialog->windowTitle() == expected(
+                                                     chinese,
+                                                     "About OneDrive client",
+                                                     "关于 OneDrive 客户端"
+                                                 ) &&
+                        dialog->text().contains(
+                            QString::fromLatin1(build_info::version)
+                        ) &&
+                        dialog->text().contains(
+                            "https://github.com/cloudfyy/onedrivecpp"
+                        ) &&
+                        dialog->text().contains("GPL-3.0-or-later") &&
+                        dialog->text().contains(
+                            expected(chinese, "Version:", "版本：")
+                        );
+                dialog->accept();
+            }
+        });
+        action->trigger();
+        require(valid, "about dialog omitted translated project information");
+    }
+}
+
 int main(int argc, char* argv[]) {
     test::TemporaryDirectory settings;
     QSettings::setPath(
@@ -1013,6 +1065,7 @@ int main(int argc, char* argv[]) {
         );
         test_browser_language();
         test_login_refresh_language();
+        test_about_menu();
     } catch (const std::exception& error) {
         return test::fail(error.what());
     }

@@ -124,6 +124,8 @@ FTXUI 和 Proxy 4 可以由已安装的 CMake 包提供；如果找不到，CMak
 
 ### 可选桌面 GUI
 
+**帮助 → 关于** 显示当前构建版本、许可证和 GitHub 项目链接。
+
 GUI 要求 Qt 6.8 或更高版本，以及 Linguist 工具和 Qt 简体中文翻译包。
 在 Ubuntu 26.04 上：
 

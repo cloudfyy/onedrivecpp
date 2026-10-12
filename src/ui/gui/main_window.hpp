@@ -14,6 +14,7 @@ class QFormLayout;
 class QTabWidget;
 class QMenu;
 class QActionGroup;
+class QAction;
 
 namespace onedrive::gui {
 
@@ -43,6 +44,7 @@ private:
     void reload_settings();
     void save_settings();
     void import_settings();
+    void show_about();
 
     AppStateViewModel state_;
     Localization* localization_{};
@@ -58,6 +60,8 @@ private:
     QLabel* settings_status_{};
     QMenu* language_menu_{};
     QActionGroup* language_actions_{};
+    QMenu* help_menu_{};
+    QAction* about_action_{};
     QLabel* config_file_value_{};
     QLabel* account_status_value_{};
     QLabel* sync_directory_value_{};

@@ -138,6 +138,30 @@ int test_args() {
         !version.standard_output.starts_with("onedrive-cpp ")) {
         return fail("--version did not print the application version");
     }
+    const auto help_banner = version.standard_output + "\n";
+    if (!help.standard_output.starts_with(help_banner)) {
+        return fail(
+            "no-argument help omitted the application name and version"
+        );
+    }
+    for (const auto& arguments : {
+             std::vector<std::string>{"onedrive-cpp", "--help"},
+             {"onedrive-cpp", "-h"},
+             {"onedrive-cpp", "account", "--help"},
+             {"onedrive-cpp", "account", "login", "--help"},
+             {"onedrive-cpp", "inspect", "status", "--help"},
+             {"onedrive-cpp", "state", "--help"},
+             {"onedrive-cpp", "transfer", "sync", "--help"},
+         }) {
+        const auto command_help = run_application(runtime_factory, arguments);
+        if (command_help.exit_code != exit_code::success ||
+            !command_help.standard_output.starts_with(help_banner) ||
+            !command_help.standard_error.empty()) {
+            return fail(
+                "command help omitted the application name and version"
+            );
+        }
+    }
     const auto transfer_help = run_application(
         runtime_factory, {"onedrive-cpp", "transfer", "--help"}
     );

@@ -172,6 +172,13 @@ if(ONEDRIVE_BUILD_GUI)
         LIBRARIES onedrive_app Qt6::Widgets Qt6::Network onedrive_gui_localization
     )
     set_target_properties(gui_localization_tests PROPERTIES AUTOMOC ON)
+    foreach(GUI_WINDOW_TEST IN ITEMS
+        gui_settings_tests gui_startup_state_tests gui_login_tests gui_localization_tests
+    )
+        target_include_directories(${GUI_WINDOW_TEST} PRIVATE
+            "${PROJECT_BINARY_DIR}/generated"
+        )
+    endforeach()
     set_tests_properties(gui_localization_tests PROPERTIES
         TIMEOUT 20
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen;LC_ALL=en_US.UTF-8;LANG=en_US.UTF-8;LANGUAGE=en_US"

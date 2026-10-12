@@ -144,6 +144,8 @@ below assume the project root is the current working directory.
 
 ### Optional desktop GUI
 
+**Help → About** shows the build version, license, and GitHub project link.
+
 The GUI requires Qt 6.8 or later, including Linguist tools and Qt's Simplified
 Chinese translation catalog. On Ubuntu 26.04:
 
