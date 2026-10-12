@@ -191,8 +191,9 @@ later operations refresh them and report authentication or connectivity errors.
 Sync-path validation does not prevent login when authentication/state settings
 are usable. The GUI still has no synchronization action.
 
-Settings phase one provides three sub-tabs: **Account and directories**,
-**Sync rules**, and **Transfers**. They share one draft and global save/import/
+Settings phases one and two provide six sub-tabs: **Account and directories**,
+**Sync rules**, **Transfers**, **Network**, **Monitor**, and **Advanced and logs**.
+They share one draft and global save/import/
 reload controls. Save validates with the core TOML parser, preserves comments
 and untouched settings, backs up the original, and replaces the file atomically.
 Import and reload replace the draft; switching tabs or language preserves it.
@@ -205,9 +206,19 @@ deletion/conflict/dotfile policies, selective rules, file-size limit and advance
 per-request/aggregate rates, ordering, and advanced chunk/checkpoint/retry/
 download validation settings. Sizes use bytes and rates bytes/s (`0` means
 unlimited for sizes/rates, but zero remote deletions blocks deletion). Integers
-retain TOML's full nonnegative signed 64-bit range. Network, monitor, logging,
-and advanced account endpoint/scopes/mount editors remain deferred and preserved
-in TOML. Persistent dry-run/force-delete flags and CLI themes are not GUI settings.
+retain TOML's full nonnegative signed 64-bit range.
+
+Phase two adds proxy URL/bypass overrides, username and password/CA file
+references, transport timeouts and HTTP/IP modes, Graph throttling, monitor
+poll/settle/WebSocket settings, log level/file, file permissions and metadata.
+Unchecked proxy overrides inherit the environment independently; an explicitly
+empty URL forces direct connections and an empty bypass list overrides `NO_PROXY`.
+Passwords are never entered inline; referenced files are checked by runtime
+security tools, not opened by the editor. Advanced account settings include
+trusted HTTPS auth/Graph endpoints, scopes (changes require signing in again),
+and a required mount point. No files, credentials or state are migrated.
+Persistent dry-run/force-delete flags and CLI themes are not GUI settings.
+GUI synchronization/monitor workers and service integration remain deferred.
 
 CLI/TUI text, JSON output, configuration keys, and logs are unchanged.
 `ONEDRIVE_BUILD_GUI` defaults to `OFF`; headless builds need neither Qt nor

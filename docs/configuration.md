@@ -439,8 +439,11 @@ The complete proxy configuration defaults are:
   the environment;
 - without `proxy.ca_file`, HTTPS proxies use the system CA trust store.
 
-To guarantee direct connections, omit the `[proxy]` table and unset all proxy
-environment variables. To use a configured proxy for every destination
+To guarantee direct connections, set `proxy.url = ""` (an explicit empty
+override), or omit the `[proxy]` table and unset all proxy environment variables.
+The URL and bypass list may be omitted independently, including in an empty
+`[proxy]` table, to inherit the corresponding environment settings.
+To use a configured proxy for every destination
 regardless of `NO_PROXY`, set `no_proxy = []`.
 
 `proxy.no_proxy` is an array of hosts, domain suffixes, IP addresses, or other

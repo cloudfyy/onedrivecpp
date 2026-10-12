@@ -170,6 +170,9 @@ http::IpVersion parse_ip_version(std::string_view value) {
 }
 
 void validate_proxy_url(std::string_view value) {
+    if (value.empty()) {
+        return; // An explicit empty CURLOPT_PROXY disables environment proxies.
+    }
     constexpr std::array schemes{
         "http://",
         "https://",

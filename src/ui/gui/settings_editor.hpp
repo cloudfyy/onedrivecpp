@@ -10,6 +10,7 @@ class QFormLayout;
 class QLabel;
 class QTabWidget;
 class QToolButton;
+class QCheckBox;
 
 namespace onedrive::gui {
 
@@ -22,7 +23,17 @@ public:
     [[nodiscard]] std::vector<config::SettingPatch> patches() const;
 
 private:
-    enum class Kind { text, number, choice, boolean, optional_path };
+    enum class Kind {
+        text,
+        number,
+        choice,
+        boolean,
+        optional_path,
+        optional_text,
+        list,
+        override_text,
+        override_list
+    };
     struct Field {
         std::string table;
         std::string key;
@@ -33,6 +44,9 @@ private:
         std::function<QString(const config::Config&)> read;
         QString baseline;
         std::vector<std::pair<const char*, const char*>> choices;
+        QCheckBox* override = nullptr;
+        std::function<bool(const config::Config&)> present;
+        bool baseline_present = false;
     };
     void
     add(QFormLayout* form,
@@ -42,7 +56,8 @@ private:
         Kind kind,
         std::function<QString(const config::Config&)> read,
         std::vector<std::pair<const char*, const char*>> choices = {},
-        bool directory = false);
+        bool directory = false,
+        std::function<bool(const config::Config&)> present = {});
     [[nodiscard]] static QString value(const Field& field);
     QTabWidget* tabs_;
     std::vector<Field> fields_;

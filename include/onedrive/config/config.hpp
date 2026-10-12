@@ -123,12 +123,17 @@ struct Config {
     const std::filesystem::path& sync_directory,
     const std::filesystem::path& state_directory
 );
-using SettingValue =
-    std::variant<std::monostate, std::string, std::int64_t, bool>;
+using SettingValue = std::variant<
+    std::monostate,
+    std::string,
+    std::int64_t,
+    bool,
+    std::vector<std::string>>;
 struct SettingPatch {
     std::string table;
     std::string key;
-    SettingValue value; // monostate removes an optional setting.
+    // monostate removes an optional key; an empty key removes its whole table.
+    SettingValue value;
 };
 [[nodiscard]] std::string update_settings(
     const std::filesystem::path& config_path,

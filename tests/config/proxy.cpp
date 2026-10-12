@@ -5,6 +5,23 @@ namespace {
 using namespace onedrive::test::config;
 
 int test_proxy() {
+    for (const auto* source :
+         {"config_version = 2\n",
+          "config_version = 2\n[proxy]\n",
+          "config_version = 2\n[proxy]\nno_proxy = []\n",
+          "config_version = 2\n[proxy]\nurl = ''\n",
+          "config_version = 2\n[proxy]\nurl = ''\nno_proxy = []\n"}) {
+        const std::string text{source};
+        const auto parsed =
+            onedrive::config::Config::load_from_string("config.toml", text);
+        if (parsed.proxy.url.has_value() != text.contains("url =") ||
+            parsed.proxy.no_proxy.has_value() != text.contains("no_proxy =") ||
+            (parsed.proxy.url && !parsed.proxy.url->empty()) ||
+            (parsed.proxy.no_proxy && !parsed.proxy.no_proxy->empty())) {
+            std::cerr << "absent/empty proxy overrides were conflated\n";
+            return EXIT_FAILURE;
+        }
+    }
     ConfigFixture fixture;
     const auto& path = fixture.path;
     {

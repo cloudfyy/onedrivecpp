@@ -27,13 +27,10 @@ void load_proxy_options(Config& config, const toml::table& root, const std::file
             "proxy.url",
             "a string"
         );
-        if (!url) {
-            throw std::runtime_error(
-                "TOML configuration value 'proxy.url' is required"
-            );
+        if (url) {
+            validate_proxy_url(*url);
+            config.proxy.url = *url;
         }
-        validate_proxy_url(*url);
-        config.proxy.url = *url;
         if (proxy->contains("no_proxy")) {
             config.proxy.no_proxy = proxy_bypass_list(*proxy);
         }
@@ -90,7 +87,7 @@ void load_proxy_options(Config& config, const toml::table& root, const std::file
                     "be empty or contain NUL bytes"
                 );
             }
-            if (!url->starts_with("https://")) {
+            if (!url || !url->starts_with("https://")) {
                 throw std::runtime_error(
                     "TOML configuration value 'proxy.ca_file' requires "
                     "an HTTPS proxy URL"

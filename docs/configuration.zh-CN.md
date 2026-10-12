@@ -394,7 +394,9 @@ ca_file = "/etc/ssl/certs/company-proxy-ca.pem"
 - `proxy.no_proxy` 未设置时，libcurl 使用环境中的 `NO_PROXY`/`no_proxy`；
 - `proxy.ca_file` 未设置时，HTTPS 代理使用系统 CA 信任库。
 
-若要保证完全直连，应省略 `[proxy]` 配置段，并清除所有代理环境变量。若要让
+若要保证完全直连，可设置 `proxy.url = ""`（显式空覆盖值），或省略 `[proxy]`
+配置段并清除所有代理环境变量。URL 与绕过列表可以分别省略，包括空 `[proxy]` 表，
+以继承对应环境设置。若要让
 配置的代理忽略环境中的 `NO_PROXY` 并代理所有目标，应设置 `no_proxy = []`。
 
 `proxy.no_proxy` 是主机、域名后缀、IP 地址或其他 libcurl 免代理模式的数组。

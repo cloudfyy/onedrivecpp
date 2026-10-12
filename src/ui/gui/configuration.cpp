@@ -6,12 +6,15 @@
 #include "util/atomic_file.hpp"
 #include "util/private_file.hpp"
 
+#include <curl/curl.h>
+
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <fcntl.h>
 #include <format>
 #include <optional>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <sys/stat.h>
@@ -25,6 +28,53 @@ namespace {
 constexpr mode_t private_directory_mode = S_IRWXU;
 constexpr mode_t private_file_mode = S_IRUSR | S_IWUSR;
 constexpr std::size_t maximum_config_bytes = 1024U * 1024U;
+
+void validate_gui_endpoints(const config::Config& config) {
+    const auto validate =
+        [](std::string_view name, const std::string& value, bool proxy) {
+            if (proxy && value.empty()) {
+                return;
+            }
+            const std::unique_ptr<CURLU, decltype(&curl_url_cleanup)> url{
+                curl_url(), curl_url_cleanup
+            };
+            if (!url) {
+                throw std::runtime_error("cannot allocate endpoint URL parser");
+            }
+            const auto component = [&](CURLUPart part) {
+                char* raw = nullptr;
+                const auto result = curl_url_get(url.get(), part, &raw, 0);
+                const std::unique_ptr<char, decltype(&curl_free)> owned{
+                    raw, curl_free
+                };
+                return result == CURLUE_OK ? std::optional<std::string>{raw}
+                                           : std::nullopt;
+            };
+            if (value.contains('\0') ||
+                curl_url_set(
+                    url.get(),
+                    CURLUPART_URL,
+                    value.c_str(),
+                    CURLU_NON_SUPPORT_SCHEME
+                ) != CURLUE_OK ||
+                !component(CURLUPART_HOST) || component(CURLUPART_USER) ||
+                component(CURLUPART_PASSWORD) || value.contains('?') ||
+                value.contains('#') ||
+                (!proxy && component(CURLUPART_SCHEME) != "https")) {
+                throw std::invalid_argument(
+                    std::string{name} +
+                    ": expected a valid endpoint without inline credentials, "
+                    "query or fragment" +
+                    (proxy ? "" : " using HTTPS")
+                );
+            }
+        };
+    validate("auth.endpoint", config.auth_endpoint, false);
+    validate("graph.endpoint", config.graph_endpoint, false);
+    if (config.proxy.url) {
+        validate("proxy.url", *config.proxy.url, true);
+    }
+}
 
 std::string read_config_file(
     const std::filesystem::path& path, bool require_current_user_owner
@@ -129,6 +179,7 @@ ConfigurationPreview preview_configuration(
     const auto config = config::Config::load_from_string(
         destination_file, read_import_file(source_file)
     );
+    validate_gui_endpoints(config);
     config::validate_sync_state_directories(
         config.sync_data_directory, config.state_directory
     );
@@ -178,6 +229,7 @@ std::optional<std::filesystem::path> save_settings_patch(
     const auto updated = config::update_settings(config_file, current, patches);
     const auto updated_config =
         config::Config::load_from_string(config_file, updated);
+    validate_gui_endpoints(updated_config);
     if (updated_config.sync_data_directory.empty() ||
         updated_config.state_directory.empty()) {
         throw std::invalid_argument(
@@ -202,6 +254,7 @@ std::optional<std::filesystem::path> import_configuration(
     const auto contents = read_import_file(source_file);
     const auto imported =
         config::Config::load_from_string(destination_file, contents);
+    validate_gui_endpoints(imported);
     config::validate_sync_state_directories(
         imported.sync_data_directory, imported.state_directory
     );

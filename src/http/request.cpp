@@ -322,7 +322,8 @@ HttpResult perform_request(
             proxy_password->c_str()
         );
     }
-    if (result == CURLE_OK && proxy.url) {
+    if (result == CURLE_OK &&
+        (proxy.url || proxy.auth != ProxyAuth::automatic)) {
         result = set_option(
             CURLOPT_PROXYAUTH,
             curl_proxy_auth(proxy.auth)

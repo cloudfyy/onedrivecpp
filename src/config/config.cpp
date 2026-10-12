@@ -96,6 +96,38 @@ byte_offset(std::string_view contents, toml::source_position position) {
     return offset;
 }
 
+std::string array_comments(std::string_view contents, const toml::node& node) {
+    const auto* array = node.as_array();
+    if (!array) {
+        return {};
+    }
+    std::string comments;
+    const auto collect = [&](std::size_t begin, std::size_t end) {
+        const auto gap = contents.substr(begin, end - begin);
+        std::size_t position = 0;
+        while ((position = gap.find('#', position)) != std::string_view::npos) {
+            const auto newline = gap.find('\n', position);
+            comments += gap.substr(
+                position,
+                newline == std::string_view::npos ? gap.size() - position
+                                                  : newline - position
+            );
+            comments += '\n';
+            if (newline == std::string_view::npos) {
+                break;
+            }
+            position = newline + 1;
+        }
+    };
+    auto begin = byte_offset(contents, node.source().begin);
+    for (const auto& entry : *array) {
+        collect(begin, byte_offset(contents, entry.source().begin));
+        begin = byte_offset(contents, entry.source().end);
+    }
+    collect(begin, byte_offset(contents, node.source().end));
+    return comments;
+}
+
 } // namespace
 
 Config Config::defaults() {
@@ -228,13 +260,82 @@ std::string update_settings(
         // Reparse after each edit: missing siblings may share an insertion
         // point.
         auto root = toml::parse(contents, config_path.string());
-        auto* table = root[patch.table].as_table();
+        auto* table = root.at_path(patch.table).as_table();
+        if (patch.key.empty()) {
+            if (!std::holds_alternative<std::monostate>(patch.value) ||
+                patch.table.contains('.')) {
+                throw std::invalid_argument(
+                    "table removal requires a top-level table and no value"
+                );
+            }
+            if (!table) {
+                continue;
+            }
+            struct Removal {
+                std::size_t begin;
+                std::size_t end;
+                std::string comments;
+            };
+            std::vector<Removal> removals;
+            if (table->is_inline()) {
+                const auto key = root.find(patch.table);
+                std::string comments;
+                for (const auto& [child_key, value] : *table) {
+                    comments += array_comments(contents, value);
+                }
+                removals.push_back(
+                    {byte_offset(contents, key->first.source().begin),
+                     byte_offset(contents, table->source().end),
+                     std::move(comments)}
+                );
+            } else {
+                const auto header =
+                    byte_offset(contents, table->source().begin);
+                if (contents[header] == '[') {
+                    removals.push_back(
+                        {header, contents.find(']', header) + 1, {}}
+                    );
+                }
+                for (const auto& [key, value] : *table) {
+                    if (value.is_table()) {
+                        throw std::invalid_argument(
+                            "cannot remove a table containing child tables"
+                        );
+                    }
+                    auto begin = byte_offset(contents, key.source().begin);
+                    const auto newline = contents.rfind('\n', begin);
+                    begin = newline == std::string::npos ? 0 : newline + 1;
+                    removals.push_back(
+                        {begin,
+                         byte_offset(contents, value.source().end),
+                         array_comments(contents, value)}
+                    );
+                }
+            }
+            std::sort(
+                removals.begin(),
+                removals.end(),
+                [](const auto& a, const auto& b) { return a.begin > b.begin; }
+            );
+            for (const auto& [begin, end, comments] : removals) {
+                contents.replace(begin, end - begin, comments);
+            }
+            continue;
+        }
         auto* node = table ? table->get(patch.key) : nullptr;
         std::string formatted;
         std::visit(
             [&](const auto& value) {
                 using T = std::decay_t<decltype(value)>;
-                if constexpr (!std::is_same_v<T, std::monostate>) {
+                if constexpr (std::is_same_v<T, std::vector<std::string>>) {
+                    toml::array array;
+                    for (const auto& entry : value) {
+                        array.push_back(entry);
+                    }
+                    std::ostringstream output;
+                    output << toml::toml_formatter{array};
+                    formatted = output.str();
+                } else if constexpr (!std::is_same_v<T, std::monostate>) {
                     std::ostringstream output;
                     output << toml::toml_formatter{toml::value<T>{value}};
                     formatted = output.str();
@@ -245,6 +346,10 @@ std::string update_settings(
         if (node && !formatted.empty()) {
             const auto begin = byte_offset(contents, node->source().begin);
             const auto end = byte_offset(contents, node->source().end);
+            const auto comments = array_comments(contents, *node);
+            if (!comments.empty()) {
+                formatted.insert(1, "\n" + comments);
+            }
             contents.replace(begin, end - begin, formatted);
         } else if (table && table->is_inline()) {
             const auto begin = byte_offset(contents, table->source().begin);
@@ -266,7 +371,9 @@ std::string update_settings(
                             first = previous;
                         }
                     }
+                    const auto comments = array_comments(contents, *node);
                     contents.erase(first, last - first);
+                    contents.insert(0, comments);
                 }
             } else {
                 contents.insert(
@@ -281,9 +388,27 @@ std::string update_settings(
             const auto end = byte_offset(contents, node->source().end);
             const auto newline = contents.rfind('\n', begin);
             begin = newline == std::string::npos ? 0 : newline + 1;
-            contents.erase(begin, end - begin);
+            contents.replace(
+                begin, end - begin, array_comments(contents, *node)
+            );
         } else if (!formatted.empty()) {
             if (!table) {
+                const auto dot = patch.table.rfind('.');
+                if (dot != std::string::npos) {
+                    auto* parent =
+                        root.at_path(patch.table.substr(0, dot)).as_table();
+                    if (parent && parent->is_inline()) {
+                        const auto end =
+                            byte_offset(contents, parent->source().end);
+                        contents.insert(
+                            end - 1,
+                            (parent->empty() ? "" : ", ") +
+                                patch.table.substr(dot + 1) + " = { " +
+                                patch.key + " = " + formatted + " } "
+                        );
+                        continue;
+                    }
+                }
                 contents += "\n[" + patch.table + "]\n" + patch.key + " = " +
                             formatted + "\n";
             } else {
@@ -294,7 +419,8 @@ std::string update_settings(
                     const auto probe = toml::parse(
                         header + "\n__setting_patch_probe__ = true\n"
                     );
-                    const auto* header_table = probe[patch.table].as_table();
+                    const auto* header_table =
+                        probe.at_path(patch.table).as_table();
                     if (!header_table ||
                         !header_table->contains("__setting_patch_probe__")) {
                         // An implicit parent of a declared child table can be

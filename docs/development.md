@@ -59,15 +59,23 @@ preservation through English/Chinese/system-language transitions. No Graph
 credentials or real browser are needed. These tests do not replace a real
 desktop/native-dialog check.
 
-Settings phase one implements account/directories, sync rules and transfers;
-network/monitor/logging and advanced account configuration remain deferred.
-`SettingsEditor` keeps one widget-backed draft across all three tabs. Enum
+Settings phases one and two are implemented: account/directories, sync rules,
+transfers, network, monitor, and advanced/logging, including advanced account
+endpoints, scope arrays and mount requirements. GUI synchronization/monitor
+workers, directory migration and service integration remain deferred.
+`SettingsEditor` keeps one widget-backed draft across all six tabs. Enum
 `itemData` contains parser values, never translated labels. Numeric text fields
 avoid Qt's 32-bit spin-box truncation and validate nonnegative TOML int64 values.
 Only edited keys are patched; optional selective rules can be removed, and
 editing sync mode removes legacy `sync.upload` while preserving the chosen
 deletion policy. The core patcher uses parser source regions (including quoted
 headers, dotted keys and inline tables), not regex or full-document serialization.
+Typed arrays and nested Graph throttle tables retain their source structure.
+Proxy URL/bypass override checkboxes preserve absent versus explicitly empty
+values independently, including existing empty tables. Removing all proxy
+settings can remove its table without losing surrounding comments.
+GUI save/import reject inline URL credentials and unsafe auth/Graph endpoints;
+password/CA files are references only, with runtime file-security checks intact.
 Save validates before backup/atomic replacement. Import/reload intentionally
 reset all draft fields; language switches and login completion do not.
 
@@ -82,6 +90,9 @@ invalid imports, and first import with destination-relative rules. Unknown TOML
 keys are rejected without modifying the source, not silently discarded.
 Startup/import regressions cover corrupt-config recovery;
 localization/login tests cover disabled controls and worker/draft preservation.
+Phase-two regressions cover every new field, proxy patterns/optional states,
+nested/inline/dotted tables and internal array comments, timeout units, backoff/throttle constraints,
+endpoint safety and rejection without writes or backups.
 No GUI sync action, migration or online credential validation is implied.
 
 ## Live Graph end-to-end tests
