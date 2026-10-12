@@ -100,6 +100,9 @@ MainWindow::MainWindow(
     login_actions->addWidget(cancel_login_button_);
     login_actions->addStretch();
     overview_layout->addRow(login_actions);
+    startup_status_ = make_value_label({});
+    startup_status_->setObjectName("startupStatus");
+    overview_layout->addRow(startup_status_);
     tabs->addTab(overview, tr("Overview"));
 
     auto* settings = new QWidget{tabs};
@@ -135,10 +138,18 @@ MainWindow::MainWindow(
     auto* save_button = new QPushButton{tr("Save settings"), settings};
     import_button_ = import_button;
     save_button_ = save_button;
+    import_button_->setObjectName("importSettingsButton");
+    save_button_->setObjectName("saveSettingsButton");
+    reload_button_ = new QPushButton{tr("Reload configuration"), settings};
+    reload_button_->setObjectName("reloadSettingsButton");
     actions->addWidget(import_button);
+    actions->addWidget(reload_button_);
     actions->addStretch();
     actions->addWidget(save_button);
     settings_layout->addRow(actions);
+    settings_status_ = make_value_label({});
+    settings_status_->setObjectName("settingsStatus");
+    settings_layout->addRow(settings_status_);
     tabs->addTab(settings, tr("Settings"));
 
     setCentralWidget(tabs);
@@ -168,6 +179,8 @@ MainWindow::MainWindow(
     connect(save_button, &QPushButton::clicked, this, [this] {
         save_settings();
     });
+    connect(reload_button_, &QPushButton::clicked,
+            this, &MainWindow::reload_settings);
     connect(
         login_button_, &QPushButton::clicked, this, &MainWindow::start_login
     );
@@ -214,7 +227,7 @@ MainWindow::MainWindow(
             authorization_url_.clear();
             browser_button_->setEnabled(false);
             cancel_login_button_->setEnabled(false);
-            login_button_->setEnabled(true);
+            login_button_->setEnabled(state_.can_sign_in());
             settings_->setEnabled(true);
             if (closing_) {
                 close();
@@ -227,12 +240,26 @@ MainWindow::MainWindow(
             } else {
                 try {
                     state_ = load_app_state_view_model(state_.config_file);
-                    account_status_value_->setText(
-                        account_status_text(state_.account_status)
-                    );
-                    set_login_status(
-                        QT_TR_NOOP("Signed in. Account credentials saved.")
-                    );
+                    refresh_settings(true);
+                    if (state_.can_sign_in()) {
+                        set_login_status(
+                            QT_TR_NOOP("Signed in. Account credentials saved.")
+                        );
+                    } else {
+                        const auto& detail =
+                            !state_.configuration_error.empty()
+                                ? state_.configuration_error
+                            : !state_.account_error.empty()
+                                ? state_.account_error
+                                : state_.authentication_error;
+                        set_login_status(
+                            QT_TR_NOOP(
+                                "Login completed, but account status could not be "
+                                "refreshed: %1"
+                            ),
+                            QString::fromStdString(detail)
+                        );
+                    }
                 } catch (const std::exception& exception) {
                     set_login_status(
                         QT_TR_NOOP(
@@ -247,6 +274,9 @@ MainWindow::MainWindow(
     );
     refresh_settings();
     retranslate_ui();
+    if (state_.configuration_status != ConfigurationStatus::valid) {
+        tabs_->setCurrentWidget(settings_);
+    }
 }
 
 void MainWindow::changeEvent(QEvent* event) {
@@ -284,10 +314,12 @@ void MainWindow::retranslate_ui() {
     browser_button_->setText(tr("Open browser"));
     import_button_->setText(tr("Import TOML…"));
     save_button_->setText(tr("Save settings"));
+    reload_button_->setText(tr("Reload configuration"));
     for (auto* browse : settings_->findChildren<QPushButton*>("browseButton")) {
         browse->setText(tr("Browse…"));
     }
     account_status_value_->setText(account_status_text(state_.account_status));
+    refresh_startup_status();
     set_login_status(login_status_source_, login_status_detail_);
     if (login_url_is_instruction_) {
         login_url_->setText(
@@ -325,6 +357,9 @@ void MainWindow::set_login_status(const char* source, const QString& detail) {
 }
 
 void MainWindow::start_login() {
+    if (!state_.can_sign_in()) {
+        return;
+    }
     cancelling_ = false;
     settings_->setEnabled(false);
     login_button_->setEnabled(false);
@@ -334,7 +369,7 @@ void MainWindow::start_login() {
         login_.start(state_.config_file);
     } catch (const std::exception& error) {
         settings_->setEnabled(true);
-        login_button_->setEnabled(true);
+        login_button_->setEnabled(state_.can_sign_in());
         cancel_login_button_->setEnabled(false);
         set_login_status(
             QT_TR_NOOP("Cannot start login: %1"),
@@ -384,7 +419,7 @@ void MainWindow::closeEvent(QCloseEvent* event) {
     QMainWindow::closeEvent(event);
 }
 
-void MainWindow::refresh_settings() {
+void MainWindow::refresh_settings(bool preserve_edits) {
     config_file_value_->setText(
         QString::fromStdString(state_.config_file.string())
     );
@@ -395,12 +430,73 @@ void MainWindow::refresh_settings() {
     state_directory_value_->setText(
         QString::fromStdString(state_.state_directory.string())
     );
-    sync_directory_edit_->setText(
-        QString::fromStdString(state_.sync_directory.string())
-    );
-    state_directory_edit_->setText(
-        QString::fromStdString(state_.state_directory.string())
-    );
+    if (!preserve_edits) {
+        sync_directory_edit_->setText(
+            QString::fromStdString(state_.sync_directory.string())
+        );
+        state_directory_edit_->setText(
+            QString::fromStdString(state_.state_directory.string())
+        );
+    }
+    const bool editable =
+        state_.configuration_status != ConfigurationStatus::invalid;
+    sync_directory_edit_->setEnabled(editable);
+    state_directory_edit_->setEnabled(editable);
+    save_button_->setEnabled(editable);
+    login_button_->setEnabled(state_.can_sign_in());
+    refresh_startup_status();
+    if (!state_.can_sign_in()) {
+        set_login_status(QT_TR_NOOP(
+            "Sign in is unavailable. Resolve the errors in Settings, then "
+            "reload the configuration."
+        ));
+    } else if (state_.account_status == AccountStatus::credentials_available) {
+        set_login_status(QT_TR_NOOP(
+            "Saved credentials have not been verified online. "
+            "No sign-in is required at startup."
+        ));
+    } else {
+        set_login_status(QT_TR_NOOP("Sign in to connect a OneDrive account."));
+    }
+}
+
+void MainWindow::refresh_startup_status() {
+    QStringList messages;
+    if (state_.configuration_status == ConfigurationStatus::missing) {
+        messages << tr(
+            "Configuration file is missing. Using defaults; complete setup "
+            "in Settings."
+        );
+    } else if (state_.configuration_status == ConfigurationStatus::invalid) {
+        messages << tr(
+            "Configuration could not be loaded:\n%1\n"
+            "Import a valid TOML file, or repair this file and reload. "
+            "The original file has not been changed."
+        ).arg(QString::fromStdString(state_.configuration_error));
+    }
+    if (!state_.authentication_error.empty()) {
+        messages << tr("Authentication configuration needs attention:\n%1")
+                        .arg(QString::fromStdString(state_.authentication_error));
+    }
+    if (!state_.account_error.empty()) {
+        messages << tr(
+            "Local account credentials could not be read:\n%1\n"
+            "Repair the state directory or select another one in Settings, "
+            "then reload."
+        ).arg(QString::fromStdString(state_.account_error));
+    }
+    if (!state_.sync_error.empty()) {
+        messages << tr(
+            "Sync directory needs attention before synchronization:\n%1"
+        ).arg(QString::fromStdString(state_.sync_error));
+    }
+    startup_status_->setText(messages.join("\n\n"));
+    settings_status_->setText(startup_status_->text());
+}
+
+void MainWindow::reload_settings() {
+    state_ = load_app_state_view_model(state_.config_file);
+    refresh_settings();
 }
 
 void MainWindow::browse_for_directory(QLineEdit* field) {

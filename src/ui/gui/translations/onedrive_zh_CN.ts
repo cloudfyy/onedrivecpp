@@ -4,6 +4,14 @@
 <context>
     <name>AccountStatus</name>
     <message>
+        <source>Account status unavailable</source>
+        <translation>账号状态不可用</translation>
+    </message>
+    <message>
+        <source>Local account credentials need attention</source>
+        <translation>本地账号凭据需要处理</translation>
+    </message>
+    <message>
         <location filename="../localization.cpp" line="122"/>
         <source>No active account</source>
         <translation>无活动账号</translation>
@@ -100,6 +108,50 @@
 </context>
 <context>
     <name>onedrive::gui::MainWindow</name>
+    <message>
+        <source>Reload configuration</source>
+        <translation>重新加载配置</translation>
+    </message>
+    <message>
+        <source>Sign in is unavailable. Resolve the errors in Settings, then reload the configuration.</source>
+        <translation>暂时无法登录。请在设置中解决错误，然后重新加载配置。</translation>
+    </message>
+    <message>
+        <source>Saved credentials have not been verified online. No sign-in is required at startup.</source>
+        <translation>已保存的凭据尚未经在线验证。启动时无需登录。</translation>
+    </message>
+    <message>
+        <source>Configuration file is missing. Using defaults; complete setup in Settings.</source>
+        <translation>配置文件不存在。正在使用默认值；请在设置中完成配置。</translation>
+    </message>
+    <message>
+        <source>Configuration could not be loaded:
+%1
+Import a valid TOML file, or repair this file and reload. The original file has not been changed.</source>
+        <translation>无法加载配置：
+%1
+请导入有效的 TOML 文件，或修复此文件后重新加载。原文件未被修改。</translation>
+    </message>
+    <message>
+        <source>Authentication configuration needs attention:
+%1</source>
+        <translation>身份验证配置需要处理：
+%1</translation>
+    </message>
+    <message>
+        <source>Local account credentials could not be read:
+%1
+Repair the state directory or select another one in Settings, then reload.</source>
+        <translation>无法读取本地账号凭据：
+%1
+请修复状态目录或在设置中选择其他目录，然后重新加载。</translation>
+    </message>
+    <message>
+        <source>Sync directory needs attention before synchronization:
+%1</source>
+        <translation>同步前需要处理同步目录：
+%1</translation>
+    </message>
     <message>
         <location filename="../main.cpp" line="39"/>
         <location filename="../main_window.cpp" line="67"/>

@@ -244,7 +244,8 @@ std::filesystem::path write_config(const std::filesystem::path& directory) {
         file,
         "config_version = 2\n[sync]\ndata_directory = \"" +
             (directory / "sync").string() + "\"\n[state]\ndirectory = \"" +
-            (directory / "state").string() + "\"\n"
+            (directory / "state").string() +
+            "\"\n[auth]\napplication_id = \"test-client\"\n"
     );
     return file;
 }
@@ -403,9 +404,6 @@ int test_controller_signals_and_restart() {
 int test_default_controller() {
     test::TemporaryDirectory temporary;
     const auto file = write_config(temporary.path());
-    auto contents = test::read_file(file);
-    contents += "\n[auth]\napplication_id = \"test-client\"\n";
-    test::write_file(file, contents);
     gui::LoginController controller;
     unsigned int urls = 0;
     bool finished = false;

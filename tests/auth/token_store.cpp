@@ -31,6 +31,15 @@ int test_token_store_boundaries() {
     if (!store.remove_refresh_token() || store.remove_refresh_token()) {
         return fail("refresh token removal did not report presence accurately");
     }
+    std::filesystem::create_symlink(
+        temporary.path() / "absent-token", store.path()
+    );
+    if (!throws_with<std::runtime_error>(
+            [&] { static_cast<void>(store.load_refresh_token()); }
+        )) {
+        return fail("dangling refresh token link was reported as missing");
+    }
+    std::filesystem::remove(store.path());
     std::filesystem::create_directory(store.path());
     if (!throws_with<std::runtime_error>(
             [&] { static_cast<void>(store.load_refresh_token()); },

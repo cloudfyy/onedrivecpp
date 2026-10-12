@@ -179,6 +179,16 @@ browser may follow their own system settings.
 
 Underlying configuration, filesystem, backend, and server error details are
 preserved and may still be in English; their GUI context is translated.
+Startup is local-only: it never checks credentials online, opens a browser, or
+prompts for login. Missing configuration uses defaults with a setup notice
+(set `auth.application_id` in TOML before signing in). Invalid configuration or
+unreadable account state keeps Settings available and disables sign-in until
+repaired. Import a valid TOML file, or edit the active file and use **Reload
+configuration**. Invalid files are not silently overwritten; imports preserve
+their contents in a backup. Saved credentials are explicitly unverified online;
+later operations refresh them and report authentication or connectivity errors.
+Sync-path validation does not prevent login when authentication/state settings
+are usable. The GUI still has no synchronization action.
 CLI/TUI text, JSON output, configuration keys, and logs are unchanged.
 `ONEDRIVE_BUILD_GUI` defaults to `OFF`; headless builds need neither Qt nor
 translation tools. See [GUI localization tests](docs/development.md#gui-localization)

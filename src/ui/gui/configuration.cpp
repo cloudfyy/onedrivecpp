@@ -96,6 +96,32 @@ std::string read_import_file(const std::filesystem::path& source_file) {
 
 } // namespace
 
+config::Config load_configuration(
+    const std::filesystem::path& config_file, bool& missing
+) {
+    std::error_code error;
+    const auto status = std::filesystem::symlink_status(config_file, error);
+    if (error == std::errc::no_such_file_or_directory ||
+        (!error && !std::filesystem::exists(status))) {
+        missing = true;
+        return config::Config::defaults();
+    }
+    if (error) {
+        throw std::runtime_error(
+            "cannot inspect configuration file '" + config_file.string() +
+            "': " + error.message()
+        );
+    }
+    missing = false;
+    try {
+        return config::Config::load_from_string(
+            config_file, read_config_file(config_file, false)
+        );
+    } catch (const std::invalid_argument& error) {
+        throw std::runtime_error(error.what());
+    }
+}
+
 ConfigurationPreview preview_configuration(
     const std::filesystem::path& source_file,
     const std::filesystem::path& destination_file

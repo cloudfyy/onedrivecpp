@@ -9,6 +9,7 @@
 namespace onedrive::app::detail {
 
 void secure_state_directory(const std::filesystem::path& directory);
+void inspect_state_directory(const std::filesystem::path& directory);
 void validate_private_file(
     const std::filesystem::path& path,
     std::string_view description,

@@ -1,7 +1,9 @@
 #include "login_controller.hpp"
 #include "browser_request.hpp"
+#include "configuration.hpp"
 
 #include "onedrive/app/factory.hpp"
+#include "app/checks.hpp"
 
 #include <QMetaObject>
 #include <QCoreApplication>
@@ -273,10 +275,9 @@ void LoginController::start(const std::filesystem::path& config_file) {
             QString error;
             bool cancelled = false;
             try {
-                const auto config = config::Config::load(config_file);
-                config::validate_sync_state_directories(
-                    config.sync_data_directory, config.state_directory
-                );
+                bool missing = false;
+                const auto config = load_configuration(config_file, missing);
+                app::detail::validate_authentication_config(config);
                 const auto result = authenticate_(
                     config,
                     [this, token](const QString& url) {

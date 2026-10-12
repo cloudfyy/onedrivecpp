@@ -130,6 +130,14 @@ QString account_status_text(AccountStatus status) {
         return QCoreApplication::translate(
             "AccountStatus", "Active account has no saved credentials"
         );
+    case AccountStatus::unavailable:
+        return QCoreApplication::translate(
+            "AccountStatus", "Account status unavailable"
+        );
+    case AccountStatus::invalid:
+        return QCoreApplication::translate(
+            "AccountStatus", "Local account credentials need attention"
+        );
     }
     throw std::logic_error{"unknown account status"};
 }

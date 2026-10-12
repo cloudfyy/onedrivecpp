@@ -88,7 +88,8 @@ std::filesystem::path write_config(const std::filesystem::path& directory) {
         "config_version = 2\n[sync]\ndata_directory = \"" +
             (directory / "sync-%2-中文").string() +
             "\"\n[state]\ndirectory = \"" +
-            (directory / "state-%3-中文").string() + "\"\n"
+            (directory / "state-%3-中文").string() +
+            "\"\n[auth]\napplication_id = \"test-client\"\n"
     );
     return file;
 }
@@ -901,9 +902,16 @@ void test_login_refresh_language() {
         };
         auto* sign_in = window.findChild<QPushButton*>("signInButton");
         auto* status = window.findChild<QLabel*>("loginStatus");
+        const auto fields = window.findChildren<QLineEdit*>();
+        fields[0]->setText("/unsaved/sync-中文");
+        fields[1]->setText("/unsaved/state-中文");
         sign_in->click();
         require(
-            wait_until([&] { return sign_in->isEnabled(); }),
+            wait_until([&] {
+                return window.findChild<QWidget*>("settingsPage")->isEnabled();
+            }) && sign_in->isEnabled() == !invalid_config &&
+                fields[0]->text() == "/unsaved/sync-中文" &&
+                fields[1]->text() == "/unsaved/state-中文",
             "successful authentication did not complete"
         );
         const auto prefix = QString{

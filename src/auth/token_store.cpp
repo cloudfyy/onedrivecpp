@@ -17,9 +17,18 @@ FileTokenStore::FileTokenStore(const std::filesystem::path& state_directory)
 }
 
 std::optional<std::string> FileTokenStore::load_refresh_token() const {
-    if (!std::filesystem::exists(path_)) {
+    std::error_code error;
+    const auto status = std::filesystem::symlink_status(path_, error);
+    if (error == std::errc::no_such_file_or_directory ||
+        (!error && !std::filesystem::exists(status))) {
         spdlog::debug("No persisted Microsoft refresh token is present");
         return std::nullopt;
+    }
+    if (error) {
+        throw std::runtime_error(
+            "cannot inspect refresh token file '" + path_.string() +
+            "': " + error.message()
+        );
     }
     std::string token = onedrive::util::read_private_file(
         path_,

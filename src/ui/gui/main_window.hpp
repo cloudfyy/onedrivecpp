@@ -37,7 +37,9 @@ private:
     void start_login();
     void cancel_login();
     void open_login_url();
-    void refresh_settings();
+    void refresh_settings(bool preserve_edits = false);
+    void refresh_startup_status();
+    void reload_settings();
     void browse_for_directory(QLineEdit* field);
     void save_settings();
     void import_settings();
@@ -50,6 +52,9 @@ private:
     QLabel* theme_value_{};
     QPushButton* import_button_{};
     QPushButton* save_button_{};
+    QPushButton* reload_button_{};
+    QLabel* startup_status_{};
+    QLabel* settings_status_{};
     QMenu* language_menu_{};
     QActionGroup* language_actions_{};
     QLabel* config_file_value_{};

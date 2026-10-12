@@ -23,7 +23,9 @@ namespace onedrive::app::detail {
 constexpr mode_t private_directory_mode = S_IRWXU;
 constexpr mode_t private_file_mode = S_IRUSR | S_IWUSR;
 
-void secure_state_directory(const std::filesystem::path& directory) {
+namespace {
+
+void validate_state_directory_path(const std::filesystem::path& directory) {
     if (directory.empty()) {
         throw std::runtime_error("state.directory must not be empty");
     }
@@ -31,6 +33,29 @@ void secure_state_directory(const std::filesystem::path& directory) {
         directory,
         "state directory"
     );
+}
+
+} // namespace
+
+void inspect_state_directory(const std::filesystem::path& directory) {
+    validate_state_directory_path(directory);
+    try {
+        const auto descriptor = onedrive::util::open_path_no_symlinks(
+            directory, O_RDONLY | O_DIRECTORY | O_CLOEXEC
+        );
+        static_cast<void>(onedrive::util::inspect_owned_directory(
+            descriptor.get(), directory, "state directory"
+        ));
+    } catch (const std::system_error& error) {
+        if (error.code() == std::errc::no_such_file_or_directory) {
+            return;
+        }
+        throw;
+    }
+}
+
+void secure_state_directory(const std::filesystem::path& directory) {
+    validate_state_directory_path(directory);
     const bool created = std::filesystem::create_directories(directory);
     onedrive::util::reject_symlink_components(
         directory,

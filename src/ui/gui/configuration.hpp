@@ -1,11 +1,17 @@
 #pragma once
 
 #include "onedrive/sync/capabilities.hpp"
+#include "onedrive/config/config.hpp"
 
 #include <filesystem>
 #include <optional>
 
 namespace onedrive::gui {
+
+// A missing file uses defaults; existing files must be safely readable and valid.
+[[nodiscard]] config::Config load_configuration(
+    const std::filesystem::path& config_file, bool& missing
+);
 
 struct ConfigurationPreview {
     std::filesystem::path sync_directory;

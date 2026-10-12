@@ -1,16 +1,31 @@
 #pragma once
 
 #include <filesystem>
+#include <string>
 
 namespace onedrive::gui {
 
-enum class AccountStatus { no_account, credentials_available, no_credentials };
+enum class AccountStatus {
+    no_account, credentials_available, no_credentials, unavailable, invalid
+};
+
+enum class ConfigurationStatus { valid, missing, invalid };
 
 struct AppStateViewModel {
     std::filesystem::path config_file;
     std::filesystem::path sync_directory;
     std::filesystem::path state_directory;
     AccountStatus account_status{AccountStatus::no_account};
+    ConfigurationStatus configuration_status{ConfigurationStatus::valid};
+    std::string configuration_error;
+    std::string authentication_error;
+    std::string account_error;
+    std::string sync_error;
+
+    [[nodiscard]] bool can_sign_in() const {
+        return configuration_status != ConfigurationStatus::invalid &&
+               authentication_error.empty() && account_error.empty();
+    }
 };
 
 [[nodiscard]] AppStateViewModel load_app_state_view_model(

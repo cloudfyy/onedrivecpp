@@ -92,6 +92,7 @@ add_onedrive_test(
         src/ui/gui/app_state_view_model.cpp
         tests/gui/state_view_model.cpp
     INCLUDE_DIRS src src/ui/gui tests
+    LIBRARIES onedrive_app
 )
 add_onedrive_test(
     browser_request_tests
@@ -99,6 +100,23 @@ add_onedrive_test(
     INCLUDE_DIRS src tests
 )
 if(ONEDRIVE_BUILD_GUI)
+    add_onedrive_test(
+        gui_startup_state_tests
+        SOURCES
+            src/ui/gui/login_controller.cpp
+            src/ui/gui/login_controller.hpp
+            src/ui/gui/main_window.cpp
+            src/ui/gui/main_window.hpp
+            src/ui/gui/configuration.cpp
+            src/ui/gui/app_state_view_model.cpp
+            tests/gui/startup_state.cpp
+        INCLUDE_DIRS src src/ui/gui tests
+        LIBRARIES onedrive_app Qt6::Widgets Qt6::Network onedrive_gui_localization
+    )
+    set_target_properties(gui_startup_state_tests PROPERTIES AUTOMOC ON)
+    set_tests_properties(gui_startup_state_tests PROPERTIES
+        TIMEOUT 20 ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    )
     add_onedrive_test(
         gui_login_tests
         SOURCES
