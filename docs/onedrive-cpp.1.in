@@ -1,4 +1,4 @@
-.TH ONEDRIVE-CPP 1 "8 October 2026" "onedrive-cpp @ONEDRIVE_PACKAGE_VERSION@" "User Commands"
+.TH ONEDRIVE-CPP 1 "12 October 2026" "onedrive-cpp @ONEDRIVE_PACKAGE_VERSION@" "User Commands"
 .SH NAME
 onedrive-cpp \- modern C++ OneDrive synchronization client
 .SH SYNOPSIS
@@ -82,6 +82,38 @@ renames. SQLite journals provide crash recovery for transfer and metadata
 operations. The client also includes device-code authentication, selective
 synchronization, dry-run and JSON output, inotify monitoring, proxy support,
 rate limiting, shell completion, and packaging integration.
+.SH OPTIONAL GRAPHICAL INTERFACE
+When built with GUI support, run
+.BR onedrive-cpp-gui .
+The GUI uses browser authorization-code login with PKCE; CLI login retains the
+device-code flow. Both use the configured account state.
+.PP
+Use
+.B \-\-language auto
+(the default) to follow the system language,
+.B \-\-language en
+for English, or
+.B \-\-language zh_CN
+for Simplified Chinese. The Language menu changes the running interface without
+discarding settings edits or restarting login. The selection applies only to
+the current process. CLI output remains English.
+.PP
+Settings contain Account and directories, Sync rules, Transfers, Network,
+Monitor, and Advanced and logs pages. Hover over a field for a brief explanation.
+Saving validates the configuration, preserves comments and unedited values,
+backs up an existing configuration, and writes atomically.
+Import copies validated TOML content to the active configuration file, leaving
+the source unchanged. Relative file references resolve from the destination
+configuration directory.
+.PP
+Startup does not contact Microsoft or open the browser automatically. Missing
+configuration uses defaults with a setup notice; invalid configuration and
+credential errors remain visible and recoverable through Settings.
+Saved credentials are not proof of an online-valid login.
+Changing the state directory does not migrate tokens or databases.
+.PP
+GUI synchronization and monitoring start/stop controls are not yet implemented;
+use CLI transfer commands for these operations.
 .SH COMMANDS
 .TP
 .B account login

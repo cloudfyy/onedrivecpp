@@ -1,4 +1,4 @@
-.TH ONEDRIVE-CPP 1 "2026年10月8日" "onedrive-cpp @ONEDRIVE_PACKAGE_VERSION@" "用户命令"
+.TH ONEDRIVE-CPP 1 "2026年10月12日" "onedrive-cpp @ONEDRIVE_PACKAGE_VERSION@" "用户命令"
 .SH 名称
 onedrive-cpp \- 现代 C++ OneDrive 同步客户端
 .SH 用法
@@ -78,6 +78,30 @@ onedrive-cpp \- 现代 C++ OneDrive 同步客户端
 Graph 操作传播删除、移动和重命名。SQLite journal 为传输和元数据操作提供崩溃
 恢复。客户端还支持设备代码认证、选择性同步、dry-run、JSON 输出、inotify
 监控、代理、速率限制、Shell 自动补全和软件包集成。
+.SH 可选图形界面
+启用 GUI 构建后，运行
+.BR onedrive-cpp-gui 。
+GUI 使用浏览器授权码与 PKCE 登录；CLI 仍使用设备代码流程。两者共用配置的账号状态。
+.PP
+使用
+.B \-\-language auto
+跟随系统语言（默认），
+.B \-\-language en
+使用英文，或
+.B \-\-language zh_CN
+使用简体中文。语言菜单可即时切换界面，不丢失设置草稿或重新启动登录。
+语言选择仅对本次进程有效，CLI 输出仍为英文。
+.PP
+设置包含账号与目录、同步规则、传输、网络、监控、高级与日志六个子页。
+悬停配置项可查看简洁提示。保存前校验配置，保留注释及未编辑内容，
+备份已有配置并原子写入。导入将校验后的 TOML 内容写入当前生效配置，
+不修改源文件；相对文件引用按目标配置目录解析。
+.PP
+启动时不访问 Microsoft，也不自动打开浏览器。配置缺失时使用默认值并提示配置；
+无效配置和凭据错误明确显示，可通过设置修复。
+已保存凭据不代表远端登录仍然有效。更改状态目录不会迁移 Token 或数据库。
+.PP
+GUI 尚未实现同步及监控任务的启动与停止；这些操作请使用 CLI 传输命令。
 .SH 命令
 .TP
 .B account login
