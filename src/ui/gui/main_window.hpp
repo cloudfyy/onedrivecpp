@@ -5,6 +5,7 @@
 #include "sync_controller.hpp"
 
 #include <QMainWindow>
+#include <QDateTime>
 #include <deque>
 #include <optional>
 
@@ -21,6 +22,8 @@ class QAction;
 class QGroupBox;
 class QProgressBar;
 class QPlainTextEdit;
+class QComboBox;
+class QCheckBox;
 
 namespace onedrive::gui {
 
@@ -42,7 +45,12 @@ private:
     void closeEvent(QCloseEvent* event) override;
     void changeEvent(QEvent* event) override;
     void retranslate_ui();
-    void set_login_status(const char* source, const QString& detail = {});
+    void set_login_status(
+        const char* source,
+        const QString& detail = {},
+        events::MessageKind kind = events::MessageKind::information,
+        bool record = true
+    );
     void start_login();
     void cancel_login();
     void logout();
@@ -53,7 +61,29 @@ private:
         const std::vector<events::Event>& batch, std::size_t omitted
     );
     void render_sync();
-    QString sync_event_text(const events::Event& event) const;
+    QString log_event_text(const events::Event& event) const;
+    enum class LogOperation {
+        application,
+        account,
+        configuration,
+        preview,
+        synchronization
+    };
+    void append_log_event(
+        LogOperation operation,
+        const events::Event& event,
+        const char* source = nullptr,
+        const QString& detail = {}
+    );
+    void log_message(
+        LogOperation operation,
+        events::MessageKind kind,
+        const char* source,
+        const QString& detail = {}
+    );
+    void log_sync_result();
+    void log_startup_errors();
+    void render_logs();
     void open_login_url();
     void refresh_settings(bool preserve_edits = false);
     void refresh_startup_status();
@@ -65,6 +95,8 @@ private:
     AppStateViewModel state_;
     Localization* localization_{};
     QTabWidget* tabs_{};
+    QWidget* sync_page_{};
+    QWidget* logs_page_{};
     QFormLayout* overview_layout_{};
     QFormLayout* settings_layout_{};
     SettingsEditor* settings_editor_{};
@@ -119,8 +151,22 @@ private:
     QString sync_error_;
     std::optional<events::DeltaProgressEvent> sync_delta_;
     std::optional<events::DownloadProgressEvent> sync_download_;
-    std::deque<events::Event> sync_history_;
-    std::size_t sync_omitted_{};
+    struct LogEntry {
+        QDateTime timestamp;
+        LogOperation operation;
+        events::MessageKind kind;
+        events::Event event;
+        const char* source{};
+        QString detail;
+    };
+    std::deque<LogEntry> log_history_;
+    std::size_t log_omitted_{};
+    QComboBox* log_level_{};
+    QCheckBox* log_autoscroll_{};
+    QPushButton* copy_logs_button_{};
+    QPushButton* clear_logs_button_{};
+    QPushButton* view_logs_button_{};
+    QLabel* overview_sync_status_{};
     QGroupBox* sync_group_{};
     QPushButton* preview_button_{};
     QPushButton* sync_button_{};
@@ -128,7 +174,8 @@ private:
     QLabel* sync_status_{};
     QLabel* transfer_status_{};
     QProgressBar* sync_progress_{};
-    QPlainTextEdit* sync_messages_{};
+    QLabel* sync_progress_hint_{};
+    QPlainTextEdit* log_messages_{};
 };
 
 } // namespace onedrive::gui

@@ -112,16 +112,33 @@ credential errors remain visible and recoverable through Settings.
 Saved credentials are not proof of an online-valid login.
 Changing the state directory does not migrate tokens or databases.
 .PP
-Overview provides Preview changes, Sync now, and Stop. Tasks use saved settings,
+The main tabs are Overview, Synchronization, Logs, and Settings.
+Overview shows account/directories and the current or latest task result.
+Synchronization provides Preview changes, Sync now, Stop, and View logs.
+Tasks use saved settings,
 not unsaved drafts, and acquire the same state-directory lock as the CLI.
 Preview does not change synchronized files. Saved
 .B sync.dry_run = true
 also keeps Sync now in preview mode; remote-deletion safeguards are not bypassed.
+Complete preview metadata stays in memory; the next task queries only later
+remote changes and rebuilds its plan against current local files.
+Preview does not advance the applied cursor. Account, configuration, filters
+and stored-state changes invalidate reuse; expired cursors and directory
+moves/deletions fall back to a full query. Recovery journals prevent caching.
+Cancellation/failure clears it, apply consumes it, and GUI restarts discard it.
 Messages display the plan, blocked items and errors. Download progress includes
 counts, speed and an available time estimate; uploads have messages only.
+The percentage describes downloads, not the overall task. Phases without known
+totals show a text explanation rather than an indeterminate progress bar.
+Overall 100% is displayed only after successful task completion.
 Login, logout and settings changes are disabled during synchronization.
 Stop requests cancellation; closing the window cancels and waits for task cleanup.
-Message history retains up to 500 events and explicitly reports omissions.
+Logs retains up to 500 application events across tasks for the current session
+and explicitly reports omissions. Entries have timestamps, operation names and
+levels. Filter by level, toggle auto-scroll, copy displayed logs or clear history.
+Clearing or switching tabs does not stop a task; switching languages preserves
+history and filters. Account logs do not include authorization URLs or tokens.
+This tab does not read the configured log file or create an additional one.
 GUI monitoring and systemd service controls are not implemented;
 use CLI transfer commands for monitoring.
 .SH COMMANDS

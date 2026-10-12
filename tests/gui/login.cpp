@@ -7,6 +7,7 @@
 #include "app/preflight.hpp"
 
 #include <QLineEdit>
+#include <QPlainTextEdit>
 
 #include <QApplication>
 #include <QElapsedTimer>
@@ -730,6 +731,18 @@ int test_window_account_actions() {
                 "logout ignored the runtime lock or hid its failure"
             );
         }
+        auto* logs = window.findChild<QPlainTextEdit*>("logMessages");
+        const int previous_logs = logs->document()->blockCount();
+        action->click();
+        if (logs->document()->blockCount() != previous_logs + 1 ||
+            !logs->toPlainText().contains(
+                "[Account] Error: Cannot log out: "
+            ) ||
+            logs->toPlainText().contains("saved-token")) {
+            return test::fail(
+                "repeated logout failures were suppressed or leaked credentials"
+            );
+        }
     }
     localization.set_language(gui::Language::simplified_chinese);
     QCoreApplication::processEvents();
@@ -900,6 +913,17 @@ int test_browser_failure_and_queued_cancellation() {
             return test::fail(
                 "cancellation opened a queued URL or retained stale browser "
                 "state"
+            );
+        }
+        const auto logs =
+            window.findChild<QPlainTextEdit*>("logMessages")->toPlainText();
+        if (!logs.contains("[Account] Info: Starting browser login...") ||
+            !logs.contains("[Account] Info: Login cancelled.") ||
+            logs.contains(authorization_url) || logs.contains("state=%25") ||
+            logs.contains("code_challenge=%2F")) {
+            return test::fail(
+                "account logs lost their operation or retained authorization "
+                "parameters"
             );
         }
     }

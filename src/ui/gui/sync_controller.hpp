@@ -2,6 +2,7 @@
 
 #include "onedrive/config/config.hpp"
 #include "onedrive/ui/common/observer.hpp"
+#include "onedrive/sync/core/engine.hpp"
 
 #include <QObject>
 #include <QString>
@@ -16,6 +17,11 @@ namespace onedrive::gui {
 
 using SynchronizationFunction = std::function<
     int(config::Config, const events::Observer&, std::stop_token)>;
+using CachedSynchronizationFunction = std::function<
+    int(config::Config,
+        const events::Observer&,
+        std::stop_token,
+        sync::PreviewCache*)>;
 
 class SyncController final : public QObject {
     Q_OBJECT
@@ -24,9 +30,13 @@ public:
     explicit SyncController(
         SynchronizationFunction synchronize = {}, QObject* parent = nullptr
     );
+    explicit SyncController(
+        CachedSynchronizationFunction synchronize, QObject* parent = nullptr
+    );
     ~SyncController() override;
     void start(const std::filesystem::path& config_file, bool preview);
     void cancel();
+    void invalidate_preview();
     [[nodiscard]] bool running() const noexcept;
 
 Q_SIGNALS:
@@ -39,7 +49,10 @@ private:
     void queue_event(const events::Event& event);
     void drain_events();
 
-    SynchronizationFunction synchronize_;
+    CachedSynchronizationFunction synchronize_;
+    sync::PreviewCache preview_cache_;
+    std::filesystem::path preview_config_file_;
+    std::string preview_config_fingerprint_;
     std::jthread worker_;
     bool running_{};
     std::mutex events_mutex_;

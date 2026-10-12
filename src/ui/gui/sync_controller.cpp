@@ -62,16 +62,33 @@ bool is_progress(const events::Event& event) {
 SyncController::SyncController(
     SynchronizationFunction synchronize, QObject* parent
 )
+    : SyncController{CachedSynchronizationFunction{}, parent} {
+    if (synchronize) {
+        synchronize_ = [function = std::move(synchronize)](
+                           config::Config config,
+                           const events::Observer& observer,
+                           std::stop_token token,
+                           sync::PreviewCache*
+                       ) {
+            return function(std::move(config), observer, token);
+        };
+    }
+}
+
+SyncController::SyncController(
+    CachedSynchronizationFunction synchronize, QObject* parent
+)
     : QObject{parent},
       synchronize_{std::move(synchronize)} {
     if (!synchronize_) {
         synchronize_ = [](config::Config config,
                           const events::Observer& observer,
-                          std::stop_token token) {
+                          std::stop_token token,
+                          sync::PreviewCache* cache) {
             const app::ProductionRuntimeFactory production;
             const app::RuntimeFactory factory{util::borrowed_proxy, production};
             return app::synchronize_account(
-                std::move(config), factory, observer, token
+                std::move(config), factory, observer, token, cache
             );
         };
     }
@@ -90,6 +107,15 @@ bool SyncController::running() const noexcept {
 
 void SyncController::cancel() {
     worker_.request_stop();
+}
+
+void SyncController::invalidate_preview() {
+    if (running_) {
+        throw std::logic_error{
+            "Cannot invalidate preview metadata during synchronization."
+        };
+    }
+    preview_cache_.clear();
 }
 
 void SyncController::start(
@@ -114,7 +140,17 @@ void SyncController::start(
                     result = exit_code::cancelled;
                 } else {
                     bool missing = false;
-                    auto config = load_configuration(config_file, missing);
+                    std::string fingerprint;
+                    auto config =
+                        load_configuration(config_file, missing, &fingerprint);
+                    bool invalidated = false;
+                    if (config_file != preview_config_file_ ||
+                        fingerprint != preview_config_fingerprint_ || missing) {
+                        invalidated = preview_cache_.available();
+                        preview_cache_.clear();
+                    }
+                    preview_config_file_ = config_file;
+                    preview_config_fingerprint_ = std::move(fingerprint);
                     effective_preview = preview || config.dry_run;
                     config.dry_run = effective_preview;
                     config.force_large_delete = false;
@@ -128,13 +164,30 @@ void SyncController::start(
                             queue_event(event);
                         }
                     };
-                    result =
-                        token.stop_requested()
-                            ? exit_code::cancelled
-                            : synchronize_(std::move(config), observer, token);
+                    if (invalidated) {
+                        observer.message(
+                            events::MessageKind::information,
+                            "preview_configuration_changed",
+                            "Saved configuration changed after preview; "
+                            "fetching remote changes again..."
+                        );
+                    }
+                    result = token.stop_requested() ? exit_code::cancelled
+                                                    : synchronize_(
+                                                          std::move(config),
+                                                          observer,
+                                                          token,
+                                                          &preview_cache_
+                                                      );
                 }
             } catch (const std::exception& exception) {
                 error = QString::fromUtf8(exception.what());
+            }
+            if (!effective_preview ||
+                (result != exit_code::success &&
+                 result != exit_code::blocked) ||
+                !error.isEmpty() || token.stop_requested()) {
+                preview_cache_.clear();
             }
             QMetaObject::invokeMethod(
                 this,

@@ -1,5 +1,6 @@
 #include "onedrive/graph/graph_client.hpp"
 #include "graph/support.hpp"
+#include "graph/delta_changes.hpp"
 
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
@@ -27,7 +28,6 @@
 #include <string_view>
 #include <thread>
 #include <type_traits>
-#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <variant>
@@ -56,7 +56,7 @@ DeltaResult MicrosoftGraphClient::list_delta(
     }
 
     std::unordered_set<std::string> visited_urls;
-    std::unordered_map<std::string, std::size_t> change_indexes;
+    DeltaChanges changes;
     DeltaResult result;
     std::size_t page_number = 1;
     std::size_t scanned_item_count = 0;
@@ -188,15 +188,7 @@ DeltaResult MicrosoftGraphClient::list_delta(
                         );
                     }
                 }
-                const auto [position, inserted] = change_indexes.emplace(
-                    item.id,
-                    result.changes.size()
-                );
-                if (inserted) {
-                    result.changes.push_back(std::move(item));
-                } else {
-                    result.changes[position->second] = std::move(item);
-                }
+                changes.upsert(std::move(item));
             }
 
             next_url = graph_next_link(json, "delta pagination")
@@ -219,10 +211,11 @@ DeltaResult MicrosoftGraphClient::list_delta(
                 );
             }
             spdlog::debug(
-                "Received Microsoft Graph delta page {} with {} changes; {} total",
+                "Received Microsoft Graph delta page {} with {} changes; {} "
+                "total",
                 page_number,
                 page_item_count,
-                result.changes.size()
+                changes.size()
             );
             scanned_item_count += page_item_count;
             const auto progress_state =
@@ -250,6 +243,7 @@ DeltaResult MicrosoftGraphClient::list_delta(
         }
     }
 
+    result.changes = std::move(changes).release();
     spdlog::info(
         "Completed Microsoft Graph delta query: {} pages, {} changes",
         page_number - 1,

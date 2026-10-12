@@ -13,6 +13,12 @@
 #include <QProgressBar>
 #include <QPushButton>
 #include <QThread>
+#include <QCheckBox>
+#include <QClipboard>
+#include <QComboBox>
+#include <QRegularExpression>
+#include <QScrollBar>
+#include <QTabWidget>
 
 #include <spdlog/spdlog.h>
 
@@ -147,6 +153,12 @@ void test_controller() {
     controller.start(fixture.file, true);
     require(
         test::throws_with<std::logic_error>(
+            [&] { controller.invalidate_preview(); }, "during synchronization"
+        ),
+        "controller allowed UI invalidation while worker owns the cache"
+    );
+    require(
+        test::throws_with<std::logic_error>(
             [&] { controller.start(fixture.file, false); }, "already running"
         ),
         "controller accepted concurrent tasks"
@@ -164,6 +176,35 @@ void test_controller() {
         worker_valid && delivered_on_ui && count == 500 && omitted == 501 &&
             latest_progress == 9999 && spdlog::default_logger() == logger,
         "controller lost its lock, event bound, latest progress or logger"
+    );
+}
+
+void test_default_controller_without_usable_credentials() {
+    Fixture fixture;
+    // Nonempty on disk passes preflight; token loading trims it to empty
+    // and fails before any HTTP request.
+    test::write_file(fixture.token, " \t\n");
+    gui::SyncController controller;
+    bool finished = false;
+    QString detail;
+    int result = exit_code::success;
+    QObject::connect(
+        &controller,
+        &gui::SyncController::finished,
+        [&](int code, const QString& error, bool preview) {
+            require(preview, "default controller lost preview mode");
+            result = code;
+            detail = error;
+            finished = true;
+        }
+    );
+    controller.start(fixture.file, true);
+    require(
+        wait_until([&] { return finished; }) && result == exit_code::failure &&
+            detail.contains("no saved Microsoft authentication is available") &&
+            !controller.running(),
+        "default production synchronization did not expose local credential "
+        "failure"
     );
 }
 
@@ -255,8 +296,13 @@ void test_history_bound() {
         }
     };
     auto* sync = button(window, "startSyncButton");
-    auto* messages = window.findChild<QPlainTextEdit*>("syncMessages");
+    auto* messages = window.findChild<QPlainTextEdit*>("logMessages");
+    std::size_t expected_omitted = 0;
     for (int attempt = 1; attempt <= 2; ++attempt) {
+        const auto previous_records = messages->document()->blockCount() -
+                                      (expected_omitted != 0 ? 1 : 0);
+        expected_omitted +=
+            500 + static_cast<std::size_t>(previous_records) + 3;
         emitted = false;
         sync->click();
         QElapsedTimer timer;
@@ -267,7 +313,7 @@ void test_history_bound() {
         require(
             emitted && wait_until([&] { return sync->isEnabled(); }) &&
                 messages->toPlainText().startsWith(
-                    "Earlier events omitted: 500"
+                    QString{"Earlier events omitted: %1"}.arg(expected_omitted)
                 ) &&
                 messages->toPlainText().contains(
                     QString{"run %1 event 999"}.arg(attempt)
@@ -278,8 +324,349 @@ void test_history_bound() {
                 (attempt == 1 ||
                  !messages->toPlainText().contains("run 1 event")) &&
                 messages->document()->blockCount() == 501,
-            "GUI history was unbounded, silently truncated or retained a "
-            "previous task"
+            "GUI history was unbounded or silently truncated"
+        );
+    }
+}
+
+void test_session_logs_and_tabs() {
+    Fixture fixture;
+    gui::Localization localization{gui::Language::english};
+    int run = 0;
+    gui::MainWindow window{
+        gui::load_app_state_view_model(fixture.file),
+        {},
+        &localization,
+        [&](config::Config, const events::Observer& observer, std::stop_token) {
+            ++run;
+            for (int index = 0; index < 80; ++index) {
+                observer.message(
+                    events::MessageKind::information,
+                    "info",
+                    std::format("run {} info {}", run, index)
+                );
+            }
+            observer.message(
+                events::MessageKind::success, "success", "successful event %1"
+            );
+            observer.message(
+                events::MessageKind::warning, "warning", "<b>raw warning %1</b>"
+            );
+            observer.message(
+                events::MessageKind::error,
+                "error",
+                "raw failure\n/path/file %1"
+            );
+            observer.blocked_item(
+                "blocked file", "conflict", "local conflict details"
+            );
+            return exit_code::success;
+        }
+    };
+    window.show();
+    auto* tabs = window.findChild<QTabWidget*>("mainTabs");
+    auto* sync_page = window.findChild<QWidget*>("syncPage");
+    auto* logs_page = window.findChild<QWidget*>("logsPage");
+    auto* overview = window.findChild<QWidget*>("overviewPage");
+    auto* messages = window.findChild<QPlainTextEdit*>("logMessages");
+    auto* level = window.findChild<QComboBox*>("logLevelFilter");
+    auto* scroll_option = window.findChild<QCheckBox*>("logAutoScroll");
+    auto* sync = button(window, "startSyncButton");
+    auto* copy = button(window, "copyLogsButton");
+    auto* clear = button(window, "clearLogsButton");
+    require(
+        tabs && tabs->count() == 4 && tabs->tabText(0) == "Overview" &&
+            tabs->tabText(1) == "Synchronization" &&
+            tabs->tabText(2) == "Logs" && tabs->tabText(3) == "Settings" &&
+            tabs->currentWidget() == overview &&
+            sync_page->isAncestorOf(sync) && !overview->isAncestorOf(sync) &&
+            logs_page->isAncestorOf(messages) && messages->isReadOnly() &&
+            scroll_option->isChecked(),
+        "GUI tasks and logs were not separated into tabs"
+    );
+    auto* draft = window.findChild<QLineEdit*>("sync.data_directory");
+    draft->setText("keep draft");
+    require(
+        !window.findChild<QPushButton*>("openSyncButton"),
+        "overview retained an unnecessary synchronization button"
+    );
+    tabs->setCurrentWidget(sync_page);
+    sync->click();
+    tabs->setCurrentIndex(3);
+    require(
+        wait_until([&] { return sync->isEnabled(); }) &&
+            tabs->currentIndex() == 3 && draft->text() == "keep draft" &&
+            window.findChild<QLabel*>("overviewSyncStatus")->text() ==
+                "Synchronization completed.",
+        "tab switching reset the task, draft or overview summary"
+    );
+    button(window, "viewLogsButton")->click();
+    QCoreApplication::processEvents();
+    const auto first_history = messages->toPlainText();
+    const QRegularExpression timestamp{
+        R"(^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\])"
+    };
+    require(
+        tabs->currentWidget() == logs_page &&
+            timestamp.match(first_history).hasMatch() &&
+            first_history.contains("[Synchronization] Info: run 1 info 0") &&
+            !first_history.contains("saved-token") &&
+            first_history.contains(
+                "[Synchronization] Error: raw failure\n/path/file %1"
+            ) &&
+            messages->verticalScrollBar()->maximum() > 0 &&
+            messages->verticalScrollBar()->value() ==
+                messages->verticalScrollBar()->maximum(),
+        "session logs lost timestamps, labels, raw details or auto-scroll"
+    );
+    scroll_option->setChecked(false);
+    messages->verticalScrollBar()->setValue(0);
+    button(window, "previewSyncButton")->click();
+    require(
+        wait_until([&] { return sync->isEnabled(); }) &&
+            tabs->currentWidget() == logs_page && run == 2 &&
+            messages->toPlainText().contains("run 1 info 0") &&
+            messages->toPlainText().contains("[Preview] Info: run 2 info 0") &&
+            messages->verticalScrollBar()->value() == 0,
+        "new tasks cleared session history or ignored disabled auto-scroll"
+    );
+    scroll_option->setChecked(true);
+    require(
+        messages->verticalScrollBar()->value() ==
+            messages->verticalScrollBar()->maximum(),
+        "enabling auto-scroll did not scroll to the latest entry"
+    );
+    level->setCurrentIndex(
+        level->findData(static_cast<int>(events::MessageKind::warning))
+    );
+    const auto warnings = messages->toPlainText();
+    require(
+        warnings.contains("Warning: <b>raw warning %1</b>") &&
+            warnings.contains("Blocked: blocked file [conflict]") &&
+            !warnings.contains("raw failure") && !warnings.contains("info 0") &&
+            !warnings.contains("successful event"),
+        "warning filter leaked other log levels"
+    );
+    copy->click();
+    require(
+        QApplication::clipboard()->text() == warnings,
+        "copy did not use the currently filtered log text"
+    );
+    const auto saved_timestamp = timestamp.match(warnings).captured();
+    const int saved_blocks = messages->document()->blockCount();
+    localization.set_language(gui::Language::simplified_chinese);
+    QCoreApplication::processEvents();
+    require(
+        tabs->currentWidget() == logs_page && tabs->tabText(2) == "日志" &&
+            level->currentData().toInt() ==
+                static_cast<int>(events::MessageKind::warning) &&
+            level->currentText() == "警告" && copy->text() == "复制日志" &&
+            clear->text() == "清空日志" &&
+            scroll_option->text() == "自动滚动" &&
+            messages->toPlainText().startsWith(saved_timestamp) &&
+            messages->toPlainText().contains(
+                "[同步] 警告：<b>raw warning %1</b>"
+            ) &&
+            messages->toPlainText().contains(
+                "[预览] 警告：阻塞：blocked file [conflict]"
+            ) &&
+            messages->document()->blockCount() == saved_blocks &&
+            draft->text() == "keep draft",
+        "language changes lost filters, history, dates or drafts"
+    );
+    level->setCurrentIndex(
+        level->findData(static_cast<int>(events::MessageKind::error))
+    );
+    require(
+        messages->toPlainText().contains("错误：raw failure\n/path/file %1") &&
+            !messages->toPlainText().contains("raw warning"),
+        "error filter was incorrect"
+    );
+    level->setCurrentIndex(
+        level->findData(static_cast<int>(events::MessageKind::success))
+    );
+    require(
+        messages->toPlainText().contains("成功：successful event %1") &&
+            messages->toPlainText().contains("预览完成。未修改同步文件。") &&
+            !messages->toPlainText().contains("raw failure"),
+        "success filter was incorrect"
+    );
+    level->setCurrentIndex(
+        level->findData(static_cast<int>(events::MessageKind::information))
+    );
+    require(
+        messages->toPlainText().contains("run 1 info 0") &&
+            !messages->toPlainText().contains("raw warning") &&
+            !messages->toPlainText().contains("successful event"),
+        "information filter was incorrect"
+    );
+    level->setCurrentIndex(0);
+    localization.set_language(gui::Language::english);
+    QCoreApplication::processEvents();
+    const int before_reload = messages->document()->blockCount();
+    button(window, "reloadSettingsButton")->click();
+    require(
+        messages->toPlainText().contains(
+            "[Configuration] Success: Configuration reloaded."
+        ) && messages->document()->blockCount() == before_reload + 1,
+        "configuration reload was not logged or language switching duplicated "
+        "entries"
+    );
+    clear->click();
+    require(
+        messages->toPlainText().isEmpty() && !copy->isEnabled() &&
+            !clear->isEnabled() && sync->isEnabled() &&
+            window.findChild<QLabel*>("syncStatus")->text() ==
+                "Preview completed. No synchronized files were changed.",
+        "clearing logs reset task results or left stale history"
+    );
+    level->setCurrentIndex(
+        level->findData(static_cast<int>(events::MessageKind::error))
+    );
+    sync->click();
+    require(
+        wait_until([&] { return sync->isEnabled(); }) && clear->isEnabled(),
+        "new tasks did not resume logging after clear"
+    );
+    require(
+        !messages->toPlainText().contains("run 1 info") &&
+            messages->toPlainText().contains("raw failure"),
+        "clear did not discard old session records"
+    );
+}
+
+void test_controller_preview_cache() {
+    for (const int invalidation : {0, 1, 2, 3, 4, 5}) {
+        Fixture fixture;
+        test::app::FakeRuntimeFactory implementation;
+        implementation.use_real_item_store = true;
+        const app::RuntimeFactory factory{util::borrowed_proxy, implementation};
+        const auto initial =
+            test::app::FakeGraphClient{"me"}.list_delta(std::nullopt, {}, {});
+        std::vector<std::optional<std::string>> requests;
+        implementation.delta_override = [&](const auto& cursor,
+                                            std::stop_token) {
+            requests.push_back(cursor);
+            if (cursor == initial.delta_link) {
+                return graph::DeltaResult{
+                    .changes = {},
+                    .delta_link = "https://graph.example.test/after-preview",
+                };
+            }
+            return initial;
+        };
+        gui::SyncController controller{[&](config::Config active,
+                                           const events::Observer& observer,
+                                           std::stop_token token,
+                                           sync::PreviewCache* cache) {
+            return app::synchronize_account(
+                std::move(active), factory, observer, token, cache
+            );
+        }};
+        bool finished = false;
+        std::vector<std::string> messages;
+        QObject::connect(
+            &controller,
+            &gui::SyncController::events_ready,
+            [&](const auto& batch, std::size_t) {
+                for (const auto& event : batch) {
+                    if (const auto* message =
+                            std::get_if<events::MessageEvent>(&event)) {
+                        messages.push_back(message->event);
+                    }
+                }
+            }
+        );
+        QObject::connect(
+            &controller,
+            &gui::SyncController::finished,
+            [&](int result, const QString& error, bool) {
+                require(
+                    result == 0 && error.isEmpty(), "cached GUI task failed"
+                );
+                finished = true;
+            }
+        );
+        const auto run = [&](bool preview) {
+            finished = false;
+            controller.start(fixture.file, preview);
+            require(
+                wait_until([&] { return finished; }),
+                "cached task did not finish"
+            );
+        };
+        const auto destination =
+            account::AccountState::drive_data_directory(
+                fixture.config.sync_data_directory, fixture.identity
+            ) /
+            "notes.txt";
+        run(true);
+        auto store =
+            implementation.create_item_store(fixture.config, fixture.identity);
+        store->open();
+        require(
+            requests == std::vector<std::optional<std::string>>{std::nullopt} &&
+                !store->delta_link(fixture.identity.drive_id) &&
+                store->drive_items(fixture.identity.drive_id).empty() &&
+                !std::filesystem::exists(destination),
+            "preview persisted its cursor, item state or files"
+        );
+        if (invalidation == 1) {
+            test::write_file(
+                fixture.file,
+                test::read_file(fixture.file) + "\n# saved change\n"
+            );
+        } else if (invalidation == 2) {
+            controller.invalidate_preview();
+        } else if (invalidation == 3) {
+            auto identity = fixture.identity;
+            identity.user_id = "other-account";
+            identity.user_display_name = "Other Account";
+            implementation.identity_override = [identity](std::stop_token) {
+                return identity;
+            };
+        } else if (invalidation == 4) {
+            store->apply_delta({
+                .drive_id = fixture.identity.drive_id,
+                .delta_link = "https://graph.example.test/external-sync",
+                .sync_filter_fingerprint = "external-filter",
+            });
+        } else if (invalidation == 5) {
+            const auto alternate = fixture.root.path() / "alternate.toml";
+            test::write_file(alternate, test::read_file(fixture.file));
+            fixture.file = alternate;
+        }
+        store.reset();
+        run(false);
+        require(
+            requests.size() == 2 &&
+                requests.back() ==
+                    (invalidation == 0
+                         ? std::optional<std::string>{initial.delta_link}
+                         : std::nullopt),
+            "GUI repeated a full query or reused invalid "
+            "configuration/account/state"
+        );
+        if (invalidation != 3) {
+            store = implementation.create_item_store(
+                fixture.config, fixture.identity
+            );
+            store->open();
+            require(
+                store->delta_link(fixture.identity.drive_id) ==
+                        (invalidation == 0
+                             ? "https://graph.example.test/after-preview"
+                             : initial.delta_link) &&
+                    store->drive_items(fixture.identity.drive_id).size() == 1 &&
+                    test::read_file(destination) == std::string(42, 'x'),
+                "cached sync did not apply retained metadata and latest cursor "
+                "to SQLite"
+            );
+        }
+        require(
+            (std::ranges::find(messages, "preview_cache_reused") !=
+             messages.end()) == (invalidation == 0),
+            "GUI did not report the actual cache reuse decision"
         );
     }
 }
@@ -306,7 +693,7 @@ void test_preview_and_apply() {
         auto* sync = button(window, "startSyncButton");
         auto* status = window.findChild<QLabel*>("syncStatus");
         auto* progress = window.findChild<QProgressBar*>("syncProgress");
-        auto* messages = window.findChild<QPlainTextEdit*>("syncMessages");
+        auto* messages = window.findChild<QPlainTextEdit*>("logMessages");
         auto* draft = window.findChild<QLineEdit*>("sync.data_directory");
         draft->setText("unsaved draft");
         const auto destination =
@@ -355,6 +742,193 @@ void test_preview_and_apply() {
     }
 }
 
+void test_progress_phases() {
+    Fixture fixture;
+    gui::Localization localization{gui::Language::english};
+    std::atomic<int> step{};
+    int runs = 0;
+    gui::MainWindow window{
+        gui::load_app_state_view_model(fixture.file),
+        {},
+        &localization,
+        [&](config::Config,
+            const events::Observer& observer,
+            std::stop_token token) {
+            const bool report_completion = ++runs == 1;
+            const auto wait_for = [&](int target) {
+                while (step < target && !token.stop_requested()) {
+                    QThread::msleep(1);
+                }
+                return !token.stop_requested();
+            };
+            for (int stage = 0; stage <= 6; ++stage) {
+                if (!wait_for(stage)) {
+                    return exit_code::cancelled;
+                }
+                switch (stage) {
+                case 0:
+                    observer.delta_progress(
+                        11, 2569, util::ProgressState::ongoing
+                    );
+                    break;
+                case 1:
+                    if (report_completion) {
+                        observer.delta_progress(
+                            11, 2569, util::ProgressState::completed
+                        );
+                    } else {
+                        observer.delta_summary(
+                            {.pages = 11, .scanned_items = 2569}
+                        );
+                    }
+                    break;
+                case 2:
+                    observer.download_progress(
+                        0, 0, 0, 0, util::ProgressState::ongoing
+                    );
+                    break;
+                case 3:
+                    observer.download_progress(
+                        0, 2, 0, 100, util::ProgressState::ongoing
+                    );
+                    observer.end_download_progress();
+                    break;
+                case 4:
+                    observer.download_progress(
+                        1, 2, 0, 0, util::ProgressState::ongoing
+                    );
+                    observer.end_download_progress();
+                    break;
+                case 5:
+                    observer.download_progress(
+                        1,
+                        2,
+                        50,
+                        100,
+                        util::ProgressState::ongoing,
+                        {.bytes_per_second = 25,
+                         .estimated_seconds_remaining = 2}
+                    );
+                    observer.end_download_progress();
+                    break;
+                case 6:
+                    observer.download_progress(
+                        2,
+                        2,
+                        100,
+                        100,
+                        util::ProgressState::completed,
+                        {.bytes_per_second = 25,
+                         .estimated_seconds_remaining = 0}
+                    );
+                    observer.end_download_progress();
+                    break;
+                }
+            }
+            return wait_for(7) ? exit_code::success : exit_code::cancelled;
+        }
+    };
+    auto* sync = button(window, "startSyncButton");
+    auto* progress = window.findChild<QProgressBar*>("syncProgress");
+    auto* hint = window.findChild<QLabel*>("syncProgressHint");
+    auto* status = window.findChild<QLabel*>("syncStatus");
+    auto* transfer = window.findChild<QLabel*>("transferStatus");
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        step = 0;
+        sync->click();
+        require(
+            progress->isHidden() && progress->maximum() == 100 &&
+                !hint->isHidden() && progress->value() == 0,
+            "preparation showed a misleading percentage or stale progress"
+        );
+        require(
+            wait_until([&] {
+                return status->text() ==
+                       "Scanning remote changes: 11 pages, 2569 items.";
+            }) &&
+                progress->isHidden() &&
+                hint->text() == "Remote totals are unknown; a percentage "
+                                "cannot be calculated.",
+            "remote scanning showed a full/busy bar despite unknown totals"
+        );
+        localization.set_language(gui::Language::simplified_chinese);
+        QCoreApplication::processEvents();
+        require(
+            progress->isHidden() &&
+                hint->text() == "远端总量未知，无法计算百分比。",
+            "unknown scan totals did not translate without changing progress"
+        );
+        localization.set_language(gui::Language::english);
+        QCoreApplication::processEvents();
+        step = 1;
+        require(
+            wait_until([&] { return status->text() == "Synchronizing..."; }) &&
+                progress->isHidden() && !sync->isEnabled(),
+            "completed scan or delta summary left the GUI scanning"
+        );
+        step = 2;
+        require(
+            wait_until([&] {
+                return hint->text() == "Download totals are unknown; a "
+                                       "percentage cannot be calculated.";
+            }) &&
+                status->text() == "Downloading files..." &&
+                progress->isHidden(),
+            "unknown download totals were presented as measurable progress"
+        );
+        step = 3;
+        require(
+            wait_until([&] { return !progress->isHidden(); }) &&
+                progress->maximum() == 100 && progress->value() == 0 &&
+                hint->isHidden() && status->text() == "Downloading files..." &&
+                progress->text() == "Downloads: 0%",
+            "terminal newline reset download progress to an indeterminate phase"
+        );
+        step = 4;
+        require(
+            wait_until([&] { return progress->value() == 50; }) &&
+                !progress->isHidden() &&
+                transfer->text().contains("1/2 files; 0/0 bytes"),
+            "zero-byte downloads did not use measurable file-count progress"
+        );
+        step = 5;
+        require(
+            wait_until([&] {
+                return transfer->text().contains("50/100 bytes");
+            }) &&
+                progress->value() == 50 && progress->text() == "Downloads: 50%",
+            "byte progress or terminal newline handling was incorrect"
+        );
+        localization.set_language(gui::Language::simplified_chinese);
+        QCoreApplication::processEvents();
+        require(
+            progress->value() == 50 && progress->text() == "下载：50%" &&
+                progress->accessibleName() == "下载进度",
+            "download percentage changed or lost its label during translation"
+        );
+        localization.set_language(gui::Language::english);
+        QCoreApplication::processEvents();
+        step = 6;
+        require(
+            wait_until([&] { return status->text() == "Synchronizing..."; }) &&
+                progress->isHidden() && !hint->isHidden() &&
+                !sync->isEnabled() &&
+                transfer->text().contains("2/2 files; 100/100 bytes") &&
+                !transfer->text().contains("seconds remaining"),
+            "finished downloads falsely reported overall completion or a stale "
+            "ETA"
+        );
+        step = 7;
+        require(
+            wait_until([&] { return sync->isEnabled(); }) &&
+                status->text() == "Synchronization completed." &&
+                !progress->isHidden() && progress->value() == 100 &&
+                progress->text() == "100%" && hint->isHidden(),
+            "overall 100 percent appeared before task completion"
+        );
+    }
+}
+
 void test_progress_and_stop() {
     Fixture fixture;
     gui::Localization localization{gui::Language::english};
@@ -396,6 +970,8 @@ void test_progress_and_stop() {
                 QThread::msleep(1);
             }
             observer.delta_progress(99, 999, util::ProgressState::ongoing);
+            observer.delta_summary({.pages = 99, .scanned_items = 999});
+            observer.end_download_progress();
             late_progress = true;
             while (!finish) {
                 QThread::msleep(1);
@@ -413,7 +989,7 @@ void test_progress_and_stop() {
     auto* stop = button(window, "stopSyncButton");
     auto* progress = window.findChild<QProgressBar*>("syncProgress");
     auto* status = window.findChild<QLabel*>("syncStatus");
-    auto* messages = window.findChild<QPlainTextEdit*>("syncMessages");
+    auto* messages = window.findChild<QPlainTextEdit*>("logMessages");
     auto* transfer = window.findChild<QLabel*>("transferStatus");
     const auto source = test::read_file(fixture.file);
     auto* draft = window.findChild<QLineEdit*>("sync.data_directory");
@@ -434,6 +1010,17 @@ void test_progress_and_stop() {
             transfer->text().contains("2 seconds remaining"),
         "progress or task interlocks were incorrect"
     );
+    auto* tabs = window.findChild<QTabWidget*>("mainTabs");
+    for (int index = 0; index < tabs->count(); ++index) {
+        tabs->setCurrentIndex(index);
+        QCoreApplication::processEvents();
+        require(
+            calls == 1 && progress->value() == 50 && !sync->isEnabled() &&
+                stop->isEnabled() && !late_progress,
+            "changing tabs interrupted an active task"
+        );
+    }
+    tabs->setCurrentWidget(window.findChild<QWidget*>("logsPage"));
     Q_EMIT sync->clicked();
     Q_EMIT button(window, "previewSyncButton")->clicked();
     Q_EMIT button(window, "signInButton")->clicked();
@@ -460,6 +1047,13 @@ void test_progress_and_stop() {
             messages->toPlainText().contains("阻塞：blocked.txt [conflict]") &&
             draft->text() == "unsaved draft",
         "language switching reset progress, events or settings drafts"
+    );
+    button(window, "clearLogsButton")->click();
+    require(
+        messages->toPlainText().isEmpty() && progress->value() == 50 &&
+            calls == 1 && !sync->isEnabled() &&
+            draft->text() == "unsaved draft",
+        "clearing logs changed an active synchronization task"
     );
     stop->click();
     require(wait_until([&] { return late_progress.load(); }),
@@ -621,9 +1215,13 @@ int main(int argc, char* argv[]) {
     gui::Localization localization{gui::Language::english};
     try {
         test_controller();
+        test_default_controller_without_usable_credentials();
         test_controller_lifecycle();
         test_history_bound();
+        test_session_logs_and_tabs();
+        test_controller_preview_cache();
         test_preview_and_apply();
+        test_progress_phases();
         test_progress_and_stop();
         test_results_and_preflight();
         test_close_and_availability();

@@ -32,6 +32,8 @@ struct ItemState {
     std::uint64_t local_inode{0};
     std::optional<util::FileHash> content_hash;
     bool directory{false};
+
+    bool operator==(const ItemState&) const = default;
 };
 
 struct UploadSuppression {
@@ -40,6 +42,8 @@ struct UploadSuppression {
     std::filesystem::path local_path;
     std::uint64_t source_device{0};
     std::uint64_t source_inode{0};
+
+    bool operator==(const UploadSuppression&) const = default;
 };
 
 struct BlockedItem {
@@ -58,6 +62,8 @@ struct BlockedItem {
     std::string reason_message;
     std::uint64_t attempt_count{0};
     std::optional<util::FileHash> content_hash;
+
+    bool operator==(const BlockedItem&) const = default;
 };
 
 enum class DeltaApplyMode {

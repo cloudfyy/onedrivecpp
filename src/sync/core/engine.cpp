@@ -1,5 +1,6 @@
 #include "onedrive/sync/core/engine.hpp"
 #include "onedrive/exit_code.hpp"
+#include "graph/delta_changes.hpp"
 
 #include "onedrive/sync/cancellation.hpp"
 #include "onedrive/ui/common/observer.hpp"
@@ -39,6 +40,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string_view>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -370,7 +372,52 @@ void report_completion(
 
 } // namespace
 
+PreviewCache::Scope PreviewCache::scope(const config::Config& config) {
+    return {
+        .sync_root = util::normalized_absolute(config.sync_data_directory),
+        .state_root = util::normalized_absolute(config.state_directory),
+        .drive_id = config.drive_id,
+        .graph_endpoint = config.graph_endpoint,
+        .application_id = config.application_id,
+        .tenant = config.azure_tenant_id,
+        .auth_endpoint = config.auth_endpoint,
+        .auth_scope = config.auth_scope,
+        .validation = config.download_validation,
+    };
+}
+
+std::optional<PreviewCache::State> PreviewCache::capture_state(
+    const storage::ItemStore& items, const std::string& drive
+) {
+    if (!items.pending_downloads(drive).empty() ||
+        !items.partial_downloads(drive).empty() ||
+        !items.pending_uploads(drive).empty() ||
+        !items.pending_deletes(drive).empty() ||
+        !items.pending_remote_moves(drive).empty() ||
+        !items.pending_moves(drive).empty()) {
+        return std::nullopt;
+    }
+    State state{
+        .cursor = items.delta_link(drive),
+        .filter = items.sync_filter_fingerprint(drive),
+        .items = items.drive_items(drive),
+        .blocked = items.blocked_items(drive),
+        .suppressions = items.upload_suppressions(drive),
+    };
+    std::ranges::sort(state.items, {}, &storage::ItemState::remote_id);
+    std::ranges::sort(state.blocked, {}, &storage::BlockedItem::remote_id);
+    std::ranges::sort(state.suppressions, {}, [](const auto& suppression) {
+        return std::tie(suppression.remote_id, suppression.local_path);
+    });
+    return state;
+}
+
 int SyncEngine::synchronize(std::stop_token stop_token) {
+    std::optional<PreviewCache::Snapshot> previous_preview;
+    if (preview_cache_) {
+        previous_preview = std::move(preview_cache_->snapshot_);
+        preview_cache_->clear();
+    }
     const auto started_at = std::chrono::steady_clock::now();
     const auto record_result = [this,
                                 started_at](metrics::SyncRunOutcome outcome) {
@@ -392,6 +439,10 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
         );
         std::filesystem::path sync_root =
             onedrive::util::normalized_absolute(config_.sync_data_directory);
+        const auto cache_state =
+            preview_cache_ && (capabilities.previews() || previous_preview)
+                ? PreviewCache::capture_state(items_, config_.drive_id)
+                : std::nullopt;
         std::optional<detail::SafeSyncRoot> safe_root;
         std::optional<detail::FilesystemMetadata> metadata;
         if (capabilities.previews()) {
@@ -482,10 +533,32 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
             previous_delta_link.has_value() &&
             previous_sync_filter_fingerprint.value_or("") !=
                 sync_filter_fingerprint;
-        const auto query_delta_link = sync_filter_changed
-                                          ? std::optional<std::string>{}
-                                          : previous_delta_link;
-        if (sync_filter_changed) {
+        auto query_delta_link = sync_filter_changed
+                                    ? std::optional<std::string>{}
+                                    : previous_delta_link;
+        if (previous_preview &&
+            (!cache_state ||
+             previous_preview->scope != PreviewCache::scope(config_) ||
+             previous_preview->filter != sync_filter_fingerprint ||
+             previous_preview->state != *cache_state)) {
+            previous_preview.reset();
+            observer.message(
+                events::MessageKind::information,
+                "preview_cache_invalidated",
+                "Preview metadata no longer matches the account, filters or "
+                "synchronization state; fetching remote changes again..."
+            );
+        }
+        if (previous_preview) {
+            query_delta_link = previous_preview->delta.delta_link;
+            observer.message(
+                events::MessageKind::information,
+                "preview_cache_reused",
+                "Reusing preview metadata; checking only subsequent remote "
+                "changes and rebuilding the local plan..."
+            );
+        }
+        if (sync_filter_changed && !previous_preview) {
             spdlog::info(
                 "Selective synchronization rules changed; fetching the full "
                 "remote state"
@@ -533,6 +606,9 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
         auto apply_mode = query_delta_link.has_value()
                               ? storage::DeltaApplyMode::merge
                               : storage::DeltaApplyMode::replace;
+        if (previous_preview) {
+            apply_mode = previous_preview->apply_mode;
+        }
         graph::DeltaResult delta;
         std::size_t delta_pages = 0;
         std::size_t delta_scanned_items = 0;
@@ -549,6 +625,7 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
                 query_delta_link, delta_progress, stop_token
             );
         } catch (const graph::DeltaCursorInvalidError& error) {
+            previous_preview.reset();
             spdlog::warn(
                 "{}; retrying with a full Microsoft Graph delta query",
                 error.what()
@@ -565,6 +642,61 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
             apply_mode = storage::DeltaApplyMode::replace;
         }
         throw_if_cancelled(stop_token);
+        if (previous_preview) {
+            graph::client_detail::DeltaChanges changes{
+                std::move(previous_preview->delta.changes)
+            };
+            const bool hierarchy_changed = std::ranges::any_of(
+                delta.changes, [&](const graph::RemoteItem& change) {
+                    const auto* cached = changes.find(change.id);
+                    const auto tracked_position = std::ranges::lower_bound(
+                        cache_state->items,
+                        change.id,
+                        {},
+                        &storage::ItemState::remote_id
+                    );
+                    const auto* tracked =
+                        tracked_position != cache_state->items.end() &&
+                                tracked_position->remote_id == change.id
+                            ? &*tracked_position
+                            : nullptr;
+                    if (change.deleted && !cached && !tracked) {
+                        // A tombstone does not identify whether an unknown
+                        // item was a directory containing cached children.
+                        return true;
+                    }
+                    if (cached && cached->directory &&
+                        (change.deleted ||
+                         cached->remote_path != change.remote_path)) {
+                        return true;
+                    }
+                    return tracked && tracked->directory &&
+                           (change.deleted ||
+                            tracked->remote_path != change.remote_path);
+                }
+            );
+            if (hierarchy_changed) {
+                observer.message(
+                    events::MessageKind::information,
+                    "preview_hierarchy_changed",
+                    "Remote directory changes or unidentified deletions may "
+                    "affect preview paths; fetching the full remote state..."
+                );
+                delta =
+                    graph_.list_delta(std::nullopt, delta_progress, stop_token);
+                apply_mode = storage::DeltaApplyMode::replace;
+            } else {
+                for (auto& change : delta.changes) {
+                    changes.upsert(std::move(change));
+                }
+                delta.changes = std::move(changes).release();
+            }
+        }
+        throw_if_cancelled(stop_token);
+        std::optional<graph::DeltaResult> preview_delta;
+        if (capabilities.previews() && cache_state) {
+            preview_delta = delta;
+        }
         events::DeltaSummary delta_summary{
             .pages = delta_pages,
             .scanned_items = delta_scanned_items,
@@ -772,6 +904,28 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
         report_completion(
             blocked_count, capabilities.previews(), started_at, observer
         );
+        if (preview_delta && !stop_token.stop_requested() &&
+            !preview_delta->delta_link.empty() &&
+            PreviewCache::capture_state(items_, config_.drive_id) ==
+                cache_state) {
+            preview_cache_->snapshot_.emplace(
+                PreviewCache::Snapshot{
+                    .scope = PreviewCache::scope(config_),
+                    .filter = sync_filter_fingerprint,
+                    .state = *cache_state,
+                    .delta = std::move(*preview_delta),
+                    .apply_mode = apply_mode,
+                }
+            );
+        } else if (preview_cache_ && capabilities.previews()) {
+            observer.message(
+                events::MessageKind::information,
+                "preview_cache_unavailable",
+                "Preview metadata was not retained because synchronization "
+                "state needs recovery, changed during preview, has no cursor "
+                "or the task was cancelled."
+            );
+        }
         return blocked_count == 0 ? exit_code::success : exit_code::blocked;
     } catch (const SyncCancelledError&) {
         record_result(metrics::SyncRunOutcome::cancelled);

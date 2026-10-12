@@ -84,18 +84,24 @@ public:
                 "simulated invalid delta cursor"
             };
         }
+        auto result =
+            delta_override
+                ? delta_override(delta_link)
+                : onedrive::graph::DeltaResult{
+                      .changes = changes,
+                      .delta_link = "https://graph.example.test/delta",
+                  };
         if (progress) {
             progress(
-                1, changes.size(), onedrive::util::ProgressState::completed
+                1,
+                result.changes.size(),
+                onedrive::util::ProgressState::completed
             );
         }
         if (stop_on_delta != nullptr) {
             stop_on_delta->request_stop();
         }
-        return {
-            .changes = changes,
-            .delta_link = "https://graph.example.test/delta",
-        };
+        return result;
     }
 
     void download_file(
@@ -416,6 +422,9 @@ public:
     }
 
     std::vector<onedrive::graph::RemoteItem> changes;
+    std::function<
+        onedrive::graph::DeltaResult(const std::optional<std::string>&)>
+        delta_override;
     std::optional<onedrive::graph::RemoteItem> lookup_item;
     std::unordered_map<std::string, std::string> contents;
     std::string failing_id;
@@ -787,6 +796,9 @@ public:
             static_cast<void>(path);
             result.push_back(suppression);
         }
+        if (reverse_state_order) {
+            std::ranges::reverse(result);
+        }
         return result;
     }
 
@@ -801,7 +813,11 @@ public:
     [[nodiscard]] std::vector<onedrive::storage::BlockedItem>
     blocked_items(const std::string&) const {
         const std::scoped_lock lock{mutex};
-        return blocked;
+        auto result = blocked;
+        if (reverse_state_order) {
+            std::ranges::reverse(result);
+        }
+        return result;
     }
 
     bool reset(const std::string&) {
@@ -847,6 +863,9 @@ public:
             static_cast<void>(remote_id);
             result.push_back(item);
         }
+        if (reverse_state_order) {
+            std::ranges::reverse(result);
+        }
         return result;
     }
 
@@ -868,6 +887,7 @@ public:
     onedrive::storage::ItemDelta applied_delta;
     std::optional<std::string> saved_delta_link;
     std::optional<std::string> saved_sync_filter_fingerprint;
+    bool reverse_state_order{false};
     int upsert_count{0};
     int apply_count{0};
     bool fail_upsert{false};

@@ -1,8 +1,173 @@
 #include "support.hpp"
+#include "graph/delta_changes.hpp"
 
 namespace {
 
 using namespace onedrive::test::graph;
+
+int test_shared_delta_changes() {
+    namespace graph = onedrive::graph;
+    graph::RemoteItem first{
+        .id = "first",
+        .name = "old.txt",
+        .etag = "old",
+        .remote_path = "old.txt",
+        .malware = true,
+        .content_hash =
+            onedrive::util::FileHash{
+                .algorithm = onedrive::util::FileHashAlgorithm::sha256,
+                .value = std::string(64, '0'),
+            },
+        .validate_content = false,
+    };
+    graph::RemoteItem second{.id = "second", .deleted = true};
+    auto latest = first;
+    latest.name = latest.remote_path = "new.txt";
+    latest.etag = "new";
+    latest.malware = false;
+    latest.validate_content = true;
+    latest.content_hash.reset();
+    graph::client_detail::DeltaChanges changes{
+        std::vector<graph::RemoteItem>{first, second, latest}
+    };
+    if (changes.size() != 2 || changes.find("missing") ||
+        !changes.find("first") || changes.find("first")->etag != "new") {
+        return fail(
+            "seeded delta merge did not preserve unique latest records"
+        );
+    }
+    changes.upsert({.id = "third", .root = true});
+    changes.upsert(
+        {.id = "second", .name = "restored.txt", .remote_path = "restored.txt"}
+    );
+    const auto result = std::move(changes).release();
+    if (result.size() != 3 || result[0].id != "first" ||
+        result[0].name != "new.txt" || result[0].remote_path != "new.txt" ||
+        result[0].malware || result[0].content_hash ||
+        !result[0].validate_content || result[1].id != "second" ||
+        result[1].deleted || result[1].name != "restored.txt" ||
+        result[2].id != "third" || !result[2].root) {
+        return fail(
+            "shared delta merge retained old flags or changed first-seen order"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_delta_transport_and_shape_failures() {
+    namespace od = onedrive;
+    const auto rejected = [](od::http::HttpResult response,
+                             std::string_view message,
+                             bool cancelled = false) {
+        auto transport =
+            std::make_unique<FakeTransport>(std::deque<od::http::HttpResult>{
+                token_response(), std::move(response)
+            });
+        auto* recorded = transport.get();
+        od::graph::MicrosoftGraphClient client{
+            wrap_transport(std::move(transport)),
+            wrap_token_store(std::make_unique<FakeTokenStore>("refresh")),
+            auth_options(),
+            {.endpoint = "https://graph.example.test/v1.0"},
+        };
+        try {
+            static_cast<void>(client.list_delta(std::nullopt));
+        } catch (const od::graph::RequestCancelledError&) {
+            return cancelled && recorded->queued.requests.size() == 2;
+        } catch (const std::runtime_error& error) {
+            return !cancelled &&
+                   std::string_view{error.what()}.contains(message) &&
+                   recorded->queued.requests.size() == 2;
+        }
+        return false;
+    };
+    if (!rejected(
+            std::unexpected{od::http::HttpError{
+                .code = od::http::HttpErrorCode::transport,
+                .message = "offline transport failed",
+            }},
+            "offline transport failed"
+        ) ||
+        !rejected(
+            std::unexpected{od::http::HttpError{
+                .code = od::http::HttpErrorCode::cancelled,
+                .message = "cancelled transport",
+            }},
+            {},
+            true
+        )) {
+        return fail(
+            "delta transport error/cancellation was hidden or misclassified"
+        );
+    }
+    const std::vector<std::pair<std::string, std::string>> cases{
+        {R"({"value":[{"id":"","name":"Drive","root":{},"folder":{}}]})",
+         "empty ID"},
+        {R"({"value":[{"id":"root","name":"Drive","eTag":42,"root":{},"folder":{}}]})",
+         "invalid eTag"},
+        {R"({"value":[{"id":"root","name":"","root":{},"folder":{}}]})",
+         "invalid metadata"},
+        {R"({"value":[{"id":"root","name":"Drive","size":-1,"root":{},"folder":{}}]})",
+         "invalid metadata"},
+        {R"({"value":[{"name":"missing ID"}]})",
+         "missing required drive item data"},
+        {R"({"value":[]})", "final delta link"},
+        {R"({"value":[],"@odata.deltaLink":42})", "final delta link"},
+    };
+    for (const auto& [body, message] : cases) {
+        if (!rejected(json_response(200, body), message)) {
+            return fail(
+                "invalid delta metadata/page shape was accepted: " + message
+            );
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_delta_cancelled_before_request_or_between_pages() {
+    namespace od = onedrive;
+    for (const bool before_request : {false, true}) {
+        auto transport =
+            std::make_unique<FakeTransport>(std::deque<od::http::HttpResult>{
+                token_response(),
+                graph_page(
+                    "[]", "https://graph.example.test/v1.0/delta?page=2"
+                ),
+            });
+        auto* recorded = transport.get();
+        od::graph::MicrosoftGraphClient client{
+            wrap_transport(std::move(transport)),
+            wrap_token_store(std::make_unique<FakeTokenStore>("refresh")),
+            auth_options(),
+            {.endpoint = "https://graph.example.test/v1.0"},
+        };
+        std::stop_source stop;
+        if (before_request) {
+            stop.request_stop();
+        }
+        bool progress_seen = false;
+        try {
+            static_cast<void>(client.list_delta(
+                std::nullopt,
+                [&](auto, auto, auto state) {
+                    progress_seen = state == od::util::ProgressState::ongoing;
+                    stop.request_stop();
+                },
+                stop.get_token()
+            ));
+            return fail("cancelled delta returned a partial successful result");
+        } catch (const od::graph::RequestCancelledError&) {
+            if (recorded->queued.requests.size() !=
+                    (before_request ? 0U : 2U) ||
+                progress_seen == before_request) {
+                return fail(
+                    "delta cancellation issued an unexpected request/page"
+                );
+            }
+        }
+    }
+    return EXIT_SUCCESS;
+}
 
 int test_untrusted_pagination_url() {
     auto transport =
@@ -437,6 +602,12 @@ int test_delta_request_cancellation() {
 } // namespace
 
 int main() {
+    if (test_shared_delta_changes() != EXIT_SUCCESS ||
+        test_delta_transport_and_shape_failures() != EXIT_SUCCESS ||
+        test_delta_cancelled_before_request_or_between_pages() !=
+            EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
     if (const int result = test_untrusted_pagination_url();
         result != EXIT_SUCCESS) {
         return result;

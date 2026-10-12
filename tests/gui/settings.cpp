@@ -3,6 +3,7 @@
 #include "main_window.hpp"
 #include "settings_editor.hpp"
 #include "support/common.hpp"
+#include "onedrive/util/sha256.hpp"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -1083,6 +1084,41 @@ void test_editor_browse_and_advanced() {
     }
 }
 
+void test_configuration_fingerprint() {
+    test::TemporaryDirectory fixture;
+    const auto file = fixture.path() / "config.toml";
+    bool missing = false;
+    std::string fingerprint = "previous";
+    static_cast<void>(gui::load_configuration(file, missing, &fingerprint));
+    require(
+        missing && fingerprint.empty(),
+        "missing configuration retained an old source fingerprint"
+    );
+    const std::string source =
+        "config_version = 2\n[sync]\ndata_directory = 'sync'\n"
+        "[state]\ndirectory = 'state'\n";
+    test::write_file(file, source);
+    const auto loaded = gui::load_configuration(file, missing, &fingerprint);
+    require(
+        !missing && fingerprint == util::sha256_hex(source) &&
+            loaded.sync_data_directory == std::filesystem::path{"sync"},
+        "configuration fingerprint did not match parsed source bytes"
+    );
+    const auto valid_fingerprint = fingerprint;
+    test::write_file(file, "config_version = 2\n[sync\n");
+    require(
+        test::throws_with<std::runtime_error>(
+            [&] {
+                static_cast<void>(
+                    gui::load_configuration(file, missing, &fingerprint)
+                );
+            },
+            "cannot parse TOML"
+        ) && fingerprint == valid_fingerprint,
+        "invalid configuration published a new fingerprint or hid its error"
+    );
+}
+
 void test_persistence_rejects_without_writes() {
     test::TemporaryDirectory fixture;
     const auto file = fixture.path() / "config.toml";
@@ -1964,6 +2000,7 @@ int main(int argc, char** argv) {
         test_editor_enum_reload_and_numeric_syntax();
         test_numeric_limits_round_trip();
         test_editor_browse_and_advanced();
+        test_configuration_fingerprint();
         test_persistence_rejects_without_writes();
         test_cancel_save_and_import_errors();
         test_import_creates_missing_configuration();

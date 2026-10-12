@@ -105,6 +105,42 @@ coalescing. Window regressions cover translated progress/history, blocked and
 failed results, settings/account interlocks, unsaved drafts, bounded history
 with explicit omissions, and cancel-and-join on close. Graph/application tests
 also cancel token refresh and drive identity lookup before storage creation.
+Tab/log regressions check the Overview/Synchronization/Logs/Settings split,
+navigation and overview summaries, cross-task history and exact overflow counts,
+timestamps, every level filter, copying displayed text, clear-during-sync,
+auto-scroll on/off, raw multiline details, and bilingual history/filter/draft
+preservation. Account tests ensure browser authorization parameters do not enter
+the session log.
+`sync_preview_tests` covers private-cursor reuse in both merge and replacement
+mode, repeated previews, last-change-wins merging, retained unapplied changes,
+cursor expiry and directory hierarchy fallback, scope/filter/state/journal
+invalidation, fresh local conflicts and remote-deletion safeguards, cancellation
+and failure. GUI controller integration uses a real SQLite ItemDatabase to
+verify preview does not persist state, incremental apply commits the latest
+cursor and expected bytes, and saved-file/account/external-state changes or
+explicit invalidation prevent reuse. Cache access is worker-owned during tasks
+and idle-only during account transitions; saved-file hashes use exactly the
+securely read bytes passed to the configuration parser.
+Graph pagination and preview-cache merging share the private
+`graph/delta_changes.hpp` accumulator: first-seen order is stable and each ID's
+latest complete record replaces all earlier metadata, including deletion,
+malware, validation and hash fields. Protocol tests also cover transport errors,
+malformed delta pages and cancellation before requests/between pages.
+Cache regressions additionally cover tracked-directory fallback, synthetic
+full-snapshot removals, equivalent reordered state collections, changed persisted
+hashes, empty cursors, late cancellation, failed full-query fallback and
+selectively retained local files/upload suppressions, including local-path
+inspection errors that must invalidate the cache without changing user data or
+applied state. Application tests seed an
+actual cache before early cancellation/identity failures and startup-observer
+exceptions; GUI tests exercise the default production function using whitespace
+credentials that fail locally before HTTP, plus the worker-ownership guard.
+Progress regressions explicitly distinguish unknown scan/download totals,
+completed scans and delta summaries, file-count versus byte percentages, and
+download completion versus task completion. `EndDownloadProgressEvent` is a
+terminal-line formatting marker and must not reset GUI download progress.
+Tests also preserve cancellation through late scan summaries and check that
+completed/stopped downloads do not retain a remaining-time estimate.
 Phase-two regressions cover every new field, proxy patterns/optional states,
 nested/inline/dotted tables and internal array comments, timeout units, backoff/throttle constraints,
 endpoint safety and rejection without writes or backups.

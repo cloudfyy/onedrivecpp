@@ -461,6 +461,7 @@ foreach(
         INCLUDE_DIRS tests tests/graph
     )
 endforeach()
+target_include_directories(graph_delta_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 add_onedrive_test(
     graph_support_tests
     SOURCES tests/graph/helpers.cpp
@@ -522,7 +523,7 @@ foreach(PREFLIGHT_TEST IN ITEMS state sync invalid)
         LIBRARIES onedrive_app
     )
 endforeach()
-foreach(SYNC_TEST IN ITEMS base delete move move_recovery download upload mode)
+foreach(SYNC_TEST IN ITEMS base delete move move_recovery download upload mode preview)
     add_onedrive_test(
         sync_${SYNC_TEST}_tests
         SOURCES tests/sync/${SYNC_TEST}.cpp

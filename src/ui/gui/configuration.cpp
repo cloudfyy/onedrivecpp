@@ -1,4 +1,5 @@
 #include "configuration.hpp"
+#include "onedrive/util/sha256.hpp"
 
 #include "onedrive/config/config.hpp"
 #include "onedrive/util/path_security.hpp"
@@ -147,13 +148,18 @@ std::string read_import_file(const std::filesystem::path& source_file) {
 } // namespace
 
 config::Config load_configuration(
-    const std::filesystem::path& config_file, bool& missing
+    const std::filesystem::path& config_file,
+    bool& missing,
+    std::string* fingerprint
 ) {
     std::error_code error;
     const auto status = std::filesystem::symlink_status(config_file, error);
     if (error == std::errc::no_such_file_or_directory ||
         (!error && !std::filesystem::exists(status))) {
         missing = true;
+        if (fingerprint) {
+            fingerprint->clear();
+        }
         return config::Config::defaults();
     }
     if (error) {
@@ -164,9 +170,12 @@ config::Config load_configuration(
     }
     missing = false;
     try {
-        return config::Config::load_from_string(
-            config_file, read_config_file(config_file, false)
-        );
+        const auto contents = read_config_file(config_file, false);
+        auto config = config::Config::load_from_string(config_file, contents);
+        if (fingerprint) {
+            *fingerprint = util::sha256_hex(contents);
+        }
+        return config;
     } catch (const std::invalid_argument& error) {
         throw std::runtime_error(error.what());
     }

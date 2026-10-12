@@ -161,19 +161,24 @@ class FakeGraphClient final {
 public:
     using IdentityOverride =
         std::function<onedrive::account::DriveIdentity(std::stop_token)>;
+    using DeltaOverride = std::function<onedrive::graph::DeltaResult(
+        const std::optional<std::string>&, std::stop_token
+    )>;
 
     explicit FakeGraphClient(
         std::string configured_drive_id,
         bool empty_shared = false,
         bool empty_sites = false,
         bool include_configured_drive = false,
-        IdentityOverride identity_override = {}
+        IdentityOverride identity_override = {},
+        DeltaOverride delta_override = {}
     )
         : configured_drive_id_{std::move(configured_drive_id)},
           empty_shared_{empty_shared},
           empty_sites_{empty_sites},
           include_configured_drive_{include_configured_drive},
-          identity_override_{std::move(identity_override)} {
+          identity_override_{std::move(identity_override)},
+          delta_override_{std::move(delta_override)} {
     }
 
     [[nodiscard]] onedrive::account::DriveIdentity
@@ -316,10 +321,21 @@ public:
     }
 
     [[nodiscard]] onedrive::graph::DeltaResult list_delta(
-        const std::optional<std::string>&,
+        const std::optional<std::string>& cursor,
         const onedrive::graph::DeltaProgress& progress,
-        std::stop_token
+        std::stop_token token
     ) const {
+        if (delta_override_) {
+            auto result = delta_override_(cursor, token);
+            if (progress) {
+                progress(
+                    1,
+                    result.changes.size(),
+                    onedrive::util::ProgressState::completed
+                );
+            }
+            return result;
+        }
         if (progress) {
             progress(1, 1, onedrive::util::ProgressState::completed);
         }
@@ -429,6 +445,7 @@ private:
     bool empty_sites_;
     bool include_configured_drive_;
     IdentityOverride identity_override_;
+    DeltaOverride delta_override_;
 };
 
 class FakeItemStore final {
@@ -731,7 +748,8 @@ public:
             false,
             false,
             false,
-            identity_override
+            identity_override,
+            delta_override
         );
     }
 
@@ -813,6 +831,7 @@ public:
 
     std::string configured_drive_id{"me"};
     FakeGraphClient::IdentityOverride identity_override;
+    FakeGraphClient::DeltaOverride delta_override;
     FakeAuthenticationTransport::ResponseOverride
         authentication_response_override;
     bool empty_shared{false};

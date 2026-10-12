@@ -8,6 +8,10 @@ namespace onedrive::events {
 class Observer;
 }
 
+namespace onedrive::sync {
+class PreviewCache;
+}
+
 namespace onedrive::app {
 
 class RuntimeFactory;
@@ -16,7 +20,8 @@ class RuntimeFactory;
     config::Config config,
     const RuntimeFactory& runtime_factory,
     const events::Observer& observer,
-    std::stop_token stop_token = {}
+    std::stop_token stop_token = {},
+    sync::PreviewCache* preview_cache = nullptr
 );
 
 }  // namespace onedrive::app

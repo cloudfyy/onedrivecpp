@@ -193,17 +193,40 @@ later operations refresh them and report authentication or connectivity errors.
 Sync-path validation does not prevent login when authentication/state settings
 are usable; synchronization requires valid sync settings and saved credentials.
 
-In **Overview → Synchronization**, use **Preview changes** to inspect the plan
+The main tabs are **Overview / Synchronization / Logs / Settings**. Overview
+shows account and directory information plus the current/latest sync result.
+Overview has no synchronization buttons; task controls are on the Synchronization tab.
+
+In **Synchronization**, use **Preview changes** to inspect the plan
 without changing synchronized files, then **Sync now** to apply it. Both use
 saved configuration, not unsaved Settings drafts. A saved `sync.dry_run = true`
 keeps **Sync now** in preview mode; the GUI never overrides the remote-deletion
 safety limit. Tasks run in a background worker using the same service and state
-directory lock as the CLI. Messages show plans, blocked items and errors;
-download progress includes file/byte counts, speed and an estimated remaining
+directory lock as the CLI. The task page shows a concise result/error summary
+and **View logs** opens the details. Download progress includes file/byte counts, speed and an estimated remaining
 time when available. Uploads currently have messages but no percentage display.
+The percentage is explicitly download progress, not whole-task progress.
+Scanning and other phases without measurable totals display an explanatory
+message instead of a full-looking indeterminate bar. Overall 100% appears only
+after successful task completion.
 **Stop** requests cancellation and waits for cleanup. Login, logout and settings
 changes are disabled during a task; closing the window cancels and joins it.
-The message history is limited to 500 events, with omissions explicitly shown.
+
+The GUI retains complete preview metadata in memory: the next preview/sync
+checks only changes since that preview, merges them with unapplied changes,
+and rebuilds the plan against current local files. Preview never advances the
+applied cursor. Configuration, account, filter or persisted-state changes
+invalidate the cache; expired cursors and directory moves/deletions fall back
+to a full query. Pending recovery prevents caching. Cancellation/failure clears
+it, and apply consumes it; nothing is saved across GUI restarts.
+
+**Logs** retains up to 500 application events across tasks for the current GUI
+session, with timestamps, operation names and levels; omissions are explicitly
+shown. Filter by level, toggle auto-scroll, copy the displayed logs or clear
+history without stopping a task. Tab/language switches preserve tasks, filters
+and history. Raw backend details remain unchanged; authorization URLs and tokens
+are not added to account logs. This tab does not read the configured log file
+or persist an additional log.
 GUI monitoring and systemd service control remain deferred.
 
 Hover over any setting, its label or browse/override control for a concise tip,

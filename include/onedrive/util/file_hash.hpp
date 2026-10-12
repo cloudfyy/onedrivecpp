@@ -12,6 +12,8 @@ enum class FileHashAlgorithm {
 struct FileHash {
     FileHashAlgorithm algorithm{FileHashAlgorithm::quick_xor};
     std::string value;
+
+    bool operator==(const FileHash&) const = default;
 };
 
 }  // namespace onedrive::util

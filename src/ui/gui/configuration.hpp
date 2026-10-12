@@ -5,12 +5,15 @@
 
 #include <filesystem>
 #include <optional>
+#include <string>
 
 namespace onedrive::gui {
 
 // A missing file uses defaults; existing files must be safely readable and valid.
 [[nodiscard]] config::Config load_configuration(
-    const std::filesystem::path& config_file, bool& missing
+    const std::filesystem::path& config_file,
+    bool& missing,
+    std::string* fingerprint = nullptr
 );
 
 struct ConfigurationPreview {
