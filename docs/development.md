@@ -82,7 +82,12 @@ reset all draft fields; language switches and login completion do not.
 `gui_settings_tests` exercises real offscreen controls and saved TOML for every
 exposed setting, 64-bit boundaries, parser constraints, comments/unrelated fields,
 backups, optional-key removal, draft/language/tab switching, reload, and first-time
-Application ID setup. It also checks every transfer-order/sync-mode reload,
+Application ID setup. It checks all 57 concise tips and accessibility descriptions
+on fields, labels, browse buttons and override rows, initial Chinese/English and
+unsupported-locale fallback, reload into disabled inherited controls, and runtime
+language switches with expanded advanced groups and inactive proxy drafts.
+Run these cases with `ctest --preset debug -R '^gui_settings_tests$'`.
+It also checks every transfer-order/sync-mode reload,
 numeric lower/upper limits and strict draft syntax, advanced groups and browse
 accept/cancel, inline optional-key removal at each position, UTF-8/multiline
 source edits, rejected patches without writes/backups, cancelled save/import,

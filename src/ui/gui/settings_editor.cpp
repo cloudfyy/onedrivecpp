@@ -69,12 +69,20 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "auth",
         "application_id",
         QT_TR_NOOP("Application ID"),
+        QT_TR_NOOP(
+            "Your Entra public-client ID, not a secret; required for login "
+            "(unset by default). Sign in again after changes."
+        ),
         Kind::text,
         [](const auto& c) { return QString::fromStdString(c.application_id); });
     add(account,
         "auth",
         "tenant_id",
         QT_TR_NOOP("Tenant ID"),
+        QT_TR_NOOP(
+            "Use common (default), consumers for personal accounts, or an "
+            "organization's tenant ID matching your app registration."
+        ),
         Kind::text,
         [](const auto& c) {
             return QString::fromStdString(c.azure_tenant_id);
@@ -84,6 +92,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "sync",
         "data_directory",
         QT_TR_NOOP("Sync directory"),
+        QT_TR_NOOP(
+            "Root for separate account/drive folders (default: ~/OneDrive); "
+            "must not overlap state or use symlinks. Changes do not move files."
+        ),
         Kind::text,
         [](const auto& c) {
             return QString::fromStdString(c.sync_data_directory.string());
@@ -96,6 +108,11 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "state",
         "directory",
         QT_TR_NOOP("State directory"),
+        QT_TR_NOOP(
+            "Private credentials and sync state (default: "
+            "~/.local/state/onedrive-cpp). Changes do not migrate state; sign "
+            "in again."
+        ),
         Kind::text,
         [](const auto& c) {
             return QString::fromStdString(c.state_directory.string());
@@ -107,6 +124,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "sync",
         "drive_id",
         QT_TR_NOOP("Drive ID"),
+        QT_TR_NOOP(
+            "me (default) selects your OneDrive; an actual Drive ID selects "
+            "another accessible drive or SharePoint library."
+        ),
         Kind::text,
         [](const auto& c) { return QString::fromStdString(c.drive_id); });
     note(
@@ -123,18 +144,33 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "auth",
         "endpoint",
         QT_TR_NOOP("Authentication endpoint"),
+        QT_TR_NOOP(
+            "Trusted HTTPS login URL: login.microsoftonline.com (default) or "
+            "login.chinacloudapi.cn. Match the Graph cloud; sign in again "
+            "after changes."
+        ),
         Kind::text,
         [](const auto& c) { return QString::fromStdString(c.auth_endpoint); });
     add(account_advanced,
         "graph",
         "endpoint",
         QT_TR_NOOP("Graph endpoint"),
+        QT_TR_NOOP(
+            "Trusted HTTPS API receiving tokens: graph.microsoft.com/v1.0 "
+            "(default) or microsoftgraph.chinacloudapi.cn/v1.0. Match the "
+            "login cloud, not a SharePoint site."
+        ),
         Kind::text,
         [](const auto& c) { return QString::fromStdString(c.graph_endpoint); });
     add(account_advanced,
         "auth",
         "scopes",
         QT_TR_NOOP("Authentication scopes (one per line)"),
+        QT_TR_NOOP(
+            "Delegated permissions (default: User.Read, Files.ReadWrite, "
+            "offline_access); request only what you need. Changes require "
+            "signing in again."
+        ),
         Kind::list,
         [](const auto& c) {
             return QString::fromStdString(c.auth_scope)
@@ -146,6 +182,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "sync",
         "data_mount_point",
         QT_TR_NOOP("Required mount point (empty: disabled)"),
+        QT_TR_NOOP(
+            "Require a mounted ancestor before sync to prevent missing-storage "
+            "deletions; empty disables this guard (default)."
+        ),
         Kind::optional_path,
         [](const auto& c) {
             return c.sync_data_mount_point
@@ -174,6 +214,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "sync",
         "mode",
         QT_TR_NOOP("Sync mode"),
+        QT_TR_NOOP(
+            "Choose which direction changes travel (default: both); deletion "
+            "propagation is controlled separately."
+        ),
         Kind::choice,
         [](const auto& c) {
             switch (c.sync_mode) {
@@ -192,6 +236,11 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "sync",
         "delete_policy",
         QT_TR_NOOP("Deletion policy"),
+        QT_TR_NOOP(
+            "Propagate deletes tracked destination items; preserve keeps "
+            "them—inspect a dry run first. Default: propagate (upload-only: "
+            "preserve unless set)."
+        ),
         Kind::choice,
         [](const auto& c) {
             return QString{
@@ -206,6 +255,11 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "sync",
         "local_conflict",
         QT_TR_NOOP("Local conflict policy"),
+        QT_TR_NOOP(
+            "Block (default) stops conflicting changes; backup saves a local "
+            "safeBackup copy before replacing with remote content and needs "
+            "extra space."
+        ),
         Kind::choice,
         [](const auto& c) {
             return QString{
@@ -220,6 +274,11 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "sync",
         "sync_list",
         QT_TR_NOOP("Selective sync rules file (empty: disabled)"),
+        QT_TR_NOOP(
+            "UTF-8 rules path relative to the config; unset selects all, an "
+            "empty rules file selects nothing. Excluded local files are "
+            "retained."
+        ),
         Kind::optional_path,
         [](const auto& c) {
             return c.sync_list ? QString::fromStdString(c.sync_list->string())
@@ -229,6 +288,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "sync",
         "dotfiles",
         QT_TR_NOOP("Dotfiles"),
+        QT_TR_NOOP(
+            "Include (default) syncs dot-prefixed paths; exclude skips them "
+            "without deleting existing local copies."
+        ),
         Kind::choice,
         [](const auto& c) {
             return QString{
@@ -242,6 +305,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "sync",
         "maximum_file_size_bytes",
         QT_TR_NOOP("Maximum file size (bytes; 0: unlimited)"),
+        QT_TR_NOOP(
+            "Skip larger files in both sync directions, retaining existing "
+            "local copies; default: 0 (unlimited)."
+        ),
         Kind::number,
         [](const auto& c) {
             return QString::number(c.maximum_file_size_bytes);
@@ -251,6 +318,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "sync",
         "nosync_enabled",
         QT_TR_NOOP("Honor .nosync files"),
+        QT_TR_NOOP(
+            "Enabled by default: a regular .nosync file excludes its local "
+            "subtree; symlinks are not markers and the marker is never synced."
+        ),
         Kind::boolean,
         [](const auto& c) {
             return QString{c.nosync_enabled ? "true" : "false"};
@@ -259,6 +330,11 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "sync",
         "sync_root_files",
         QT_TR_NOOP("Include root files with selective sync"),
+        QT_TR_NOOP(
+            "With selective rules, include root-level files, not directories; "
+            "exclusions still win. Default: off; no effect without a rules "
+            "file."
+        ),
         Kind::boolean,
         [](const auto& c) {
             return QString{c.sync_root_files ? "true" : "false"};
@@ -267,6 +343,11 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "sync",
         "maximum_remote_deletions",
         QT_TR_NOOP("Maximum remote deletions (0: no deletions)"),
+        QT_TR_NOOP(
+            "Stop deletion batches exceeding this tracked-item count, "
+            "including directory descendants; default: 1000, 0 blocks all "
+            "remote deletions."
+        ),
         Kind::number,
         [](const auto& c) {
             return QString::number(c.maximum_remote_deletions);
@@ -277,18 +358,30 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "upload",
         "concurrency",
         QT_TR_NOOP("Upload concurrency (1–16)"),
+        QT_TR_NOOP(
+            "Independent files uploading at once (default: 1); each file's "
+            "session fragments stay sequential."
+        ),
         Kind::number,
         [](const auto& c) { return QString::number(c.upload_concurrency); });
     add(transfer,
         "download",
         "concurrency",
         QT_TR_NOOP("Download concurrency (1–16)"),
+        QT_TR_NOOP(
+            "Files downloading at once (default: 4); the same destination is "
+            "serialized and workers share any total rate limit."
+        ),
         Kind::number,
         [](const auto& c) { return QString::number(c.download_concurrency); });
     add(transfer,
         "upload",
         "maximum_rate_bytes_per_second",
         QT_TR_NOOP("Upload rate per request (bytes/s; 0: unlimited)"),
+        QT_TR_NOOP(
+            "Each upload request's speed, not the combined speed; default: 0 "
+            "(unlimited). Low limits may require longer timeouts."
+        ),
         Kind::number,
         [](const auto& c) {
             return QString::number(c.upload_maximum_rate_bytes_per_second);
@@ -297,6 +390,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "download",
         "maximum_rate_bytes_per_second",
         QT_TR_NOOP("Download rate per request (bytes/s; 0: unlimited)"),
+        QT_TR_NOOP(
+            "Each file-content request's speed, not the combined speed; "
+            "default: 0 (unlimited). Low limits may require longer timeouts."
+        ),
         Kind::number,
         [](const auto& c) {
             return QString::number(c.download_maximum_rate_bytes_per_second);
@@ -305,6 +402,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "upload",
         "maximum_total_rate_bytes_per_second",
         QT_TR_NOOP("Aggregate upload rate (bytes/s; 0: unlimited)"),
+        QT_TR_NOOP(
+            "Combined speed shared by all active uploads (default: 0, "
+            "unlimited); individual request limits still apply."
+        ),
         Kind::number,
         [](const auto& c) {
             return QString::number(
@@ -315,6 +416,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "download",
         "maximum_total_rate_bytes_per_second",
         QT_TR_NOOP("Aggregate download rate (bytes/s; 0: unlimited)"),
+        QT_TR_NOOP(
+            "Combined speed shared by all active downloads (default: 0, "
+            "unlimited); individual request limits still apply."
+        ),
         Kind::number,
         [](const auto& c) {
             return QString::number(
@@ -325,6 +430,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "transfer",
         "order",
         QT_TR_NOOP("Transfer order"),
+        QT_TR_NOOP(
+            "Download start order, not completion order; default preserves "
+            "plan order. Upload dependencies remain parent-first."
+        ),
         Kind::choice,
         [](const auto& c) {
             switch (c.transfer_order) {
@@ -353,6 +462,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         QT_TR_NOOP(
             "Upload chunk (bytes; multiple of 327680, less than 62914560)"
         ),
+        QT_TR_NOOP(
+            "Session fragment size (default: 10485760 bytes, 10 MiB); only "
+            "files larger than 250000000 bytes use sessions."
+        ),
         Kind::number,
         [](const auto& c) {
             return QString::number(c.upload_chunk_size_bytes);
@@ -361,6 +474,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "download",
         "chunk_threshold_bytes",
         QT_TR_NOOP("Download chunk threshold (bytes; greater than 0)"),
+        QT_TR_NOOP(
+            "Larger files use sequential ranges of at most this size (default: "
+            "8388608 bytes, 8 MiB); relaxed validation disables chunking."
+        ),
         Kind::number,
         [](const auto& c) {
             return QString::number(c.download_chunk_threshold_bytes);
@@ -369,6 +486,11 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "download",
         "checkpoint_interval_bytes",
         QT_TR_NOOP("Download checkpoint interval (bytes; greater than 0)"),
+        QT_TR_NOOP(
+            "Persist progress after this many new bytes (default: 1048576, 1 "
+            "MiB); smaller intervals reduce re-download but increase "
+            "disk/database work."
+        ),
         Kind::number,
         [](const auto& c) {
             return QString::number(c.download_checkpoint_interval_bytes);
@@ -377,6 +499,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "download",
         "maximum_retries",
         QT_TR_NOOP("Maximum download retries"),
+        QT_TR_NOOP(
+            "Transient file-content retries (default: 4, 0 disables); separate "
+            "from Graph API retries but uses Graph backoff delays."
+        ),
         Kind::number,
         [](const auto& c) {
             return QString::number(c.download_maximum_retries);
@@ -385,6 +511,11 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "download",
         "validation",
         QT_TR_NOOP("Download validation"),
+        QT_TR_NOOP(
+            "Strict (default) checks remote size/hashes; relaxed accepts "
+            "transformed content but disables those checks and resume/chunking "
+            "for all downloads, weakening integrity."
+        ),
         Kind::choice,
         [](const auto& c) {
             return QString{
@@ -401,6 +532,11 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "proxy",
         "url",
         QT_TR_NOOP("Proxy URL (empty override: direct connection)"),
+        QT_TR_NOOP(
+            "Unchecked (default) inherits proxy environment variables; checked "
+            "with an empty URL forces direct connections. Never embed "
+            "passwords; socks5h uses proxy DNS."
+        ),
         Kind::override_text,
         [](const auto& c) {
             return c.proxy.url ? QString::fromStdString(*c.proxy.url)
@@ -415,6 +551,11 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "proxy",
         "no_proxy",
         QT_TR_NOOP("Proxy bypass hosts (one per line; empty override: none)"),
+        QT_TR_NOOP(
+            "Unchecked (default) inherits NO_PROXY/no_proxy independently; "
+            "checked with an empty list sends all hosts through the selected "
+            "proxy."
+        ),
         Kind::override_list,
         [](const auto& c) {
             QStringList entries;
@@ -433,6 +574,11 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "proxy",
         "username",
         QT_TR_NOOP("Proxy username (empty: unset)"),
+        QT_TR_NOOP(
+            "Optional proxy login name (default: unset); required with a "
+            "password file. Clear credentials to return to environment-only "
+            "settings."
+        ),
         Kind::optional_text,
         [](const auto& c) {
             return c.proxy.username ? QString::fromStdString(*c.proxy.username)
@@ -442,6 +588,11 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "proxy",
         "password_file",
         QT_TR_NOOP("Proxy password file (empty: unset)"),
+        QT_TR_NOOP(
+            "Optional path relative to the config (default: unset); requires a "
+            "username and an owner-only regular file, no symlinks, at most 64 "
+            "KiB."
+        ),
         Kind::optional_path,
         [](const auto& c) {
             return c.proxy.password_file
@@ -452,6 +603,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "proxy",
         "auth",
         QT_TR_NOOP("Proxy authentication"),
+        QT_TR_NOOP(
+            "HTTP/HTTPS proxy authentication (default: auto); availability "
+            "depends on libcurl. SOCKS5 uses its own credential mechanism."
+        ),
         Kind::choice,
         [](const auto& c) {
             switch (c.proxy.auth) {
@@ -476,6 +631,11 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "proxy",
         "ca_file",
         QT_TR_NOOP("HTTPS proxy CA file (empty: unset)"),
+        QT_TR_NOOP(
+            "CA path relative to the config for an explicit HTTPS proxy, not "
+            "the destination server; empty uses system trust and verification "
+            "stays enabled."
+        ),
         Kind::optional_path,
         [](const auto& c) {
             return c.proxy.ca_file
@@ -502,6 +662,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "transfer",
         "connect_timeout_seconds",
         QT_TR_NOOP("Connection timeout (seconds; greater than 0)"),
+        QT_TR_NOOP(
+            "Connection time allowed per upload/download request (default: 30 "
+            "seconds), separate from WebSocket timeouts."
+        ),
         Kind::number,
         [](const auto& c) {
             return QString::number(
@@ -512,6 +676,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "transfer",
         "operation_timeout_seconds",
         QT_TR_NOOP("Request timeout (seconds; greater than 0)"),
+        QT_TR_NOOP(
+            "Total time per file-content request (default: 3600 seconds), "
+            "including rate-limit waits; low limits may need more time."
+        ),
         Kind::number,
         [](const auto& c) {
             return QString::number(
@@ -522,6 +690,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "transfer",
         "stall_timeout_seconds",
         QT_TR_NOOP("Stall timeout (seconds; 0: disabled)"),
+        QT_TR_NOOP(
+            "Abort transfers below the minimum rate for this long (default: 60 "
+            "seconds); 0 disables detection and low rate limits can trigger it."
+        ),
         Kind::number,
         [](const auto& c) {
             return QString::number(
@@ -532,6 +704,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "transfer",
         "stall_minimum_bytes_per_second",
         QT_TR_NOOP("Stall minimum rate (bytes/s; greater than 0)"),
+        QT_TR_NOOP(
+            "Speed below which the stall timer runs (default: 1 byte/second); "
+            "no effect when stall timeout is 0."
+        ),
         Kind::number,
         [](const auto& c) {
             return QString::number(
@@ -542,6 +718,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "transfer",
         "http_version",
         QT_TR_NOOP("HTTP version"),
+        QT_TR_NOOP(
+            "File-transfer protocol preference (default: auto); HTTP/2 may "
+            "fall back depending on libcurl and server support."
+        ),
         Kind::choice,
         [](const auto& c) {
             switch (c.transfer_transport.http_version) {
@@ -560,6 +740,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "transfer",
         "ip_version",
         QT_TR_NOOP("IP version"),
+        QT_TR_NOOP(
+            "File-transfer address family (default: auto); forcing IPv4/IPv6 "
+            "fails if the host has no matching address."
+        ),
         Kind::choice,
         [](const auto& c) {
             switch (c.transfer_transport.ip_version) {
@@ -579,6 +763,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "graph.throttle",
         "maximum_retries",
         QT_TR_NOOP("Maximum throttle retries (0: no retries)"),
+        QT_TR_NOOP(
+            "Graph API throttling/transient retries (default: 4, 0 disables); "
+            "separate from file-content download retries."
+        ),
         Kind::number,
         [](const auto& c) {
             return QString::number(c.graph_maximum_throttle_retries);
@@ -587,6 +775,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "graph.throttle",
         "initial_delay_seconds",
         QT_TR_NOOP("Initial throttle delay (seconds)"),
+        QT_TR_NOOP(
+            "Initial exponential retry delay (default: 1 second), also used by "
+            "downloads; server Retry-After may override it."
+        ),
         Kind::number,
         [](const auto& c) {
             return QString::number(c.graph_initial_throttle_delay.count());
@@ -595,6 +787,11 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "graph.throttle",
         "maximum_delay_seconds",
         QT_TR_NOOP("Maximum throttle delay (seconds; at least initial delay)"),
+        QT_TR_NOOP(
+            "Maximum retry wait (default: 300 seconds), at least the initial "
+            "delay; a longer server Retry-After stops retries rather than "
+            "shortening its wait."
+        ),
         Kind::number,
         [](const auto& c) {
             return QString::number(c.graph_maximum_throttle_delay.count());
@@ -605,6 +802,11 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "monitor",
         "websocket_enabled",
         QT_TR_NOOP("Enable WebSocket notifications"),
+        QT_TR_NOOP(
+            "Wake the CLI/service monitor on remote changes (default: on); "
+            "disabling keeps local events and polling. The GUI does not run "
+            "monitors."
+        ),
         Kind::boolean,
         [](const auto& c) {
             return QString{c.monitor_websocket_enabled ? "true" : "false"};
@@ -613,6 +815,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "monitor",
         "poll_interval_seconds",
         QT_TR_NOOP("Poll interval (seconds; 1–86400)"),
+        QT_TR_NOOP(
+            "Monitor's remote-change fallback interval (default: 300 seconds); "
+            "polling continues without WebSocket notifications."
+        ),
         Kind::number,
         [](const auto& c) {
             return QString::number(c.monitor_poll_interval.count());
@@ -621,6 +827,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "monitor",
         "settle_delay_milliseconds",
         QT_TR_NOOP("Local settle delay (milliseconds; 0–60000)"),
+        QT_TR_NOOP(
+            "Wait for local-change bursts to settle (default: 1000 "
+            "milliseconds); new events reset the delay and 0 skips waiting."
+        ),
         Kind::number,
         [](const auto& c) {
             return QString::number(c.monitor_settle_delay.count());
@@ -631,6 +841,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "monitor",
         "websocket_request_timeout_seconds",
         QT_TR_NOOP("WebSocket request timeout (seconds; 1–300)"),
+        QT_TR_NOOP(
+            "Time allowed to acquire a Graph notification channel (default: 60 "
+            "seconds), separate from file-transfer timeouts."
+        ),
         Kind::number,
         [](const auto& c) {
             return QString::number(c.monitor_websocket_request_timeout.count());
@@ -639,6 +853,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "monitor",
         "websocket_connect_timeout_seconds",
         QT_TR_NOOP("WebSocket connection timeout (seconds; 1–300)"),
+        QT_TR_NOOP(
+            "Time allowed for the WSS connection/handshake (default: 10 "
+            "seconds), separate from file-transfer timeouts."
+        ),
         Kind::number,
         [](const auto& c) {
             return QString::number(c.monitor_websocket_connect_timeout.count());
@@ -647,6 +865,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "monitor",
         "websocket_renewal_lead_seconds",
         QT_TR_NOOP("WebSocket renewal lead (seconds; 0–3600)"),
+        QT_TR_NOOP(
+            "Refresh the channel before expiry (default: 120 seconds early); 0 "
+            "renews at expiry rather than disabling renewal."
+        ),
         Kind::number,
         [](const auto& c) {
             return QString::number(c.monitor_websocket_renewal_lead.count());
@@ -655,6 +877,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "monitor",
         "websocket_initial_backoff_seconds",
         QT_TR_NOOP("WebSocket initial backoff (seconds; 1–3600)"),
+        QT_TR_NOOP(
+            "Initial exponential reconnect delay (default: 1 second); polling "
+            "provides fallback while disconnected."
+        ),
         Kind::number,
         [](const auto& c) {
             return QString::number(c.monitor_websocket_initial_backoff.count());
@@ -665,6 +891,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         QT_TR_NOOP(
             "WebSocket maximum backoff (seconds; 1–86400; at least initial "
             "backoff)"
+        ),
+        QT_TR_NOOP(
+            "Reconnect delay ceiling (default: 300 seconds), at least the "
+            "initial backoff; does not change server heartbeat timing."
         ),
         Kind::number,
         [](const auto& c) {
@@ -684,6 +914,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "logging",
         "level",
         QT_TR_NOOP("Logging level"),
+        QT_TR_NOOP(
+            "Diagnostic verbosity (default: info); debug/trace may expose "
+            "private metadata, so review before sharing."
+        ),
         Kind::choice,
         [](const auto& c) { return QString::fromStdString(c.logging.level); },
         {{"trace", QT_TR_NOOP("Trace")},
@@ -697,6 +931,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "logging",
         "file",
         QT_TR_NOOP("Log file (empty: unset)"),
+        QT_TR_NOOP(
+            "Optional log path relative to the config; empty disables file "
+            "logging (default). Review private metadata before sharing."
+        ),
         Kind::optional_path,
         [](const auto& c) {
             return c.logging.file
@@ -707,6 +945,11 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "sync",
         "permissions",
         QT_TR_NOOP("Sync file permissions"),
+        QT_TR_NOOP(
+            "Private (default): new files 0600, root/new directories 0700; "
+            "umask may expose content to others. Existing files are unchanged; "
+            "state stays private."
+        ),
         Kind::choice,
         [](const auto& c) {
             return QString{
@@ -721,6 +964,10 @@ SettingsEditor::SettingsEditor(QWidget* parent)
         "filesystem",
         "metadata",
         QT_TR_NOOP("Filesystem metadata"),
+        QT_TR_NOOP(
+            "Sync metadata always uses SQLite; auto (default) adds xattr hints "
+            "when supported, xattr requires support, database uses no xattrs."
+        ),
         Kind::choice,
         [](const auto& c) {
             switch (c.filesystem_metadata) {
@@ -754,6 +1001,7 @@ void SettingsEditor::add(
     const char* table,
     const char* key,
     const char* label,
+    const char* tip,
     Kind kind,
     std::function<QString(const config::Config&)> read,
     std::vector<std::pair<const char*, const char*>> choices,
@@ -824,9 +1072,11 @@ void SettingsEditor::add(
         {table,
          key,
          label,
+         tip,
          kind,
          widget,
          label_widget,
+         container,
          std::move(read),
          {},
          std::move(choices),
@@ -883,6 +1133,21 @@ void SettingsEditor::retranslate() {
     tabs_->setTabText(5, tr("Advanced and logs"));
     for (auto& field : fields_) {
         field.label_widget->setText(tr(field.label));
+        const auto tip = tr(field.tip);
+        for (auto* target :
+             {field.widget,
+              static_cast<QWidget*>(field.label_widget),
+              field.container}) {
+            target->setToolTip(tip);
+            target->setAccessibleDescription(tip);
+        }
+        if (field.container != field.widget) {
+            for (auto* companion :
+                 field.container->findChildren<QAbstractButton*>()) {
+                companion->setToolTip(tip);
+                companion->setAccessibleDescription(tip);
+            }
+        }
         if (field.override) {
             field.override->setText(tr("Override environment"));
         }

@@ -38,9 +38,11 @@ private:
         std::string table;
         std::string key;
         const char* label;
+        const char* tip;
         Kind kind;
         QWidget* widget;
         QLabel* label_widget;
+        QWidget* container;
         std::function<QString(const config::Config&)> read;
         QString baseline;
         std::vector<std::pair<const char*, const char*>> choices;
@@ -53,6 +55,7 @@ private:
         const char* table,
         const char* key,
         const char* label,
+        const char* tip,
         Kind kind,
         std::function<QString(const config::Config&)> read,
         std::vector<std::pair<const char*, const char*>> choices = {},

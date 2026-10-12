@@ -191,6 +191,10 @@ later operations refresh them and report authentication or connectivity errors.
 Sync-path validation does not prevent login when authentication/state settings
 are usable. The GUI still has no synchronization action.
 
+Hover over any setting, its label or browse/override control for a concise tip,
+including advanced fields. Tips also provide accessibility descriptions and
+switch languages immediately without changing the draft.
+
 Settings phases one and two provide six sub-tabs: **Account and directories**,
 **Sync rules**, **Transfers**, **Network**, **Monitor**, and **Advanced and logs**.
 They share one draft and global save/import/
