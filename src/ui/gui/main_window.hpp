@@ -38,6 +38,8 @@ private:
     void set_login_status(const char* source, const QString& detail = {});
     void start_login();
     void cancel_login();
+    void logout();
+    void refresh_login_actions();
     void open_login_url();
     void refresh_settings(bool preserve_edits = false);
     void refresh_startup_status();
@@ -71,8 +73,7 @@ private:
     LoginController login_;
     QWidget* settings_{};
     QPushButton* login_button_{};
-    QPushButton* cancel_login_button_{};
-    QPushButton* browser_button_{};
+    QPushButton* account_action_button_{};
     QLabel* login_status_{};
     QLabel* login_url_{};
     const char* login_status_source_{

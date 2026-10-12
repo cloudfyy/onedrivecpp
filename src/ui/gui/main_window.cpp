@@ -4,6 +4,7 @@
 #include "localization.hpp"
 #include "settings_editor.hpp"
 #include "onedrive/version.hpp"
+#include "onedrive/app/factory.hpp"
 
 #include <QActionGroup>
 #include <QApplication>
@@ -71,15 +72,10 @@ MainWindow::MainWindow(
     auto* login_actions = new QHBoxLayout;
     login_button_ = new QPushButton{tr("Sign in"), overview};
     login_button_->setObjectName("signInButton");
-    cancel_login_button_ = new QPushButton{tr("Cancel login"), overview};
-    cancel_login_button_->setObjectName("cancelLoginButton");
-    browser_button_ = new QPushButton{tr("Open browser"), overview};
-    browser_button_->setObjectName("openBrowserButton");
-    cancel_login_button_->setEnabled(false);
-    browser_button_->setEnabled(false);
+    account_action_button_ = new QPushButton{tr("Log out"), overview};
+    account_action_button_->setObjectName("accountActionButton");
     login_actions->addWidget(login_button_);
-    login_actions->addWidget(browser_button_);
-    login_actions->addWidget(cancel_login_button_);
+    login_actions->addWidget(account_action_button_);
     login_actions->addStretch();
     overview_layout->addRow(login_actions);
     startup_status_ = make_value_label({});
@@ -161,18 +157,13 @@ MainWindow::MainWindow(
     connect(
         login_button_, &QPushButton::clicked, this, &MainWindow::start_login
     );
-    connect(
-        cancel_login_button_,
-        &QPushButton::clicked,
-        this,
-        &MainWindow::cancel_login
-    );
-    connect(
-        browser_button_,
-        &QPushButton::clicked,
-        this,
-        &MainWindow::open_login_url
-    );
+    connect(account_action_button_, &QPushButton::clicked, this, [this] {
+        if (login_.running()) {
+            cancel_login();
+        } else {
+            logout();
+        }
+    });
     connect(
         &login_,
         &LoginController::browser_requested,
@@ -189,7 +180,6 @@ MainWindow::MainWindow(
             set_login_status(QT_TR_NOOP(
                 "Waiting for browser authorization (up to 5 minutes)..."
             ));
-            browser_button_->setEnabled(true);
             open_login_url();
         },
         Qt::QueuedConnection
@@ -202,9 +192,7 @@ MainWindow::MainWindow(
             login_url_->clear();
             login_url_is_instruction_ = false;
             authorization_url_.clear();
-            browser_button_->setEnabled(false);
-            cancel_login_button_->setEnabled(false);
-            login_button_->setEnabled(state_.can_sign_in());
+            refresh_login_actions();
             settings_->setEnabled(true);
             if (closing_) {
                 close();
@@ -288,8 +276,7 @@ void MainWindow::retranslate_ui() {
     settings_editor_->retranslate();
     theme_value_->setText(tr("Follow system light/dark appearance"));
     login_button_->setText(tr("Sign in"));
-    cancel_login_button_->setText(tr("Cancel login"));
-    browser_button_->setText(tr("Open browser"));
+    refresh_login_actions();
     import_button_->setText(tr("Import TOML…"));
     save_button_->setText(tr("Save settings"));
     reload_button_->setText(tr("Reload configuration"));
@@ -354,20 +341,21 @@ void MainWindow::set_login_status(const char* source, const QString& detail) {
 }
 
 void MainWindow::start_login() {
-    if (!state_.can_sign_in()) {
+    if (!state_.can_sign_in() ||
+        state_.account_status == AccountStatus::credentials_available ||
+        login_.running()) {
         return;
     }
     cancelling_ = false;
     settings_->setEnabled(false);
     login_button_->setEnabled(false);
-    cancel_login_button_->setEnabled(true);
     set_login_status(QT_TR_NOOP("Starting browser login..."));
     try {
         login_.start(state_.config_file);
+        refresh_login_actions();
     } catch (const std::exception& error) {
         settings_->setEnabled(true);
-        login_button_->setEnabled(state_.can_sign_in());
-        cancel_login_button_->setEnabled(false);
+        refresh_login_actions();
         set_login_status(
             QT_TR_NOOP("Cannot start login: %1"),
             QString::fromUtf8(error.what())
@@ -380,10 +368,44 @@ void MainWindow::cancel_login() {
     login_url_->clear();
     login_url_is_instruction_ = false;
     authorization_url_.clear();
-    browser_button_->setEnabled(false);
-    cancel_login_button_->setEnabled(false);
+    refresh_login_actions();
     set_login_status(QT_TR_NOOP("Cancelling login..."));
     login_.cancel();
+}
+
+void MainWindow::refresh_login_actions() {
+    const bool running = login_.running();
+    const bool signed_in =
+        state_.account_status == AccountStatus::credentials_available;
+    login_button_->setEnabled(!running && !signed_in && state_.can_sign_in());
+    account_action_button_->setText(
+        running ? tr("Cancel login") : tr("Log out")
+    );
+    account_action_button_->setEnabled(running ? !cancelling_ : signed_in);
+}
+
+void MainWindow::logout() {
+    if (login_.running() ||
+        state_.account_status != AccountStatus::credentials_available) {
+        return;
+    }
+    try {
+        bool missing = false;
+        const auto config = load_configuration(state_.config_file, missing);
+        const app::ProductionRuntimeFactory production;
+        const app::RuntimeFactory factory{util::borrowed_proxy, production};
+        const bool removed = app::logout_account(config, factory);
+        state_ = load_app_state_view_model(state_.config_file);
+        refresh_settings(true);
+        set_login_status(
+            removed ? QT_TR_NOOP("Signed out. Saved credentials removed.")
+                    : QT_TR_NOOP("No saved authentication was present.")
+        );
+    } catch (const std::exception& error) {
+        set_login_status(
+            QT_TR_NOOP("Cannot log out: %1"), QString::fromUtf8(error.what())
+        );
+    }
 }
 
 void MainWindow::open_login_url() {
@@ -398,8 +420,8 @@ void MainWindow::open_login_url() {
     }
     if (!QDesktopServices::openUrl(url)) {
         set_login_status(QT_TR_NOOP(
-            "Cannot open the system browser. Copy the login URL below or try "
-            "Open browser again."
+            "Cannot open the system browser. Copy the login URL below into "
+            "your browser."
         ));
         login_url_->setText(authorization_url_);
         login_url_is_instruction_ = false;
@@ -441,7 +463,7 @@ void MainWindow::refresh_settings(bool preserve_edits) {
     state_directory_edit_->setEnabled(editable);
     settings_editor_->setEnabled(editable);
     save_button_->setEnabled(editable);
-    login_button_->setEnabled(state_.can_sign_in());
+    refresh_login_actions();
     refresh_startup_status();
     if (!state_.can_sign_in()) {
         set_login_status(QT_TR_NOOP(

@@ -245,8 +245,7 @@ void test_window_and_settings(bool chinese) {
     );
     for (const auto& pair : {
              std::pair{"Sign in", "登录账号"},
-             std::pair{"Open browser", "打开浏览器"},
-             std::pair{"Cancel login", "取消登录"},
+             std::pair{"Log out", "退出登录"},
              std::pair{"Browse…", "浏览…"},
              std::pair{"Import TOML…", "导入 TOML…"},
          }) {
@@ -463,7 +462,7 @@ void test_login(bool chinese) {
             "starting login status was not translated"
         );
         if (outcome == 2) {
-            window.findChild<QPushButton*>("cancelLoginButton")->click();
+            window.findChild<QPushButton*>("accountActionButton")->click();
             require(
                 status->text() ==
                     expected(chinese, "Cancelling login...", "正在取消登录…"),
@@ -703,7 +702,7 @@ void test_runtime_language(bool system_chinese) {
             login_calls == 1,
         "language switching reset the in-progress login or its status"
     );
-    window.findChild<QPushButton*>("cancelLoginButton")->click();
+    window.findChild<QPushButton*>("accountActionButton")->click();
     select(gui::Language::english, false);
     require(
         wait_until([&] { return sign_in->isEnabled(); }) &&
@@ -795,14 +794,19 @@ void test_browser_language() {
         } release_worker{finish};
         auto* sign_in = window.findChild<QPushButton*>("signInButton");
         auto* status = window.findChild<QLabel*>("loginStatus");
-        auto* open = window.findChild<QPushButton*>("openBrowserButton");
+        auto* account_action =
+            window.findChild<QPushButton*>("accountActionButton");
         auto* overview = qobject_cast<QFormLayout*>(
             window.findChild<QTabWidget*>()->widget(0)->layout()
         );
         auto* url = qobject_cast<QLabel*>(
             overview->itemAt(5, QFormLayout::FieldRole)->widget()
         );
-        require(open && url, "browser controls were missing");
+        require(
+            account_action && url &&
+                !window.findChild<QPushButton*>("openBrowserButton"),
+            "account action was missing or the obsolete browser button remained"
+        );
         sign_in->click();
         const bool valid = address.startsWith(
             "https://login.example.test/"
@@ -810,11 +814,12 @@ void test_browser_language() {
         if (valid) {
             require(
                 wait_until([&] { return browser.addresses.size() == 1; }) &&
-                    status->text() ==
-                        "Waiting for browser authorization (up to 5 minutes)..." &&
+                    status->text() == "Waiting for browser authorization (up "
+                                      "to 5 minutes)..." &&
                     url->text() ==
                         "Complete authorization in your system browser." &&
-                    open->isEnabled(),
+                    account_action->isEnabled() &&
+                    account_action->text() == "Cancel login",
                 "browser request did not display its instruction and status"
             );
             for (const auto language :
@@ -825,28 +830,29 @@ void test_browser_language() {
                     language == gui::Language::simplified_chinese;
                 require(
                     status->text() == expected(
-                        chinese,
-                        "Waiting for browser authorization (up to 5 minutes)...",
-                        "正在等待浏览器授权（最多 5 分钟）…"
-                    ) &&
+                                          chinese,
+                                          "Waiting for browser authorization "
+                                          "(up to 5 minutes)...",
+                                          "正在等待浏览器授权（最多 5 分钟）…"
+                                      ) &&
                         url->text() == expected(
-                            chinese,
-                            "Complete authorization in your system browser.",
-                            "请在系统浏览器中完成授权。"
-                        ) &&
-                        !sign_in->isEnabled() && open->isEnabled() &&
+                                           chinese,
+                                           "Complete authorization in your "
+                                           "system browser.",
+                                           "请在系统浏览器中完成授权。"
+                                       ) &&
+                        !sign_in->isEnabled() && account_action->isEnabled() &&
+                        account_action->text() ==
+                            expected(chinese, "Cancel login", "取消登录") &&
                         browser.addresses.size() == 1,
                     "language switching changed browser state or relaunched it"
                 );
             }
-            open->click();
+            account_action->click();
             require(
-                browser.addresses.size() == 2 &&
-                    browser.addresses[0] == QUrl{address, QUrl::StrictMode} &&
-                    browser.addresses[1] == browser.addresses[0],
-                "reopening the browser changed the authorization URL"
+                !account_action->isEnabled(),
+                "cancellation accepted duplicate requests"
             );
-            window.findChild<QPushButton*>("cancelLoginButton")->click();
         } else {
             require(
                 wait_until([&] {
@@ -874,7 +880,8 @@ void test_browser_language() {
         require(
             wait_until([&] { return sign_in->isEnabled(); }) &&
                 status->text() == "Login cancelled." && url->text().isEmpty() &&
-                !open->isEnabled() &&
+                !account_action->isEnabled() &&
+                account_action->text() == "Log out" &&
                 (valid || browser.addresses.isEmpty()),
             "browser completion retained stale controls or opened an unsafe URL"
         );
@@ -888,17 +895,37 @@ void test_browser_language() {
 }
 
 void test_login_refresh_language() {
-    for (const bool invalid_config : {false, true}) {
+    enum class RefreshFailure { none, configuration, account, authentication };
+    for (const auto failure :
+         {RefreshFailure::none,
+          RefreshFailure::configuration,
+          RefreshFailure::account,
+          RefreshFailure::authentication}) {
         test::TemporaryDirectory fixture;
         const auto file = write_config(fixture.path());
         gui::Localization localization{gui::Language::english};
         gui::MainWindow window{
             gui::load_app_state_view_model(file),
-            [file, invalid_config](
-                const auto&, const auto&, std::stop_token
+            [file, failure](
+                const auto& config, const auto&, std::stop_token
             ) -> auth::AuthResult<app::AuthenticationResult> {
-                if (invalid_config) {
+                if (failure == RefreshFailure::configuration) {
                     test::write_file(file, "[invalid TOML");
+                } else if (failure == RefreshFailure::account) {
+                    std::filesystem::create_directories(config.state_directory);
+                    std::filesystem::permissions(
+                        config.state_directory,
+                        std::filesystem::perms::owner_all
+                    );
+                    test::write_file(
+                        config.state_directory / "active_account",
+                        "../invalid\n"
+                    );
+                } else if (failure == RefreshFailure::authentication) {
+                    test::write_file(
+                        file,
+                        test::read_file(file) + "scopes = ['offline_access']\n"
+                    );
                 }
                 return app::AuthenticationResult{};
             },
@@ -911,11 +938,12 @@ void test_login_refresh_language() {
         sync_field->setText("/unsaved/sync-中文");
         state_field->setText("/unsaved/state-中文");
         sign_in->click();
+        const bool failed_refresh = failure != RefreshFailure::none;
         require(
             wait_until([&] {
                 return window.findChild<QWidget*>("settingsPage")->isEnabled();
             }) &&
-                sign_in->isEnabled() == !invalid_config &&
+                sign_in->isEnabled() == !failed_refresh &&
                 sync_field->text() == "/unsaved/sync-中文" &&
                 state_field->text() == "/unsaved/state-中文",
             "successful authentication did not complete"
@@ -923,11 +951,18 @@ void test_login_refresh_language() {
         const auto prefix = QString{
             "Login completed, but account status could not be refreshed: "
         };
-        const auto detail = invalid_config ? status->text().mid(prefix.size())
-                                           : QString{};
+        const auto refreshed = gui::load_app_state_view_model(file);
+        const auto detail = QString::fromStdString(
+            failure == RefreshFailure::configuration
+                ? refreshed.configuration_error
+            : failure == RefreshFailure::account ? refreshed.account_error
+            : failure == RefreshFailure::authentication
+                ? refreshed.authentication_error
+                : std::string{}
+        );
         require(
-            invalid_config
-                ? status->text().startsWith(prefix) && !detail.isEmpty()
+            failed_refresh
+                ? status->text() == prefix + detail && !detail.isEmpty()
                 : status->text() == "Signed in. Account credentials saved.",
             "authentication refresh result was not displayed"
         );
@@ -939,18 +974,19 @@ void test_login_refresh_language() {
                 language == gui::Language::simplified_chinese;
             require(
                 status->text() ==
-                    (invalid_config
-                         ? expected(
-                               chinese,
-                               "Login completed, but account status could not be "
-                               "refreshed: ",
-                               "登录已完成，但无法刷新账号状态："
-                           ) + detail
-                         : expected(
-                               chinese,
-                               "Signed in. Account credentials saved.",
-                               "已登录。账号凭据已保存。"
-                           )) &&
+                        (failed_refresh
+                             ? expected(
+                                   chinese,
+                                   "Login completed, but account status could "
+                                   "not be "
+                                   "refreshed: ",
+                                   "登录已完成，但无法刷新账号状态："
+                               ) + detail
+                             : expected(
+                                   chinese,
+                                   "Signed in. Account credentials saved.",
+                                   "已登录。账号凭据已保存。"
+                               )) &&
                     window.findChild<QWidget*>("settingsPage")->isEnabled(),
                 "completed login did not retranslate or preserve refresh detail"
             );

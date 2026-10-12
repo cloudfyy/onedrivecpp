@@ -232,11 +232,7 @@ int execute_command(
     }
     if (operation == Operation::logout) {
         spdlog::info("Removing locally saved authentication");
-        const bool removed =
-            account::AccountState::find_active_token_directory(
-                config.state_directory
-            ) &&
-            runtime_factory.create_token_store(config)->remove_refresh_token();
+        const bool removed = logout_account(config, runtime_factory);
         console.message(
             cli::MessageKind::success,
             "logout_completed",

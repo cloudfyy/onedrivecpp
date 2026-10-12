@@ -2,6 +2,20 @@ include(${PROJECT_SOURCE_DIR}/cmake/TestHelpers.cmake)
 
 find_program(BASH_EXECUTABLE bash REQUIRED)
 
+add_test(NAME cli_help_tests COMMAND onedrive-cpp --help)
+add_test(NAME cli_no_args_tests COMMAND onedrive-cpp)
+add_test(NAME cli_subcommand_help_tests COMMAND onedrive-cpp transfer sync --help)
+add_test(NAME cli_version_tests COMMAND onedrive-cpp --version)
+string(REPLACE "." "\\." ONEDRIVE_VERSION_PATTERN "${PROJECT_VERSION}")
+set_tests_properties(
+    cli_help_tests cli_no_args_tests cli_subcommand_help_tests cli_version_tests
+    PROPERTIES TIMEOUT 5
+    PASS_REGULAR_EXPRESSION "^onedrive-cpp ${ONEDRIVE_VERSION_PATTERN}[\r\n]"
+)
+set_tests_properties(cli_version_tests PROPERTIES
+    PASS_REGULAR_EXPRESSION "^onedrive-cpp ${ONEDRIVE_VERSION_PATTERN}[\r\n]+$"
+)
+
 add_onedrive_test(
     test_support_tests
     SOURCES tests/support/common.cpp
@@ -154,6 +168,9 @@ if(ONEDRIVE_BUILD_GUI)
         LIBRARIES onedrive_app Qt6::Widgets Qt6::Network onedrive_gui_localization
     )
     set_target_properties(gui_login_tests PROPERTIES AUTOMOC ON)
+    target_link_options(gui_login_tests PRIVATE
+        -Wl,--wrap=_ZN16QDesktopServices7openUrlERK4QUrl
+    )
     set_tests_properties(gui_login_tests PROPERTIES TIMEOUT 20)
     set_property(TEST gui_login_tests APPEND PROPERTY ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     add_onedrive_test(
@@ -441,6 +458,7 @@ add_onedrive_test(
     LIBRARIES onedrive_cli
 )
 target_include_directories(app_args_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_include_directories(app_flow_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_include_directories(app_authentication_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 add_onedrive_test(
     app_cleanup_tests

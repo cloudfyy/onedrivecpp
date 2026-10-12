@@ -126,7 +126,8 @@ int Application::run(int argc, char* argv[]) {
             monitor_signal_mask.emplace();
         }
         std::optional<detail::RuntimePreflight> runtime_preflight;
-        if (arguments.operation != detail::Operation::authenticate) {
+        if (arguments.operation != detail::Operation::authenticate &&
+            arguments.operation != detail::Operation::logout) {
             runtime_preflight.emplace(config, arguments.operation);
         }
         const auto result = detail::execute_command(

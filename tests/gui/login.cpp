@@ -1,19 +1,60 @@
 #include "login_controller.hpp"
 #include "main_window.hpp"
 #include "app_state_view_model.hpp"
+#include "localization.hpp"
 #include "support/common.hpp"
 #include "onedrive/app/options.hpp"
+#include "app/preflight.hpp"
+
+#include <QLineEdit>
 
 #include <QApplication>
 #include <QElapsedTimer>
+#include <QFormLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QTabWidget>
 #include <QTcpSocket>
 #include <QThread>
 #include <QUrl>
 #include <QUrlQuery>
 
 #include <atomic>
+#include <utility>
+#include <vector>
+
+namespace {
+
+struct BrowserOpenCapture {
+    std::vector<QUrl> requests;
+    bool succeeds{};
+};
+
+BrowserOpenCapture* browser_open_capture{};
+
+class ScopedBrowserOpenCapture {
+public:
+    explicit ScopedBrowserOpenCapture(BrowserOpenCapture& capture)
+        : previous_{std::exchange(browser_open_capture, &capture)} {
+    }
+    ~ScopedBrowserOpenCapture() {
+        browser_open_capture = previous_;
+    }
+
+private:
+    BrowserOpenCapture* previous_;
+};
+
+} // namespace
+
+extern "C" bool __real__ZN16QDesktopServices7openUrlERK4QUrl(const QUrl&);
+extern "C" bool __wrap__ZN16QDesktopServices7openUrlERK4QUrl(const QUrl& url) {
+    if (browser_open_capture) {
+        browser_open_capture->requests.push_back(url);
+        return browser_open_capture->succeeds;
+    }
+    return __real__ZN16QDesktopServices7openUrlERK4QUrl(url);
+}
 
 namespace {
 
@@ -569,7 +610,7 @@ int test_window_close() {
     };
     window.show();
     auto* login = window.findChild<QPushButton*>("signInButton");
-    auto* cancel = window.findChild<QPushButton*>("cancelLoginButton");
+    auto* cancel = window.findChild<QPushButton*>("accountActionButton");
     if (!login || !cancel) {
         return test::fail("window login controls were missing");
     }
@@ -586,6 +627,297 @@ int test_window_close() {
     return EXIT_SUCCESS;
 }
 
+int test_window_account_actions() {
+    test::TemporaryDirectory fixture;
+    const auto file = write_config(fixture.path());
+    const auto config = config::Config::load(file);
+    const account::DriveIdentity identity{
+        .user_id = "user",
+        .user_display_name = "User",
+        .configured_drive_id = "me",
+        .drive_id = "drive",
+        .drive_name = "Drive",
+    };
+    std::atomic<int> attempts{};
+    gui::Localization localization{gui::Language::english};
+    gui::MainWindow window{
+        gui::load_app_state_view_model(file),
+        [&](
+            const config::Config& active, const auto&, std::stop_token token
+        ) -> auth::AuthResult<app::AuthenticationResult> {
+            const auto attempt = ++attempts;
+            if (attempt == 2) {
+                while (!token.stop_requested()) {
+                    QThread::msleep(1);
+                }
+                return std::unexpected(
+                    auth::AuthError{.code = auth::AuthErrorCode::cancelled}
+                );
+            }
+            if (attempt == 3) {
+                throw std::runtime_error{"test sign-in failure"};
+            }
+            const app::detail::RuntimePreflight preflight{
+                active, app::detail::Operation::authenticate
+            };
+            const auto paths = account::AccountState::activate(
+                active.state_directory, identity, "saved-token"
+            );
+            return app::AuthenticationResult{
+                .identity = identity,
+                .token_directory = paths.token_directory,
+            };
+        },
+        &localization
+    };
+    auto* sign_in = window.findChild<QPushButton*>("signInButton");
+    auto* action = window.findChild<QPushButton*>("accountActionButton");
+    auto* status = window.findChild<QLabel*>("loginStatus");
+    auto* draft = window.findChild<QLineEdit*>("sync.data_directory");
+    if (!sign_in || !action || !status || !draft || !sign_in->isEnabled() ||
+        action->isEnabled() || action->text() != "Log out" ||
+        window.findChild<QPushButton*>("openBrowserButton")) {
+        return test::fail("signed-out account controls were incorrect");
+    }
+    draft->setText("unsaved draft");
+    const auto initial_status = status->text();
+    Q_EMIT action->clicked();
+    if (status->text() != initial_status ||
+        std::filesystem::exists(config.state_directory)) {
+        return test::fail("inactive logout changed local state");
+    }
+    sign_in->click();
+    if (!wait_until([&] {
+            return action->text() == "Log out" && action->isEnabled();
+        }) ||
+        sign_in->isEnabled() ||
+        status->text() != "Signed in. Account credentials saved." ||
+        draft->text() != "unsaved draft") {
+        return test::fail(
+            "successful login did not enable logout or retained duplicate login"
+        );
+    }
+    const auto token_directory =
+        account::AccountState::find_active_token_directory(
+            config.state_directory
+        );
+    if (!token_directory) {
+        return test::fail("login did not persist account credentials");
+    }
+    Q_EMIT sign_in->clicked();
+    if (attempts != 1 || sign_in->isEnabled() || !action->isEnabled() ||
+        action->text() != "Log out") {
+        return test::fail("signed-in account accepted duplicate login");
+    }
+    const auto token = *token_directory / "refresh_token";
+    const auto marker = config.state_directory / "active_account";
+    const auto marker_contents = test::read_file(marker);
+    std::filesystem::create_directories(config.sync_data_directory);
+    const auto local_file = config.sync_data_directory / "keep.txt";
+    const auto state_file = config.state_directory / "keep-state.txt";
+    test::write_file(local_file, "downloaded content");
+    test::write_file(state_file, "synchronization state");
+    {
+        const app::detail::RuntimePreflight busy{
+            config, app::detail::Operation::logout
+        };
+        action->click();
+        if (!status->text().startsWith("Cannot log out: ") ||
+            !status->text().contains("another onedrive-cpp process") ||
+            !action->isEnabled() || sign_in->isEnabled() ||
+            test::read_file(token) != "saved-token") {
+            return test::fail(
+                "logout ignored the runtime lock or hid its failure"
+            );
+        }
+    }
+    localization.set_language(gui::Language::simplified_chinese);
+    QCoreApplication::processEvents();
+    if (!status->text().startsWith("无法退出登录：") ||
+        action->text() != "退出登录" || !action->isEnabled() ||
+        sign_in->isEnabled()) {
+        return test::fail(
+            "logout failure or account controls did not retranslate"
+        );
+    }
+    localization.set_language(gui::Language::english);
+    QCoreApplication::processEvents();
+    const auto source = test::read_file(file);
+    test::write_file(file, "[broken TOML");
+    action->click();
+    if (!status->text().startsWith("Cannot log out: ") ||
+        test::read_file(token) != "saved-token" || !action->isEnabled()) {
+        return test::fail(
+            "logout ignored malformed configuration or removed credentials"
+        );
+    }
+    test::write_file(file, source);
+    action->click();
+    if (!sign_in->isEnabled() || action->isEnabled() ||
+        action->text() != "Log out" || std::filesystem::exists(token) ||
+        status->text() != "Signed out. Saved credentials removed." ||
+        test::read_file(marker) != marker_contents ||
+        test::read_file(local_file) != "downloaded content" ||
+        test::read_file(state_file) != "synchronization state" ||
+        draft->text() != "unsaved draft") {
+        return test::fail(
+            "logout changed files or failed to restore signed-out controls"
+        );
+    }
+    localization.set_language(gui::Language::simplified_chinese);
+    QCoreApplication::processEvents();
+    if (status->text() != "已退出登录。保存的凭据已移除。" ||
+        !sign_in->isEnabled() || action->isEnabled() ||
+        draft->text() != "unsaved draft") {
+        return test::fail(
+            "logout result did not retranslate or preserve drafts"
+        );
+    }
+    localization.set_language(gui::Language::english);
+    QCoreApplication::processEvents();
+    sign_in->click();
+    if (action->text() != "Cancel login" || !action->isEnabled() ||
+        sign_in->isEnabled()) {
+        return test::fail("login did not switch logout into cancellation");
+    }
+    Q_EMIT sign_in->clicked();
+    action->click();
+    if (action->isEnabled() ||
+        !wait_until([&] { return sign_in->isEnabled(); }) ||
+        action->text() != "Log out" || action->isEnabled() ||
+        status->text() != "Login cancelled.") {
+        return test::fail(
+            "cancelled login did not restore signed-out controls"
+        );
+    }
+    sign_in->click();
+    if (!wait_until([&] { return sign_in->isEnabled(); }) ||
+        action->isEnabled() || action->text() != "Log out" ||
+        status->text() != "Login failed: test sign-in failure") {
+        return test::fail("failed login did not restore signed-out controls");
+    }
+    sign_in->click();
+    if (!wait_until([&] {
+            return action->text() == "Log out" && action->isEnabled();
+        }) ||
+        sign_in->isEnabled() || attempts != 4) {
+        return test::fail("account could not sign in again after logout");
+    }
+    std::filesystem::remove(token);
+    action->click();
+    if (!sign_in->isEnabled() || action->isEnabled() ||
+        status->text() != "No saved authentication was present.") {
+        return test::fail(
+            "already removed credentials did not refresh logout state"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_browser_failure_and_queued_cancellation() {
+    for (const bool cancel_before_dispatch : {false, true}) {
+        test::TemporaryDirectory fixture;
+        const auto file = write_config(fixture.path());
+        const QString authorization_url{
+            "https://login.example.test/authorize?state=%25&code_challenge=%2F"
+        };
+        BrowserOpenCapture capture;
+        const ScopedBrowserOpenCapture capture_browser{capture};
+        gui::Localization localization{gui::Language::english};
+        std::atomic<bool> queued{};
+        gui::MainWindow window{
+            gui::load_app_state_view_model(file),
+            [&](
+                const auto&, const auto& open, std::stop_token token
+            ) -> auth::AuthResult<app::AuthenticationResult> {
+                open(authorization_url);
+                queued = true;
+                while (!token.stop_requested()) {
+                    QThread::msleep(1);
+                }
+                return std::unexpected(
+                    auth::AuthError{.code = auth::AuthErrorCode::cancelled}
+                );
+            },
+            &localization
+        };
+        auto* sign_in = window.findChild<QPushButton*>("signInButton");
+        auto* action = window.findChild<QPushButton*>("accountActionButton");
+        auto* status = window.findChild<QLabel*>("loginStatus");
+        auto* overview = qobject_cast<QFormLayout*>(
+            window.findChild<QTabWidget*>()->widget(0)->layout()
+        );
+        auto* url = qobject_cast<QLabel*>(
+            overview->itemAt(5, QFormLayout::FieldRole)->widget()
+        );
+        sign_in->click();
+        if (cancel_before_dispatch) {
+            QElapsedTimer timer;
+            timer.start();
+            // Leave the browser request queued until the user cancels.
+            while (!queued && timer.elapsed() < 5000) {
+                QThread::msleep(1);
+            }
+            if (!queued) {
+                return test::fail(
+                    "login worker did not queue its browser request"
+                );
+            }
+            action->click();
+        } else {
+            if (!wait_until([&] { return capture.requests.size() == 1; }) ||
+                capture.requests.front() !=
+                    QUrl{authorization_url, QUrl::StrictMode} ||
+                status->text() !=
+                    "Cannot open the system browser. Copy the login URL below "
+                    "into your browser." ||
+                url->text() != authorization_url || sign_in->isEnabled() ||
+                !action->isEnabled()) {
+                return test::fail(
+                    "browser-open failure lost the manual login URL"
+                );
+            }
+            localization.set_language(gui::Language::simplified_chinese);
+            QCoreApplication::processEvents();
+            if (status->text() !=
+                    "无法打开系统浏览器。请将下方登录链接复制到浏览器中。" ||
+                url->text() != authorization_url ||
+                action->text() != "取消登录" || !action->isEnabled() ||
+                capture.requests.size() != 1) {
+                return test::fail(
+                    "browser failure did not preserve its URL during "
+                    "translation"
+                );
+            }
+            localization.set_language(gui::Language::english);
+            QCoreApplication::processEvents();
+            action->click();
+        }
+        if (!wait_until([&] { return sign_in->isEnabled(); }) ||
+            action->text() != "Log out" || action->isEnabled() ||
+            status->text() != "Login cancelled." || !url->text().isEmpty() ||
+            capture.requests.size() != (cancel_before_dispatch ? 0U : 1U)) {
+            return test::fail(
+                "cancellation opened a queued URL or retained stale browser "
+                "state"
+            );
+        }
+    }
+    test::TemporaryDirectory fixture;
+    gui::MainWindow unavailable{
+        gui::load_app_state_view_model(fixture.path() / "missing.toml")
+    };
+    auto* sign_in = unavailable.findChild<QPushButton*>("signInButton");
+    auto* status = unavailable.findChild<QLabel*>("loginStatus");
+    const auto initial_status = status->text();
+    Q_EMIT sign_in->clicked();
+    if (sign_in->isEnabled() || status->text() != initial_status ||
+        !unavailable.findChild<QWidget*>("settingsPage")->isEnabled()) {
+        return test::fail("invalid authentication configuration started login");
+    }
+    return EXIT_SUCCESS;
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -596,7 +928,9 @@ int main(int argc, char** argv) {
         test_default_controller() != EXIT_SUCCESS ||
         test_loopback_timeout_and_invalid_callback() != EXIT_SUCCESS ||
         test_partial_connections() != EXIT_SUCCESS ||
-        test_window_close() != EXIT_SUCCESS) {
+        test_window_close() != EXIT_SUCCESS ||
+        test_window_account_actions() != EXIT_SUCCESS ||
+        test_browser_failure_and_queued_cancellation() != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

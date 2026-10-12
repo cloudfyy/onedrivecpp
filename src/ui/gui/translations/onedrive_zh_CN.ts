@@ -111,6 +111,26 @@
 <context>
     <name>onedrive::gui::MainWindow</name>
     <message>
+        <source>Log out</source>
+        <translation>退出登录</translation>
+    </message>
+    <message>
+        <source>Signed out. Saved credentials removed.</source>
+        <translation>已退出登录。保存的凭据已移除。</translation>
+    </message>
+    <message>
+        <source>No saved authentication was present.</source>
+        <translation>没有保存的登录凭据。</translation>
+    </message>
+    <message>
+        <source>Cannot log out: %1</source>
+        <translation>无法退出登录：%1</translation>
+    </message>
+    <message>
+        <source>Cannot open the system browser. Copy the login URL below into your browser.</source>
+        <translation>无法打开系统浏览器。请将下方登录链接复制到浏览器中。</translation>
+    </message>
+    <message>
         <source>Help</source>
         <translation>帮助</translation>
     </message>
@@ -249,12 +269,6 @@ Repair the state directory or select another one in Settings, then reload.</sour
         <translation>取消登录</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="75"/>
-        <location filename="../main_window.cpp" line="284"/>
-        <source>Open browser</source>
-        <translation>打开浏览器</translation>
-    </message>
-    <message>
         <location filename="../main_window.cpp" line="87"/>
         <location filename="../main_window.cpp" line="263"/>
         <source>Overview</source>
@@ -362,11 +376,6 @@ Repair the state directory or select another one in Settings, then reload.</sour
         <location filename="../main_window.cpp" line="366"/>
         <source>Cannot open browser: the login URL is not a valid HTTPS address.</source>
         <translation>无法打开浏览器：登录 URL 不是有效的 HTTPS 地址。</translation>
-    </message>
-    <message>
-        <location filename="../main_window.cpp" line="373"/>
-        <source>Cannot open the system browser. Copy the login URL below or try Open browser again.</source>
-        <translation>无法打开系统浏览器。请复制下方的登录 URL，或再次点击“打开浏览器”。</translation>
     </message>
     <message>
         <location filename="../main_window.cpp" line="495"/>

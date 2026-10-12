@@ -37,6 +37,10 @@ struct AuthenticationResult {
     std::filesystem::path token_directory;
 };
 
+[[nodiscard]] bool logout_account(
+    const config::Config& config, const RuntimeFactory& runtime_factory
+);
+
 [[nodiscard]] auth::AuthResult<AuthenticationResult>
 authenticate_auth_code_account(
     const config::Config& config,

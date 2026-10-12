@@ -71,6 +71,15 @@ void check_window(
     require(sign_in && status && login_status, "startup controls are missing");
     require(sign_in->isEnabled() == sign_in_enabled,
             "startup sign-in availability is incorrect");
+    const auto* logout = window.findChild<QPushButton*>("accountActionButton");
+    require(
+        logout && logout->text() == "Log out" &&
+            logout->isEnabled() ==
+                (state.account_status ==
+                 gui::AccountStatus::credentials_available) &&
+            !window.findChild<QPushButton*>("openBrowserButton"),
+        "startup logout availability is incorrect"
+    );
     require(window.findChild<QWidget*>("settingsPage")->isEnabled() &&
                 window.findChild<QPushButton*>("importSettingsButton")->isEnabled() &&
                 window.findChild<QPushButton*>("reloadSettingsButton")->isEnabled(),
@@ -106,6 +115,7 @@ void check_window(
     require(window.findChild<QPushButton*>("reloadSettingsButton")->text() ==
                 "重新加载配置",
             "recovery control did not retranslate");
+    require(logout->text() == "退出登录", "logout control did not retranslate");
     if (!english.isEmpty()) {
         require(status->text() != english, "startup error did not retranslate");
     }
@@ -184,7 +194,7 @@ void test_account_startup(StartupBrowserCapture& browser) {
     auto state = gui::load_app_state_view_model(file);
     require(state.account_status == gui::AccountStatus::credentials_available,
             "saved credentials were not detected");
-    check_window(state, true, browser);
+    check_window(state, false, browser);
     const auto token = paths.token_directory / "refresh_token";
     std::filesystem::remove(token);
     state = gui::load_app_state_view_model(file);

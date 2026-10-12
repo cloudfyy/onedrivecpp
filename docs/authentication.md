@@ -130,12 +130,20 @@ prints a warning when a broader organizational scope is configured.
 In the GUI, click **Sign in**. Complete sign-in and consent in the system
 browser, then return to the application. No device code is shown. The GUI
 validates a fresh random state and exchanges the code using a fresh PKCE
-verifier. It waits up to five minutes; **Cancel login** or closing the window
-cancels the wait and joins the login worker. **Open browser** retries opening
-the same pending authorization page. Settings are disabled during login.
+verifier. It waits up to five minutes; during login, **Log out** changes to
+**Cancel login**. That button or closing the window cancels the wait and joins
+the login worker. The browser opens automatically; if opening fails, copy the
+displayed authorization URL into your browser. Settings are disabled during login.
 Existing credentials are not replaced if authorization fails or is cancelled
 before account activation. Once account activation starts, it is allowed to
 complete its atomic writes.
+
+When saved credentials are available, **Sign in** is disabled and **Log out**
+is enabled. Logging out removes only the active account's locally saved refresh
+token, using the same runtime lock and operation as CLI logout. It preserves
+synchronized files and account/synchronization state, and does not sign out of
+the Microsoft account in your browser. Sign in becomes available again once
+the credentials are removed and authentication configuration is valid.
 
 GUI Auth Code and CLI Device Code share the same account refresh token when
 using the same state directory and application registration. Signing in again

@@ -1,11 +1,78 @@
 #include "support.hpp"
 #include "onedrive/exit_code.hpp"
+#include "app/preflight.hpp"
+#include "onedrive/logging/logging.hpp"
 
 namespace {
 
 namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::app;
+
+int test_logout_without_credentials() {
+    CliFixture fixture;
+    const auto config = onedrive::config::Config::load(fixture.config_path);
+    const auto logout = [&] {
+        return run_application(
+            fixture.runtime_factory,
+            {"onedrive-cpp",
+             "account",
+             "logout",
+             "--config",
+             fixture.config_path.string(),
+             "--color",
+             "never"}
+        );
+    };
+    auto result = logout();
+    if (result.exit_code != exit_code::success ||
+        !result.standard_output.contains(
+            "No saved authentication was present."
+        ) ||
+        fixture.runtime_factory.token_store_count != 0 ||
+        std::filesystem::exists(fixture.state_path / "active_account")) {
+        return fail("logout without an active account accessed credentials");
+    }
+    const auto paths = [&] {
+        const onedrive::logging::Session logging{{}};
+        return onedrive::account::AccountState::activate(
+            fixture.state_path,
+            onedrive::test::test_drive_identity("me"),
+            "saved-token"
+        );
+    }();
+    const auto token = paths.token_directory / "refresh_token";
+    const auto account_metadata =
+        onedrive::test::read_file(paths.token_directory / "account.json");
+    {
+        const onedrive::logging::Session logging{{}};
+        const onedrive::app::detail::RuntimePreflight busy{
+            config, onedrive::app::detail::Operation::logout
+        };
+        result = logout();
+        if (result.exit_code != exit_code::failure ||
+            !result.standard_error.contains("another onedrive-cpp process") ||
+            result.standard_output.contains("Saved authentication removed") ||
+            onedrive::test::read_file(token) != "saved-token" ||
+            fixture.runtime_factory.token_store_count != 0) {
+            return fail(
+                "CLI logout did not preserve credentials under a runtime lock"
+            );
+        }
+    }
+    std::filesystem::remove(token);
+    result = logout();
+    if (result.exit_code != exit_code::success ||
+        !result.standard_output.contains(
+            "No saved authentication was present."
+        ) ||
+        fixture.runtime_factory.token_store_count != 1 ||
+        onedrive::test::read_file(paths.token_directory / "account.json") !=
+            account_metadata) {
+        return fail("logout without a refresh token changed account metadata");
+    }
+    return EXIT_SUCCESS;
+}
 
 int test_flow() {
     CliFixture fixture;
@@ -661,5 +728,9 @@ int test_flow() {
 } // namespace
 
 int main() {
+    if (const auto result = test_logout_without_credentials();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
     return test_flow();
 }

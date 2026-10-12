@@ -11,6 +11,17 @@
 #include <utility>
 
 namespace onedrive::app {
+
+bool logout_account(
+    const config::Config& config, const RuntimeFactory& runtime_factory
+) {
+    const detail::RuntimePreflight preflight{config, detail::Operation::logout};
+    return account::AccountState::find_active_token_directory(
+               config.state_directory
+           ) &&
+           runtime_factory.create_token_store(config)->remove_refresh_token();
+}
+
 namespace {
 
 auto cancelled() {
