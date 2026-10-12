@@ -5,6 +5,71 @@ namespace {
 using namespace onedrive::test::config;
 
 int test_proxy() {
+    for (const auto* key : {"username", "password_file", "ca_file"}) {
+        for (const auto* value : {"''", "\"bad\\u0000value\""}) {
+            const auto source =
+                "config_version = 2\n[proxy]\nurl = 'https://proxy.example.test'\n" +
+                std::string{key} + " = " + value + "\n";
+            if (!onedrive::test::throws_with(
+                    [&] {
+                        static_cast<void>(
+                            onedrive::config::Config::load_from_string(
+                                "config.toml", source
+                            )
+                        );
+                    },
+                    std::string{"proxy."} + key
+                )) {
+                return onedrive::test::fail(
+                    "empty/NUL proxy credential or path accepted"
+                );
+            }
+        }
+    }
+    for (const auto* invalid :
+         {"[proxy]\nurl = \"https://bad\\u0000host\"\n",
+          "[proxy]\nno_proxy = [\"bad\\u0000host\"]\n",
+          "[proxy]\nno_proxy = 'localhost'\n",
+          "proxy = 'not a table'\n",
+          "[auth]\nscopes = 'User.Read'\n"}) {
+        if (!onedrive::test::throws_with([&] {
+                static_cast<void>(onedrive::config::Config::load_from_string(
+                    "config.toml", "config_version = 2\n" + std::string{invalid}
+                ));
+            })) {
+            return onedrive::test::fail(
+                "invalid proxy/scope type or NUL accepted"
+            );
+        }
+    }
+    ConfigFixture inherited;
+    const auto password = inherited.temporary.path() / "password";
+    const auto ca = inherited.temporary.path() / "ca.pem";
+    for (const auto* url : {"", "url = ''\n"}) {
+        const auto parsed = onedrive::config::Config::load_from_string(
+            inherited.path,
+            "config_version = 2\n[proxy]\n" + std::string{url} +
+                "username = 'user'\npassword_file = '" + password.string() +
+                "'\nauth = 'basic'\n"
+        );
+        if (parsed.proxy.url.has_value() != (std::string_view{url} != "") ||
+            parsed.proxy.username != "user" ||
+            parsed.proxy.password_file != password ||
+            parsed.proxy.auth != onedrive::http::ProxyAuth::basic ||
+            std::filesystem::exists(password)) {
+            return onedrive::test::fail(
+                "inherited/empty proxy credentials changed or read"
+            );
+        }
+    }
+    const auto absolute_ca = onedrive::config::Config::load_from_string(
+        inherited.path,
+        "config_version = 2\n[proxy]\nurl = 'https://proxy.example.test'\n"
+        "ca_file = '" + ca.string() + "'\n"
+    );
+    if (absolute_ca.proxy.ca_file != ca || std::filesystem::exists(ca)) {
+        return onedrive::test::fail("absolute proxy CA reference changed or read");
+    }
     for (const auto* source :
          {"config_version = 2\n",
           "config_version = 2\n[proxy]\n",

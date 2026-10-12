@@ -18,7 +18,9 @@
 #include <QTimer>
 #include <QToolButton>
 
+#include <algorithm>
 #include <atomic>
+#include <cstdint>
 namespace {
 using namespace onedrive;
 
@@ -1428,6 +1430,10 @@ void test_endpoint_import_rejection() {
           "[graph]\nendpoint = 'https://user:secret@graph.example.test'\n",
           "[proxy]\nurl = 'http://user:secret@proxy.example.test'\n",
           "[proxy]\nurl = 'https://proxy.example.test?secret=x'\n",
+          "[auth]\nendpoint = 'https://[invalid'\n",
+          "[auth]\nendpoint = 'https://login.example.test/#fragment'\n",
+          "[graph]\nendpoint = 'https://user@graph.example.test'\n",
+          "[graph]\nendpoint = \"https://graph.example.test/\\u0000\"\n",
           "[proxy]\npassword_file = 'private-password'\n",
           "[proxy]\nca_file = 'ca.pem'\n"}) {
         const auto source = original + unsafe;
@@ -1445,6 +1451,139 @@ void test_endpoint_import_rejection() {
                 test::read_file(incoming) == source &&
                 backups(fixture.path()) == 0,
             "unsafe endpoint/file-reference import wrote a file or backup"
+        );
+    }
+}
+
+void test_phase_two_proxy_drafts_and_empty_save() {
+    test::TemporaryDirectory fixture;
+    const auto file = fixture.path() / "config.toml";
+    const std::string original =
+        "config_version = 2\n[sync]\ndata_directory = 'sync'\n"
+        "[state]\ndirectory = 'state'\n"
+        "[proxy] # retained inheritance\nurl = 'https://proxy.example.test'\n";
+    test::write_file(file, original);
+    gui::SettingsEditor editor;
+    for (const auto* retained : {"proxy.username", "proxy.auth"}) {
+        editor.load(config::Config::load(file));
+        checked(editor, "proxy.url.override", false);
+        if (std::string_view{retained} == "proxy.username") {
+            text(editor, retained, "inherited-user");
+        } else {
+            choice(editor, retained, "basic");
+        }
+        const auto patches = editor.patches();
+        require(
+            std::none_of(patches.begin(), patches.end(), [](const auto& patch) {
+                return patch.table == "proxy" && patch.key.empty();
+            }),
+            "disabling URL discarded independent proxy credentials/auth"
+        );
+        const auto updated = config::update_settings(file, original, patches);
+        const auto c = config::Config::load_from_string(file, updated);
+        require(
+            !c.proxy.url &&
+                (c.proxy.username == "inherited-user" ||
+                 c.proxy.auth == http::ProxyAuth::basic) &&
+                updated.contains("# retained inheritance"),
+            "retained proxy draft failed actual TOML reload"
+        );
+    }
+    editor.load(config::Config::load(file));
+    text(editor, "proxy.url", "");
+    checked(editor, "proxy.no_proxy.override", true);
+    list(editor, "auth.scopes", "");
+    const auto backup = gui::save_settings_patch(file, editor.patches());
+    const auto c = config::Config::load(file);
+    require(
+        backup && test::read_file(*backup) == original &&
+            c.proxy.url == "" &&
+            c.proxy.no_proxy == std::vector<std::string>{} &&
+            c.auth_scope.empty() && backups(fixture.path()) == 1,
+        "GUI save collapsed explicit empty overrides or scope arrays"
+    );
+    editor.load(c);
+    checked(editor, "proxy.url.override", false);
+    checked(editor, "proxy.no_proxy.override", false);
+    text(editor, "proxy.url", "https://discarded.example.test");
+    list(editor, "proxy.no_proxy", "discarded.example.test");
+    const auto unset = config::Config::load_from_string(
+        file,
+        config::update_settings(file, test::read_file(file), editor.patches())
+    );
+    require(
+        !unset.proxy.url && !unset.proxy.no_proxy,
+        "disabled proxy draft text persisted instead of removal"
+    );
+}
+
+void test_phase_two_patch_boundaries() {
+    const std::string source = "config_version = 2\n";
+    require(
+        config::update_settings(
+            "config.toml", source, {{"proxy", "", std::monostate{}}}
+        ) == source,
+        "removing an absent proxy table changed the source"
+    );
+    for (const auto& patch :
+         {config::SettingPatch{"proxy", "", std::string{"invalid"}},
+          config::SettingPatch{"graph.throttle", "", std::monostate{}},
+          config::SettingPatch{"graph", "", std::monostate{}}}) {
+        require(
+            test::throws_with<std::invalid_argument>([&] {
+                static_cast<void>(config::update_settings(
+                    "config.toml", source + "[graph.throttle]\n", {patch}
+                ));
+            }),
+            "unsafe table removal was accepted"
+        );
+    }
+    const auto nested = config::update_settings(
+        "config.toml", source + "graph = {} # keep empty parent\n",
+        {{"graph.throttle", "maximum_retries", std::int64_t{0}}}
+    );
+    require(
+        nested.contains("# keep empty parent") &&
+            config::Config::load_from_string("config.toml", nested)
+                    .graph_maximum_throttle_retries == 0,
+        "inserting throttle into an empty inline parent failed"
+    );
+    gui::SettingsEditor editor;
+    editor.load(config::Config::defaults());
+    for (const auto* field :
+         {"transfer.connect_timeout_seconds",
+          "transfer.operation_timeout_seconds",
+          "transfer.stall_timeout_seconds",
+          "graph.throttle.maximum_retries",
+          "graph.throttle.initial_delay_seconds",
+          "graph.throttle.maximum_delay_seconds"}) {
+        text(editor, field, "9223372036854775807");
+    }
+    const auto c = config::Config::load_from_string(
+        "config.toml",
+        config::update_settings("config.toml", source, editor.patches())
+    );
+    require(
+        c.transfer_transport.connect_timeout.count() == INT64_MAX &&
+            c.transfer_transport.operation_timeout.count() == INT64_MAX &&
+            c.transfer_transport.low_speed_timeout.count() == INT64_MAX &&
+            c.graph_maximum_throttle_retries == INT64_MAX &&
+            c.graph_initial_throttle_delay.count() == INT64_MAX &&
+            c.graph_maximum_throttle_delay.count() == INT64_MAX,
+        "timeout/throttle upper TOML int64 boundary was truncated"
+    );
+    editor.load(c);
+    require(editor.patches().empty(), "upper limits generated reload patches");
+    test::TemporaryDirectory fixture;
+    const auto file = fixture.path() / "not-created" / "config.toml";
+    for (const auto& [sync, state] :
+         {std::pair{"", "state"}, std::pair{"sync", ""}}) {
+        require(
+            test::throws_with<std::invalid_argument>([&] {
+                static_cast<void>(gui::save_basic_settings(file, sync, state));
+            }) &&
+                !std::filesystem::exists(file.parent_path()),
+            "empty basic settings created directories or configuration"
         );
     }
 }
@@ -1470,6 +1609,8 @@ int main(int argc, char** argv) {
         test_phase_two_enums_and_lower_limits();
         test_array_comment_preservation();
         test_endpoint_import_rejection();
+        test_phase_two_proxy_drafts_and_empty_save();
+        test_phase_two_patch_boundaries();
         return EXIT_SUCCESS;
     } catch (const std::exception& error) {
         return onedrive::test::fail(error.what());

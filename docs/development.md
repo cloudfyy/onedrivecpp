@@ -93,6 +93,11 @@ localization/login tests cover disabled controls and worker/draft preservation.
 Phase-two regressions cover every new field, proxy patterns/optional states,
 nested/inline/dotted tables and internal array comments, timeout units, backoff/throttle constraints,
 endpoint safety and rejection without writes or backups.
+Focused phase-two coverage also checks empty GUI overrides/scopes, independent
+inherited proxy credentials, NUL/empty file-reference rejection, safe table
+removal, empty inline throttle parents, and int64 timeout/throttle limits.
+`proxy_basic_tests` uses loopback Digest challenges to verify authentication
+for environment-inherited proxies and direct connections with empty overrides.
 No GUI sync action, migration or online credential validation is implied.
 
 ## Live Graph end-to-end tests
