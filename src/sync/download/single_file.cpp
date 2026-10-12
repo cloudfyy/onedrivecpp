@@ -152,7 +152,7 @@ int download_single_file(
     }
     if (target_status.current_remote_file) {
         observer.message(
-            events::MessageKind::success,
+            events::MessageKind::information,
             "single_download_reused",
             "Local file is already current: " + destination.string()
         );
@@ -212,7 +212,7 @@ int download_single_file(
         installed.local_path.string()
     );
     observer.message(
-        events::MessageKind::success,
+        events::MessageKind::information,
         "single_download_completed",
         std::format(
             "Downloaded '{}' to '{}'.",

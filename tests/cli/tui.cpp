@@ -54,7 +54,7 @@ int test_inspection_completion() {
                     30
                 )};
                 console.message(
-                    MessageKind::success, "result", "Inspection result retained"
+                    MessageKind::information, "result", "Inspection result retained"
                 );
                 std::istringstream input{keys};
                 auto* original = std::cin.rdbuf(input.rdbuf());
@@ -578,7 +578,7 @@ int test_tui_dashboard() {
             "conflict.txt", "local_modification", "changed locally"
         );
         console.message(
-            MessageKind::success, "sync_completed", "Sync completed"
+            MessageKind::information, "sync_completed", "Sync completed"
         );
         console.message(
             MessageKind::warning,
@@ -777,7 +777,7 @@ int test_tui_dashboard() {
     );
     unstyled_backend->emit(
         MessageEvent{
-            .kind = MessageKind::success,
+            .kind = MessageKind::information,
             .event = "complete",
             .text = "Complete",
         }
@@ -833,7 +833,7 @@ int test_tui_dashboard() {
     );
     monitor_backend->emit(
         MessageEvent{
-            .kind = MessageKind::success,
+            .kind = MessageKind::information,
             .event = "monitor_ready",
             .text = "Monitoring local and Microsoft Graph changes for: /sync",
         }
@@ -850,9 +850,64 @@ int test_tui_dashboard() {
     return EXIT_SUCCESS;
 }
 
+int test_message_levels() {
+    using namespace onedrive::cli;
+    for (const auto kind :
+         {MessageKind::trace, MessageKind::debug, MessageKind::information,
+          MessageKind::warning, MessageKind::error, MessageKind::critical}) {
+        std::ostringstream output;
+        std::ostringstream error;
+        const Console console{detail::make_ftxui_console_backend(
+            {.color = ColorMode::always, .ui = UiMode::tui},
+            output,
+            error,
+            100,
+            30
+        )};
+        console.message(kind, "log", "backend detail");
+        const auto logged = output.str();
+        const auto frame = logged.substr(logged.rfind("\033[H"));
+        const bool suppressed =
+            kind == MessageKind::trace || kind == MessageKind::debug ||
+            kind == MessageKind::information;
+        if (frame.contains("backend detail") == suppressed) {
+            return fail("TUI changed backend log severity filtering");
+        }
+        console.message(kind, "application", "application detail");
+        const auto rendered = output.str();
+        const auto application_frame =
+            rendered.substr(rendered.rfind("\033[H"));
+        if (!application_frame.contains("application detail") ||
+            !error.str().empty()) {
+            return fail("TUI lost an application message level");
+        }
+    }
+    {
+        std::ostringstream output;
+        std::ostringstream error;
+        const Console console{detail::make_ftxui_console_backend(
+            {.ui = UiMode::tui}, output, error, 100, 30
+        )};
+        if (!onedrive::test::throws_with<std::logic_error>(
+                [&] {
+                    console.message(
+                        static_cast<MessageKind>(255), "log", "invalid level"
+                    );
+                },
+                "unknown console message kind"
+            )) {
+            return fail("TUI accepted an unknown backend log severity");
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
 } // namespace
 
 int main() {
+    if (const auto result = test_message_levels(); result != EXIT_SUCCESS) {
+        return result;
+    }
     if (const auto result = test_partial_list(); result != EXIT_SUCCESS) {
         return result;
     }

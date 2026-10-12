@@ -1,5 +1,6 @@
 #pragma once
 
+#include "onedrive/logging/logging.hpp"
 #include "onedrive/util/progress.hpp"
 
 #include <cstddef>
@@ -11,12 +12,7 @@
 
 namespace onedrive::events {
 
-enum class MessageKind {
-    information,
-    success,
-    warning,
-    error,
-};
+using MessageKind = logging::Severity;
 
 struct Field {
     std::string label;

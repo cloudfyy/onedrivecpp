@@ -1751,7 +1751,7 @@ int cleanup_state(
     );
     const bool complete = skipped == 0 && failed == 0;
     console.message(
-        complete ? cli::MessageKind::success : cli::MessageKind::warning,
+        complete ? cli::MessageKind::information : cli::MessageKind::warning,
         complete ? "cleanup_completed" : "cleanup_incomplete",
         std::format(
             "Removed {} invalid partial records and {} temporary files; {} "

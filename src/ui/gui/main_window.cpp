@@ -188,10 +188,12 @@ MainWindow::MainWindow(
     log_level_->setObjectName("logLevelFilter");
     log_level_->addItem({}, -1);
     for (const auto kind :
-         {events::MessageKind::information,
-          events::MessageKind::success,
+         {events::MessageKind::trace,
+          events::MessageKind::debug,
+          events::MessageKind::information,
           events::MessageKind::warning,
-          events::MessageKind::error}) {
+          events::MessageKind::error,
+          events::MessageKind::critical}) {
         log_level_->addItem({}, static_cast<int>(kind));
     }
     log_actions->addWidget(log_level_);
@@ -420,7 +422,7 @@ MainWindow::MainWindow(
                 set_login_status(
                     QT_TR_NOOP("Signed in. Account credentials saved."),
                     {},
-                    events::MessageKind::success
+                    events::MessageKind::information
                 );
             } else {
                 try {
@@ -430,7 +432,7 @@ MainWindow::MainWindow(
                         set_login_status(
                             QT_TR_NOOP("Signed in. Account credentials saved."),
                             {},
-                            events::MessageKind::success
+                            events::MessageKind::information
                         );
                     } else {
                         const auto& detail = !state_.configuration_error.empty()
@@ -525,10 +527,12 @@ void MainWindow::retranslate_ui() {
     stop_sync_button_->setText(tr("Stop"));
     view_logs_button_->setText(tr("View logs"));
     log_level_->setItemText(0, tr("All levels"));
-    log_level_->setItemText(1, tr("Information"));
-    log_level_->setItemText(2, tr("Success"));
-    log_level_->setItemText(3, tr("Warning"));
-    log_level_->setItemText(4, tr("Error"));
+    log_level_->setItemText(1, tr("Trace"));
+    log_level_->setItemText(2, tr("Debug"));
+    log_level_->setItemText(3, tr("Information"));
+    log_level_->setItemText(4, tr("Warning"));
+    log_level_->setItemText(5, tr("Error"));
+    log_level_->setItemText(6, tr("Critical"));
     log_level_->setAccessibleName(tr("Log level"));
     log_autoscroll_->setText(tr("Auto-scroll"));
     copy_logs_button_->setText(tr("Copy logs"));
@@ -960,7 +964,7 @@ void MainWindow::log_sync_result() {
     case SyncPhase::completed:
         log_message(
             operation,
-            events::MessageKind::success,
+            events::MessageKind::information,
             sync_preview_
                 ? QT_TR_NOOP(
                       "Preview completed. No synchronized files were changed."
@@ -1089,17 +1093,23 @@ void MainWindow::render_logs() {
             text = text.arg(entry.detail);
         }
         switch (entry.kind) {
+        case events::MessageKind::trace:
+            text = tr("Trace: %1").arg(text);
+            break;
+        case events::MessageKind::debug:
+            text = tr("Debug: %1").arg(text);
+            break;
         case events::MessageKind::information:
             text = tr("Info: %1").arg(text);
-            break;
-        case events::MessageKind::success:
-            text = tr("Success: %1").arg(text);
             break;
         case events::MessageKind::warning:
             text = tr("Warning: %1").arg(text);
             break;
         case events::MessageKind::error:
             text = tr("Error: %1").arg(text);
+            break;
+        case events::MessageKind::critical:
+            text = tr("Critical: %1").arg(text);
             break;
         }
         QString operation;
@@ -1211,7 +1221,7 @@ void MainWindow::logout() {
             removed ? QT_TR_NOOP("Signed out. Saved credentials removed.")
                     : QT_TR_NOOP("No saved authentication was present."),
             {},
-            events::MessageKind::success
+            events::MessageKind::information
         );
     } catch (const std::exception& error) {
         set_login_status(
@@ -1370,7 +1380,7 @@ void MainWindow::reload_settings() {
     if (state_.configuration_status == ConfigurationStatus::valid) {
         log_message(
             LogOperation::configuration,
-            events::MessageKind::success,
+            events::MessageKind::information,
             QT_TR_NOOP("Configuration reloaded.")
         );
     }
@@ -1445,7 +1455,7 @@ void MainWindow::save_settings() {
         refresh_settings();
         log_message(
             LogOperation::configuration,
-            events::MessageKind::success,
+            events::MessageKind::information,
             QT_TR_NOOP(
                 "Settings saved. Changes take effect on the next operation."
             )
@@ -1520,7 +1530,7 @@ void MainWindow::import_settings() {
         refresh_settings();
         log_message(
             LogOperation::configuration,
-            events::MessageKind::success,
+            events::MessageKind::information,
             QT_TR_NOOP("Configuration imported.")
         );
         log_startup_errors();

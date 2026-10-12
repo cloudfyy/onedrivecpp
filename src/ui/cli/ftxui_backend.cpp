@@ -102,7 +102,9 @@ std::optional<std::string> friendly_message(
     const MessageEvent& event
 ) {
     if (event.event == "log" &&
-        event.kind == MessageKind::information) {
+        (event.kind == MessageKind::trace ||
+         event.kind == MessageKind::debug ||
+         event.kind == MessageKind::information)) {
         return std::nullopt;
     }
     if (event.event == "delta_query_started") {
@@ -323,13 +325,14 @@ private:
 
     Color color_for(MessageKind kind) const {
         switch (kind) {
+            case MessageKind::trace:
+            case MessageKind::debug:
             case MessageKind::information:
                 return palette_.accent;
-            case MessageKind::success:
-                return palette_.success;
             case MessageKind::warning:
                 return palette_.warning;
             case MessageKind::error:
+            case MessageKind::critical:
                 return palette_.error;
         }
         throw_unknown_message_kind();

@@ -61,8 +61,10 @@ URL，但仍可能包含账号与 Drive 显示名称、远端项目名称和本�
 `--color=auto` 是默认值：仅在终端中启用样式；设置 `NO_COLOR` 后会自动禁用。
 `always` 强制输出 ANSI 样式，`never` 则始终禁用。`--output=json` 每行输出
 一个紧凑的 JSON 对象，绝不包含 ANSI 序列。在该模式下执行危险操作时，必须
-使用 `--yes` 显式确认。`--quiet` 会隐藏普通信息和成功消息，但仍保留警告和
-错误。诊断日志继续写入标准错误，命令结果写入标准输出。
+使用 `--yes` 显式确认。应用消息和后端日志共用六个级别；成功结果使用 `info`，
+不再单列 `success`。JSON 保留原始级别：`trace`、`debug`、`info`、`warning`、
+`error`、`critical`。`--quiet` 隐藏跟踪、调试和普通信息，但仍保留警告、错误和
+严重消息。诊断日志继续写入标准错误，命令结果写入标准输出。
 
 `account login`、全部 `inspect` 查询命令和全部 `transfer` 命令读取配置中的 `console.ui`，默认值为 `auto`；
 命令行显式提供的 `--ui` 只覆盖本次运行。auto 模式只有在标准输入和标准输出均连接终端、`TERM`

@@ -313,7 +313,7 @@ add_onedrive_test(
     tui_paging_tests
     SOURCES tests/cli/tui_paging.cpp
     INCLUDE_DIRS src tests
-    LIBRARIES onedrive_cli
+    LIBRARIES onedrive_cli spdlog::spdlog
 )
 add_onedrive_test(
     metrics_status_tests

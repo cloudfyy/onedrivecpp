@@ -366,7 +366,7 @@ void report_completion(
                 : "Synchronization state update completed";
     spdlog::info("{} in {} milliseconds", message, elapsed.count());
     observer.message(
-        events::MessageKind::success,
+        events::MessageKind::information,
         "sync_completed",
         std::format("{} in {} milliseconds", message, elapsed.count())
     );

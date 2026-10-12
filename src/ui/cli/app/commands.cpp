@@ -82,7 +82,7 @@ int migrate_state(
     }
     if (!pending || arguments.force_dry_run || config.dry_run) {
         console.message(
-            cli::MessageKind::success,
+            cli::MessageKind::information,
             "database_migration_preview",
             pending ? "Dry run: listed databases require an upgrade; no "
                       "databases or backups were changed."
@@ -147,7 +147,7 @@ int migrate_state(
         }
     }
     console.message(
-        cli::MessageKind::success,
+        cli::MessageKind::information,
         "database_migration_completed",
         "Database upgrades completed; no local or remote files were "
         "synchronized."
@@ -192,7 +192,7 @@ int authenticate(
     }
     spdlog::info("Microsoft authentication succeeded");
     console.message(
-        cli::MessageKind::success,
+        cli::MessageKind::information,
         "authentication_succeeded",
         "Authentication succeeded. Refresh token saved to " +
             (result->token_directory / "refresh_token").string()
@@ -234,7 +234,7 @@ int execute_command(
         spdlog::info("Removing locally saved authentication");
         const bool removed = logout_account(config, runtime_factory);
         console.message(
-            cli::MessageKind::success,
+            cli::MessageKind::information,
             "logout_completed",
             removed ? "Saved authentication removed."
                     : "No saved authentication was present."
@@ -246,7 +246,7 @@ int execute_command(
             storage::diagnose_state_databases(config.state_directory);
         if (results.empty()) {
             console.message(
-                cli::MessageKind::success,
+                cli::MessageKind::information,
                 "database_integrity",
                 "No synchronization state databases were found."
             );
@@ -262,7 +262,7 @@ int execute_command(
                 invalid || (!result.healthy && !result.migration_required);
         }
         console.message(
-            healthy   ? cli::MessageKind::success
+            healthy   ? cli::MessageKind::information
             : invalid ? cli::MessageKind::error
                       : cli::MessageKind::warning,
             healthy   ? "database_integrity_passed"
@@ -414,7 +414,7 @@ int execute_command(
                 cleared.pending_deltas
             );
             console.message(
-                cli::MessageKind::success,
+                cli::MessageKind::information,
                 "full_state_clear_completed",
                 std::format(
                     "Cleared all synchronization state for drive {}: {} "
@@ -459,7 +459,7 @@ int execute_command(
             removed ? "removed" : "not present"
         );
         console.message(
-            cli::MessageKind::success,
+            cli::MessageKind::information,
             "state_cursor_reset",
             "Reset synchronization cursor for drive " + display_drive +
                 ": saved cursor " + (removed ? "removed" : "not present") + "."

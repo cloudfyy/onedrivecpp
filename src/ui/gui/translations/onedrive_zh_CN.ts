@@ -170,8 +170,16 @@
     </message>
     <message>
         <location filename="../main_window.cpp" line="493"/>
-        <source>Success</source>
-        <translation>成功</translation>
+        <source>Trace</source>
+        <translation>跟踪</translation>
+    </message>
+    <message>
+        <source>Debug</source>
+        <translation>调试</translation>
+    </message>
+    <message>
+        <source>Critical</source>
+        <translation>严重</translation>
     </message>
     <message>
         <location filename="../main_window.cpp" line="494"/>
@@ -437,8 +445,16 @@
     </message>
     <message>
         <location filename="../main_window.cpp" line="1028"/>
-        <source>Success: %1</source>
-        <translation>成功：%1</translation>
+        <source>Trace: %1</source>
+        <translation>跟踪：%1</translation>
+    </message>
+    <message>
+        <source>Debug: %1</source>
+        <translation>调试：%1</translation>
+    </message>
+    <message>
+        <source>Critical: %1</source>
+        <translation>严重：%1</translation>
     </message>
     <message>
         <location filename="../main_window.cpp" line="1031"/>

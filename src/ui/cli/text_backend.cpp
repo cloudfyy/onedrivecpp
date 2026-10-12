@@ -22,13 +22,17 @@ struct Style {
 
 Style style_for(MessageKind kind) {
     switch (kind) {
+        case MessageKind::trace:
+            return {.symbol = "TR", .color = "\033[90m"};
+        case MessageKind::debug:
+            return {.symbol = "DB", .color = "\033[34m"};
         case MessageKind::information:
             return {.symbol = "->", .color = "\033[36m"};
-        case MessageKind::success:
-            return {.symbol = "OK", .color = "\033[32m"};
         case MessageKind::warning:
             return {.symbol = "!!", .color = "\033[33m"};
         case MessageKind::error:
+            return {.symbol = "XX", .color = "\033[31m"};
+        case MessageKind::critical:
             return {.symbol = "XX", .color = "\033[31m"};
     }
     throw_unknown_message_kind();
@@ -83,7 +87,9 @@ private:
             return;
         }
         std::ostream& stream =
-            event.kind == MessageKind::error ? error_ : output_;
+            event.kind == MessageKind::error ||
+                    event.kind == MessageKind::critical
+                ? error_ : output_;
         if (!styled_) {
             stream << event.text << '\n';
             return;

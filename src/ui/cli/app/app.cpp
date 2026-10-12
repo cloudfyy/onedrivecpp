@@ -18,21 +18,6 @@
 namespace onedrive::app {
 namespace {
 
-cli::MessageKind message_kind(logging::Severity severity) noexcept {
-    switch (severity) {
-        case logging::Severity::trace:
-        case logging::Severity::debug:
-        case logging::Severity::information:
-            return cli::MessageKind::information;
-        case logging::Severity::warning:
-            return cli::MessageKind::warning;
-        case logging::Severity::error:
-        case logging::Severity::critical:
-            return cli::MessageKind::error;
-    }
-    return cli::MessageKind::information;
-}
-
 cli::TuiView tui_view(detail::Operation operation) noexcept {
     switch (operation) {
         case detail::Operation::authenticate:
@@ -110,7 +95,7 @@ int Application::run(int argc, char* argv[]) {
                             std::string_view message
                         ) {
                             console.message(
-                                message_kind(severity), "log", message
+                                severity, "log", message
                             );
                         }
                     } :

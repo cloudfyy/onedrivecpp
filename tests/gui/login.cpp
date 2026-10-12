@@ -594,36 +594,55 @@ int test_partial_connections() {
 }
 
 int test_window_close() {
-    test::TemporaryDirectory temporary;
-    const auto file = write_config(temporary.path());
-    gui::MainWindow window{
-        gui::load_app_state_view_model(file),
-        [](
-            const config::Config&, const auto&, std::stop_token token
-        ) -> auth::AuthResult<app::AuthenticationResult> {
-            while (!token.stop_requested()) {
-                QThread::msleep(1);
-            }
-            return std::unexpected(
-                auth::AuthError{.code = auth::AuthErrorCode::cancelled}
+    gui::Localization localization{gui::Language::english};
+    for (const bool completed : {false, true}) {
+        test::TemporaryDirectory temporary;
+        const auto file = write_config(temporary.path());
+        gui::MainWindow window{
+            gui::load_app_state_view_model(file),
+            [completed](
+                const config::Config&, const auto&, std::stop_token token
+            ) -> auth::AuthResult<app::AuthenticationResult> {
+                while (!token.stop_requested()) {
+                    QThread::msleep(1);
+                }
+                if (completed) {
+                    return app::AuthenticationResult{};
+                }
+                return std::unexpected(
+                    auth::AuthError{.code = auth::AuthErrorCode::cancelled}
+                );
+            },
+            &localization
+        };
+        window.show();
+        auto* login = window.findChild<QPushButton*>("signInButton");
+        auto* cancel = window.findChild<QPushButton*>("accountActionButton");
+        if (!login || !cancel) {
+            return test::fail("window login controls were missing");
+        }
+        login->click();
+        if (login->isEnabled() || !cancel->isEnabled()) {
+            return test::fail("window did not disable duplicate login");
+        }
+        window.close();
+        if (!wait_until([&] { return !window.isVisible(); })) {
+            return test::fail(
+                "window did not cancel and finish login before closing"
             );
         }
-    };
-    window.show();
-    auto* login = window.findChild<QPushButton*>("signInButton");
-    auto* cancel = window.findChild<QPushButton*>("accountActionButton");
-    if (!login || !cancel) {
-        return test::fail("window login controls were missing");
-    }
-    login->click();
-    if (login->isEnabled() || !cancel->isEnabled()) {
-        return test::fail("window did not disable duplicate login");
-    }
-    window.close();
-    if (!wait_until([&] { return !window.isVisible(); })) {
-        return test::fail(
-            "window did not cancel and finish login before closing"
-        );
+        const auto history =
+            window.findChild<QPlainTextEdit*>("logMessages")->toPlainText();
+        if (!history.contains(
+                completed
+                    ? "[Account] Info: Signed in. Account credentials saved."
+                    : "[Account] Info: Login cancelled."
+            ) ||
+            history.contains("Success:")) {
+            return test::fail(
+                "closing during login lost its outcome or shared info severity"
+            );
+        }
     }
     return EXIT_SUCCESS;
 }

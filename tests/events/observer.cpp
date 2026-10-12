@@ -4,6 +4,7 @@
 
 #include <array>
 #include <thread>
+#include <type_traits>
 #include <variant>
 
 namespace {
@@ -11,6 +12,8 @@ namespace {
 using namespace onedrive::events;
 using onedrive::test::fail;
 using onedrive::util::ProgressState;
+
+static_assert(std::is_same_v<MessageKind, onedrive::logging::Severity>);
 
 class CapturingObserver final : public Observer {
 public:

@@ -111,6 +111,14 @@ timestamps, every level filter, copying displayed text, clear-during-sync,
 auto-scroll on/off, raw multiline details, and bilingual history/filter/draft
 preservation. Account tests ensure browser authorization parameters do not enter
 the session log.
+Logging regressions retain all six shared backend severities, exercise every
+configured GUI threshold including `off`, and verify diagnostic delivery before
+failure completion, logger restoration and restart. TUI tests check low-severity
+backend suppression, all application-message levels and invalid severity
+rejection. A pseudo-terminal runs the real CLI application with the offline
+authentication adapter to verify backend forwarding to the TUI while all enabled
+levels remain in the private file log. Empty health inspection and login
+completion during window closing use Info rather than a separate Success level.
 `sync_preview_tests` covers private-cursor reuse in both merge and replacement
 mode, repeated previews, last-change-wins merging, retained unapplied changes,
 cursor expiry and directory hierarchy fallback, scope/filter/state/journal

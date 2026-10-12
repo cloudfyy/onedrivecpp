@@ -25,6 +25,7 @@
 #include <atomic>
 #include <limits>
 #include <thread>
+#include <tuple>
 
 namespace {
 
@@ -209,6 +210,213 @@ void test_default_controller_without_usable_credentials() {
     );
 }
 
+void test_controller_logging() {
+    Fixture fixture;
+    const auto log_file = fixture.config.state_directory / "sync.log";
+    test::write_file(
+        fixture.file,
+        test::read_file(fixture.file) +
+            "\n[logging]\nlevel = \"debug\"\nfile = \"" +
+            log_file.string() + "\"\n"
+    );
+    const auto previous_logger = spdlog::default_logger();
+    const auto ui_thread = std::this_thread::get_id();
+    gui::SyncController controller{
+        [](config::Config, const events::Observer&, std::stop_token) {
+            std::jthread download_worker{[] {
+                spdlog::trace("hidden trace detail");
+                spdlog::debug("download debug detail");
+                spdlog::info("Downloading '{}' ({} bytes)", "example.txt", 4);
+                spdlog::warn("download warning");
+                spdlog::error("download error");
+                spdlog::critical("download critical");
+            }};
+            download_worker.join();
+            return exit_code::success;
+        }
+    };
+    std::vector<events::MessageEvent> messages;
+    bool finished = false;
+    QObject::connect(
+        &controller,
+        &gui::SyncController::events_ready,
+        [&](const auto& batch, std::size_t omitted) {
+            require(
+                omitted == 0 && std::this_thread::get_id() == ui_thread,
+                "backend logs were dropped or delivered off the UI thread"
+            );
+            for (const auto& event : batch) {
+                if (const auto* message =
+                        std::get_if<events::MessageEvent>(&event)) {
+                    messages.push_back(*message);
+                }
+            }
+        }
+    );
+    QObject::connect(
+        &controller,
+        &gui::SyncController::finished,
+        [&](int result, const QString& error, bool) {
+            require(
+                result == exit_code::success && error.isEmpty(),
+                ("logging changed the synchronization result: " +
+                 error.toStdString()).c_str()
+            );
+            finished = true;
+        }
+    );
+    controller.start(fixture.file, false);
+    require(
+        wait_until([&] { return finished; }) && messages.size() == 5 &&
+            messages[0].kind == events::MessageKind::debug &&
+            messages[0].text == "download debug detail" &&
+            messages[1].kind == events::MessageKind::information &&
+            messages[1].text == "Downloading 'example.txt' (4 bytes)" &&
+            messages[2].kind == events::MessageKind::warning &&
+            messages[3].kind == events::MessageKind::error &&
+            messages[4].kind == events::MessageKind::critical &&
+            spdlog::default_logger() == previous_logger,
+        "backend logging lost messages, severity, filtering or logger restoration"
+    );
+    for (const auto& message : messages) {
+        require(
+            message.event == "log" &&
+                test::read_file(log_file).find(message.text) != std::string::npos,
+            "GUI log forwarding changed the event name or file logging"
+        );
+    }
+    require(
+        test::read_file(log_file).find("hidden trace detail") == std::string::npos,
+        "GUI log forwarding ignored the configured logging level"
+    );
+    const auto source = test::read_file(fixture.file);
+    auto trace_source = source;
+    trace_source.replace(trace_source.find("\"debug\""), 7, "\"trace\"");
+    test::write_file(fixture.file, trace_source);
+    messages.clear();
+    finished = false;
+    controller.start(fixture.file, false);
+    require(
+        wait_until([&] { return finished; }) && messages.size() == 6 &&
+            messages[0].kind == events::MessageKind::trace &&
+            messages[0].text == "hidden trace detail" &&
+            messages[1].kind == events::MessageKind::debug &&
+            messages[2].kind == events::MessageKind::information &&
+            messages[3].kind == events::MessageKind::warning &&
+            messages[4].kind == events::MessageKind::error &&
+            messages[5].kind == events::MessageKind::critical &&
+            spdlog::default_logger() == previous_logger,
+        "GUI log forwarding did not preserve all six backend levels"
+    );
+    const std::vector expected_levels{
+        events::MessageKind::trace, events::MessageKind::debug,
+        events::MessageKind::information, events::MessageKind::warning,
+        events::MessageKind::error, events::MessageKind::critical
+    };
+    for (const auto& [threshold, first] :
+         {std::pair{"info", 2U}, std::pair{"warn", 3U},
+          std::pair{"error", 4U}, std::pair{"critical", 5U},
+          std::pair{"off", 6U}}) {
+        auto configuration = source;
+        configuration.replace(
+            configuration.find("\"debug\""), 7,
+            "\"" + std::string{threshold} + "\""
+        );
+        test::write_file(fixture.file, configuration);
+        const auto previous_file = test::read_file(log_file);
+        messages.clear();
+        finished = false;
+        controller.start(fixture.file, false);
+        require(
+            wait_until([&] { return finished; }) &&
+                messages.size() == expected_levels.size() - first &&
+                spdlog::default_logger() == previous_logger,
+            "GUI log forwarding ignored a configured threshold or off setting"
+        );
+        for (std::size_t index = 0; index < messages.size(); ++index) {
+            require(
+                messages[index].kind == expected_levels[first + index],
+                "GUI log threshold changed the original backend severity"
+            );
+        }
+        const auto appended =
+            test::read_file(log_file).substr(previous_file.size());
+        for (const auto& message : messages) {
+            require(
+                appended.contains(message.text),
+                "GUI and file sinks disagree on the configured threshold"
+            );
+        }
+        require(
+            first != expected_levels.size() || appended.empty(),
+            "logging off still wrote backend messages to the file sink"
+        );
+    }
+}
+
+void test_controller_logging_after_failure() {
+    Fixture fixture;
+    const auto previous_logger = spdlog::default_logger();
+    int calls = 0;
+    gui::SyncController controller{
+        [&](config::Config, const events::Observer&, std::stop_token) {
+            spdlog::warn("worker diagnostic {}", ++calls);
+            if (calls == 1) {
+                throw std::runtime_error{"worker failure after logging"};
+            }
+            return exit_code::success;
+        }
+    };
+    std::vector<events::MessageEvent> messages;
+    bool finished = false;
+    QObject::connect(
+        &controller,
+        &gui::SyncController::events_ready,
+        [&](const auto& batch, std::size_t omitted) {
+            require(omitted == 0, "failure lost a backend diagnostic");
+            for (const auto& event : batch) {
+                if (const auto* message =
+                        std::get_if<events::MessageEvent>(&event)) {
+                    messages.push_back(*message);
+                }
+            }
+        }
+    );
+    QObject::connect(
+        &controller,
+        &gui::SyncController::finished,
+        [&](int result, const QString& error, bool) {
+            require(
+                messages.size() == 1 &&
+                    messages.front().kind == events::MessageKind::warning &&
+                    messages.front().text ==
+                        "worker diagnostic " + std::to_string(calls) &&
+                    messages.front().event == "log" &&
+                    spdlog::default_logger() == previous_logger &&
+                    !controller.running(),
+                "failure or restart lost logs, delivery order or logger cleanup"
+            );
+            require(
+                calls == 1
+                    ? result == exit_code::failure &&
+                          error == "worker failure after logging"
+                    : result == exit_code::success && error.isEmpty(),
+                "forwarding logs changed failure or restart results"
+            );
+            finished = true;
+        }
+    );
+    for (int attempt = 1; attempt <= 2; ++attempt) {
+        messages.clear();
+        finished = false;
+        controller.start(fixture.file, false);
+        require(
+            wait_until([&] { return finished; }) && calls == attempt,
+            "failed logging task could not be restarted"
+        );
+    }
+}
+
 void test_controller_lifecycle() {
     Fixture fixture;
     std::atomic<int> entered{};
@@ -348,7 +556,12 @@ void test_session_logs_and_tabs() {
                 );
             }
             observer.message(
-                events::MessageKind::success, "success", "successful event %1"
+                events::MessageKind::information, "completed", "successful event %1"
+            );
+            observer.message(events::MessageKind::trace, "trace", "raw trace");
+            observer.message(events::MessageKind::debug, "debug", "raw debug");
+            observer.message(
+                events::MessageKind::critical, "critical", "raw critical"
             );
             observer.message(
                 events::MessageKind::warning, "warning", "<b>raw warning %1</b>"
@@ -382,7 +595,10 @@ void test_session_logs_and_tabs() {
             tabs->currentWidget() == overview &&
             sync_page->isAncestorOf(sync) && !overview->isAncestorOf(sync) &&
             logs_page->isAncestorOf(messages) && messages->isReadOnly() &&
-            scroll_option->isChecked(),
+            scroll_option->isChecked() && level->count() == 7 &&
+            level->itemText(1) == "Trace" &&
+            level->itemText(2) == "Debug" &&
+            level->itemText(6) == "Critical",
         "GUI tasks and logs were not separated into tabs"
     );
     auto* draft = window.findChild<QLineEdit*>("sync.data_directory");
@@ -484,23 +700,36 @@ void test_session_logs_and_tabs() {
         "error filter was incorrect"
     );
     level->setCurrentIndex(
-        level->findData(static_cast<int>(events::MessageKind::success))
-    );
-    require(
-        messages->toPlainText().contains("成功：successful event %1") &&
-            messages->toPlainText().contains("预览完成。未修改同步文件。") &&
-            !messages->toPlainText().contains("raw failure"),
-        "success filter was incorrect"
-    );
-    level->setCurrentIndex(
         level->findData(static_cast<int>(events::MessageKind::information))
     );
     require(
         messages->toPlainText().contains("run 1 info 0") &&
             !messages->toPlainText().contains("raw warning") &&
-            !messages->toPlainText().contains("successful event"),
+            messages->toPlainText().contains("信息：successful event %1") &&
+            messages->toPlainText().contains("预览完成。未修改同步文件。") &&
+            !messages->toPlainText().contains("raw failure") &&
+            !messages->toPlainText().contains("raw trace") &&
+            !messages->toPlainText().contains("raw debug") &&
+            !messages->toPlainText().contains("raw critical"),
         "information filter was incorrect"
     );
+    for (const auto& [kind, label, text] :
+         {std::tuple{events::MessageKind::trace, "跟踪", "raw trace"},
+          std::tuple{events::MessageKind::debug, "调试", "raw debug"},
+          std::tuple{events::MessageKind::critical, "严重", "raw critical"}}) {
+        level->setCurrentIndex(level->findData(static_cast<int>(kind)));
+        require(
+            level->currentText() == QString::fromUtf8(label) &&
+                messages->toPlainText().contains(
+                    QString::fromUtf8(label) + "：" + text
+                ) &&
+                !messages->toPlainText().contains("raw warning") &&
+                !messages->toPlainText().contains("raw failure") &&
+                !messages->toPlainText().contains("run 1 info 0") &&
+                !messages->toPlainText().contains("successful event"),
+            "backend level filter or translation was incorrect"
+        );
+    }
     level->setCurrentIndex(0);
     localization.set_language(gui::Language::english);
     QCoreApplication::processEvents();
@@ -508,7 +737,7 @@ void test_session_logs_and_tabs() {
     button(window, "reloadSettingsButton")->click();
     require(
         messages->toPlainText().contains(
-            "[Configuration] Success: Configuration reloaded."
+            "[Configuration] Info: Configuration reloaded."
         ) && messages->document()->blockCount() == before_reload + 1,
         "configuration reload was not logged or language switching duplicated "
         "entries"
@@ -1222,6 +1451,7 @@ void test_progress_and_stop() {
             observer.blocked_item(
                 "blocked.txt", "conflict", "keep local content"
             );
+            spdlog::info("Downloading '{}' ({} bytes)", "example.txt", 100);
             observer.download_progress(
                 1,
                 2,
@@ -1270,6 +1500,9 @@ void test_progress_and_stop() {
                 "Blocked: blocked.txt [conflict]"
             ) &&
             messages->toPlainText().contains("downloads: 2") &&
+            messages->toPlainText().contains(
+                "Downloading 'example.txt' (100 bytes)"
+            ) &&
             transfer->text().contains("1 / 2 files; 50 B / 100 B; 25 B/s") &&
             transfer->text().contains("2 s remaining"),
         "progress or task interlocks were incorrect"
@@ -1492,6 +1725,8 @@ int main(int argc, char* argv[]) {
     gui::Localization localization{gui::Language::english};
     try {
         test_controller();
+        test_controller_logging();
+        test_controller_logging_after_failure();
         test_default_controller_without_usable_credentials();
         test_controller_lifecycle();
         test_history_bound();

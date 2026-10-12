@@ -39,7 +39,7 @@ int monitor_account(
         auto metrics = runtime_factory.create_metrics(config, identity);
 
         observer.message(
-            events::MessageKind::success,
+            events::MessageKind::information,
             "monitor_ready",
             "Monitoring local and Microsoft Graph changes for: " +
                 config.sync_data_directory.string()

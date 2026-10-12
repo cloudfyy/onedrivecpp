@@ -1,5 +1,8 @@
 #include "support.hpp"
 #include "onedrive/exit_code.hpp"
+#include "onedrive/logging/logging.hpp"
+
+#include <nlohmann/json.hpp>
 
 namespace {
 
@@ -15,7 +18,22 @@ int test_doctor() {
     const auto& sync_path = fixture.sync_path;
     const auto& log_path = fixture.log_path;
     auto& runtime_factory = fixture.runtime_factory;
+    const auto empty_diagnostics = run_application(
+        runtime_factory,
+        {"onedrive-cpp", "inspect", "health", "--config",
+         config_path.string(), "--output", "json"}
+    );
+    const auto empty_message =
+        nlohmann::json::parse(empty_diagnostics.standard_output);
+    if (empty_diagnostics.exit_code != exit_code::success ||
+        empty_message.at("event") != "database_integrity" ||
+        empty_message.at("level") != "info" ||
+        empty_message.at("message") !=
+            "No synchronization state databases were found.") {
+        return fail("empty health inspection did not use the shared info level");
+    }
     {
+        const onedrive::logging::Session logging{{}};
         onedrive::storage::ItemDatabase database{
             state_path / "doctor-fixture", onedrive::test::test_drive_identity()
         };

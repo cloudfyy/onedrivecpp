@@ -58,7 +58,7 @@ int main() {
         plain_output,
         plain_error
     };
-    plain.message(MessageKind::success, "completed", "Completed.");
+    plain.message(MessageKind::information, "completed", "Completed.");
     plain.section(
         "summary",
         "Summary",
@@ -161,11 +161,61 @@ int main() {
         styled_output,
         styled_error
     };
-    styled.message(MessageKind::success, "completed", "Completed.");
-    if (!styled_output.str().contains("\033[32m") ||
-        !styled_output.str().contains("OK") ||
+    styled.message(MessageKind::information, "completed", "Completed.");
+    if (!styled_output.str().contains("\033[36m") ||
+        !styled_output.str().contains("->") ||
         !styled_output.str().contains("\033[0m")) {
         return fail("forced color output did not contain ANSI styling");
+    }
+
+    for (const auto& [kind, level] :
+         {std::pair{MessageKind::trace, "trace"},
+          std::pair{MessageKind::debug, "debug"},
+          std::pair{MessageKind::information, "info"},
+          std::pair{MessageKind::warning, "warning"},
+          std::pair{MessageKind::error, "error"},
+          std::pair{MessageKind::critical, "critical"}}) {
+        const bool is_error =
+            kind == MessageKind::error || kind == MessageKind::critical;
+        std::ostringstream output;
+        std::ostringstream error;
+        const Console level_json{{.output = OutputMode::json}, output, error};
+        level_json.message(kind, "log", level);
+        const auto payload = nlohmann::json::parse(
+            is_error ? error.str() : output.str()
+        );
+        if (payload.at("level") != level || payload.at("message") != level ||
+            !(is_error ? output.str() : error.str()).empty()) {
+            return fail("JSON output changed backend levels or error routing");
+        }
+        output.str({});
+        error.str({});
+        const Console level_text{
+            {.color = ColorMode::always, .output = OutputMode::text},
+            output,
+            error
+        };
+        level_text.message(kind, "log", level);
+        if (!(is_error ? error.str() : output.str()).contains(level) ||
+            !(is_error ? output.str() : error.str()).empty()) {
+            return fail("text output lost a backend level or error routing");
+        }
+        output.str({});
+        error.str({});
+        const Console level_quiet{
+            {.output = OutputMode::json, .quiet = true}, output, error
+        };
+        level_quiet.message(kind, "log", level);
+        if (kind == MessageKind::trace || kind == MessageKind::debug ||
+            kind == MessageKind::information) {
+            if (!output.str().empty() || !error.str().empty()) {
+                return fail("quiet JSON retained a low-severity message");
+            }
+        } else if (nlohmann::json::parse(
+                       is_error ? error.str() : output.str()
+                   ).at("level") != level) {
+            return fail("quiet JSON suppressed or changed a diagnostic level");
+        }
     }
 
     std::ostringstream json_output;
@@ -306,7 +356,8 @@ int main() {
         quiet_json_error
     };
     quiet_json.message(MessageKind::information, "info", "Hidden");
-    quiet_json.message(MessageKind::success, "success", "Hidden");
+    quiet_json.message(MessageKind::trace, "trace", "Hidden");
+    quiet_json.message(MessageKind::debug, "debug", "Hidden");
     quiet_json.section(
         "summary",
         "Hidden",
@@ -345,7 +396,8 @@ int main() {
         quiet_error
     };
     quiet.message(MessageKind::information, "info", "Hidden");
-    quiet.message(MessageKind::success, "success", "Hidden");
+    quiet.message(MessageKind::trace, "trace", "Hidden");
+    quiet.message(MessageKind::debug, "debug", "Hidden");
     quiet.section(
         "summary",
         "Hidden",
@@ -366,10 +418,11 @@ int main() {
     );
     quiet.message(MessageKind::warning, "warning", "Visible warning");
     quiet.message(MessageKind::error, "error", "Visible error");
+    quiet.message(MessageKind::critical, "critical", "Visible critical");
     if (quiet_output.str() != "Visible warning\n" ||
         quiet_error.str() !=
             "Blocked 'conflict.txt': local file was modified "
-            "(local_modification)\nVisible error\n") {
+            "(local_modification)\nVisible error\nVisible critical\n") {
         return fail("quiet mode suppressed or retained the wrong output");
     }
     if (plain.output_mode() != OutputMode::text) {

@@ -65,8 +65,11 @@ paths, so retain the enforced private permissions when copying diagnostics.
 disabled when `NO_COLOR` is set. `always` forces ANSI styling and `never`
 disables it. `--output=json` emits one compact JSON object per line and never
 emits ANSI sequences; destructive interactive confirmation requires `--yes`
-in this mode. `--quiet` suppresses informational and success output while
-retaining warnings and errors. Diagnostic logs remain on standard error, while
+in this mode. Application messages use the same six severity levels as backend
+logs; successful results use `info` instead of a separate `success` level.
+JSON retains each original level (`trace`, `debug`, `info`, `warning`, `error`,
+`critical`). `--quiet` suppresses trace, debug and informational output while
+retaining warnings, errors and critical messages. Diagnostic logs remain on standard error, while
 command results are written to standard output.
 
 `account login`, all `inspect` commands, and all `transfer` commands use `console.ui` from the configuration,

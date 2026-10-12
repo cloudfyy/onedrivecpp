@@ -50,7 +50,9 @@ private:
             return;
         }
         std::ostream& stream =
-            event.kind == MessageKind::error ? error_ : output_;
+            event.kind == MessageKind::error ||
+                    event.kind == MessageKind::critical
+                ? error_ : output_;
         stream << nlohmann::json{
             {"event", event.event},
             {"level", message_level(event.kind)},

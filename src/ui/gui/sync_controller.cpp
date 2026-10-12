@@ -155,14 +155,21 @@ void SyncController::start(
                     config.dry_run = effective_preview;
                     config.force_large_delete = false;
                     Q_EMIT started(effective_preview);
-                    const logging::Session logging{config.logging};
-                    const app::detail::RuntimePreflight preflight{
-                        config, app::detail::Operation::synchronize
-                    };
                     const ForwardingObserver observer{
                         [this](const events::Event& event) {
                             queue_event(event);
                         }
+                    };
+                    config.logging.message_sink =
+                        [&observer](logging::Severity severity,
+                                    std::string_view message) {
+                            observer.message(
+                                severity, "log", message
+                            );
+                        };
+                    const logging::Session logging{config.logging};
+                    const app::detail::RuntimePreflight preflight{
+                        config, app::detail::Operation::synchronize
                     };
                     if (invalidated) {
                         observer.message(

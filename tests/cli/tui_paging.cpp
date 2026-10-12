@@ -4,6 +4,9 @@
 #include "onedrive/util/unique_file_descriptor.hpp"
 #include "support/common.hpp"
 #include "cli/partials_fixture.hpp"
+#include "app/support.hpp"
+
+#include <spdlog/spdlog.h>
 
 #include <array>
 #include <cerrno>
@@ -11,7 +14,9 @@
 #include <csignal>
 #include <cstdlib>
 #include <fcntl.h>
+#include <functional>
 #include <iostream>
+#include <optional>
 #include <poll.h>
 #include <stdexcept>
 #include <string>
@@ -20,6 +25,7 @@
 #include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
+#include <vector>
 
 namespace {
 
@@ -33,7 +39,8 @@ public:
         int pages,
         unsigned short rows = 30,
         int redirected_descriptor = -1,
-        onedrive::cli::TuiView view = onedrive::cli::TuiView::drives
+        onedrive::cli::TuiView view = onedrive::cli::TuiView::drives,
+        const std::function<int()>& application = {}
     )
         : master_{::posix_openpt(O_RDWR | O_NOCTTY)},
           output_redirected_{redirected_descriptor == STDOUT_FILENO} {
@@ -58,7 +65,7 @@ public:
             throw_errno_error("cannot fork paging test");
         }
         if (child_ == 0) {
-            run_child(pages, redirected_descriptor, view);
+            run_child(pages, redirected_descriptor, view, application);
         }
     }
 
@@ -72,6 +79,10 @@ public:
 
     TerminalPager(const TerminalPager&) = delete;
     TerminalPager& operator=(const TerminalPager&) = delete;
+
+    [[nodiscard]] const std::string& output() const noexcept {
+        return output_;
+    }
 
     void expect_page(int page, int pages) {
         const auto counter =
@@ -155,7 +166,10 @@ public:
 
 private:
     [[noreturn]] void run_child(
-        int pages, int redirected_descriptor, onedrive::cli::TuiView view
+        int pages,
+        int redirected_descriptor,
+        onedrive::cli::TuiView view,
+        const std::function<int()>& application
     ) {
         for (const int descriptor :
              {STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO}) {
@@ -176,40 +190,47 @@ private:
                     throw_errno_error("cannot redirect paging test stream");
                 }
             }
-            using namespace onedrive::cli;
-            const Console console{detail::make_ftxui_console_backend(
-                {.color = ColorMode::never, .ui = UiMode::tui, .view = view},
-                std::cout,
-                std::cerr,
-                100,
-                30
-            )};
-            if (pages == 0) {
-                console.message(
-                    MessageKind::success, "result", "Inspection result retained"
-                );
-            }
-            if (view == TuiView::partials && pages > 0) {
-                onedrive::test::emit_partial_results(
-                    console, static_cast<std::size_t>(pages)
-                );
-            } else
-                for (int page = 1; page <= pages; ++page) {
-                    console.section(
-                        "drive",
-                        "OneDrive drive:",
-                        {
-                            {.label = "name:",
-                             .key = "name",
-                             .value = "Test-drive-" + std::to_string(page)},
-                            {.label = "known files:",
-                             .key = "known_files",
-                             .value = std::to_string(page * 10)},
-                        }
+            if (application) {
+                result = application();
+            } else {
+                using namespace onedrive::cli;
+                const Console console{detail::make_ftxui_console_backend(
+                    {.color = ColorMode::never, .ui = UiMode::tui, .view = view},
+                    std::cout,
+                    std::cerr,
+                    100,
+                    30
+                )};
+                if (pages == 0) {
+                    console.message(
+                        MessageKind::information,
+                        "result",
+                        "Inspection result retained"
                     );
                 }
-            console.finish();
-            console.finish();
+                if (view == TuiView::partials && pages > 0) {
+                    onedrive::test::emit_partial_results(
+                        console, static_cast<std::size_t>(pages)
+                    );
+                } else {
+                    for (int page = 1; page <= pages; ++page) {
+                        console.section(
+                            "drive",
+                            "OneDrive drive:",
+                            {
+                                {.label = "name:",
+                                 .key = "name",
+                                 .value = "Test-drive-" + std::to_string(page)},
+                                {.label = "known files:",
+                                 .key = "known_files",
+                                 .value = std::to_string(page * 10)},
+                            }
+                        );
+                    }
+                }
+                console.finish();
+                console.finish();
+            }
         } catch (const std::exception& error) {
             std::cerr << error.what() << '\n';
             result = EXIT_FAILURE;
@@ -252,6 +273,69 @@ private:
 int main() {
     try {
         using onedrive::cli::TuiView;
+        {
+            onedrive::test::app::CliFixture fixture;
+            bool logged = false;
+            fixture.runtime_factory.authentication_response_override =
+                [&](const onedrive::http::HttpRequest&)
+                -> std::optional<onedrive::http::HttpResult> {
+                    if (!logged) {
+                        logged = true;
+                        spdlog::trace("application trace log");
+                        spdlog::debug("application debug log");
+                        spdlog::info("application info log");
+                        spdlog::warn("application warning log");
+                        spdlog::error("application error log");
+                        spdlog::critical("application critical log");
+                    }
+                    return std::nullopt;
+                };
+            TerminalPager terminal{
+                0, 30, -1, TuiView::auth,
+                [&] {
+                    std::vector<std::string> arguments{
+                        "onedrive-cpp", "account", "login", "--config",
+                        fixture.config_path.string(), "--ui", "tui",
+                        "--log-level", "trace", "--color", "never"
+                    };
+                    std::vector<char*> pointers;
+                    for (auto& argument : arguments) {
+                        pointers.push_back(argument.data());
+                    }
+                    onedrive::app::RuntimeFactory factory{
+                        onedrive::util::borrowed_proxy, fixture.runtime_factory
+                    };
+                    onedrive::app::Application application{&factory};
+                    return application.run(
+                        static_cast<int>(pointers.size()), pointers.data()
+                    );
+                }
+            };
+            terminal.expect_exit();
+            for (const auto* message :
+                 {"application warning log", "application error log",
+                  "application critical log"}) {
+                if (!terminal.output().contains(message) ||
+                    !onedrive::test::read_file(fixture.log_path)
+                         .contains(message)) {
+                    return onedrive::test::fail(
+                        "CLI did not forward backend diagnostics to TUI and file"
+                    );
+                }
+            }
+            for (const auto* message :
+                 {"application trace log", "application debug log",
+                  "application info log"}) {
+                if (terminal.output().contains(message) ||
+                    !onedrive::test::read_file(fixture.log_path)
+                         .contains(message)) {
+                    return onedrive::test::fail(
+                        "TUI filtering removed low-severity file logs or "
+                        "displayed backend details"
+                    );
+                }
+            }
+        }
         {
             TerminalPager terminal{20, 12, -1, TuiView::partials};
             terminal.expect_result("File 1/20", "> folder/partial-1.bin");

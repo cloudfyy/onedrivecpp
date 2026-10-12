@@ -236,7 +236,12 @@ recovery records.
 session, with timestamps, operation names and levels; omissions are explicitly
 shown. Filter by level, toggle auto-scroll, copy the displayed logs or clear
 history without stopping a task. Tab/language switches preserve tasks, filters
-and history. Raw backend details remain unchanged; authorization URLs and tokens
+and history. Backend logs are included according to the configured logging level,
+including each download's file path and size. Frontend and backend share the
+same six levels: Trace, Debug, Info, Warning, Error and Critical. Successful
+application events use Info, not a separate Success level. Filtering does not
+enable logs below the configured logging threshold. Raw backend details remain
+unchanged; authorization URLs and tokens
 are not added to account logs. This tab does not read the configured log file
 or persist an additional log.
 GUI monitoring and systemd service control remain deferred.
