@@ -6,6 +6,7 @@
 #include "onedrive/version.hpp"
 #include "onedrive/app/factory.hpp"
 #include "onedrive/exit_code.hpp"
+#include "onedrive/util/byte_size.hpp"
 
 #include <QActionGroup>
 #include <QApplication>
@@ -47,6 +48,38 @@ QString short_detail(const QString& text) {
 
 QString number(std::uint64_t value) {
     return QString::number(static_cast<qulonglong>(value));
+}
+
+QString data_size(std::uint64_t bytes, const QLocale& locale) {
+    const auto size = util::scale_bytes(bytes);
+    const auto amount = size.unit == "B"
+                            ? locale.toString(static_cast<qulonglong>(bytes))
+                            : locale.toString(size.value, 'f', 1);
+    return QString{"%1 %2"}.arg(
+        amount,
+        QLatin1String{
+            size.unit.data(), static_cast<qsizetype>(size.unit.size())
+        }
+    );
+}
+
+QString duration(std::uint64_t seconds, const QLocale& locale) {
+    const auto amount = [&locale](std::uint64_t value) {
+        return locale.toString(static_cast<qulonglong>(value));
+    };
+    if (seconds >= 86400) {
+        return MainWindow::tr("%1 d %2 h")
+            .arg(amount(seconds / 86400), amount(seconds % 86400 / 3600));
+    }
+    if (seconds >= 3600) {
+        return MainWindow::tr("%1 h %2 min")
+            .arg(amount(seconds / 3600), amount(seconds % 3600 / 60));
+    }
+    if (seconds >= 60) {
+        return MainWindow::tr("%1 min %2 s")
+            .arg(amount(seconds / 60), amount(seconds % 60));
+    }
+    return MainWindow::tr("%1 s").arg(amount(seconds));
 }
 
 QLabel* make_value_label(const QString& text) {
@@ -249,8 +282,12 @@ MainWindow::MainWindow(
     connect(save_button, &QPushButton::clicked, this, [this] {
         save_settings();
     });
-    connect(reload_button_, &QPushButton::clicked,
-            this, &MainWindow::reload_settings);
+    connect(
+        reload_button_,
+        &QPushButton::clicked,
+        this,
+        &MainWindow::reload_settings
+    );
     connect(
         login_button_, &QPushButton::clicked, this, &MainWindow::start_login
     );
@@ -396,12 +433,11 @@ MainWindow::MainWindow(
                             events::MessageKind::success
                         );
                     } else {
-                        const auto& detail =
-                            !state_.configuration_error.empty()
-                                ? state_.configuration_error
-                            : !state_.account_error.empty()
-                                ? state_.account_error
-                                : state_.authentication_error;
+                        const auto& detail = !state_.configuration_error.empty()
+                                                 ? state_.configuration_error
+                                             : !state_.account_error.empty()
+                                                 ? state_.account_error
+                                                 : state_.authentication_error;
                         set_login_status(
                             QT_TR_NOOP(
                                 "Login completed, but account status could not "
@@ -721,6 +757,9 @@ QString MainWindow::log_event_text(const events::Event& event) const {
 }
 
 void MainWindow::render_sync() {
+    const auto locale = locale_for_language(
+        localization_ ? localization_->language() : Language::automatic
+    );
     QString status;
     switch (sync_phase_) {
     case SyncPhase::idle:
@@ -739,7 +778,12 @@ void MainWindow::render_sync() {
     case SyncPhase::scanning:
         status =
             tr("Scanning remote changes: %1 pages, %2 items.")
-                .arg(number(sync_delta_->pages), number(sync_delta_->items));
+                .arg(
+                    locale.toString(
+                        static_cast<qulonglong>(sync_delta_->pages)
+                    ),
+                    locale.toString(static_cast<qulonglong>(sync_delta_->items))
+                );
         break;
     case SyncPhase::transferring:
         status = tr("Downloading files...");
@@ -792,20 +836,26 @@ void MainWindow::render_sync() {
             download.total,
             download.state
         ));
-        transfer = tr("Downloads: %1/%2 files; %3/%4 bytes; %5 B/s")
+        transfer = tr("Downloads: %1 / %2 files; %3 / %4; %5/s")
                        .arg(
-                           number(download.completed_files),
-                           number(download.file_count),
-                           number(download.downloaded),
-                           number(download.total),
-                           number(download.metrics.bytes_per_second)
+                           locale.toString(
+                               static_cast<qulonglong>(download.completed_files)
+                           ),
+                           locale.toString(
+                               static_cast<qulonglong>(download.file_count)
+                           ),
+                           data_size(download.downloaded, locale),
+                           data_size(download.total, locale),
+                           data_size(download.metrics.bytes_per_second, locale)
                        );
         if (download.metrics.estimated_seconds_remaining &&
             synchronization_.running() &&
             sync_phase_ == SyncPhase::transferring) {
             transfer +=
-                tr("; about %1 seconds remaining")
-                    .arg(number(*download.metrics.estimated_seconds_remaining));
+                tr("; about %1 remaining")
+                    .arg(duration(
+                        *download.metrics.estimated_seconds_remaining, locale
+                    ));
         }
     }
     transfer_status_->setText(transfer);
@@ -1265,27 +1315,29 @@ void MainWindow::refresh_startup_status() {
             "in Settings."
         );
     } else if (state_.configuration_status == ConfigurationStatus::invalid) {
-        messages << tr(
-            "Configuration could not be loaded:\n%1\n"
-            "Import a valid TOML file, or repair this file and reload. "
-            "The original file has not been changed."
-        ).arg(QString::fromStdString(state_.configuration_error));
+        messages
+            << tr("Configuration could not be loaded:\n%1\n"
+                  "Import a valid TOML file, or repair this file and reload. "
+                  "The original file has not been changed.")
+                   .arg(QString::fromStdString(state_.configuration_error));
     }
     if (!state_.authentication_error.empty()) {
         messages << tr("Authentication configuration needs attention:\n%1")
-                        .arg(QString::fromStdString(state_.authentication_error));
+                        .arg(
+                            QString::fromStdString(state_.authentication_error)
+                        );
     }
     if (!state_.account_error.empty()) {
-        messages << tr(
-            "Local account credentials could not be read:\n%1\n"
-            "Repair the state directory or select another one in Settings, "
-            "then reload."
-        ).arg(QString::fromStdString(state_.account_error));
+        messages << tr("Local account credentials could not be read:\n%1\n"
+                       "Repair the state directory or select another one in "
+                       "Settings, "
+                       "then reload.")
+                        .arg(QString::fromStdString(state_.account_error));
     }
     if (!state_.sync_error.empty()) {
-        messages << tr(
-            "Sync directory needs attention before synchronization:\n%1"
-        ).arg(QString::fromStdString(state_.sync_error));
+        messages
+            << tr("Sync directory needs attention before synchronization:\n%1")
+                   .arg(QString::fromStdString(state_.sync_error));
     }
     startup_status_->setText(messages.join("\n\n"));
     settings_status_->setText(startup_status_->text());

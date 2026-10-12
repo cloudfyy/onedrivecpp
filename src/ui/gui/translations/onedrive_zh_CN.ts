@@ -389,13 +389,29 @@
     </message>
     <message>
         <location filename="../main_window.cpp" line="795"/>
-        <source>Downloads: %1/%2 files; %3/%4 bytes; %5 B/s</source>
-        <translation>下载：%1/%2 个文件；%3/%4 字节；%5 字节/秒</translation>
+        <source>Downloads: %1 / %2 files; %3 / %4; %5/s</source>
+        <translation>下载：%1 / %2 个文件；%3 / %4；%5/秒</translation>
     </message>
     <message>
         <location filename="../main_window.cpp" line="807"/>
-        <source>; about %1 seconds remaining</source>
-        <translation>；预计剩余 %1 秒</translation>
+        <source>; about %1 remaining</source>
+        <translation>；预计剩余 %1</translation>
+    </message>
+    <message>
+        <source>%1 d %2 h</source>
+        <translation>%1 天 %2 小时</translation>
+    </message>
+    <message>
+        <source>%1 h %2 min</source>
+        <translation>%1 小时 %2 分钟</translation>
+    </message>
+    <message>
+        <source>%1 min %2 s</source>
+        <translation>%1 分钟 %2 秒</translation>
+    </message>
+    <message>
+        <source>%1 s</source>
+        <translation>%1 秒</translation>
     </message>
     <message>
         <location filename="../main_window.cpp" line="1011"/>

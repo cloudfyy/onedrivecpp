@@ -141,6 +141,13 @@ download completion versus task completion. `EndDownloadProgressEvent` is a
 terminal-line formatting marker and must not reset GUI download progress.
 Tests also preserve cancellation through late scan summaries and check that
 completed/stopped downloads do not retain a remaining-time estimate.
+Transfer counts use locale-aware grouping; byte quantities and rates use
+IEC units, and remaining time uses compact seconds/minutes/hours/days.
+GUI transfers, CLI progress and quota/inspection fields share the Qt-independent
+`util/byte_size.hpp` scaling helper while retaining their own numeric precision,
+locale and existing maximum unit.
+Regressions cover unit/time boundaries, zero and uint64-sized quantities,
+the selected language independently of the default locale, and live translation.
 Phase-two regressions cover every new field, proxy patterns/optional states,
 nested/inline/dotted tables and internal array comments, timeout units, backoff/throttle constraints,
 endpoint safety and rejection without writes or backups.

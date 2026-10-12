@@ -1,5 +1,7 @@
 #include "ui/cli/backend_factory.hpp"
 #include "ui/cli/app/drive_fields.hpp"
+#include "ui/cli/format.hpp"
+#include "onedrive/util/byte_size.hpp"
 #include "onedrive/ui/cli/console.hpp"
 #include "support/common.hpp"
 #include "cli/partials_fixture.hpp"
@@ -9,6 +11,7 @@
 #include <cstdlib>
 #include <iostream>
 #include <memory>
+#include <limits>
 #include <sstream>
 #include <string>
 
@@ -19,9 +22,17 @@ using onedrive::test::fail;
 int test_inspection_completion() {
     using namespace onedrive::cli;
     constexpr std::array inspection_views{
-        TuiView::health, TuiView::status, TuiView::drives, TuiView::shared,
-        TuiView::sites, TuiView::quota, TuiView::storage, TuiView::partials,
-        TuiView::files, TuiView::verify, TuiView::config,
+        TuiView::health,
+        TuiView::status,
+        TuiView::drives,
+        TuiView::shared,
+        TuiView::sites,
+        TuiView::quota,
+        TuiView::storage,
+        TuiView::partials,
+        TuiView::files,
+        TuiView::verify,
+        TuiView::config,
     };
     for (const auto view : inspection_views) {
         for (const auto* keys : {
@@ -87,8 +98,7 @@ int test_inspection_completion() {
         std::ostringstream output;
         std::ostringstream error;
         const Console console{detail::make_ftxui_console_backend(
-            {.ui = UiMode::tui, .view = TuiView::health},
-            output, error, 80, 20
+            {.ui = UiMode::tui, .view = TuiView::health}, output, error, 80, 20
         )};
         std::istringstream input;
         auto* original = std::cin.rdbuf(input.rdbuf());
@@ -102,7 +112,9 @@ int test_inspection_completion() {
         const bool reached_eof = std::cin.eof();
         std::cin.rdbuf(original);
         if (threw != read_error || (!read_error && !reached_eof)) {
-            return fail("inspection completion mishandled EOF or input failure");
+            return fail(
+                "inspection completion mishandled EOF or input failure"
+            );
         }
     }
     for (const auto mode : {OutputMode::text, OutputMode::json}) {
@@ -110,7 +122,8 @@ int test_inspection_completion() {
         std::ostringstream error;
         const Console console{
             {.output = mode, .ui = UiMode::console, .view = TuiView::health},
-            output, error
+            output,
+            error
         };
         std::istringstream input{"untouched\n"};
         auto* original = std::cin.rdbuf(input.rdbuf());
@@ -457,6 +470,27 @@ int test_partial_list() {
 }
 
 int test_drive_field_helpers() {
+    using onedrive::util::scale_bytes;
+    constexpr std::array<std::string_view, 7> units{
+        "B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"
+    };
+    for (std::size_t index = 0; index < units.size(); ++index) {
+        const auto bytes = std::uint64_t{1} << (10 * index);
+        const auto size = scale_bytes(bytes);
+        if (size.value != 1 || size.unit != units[index]) {
+            return fail("shared byte scaling mishandled unit boundaries");
+        }
+    }
+    if (scale_bytes(0).value != 0 || scale_bytes(0).unit != "B" ||
+        scale_bytes(1023).value != 1023 || scale_bytes(1023).unit != "B" ||
+        scale_bytes(std::numeric_limits<std::uint64_t>::max()).unit != "EiB" ||
+        scale_bytes(std::numeric_limits<std::uint64_t>::max()).value != 16 ||
+        onedrive::cli::detail::format_bytes(0) != "0 B" ||
+        onedrive::cli::detail::format_bytes(1023) != "1023 B" ||
+        onedrive::cli::detail::format_bytes(1024) != "1.0 KiB" ||
+        onedrive::cli::detail::format_bytes(1ULL << 40) != "1024.0 GiB") {
+        return fail("shared byte scaling changed CLI precision or unit limits");
+    }
     using onedrive::app::detail::format_bytes;
     if (format_bytes(0) != "0 B" || format_bytes(1023) != "1023 B" ||
         format_bytes(1024) != "1.00 KiB" ||
@@ -512,9 +546,7 @@ int test_tui_dashboard() {
             "Starting Microsoft Graph delta query"
         );
         console.message(
-            MessageKind::information,
-            "log",
-            "Microsoft Graph request details"
+            MessageKind::information, "log", "Microsoft Graph request details"
         );
         console.delta_progress(2, 350, ProgressState::ongoing);
         console.delta_summary({
@@ -526,12 +558,7 @@ int test_tui_dashboard() {
             .deletions = 10,
         });
         console.download_progress(
-            1,
-            4,
-            512,
-            1'024,
-            ProgressState::ongoing,
-            {.bytes_per_second = 128}
+            1, 4, 512, 1'024, ProgressState::ongoing, {.bytes_per_second = 128}
         );
         console.end_download_progress();
         const auto after_end = output.str();
@@ -586,9 +613,7 @@ int test_tui_dashboard() {
             !rendered.contains("conflict.txt") ||
             !rendered.contains("Sync complete.") ||
             !rendered.contains("Checking the cloud for changes") ||
-            !rendered.contains(
-                "cloud service cloud check needs attention"
-            ) ||
+            !rendered.contains("cloud service cloud check needs attention") ||
             !error.str().empty()) {
             return fail("FTXUI dashboard did not render friendly state");
         }
@@ -613,8 +638,7 @@ int test_tui_dashboard() {
         }
         std::istringstream confirmation{"yes\n"};
         auto* original_input = std::cin.rdbuf(confirmation.rdbuf());
-        const bool confirmed =
-            console.confirm("confirm", "Continue? ", "yes");
+        const bool confirmed = console.confirm("confirm", "Continue? ", "yes");
         std::cin.rdbuf(original_input);
         if (!confirmed) {
             return fail("FTXUI confirmation did not accept expected input");
@@ -660,19 +684,23 @@ int test_tui_dashboard() {
         80,
         20
     );
-    auth_backend->emit(MessageEvent{
-        .kind = MessageKind::information,
-        .event = "device_authorization",
-        .text =
-            "To sign in, use a web browser to open the page "
-            "https://login.microsoftonline.com/device and enter the code "
-            "ABCD-EFGH to authenticate.",
-    });
-    auth_backend->emit(MessageEvent{
-        .kind = MessageKind::information,
-        .event = "authorization_wait",
-        .text = "Waiting for authorization...",
-    });
+    auth_backend->emit(
+        MessageEvent{
+            .kind = MessageKind::information,
+            .event = "device_authorization",
+            .text =
+                "To sign in, use a web browser to open the page "
+                "https://login.microsoftonline.com/device and enter the code "
+                "ABCD-EFGH to authenticate.",
+        }
+    );
+    auth_backend->emit(
+        MessageEvent{
+            .kind = MessageKind::information,
+            .event = "authorization_wait",
+            .text = "Waiting for authorization...",
+        }
+    );
     auth_backend.reset();
     if (!auth_output.str().contains("ONEDRIVE // AUTH  v") ||
         !auth_output.str().contains("ABCD-EFGH") ||
@@ -692,13 +720,15 @@ int test_tui_dashboard() {
         80,
         20
     );
-    doctor_backend->emit(SectionEvent{
-        .event = "database_integrity",
-        .title = "Synchronization state database:",
-        .fields = {
-            {.label = "status:", .key = "status", .value = "healthy"},
-        },
-    });
+    doctor_backend->emit(
+        SectionEvent{
+            .event = "database_integrity",
+            .title = "Synchronization state database:",
+            .fields = {
+                {.label = "status:", .key = "status", .value = "healthy"},
+            },
+        }
+    );
     doctor_backend.reset();
     if (!doctor_output.str().contains("ONEDRIVE // HEALTH  v") ||
         !doctor_output.str().contains("status: healthy")) {
@@ -717,14 +747,16 @@ int test_tui_dashboard() {
         80,
         24
     );
-    status_backend->emit(SectionEvent{
-        .event = "status",
-        .title = "Synchronization status:",
-        .fields = {
-            {.label = "account:", .key = "account", .value = "Test User"},
-            {.label = "tracked:", .key = "tracked_items", .value = "42"},
-        },
-    });
+    status_backend->emit(
+        SectionEvent{
+            .event = "status",
+            .title = "Synchronization status:",
+            .fields = {
+                {.label = "account:", .key = "account", .value = "Test User"},
+                {.label = "tracked:", .key = "tracked_items", .value = "42"},
+            },
+        }
+    );
     status_backend.reset();
     if (!status_output.str().contains("ONEDRIVE // STATUS  v") ||
         !status_output.str().contains("account: Test User") ||
@@ -743,17 +775,17 @@ int test_tui_dashboard() {
         80,
         20
     );
-    unstyled_backend->emit(MessageEvent{
-        .kind = MessageKind::success,
-        .event = "complete",
-        .text = "Complete",
-    });
+    unstyled_backend->emit(
+        MessageEvent{
+            .kind = MessageKind::success,
+            .event = "complete",
+            .text = "Complete",
+        }
+    );
     unstyled_backend.reset();
     const auto unstyled = unstyled_output.str();
-    if (unstyled.contains("\033[1m") ||
-        unstyled.contains("\033[3") ||
-        unstyled.contains("\033[38;") ||
-        !unstyled.contains("\033[?25h")) {
+    if (unstyled.contains("\033[1m") || unstyled.contains("\033[3") ||
+        unstyled.contains("\033[38;") || !unstyled.contains("\033[?25h")) {
         return fail("color-disabled TUI retained ANSI styling");
     }
 
@@ -799,11 +831,13 @@ int test_tui_dashboard() {
         80,
         20
     );
-    monitor_backend->emit(MessageEvent{
-        .kind = MessageKind::success,
-        .event = "monitor_ready",
-        .text = "Monitoring local and Microsoft Graph changes for: /sync",
-    });
+    monitor_backend->emit(
+        MessageEvent{
+            .kind = MessageKind::success,
+            .event = "monitor_ready",
+            .text = "Monitoring local and Microsoft Graph changes for: /sync",
+        }
+    );
     monitor_backend.reset();
     if (!monitor_output.str().contains("ONEDRIVE // WATCH  v") ||
         !monitor_output.str().contains("q / Esc  EXIT") ||
@@ -816,7 +850,7 @@ int test_tui_dashboard() {
     return EXIT_SUCCESS;
 }
 
-}  // namespace
+} // namespace
 
 int main() {
     if (const auto result = test_partial_list(); result != EXIT_SUCCESS) {
@@ -829,7 +863,8 @@ int main() {
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const auto result = test_inspection_completion(); result != EXIT_SUCCESS) {
+    if (const auto result = test_inspection_completion();
+        result != EXIT_SUCCESS) {
         return result;
     }
     for (const auto rows : {12U, 24U, 30U}) {

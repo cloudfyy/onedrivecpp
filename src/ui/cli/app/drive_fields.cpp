@@ -1,7 +1,7 @@
 #include "drive_fields.hpp"
+#include "onedrive/util/byte_size.hpp"
 
 #include <algorithm>
-#include <array>
 #include <format>
 #include <iterator>
 #include <string_view>
@@ -9,18 +9,9 @@
 namespace onedrive::app::detail {
 
 std::string format_bytes(std::uint64_t bytes) {
-    constexpr std::uint64_t unit = 1024;
-    constexpr std::array<std::string_view, 5> names{
-        "B", "KiB", "MiB", "GiB", "TiB"
-    };
-    double value = static_cast<double>(bytes);
-    std::size_t index = 0;
-    while (value >= static_cast<double>(unit) && index + 1 < names.size()) {
-        value /= static_cast<double>(unit);
-        ++index;
-    }
-    return index == 0 ? std::format("{} {}", bytes, names[index])
-                      : std::format("{:.2f} {}", value, names[index]);
+    const auto size = util::scale_bytes(bytes, util::ByteUnit::tebibytes);
+    return size.unit == "B" ? std::format("{} {}", bytes, size.unit)
+                            : std::format("{:.2f} {}", size.value, size.unit);
 }
 
 std::vector<cli::Field>
@@ -47,10 +38,8 @@ quota_fields(const std::optional<graph::DriveQuota>& quota) {
     };
 }
 
-std::vector<cli::Field> drive_fields(
-    const graph::DriveInfo& drive,
-    std::optional<bool> configured
-) {
+std::vector<cli::Field>
+drive_fields(const graph::DriveInfo& drive, std::optional<bool> configured) {
     std::vector<cli::Field> fields{
         {.label = "name:", .key = "name", .value = drive.name},
         {.label = "id:", .key = "id", .value = drive.id},

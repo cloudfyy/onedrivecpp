@@ -23,6 +23,7 @@
 #include <spdlog/spdlog.h>
 
 #include <atomic>
+#include <limits>
 #include <thread>
 
 namespace {
@@ -844,7 +845,7 @@ void test_progress_phases() {
         require(
             wait_until([&] {
                 return status->text() ==
-                       "Scanning remote changes: 11 pages, 2569 items.";
+                       "Scanning remote changes: 11 pages, 2,569 items.";
             }) &&
                 progress->isHidden() &&
                 hint->text() == "Remote totals are unknown; a percentage "
@@ -888,13 +889,13 @@ void test_progress_phases() {
         require(
             wait_until([&] { return progress->value() == 50; }) &&
                 !progress->isHidden() &&
-                transfer->text().contains("1/2 files; 0/0 bytes"),
+                transfer->text().contains("1 / 2 files; 0 B / 0 B"),
             "zero-byte downloads did not use measurable file-count progress"
         );
         step = 5;
         require(
             wait_until([&] {
-                return transfer->text().contains("50/100 bytes");
+                return transfer->text().contains("50 B / 100 B");
             }) &&
                 progress->value() == 50 && progress->text() == "Downloads: 50%",
             "byte progress or terminal newline handling was incorrect"
@@ -913,8 +914,8 @@ void test_progress_phases() {
             wait_until([&] { return status->text() == "Synchronizing..."; }) &&
                 progress->isHidden() && !hint->isHidden() &&
                 !sync->isEnabled() &&
-                transfer->text().contains("2/2 files; 100/100 bytes") &&
-                !transfer->text().contains("seconds remaining"),
+                transfer->text().contains("2 / 2 files; 100 B / 100 B") &&
+                !transfer->text().contains("remaining"),
             "finished downloads falsely reported overall completion or a stale "
             "ETA"
         );
@@ -925,6 +926,136 @@ void test_progress_phases() {
                 !progress->isHidden() && progress->value() == 100 &&
                 progress->text() == "100%" && hint->isHidden(),
             "overall 100 percent appeared before task completion"
+        );
+    }
+}
+
+void test_readable_transfer_numbers() {
+    struct Example {
+        std::uint64_t downloaded;
+        std::uint64_t total;
+        std::uint64_t speed;
+        std::optional<std::uint64_t> seconds;
+        QString amounts;
+        QString english_time;
+        QString chinese_time;
+    };
+    const Example examples[]{
+        {0, 0, 0, std::nullopt, "0 B / 0 B; 0 B", {}, {}},
+        {1023, 1024, 0, 0, "1,023 B / 1.0 KiB; 0 B", "0 s", "0 秒"},
+        {1024,
+         1ULL << 20,
+         1024,
+         59,
+         "1.0 KiB / 1.0 MiB; 1.0 KiB",
+         "59 s",
+         "59 秒"},
+        {1ULL << 20,
+         1ULL << 30,
+         1ULL << 20,
+         60,
+         "1.0 MiB / 1.0 GiB; 1.0 MiB",
+         "1 min 0 s",
+         "1 分钟 0 秒"},
+        {1ULL << 30,
+         1ULL << 40,
+         1ULL << 30,
+         3599,
+         "1.0 GiB / 1.0 TiB; 1.0 GiB",
+         "59 min 59 s",
+         "59 分钟 59 秒"},
+        {1ULL << 40,
+         1ULL << 50,
+         1ULL << 40,
+         3600,
+         "1.0 TiB / 1.0 PiB; 1.0 TiB",
+         "1 h 0 min",
+         "1 小时 0 分钟"},
+        {1ULL << 50,
+         1ULL << 60,
+         1ULL << 50,
+         86399,
+         "1.0 PiB / 1.0 EiB; 1.0 PiB",
+         "23 h 59 min",
+         "23 小时 59 分钟"},
+        {1ULL << 60,
+         std::numeric_limits<std::uint64_t>::max(),
+         1ULL << 60,
+         86400,
+         "1.0 EiB / 16.0 EiB; 1.0 EiB",
+         "1 d 0 h",
+         "1 天 0 小时"},
+        {30082294,
+         17349245011,
+         126523,
+         136886,
+         "28.7 MiB / 16.2 GiB; 123.6 KiB",
+         "1 d 14 h",
+         "1 天 14 小时"},
+    };
+    struct RestoreLocale {
+        QLocale original;
+        ~RestoreLocale() {
+            QLocale::setDefault(original);
+        }
+    } restore{QLocale{}};
+    QLocale::setDefault(QLocale{QLocale::German});
+    for (const auto& example : examples) {
+        Fixture fixture;
+        gui::Localization localization{gui::Language::english};
+        gui::MainWindow window{
+            gui::load_app_state_view_model(fixture.file),
+            {},
+            &localization,
+            [&example](
+                config::Config,
+                const events::Observer& observer,
+                std::stop_token token
+            ) {
+                observer.download_progress(
+                    64,
+                    13341,
+                    example.downloaded,
+                    example.total,
+                    util::ProgressState::ongoing,
+                    {.bytes_per_second = example.speed,
+                     .estimated_seconds_remaining = example.seconds}
+                );
+                while (!token.stop_requested()) {
+                    QThread::msleep(1);
+                }
+                return exit_code::cancelled;
+            }
+        };
+        auto* transfer = window.findChild<QLabel*>("transferStatus");
+        button(window, "startSyncButton")->click();
+        auto english =
+            "Downloads: 64 / 13,341 files; " + example.amounts + "/s";
+        if (example.seconds) {
+            english += "; about " + example.english_time + " remaining";
+        }
+        require(
+            wait_until([&] { return transfer->text() == english; }),
+            "transfer numbers did not use readable units and selected locale"
+        );
+        localization.set_language(gui::Language::simplified_chinese);
+        QCoreApplication::processEvents();
+        auto chinese = "下载：64 / 13,341 个文件；" + example.amounts + "/秒";
+        chinese.replace("; ", "；");
+        if (example.seconds) {
+            chinese += "；预计剩余 " + example.chinese_time;
+        }
+        if (transfer->text() != chinese) {
+            throw std::runtime_error{("translated transfer: " +
+                                      transfer->text() +
+                                      "; expected: " + chinese)
+                                         .toStdString()};
+        }
+        localization.set_language(gui::Language::english);
+        QCoreApplication::processEvents();
+        require(
+            transfer->text() == english,
+            "language switching changed the underlying transfer values"
         );
     }
 }
@@ -1006,8 +1137,8 @@ void test_progress_and_stop() {
                 "Blocked: blocked.txt [conflict]"
             ) &&
             messages->toPlainText().contains("downloads: 2") &&
-            transfer->text().contains("1/2 files; 50/100 bytes; 25 B/s") &&
-            transfer->text().contains("2 seconds remaining"),
+            transfer->text().contains("1 / 2 files; 50 B / 100 B; 25 B/s") &&
+            transfer->text().contains("2 s remaining"),
         "progress or task interlocks were incorrect"
     );
     auto* tabs = window.findChild<QTabWidget*>("mainTabs");
@@ -1056,8 +1187,10 @@ void test_progress_and_stop() {
         "clearing logs changed an active synchronization task"
     );
     stop->click();
-    require(wait_until([&] { return late_progress.load(); }),
-            "cancelled task did not send its late progress");
+    require(
+        wait_until([&] { return late_progress.load(); }),
+        "cancelled task did not send its late progress"
+    );
     QCoreApplication::processEvents();
     require(
         !stop->isEnabled() && status->text() == "正在停止，等待任务结束…",
@@ -1222,6 +1355,7 @@ int main(int argc, char* argv[]) {
         test_controller_preview_cache();
         test_preview_and_apply();
         test_progress_phases();
+        test_readable_transfer_numbers();
         test_progress_and_stop();
         test_results_and_preflight();
         test_close_and_availability();
