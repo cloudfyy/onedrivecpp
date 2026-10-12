@@ -6,6 +6,7 @@
 #include "onedrive/ui/common/observer.hpp"
 #include "onedrive/util/mount.hpp"
 #include "onedrive/util/path_security.hpp"
+#include "onedrive/util/sha256.hpp"
 #include "sync/core/delta_plan.hpp"
 #include "onedrive/sync/capabilities.hpp"
 #include "sync/core/downloads.hpp"
@@ -28,6 +29,7 @@
 #include "sync/upload/orchestration.hpp"
 
 #include <spdlog/spdlog.h>
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <cerrno>
@@ -52,8 +54,8 @@ namespace {
 struct TransparentStringHash {
     using is_transparent = void;
 
-    [[nodiscard]] std::size_t operator()(std::string_view value
-    ) const noexcept {
+    [[nodiscard]] std::size_t
+    operator()(std::string_view value) const noexcept {
         return std::hash<std::string_view>{}(value);
     }
 };
@@ -412,6 +414,22 @@ std::optional<PreviewCache::State> PreviewCache::capture_state(
     return state;
 }
 
+std::string PreviewCache::scope_fingerprint(const config::Config& config) {
+    const auto value = scope(config);
+    return util::sha256_hex(
+        nlohmann::json::array({value.sync_root.string(),
+                               value.state_root.string(),
+                               value.drive_id,
+                               value.graph_endpoint,
+                               value.application_id,
+                               value.tenant,
+                               value.auth_endpoint,
+                               value.auth_scope,
+                               static_cast<int>(value.validation)})
+            .dump()
+    );
+}
+
 int SyncEngine::synchronize(std::stop_token stop_token) {
     std::optional<PreviewCache::Snapshot> previous_preview;
     if (preview_cache_) {
@@ -536,6 +554,28 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
         auto query_delta_link = sync_filter_changed
                                     ? std::optional<std::string>{}
                                     : previous_delta_link;
+        const auto scope_fingerprint = PreviewCache::scope_fingerprint(config_);
+        auto pending_delta = items_.pending_delta(config_.drive_id);
+        if (pending_delta &&
+            (pending_delta->scope_fingerprint != scope_fingerprint ||
+             pending_delta->sync_filter_fingerprint !=
+                 sync_filter_fingerprint ||
+             pending_delta->applied_delta_link != previous_delta_link ||
+             pending_delta->applied_filter_fingerprint !=
+                 previous_sync_filter_fingerprint)) {
+            observer.message(
+                events::MessageKind::information,
+                "pending_delta_invalidated",
+                "Saved remote changes no longer match the account, filters or "
+                "applied cursor; fetching remote changes again..."
+            );
+            pending_delta.reset();
+            if (!capabilities.previews()) {
+                items_.remove_pending_delta(config_.drive_id);
+            }
+        }
+        std::optional<graph::DeltaResult> retained_delta;
+        std::optional<storage::DeltaApplyMode> retained_mode;
         if (previous_preview &&
             (!cache_state ||
              previous_preview->scope != PreviewCache::scope(config_) ||
@@ -551,14 +591,26 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
         }
         if (previous_preview) {
             query_delta_link = previous_preview->delta.delta_link;
+            retained_delta = std::move(previous_preview->delta);
+            retained_mode = previous_preview->apply_mode;
             observer.message(
                 events::MessageKind::information,
                 "preview_cache_reused",
                 "Reusing preview metadata; checking only subsequent remote "
                 "changes and rebuilding the local plan..."
             );
+        } else if (pending_delta) {
+            query_delta_link = pending_delta->delta.delta_link;
+            retained_delta = std::move(pending_delta->delta);
+            retained_mode = pending_delta->apply_mode;
+            observer.message(
+                events::MessageKind::information,
+                "pending_delta_resumed",
+                "Restoring saved remote changes; checking only subsequent "
+                "changes and rebuilding the local plan..."
+            );
         }
-        if (sync_filter_changed && !previous_preview) {
+        if (sync_filter_changed && !retained_delta) {
             spdlog::info(
                 "Selective synchronization rules changed; fetching the full "
                 "remote state"
@@ -606,8 +658,8 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
         auto apply_mode = query_delta_link.has_value()
                               ? storage::DeltaApplyMode::merge
                               : storage::DeltaApplyMode::replace;
-        if (previous_preview) {
-            apply_mode = previous_preview->apply_mode;
+        if (retained_mode) {
+            apply_mode = *retained_mode;
         }
         graph::DeltaResult delta;
         std::size_t delta_pages = 0;
@@ -621,11 +673,11 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
                 observer.delta_progress(pages, items, state);
             };
         try {
-            delta = graph_.list_delta(
-                query_delta_link, delta_progress, stop_token
-            );
+            delta =
+                graph_.list_delta(query_delta_link, delta_progress, stop_token);
         } catch (const graph::DeltaCursorInvalidError& error) {
             previous_preview.reset();
+            retained_delta.reset();
             spdlog::warn(
                 "{}; retrying with a full Microsoft Graph delta query",
                 error.what()
@@ -636,27 +688,27 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
                 "The saved Microsoft Graph cursor is no longer valid; "
                 "fetching the full remote state..."
             );
-            delta = graph_.list_delta(
-                std::nullopt, delta_progress, stop_token
-            );
+            delta = graph_.list_delta(std::nullopt, delta_progress, stop_token);
             apply_mode = storage::DeltaApplyMode::replace;
         }
         throw_if_cancelled(stop_token);
-        if (previous_preview) {
+        auto tracked_items = items_.drive_items(config_.drive_id);
+        std::ranges::sort(tracked_items, {}, &storage::ItemState::remote_id);
+        if (retained_delta) {
             graph::client_detail::DeltaChanges changes{
-                std::move(previous_preview->delta.changes)
+                std::move(retained_delta->changes)
             };
             const bool hierarchy_changed = std::ranges::any_of(
                 delta.changes, [&](const graph::RemoteItem& change) {
                     const auto* cached = changes.find(change.id);
                     const auto tracked_position = std::ranges::lower_bound(
-                        cache_state->items,
+                        tracked_items,
                         change.id,
                         {},
                         &storage::ItemState::remote_id
                     );
                     const auto* tracked =
-                        tracked_position != cache_state->items.end() &&
+                        tracked_position != tracked_items.end() &&
                                 tracked_position->remote_id == change.id
                             ? &*tracked_position
                             : nullptr;
@@ -678,9 +730,10 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
             if (hierarchy_changed) {
                 observer.message(
                     events::MessageKind::information,
-                    "preview_hierarchy_changed",
+                    previous_preview ? "preview_hierarchy_changed"
+                                     : "pending_delta_hierarchy_changed",
                     "Remote directory changes or unidentified deletions may "
-                    "affect preview paths; fetching the full remote state..."
+                    "affect saved paths; fetching the full remote state..."
                 );
                 delta =
                     graph_.list_delta(std::nullopt, delta_progress, stop_token);
@@ -697,6 +750,17 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
         if (capabilities.previews() && cache_state) {
             preview_delta = delta;
         }
+        if (!capabilities.previews()) {
+            items_.save_pending_delta({
+                .drive_id = config_.drive_id,
+                .scope_fingerprint = scope_fingerprint,
+                .sync_filter_fingerprint = sync_filter_fingerprint,
+                .applied_delta_link = previous_delta_link,
+                .applied_filter_fingerprint = previous_sync_filter_fingerprint,
+                .delta = delta,
+                .apply_mode = apply_mode,
+            });
+        }
         events::DeltaSummary delta_summary{
             .pages = delta_pages,
             .scanned_items = delta_scanned_items,
@@ -712,7 +776,6 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
             }
         }
         observer.delta_summary(delta_summary);
-        const auto tracked_items = items_.drive_items(config_.drive_id);
         std::vector<storage::UploadSuppression> upload_suppressions;
         if (apply_mode == storage::DeltaApplyMode::replace) {
             engine_detail::add_full_refresh_deletions(delta, tracked_items);

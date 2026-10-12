@@ -73,6 +73,10 @@ StateSummary read_state_summary(
             count_for_drive(database.get(), "pending_remote_move", drive_id),
         .pending_local_moves =
             count_for_drive(database.get(), "pending_move", drive_id),
+        .pending_deltas =
+            count_for_drive(database.get(), "pending_delta", drive_id),
+        .pending_delta_changes =
+            count_for_drive(database.get(), "pending_delta_change", drive_id),
         .delta_cursor = false,
         .sync_filter_fingerprint = {},
     };

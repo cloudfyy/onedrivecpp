@@ -541,6 +541,26 @@ public:
             }
         }
         applied_delta = std::move(delta);
+        pending_remote_delta.reset();
+    }
+
+    void save_pending_delta(onedrive::storage::PendingDelta delta) {
+        const std::scoped_lock lock{mutex};
+        if (fail_save_pending_delta) {
+            throw std::runtime_error{
+                "simulated pending delta persistence failure"
+            };
+        }
+        pending_remote_delta = std::move(delta);
+    }
+    [[nodiscard]] std::optional<onedrive::storage::PendingDelta>
+    pending_delta(const std::string&) const {
+        const std::scoped_lock lock{mutex};
+        return pending_remote_delta;
+    }
+    void remove_pending_delta(const std::string&) {
+        const std::scoped_lock lock{mutex};
+        pending_remote_delta.reset();
     }
 
     void save_pending_download(onedrive::storage::PendingDownload download) {
@@ -885,6 +905,8 @@ public:
         upload_suppressions_by_path;
     std::vector<onedrive::storage::BlockedItem> blocked;
     onedrive::storage::ItemDelta applied_delta;
+    std::optional<onedrive::storage::PendingDelta> pending_remote_delta;
+    bool fail_save_pending_delta{false};
     std::optional<std::string> saved_delta_link;
     std::optional<std::string> saved_sync_filter_fingerprint;
     bool reverse_state_order{false};

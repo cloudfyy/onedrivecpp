@@ -42,6 +42,10 @@ public:
     void open_read_only();
     void upsert(ItemState item);
     void apply_delta(ItemDelta delta);
+    void save_pending_delta(PendingDelta delta);
+    [[nodiscard]] std::optional<PendingDelta>
+    pending_delta(const std::string& drive_id) const;
+    void remove_pending_delta(const std::string& drive_id);
     void save_pending_download(PendingDownload download);
     void remove_pending_download(
         const std::string& drive_id, const std::string& remote_id
@@ -115,6 +119,10 @@ private:
     void open_read_only_on_worker();
     void upsert_on_worker(const ItemState& item);
     void apply_delta_on_worker(ItemDelta delta);
+    void save_pending_delta_on_worker(const PendingDelta& delta);
+    [[nodiscard]] std::optional<PendingDelta>
+    pending_delta_on_worker(const std::string& drive_id) const;
+    void remove_pending_delta_on_worker(const std::string& drive_id);
     void save_pending_download_on_worker(const PendingDownload& download);
     void remove_pending_download_on_worker(
         const std::string& drive_id, const std::string& remote_id

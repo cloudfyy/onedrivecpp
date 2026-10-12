@@ -1,6 +1,7 @@
 #pragma once
 
 #include "onedrive/util/file_hash.hpp"
+#include "onedrive/graph/graph_client.hpp"
 #include "onedrive/util/proxy_service.hpp"
 
 #include <cstddef>
@@ -69,6 +70,16 @@ struct BlockedItem {
 enum class DeltaApplyMode {
     merge,
     replace,
+};
+
+struct PendingDelta {
+    std::string drive_id;
+    std::string scope_fingerprint;
+    std::string sync_filter_fingerprint;
+    std::optional<std::string> applied_delta_link;
+    std::optional<std::string> applied_filter_fingerprint;
+    graph::DeltaResult delta;
+    DeltaApplyMode apply_mode{DeltaApplyMode::merge};
 };
 
 struct ItemDelta {
@@ -160,6 +171,7 @@ struct ClearedState {
     std::size_t pending_moves{0};
     std::size_t upload_suppressions{0};
     std::size_t blocked_items{0};
+    std::size_t pending_deltas{0};
     bool delta_link{false};
 };
 
@@ -167,6 +179,9 @@ PRO_DEF_MEM_DISPATCH(StoreOpenDispatch, open);
 PRO_DEF_MEM_DISPATCH(StoreOpenReadOnlyDispatch, open_read_only);
 PRO_DEF_MEM_DISPATCH(StoreUpsertDispatch, upsert);
 PRO_DEF_MEM_DISPATCH(StoreApplyDeltaDispatch, apply_delta);
+PRO_DEF_MEM_DISPATCH(StoreSavePendingDeltaDispatch, save_pending_delta);
+PRO_DEF_MEM_DISPATCH(StorePendingDeltaDispatch, pending_delta);
+PRO_DEF_MEM_DISPATCH(StoreRemovePendingDeltaDispatch, remove_pending_delta);
 PRO_DEF_MEM_DISPATCH(StoreSavePendingDispatch, save_pending_download);
 PRO_DEF_MEM_DISPATCH(StoreRemovePendingDispatch, remove_pending_download);
 PRO_DEF_MEM_DISPATCH(StorePendingDispatch, pending_downloads);
@@ -208,106 +223,127 @@ PRO_DEF_MEM_DISPATCH(StoreFindDispatch, find);
 PRO_DEF_MEM_DISPATCH(StoreDriveItemsDispatch, drive_items);
 PRO_DEF_MEM_DISPATCH(StoreSizeDispatch, size);
 
-struct ItemStoreFacade : pro::facade_builder ::add_convention<StoreOpenDispatch, void()>::add_convention<StoreOpenReadOnlyDispatch, void()>::add_convention<
-                             StoreUpsertDispatch,
-                             void(ItemState
-                             )>::add_convention<StoreApplyDeltaDispatch, void(ItemDelta)>::
-                             add_convention<StoreSavePendingDispatch, void(PendingDownload)>::add_convention<
-                                 StoreRemovePendingDispatch,
-                                 void(const std::string&, const std::string&)>::
-                                 add_convention<
-                                     StorePendingDispatch,
-                                     std::vector<PendingDownload>(
-                                         const std::string&
-                                     ) const>::
-                                     add_convention<StoreSavePartialDispatch, void(PartialDownload)>::add_convention<
-                                         StoreRemovePartialDispatch,
+struct ItemStoreFacade : pro::facade_builder ::add_convention<StoreSavePendingDeltaDispatch, void(PendingDelta)>::add_convention<
+                             StorePendingDeltaDispatch,
+                             std::optional<PendingDelta>(const std::string&)
+                                 const>::
+                             add_convention<
+                                 StoreRemovePendingDeltaDispatch,
+                                 void(
+                                     const std::string&
+                                 )>::add_convention<StoreOpenDispatch, void()>::
+                                 add_convention<StoreOpenReadOnlyDispatch, void()>::add_convention<
+                                     StoreUpsertDispatch,
+                                     void(
+                                         ItemState
+                                     )>::add_convention<StoreApplyDeltaDispatch, void(ItemDelta)>::
+                                     add_convention<StoreSavePendingDispatch, void(PendingDownload)>::add_convention<
+                                         StoreRemovePendingDispatch,
                                          void(
                                              const std::string&,
                                              const std::string&
                                          )>::
                                          add_convention<
-                                             StorePartialDispatch,
-                                             std::optional<PartialDownload>(
-                                                 const std::string&,
+                                             StorePendingDispatch,
+                                             std::vector<PendingDownload>(
                                                  const std::string&
-                                             ) const>::
+                                             ) const>::add_convention<StoreSavePartialDispatch, void(PartialDownload)>::
                                              add_convention<
-                                                 StorePartialsDispatch,
-                                                 std::vector<PartialDownload>(
+                                                 StoreRemovePartialDispatch,
+                                                 void(
+                                                     const std::string&,
                                                      const std::string&
-                                                 ) const>::add_convention<StoreSavePendingUploadDispatch, void(PendingUpload)>::
+                                                 )>::
                                                  add_convention<
-                                                     StoreRemovePendingUploadDispatch,
-                                                     void(
+                                                     StorePartialDispatch,
+                                                     std::optional<
+                                                         PartialDownload>(
                                                          const std::string&,
                                                          const std::string&
-                                                     )>::
+                                                     ) const>::
                                                      add_convention<
-                                                         StorePendingUploadsDispatch,
+                                                         StorePartialsDispatch,
                                                          std::vector<
-                                                             PendingUpload>(
+                                                             PartialDownload>(
                                                              const std::string&
-                                                         ) const>::
+                                                         ) const>::add_convention<StoreSavePendingUploadDispatch, void(PendingUpload)>::
                                                          add_convention<
-                                                             StoreCommitUploadDispatch,
+                                                             StoreRemovePendingUploadDispatch,
                                                              void(
-                                                                 const PendingUpload&,
-                                                                 ItemState
-                                                             )>::add_convention<StoreSavePendingDeleteDispatch, void(PendingDelete)>::
+                                                                 const std::string&,
+                                                                 const std::string&
+                                                             )>::
                                                              add_convention<
-                                                                 StoreRemovePendingDeleteDispatch,
-                                                                 void(
-                                                                     const std::string&,
-                                                                     const std::string&
-                                                                 )>::
+                                                                 StorePendingUploadsDispatch,
+                                                                 std::
+                                                                     vector<PendingUpload>(const std::
+                                                                                               string&)
+                                                                         const>::
                                                                  add_convention<
-                                                                     StorePendingDeletesDispatch,
-                                                                     std::
-                                                                         vector<PendingDelete>(const std::
-                                                                                                   string&
-                                                                         ) const>::
+                                                                     StoreCommitUploadDispatch,
+                                                                     void(
+                                                                         const PendingUpload&,
+                                                                         ItemState
+                                                                     )>::
                                                                      add_convention<
-                                                                         StoreCommitDeleteDispatch,
+                                                                         StoreSavePendingDeleteDispatch,
                                                                          void(
-                                                                             const PendingDelete&
-                                                                         )>::add_convention<StoreSavePendingRemoteMoveDispatch, void(PendingRemoteMove)>::add_convention<StoreRemovePendingRemoteMoveDispatch, void(const std::string&, const std::string&)>::add_convention<StorePendingRemoteMovesDispatch, std::vector<PendingRemoteMove>(const std::string&) const>::add_convention<StoreCommitRemoteMoveDispatch, void(const PendingRemoteMove&, ItemState)>::add_convention<StoreSavePendingMoveDispatch, void(PendingMove)>::add_convention<StoreRemovePendingMoveDispatch, void(const std::string&, const std::string&)>::add_convention<StorePendingMovesDispatch, std::vector<PendingMove>(const std::string&) const>::add_convention<StoreUploadSuppressionsDispatch, std::vector<UploadSuppression>(const std::string&) const>::add_convention<StoreRemoveUploadSuppressionDispatch, void(const std::string&, const std::filesystem::path&)>::add_convention<StoreBlockedDispatch, std::vector<BlockedItem>(const std::string&) const>::
+                                                                             PendingDelete
+                                                                         )>::
                                                                          add_convention<
-                                                                             StoreResetDispatch,
-                                                                             bool(
+                                                                             StoreRemovePendingDeleteDispatch,
+                                                                             void(
+                                                                                 const std::string&,
                                                                                  const std::string&
                                                                              )>::
                                                                              add_convention<
-                                                                                 StoreClearDispatch,
-                                                                                 ClearedState(
-                                                                                     const std::string&
-                                                                                 )>::
+                                                                                 StorePendingDeletesDispatch,
+                                                                                 std::
+                                                                                     vector<
+                                                                                         PendingDelete>(const std::string&) const>::add_convention<StoreCommitDeleteDispatch, void(const PendingDelete&)>::add_convention<StoreSavePendingRemoteMoveDispatch, void(PendingRemoteMove)>::add_convention<StoreRemovePendingRemoteMoveDispatch, void(const std::string&, const std::string&)>::add_convention<StorePendingRemoteMovesDispatch, std::vector<PendingRemoteMove>(const std::string&) const>::
                                                                                  add_convention<
-                                                                                     StoreDeltaLinkDispatch,
-                                                                                     std::
-                                                                                         optional<std::string>(const std::string&
-                                                                                         ) const>::
+                                                                                     StoreCommitRemoteMoveDispatch,
+                                                                                     void(
+                                                                                         const PendingRemoteMove&,
+                                                                                         ItemState
+                                                                                     )>::
                                                                                      add_convention<
-                                                                                         StoreSyncFilterFingerprintDispatch,
-                                                                                         std::
-                                                                                             optional<std::string>(const std::string&
-                                                                                             ) const>::
+                                                                                         StoreSavePendingMoveDispatch,
+                                                                                         void(PendingMove)>::add_convention<StoreRemovePendingMoveDispatch, void(const std::string&, const std::string&)>::add_convention<StorePendingMovesDispatch, std::vector<PendingMove>(const std::string&) const>::add_convention<StoreUploadSuppressionsDispatch, std::vector<UploadSuppression>(const std::string&) const>::
                                                                                          add_convention<
-                                                                                             StoreFindDispatch,
-                                                                                             std::
-                                                                                                 optional<
-                                                                                                     ItemState>(const std::string&, const std::string&)
-                                                                                                     const>::
+                                                                                             StoreRemoveUploadSuppressionDispatch,
+                                                                                             void(
+                                                                                                 const std::string&,
+                                                                                                 const std::filesystem::path&
+                                                                                             )>::add_convention<StoreBlockedDispatch, std::vector<BlockedItem>(const std::string&) const>::add_convention<StoreResetDispatch, bool(const std::string&)>::add_convention<StoreClearDispatch, ClearedState(const std::string&)>::add_convention<StoreDeltaLinkDispatch, std::optional<std::string>(const std::string&) const>::
                                                                                              add_convention<
-                                                                                                 StoreDriveItemsDispatch,
-                                                                                                 std::vector<
-                                                                                                     ItemState>(const std::string&
+                                                                                                 StoreSyncFilterFingerprintDispatch,
+                                                                                                 std::optional<
+                                                                                                     std::
+                                                                                                         string>(
+                                                                                                     const std::string&
                                                                                                  ) const>::
                                                                                                  add_convention<
-                                                                                                     StoreSizeDispatch,
-                                                                                                     std::size_t(
+                                                                                                     StoreFindDispatch,
+                                                                                                     std::optional<
+                                                                                                         ItemState>(
+                                                                                                         const std::
+                                                                                                             string&,
+                                                                                                         const std::
+                                                                                                             string&
                                                                                                      ) const>::
-                                                                                                     build {
+                                                                                                     add_convention<
+                                                                                                         StoreDriveItemsDispatch,
+                                                                                                         std::vector<
+                                                                                                             ItemState>(
+                                                                                                             const std::
+                                                                                                                 string&
+                                                                                                         ) const>::
+                                                                                                         add_convention<
+                                                                                                             StoreSizeDispatch,
+                                                                                                             std::size_t()
+                                                                                                                 const>::
+                                                                                                             build {
 };
 
 class ItemStore : private onedrive::util::ProxyService<ItemStoreFacade> {
@@ -330,6 +366,19 @@ public:
 
     void apply_delta(ItemDelta delta) {
         implementation()->apply_delta(std::move(delta));
+    }
+
+    void save_pending_delta(PendingDelta delta) {
+        implementation()->save_pending_delta(std::move(delta));
+    }
+
+    [[nodiscard]] std::optional<PendingDelta>
+    pending_delta(const std::string& drive_id) const {
+        return implementation()->pending_delta(drive_id);
+    }
+
+    void remove_pending_delta(const std::string& drive_id) {
+        implementation()->remove_pending_delta(drive_id);
     }
 
     void save_pending_download(PendingDownload download) {

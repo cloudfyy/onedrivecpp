@@ -353,7 +353,7 @@ target_include_directories(
 )
 target_link_libraries(db_test_support PRIVATE onedrive_core)
 
-foreach(DB_TEST IN ITEMS state journal migrate security)
+foreach(DB_TEST IN ITEMS state journal migrate security pending_delta)
     add_onedrive_test(
         db_${DB_TEST}_tests
         SOURCES tests/db/${DB_TEST}.cpp
@@ -479,6 +479,7 @@ foreach(
         LIBRARIES onedrive_cli
     )
 endforeach()
+target_link_libraries(app_synchronization_tests PRIVATE spdlog::spdlog)
 add_onedrive_test(
     app_queries_tests
     SOURCES tests/app/queries.cpp
@@ -523,7 +524,7 @@ foreach(PREFLIGHT_TEST IN ITEMS state sync invalid)
         LIBRARIES onedrive_app
     )
 endforeach()
-foreach(SYNC_TEST IN ITEMS base delete move move_recovery download upload mode preview)
+foreach(SYNC_TEST IN ITEMS base delete move move_recovery download upload mode preview persistent_delta)
     add_onedrive_test(
         sync_${SYNC_TEST}_tests
         SOURCES tests/sync/${SYNC_TEST}.cpp

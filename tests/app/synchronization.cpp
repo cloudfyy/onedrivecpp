@@ -6,6 +6,7 @@
 #include "onedrive/sync/core/engine.hpp"
 
 #include <algorithm>
+#include <spdlog/spdlog.h>
 #include <stop_token>
 #include <vector>
 
@@ -307,13 +308,97 @@ int test_populated_cache_cleanup() {
     return EXIT_SUCCESS;
 }
 
+int test_cli_pending_delta_restart() {
+    CliFixture fixture;
+    fixture.runtime_factory.use_real_item_store = true;
+    // CLI shutdown clears the logger; direct database inspection still needs
+    // it.
+    const auto logger = spdlog::default_logger();
+    const auto authenticated = fixture.authenticate();
+    spdlog::set_default_logger(logger);
+    if (authenticated.exit_code != exit_code::success) {
+        return fail("cannot initialize CLI restart account fixture");
+    }
+    auto raw = FakeGraphClient{"me"}.list_delta(std::nullopt, {}, {});
+    const auto fetched = raw.delta_link;
+    std::vector<std::optional<std::string>> requests;
+    fixture.runtime_factory.delta_override = [&](const auto& cursor,
+                                                 std::stop_token) {
+        requests.push_back(cursor);
+        if (requests.size() == 1) {
+            auto interrupted = raw;
+            interrupted.changes.front().size = 43;
+            return interrupted;
+        }
+        raw.delta_link = "https://graph.example.test/latest";
+        return raw;
+    };
+    const auto run = [&] {
+        auto result = run_application(
+            fixture.runtime_factory,
+            {"onedrive-cpp",
+             "transfer",
+             "sync",
+             "--config",
+             fixture.config_path.string(),
+             "--output",
+             "json"}
+        );
+        spdlog::set_default_logger(logger);
+        return result;
+    };
+    const auto first = run();
+    if (first.exit_code != exit_code::failure || requests.size() != 1) {
+        return fail(
+            "CLI fixture did not interrupt after fetching metadata: " +
+            first.standard_error + first.standard_output
+        );
+    }
+    const auto config = onedrive::config::Config::load(fixture.config_path);
+    const auto identity = onedrive::test::test_drive_identity("me");
+    {
+        auto store =
+            fixture.runtime_factory.create_item_store(config, identity);
+        store->open();
+        if (!store->pending_delta(identity.drive_id) ||
+            store->delta_link(identity.drive_id)) {
+            return fail("interrupted CLI did not preserve pending metadata");
+        }
+    }
+    const auto resumed = run();
+    const auto destination =
+        onedrive::account::AccountState::drive_data_directory(
+            fixture.sync_path, identity
+        ) /
+        "notes.txt";
+    if (resumed.exit_code != exit_code::success ||
+        requests !=
+            std::vector<std::optional<std::string>>{std::nullopt, fetched} ||
+        !resumed.standard_output.contains("pending_delta_resumed") ||
+        onedrive::test::read_file(destination) != std::string(42, 'x')) {
+        return fail(
+            "recreated CLI application repeated the initial delta query"
+        );
+    }
+    auto store = fixture.runtime_factory.create_item_store(config, identity);
+    store->open();
+    if (store->pending_delta(identity.drive_id) ||
+        store->delta_link(identity.drive_id) != raw.delta_link) {
+        return fail(
+            "CLI completion did not commit and clear the pending batch"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
 }  // namespace
 
 int main() {
     if (test_synchronization_service() != EXIT_SUCCESS ||
         test_synchronization_service_cancellation() != EXIT_SUCCESS ||
         test_identity_cancellation() != EXIT_SUCCESS ||
-        test_populated_cache_cleanup() != EXIT_SUCCESS) {
+        test_populated_cache_cleanup() != EXIT_SUCCESS ||
+        test_cli_pending_delta_restart() != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;

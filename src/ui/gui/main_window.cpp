@@ -727,6 +727,24 @@ void MainWindow::receive_sync_events(
 
 QString MainWindow::log_event_text(const events::Event& event) const {
     if (const auto* message = std::get_if<events::MessageEvent>(&event)) {
+        if (message->event == "pending_delta_resumed") {
+            return tr(
+                "Restoring saved remote changes; checking only subsequent "
+                "changes and rebuilding the local plan..."
+            );
+        }
+        if (message->event == "pending_delta_invalidated") {
+            return tr(
+                "Saved remote changes no longer match the account, filters or "
+                "applied cursor; fetching remote changes again..."
+            );
+        }
+        if (message->event == "pending_delta_hierarchy_changed") {
+            return tr(
+                "Remote directory changes or unidentified deletions may "
+                "affect saved paths; fetching the full remote state..."
+            );
+        }
         return QString::fromStdString(message->text);
     } else if (const auto* section =
                    std::get_if<events::SectionEvent>(&event)) {

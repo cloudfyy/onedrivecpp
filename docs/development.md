@@ -146,6 +146,22 @@ IEC units, and remaining time uses compact seconds/minutes/hours/days.
 GUI transfers, CLI progress and quota/inspection fields share the Qt-independent
 `util/byte_size.hpp` scaling helper while retaining their own numeric precision,
 locale and existing maximum unit.
+`sync_persistent_delta_tests` recreates real SQLite stores and synchronization
+engines to verify interruption/restart in full and merge modes, latest-ID
+updates/deletions, empty incrementals, completed-file reuse and byte-offset
+resume. The shared engine checkpoints unfiltered/unaugmented remote metadata
+before planning/execution, separately from the applied cursor. Preview may read
+compatible pending metadata but never changes it. Scope/filter/applied-baseline
+mismatches invalidate reuse; expired cursors and hierarchy changes fall back.
+`db_pending_delta_tests` covers every raw metadata field and record order,
+transactional replacement/commit cleanup, read-only access, reset/clear and
+schema 26→27 migration. Separate header/item tables avoid a whole-batch SQLite
+value-size limit. Per-file commits and recovery may update tracked state while
+a batch is pending; unlike session preview caching, durable reuse does not
+require identical item-state vectors.
+CLI application and GUI controller recreation regressions also use real SQLite
+stores to verify that a fresh entry point polls the fetched cursor, executes
+retained changes, and atomically commits and clears the pending batch.
 Regressions cover unit/time boundaries, zero and uint64-sized quantities,
 the selected language independently of the default locale, and live translation.
 Phase-two regressions cover every new field, proxy patterns/optional states,

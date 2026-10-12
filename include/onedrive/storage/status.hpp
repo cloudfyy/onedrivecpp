@@ -16,6 +16,8 @@ struct StateSummary {
     std::size_t pending_deletes{0};
     std::size_t pending_remote_moves{0};
     std::size_t pending_local_moves{0};
+    std::size_t pending_deltas{0};
+    std::size_t pending_delta_changes{0};
     bool delta_cursor{false};
     std::string sync_filter_fingerprint;
 };

@@ -219,6 +219,7 @@ constexpr std::array schema_migrations{
     SchemaMigration{23, 24, add_blocked_item_content_tag},
     SchemaMigration{24, 25, add_item_content_hash},
     SchemaMigration{25, 26, create_item_remote_path_index},
+    SchemaMigration{26, 27, create_pending_delta_schema},
 };
 
 consteval bool schema_migration_chain_is_complete() {

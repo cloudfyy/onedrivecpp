@@ -52,6 +52,43 @@ void create_drive_state_schema(sqlite3* database) {
     );
 }
 
+void create_pending_delta_schema(sqlite3* database) {
+    execute_sql(
+        database,
+        "CREATE TABLE IF NOT EXISTS pending_delta ("
+        "drive_id TEXT PRIMARY KEY NOT NULL,"
+        "scope_fingerprint TEXT NOT NULL,"
+        "sync_filter_fingerprint TEXT NOT NULL,"
+        "applied_delta_link TEXT,"
+        "applied_filter_fingerprint TEXT,"
+        "delta_link TEXT NOT NULL,"
+        "apply_mode INTEGER NOT NULL CHECK(apply_mode IN (0,1))"
+        ");"
+        "CREATE TABLE IF NOT EXISTS pending_delta_change ("
+        "drive_id TEXT NOT NULL REFERENCES pending_delta(drive_id) ON DELETE "
+        "CASCADE,"
+        "remote_id TEXT NOT NULL,"
+        "position INTEGER NOT NULL CHECK(position >= 0),"
+        "name TEXT NOT NULL,"
+        "etag TEXT NOT NULL,"
+        "ctag TEXT NOT NULL,"
+        "parent_id TEXT NOT NULL,"
+        "remote_path TEXT NOT NULL,"
+        "last_modified TEXT NOT NULL,"
+        "size INTEGER NOT NULL CHECK(size >= 0),"
+        "directory INTEGER NOT NULL CHECK(directory IN (0,1)),"
+        "deleted INTEGER NOT NULL CHECK(deleted IN (0,1)),"
+        "root INTEGER NOT NULL CHECK(root IN (0,1)),"
+        "malware INTEGER NOT NULL CHECK(malware IN (0,1)),"
+        "content_hash_algorithm TEXT NOT NULL,"
+        "content_hash_value TEXT NOT NULL,"
+        "validate_content INTEGER NOT NULL CHECK(validate_content IN (0,1)),"
+        "PRIMARY KEY(drive_id, remote_id),"
+        "UNIQUE(drive_id, position)"
+        ");"
+    );
+}
+
 void create_pending_download_schema(sqlite3* database) {
     execute_sql(
         database,
@@ -365,6 +402,7 @@ void set_schema_version(sqlite3* database, int version) {
 void ensure_current_schema(sqlite3* database) {
     create_item_schema(database);
     create_drive_state_schema(database);
+    create_pending_delta_schema(database);
     create_pending_download_schema(database);
     create_blocked_item_schema(database);
     create_identity_schema(database);

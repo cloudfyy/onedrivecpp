@@ -343,6 +343,7 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         database, state_statement.get(), 3, delta.sync_filter_fingerprint
     );
     state_statement.execute("cannot update delta link");
+    remove_pending_delta_on_worker(delta.drive_id);
     transaction.commit();
 
     spdlog::debug(

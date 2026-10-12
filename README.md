@@ -220,6 +220,18 @@ invalidate the cache; expired cursors and directory moves/deletions fall back
 to a full query. Pending recovery prevents caching. Cancellation/failure clears
 it, and apply consumes it; nothing is saved across GUI restarts.
 
+Actual synchronization in both CLI and GUI saves a separate **pending remote
+delta batch** in SQLite before executing the plan. After interruption/restart,
+the next sync restores those raw changes, queries only changes since their
+fetched cursor, and rebuilds the plan against current local state. Completed
+files and partial downloads continue using existing recovery. The applied
+cursor advances only when the remote plan is committed, atomically clearing the
+pending batch. Changed account/root/Graph/auth/validation context, filters or
+applied baseline invalidate reuse; expired cursors and directory hierarchy
+changes fall back to a full query. Preview does not write pending batches.
+`state reset` also discards pending delta metadata, without deleting file
+recovery records.
+
 **Logs** retains up to 500 application events across tasks for the current GUI
 session, with timestamps, operation names and levels; omissions are explicitly
 shown. Filter by level, toggle auto-scroll, copy the displayed logs or clear

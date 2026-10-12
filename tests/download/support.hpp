@@ -247,6 +247,15 @@ public:
     void apply_delta(onedrive::storage::ItemDelta) {
     }
 
+    void save_pending_delta(onedrive::storage::PendingDelta) {
+    }
+    [[nodiscard]] std::optional<onedrive::storage::PendingDelta>
+    pending_delta(const std::string&) const {
+        return std::nullopt;
+    }
+    void remove_pending_delta(const std::string&) {
+    }
+
     void save_pending_download(onedrive::storage::PendingDownload download) {
         pending.insert_or_assign(download.item.remote_id, std::move(download));
         if (pending_download_saved) {

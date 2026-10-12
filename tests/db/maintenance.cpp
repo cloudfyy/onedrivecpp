@@ -61,7 +61,7 @@ int test_migration() {
         if (diagnosed.size() != 1 || diagnosed[0].healthy ||
             !diagnosed[0].migration_required ||
             diagnosed[0].schema_version != version ||
-            diagnosed[0].latest_schema_version != 26 ||
+            diagnosed[0].latest_schema_version != 27 ||
             read_file(path) != before || !schema_version_is(path, version)) {
             return fail(
                 "read-only diagnostics did not identify old schema versions"
@@ -69,7 +69,7 @@ int test_migration() {
         }
         const auto backup = migrate_state_database(path);
         if (backup.empty() || !schema_version_is(backup, version) ||
-            !schema_version_is(path, 26) || cursor(backup) != "saved-cursor" ||
+            !schema_version_is(path, 27) || cursor(backup) != "saved-cursor" ||
             cursor(path) != "saved-cursor" ||
             (std::filesystem::status(backup).permissions() &
              std::filesystem::perms::all) !=
@@ -82,7 +82,7 @@ int test_migration() {
         }
         const auto after = diagnose_state_databases(directory);
         if (after.size() != 1 || !after[0].healthy ||
-            after[0].schema_version != 26 || after[0].migration_required ||
+            after[0].schema_version != 27 || after[0].migration_required ||
             !migrate_state_database(path).empty()) {
             return fail("migration was not healthy and idempotent");
         }
@@ -149,11 +149,11 @@ int test_failures() {
         }
     }
     if (!execute_schema(
-            path, "DROP TABLE unexpected; PRAGMA user_version = 27;"
+            path, "DROP TABLE unexpected; PRAGMA user_version = 28;"
         )) {
         return fail("cannot create future schema fixture");
     }
-    for (const int version : {27, 0}) {
+    for (const int version : {28, 0}) {
         if (version == 0 && !execute_schema(path, "PRAGMA user_version = 0;")) {
             return fail("cannot create unversioned fixture");
         }

@@ -49,7 +49,7 @@ int test_migration_command() {
     const auto preview = run({"--dry-run", "--yes"});
     if (preview.exit_code != exit_code::success ||
         !preview.standard_output.contains(R"("schema_version":"24")") ||
-        !preview.standard_output.contains(R"("latest_schema_version":"26")") ||
+        !preview.standard_output.contains(R"("latest_schema_version":"27")") ||
         !preview.standard_output.contains(R"("status":"upgrade-required")") ||
         !schema_version_is(path, 24)) {
         return fail("migration preview changed state or omitted versions");
@@ -73,7 +73,7 @@ int test_migration_command() {
     if (health.exit_code != exit_code::failure ||
         !health.standard_output.contains(R"("status":"upgrade-required")") ||
         !health.standard_output.contains(R"("schema_version":"24")") ||
-        !health.standard_output.contains(R"("latest_schema_version":"26")") ||
+        !health.standard_output.contains(R"("latest_schema_version":"27")") ||
         !health.standard_output.contains("database_upgrade_required")) {
         return fail(
             "health did not distinguish an old database from corruption"
@@ -115,7 +115,7 @@ int test_migration_command() {
     std::filesystem::create_directory(invalid_directory);
     const auto invalid_path = invalid_directory / "items.sqlite3";
     if (!create_version_twenty_four_database(invalid_path) ||
-        !execute_schema(invalid_path, "PRAGMA user_version = 27;")) {
+        !execute_schema(invalid_path, "PRAGMA user_version = 28;")) {
         return fail("cannot create unsupported command fixture");
     }
     std::filesystem::permissions(
@@ -125,7 +125,7 @@ int test_migration_command() {
     const auto unsupported = run({"--yes"});
     if (unsupported.exit_code != exit_code::failure ||
         !schema_version_is(path, 24) ||
-        !unsupported.standard_output.contains(R"("schema_version":"27")")) {
+        !unsupported.standard_output.contains(R"("schema_version":"28")")) {
         return fail(
             "migration changed an earlier database despite failed prechecks"
         );
@@ -148,8 +148,7 @@ int test_migration_command() {
     }
     const auto migrated = run({"--yes"});
     if (migrated.exit_code != exit_code::success ||
-        !schema_version_is(path, 26) ||
-        !schema_version_is(legacy_path, 26) ||
+        !schema_version_is(path, 27) || !schema_version_is(legacy_path, 27) ||
         !migrated.standard_output.contains("database_migration_completed") ||
         !migrated.standard_output.contains("backup_path") ||
         std::filesystem::exists(fixture.sync_path)) {
@@ -215,7 +214,7 @@ int test_empty_and_confirmed_migration() {
     );
     const auto confirmed = run("migrate\n");
     if (confirmed.exit_code != exit_code::success ||
-        !schema_version_is(path, 26) ||
+        !schema_version_is(path, 27) ||
         !confirmed.standard_output.contains("Database upgrades completed")) {
         return fail("explicit text confirmation did not upgrade the database");
     }

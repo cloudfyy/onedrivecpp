@@ -670,10 +670,9 @@ int show_status(
                     !last_run ? "unavailable"
                     : last_run->outcome == metrics::SyncRunOutcome::succeeded
                         ? "succeeded"
-                        : last_run->outcome ==
-                                  metrics::SyncRunOutcome::cancelled
-                              ? "cancelled"
-                              : "failed",
+                    : last_run->outcome == metrics::SyncRunOutcome::cancelled
+                        ? "cancelled"
+                        : "failed",
             },
             {
                 .label = "tracked:",
@@ -716,6 +715,16 @@ int show_status(
                 .value = std::to_string(state.pending_local_moves),
             },
             {
+                .label = "pending delta batches:",
+                .key = "pending_delta_batches",
+                .value = std::to_string(state.pending_deltas),
+            },
+            {
+                .label = "pending delta changes:",
+                .key = "pending_delta_changes",
+                .value = std::to_string(state.pending_delta_changes),
+            },
+            {
                 .label = "delta cursor:",
                 .key = "delta_cursor",
                 .value = state.delta_cursor ? "available" : "absent",
@@ -735,8 +744,7 @@ int show_status(
             {
                 .label = "WebSocket:",
                 .key = "websocket_enabled",
-                .value =
-                    snapshot.websocket_enabled ? "enabled" : "disabled",
+                .value = snapshot.websocket_enabled ? "enabled" : "disabled",
             },
         }
     );

@@ -111,6 +111,18 @@
 <context>
     <name>onedrive::gui::MainWindow</name>
     <message>
+        <source>Restoring saved remote changes; checking only subsequent changes and rebuilding the local plan...</source>
+        <translation>正在恢复已保存的远端变更；仅检查后续增量并重新生成本地计划…</translation>
+    </message>
+    <message>
+        <source>Saved remote changes no longer match the account, filters or applied cursor; fetching remote changes again...</source>
+        <translation>已保存的远端变更与账号、筛选或已应用游标不匹配；正在重新获取远端变更…</translation>
+    </message>
+    <message>
+        <source>Remote directory changes or unidentified deletions may affect saved paths; fetching the full remote state...</source>
+        <translation>远端目录变更或未识别的删除可能影响已保存的路径；正在获取完整远端状态…</translation>
+    </message>
+    <message>
         <location filename="../main_window.cpp" line="839"/>
         <source>Remote totals are unknown; a percentage cannot be calculated.</source>
         <translation>远端总量未知，无法计算百分比。</translation>

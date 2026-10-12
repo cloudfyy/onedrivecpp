@@ -43,6 +43,7 @@ bool ItemDatabase::reset_on_worker(const std::string& drive_id) {
     bind_text(database, state_statement.get(), 1, drive_id);
     state_statement.execute("cannot reset drive delta link");
     const bool had_delta_link = sqlite3_changes(database) != 0;
+    remove_pending_delta_on_worker(drive_id);
     transaction.commit();
 
     const auto retained_items = query_count(
@@ -87,6 +88,9 @@ ClearedState ItemDatabase::clear_on_worker(const std::string& drive_id) {
     bind_text(database, state_statement.get(), 1, drive_id);
     state_statement.execute("cannot clear drive delta link");
     cleared.delta_link = sqlite3_changes(database) != 0;
+    remove_pending_delta_on_worker(drive_id);
+    cleared.pending_deltas =
+        static_cast<std::size_t>(sqlite3_changes(database));
 
     Statement pending_statement{
         database, "DELETE FROM pending_download WHERE drive_id = ?1;"
@@ -156,7 +160,7 @@ ClearedState ItemDatabase::clear_on_worker(const std::string& drive_id) {
         "{} pending downloads, {} partial downloads, {} pending uploads, {} "
         "pending deletions, {} pending remote moves, {} pending moves, {} "
         "upload suppressions, {} "
-        "blocked items, saved delta cursor {}",
+        "blocked items, {} pending delta snapshots, saved delta cursor {}",
         drive_id,
         cleared.items,
         cleared.pending_downloads,
@@ -167,6 +171,7 @@ ClearedState ItemDatabase::clear_on_worker(const std::string& drive_id) {
         cleared.pending_moves,
         cleared.upload_suppressions,
         cleared.blocked_items,
+        cleared.pending_deltas,
         cleared.delta_link ? "removed" : "not present"
     );
     return cleared;

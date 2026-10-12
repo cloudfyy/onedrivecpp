@@ -41,10 +41,10 @@ int test_doctor() {
             R"("status":"healthy")"
         ) ||
         !healthy_diagnostics.standard_output.contains(
-            R"("schema_version":"26")"
+            R"("schema_version":"27")"
         ) ||
         !healthy_diagnostics.standard_output.contains(
-            R"("latest_schema_version":"26")"
+            R"("latest_schema_version":"27")"
         )) {
         return fail("inspect health did not report a healthy state database");
     }
@@ -78,7 +78,7 @@ int test_doctor() {
             R"("schema_version":"unknown")"
         ) ||
         !unhealthy_diagnostics.standard_output.contains(
-            R"("latest_schema_version":"26")"
+            R"("latest_schema_version":"27")"
         )) {
         return fail("inspect health did not reject a corrupt state database");
     }

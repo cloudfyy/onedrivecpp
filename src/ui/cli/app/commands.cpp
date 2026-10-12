@@ -401,7 +401,7 @@ int execute_command(
                 "{} item snapshots, {} pending downloads, {} partial "
                 "downloads, {} pending uploads, {} pending moves, {} "
                 "upload suppressions, and {} blocked items "
-                "removed; saved cursor {}",
+                "removed; saved cursor {}; {} pending delta snapshots removed",
                 config.drive_id,
                 cleared.items,
                 cleared.pending_downloads,
@@ -410,7 +410,8 @@ int execute_command(
                 cleared.pending_moves,
                 cleared.upload_suppressions,
                 cleared.blocked_items,
-                cleared.delta_link ? "removed" : "not present"
+                cleared.delta_link ? "removed" : "not present",
+                cleared.pending_deltas
             );
             console.message(
                 cli::MessageKind::success,
@@ -420,7 +421,8 @@ int execute_command(
                     "item snapshots, {} pending downloads, {} partial "
                     "downloads, {} pending uploads, {} pending moves, {} "
                     "upload suppressions, and {} blocked items "
-                    "removed; saved cursor {}.",
+                    "removed; saved cursor {}. {} pending delta snapshots "
+                    "removed.",
                     display_drive,
                     cleared.items,
                     cleared.pending_downloads,
@@ -429,7 +431,8 @@ int execute_command(
                     cleared.pending_moves,
                     cleared.upload_suppressions,
                     cleared.blocked_items,
-                    cleared.delta_link ? "removed" : "not present"
+                    cleared.delta_link ? "removed" : "not present",
+                    cleared.pending_deltas
                 )
             );
             console.message(
@@ -471,6 +474,7 @@ int execute_command(
         console.message(
             cli::MessageKind::information,
             "initial_delta_scheduled",
+            "Saved pending remote delta metadata was discarded. "
             "The next sync will perform a full Microsoft Graph delta query."
         );
         return exit_code::success;

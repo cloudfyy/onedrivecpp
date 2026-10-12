@@ -126,6 +126,14 @@ Preview does not advance the applied cursor. Account, configuration, filters
 and stored-state changes invalidate reuse; expired cursors and directory
 moves/deletions fall back to a full query. Recovery journals prevent caching.
 Cancellation/failure clears it, apply consumes it, and GUI restarts discard it.
+Actual synchronization in CLI and GUI separately persists the fetched raw remote
+delta batch before execution. After interruption or restart, the next sync loads
+it, checks only subsequent remote changes, and rebuilds the local plan.
+The applied cursor advances and the pending batch is cleared in one transaction
+when the remote plan is committed. Context/filter/applied-baseline mismatches
+invalidate reuse; expired cursors and directory hierarchy changes require a full
+query. Preview does not write pending batches. State reset discards pending delta
+metadata but preserves file recovery journals.
 Messages display the plan, blocked items and errors. Download progress includes
 counts, speed and an available time estimate; uploads have messages only.
 The percentage describes downloads, not the overall task. Phases without known

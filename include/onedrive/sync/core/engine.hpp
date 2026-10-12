@@ -59,6 +59,8 @@ private:
         storage::DeltaApplyMode apply_mode;
     };
     [[nodiscard]] static Scope scope(const config::Config& config);
+    [[nodiscard]] static std::string
+    scope_fingerprint(const config::Config& config);
     [[nodiscard]] static std::optional<State>
     capture_state(const storage::ItemStore& items, const std::string& drive);
     std::optional<Snapshot> snapshot_;

@@ -930,6 +930,121 @@ void test_progress_phases() {
     }
 }
 
+void test_controller_pending_delta_restart() {
+    Fixture fixture;
+    test::app::FakeRuntimeFactory implementation;
+    implementation.use_real_item_store = true;
+    const app::RuntimeFactory factory{util::borrowed_proxy, implementation};
+    const auto raw =
+        test::app::FakeGraphClient{"me"}.list_delta(std::nullopt, {}, {});
+    std::vector<std::optional<std::string>> requests;
+    implementation.delta_override = [&](const auto& cursor, std::stop_token) {
+        requests.push_back(cursor);
+        if (cursor) {
+            return graph::DeltaResult{
+                .changes = {},
+                .delta_link = "https://graph.example.test/restarted"
+            };
+        }
+        return raw;
+    };
+    class CancelBeforeExecution final : public events::Observer {
+    public:
+        explicit CancelBeforeExecution(std::stop_source& stop)
+            : stop_{stop} {
+        }
+
+    private:
+        void on_event(const events::Event& event) const override {
+            const auto* message = std::get_if<events::MessageEvent>(&event);
+            if (message && message->event == "execution_started") {
+                stop_.request_stop();
+            }
+        }
+        std::stop_source& stop_;
+    };
+    bool restored = false;
+    for (int phase = 0; phase < 2; ++phase) {
+        bool finished = false;
+        int result = -1;
+        QString error;
+        std::stop_source stop;
+        gui::SyncController controller{[&](config::Config config,
+                                           const events::Observer& observer,
+                                           std::stop_token token,
+                                           sync::PreviewCache* cache) {
+            if (phase == 0) {
+                CancelBeforeExecution cancelled{stop};
+                return app::synchronize_account(
+                    std::move(config),
+                    factory,
+                    cancelled,
+                    stop.get_token(),
+                    cache
+                );
+            }
+            return app::synchronize_account(
+                std::move(config), factory, observer, token, cache
+            );
+        }};
+        QObject::connect(
+            &controller,
+            &gui::SyncController::events_ready,
+            [&](const auto& events, std::size_t) {
+                for (const auto& event : events) {
+                    const auto* message =
+                        std::get_if<events::MessageEvent>(&event);
+                    restored |=
+                        message && message->event == "pending_delta_resumed";
+                }
+            }
+        );
+        QObject::connect(
+            &controller,
+            &gui::SyncController::finished,
+            [&](int outcome, const QString& detail, bool) {
+                result = outcome;
+                error = detail;
+                finished = true;
+            }
+        );
+        controller.start(fixture.file, false);
+        require(
+            wait_until([&] { return finished; }) && error.isEmpty() &&
+                result ==
+                    (phase == 0 ? exit_code::cancelled : exit_code::success),
+            "recreated GUI controller could not restore a pending delta batch"
+        );
+        auto store =
+            implementation.create_item_store(fixture.config, fixture.identity);
+        store->open();
+        require(
+            phase == 0
+                ? store->pending_delta(fixture.identity.drive_id).has_value() &&
+                      !store->delta_link(fixture.identity.drive_id)
+                : !store->pending_delta(fixture.identity.drive_id) &&
+                      store->delta_link(fixture.identity.drive_id) ==
+                          "https://graph.example.test/restarted",
+            "GUI interruption or completion persisted the wrong cursor"
+        );
+    }
+    require(
+        restored &&
+            requests ==
+                std::vector<std::optional<std::string>>{
+                    std::nullopt, raw.delta_link
+                } &&
+            test::read_file(
+                account::AccountState::drive_data_directory(
+                    fixture.config.sync_data_directory, fixture.identity
+                ) /
+                "notes.txt"
+            ) == std::string(42, 'x'),
+        "new GUI controller repeated the initial query or lost unapplied "
+        "changes"
+    );
+}
+
 void test_readable_transfer_numbers() {
     struct Example {
         std::uint64_t downloaded;
@@ -1081,6 +1196,24 @@ void test_progress_and_stop() {
             observer.message(
                 events::MessageKind::warning, "warning", "backend detail %1"
             );
+            observer.message(
+                events::MessageKind::information,
+                "pending_delta_resumed",
+                "Restoring saved remote changes; checking only subsequent "
+                "changes and rebuilding the local plan..."
+            );
+            observer.message(
+                events::MessageKind::information,
+                "pending_delta_invalidated",
+                "Saved remote changes no longer match the account, filters or "
+                "applied cursor; fetching remote changes again..."
+            );
+            observer.message(
+                events::MessageKind::information,
+                "pending_delta_hierarchy_changed",
+                "Remote directory changes or unidentified deletions may "
+                "affect saved paths; fetching the full remote state..."
+            );
             observer.section(
                 "plan",
                 "Plan:",
@@ -1175,6 +1308,17 @@ void test_progress_and_stop() {
                 "远端变更：2 个文件，1 个文件夹，1 项删除。"
             ) &&
             messages->toPlainText().contains("警告：backend detail %1") &&
+            messages->toPlainText().contains(
+                "正在恢复已保存的远端变更；仅检查后续增量并重新生成本地计划…"
+            ) &&
+            messages->toPlainText().contains(
+                "已保存的远端变更与账号、筛选或已应用游标不匹配；正在重新获取远"
+                "端变更…"
+            ) &&
+            messages->toPlainText().contains(
+                "远端目录变更或未识别的删除可能影响已保存的路径；正在获取完整远"
+                "端状态…"
+            ) &&
             messages->toPlainText().contains("阻塞：blocked.txt [conflict]") &&
             draft->text() == "unsaved draft",
         "language switching reset progress, events or settings drafts"
@@ -1353,6 +1497,7 @@ int main(int argc, char* argv[]) {
         test_history_bound();
         test_session_logs_and_tabs();
         test_controller_preview_cache();
+        test_controller_pending_delta_restart();
         test_preview_and_apply();
         test_progress_phases();
         test_readable_transfer_numbers();

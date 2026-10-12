@@ -76,6 +76,7 @@ add_library(onedrive_core
     src/util/remote_time.cpp
     src/util/sha256.cpp
     src/storage/delta.cpp
+    src/storage/pending_delta.cpp
     src/storage/item_database.cpp
     src/storage/item_state.cpp
     src/storage/state_reset.cpp
