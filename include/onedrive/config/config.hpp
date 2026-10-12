@@ -12,6 +12,8 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <variant>
+#include <vector>
 
 namespace onedrive::config {
 
@@ -120,6 +122,18 @@ struct Config {
     std::string_view contents,
     const std::filesystem::path& sync_directory,
     const std::filesystem::path& state_directory
+);
+using SettingValue =
+    std::variant<std::monostate, std::string, std::int64_t, bool>;
+struct SettingPatch {
+    std::string table;
+    std::string key;
+    SettingValue value; // monostate removes an optional setting.
+};
+[[nodiscard]] std::string update_settings(
+    const std::filesystem::path& config_path,
+    std::string_view contents,
+    const std::vector<SettingPatch>& patches
 );
 void validate_sync_state_directories(
     const std::filesystem::path& sync_directory,

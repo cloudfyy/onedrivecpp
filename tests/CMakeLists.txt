@@ -101,6 +101,25 @@ add_onedrive_test(
 )
 if(ONEDRIVE_BUILD_GUI)
     add_onedrive_test(
+        gui_settings_tests
+        SOURCES
+            src/ui/gui/login_controller.cpp
+            src/ui/gui/login_controller.hpp
+            src/ui/gui/main_window.cpp
+            src/ui/gui/main_window.hpp
+            src/ui/gui/settings_editor.cpp
+            src/ui/gui/settings_editor.hpp
+            src/ui/gui/configuration.cpp
+            src/ui/gui/app_state_view_model.cpp
+            tests/gui/settings.cpp
+        INCLUDE_DIRS src src/ui/gui tests
+        LIBRARIES onedrive_app Qt6::Widgets Qt6::Network onedrive_gui_localization
+    )
+    set_target_properties(gui_settings_tests PROPERTIES AUTOMOC ON)
+    set_tests_properties(gui_settings_tests PROPERTIES
+        TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    )
+    add_onedrive_test(
         gui_startup_state_tests
         SOURCES
             src/ui/gui/login_controller.cpp
@@ -110,6 +129,8 @@ if(ONEDRIVE_BUILD_GUI)
             src/ui/gui/configuration.cpp
             src/ui/gui/app_state_view_model.cpp
             tests/gui/startup_state.cpp
+            src/ui/gui/settings_editor.cpp
+            src/ui/gui/settings_editor.hpp
         INCLUDE_DIRS src src/ui/gui tests
         LIBRARIES onedrive_app Qt6::Widgets Qt6::Network onedrive_gui_localization
     )
@@ -127,6 +148,8 @@ if(ONEDRIVE_BUILD_GUI)
             src/ui/gui/configuration.cpp
             src/ui/gui/app_state_view_model.cpp
             tests/gui/login.cpp
+            src/ui/gui/settings_editor.cpp
+            src/ui/gui/settings_editor.hpp
         INCLUDE_DIRS src src/ui/gui tests
         LIBRARIES onedrive_app Qt6::Widgets Qt6::Network onedrive_gui_localization
     )
@@ -143,6 +166,8 @@ if(ONEDRIVE_BUILD_GUI)
             src/ui/gui/configuration.cpp
             src/ui/gui/app_state_view_model.cpp
             tests/gui/localization.cpp
+            src/ui/gui/settings_editor.cpp
+            src/ui/gui/settings_editor.hpp
         INCLUDE_DIRS src src/ui/gui tests
         LIBRARIES onedrive_app Qt6::Widgets Qt6::Network onedrive_gui_localization
     )

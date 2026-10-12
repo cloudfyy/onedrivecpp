@@ -18,6 +18,7 @@ class QActionGroup;
 namespace onedrive::gui {
 
 class Localization;
+class SettingsEditor;
 
 class MainWindow final : public QMainWindow {
     Q_OBJECT
@@ -40,7 +41,6 @@ private:
     void refresh_settings(bool preserve_edits = false);
     void refresh_startup_status();
     void reload_settings();
-    void browse_for_directory(QLineEdit* field);
     void save_settings();
     void import_settings();
 
@@ -49,6 +49,7 @@ private:
     QTabWidget* tabs_{};
     QFormLayout* overview_layout_{};
     QFormLayout* settings_layout_{};
+    SettingsEditor* settings_editor_{};
     QLabel* theme_value_{};
     QPushButton* import_button_{};
     QPushButton* save_button_{};

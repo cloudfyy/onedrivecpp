@@ -30,6 +30,10 @@ struct ConfigurationPreview {
     const std::filesystem::path& sync_directory,
     const std::filesystem::path& state_directory
 );
+[[nodiscard]] std::optional<std::filesystem::path> save_settings_patch(
+    const std::filesystem::path& config_file,
+    const std::vector<config::SettingPatch>& patches
+);
 
 [[nodiscard]] std::optional<std::filesystem::path> import_configuration(
     const std::filesystem::path& source_file,

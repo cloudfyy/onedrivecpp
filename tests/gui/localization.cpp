@@ -266,9 +266,10 @@ void test_window_and_settings(bool chinese) {
                     expected(chinese, "Settings saved", "设置已保存") &&
                 dialog->text().startsWith(expected(
                     chinese,
-                    "Basic settings saved.\nPrevious configuration backed up "
+                    "Settings saved. Changes take effect on the next "
+                    "operation.\nPrevious configuration backed up "
                     "to:\n",
-                    "基本设置已保存。\n原配置已备份到：\n"
+                    "设置已保存。更改将在下次操作时生效。\n原配置已备份到：\n"
                 )) &&
                 dialog->text().contains(
                     QString::fromStdString(file.string()) + ".backup."
@@ -284,7 +285,7 @@ void test_window_and_settings(bool chinese) {
         dialog_seen && dialog_correct,
         "saved settings dialog or Qt buttons were not localized"
     );
-    auto* sync_field = window.findChildren<QLineEdit*>().first();
+    auto* sync_field = window.findChild<QLineEdit*>("sync.data_directory");
     const auto previous = test::read_file(file);
     sync_field->setText("/changed/同步");
     QTimer::singleShot(0, &window, [&] {
@@ -604,11 +605,13 @@ void test_runtime_language(bool system_chinese) {
     };
     window.show();
     const auto fields = window.findChildren<QLineEdit*>();
-    require(fields.size() == 2, "settings fields were not found");
-    fields[0]->setText("/unsaved/同步-%1");
-    fields[1]->setText("/unsaved/状态-%2");
-    fields[0]->setCursorPosition(5);
-    fields[0]->setModified(true);
+    require(fields.size() >= 2, "settings fields were not found");
+    auto* sync_field = window.findChild<QLineEdit*>("sync.data_directory");
+    auto* state_field = window.findChild<QLineEdit*>("state.directory");
+    sync_field->setText("/unsaved/同步-%1");
+    state_field->setText("/unsaved/状态-%2");
+    sync_field->setCursorPosition(5);
+    sync_field->setModified(true);
     auto* menu = window.findChild<QMenu*>("languageMenu");
     auto* tabs = window.findChild<QTabWidget*>();
     auto* sign_in = window.findChild<QPushButton*>("signInButton");
@@ -645,9 +648,9 @@ void test_runtime_language(bool system_chinese) {
         }
         require(
             window.findChildren<QLineEdit*>() == fields &&
-                fields[0]->text() == "/unsaved/同步-%1" &&
-                fields[1]->text() == "/unsaved/状态-%2" &&
-                fields[0]->cursorPosition() == 5 && fields[0]->isModified(),
+                sync_field->text() == "/unsaved/同步-%1" &&
+                state_field->text() == "/unsaved/状态-%2" &&
+                sync_field->cursorPosition() == 5 && sync_field->isModified(),
             "language switching rebuilt fields or discarded unsaved edits"
         );
         require(
@@ -902,16 +905,18 @@ void test_login_refresh_language() {
         };
         auto* sign_in = window.findChild<QPushButton*>("signInButton");
         auto* status = window.findChild<QLabel*>("loginStatus");
-        const auto fields = window.findChildren<QLineEdit*>();
-        fields[0]->setText("/unsaved/sync-中文");
-        fields[1]->setText("/unsaved/state-中文");
+        auto* sync_field = window.findChild<QLineEdit*>("sync.data_directory");
+        auto* state_field = window.findChild<QLineEdit*>("state.directory");
+        sync_field->setText("/unsaved/sync-中文");
+        state_field->setText("/unsaved/state-中文");
         sign_in->click();
         require(
             wait_until([&] {
                 return window.findChild<QWidget*>("settingsPage")->isEnabled();
-            }) && sign_in->isEnabled() == !invalid_config &&
-                fields[0]->text() == "/unsaved/sync-中文" &&
-                fields[1]->text() == "/unsaved/state-中文",
+            }) &&
+                sign_in->isEnabled() == !invalid_config &&
+                sync_field->text() == "/unsaved/sync-中文" &&
+                state_field->text() == "/unsaved/state-中文",
             "successful authentication did not complete"
         );
         const auto prefix = QString{

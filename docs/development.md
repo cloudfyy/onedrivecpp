@@ -39,7 +39,7 @@ entry in `src/ui/gui/translations/onedrive_zh_CN.ts`, and rebuild:
 ```bash
 cmake --preset debug -DONEDRIVE_BUILD_GUI=ON -DONEDRIVE_ENABLE_GRAPH_E2E=OFF
 cmake --build build/debug --target onedrive_gui_lupdate
-cmake --build build/debug --target onedrive-cpp-gui gui_localization_tests gui_startup_options_tests gui_login_tests gui_state_view_model_tests gui_system_appearance_tests browser_request_tests
+cmake --build build/debug --target onedrive-cpp-gui gui_settings_tests gui_startup_state_tests gui_localization_tests gui_startup_options_tests gui_login_tests gui_state_view_model_tests gui_system_appearance_tests browser_request_tests
 ctest --test-dir build/debug -R '^(gui_.*|browser_request_tests)$' --output-on-failure
 ```
 
@@ -58,6 +58,31 @@ actions, existing widgets/status text, unsaved fields, and active login
 preservation through English/Chinese/system-language transitions. No Graph
 credentials or real browser are needed. These tests do not replace a real
 desktop/native-dialog check.
+
+Settings phase one implements account/directories, sync rules and transfers;
+network/monitor/logging and advanced account configuration remain deferred.
+`SettingsEditor` keeps one widget-backed draft across all three tabs. Enum
+`itemData` contains parser values, never translated labels. Numeric text fields
+avoid Qt's 32-bit spin-box truncation and validate nonnegative TOML int64 values.
+Only edited keys are patched; optional selective rules can be removed, and
+editing sync mode removes legacy `sync.upload` while preserving the chosen
+deletion policy. The core patcher uses parser source regions (including quoted
+headers, dotted keys and inline tables), not regex or full-document serialization.
+Save validates before backup/atomic replacement. Import/reload intentionally
+reset all draft fields; language switches and login completion do not.
+
+`gui_settings_tests` exercises real offscreen controls and saved TOML for every
+exposed setting, 64-bit boundaries, parser constraints, comments/unrelated fields,
+backups, optional-key removal, draft/language/tab switching, reload, and first-time
+Application ID setup. It also checks every transfer-order/sync-mode reload,
+numeric lower/upper limits and strict draft syntax, advanced groups and browse
+accept/cancel, inline optional-key removal at each position, UTF-8/multiline
+source edits, rejected patches without writes/backups, cancelled save/import,
+invalid imports, and first import with destination-relative rules. Unknown TOML
+keys are rejected without modifying the source, not silently discarded.
+Startup/import regressions cover corrupt-config recovery;
+localization/login tests cover disabled controls and worker/draft preservation.
+No GUI sync action, migration or online credential validation is implied.
 
 ## Live Graph end-to-end tests
 

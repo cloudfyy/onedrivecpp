@@ -17,6 +17,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 namespace onedrive::config {
@@ -93,87 +94,6 @@ byte_offset(std::string_view contents, toml::source_position position) {
         );
     }
     return offset;
-}
-
-std::string quoted_toml_string(std::string value) {
-    std::ostringstream output;
-    output << toml::toml_formatter{toml::value<std::string>{std::move(value)}};
-    return output.str();
-}
-
-toml::node* find_path_value(
-    toml::table& root, std::string_view table_name, std::string_view key
-) {
-    auto* table_node = root.get(table_name);
-    auto* table = table_node == nullptr ? nullptr : table_node->as_table();
-    return table == nullptr ? nullptr : table->get(key);
-}
-
-struct TextEdit {
-    std::size_t begin;
-    std::size_t end;
-    std::string replacement;
-};
-
-TextEdit path_edit(
-    std::string_view contents,
-    toml::table& root,
-    std::string_view table_name,
-    std::string_view key,
-    const std::filesystem::path& value
-) {
-    const auto formatted = quoted_toml_string(value.string());
-    if (auto* node = find_path_value(root, table_name, key)) {
-        if (!node->is_string()) {
-            throw std::runtime_error(
-                "configuration path '" + std::string{table_name} + "." +
-                std::string{key} + "' must be a string"
-            );
-        }
-        const auto source = node->source();
-        return {
-            byte_offset(contents, source.begin),
-            byte_offset(contents, source.end),
-            formatted,
-        };
-    }
-
-    const auto header = "[" + std::string{table_name} + "]";
-    std::size_t line_start = 0;
-    while (line_start < contents.size()) {
-        const auto newline = contents.find('\n', line_start);
-        const auto line_end =
-            newline == std::string::npos ? contents.size() : newline;
-        auto line = std::string_view{contents}.substr(
-            line_start, line_end - line_start
-        );
-        while (!line.empty() && (line.front() == ' ' || line.front() == '\t' ||
-                                 line.front() == '\r')) {
-            line.remove_prefix(1);
-        }
-        while (!line.empty() && (line.back() == ' ' || line.back() == '\t' ||
-                                 line.back() == '\r')) {
-            line.remove_suffix(1);
-        }
-        if (line == header) {
-            const auto insert_at =
-                newline == std::string::npos ? contents.size() : newline + 1;
-            const auto insertion = std::string{key} + " = " + formatted + "\n";
-            return {insert_at, insert_at, insertion};
-        }
-        if (newline == std::string::npos) {
-            break;
-        }
-        line_start = newline + 1;
-    }
-
-    std::string suffix;
-    if (!contents.empty()) {
-        suffix = contents.back() == '\n' ? "\n" : "\n\n";
-    }
-    suffix += "[" + std::string{table_name} + "]\n" + std::string{key} + " = " +
-              formatted + "\n";
-    return {contents.size(), contents.size(), suffix};
 }
 
 } // namespace
@@ -287,18 +207,118 @@ std::string update_basic_paths(
     const std::filesystem::path& sync_directory,
     const std::filesystem::path& state_directory
 ) {
-    std::string contents{source};
-    auto root = toml::parse(source, config_path.string());
+    return update_settings(
+        config_path,
+        source,
+        {
+            {"sync", "data_directory", sync_directory.string()},
+            {"state", "directory", state_directory.string()},
+        }
+    );
+}
 
-    std::array edits{
-        path_edit(contents, root, "sync", "data_directory", sync_directory),
-        path_edit(contents, root, "state", "directory", state_directory),
-    };
-    std::ranges::sort(edits, [](const auto& left, const auto& right) {
-        return left.begin > right.begin;
-    });
-    for (const auto& edit : edits) {
-        contents.replace(edit.begin, edit.end - edit.begin, edit.replacement);
+std::string update_settings(
+    const std::filesystem::path& config_path,
+    std::string_view source,
+    const std::vector<SettingPatch>& patches
+) {
+    static_cast<void>(Config::load_from_string(config_path, source));
+    std::string contents{source};
+    for (const auto& patch : patches) {
+        // Reparse after each edit: missing siblings may share an insertion
+        // point.
+        auto root = toml::parse(contents, config_path.string());
+        auto* table = root[patch.table].as_table();
+        auto* node = table ? table->get(patch.key) : nullptr;
+        std::string formatted;
+        std::visit(
+            [&](const auto& value) {
+                using T = std::decay_t<decltype(value)>;
+                if constexpr (!std::is_same_v<T, std::monostate>) {
+                    std::ostringstream output;
+                    output << toml::toml_formatter{toml::value<T>{value}};
+                    formatted = output.str();
+                }
+            },
+            patch.value
+        );
+        if (node && !formatted.empty()) {
+            const auto begin = byte_offset(contents, node->source().begin);
+            const auto end = byte_offset(contents, node->source().end);
+            contents.replace(begin, end - begin, formatted);
+        } else if (table && table->is_inline()) {
+            const auto begin = byte_offset(contents, table->source().begin);
+            const auto end = byte_offset(contents, table->source().end);
+            if (formatted.empty()) {
+                if (node) {
+                    const auto key = table->find(patch.key);
+                    auto first =
+                        byte_offset(contents, key->first.source().begin);
+                    auto last = byte_offset(contents, node->source().end);
+                    const auto next =
+                        contents.find_first_not_of(" \t\r\n", last);
+                    if (next < end && contents[next] == ',') {
+                        last = next + 1;
+                    } else {
+                        const auto previous =
+                            contents.find_last_not_of(" \t\r\n", first - 1);
+                        if (previous > begin && contents[previous] == ',') {
+                            first = previous;
+                        }
+                    }
+                    contents.erase(first, last - first);
+                }
+            } else {
+                contents.insert(
+                    end - 1,
+                    (table->empty() ? "" : ", ") + patch.key + " = " +
+                        formatted + " "
+                );
+            }
+        } else if (node) {
+            const auto key = table->find(patch.key);
+            auto begin = byte_offset(contents, key->first.source().begin);
+            const auto end = byte_offset(contents, node->source().end);
+            const auto newline = contents.rfind('\n', begin);
+            begin = newline == std::string::npos ? 0 : newline + 1;
+            contents.erase(begin, end - begin);
+        } else if (!formatted.empty()) {
+            if (!table) {
+                contents += "\n[" + patch.table + "]\n" + patch.key + " = " +
+                            formatted + "\n";
+            } else {
+                const auto begin = byte_offset(contents, table->source().begin);
+                if (contents[begin] == '[') {
+                    const auto newline = contents.find('\n', begin);
+                    const auto header = contents.substr(begin, newline - begin);
+                    const auto probe = toml::parse(
+                        header + "\n__setting_patch_probe__ = true\n"
+                    );
+                    const auto* header_table = probe[patch.table].as_table();
+                    if (!header_table ||
+                        !header_table->contains("__setting_patch_probe__")) {
+                        // An implicit parent of a declared child table can be
+                        // explicitly declared at the end of the document.
+                        contents += "\n[" + patch.table + "]\n" + patch.key +
+                                    " = " + formatted + "\n";
+                        continue;
+                    }
+                    const auto at = newline == std::string::npos
+                                        ? contents.size()
+                                        : newline + 1;
+                    contents.insert(
+                        at,
+                        (newline == std::string::npos ? "\n" : "") + patch.key +
+                            " = " + formatted + "\n"
+                    );
+                } else {
+                    contents.insert(
+                        0,
+                        patch.table + "." + patch.key + " = " + formatted + "\n"
+                    );
+                }
+            }
+        }
     }
     static_cast<void>(Config::load_from_string(config_path, contents));
     return contents;

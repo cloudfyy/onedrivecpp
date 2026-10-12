@@ -2,6 +2,7 @@
 
 #include "configuration.hpp"
 #include "localization.hpp"
+#include "settings_editor.hpp"
 
 #include <QActionGroup>
 #include <QApplication>
@@ -21,7 +22,6 @@
 #include <QUrl>
 
 #include <exception>
-#include <functional>
 #include <utility>
 
 namespace onedrive::gui {
@@ -33,25 +33,6 @@ QLabel* make_value_label(const QString& text) {
     label->setTextInteractionFlags(Qt::TextSelectableByMouse);
     label->setWordWrap(true);
     return label;
-}
-
-QWidget* directory_field(
-    QLineEdit*& field,
-    QWidget* parent,
-    const std::function<void(QLineEdit*)>& browse
-) {
-    auto* container = new QWidget{parent};
-    auto* layout = new QHBoxLayout{container};
-    layout->setContentsMargins(0, 0, 0, 0);
-    field = new QLineEdit{container};
-    auto* button = new QPushButton{MainWindow::tr("Browse…"), container};
-    button->setObjectName("browseButton");
-    layout->addWidget(field);
-    layout->addWidget(button);
-    QObject::connect(button, &QPushButton::clicked, container, [field, browse] {
-        browse(field);
-    });
-    return container;
 }
 
 } // namespace
@@ -113,22 +94,12 @@ MainWindow::MainWindow(
     auto* config_path = make_value_label({});
     config_path->setTextInteractionFlags(Qt::TextSelectableByMouse);
     settings_layout->addRow(tr("Configuration file"), config_path);
-    settings_layout->addRow(
-        tr("Sync directory"),
-        directory_field(
-            sync_directory_edit_, settings, [this](QLineEdit* field) {
-                browse_for_directory(field);
-            }
-        )
-    );
-    settings_layout->addRow(
-        tr("State directory"),
-        directory_field(
-            state_directory_edit_, settings, [this](QLineEdit* field) {
-                browse_for_directory(field);
-            }
-        )
-    );
+    settings_editor_ = new SettingsEditor{settings};
+    settings_layout->addRow(settings_editor_);
+    sync_directory_edit_ =
+        settings_editor_->findChild<QLineEdit*>("sync.data_directory");
+    state_directory_edit_ =
+        settings_editor_->findChild<QLineEdit*>("state.directory");
     auto* theme = make_value_label(tr("Follow system light/dark appearance"));
     theme_value_ = theme;
     settings_layout->addRow(tr("Appearance"), theme);
@@ -305,9 +276,8 @@ void MainWindow::retranslate_ui() {
     set_label(overview_layout_, 4, tr("Login"));
     set_label(overview_layout_, 5, tr("Browser login"));
     set_label(settings_layout_, 0, tr("Configuration file"));
-    set_label(settings_layout_, 1, tr("Sync directory"));
-    set_label(settings_layout_, 2, tr("State directory"));
-    set_label(settings_layout_, 3, tr("Appearance"));
+    set_label(settings_layout_, 2, tr("Appearance"));
+    settings_editor_->retranslate();
     theme_value_->setText(tr("Follow system light/dark appearance"));
     login_button_->setText(tr("Sign in"));
     cancel_login_button_->setText(tr("Cancel login"));
@@ -431,17 +401,18 @@ void MainWindow::refresh_settings(bool preserve_edits) {
         QString::fromStdString(state_.state_directory.string())
     );
     if (!preserve_edits) {
-        sync_directory_edit_->setText(
-            QString::fromStdString(state_.sync_directory.string())
-        );
-        state_directory_edit_->setText(
-            QString::fromStdString(state_.state_directory.string())
-        );
+        if (state_.configuration_status != ConfigurationStatus::invalid) {
+            bool missing = false;
+            settings_editor_->load(
+                load_configuration(state_.config_file, missing)
+            );
+        }
     }
     const bool editable =
         state_.configuration_status != ConfigurationStatus::invalid;
     sync_directory_edit_->setEnabled(editable);
     state_directory_edit_->setEnabled(editable);
+    settings_editor_->setEnabled(editable);
     save_button_->setEnabled(editable);
     login_button_->setEnabled(state_.can_sign_in());
     refresh_startup_status();
@@ -499,16 +470,19 @@ void MainWindow::reload_settings() {
     refresh_settings();
 }
 
-void MainWindow::browse_for_directory(QLineEdit* field) {
-    const auto selected = QFileDialog::getExistingDirectory(
-        this, tr("Select directory"), field->text()
-    );
-    if (!selected.isEmpty()) {
-        field->setText(selected);
-    }
-}
-
 void MainWindow::save_settings() {
+    std::vector<config::SettingPatch> patches;
+    try {
+        patches = settings_editor_->patches();
+    } catch (const std::exception& error) {
+        QMessageBox::critical(
+            this,
+            tr("Cannot save settings"),
+            tr("Settings could not be saved:\n%1")
+                .arg(QString::fromUtf8(error.what()))
+        );
+        return;
+    }
     const auto new_sync_directory =
         std::filesystem::path{sync_directory_edit_->text().toStdString()};
     const auto new_state_directory =
@@ -550,12 +524,11 @@ void MainWindow::save_settings() {
     }
 
     try {
-        const auto backup = save_basic_settings(
-            state_.config_file, new_sync_directory, new_state_directory
-        );
+        const auto backup = save_settings_patch(state_.config_file, patches);
         state_ = load_app_state_view_model(state_.config_file);
         refresh_settings();
-        auto message = tr("Basic settings saved.");
+        auto message =
+            tr("Settings saved. Changes take effect on the next operation.");
         if (backup) {
             message += tr("\nPrevious configuration backed up to:\n%1")
                            .arg(QString::fromStdString(backup->string()));

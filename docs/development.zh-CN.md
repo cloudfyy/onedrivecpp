@@ -32,7 +32,7 @@ Qt URL 处理器捕获有效浏览器请求，不启动真实浏览器；格式�
 ```bash
 cmake --preset debug -DONEDRIVE_BUILD_GUI=ON -DONEDRIVE_ENABLE_GRAPH_E2E=OFF
 cmake --build build/debug --target onedrive_gui_lupdate
-cmake --build build/debug --target onedrive-cpp-gui gui_localization_tests gui_startup_options_tests gui_login_tests gui_state_view_model_tests gui_system_appearance_tests browser_request_tests
+cmake --build build/debug --target onedrive-cpp-gui gui_settings_tests gui_startup_state_tests gui_localization_tests gui_startup_options_tests gui_login_tests gui_state_view_model_tests gui_system_appearance_tests browser_request_tests
 ctest --test-dir build/debug -R '^(gui_.*|browser_request_tests)$' --output-on-failure
 ```
 
@@ -46,6 +46,25 @@ GUI 及测试程序。不要手动编辑生成的 `.qm` 文件。离屏测试分
 菜单切换测试验证勾选项、已有控件和状态翻译、未保存字段及活动登录的保留。
 无需 Graph 凭据或真实浏览器，但不能替代
 真实桌面及原生对话框验证。
+
+设置改版第一阶段已实现账号与目录、同步规则、传输；网络／监控／日志及高级
+账号配置留待后续阶段。`SettingsEditor` 三个子页共用基于控件的草稿；枚举
+`itemData` 保存解析器值，不从翻译文本反推。数字文本框避免 Qt 32 位整数
+截断，验证 TOML 非负 int64 范围。只修改已编辑键；选择性规则留空可删除可选键，
+更改同步模式时移除旧 `sync.upload`，同时保留选择的删除策略。核心补丁工具使用
+解析器源位置处理引号表头、点分键与内联表，不用正则或整文档序列化。
+保存先验证，再备份与原子替换。导入／重新加载重置所有草稿；语言切换和登录
+完成不会丢弃草稿。
+
+`gui_settings_tests` 使用真实离屏控件与保存后的 TOML 验证所有新增字段、64 位
+边界、解析器约束、注释／无关配置保留、备份、可选键删除、草稿／语言／子页
+切换、重新加载及首次应用 ID 设置。另覆盖所有传输排序／同步模式的重新加载、
+数值上下界与严格草稿语法、高级分组展开／收起、浏览选择／取消、内联表各位置的
+可选键删除、UTF-8／多行源码编辑、非法补丁不写入／不备份、保存／导入取消、
+非法导入及首次导入按目标配置位置解析规则文件。未知 TOML 键会被拒绝并保留原文，
+不会静默丢弃。启动／导入回归验证损坏配置恢复；本地化与
+登录测试覆盖禁用控件及工作线程／草稿保留。不代表已提供 GUI 同步、目录迁移或
+在线凭据验证。
 
 ## 离线代码覆盖率
 

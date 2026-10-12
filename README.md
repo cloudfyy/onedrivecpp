@@ -171,7 +171,7 @@ information without opening a window.
 
 Use the **Language** menu to switch between **System language**, **English**, and
 **Simplified Chinese** immediately. Existing labels, status messages, settings,
-and the window title update without losing unsaved directory edits or restarting
+and the window title update without losing unsaved settings drafts or restarting
 an active login. The checked menu item shows the selection. Both command-line
 and menu selections apply only to the current session and are not saved.
 Restart after changing the system language. Native dialogs and the external
@@ -181,7 +181,8 @@ Underlying configuration, filesystem, backend, and server error details are
 preserved and may still be in English; their GUI context is translated.
 Startup is local-only: it never checks credentials online, opens a browser, or
 prompts for login. Missing configuration uses defaults with a setup notice
-(set `auth.application_id` in TOML before signing in). Invalid configuration or
+(save **Application ID** in **Settings → Account and directories** before signing
+in). Invalid configuration or
 unreadable account state keeps Settings available and disables sign-in until
 repaired. Import a valid TOML file, or edit the active file and use **Reload
 configuration**. Invalid files are not silently overwritten; imports preserve
@@ -189,6 +190,25 @@ their contents in a backup. Saved credentials are explicitly unverified online;
 later operations refresh them and report authentication or connectivity errors.
 Sync-path validation does not prevent login when authentication/state settings
 are usable. The GUI still has no synchronization action.
+
+Settings phase one provides three sub-tabs: **Account and directories**,
+**Sync rules**, and **Transfers**. They share one draft and global save/import/
+reload controls. Save validates with the core TOML parser, preserves comments
+and untouched settings, backs up the original, and replaces the file atomically.
+Import and reload replace the draft; switching tabs or language preserves it.
+Directory changes do not migrate files or credentials. Changes apply to the next
+operation; settings are disabled during login.
+
+The tabs cover Application/tenant/Drive IDs and directories; sync direction,
+deletion/conflict/dotfile policies, selective rules, file-size limit and advanced
+`.nosync`/root-file/deletion guard settings; upload/download concurrency,
+per-request/aggregate rates, ordering, and advanced chunk/checkpoint/retry/
+download validation settings. Sizes use bytes and rates bytes/s (`0` means
+unlimited for sizes/rates, but zero remote deletions blocks deletion). Integers
+retain TOML's full nonnegative signed 64-bit range. Network, monitor, logging,
+and advanced account endpoint/scopes/mount editors remain deferred and preserved
+in TOML. Persistent dry-run/force-delete flags and CLI themes are not GUI settings.
+
 CLI/TUI text, JSON output, configuration keys, and logs are unchanged.
 `ONEDRIVE_BUILD_GUI` defaults to `OFF`; headless builds need neither Qt nor
 translation tools. See [GUI localization tests](docs/development.md#gui-localization)

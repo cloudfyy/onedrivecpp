@@ -7,6 +7,7 @@
 #include "support/common.hpp"
 
 #include <QApplication>
+#include <QComboBox>
 #include <QDesktopServices>
 #include <QFileDialog>
 #include <QLabel>
@@ -229,7 +230,10 @@ void test_import_and_reload_recovery() {
     const auto source = fixture.path() / "import.toml";
     const std::string corrupt = "# retain this original\n[broken TOML";
     test::write_file(file, corrupt);
-    const auto valid = "# retain imported comments\n" + configuration(fixture.path());
+    const auto valid =
+        "# retain imported comments\n" + configuration(fixture.path()) +
+        "tenant_id = 'organizations'\n[upload]\nconcurrency = 7\n"
+        "[transfer]\norder = 'size_dsc'\n";
     test::write_file(source, valid);
     gui::MainWindow window{gui::load_app_state_view_model(file)};
     window.show();
@@ -259,6 +263,14 @@ void test_import_and_reload_recovery() {
                 window.findChild<QPushButton*>("signInButton")->isEnabled() &&
                 window.findChild<QPushButton*>("saveSettingsButton")->isEnabled(),
             "GUI import did not recover the active configuration");
+    require(
+        window.findChild<QLineEdit*>("auth.tenant_id")->text() ==
+                "organizations" &&
+            window.findChild<QLineEdit*>("upload.concurrency")->text() == "7" &&
+            window.findChild<QComboBox*>("transfer.order")->currentData() ==
+                "size_dsc",
+        "import did not populate all settings sub-tabs"
+    );
     bool backed_up = false;
     for (const auto& entry : std::filesystem::directory_iterator(fixture.path())) {
         if (entry.path().filename().string().starts_with("config.toml.backup.")) {
@@ -322,9 +334,8 @@ void test_state_directory_settings_recovery() {
     require(!window.findChild<QPushButton*>("signInButton")->isEnabled(),
             "corrupt account marker did not disable login");
     const auto new_state = fixture.path() / "recovered-state";
-    window.findChildren<QLineEdit*>()[1]->setText(
-        QString::fromStdString(new_state.string())
-    );
+    window.findChild<QLineEdit*>("state.directory")
+        ->setText(QString::fromStdString(new_state.string()));
     int stage = 0;
     QTimer dialogs;
     QObject::connect(&dialogs, &QTimer::timeout, &window, [&] {

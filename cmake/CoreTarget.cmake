@@ -222,6 +222,8 @@ if(ONEDRIVE_BUILD_GUI)
             ${PROJECT_SOURCE_DIR}/src/ui/gui/main.cpp
             ${PROJECT_SOURCE_DIR}/src/ui/gui/main_window.cpp
             ${PROJECT_SOURCE_DIR}/src/ui/gui/main_window.hpp
+            ${PROJECT_SOURCE_DIR}/src/ui/gui/settings_editor.cpp
+            ${PROJECT_SOURCE_DIR}/src/ui/gui/settings_editor.hpp
             ${PROJECT_SOURCE_DIR}/src/ui/gui/localization.cpp
             ${PROJECT_SOURCE_DIR}/src/ui/gui/login_controller.cpp
             ${PROJECT_SOURCE_DIR}/src/ui/gui/login_controller.hpp
@@ -254,6 +256,8 @@ if(ONEDRIVE_BUILD_GUI)
         src/ui/gui/main.cpp
         src/ui/gui/main_window.cpp
         src/ui/gui/main_window.hpp
+        src/ui/gui/settings_editor.cpp
+        src/ui/gui/settings_editor.hpp
         src/ui/gui/login_controller.cpp
         src/ui/gui/login_controller.hpp
         src/ui/gui/system_appearance.cpp

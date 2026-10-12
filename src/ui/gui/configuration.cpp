@@ -150,8 +150,19 @@ std::optional<std::filesystem::path> save_basic_settings(
             "sync and state directories must not be empty"
         );
     }
-    ensure_private_parent(config_file);
+    return save_settings_patch(
+        config_file,
+        {
+            {"sync", "data_directory", sync_directory.string()},
+            {"state", "directory", state_directory.string()},
+        }
+    );
+}
 
+std::optional<std::filesystem::path> save_settings_patch(
+    const std::filesystem::path& config_file,
+    const std::vector<config::SettingPatch>& patches
+) {
     std::string current = "config_version = 2\n";
     std::error_code error;
     const auto status = std::filesystem::symlink_status(config_file, error);
@@ -164,14 +175,19 @@ std::optional<std::filesystem::path> save_basic_settings(
         );
     }
 
-    const auto updated = config::update_basic_paths(
-        config_file, current, sync_directory, state_directory
-    );
+    const auto updated = config::update_settings(config_file, current, patches);
     const auto updated_config =
         config::Config::load_from_string(config_file, updated);
+    if (updated_config.sync_data_directory.empty() ||
+        updated_config.state_directory.empty()) {
+        throw std::invalid_argument(
+            "sync and state directories must not be empty"
+        );
+    }
     config::validate_sync_state_directories(
         updated_config.sync_data_directory, updated_config.state_directory
     );
+    ensure_private_parent(config_file);
     const auto backup = backup_existing_config(config_file);
     util::write_file_atomically(
         config_file, updated, private_file_mode, "configuration file"
