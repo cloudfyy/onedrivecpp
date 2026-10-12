@@ -1,6 +1,7 @@
 #include "localization.hpp"
 
 #include <QCoreApplication>
+#include <QEvent>
 
 #include <stdexcept>
 
@@ -10,8 +11,92 @@ static void initialize_translation_resources() {
 
 namespace onedrive::gui {
 
+QLocale locale_for_language(Language language) {
+    switch (language) {
+    case Language::automatic:
+        return QLocale::system();
+    case Language::english:
+        return QLocale{QLocale::English};
+    case Language::simplified_chinese:
+        return QLocale{"zh_CN"};
+    }
+    throw std::logic_error{"unknown GUI language"};
+}
+
+Language parse_startup_language(
+    QCommandLineParser& parser, const QStringList& arguments
+) {
+    parser.setApplicationDescription("OneDrive desktop client");
+    parser.addHelpOption();
+    parser.addVersionOption();
+    parser.addOption(
+        QCommandLineOption{
+            "language",
+            "GUI language: auto (system locale), en (English), or zh_CN "
+            "(Simplified Chinese).",
+            "language",
+            "auto"
+        }
+    );
+    if (!parser.parse(arguments)) {
+        throw std::invalid_argument{parser.errorText().toStdString()};
+    }
+    if (!parser.positionalArguments().isEmpty()) {
+        throw std::invalid_argument{
+            "Unexpected positional arguments: " +
+            parser.positionalArguments().join(' ').toStdString()
+        };
+    }
+    const auto language = parser.value("language");
+    if (language == "auto") {
+        return Language::automatic;
+    }
+    if (language == "en") {
+        return Language::english;
+    }
+    if (language == "zh_CN") {
+        return Language::simplified_chinese;
+    }
+    throw std::invalid_argument{
+        "Invalid GUI language '" + language.toStdString() +
+        "'. Expected auto, en, or zh_CN."
+    };
+}
+
+Localization::Localization(Language language) {
+    initialize_translation_resources();
+    set_language(language);
+}
+
 Localization::Localization(const QLocale& locale) {
     initialize_translation_resources();
+    language_ = locale.language() == QLocale::Chinese &&
+                        locale.script() == QLocale::SimplifiedChineseScript
+                    ? Language::simplified_chinese
+                    : Language::english;
+    apply_locale(locale);
+}
+
+void Localization::set_language(Language language) {
+    apply_locale(locale_for_language(language));
+    language_ = language;
+    // Also notify widgets when auto and English use the same source strings.
+    if (auto* application = QCoreApplication::instance()) {
+        QEvent event{QEvent::LanguageChange};
+        QCoreApplication::sendEvent(application, &event);
+    }
+}
+
+Language Localization::language() const noexcept {
+    return language_;
+}
+
+void Localization::apply_locale(const QLocale& locale) {
+    if (chinese_loaded_) {
+        QCoreApplication::removeTranslator(&translator_);
+        QCoreApplication::removeTranslator(&qt_translator_);
+        chinese_loaded_ = false;
+    }
     // Only Simplified Chinese is supported; Traditional Chinese falls back
     // to English rather than unexpectedly displaying Simplified Chinese.
     if (locale.language() != QLocale::Chinese ||

@@ -4,16 +4,37 @@
 
 #include "onedrive/config/config.hpp"
 #include "onedrive/exit_code.hpp"
+#include "onedrive/version.hpp"
 
 #include <QApplication>
 #include <QMessageBox>
+#include <QTextStream>
 
 #include <exception>
+#include <stdexcept>
 
 int main(int argc, char* argv[]) {
     QApplication application{argc, argv};
     QCoreApplication::setApplicationName("onedrive-cpp-gui");
-    onedrive::gui::Localization localization;
+    QCoreApplication::setApplicationVersion(onedrive::build_info::version);
+    QCommandLineParser parser;
+    onedrive::gui::Language language;
+    try {
+        language = onedrive::gui::parse_startup_language(
+            parser, application.arguments()
+        );
+    } catch (const std::invalid_argument& error) {
+        QTextStream{stderr} << QCoreApplication::applicationName() << ": "
+                            << error.what() << '\n';
+        return onedrive::exit_code::failure;
+    }
+    if (parser.isSet("help") || parser.isSet("help-all")) {
+        parser.showHelp();
+    }
+    if (parser.isSet("version")) {
+        parser.showVersion();
+    }
+    onedrive::gui::Localization localization{language};
     QApplication::setApplicationDisplayName(
         QCoreApplication::translate(
             "onedrive::gui::MainWindow", "onedrive client"
@@ -25,7 +46,9 @@ int main(int argc, char* argv[]) {
         onedrive::gui::MainWindow window{
             onedrive::gui::load_app_state_view_model(
                 onedrive::config::default_config_path()
-            )
+            ),
+            {},
+            &localization
         };
         window.show();
         return application.exec();

@@ -262,6 +262,7 @@ if(ONEDRIVE_BUILD_GUI)
     set_target_properties(onedrive-cpp-gui PROPERTIES AUTOMOC ON)
     target_include_directories(onedrive-cpp-gui PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_BINARY_DIR}/generated
     )
     target_link_libraries(
         onedrive-cpp-gui

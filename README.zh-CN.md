@@ -133,12 +133,22 @@ sudo apt install -y qt6-base-dev qt6-tools-dev qt6-tools-dev-tools \
 cmake --preset release -DONEDRIVE_BUILD_GUI=ON
 cmake --build --preset release --target onedrive-cpp-gui
 ./build/release/onedrive-cpp-gui
+# 可选的启动语言参数（不会弹出语言选择对话框）：
+./build/release/onedrive-cpp-gui --language en
+./build/release/onedrive-cpp-gui --language=zh_CN
+./build/release/onedrive-cpp-gui --language auto
 ```
 
-GUI 启动时跟随系统语言：简体中文环境显示 **OneDrive 客户端**，英语或其他
+GUI 默认（`--language auto`）启动时跟随系统语言：简体中文环境显示 **OneDrive 客户端**，英语或其他
 不支持的语言环境显示 **onedrive client**。概览、设置、登录状态、对话框和
 浏览器回调消息均有翻译。应用与 Qt 翻译内嵌在可执行文件中，运行时不需要额外
-翻译文件。更改系统语言后请重启应用；原生对话框和外部浏览器可能使用各自的
+翻译文件。`--language` 仅接受 `auto`、`en` 和 `zh_CN`；不支持的值或未知参数
+会明确报错并退出。`--help` 和 `--version` 输出信息后退出，不会打开窗口。
+
+运行时可通过 **语言** 菜单选择 **系统语言**、**英语** 或 **简体中文**，
+立即更新现有标签、状态消息、设置界面和窗口标题，不丢失未保存的目录编辑，
+也不重启正在进行的登录。菜单勾选项表示当前选择。命令行和菜单选择仅在本次
+运行有效，不会保存。更改系统语言后请重启应用；原生对话框和外部浏览器可能使用各自的
 系统语言设置。
 
 配置、文件系统、后端及服务器的原始错误详情会保留，可能仍为英语；GUI 提供的

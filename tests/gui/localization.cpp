@@ -4,12 +4,16 @@
 #include "support/common.hpp"
 
 #include <QApplication>
+#include <QAction>
+#include <QDesktopServices>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileDialog>
+#include <QFormLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QMenu>
 #include <QPushButton>
 #include <QSettings>
 #include <QTabWidget>
@@ -22,6 +26,18 @@
 #include <atomic>
 #include <stdexcept>
 #include <string_view>
+
+class BrowserCapture : public QObject {
+    Q_OBJECT
+
+public:
+    QList<QUrl> addresses;
+
+public Q_SLOTS:
+    void open(const QUrl& address) {
+        addresses.append(address);
+    }
+};
 
 namespace {
 
@@ -565,6 +581,369 @@ void test_browser_callback(bool chinese) {
     }
 }
 
+void test_runtime_language(bool system_chinese) {
+    test::TemporaryDirectory fixture;
+    const auto file = write_config(fixture.path());
+    gui::Localization localization{gui::Language::english};
+    std::atomic<int> login_calls{0};
+    gui::MainWindow window{
+        gui::load_app_state_view_model(file),
+        [&login_calls](
+            const auto&, const auto&, std::stop_token token
+        ) -> auth::AuthResult<app::AuthenticationResult> {
+            ++login_calls;
+            while (!token.stop_requested()) {
+                QThread::msleep(1);
+            }
+            return std::unexpected(
+                auth::AuthError{.code = auth::AuthErrorCode::cancelled}
+            );
+        },
+        &localization
+    };
+    window.show();
+    const auto fields = window.findChildren<QLineEdit*>();
+    require(fields.size() == 2, "settings fields were not found");
+    fields[0]->setText("/unsaved/同步-%1");
+    fields[1]->setText("/unsaved/状态-%2");
+    fields[0]->setCursorPosition(5);
+    fields[0]->setModified(true);
+    auto* menu = window.findChild<QMenu*>("languageMenu");
+    auto* tabs = window.findChild<QTabWidget*>();
+    auto* sign_in = window.findChild<QPushButton*>("signInButton");
+    auto* status = window.findChild<QLabel*>("loginStatus");
+    require(menu && menu->actions().size() == 3, "language menu was missing");
+    const auto check_ui = [&](bool chinese, gui::Language language) {
+        require(
+            window.windowTitle() ==
+                    expected(chinese, "onedrive client", "OneDrive 客户端") &&
+                QApplication::applicationDisplayName() ==
+                    window.windowTitle() &&
+                tabs->tabText(0) == expected(chinese, "Overview", "概览") &&
+                tabs->tabText(1) == expected(chinese, "Settings", "设置") &&
+                sign_in->text() == expected(chinese, "Sign in", "登录账号") &&
+                has_label(window, expected(chinese, "Account", "账号")) &&
+                has_label(window, expected(chinese, "Appearance", "外观")) &&
+                has_label(
+                    window,
+                    gui::account_status_text(gui::AccountStatus::no_account)
+                ),
+            "existing title, tabs, labels or account status did not retranslate"
+        );
+        require(
+            button(window, expected(chinese, "Save settings", "保存设置")) &&
+                button(window, expected(chinese, "Import TOML…", "导入 TOML…")),
+            "existing settings buttons did not retranslate"
+        );
+        for (const auto* browse :
+             window.findChildren<QPushButton*>("browseButton")) {
+            require(
+                browse->text() == expected(chinese, "Browse…", "浏览…"),
+                "existing browse button did not retranslate"
+            );
+        }
+        require(
+            window.findChildren<QLineEdit*>() == fields &&
+                fields[0]->text() == "/unsaved/同步-%1" &&
+                fields[1]->text() == "/unsaved/状态-%2" &&
+                fields[0]->cursorPosition() == 5 && fields[0]->isModified(),
+            "language switching rebuilt fields or discarded unsaved edits"
+        );
+        require(
+            menu->title() == expected(chinese, "Language", "语言") &&
+                menu->actions()[0]->text() ==
+                    expected(chinese, "System language", "系统语言") &&
+                menu->actions()[1]->text() ==
+                    expected(chinese, "English", "英语") &&
+                menu->actions()[2]->text() ==
+                    expected(chinese, "Simplified Chinese", "简体中文"),
+            "language menu did not retranslate"
+        );
+        for (auto* action : menu->actions()) {
+            require(
+                action->isChecked() ==
+                    (action->data().toInt() == static_cast<int>(language)),
+                "language menu checked the wrong selection"
+            );
+        }
+    };
+    const auto select = [&](gui::Language language, bool chinese) {
+        menu->actions()[static_cast<int>(language)]->trigger();
+        QCoreApplication::processEvents();
+        check_ui(chinese, language);
+    };
+    check_ui(false, gui::Language::english);
+    select(gui::Language::simplified_chinese, true);
+    require(
+        status->text() == "登录以连接 OneDrive 账号。",
+        "existing initial login status did not retranslate"
+    );
+    select(gui::Language::english, false);
+    select(gui::Language::automatic, system_chinese);
+    // Exercise auto/English transitions even when both use English strings.
+    select(gui::Language::english, false);
+    localization.set_language(gui::Language::automatic);
+    QCoreApplication::processEvents();
+    check_ui(system_chinese, gui::Language::automatic);
+    select(gui::Language::english, false);
+
+    sign_in->click();
+    require(
+        wait_until([&] { return login_calls == 1; }), "login did not start"
+    );
+    select(gui::Language::simplified_chinese, true);
+    require(
+        status->text() == "正在启动浏览器登录…" && !sign_in->isEnabled() &&
+            !window.findChild<QWidget*>("settingsPage")->isEnabled() &&
+            login_calls == 1,
+        "language switching reset the in-progress login or its status"
+    );
+    window.findChild<QPushButton*>("cancelLoginButton")->click();
+    select(gui::Language::english, false);
+    require(
+        wait_until([&] { return sign_in->isEnabled(); }) &&
+            status->text() == "Login cancelled." && login_calls == 1,
+        "login result was lost after language switching"
+    );
+    select(gui::Language::simplified_chinese, true);
+    require(
+        status->text() == "登录已取消。",
+        "completed login status did not retranslate"
+    );
+    select(gui::Language::english, false);
+
+    gui::MainWindow failed_window{
+        gui::load_app_state_view_model(file),
+        [](const auto&,
+           const auto&,
+           std::stop_token) -> auth::AuthResult<app::AuthenticationResult> {
+            throw std::runtime_error{"raw server detail: /中文/%1"};
+        },
+        &localization
+    };
+    auto* failed_sign_in =
+        failed_window.findChild<QPushButton*>("signInButton");
+    auto* failed_status = failed_window.findChild<QLabel*>("loginStatus");
+    failed_sign_in->click();
+    require(
+        wait_until([&] { return failed_sign_in->isEnabled(); }) &&
+            failed_status->text() ==
+                "Login failed: raw server detail: /中文/%1",
+        "login failure did not retain backend detail"
+    );
+    select(gui::Language::simplified_chinese, true);
+    require(
+        failed_status->text() == "登录失败：raw server detail: /中文/%1",
+        "existing failure status did not retranslate or preserve backend detail"
+    );
+    select(gui::Language::english, false);
+    require(
+        failed_status->text() == "Login failed: raw server detail: /中文/%1",
+        "failure status did not restore English with its backend detail"
+    );
+}
+
+void test_browser_language() {
+    test::TemporaryDirectory fixture;
+    const auto file = write_config(fixture.path());
+    gui::Localization localization{gui::Language::english};
+    BrowserCapture browser;
+    QDesktopServices::setUrlHandler("https", &browser, "open");
+    struct ResetHandler {
+        ~ResetHandler() {
+            QDesktopServices::unsetUrlHandler("https");
+        }
+    } reset_handler;
+    for (const auto& address : {
+             QString{"https://login.example.test/authorize?state=%25&code=中文"},
+             QString{"https://["},
+             QString{"http://login.example.test/"},
+             QString{"https:///authorize"},
+             QString{"https://user:secret@login.example.test/"},
+         }) {
+        localization.set_language(gui::Language::english);
+        browser.addresses.clear();
+        std::atomic<bool> finish{false};
+        gui::MainWindow window{
+            gui::load_app_state_view_model(file),
+            [address, &finish](
+                const auto&, const auto& open, std::stop_token token
+            ) -> auth::AuthResult<app::AuthenticationResult> {
+                open(address);
+                while (!token.stop_requested()) {
+                    QThread::msleep(1);
+                }
+                while (!finish) {
+                    QThread::msleep(1);
+                }
+                return std::unexpected(
+                    auth::AuthError{.code = auth::AuthErrorCode::cancelled}
+                );
+            },
+            &localization
+        };
+        struct ReleaseWorker {
+            std::atomic<bool>& finish;
+            ~ReleaseWorker() {
+                finish = true;
+            }
+        } release_worker{finish};
+        auto* sign_in = window.findChild<QPushButton*>("signInButton");
+        auto* status = window.findChild<QLabel*>("loginStatus");
+        auto* open = window.findChild<QPushButton*>("openBrowserButton");
+        auto* overview = qobject_cast<QFormLayout*>(
+            window.findChild<QTabWidget*>()->widget(0)->layout()
+        );
+        auto* url = qobject_cast<QLabel*>(
+            overview->itemAt(5, QFormLayout::FieldRole)->widget()
+        );
+        require(open && url, "browser controls were missing");
+        sign_in->click();
+        const bool valid = address.startsWith(
+            "https://login.example.test/"
+        );
+        if (valid) {
+            require(
+                wait_until([&] { return browser.addresses.size() == 1; }) &&
+                    status->text() ==
+                        "Waiting for browser authorization (up to 5 minutes)..." &&
+                    url->text() ==
+                        "Complete authorization in your system browser." &&
+                    open->isEnabled(),
+                "browser request did not display its instruction and status"
+            );
+            for (const auto language :
+                 {gui::Language::simplified_chinese, gui::Language::english}) {
+                localization.set_language(language);
+                QCoreApplication::processEvents();
+                const bool chinese =
+                    language == gui::Language::simplified_chinese;
+                require(
+                    status->text() == expected(
+                        chinese,
+                        "Waiting for browser authorization (up to 5 minutes)...",
+                        "正在等待浏览器授权（最多 5 分钟）…"
+                    ) &&
+                        url->text() == expected(
+                            chinese,
+                            "Complete authorization in your system browser.",
+                            "请在系统浏览器中完成授权。"
+                        ) &&
+                        !sign_in->isEnabled() && open->isEnabled() &&
+                        browser.addresses.size() == 1,
+                    "language switching changed browser state or relaunched it"
+                );
+            }
+            open->click();
+            require(
+                browser.addresses.size() == 2 &&
+                    browser.addresses[0] == QUrl{address, QUrl::StrictMode} &&
+                    browser.addresses[1] == browser.addresses[0],
+                "reopening the browser changed the authorization URL"
+            );
+            window.findChild<QPushButton*>("cancelLoginButton")->click();
+        } else {
+            require(
+                wait_until([&] {
+                    return status->text() ==
+                        "Cannot open browser: the login URL is not a valid HTTPS "
+                        "address.";
+                }) && browser.addresses.isEmpty(),
+                "unsafe browser URL was not rejected"
+            );
+            localization.set_language(gui::Language::simplified_chinese);
+            QCoreApplication::processEvents();
+            require(
+                status->text() ==
+                    gui::MainWindow::tr(
+                        "Cannot open browser: the login URL is not a valid HTTPS "
+                        "address."
+                    ) &&
+                    !sign_in->isEnabled() && browser.addresses.isEmpty(),
+                "unsafe URL error did not retranslate without launching a browser"
+            );
+            localization.set_language(gui::Language::english);
+            QCoreApplication::processEvents();
+        }
+        finish = true;
+        require(
+            wait_until([&] { return sign_in->isEnabled(); }) &&
+                status->text() == "Login cancelled." && url->text().isEmpty() &&
+                !open->isEnabled() &&
+                (valid || browser.addresses.isEmpty()),
+            "browser completion retained stale controls or opened an unsafe URL"
+        );
+        localization.set_language(gui::Language::simplified_chinese);
+        QCoreApplication::processEvents();
+        require(
+            status->text() == "登录已取消。" && url->text().isEmpty(),
+            "language switching resurrected a cleared browser instruction"
+        );
+    }
+}
+
+void test_login_refresh_language() {
+    for (const bool invalid_config : {false, true}) {
+        test::TemporaryDirectory fixture;
+        const auto file = write_config(fixture.path());
+        gui::Localization localization{gui::Language::english};
+        gui::MainWindow window{
+            gui::load_app_state_view_model(file),
+            [file, invalid_config](
+                const auto&, const auto&, std::stop_token
+            ) -> auth::AuthResult<app::AuthenticationResult> {
+                if (invalid_config) {
+                    test::write_file(file, "[invalid TOML");
+                }
+                return app::AuthenticationResult{};
+            },
+            &localization
+        };
+        auto* sign_in = window.findChild<QPushButton*>("signInButton");
+        auto* status = window.findChild<QLabel*>("loginStatus");
+        sign_in->click();
+        require(
+            wait_until([&] { return sign_in->isEnabled(); }),
+            "successful authentication did not complete"
+        );
+        const auto prefix = QString{
+            "Login completed, but account status could not be refreshed: "
+        };
+        const auto detail = invalid_config ? status->text().mid(prefix.size())
+                                           : QString{};
+        require(
+            invalid_config
+                ? status->text().startsWith(prefix) && !detail.isEmpty()
+                : status->text() == "Signed in. Account credentials saved.",
+            "authentication refresh result was not displayed"
+        );
+        for (const auto language :
+             {gui::Language::simplified_chinese, gui::Language::english}) {
+            localization.set_language(language);
+            QCoreApplication::processEvents();
+            const bool chinese =
+                language == gui::Language::simplified_chinese;
+            require(
+                status->text() ==
+                    (invalid_config
+                         ? expected(
+                               chinese,
+                               "Login completed, but account status could not be "
+                               "refreshed: ",
+                               "登录已完成，但无法刷新账号状态："
+                           ) + detail
+                         : expected(
+                               chinese,
+                               "Signed in. Account credentials saved.",
+                               "已登录。账号凭据已保存。"
+                           )) &&
+                    window.findChild<QWidget*>("settingsPage")->isEnabled(),
+                "completed login did not retranslate or preserve refresh detail"
+            );
+        }
+    }
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -579,10 +958,17 @@ int main(int argc, char* argv[]) {
     const bool chinese = argc > 1 && std::string_view{argv[1]} == "chinese";
     try {
         {
-            gui::Localization localization;
+            auto arguments = application.arguments();
+            if (arguments.size() > 1) {
+                arguments.removeAt(1);
+            }
+            QCommandLineParser parser;
+            gui::Localization localization{
+                gui::parse_startup_language(parser, arguments)
+            };
             require(
                 localization.chinese_loaded() == chinese,
-                "system locale selected the wrong translation"
+                "startup locale selected the wrong translation"
             );
             test_states_and_messages(chinese);
             test_window_and_settings(chinese);
@@ -607,8 +993,18 @@ int main(int argc, char* argv[]) {
                 gui::MainWindow::tr("onedrive client") == "onedrive client",
             "English fallback was not restored"
         );
+        const auto system_locale = QLocale::system();
+        test_runtime_language(
+            system_locale.language() == QLocale::Chinese &&
+            system_locale.script() == QLocale::SimplifiedChineseScript
+        );
+        test_browser_language();
+        test_login_refresh_language();
     } catch (const std::exception& error) {
         return test::fail(error.what());
     }
+
     return EXIT_SUCCESS;
 }
+
+#include "localization.moc"

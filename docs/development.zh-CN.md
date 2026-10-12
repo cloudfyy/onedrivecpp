@@ -14,6 +14,17 @@ GUI 文本使用 `tr()` 或 `QCoreApplication::translate()`；账号与配置视
 使用枚举而非已翻译字符串，其无界面测试仍不依赖 Qt。`Localization` 在构建
 控件前安装资源内嵌的翻译器，并保持到应用退出。简体中文系统语言使用 `zh_CN`
 翻译包；其他语言回退到英语源文本。后端原始错误详情保留，不进行翻译。
+GUI 专用的 `QCommandLineParser` 在安装翻译器、创建窗口前解析
+`--language auto|en|zh_CN`；`--help`／`--version` 提前退出，非法值或未知参数
+明确报错。启动时不弹出语言选择框。运行时语言菜单调用应用持有的
+`Localization` 控制器，通过 `LanguageChange` 更新现有控件和保留的登录消息，
+不重建窗口、不重置表单、不干预登录线程。语言选择仅本次运行有效，
+CLI/TUI 参数解析器保持不变。
+本地化回归测试还覆盖浏览器授权期间以及账号刷新成功／失败后的语言切换。
+Qt URL 处理器捕获有效浏览器请求，不启动真实浏览器；格式错误、非 HTTPS、
+缺少主机及含用户凭据的 URL 不得到达处理器。通过显式控制工作线程完成时机，
+避免错误和状态断言依赖线程调度。启动测试验证 `auto` 与显式覆盖即使解析到
+相同语言环境也保持不同选择，并拒绝与帮助参数同时出现的位置参数。
 
 修改 GUI 文本后，使用 Qt 工具提取字符串，在
 `src/ui/gui/translations/onedrive_zh_CN.ts` 中翻译所有新增条目，再重新构建：
@@ -21,7 +32,7 @@ GUI 文本使用 `tr()` 或 `QCoreApplication::translate()`；账号与配置视
 ```bash
 cmake --preset debug -DONEDRIVE_BUILD_GUI=ON -DONEDRIVE_ENABLE_GRAPH_E2E=OFF
 cmake --build build/debug --target onedrive_gui_lupdate
-cmake --build build/debug --target onedrive-cpp-gui gui_localization_tests gui_login_tests gui_state_view_model_tests gui_system_appearance_tests browser_request_tests
+cmake --build build/debug --target onedrive-cpp-gui gui_localization_tests gui_startup_options_tests gui_login_tests gui_state_view_model_tests gui_system_appearance_tests browser_request_tests
 ctest --test-dir build/debug -R '^(gui_.*|browser_request_tests)$' --output-on-failure
 ```
 
@@ -29,7 +40,11 @@ ctest --test-dir build/debug -R '^(gui_.*|browser_request_tests)$' --output-on-f
 GUI 及测试程序。不要手动编辑生成的 `.qm` 文件。离屏测试分别在英语、
 `zh_CN`、`zh_SG`、法语和繁体中文环境运行，验证资源加载、英语回退、翻译器
 生命周期、真实窗口标签、账号／配置枚举、登录结果、设置对话框和 Qt 按钮、
-占位符替换及 UTF-8 loopback 回复。无需 Graph 凭据或真实浏览器，但不能替代
+占位符替换及 UTF-8 loopback 回复。启动参数测试在中英文环境使用真实 Qt
+解析器和翻译器，覆盖语言覆盖、`--language value` 与 `--language=value`。
+离屏可执行文件子进程验证帮助、版本及非法参数不会进入 GUI 事件循环；
+菜单切换测试验证勾选项、已有控件和状态翻译、未保存字段及活动登录的保留。
+无需 Graph 凭据或真实浏览器，但不能替代
 真实桌面及原生对话框验证。
 
 ## 离线代码覆盖率

@@ -153,13 +153,27 @@ sudo apt install -y qt6-base-dev qt6-tools-dev qt6-tools-dev-tools \
 cmake --preset release -DONEDRIVE_BUILD_GUI=ON
 cmake --build --preset release --target onedrive-cpp-gui
 ./build/release/onedrive-cpp-gui
+# Optional startup language override (no language-selection dialog):
+./build/release/onedrive-cpp-gui --language en
+./build/release/onedrive-cpp-gui --language=zh_CN
+./build/release/onedrive-cpp-gui --language auto
 ```
 
-The GUI follows the system locale at startup: Simplified Chinese locales
+By default (`--language auto`), the GUI follows the system locale at startup:
+Simplified Chinese locales
 display **OneDrive 客户端**, and English or unsupported locales display
 **onedrive client**. The overview, settings, login statuses, dialogs, and
 browser callback messages are translated. Application and Qt translations are
 embedded in the executable; no separate translation files are needed at runtime.
+The exact accepted `--language` values are `auto`, `en`, and `zh_CN`; unsupported
+values or unknown options exit with an error. `--help` and `--version` print
+information without opening a window.
+
+Use the **Language** menu to switch between **System language**, **English**, and
+**Simplified Chinese** immediately. Existing labels, status messages, settings,
+and the window title update without losing unsaved directory edits or restarting
+an active login. The checked menu item shows the selection. Both command-line
+and menu selections apply only to the current session and are not saved.
 Restart after changing the system language. Native dialogs and the external
 browser may follow their own system settings.
 

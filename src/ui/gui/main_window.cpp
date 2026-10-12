@@ -3,14 +3,18 @@
 #include "configuration.hpp"
 #include "localization.hpp"
 
+#include <QActionGroup>
+#include <QApplication>
 #include <QFileDialog>
 #include <QCloseEvent>
 #include <QDesktopServices>
+#include <QEvent>
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QMenuBar>
 #include <QPushButton>
 #include <QTabWidget>
 #include <QWidget>
@@ -41,6 +45,7 @@ QWidget* directory_field(
     layout->setContentsMargins(0, 0, 0, 0);
     field = new QLineEdit{container};
     auto* button = new QPushButton{MainWindow::tr("Browse…"), container};
+    button->setObjectName("browseButton");
     layout->addWidget(field);
     layout->addWidget(button);
     QObject::connect(button, &QPushButton::clicked, container, [field, browse] {
@@ -52,16 +57,21 @@ QWidget* directory_field(
 } // namespace
 
 MainWindow::MainWindow(
-    AppStateViewModel state, AuthenticationFunction authenticate
+    AppStateViewModel state,
+    AuthenticationFunction authenticate,
+    Localization* localization
 )
     : state_{std::move(state)},
+      localization_{localization},
       login_{std::move(authenticate)} {
     setWindowTitle(tr("onedrive client"));
     resize(860, 520);
 
     auto* tabs = new QTabWidget{this};
+    tabs_ = tabs;
     auto* overview = new QWidget{tabs};
     auto* overview_layout = new QFormLayout{overview};
+    overview_layout_ = overview_layout;
     account_status_value_ = make_value_label({});
     config_file_value_ = make_value_label({});
     sync_directory_value_ = make_value_label({});
@@ -96,6 +106,7 @@ MainWindow::MainWindow(
     settings_ = settings;
     settings_->setObjectName("settingsPage");
     auto* settings_layout = new QFormLayout{settings};
+    settings_layout_ = settings_layout;
     auto* config_path = make_value_label({});
     config_path->setTextInteractionFlags(Qt::TextSelectableByMouse);
     settings_layout->addRow(tr("Configuration file"), config_path);
@@ -116,11 +127,14 @@ MainWindow::MainWindow(
         )
     );
     auto* theme = make_value_label(tr("Follow system light/dark appearance"));
+    theme_value_ = theme;
     settings_layout->addRow(tr("Appearance"), theme);
 
     auto* actions = new QHBoxLayout;
     auto* import_button = new QPushButton{tr("Import TOML…"), settings};
     auto* save_button = new QPushButton{tr("Save settings"), settings};
+    import_button_ = import_button;
+    save_button_ = save_button;
     actions->addWidget(import_button);
     actions->addStretch();
     actions->addWidget(save_button);
@@ -128,6 +142,25 @@ MainWindow::MainWindow(
     tabs->addTab(settings, tr("Settings"));
 
     setCentralWidget(tabs);
+    if (localization_) {
+        language_menu_ = menuBar()->addMenu(tr("Language"));
+        language_menu_->setObjectName("languageMenu");
+        language_actions_ = new QActionGroup{this};
+        language_actions_->setExclusive(true);
+        for (const auto language :
+             {Language::automatic,
+              Language::english,
+              Language::simplified_chinese}) {
+            auto* action = language_menu_->addAction(QString{});
+            action->setCheckable(true);
+            action->setData(static_cast<int>(language));
+            language_actions_->addAction(action);
+            connect(action, &QAction::triggered, this, [this, language] {
+                localization_->set_language(language);
+                retranslate_ui();
+            });
+        }
+    }
     config_path->setText(QString::fromStdString(state_.config_file.string()));
     connect(import_button, &QPushButton::clicked, this, [this] {
         import_settings();
@@ -161,10 +194,11 @@ MainWindow::MainWindow(
             login_url_->setText(
                 tr("Complete authorization in your system browser.")
             );
+            login_url_is_instruction_ = true;
             authorization_url_ = url;
-            login_status_->setText(
-                tr("Waiting for browser authorization (up to 5 minutes)...")
-            );
+            set_login_status(QT_TR_NOOP(
+                "Waiting for browser authorization (up to 5 minutes)..."
+            ));
             browser_button_->setEnabled(true);
             open_login_url();
         },
@@ -176,6 +210,7 @@ MainWindow::MainWindow(
         this,
         [this](const QString& error, bool cancelled) {
             login_url_->clear();
+            login_url_is_instruction_ = false;
             authorization_url_.clear();
             browser_button_->setEnabled(false);
             cancel_login_button_->setEnabled(false);
@@ -186,29 +221,107 @@ MainWindow::MainWindow(
                 return;
             }
             if (cancelled) {
-                login_status_->setText(tr("Login cancelled."));
+                set_login_status(QT_TR_NOOP("Login cancelled."));
             } else if (!error.isEmpty()) {
-                login_status_->setText(tr("Login failed: %1").arg(error));
+                set_login_status(QT_TR_NOOP("Login failed: %1"), error);
             } else {
                 try {
                     state_ = load_app_state_view_model(state_.config_file);
                     account_status_value_->setText(
                         account_status_text(state_.account_status)
                     );
-                    login_status_->setText(
-                        tr("Signed in. Account credentials saved.")
+                    set_login_status(
+                        QT_TR_NOOP("Signed in. Account credentials saved.")
                     );
                 } catch (const std::exception& exception) {
-                    login_status_->setText(
-                        tr("Login completed, but account status could not be "
-                           "refreshed: %1")
-                            .arg(QString::fromUtf8(exception.what()))
+                    set_login_status(
+                        QT_TR_NOOP(
+                            "Login completed, but account status could not be "
+                            "refreshed: %1"
+                        ),
+                        QString::fromUtf8(exception.what())
                     );
                 }
             }
         }
     );
     refresh_settings();
+    retranslate_ui();
+}
+
+void MainWindow::changeEvent(QEvent* event) {
+    QMainWindow::changeEvent(event);
+    if (event->type() == QEvent::LanguageChange && tabs_) {
+        retranslate_ui();
+    }
+}
+
+void MainWindow::retranslate_ui() {
+    setWindowTitle(tr("onedrive client"));
+    QApplication::setApplicationDisplayName(windowTitle());
+    tabs_->setTabText(0, tr("Overview"));
+    tabs_->setTabText(1, tr("Settings"));
+    const auto set_label =
+        [](QFormLayout* layout, int row, const QString& text) {
+            auto* label = qobject_cast<QLabel*>(
+                layout->itemAt(row, QFormLayout::LabelRole)->widget()
+            );
+            label->setText(text);
+        };
+    set_label(overview_layout_, 0, tr("Account"));
+    set_label(overview_layout_, 1, tr("Configuration file"));
+    set_label(overview_layout_, 2, tr("Sync directory"));
+    set_label(overview_layout_, 3, tr("State directory"));
+    set_label(overview_layout_, 4, tr("Login"));
+    set_label(overview_layout_, 5, tr("Browser login"));
+    set_label(settings_layout_, 0, tr("Configuration file"));
+    set_label(settings_layout_, 1, tr("Sync directory"));
+    set_label(settings_layout_, 2, tr("State directory"));
+    set_label(settings_layout_, 3, tr("Appearance"));
+    theme_value_->setText(tr("Follow system light/dark appearance"));
+    login_button_->setText(tr("Sign in"));
+    cancel_login_button_->setText(tr("Cancel login"));
+    browser_button_->setText(tr("Open browser"));
+    import_button_->setText(tr("Import TOML…"));
+    save_button_->setText(tr("Save settings"));
+    for (auto* browse : settings_->findChildren<QPushButton*>("browseButton")) {
+        browse->setText(tr("Browse…"));
+    }
+    account_status_value_->setText(account_status_text(state_.account_status));
+    set_login_status(login_status_source_, login_status_detail_);
+    if (login_url_is_instruction_) {
+        login_url_->setText(
+            tr("Complete authorization in your system browser.")
+        );
+    }
+    if (language_menu_) {
+        language_menu_->setTitle(tr("Language"));
+        for (auto* action : language_actions_->actions()) {
+            const auto language = static_cast<Language>(action->data().toInt());
+            switch (language) {
+            case Language::automatic:
+                action->setText(tr("System language"));
+                break;
+            case Language::english:
+                action->setText(tr("English"));
+                break;
+            case Language::simplified_chinese:
+                action->setText(tr("Simplified Chinese"));
+                break;
+            }
+            action->setChecked(localization_->language() == language);
+        }
+    }
+}
+
+void MainWindow::set_login_status(const char* source, const QString& detail) {
+    login_status_source_ = source;
+    login_status_detail_ = detail;
+    auto text = tr(source);
+    if (!detail.isNull()) {
+        text = text.arg(detail);
+    }
+    login_status_->setText(text);
 }
 
 void MainWindow::start_login() {
@@ -216,15 +329,16 @@ void MainWindow::start_login() {
     settings_->setEnabled(false);
     login_button_->setEnabled(false);
     cancel_login_button_->setEnabled(true);
-    login_status_->setText(tr("Starting browser login..."));
+    set_login_status(QT_TR_NOOP("Starting browser login..."));
     try {
         login_.start(state_.config_file);
     } catch (const std::exception& error) {
         settings_->setEnabled(true);
         login_button_->setEnabled(true);
         cancel_login_button_->setEnabled(false);
-        login_status_->setText(
-            tr("Cannot start login: %1").arg(QString::fromUtf8(error.what()))
+        set_login_status(
+            QT_TR_NOOP("Cannot start login: %1"),
+            QString::fromUtf8(error.what())
         );
     }
 }
@@ -232,10 +346,11 @@ void MainWindow::start_login() {
 void MainWindow::cancel_login() {
     cancelling_ = true;
     login_url_->clear();
+    login_url_is_instruction_ = false;
     authorization_url_.clear();
     browser_button_->setEnabled(false);
     cancel_login_button_->setEnabled(false);
-    login_status_->setText(tr("Cancelling login..."));
+    set_login_status(QT_TR_NOOP("Cancelling login..."));
     login_.cancel();
 }
 
@@ -243,18 +358,19 @@ void MainWindow::open_login_url() {
     const QUrl url{authorization_url_, QUrl::StrictMode};
     if (!url.isValid() || url.scheme() != "https" || url.host().isEmpty() ||
         !url.userInfo().isEmpty()) {
-        login_status_->setText(tr(
+        set_login_status(QT_TR_NOOP(
             "Cannot open browser: the login URL is not a valid HTTPS address."
         ));
         login_.cancel();
         return;
     }
     if (!QDesktopServices::openUrl(url)) {
-        login_status_->setText(tr(
+        set_login_status(QT_TR_NOOP(
             "Cannot open the system browser. Copy the login URL below or try "
             "Open browser again."
         ));
         login_url_->setText(authorization_url_);
+        login_url_is_instruction_ = false;
     }
 }
 

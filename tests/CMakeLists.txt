@@ -148,6 +148,46 @@ if(ONEDRIVE_BUILD_GUI)
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen;LC_ALL=${LOCALE}.UTF-8;LANG=${LOCALE}.UTF-8;LANGUAGE=${LOCALE}"
         )
     endforeach()
+    foreach(LANGUAGE IN ITEMS auto en zh_CN)
+        foreach(SYSTEM_LOCALE IN ITEMS en_US zh_CN)
+            if(LANGUAGE STREQUAL "zh_CN" OR
+                (LANGUAGE STREQUAL "auto" AND SYSTEM_LOCALE STREQUAL "zh_CN"))
+                set(EXPECTED_LANGUAGE chinese)
+            else()
+                set(EXPECTED_LANGUAGE english)
+            endif()
+            add_test(
+                NAME gui_localization_${SYSTEM_LOCALE}_${LANGUAGE}_tests
+                COMMAND gui_localization_tests ${EXPECTED_LANGUAGE} --language=${LANGUAGE}
+            )
+            set_tests_properties(gui_localization_${SYSTEM_LOCALE}_${LANGUAGE}_tests PROPERTIES
+                TIMEOUT 20
+                ENVIRONMENT "QT_QPA_PLATFORM=offscreen;LC_ALL=${SYSTEM_LOCALE}.UTF-8;LANG=${SYSTEM_LOCALE}.UTF-8;LANGUAGE=${SYSTEM_LOCALE}"
+            )
+        endforeach()
+    endforeach()
+    add_onedrive_test(
+        gui_startup_options_tests
+        SOURCES tests/gui/startup_options.cpp
+        INCLUDE_DIRS src/ui/gui tests ${PROJECT_BINARY_DIR}/generated
+        LIBRARIES onedrive_gui_localization Qt6::Core
+    )
+    target_compile_definitions(gui_startup_options_tests PRIVATE
+        ONEDRIVE_GUI_EXECUTABLE="$<TARGET_FILE:onedrive-cpp-gui>"
+    )
+    add_dependencies(gui_startup_options_tests onedrive-cpp-gui)
+    set_tests_properties(gui_startup_options_tests PROPERTIES
+        TIMEOUT 90
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;LC_ALL=en_US.UTF-8;LANG=en_US.UTF-8;LANGUAGE=en_US"
+    )
+    add_test(
+        NAME gui_startup_options_zh_CN_tests
+        COMMAND gui_startup_options_tests
+    )
+    set_tests_properties(gui_startup_options_zh_CN_tests PROPERTIES
+        TIMEOUT 90
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;LC_ALL=zh_CN.UTF-8;LANG=zh_CN.UTF-8;LANGUAGE=zh_CN"
+    )
     add_onedrive_test(
         gui_system_appearance_tests
         SOURCES

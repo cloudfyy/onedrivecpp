@@ -17,7 +17,21 @@ their headless tests remain Qt-independent. `Localization` installs the
 resource-bundled translators before constructing widgets and keeps them alive
 for the application's lifetime. Simplified Chinese system locales use the
 `zh_CN` catalog; all other locales fall back to the English source strings.
+The GUI-only `QCommandLineParser` accepts `--language auto|en|zh_CN` before
+installing translators or creating the window. `--help`/`--version` exit early;
+invalid values/options fail explicitly. There is no startup selection dialog.
+The session-only Language menu calls the application-owned `Localization`
+controller; `LanguageChange` retranslates existing widgets and retained login
+messages without reconstructing the window, resetting form values, or touching
+the login worker. The CLI/TUI parser is unchanged.
 Backend error details are intentionally preserved rather than translated.
+The localization regressions also switch languages during browser authorization
+and after successful or failed account refresh. A Qt URL handler captures valid
+browser launches without opening a browser; malformed, non-HTTPS, hostless, and
+credential-bearing URLs must never reach that handler. Worker completion is
+gated so error/status checks do not depend on thread timing. Startup regressions
+retain the distinction between `auto` and an explicit override even when both
+resolve to the same locale, and reject positional arguments alongside help.
 
 After changing GUI strings, extract them with Qt tooling, translate every new
 entry in `src/ui/gui/translations/onedrive_zh_CN.ts`, and rebuild:
@@ -25,7 +39,7 @@ entry in `src/ui/gui/translations/onedrive_zh_CN.ts`, and rebuild:
 ```bash
 cmake --preset debug -DONEDRIVE_BUILD_GUI=ON -DONEDRIVE_ENABLE_GRAPH_E2E=OFF
 cmake --build build/debug --target onedrive_gui_lupdate
-cmake --build build/debug --target onedrive-cpp-gui gui_localization_tests gui_login_tests gui_state_view_model_tests gui_system_appearance_tests browser_request_tests
+cmake --build build/debug --target onedrive-cpp-gui gui_localization_tests gui_startup_options_tests gui_login_tests gui_state_view_model_tests gui_system_appearance_tests browser_request_tests
 ctest --test-dir build/debug -R '^(gui_.*|browser_request_tests)$' --output-on-failure
 ```
 
@@ -35,7 +49,13 @@ generated `.qm` files. Offscreen tests run in separate English, `zh_CN`,
 `zh_SG`, French, and Traditional Chinese locale environments. They verify
 resource loading, English fallback, translator lifetime, actual window
 labels, account/configuration enums, login results, settings dialogs and Qt
-buttons, placeholder substitutions, and UTF-8 loopback replies. No Graph
+buttons, placeholder substitutions, and UTF-8 loopback replies. Startup tests
+exercise the real Qt parser and translators in English/Chinese environments,
+including overrides and both `--language value` and `--language=value`.
+Offscreen executable subprocesses verify help/version and invalid arguments
+exit without entering the GUI event loop. Menu-switch tests verify checked
+actions, existing widgets/status text, unsaved fields, and active login
+preservation through English/Chinese/system-language transitions. No Graph
 credentials or real browser are needed. These tests do not replace a real
 desktop/native-dialog check.
 
