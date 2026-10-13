@@ -135,7 +135,10 @@ public:
             output << contents.substr(initial_offset);
         }
         if (data) {
-            const std::string_view downloaded{contents};
+            const std::string_view downloaded{
+                streamed_contents.has_value() ? streamed_contents.value()
+                                              : contents
+            };
             data(
                 initial_offset,
                 std::as_bytes(
@@ -220,6 +223,7 @@ public:
     }
 
     std::string contents{"data"};
+    std::optional<std::string> streamed_contents;
     std::vector<std::uint64_t> progress_updates;
     bool send_checkpoint{true};
     onedrive::graph::RemoteItem lookup_item;

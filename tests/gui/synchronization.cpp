@@ -7,9 +7,12 @@
 
 #include <QApplication>
 #include <QElapsedTimer>
+#include <QImage>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPalette>
 #include <QPlainTextEdit>
+#include <QPixmap>
 #include <QProgressBar>
 #include <QPushButton>
 #include <QThread>
@@ -538,6 +541,78 @@ void test_history_bound() {
     }
 }
 
+void test_unsupported_format_reporting() {
+    Fixture fixture;
+    gui::Localization localization{gui::Language::english};
+    gui::MainWindow window{
+        gui::load_app_state_view_model(fixture.file),
+        {},
+        &localization,
+        [](config::Config, const events::Observer& observer, std::stop_token) {
+            observer.blocked_item(
+                "notes.one", "unsupported_onenote", "OneNote is unsupported"
+            );
+            observer.blocked_item(
+                "future.bin",
+                "unsupported_future",
+                "Future format is unsupported"
+            );
+            observer.section(
+                "execution_summary",
+                "Synchronization summary:",
+                {{.label = "unsupported format items:",
+                  .key = "unsupported_items",
+                  .value = "2"}}
+            );
+            return exit_code::blocked;
+        }
+    };
+    window.show();
+    auto* sync = button(window, "startSyncButton");
+    auto* messages = window.findChild<QPlainTextEdit*>("logMessages");
+    auto* level = window.findChild<QComboBox*>("logLevelFilter");
+    sync->click();
+    require(
+        messages && level && wait_until([&] { return sync->isEnabled(); }),
+        "unsupported-format task did not finish"
+    );
+    require(
+        messages->toPlainText().contains(
+            "Unsupported format: notes.one [unsupported_onenote]"
+        ) &&
+            messages->toPlainText().contains(
+                "Unsupported format: future.bin [unsupported_future]"
+            ) &&
+            messages->toPlainText().contains("unsupported format items: 2") &&
+            window.findChild<QLabel*>("overviewSyncStatus")
+                ->text()
+                .contains("incomplete"),
+        "GUI concealed unsupported files/count or reported complete success"
+    );
+    localization.set_language(gui::Language::simplified_chinese);
+    require(
+        wait_until([&] {
+            return messages->toPlainText().contains(
+                       "不支持的格式：notes.one [unsupported_onenote]"
+                   ) &&
+                   messages->toPlainText().contains("不支持格式的项目数： 2") &&
+                   messages->toPlainText().contains(
+                       "已跳过；保留已有本地文件。"
+                   );
+        }),
+        "unsupported-format history was not translated"
+    );
+    level->setCurrentIndex(
+        level->findData(static_cast<int>(events::MessageKind::warning))
+    );
+    require(
+        messages->toPlainText().contains("unsupported_onenote") &&
+            messages->toPlainText().contains("unsupported_future") &&
+            !messages->toPlainText().contains("不支持格式的项目数："),
+        "unsupported warnings did not respect the GUI severity threshold"
+    );
+}
+
 void test_session_logs_and_tabs() {
     Fixture fixture;
     gui::Localization localization{gui::Language::english};
@@ -660,9 +735,11 @@ void test_session_logs_and_tabs() {
     require(
         warnings.contains("Warning: <b>raw warning %1</b>") &&
             warnings.contains("Blocked: blocked file [conflict]") &&
-            !warnings.contains("raw failure") && !warnings.contains("info 0") &&
+            warnings.contains("Error: raw failure") &&
+            warnings.contains("Critical: raw critical") &&
+            !warnings.contains("info 0") &&
             !warnings.contains("successful event"),
-        "warning filter leaked other log levels"
+        "warning threshold lost higher levels or retained lower levels"
     );
     copy->click();
     require(
@@ -678,6 +755,7 @@ void test_session_logs_and_tabs() {
             level->currentData().toInt() ==
                 static_cast<int>(events::MessageKind::warning) &&
             level->currentText() == "警告" && copy->text() == "复制日志" &&
+            level->toolTip() == "显示此级别及更高级别的日志。" &&
             clear->text() == "清空日志" &&
             scroll_option->text() == "自动滚动" &&
             messages->toPlainText().startsWith(saved_timestamp) &&
@@ -696,6 +774,7 @@ void test_session_logs_and_tabs() {
     );
     require(
         messages->toPlainText().contains("错误：raw failure\n/path/file %1") &&
+            messages->toPlainText().contains("严重：raw critical") &&
             !messages->toPlainText().contains("raw warning"),
         "error filter was incorrect"
     );
@@ -704,35 +783,72 @@ void test_session_logs_and_tabs() {
     );
     require(
         messages->toPlainText().contains("run 1 info 0") &&
-            !messages->toPlainText().contains("raw warning") &&
+            messages->toPlainText().contains("raw warning") &&
             messages->toPlainText().contains("信息：successful event %1") &&
             messages->toPlainText().contains("预览完成。未修改同步文件。") &&
-            !messages->toPlainText().contains("raw failure") &&
+            messages->toPlainText().contains("raw failure") &&
             !messages->toPlainText().contains("raw trace") &&
             !messages->toPlainText().contains("raw debug") &&
-            !messages->toPlainText().contains("raw critical"),
+            messages->toPlainText().contains("raw critical"),
         "information filter was incorrect"
     );
-    for (const auto& [kind, label, text] :
-         {std::tuple{events::MessageKind::trace, "跟踪", "raw trace"},
-          std::tuple{events::MessageKind::debug, "调试", "raw debug"},
-          std::tuple{events::MessageKind::critical, "严重", "raw critical"}}) {
-        level->setCurrentIndex(level->findData(static_cast<int>(kind)));
-        require(
-            level->currentText() == QString::fromUtf8(label) &&
-                messages->toPlainText().contains(
-                    QString::fromUtf8(label) + "：" + text
-                ) &&
-                !messages->toPlainText().contains("raw warning") &&
-                !messages->toPlainText().contains("raw failure") &&
-                !messages->toPlainText().contains("run 1 info 0") &&
-                !messages->toPlainText().contains("successful event"),
-            "backend level filter or translation was incorrect"
-        );
+    const std::vector level_cases{
+        std::tuple{events::MessageKind::trace, "Trace", "跟踪", "raw trace"},
+        std::tuple{events::MessageKind::debug, "Debug", "调试", "raw debug"},
+        std::tuple{
+            events::MessageKind::information,
+            "Information",
+            "信息",
+            "successful event %1"
+        },
+        std::tuple{
+            events::MessageKind::warning, "Warning", "警告", "raw warning"
+        },
+        std::tuple{events::MessageKind::error, "Error", "错误", "raw failure"},
+        std::tuple{
+            events::MessageKind::critical, "Critical", "严重", "raw critical"
+        },
+    };
+    for (const auto language :
+         {gui::Language::simplified_chinese, gui::Language::english}) {
+        localization.set_language(language);
+        QCoreApplication::processEvents();
+        for (const auto& [kind, english, chinese, text] : level_cases) {
+            level->setCurrentIndex(level->findData(static_cast<int>(kind)));
+            require(
+                level->currentText() ==
+                    QString::fromUtf8(
+                        language == gui::Language::english ? english : chinese
+                    ),
+                "log threshold label did not translate"
+            );
+            const auto displayed = messages->toPlainText();
+            for (const auto& [other, other_english, other_chinese, marker] :
+                 level_cases) {
+                require(
+                    displayed.contains(QString::fromUtf8(marker)) ==
+                        (other >= kind),
+                    "log threshold did not include exactly its level and above"
+                );
+            }
+            copy->click();
+            require(
+                QApplication::clipboard()->text() == displayed,
+                "copy ignored the minimum-severity filter"
+            );
+        }
+        level->setCurrentIndex(0);
+        for (const auto& [kind, english, chinese, marker] : level_cases) {
+            require(
+                messages->toPlainText().contains(QString::fromUtf8(marker)),
+                "all-levels selection did not restore the complete history"
+            );
+        }
     }
-    level->setCurrentIndex(0);
-    localization.set_language(gui::Language::english);
-    QCoreApplication::processEvents();
+    require(
+        level->toolTip() == "Show messages at this level or higher.",
+        "log threshold hint did not translate to English"
+    );
     const int before_reload = messages->document()->blockCount();
     button(window, "reloadSettingsButton")->click();
     require(
@@ -762,6 +878,141 @@ void test_session_logs_and_tabs() {
         !messages->toPlainText().contains("run 1 info") &&
             messages->toPlainText().contains("raw failure"),
         "clear did not discard old session records"
+    );
+}
+
+void test_live_log_threshold() {
+    Fixture fixture;
+    gui::Localization localization{gui::Language::english};
+    std::atomic<int> requested{};
+    std::atomic<int> emitted{-1};
+    gui::MainWindow window{
+        gui::load_app_state_view_model(fixture.file),
+        {},
+        &localization,
+        [&](config::Config, const events::Observer&, std::stop_token token) {
+            for (int phase = 0; phase <= 5; ++phase) {
+                while (requested < phase && !token.stop_requested()) {
+                    QThread::msleep(1);
+                }
+                if (token.stop_requested()) {
+                    return exit_code::cancelled;
+                }
+                switch (phase) {
+                case 0:
+                    spdlog::info("active info");
+                    break;
+                case 1:
+                    spdlog::warn("active warning");
+                    break;
+                case 2:
+                    spdlog::error("active error");
+                    break;
+                case 3:
+                    spdlog::critical("active critical");
+                    break;
+                case 4:
+                    spdlog::info("after clear info");
+                    break;
+                case 5:
+                    spdlog::error("after clear error");
+                    break;
+                }
+                emitted = phase;
+            }
+            while (!token.stop_requested()) {
+                QThread::msleep(1);
+            }
+            return exit_code::cancelled;
+        }
+    };
+    auto* level = window.findChild<QComboBox*>("logLevelFilter");
+    auto* messages = window.findChild<QPlainTextEdit*>("logMessages");
+    auto* copy = button(window, "copyLogsButton");
+    auto* clear = button(window, "clearLogsButton");
+    auto* sync = button(window, "startSyncButton");
+    const auto select = [&](events::MessageKind kind) {
+        level->setCurrentIndex(level->findData(static_cast<int>(kind)));
+    };
+    const auto advance = [&](int phase) {
+        requested = phase;
+        require(
+            wait_until([&] { return emitted == phase; }),
+            "live logging task did not emit its next phase"
+        );
+        QCoreApplication::processEvents();
+    };
+    select(events::MessageKind::error);
+    sync->click();
+    advance(0);
+    advance(1);
+    require(
+        messages->toPlainText().isEmpty() && !copy->isEnabled() &&
+            clear->isEnabled() && !sync->isEnabled(),
+        "empty threshold results exposed lower levels or lost hidden history"
+    );
+    advance(2);
+    require(
+        messages->toPlainText().contains("Error: active error") &&
+            !messages->toPlainText().contains("active warning") &&
+            copy->isEnabled(),
+        "an arriving error did not satisfy the live error threshold"
+    );
+    select(events::MessageKind::warning);
+    advance(3);
+    require(
+        messages->toPlainText().contains("Warning: active warning") &&
+            messages->toPlainText().contains("Error: active error") &&
+            messages->toPlainText().contains("Critical: active critical") &&
+            !messages->toPlainText().contains("active info"),
+        "changing a live threshold lost history or excluded higher levels"
+    );
+    localization.set_language(gui::Language::simplified_chinese);
+    QCoreApplication::processEvents();
+    require(
+        level->currentData().toInt() ==
+                static_cast<int>(events::MessageKind::warning) &&
+            messages->toPlainText().contains("警告：active warning") &&
+            messages->toPlainText().contains("错误：active error") &&
+            messages->toPlainText().contains("严重：active critical"),
+        "language switching changed a running task's minimum severity"
+    );
+    copy->click();
+    require(
+        QApplication::clipboard()->text() == messages->toPlainText(),
+        "copy lost the higher-severity live messages"
+    );
+    clear->click();
+    advance(4);
+    require(
+        messages->toPlainText().isEmpty() && !copy->isEnabled() &&
+            clear->isEnabled() &&
+            level->currentData().toInt() ==
+                static_cast<int>(events::MessageKind::warning),
+        "clearing live logs reset the threshold or exposed lower-severity "
+        "arrivals"
+    );
+    select(events::MessageKind::information);
+    require(
+        messages->toPlainText().contains("信息：after clear info") &&
+            !messages->toPlainText().contains("active "),
+        "changing threshold lost retained arrivals or restored cleared history"
+    );
+    select(events::MessageKind::warning);
+    advance(5);
+    require(
+        messages->toPlainText().contains("错误：after clear error") &&
+            !messages->toPlainText().contains("after clear info") &&
+            !messages->toPlainText().contains("active "),
+        "a new higher-severity arrival bypassed the live threshold or clear"
+    );
+    button(window, "stopSyncButton")->click();
+    require(
+        wait_until([&] { return sync->isEnabled(); }) &&
+            messages->toPlainText().contains("错误：after clear error") &&
+            !messages->toPlainText().contains("同步已取消"),
+        "cancellation lost retained diagnostics or bypassed the minimum "
+        "severity"
     );
 }
 
@@ -972,6 +1223,67 @@ void test_preview_and_apply() {
     }
 }
 
+void test_progress_color() {
+    Fixture fixture;
+    gui::MainWindow window{gui::load_app_state_view_model(fixture.file)};
+    auto* progress = window.findChild<QProgressBar*>("syncProgress");
+    auto* tabs = window.findChild<QTabWidget*>("mainTabs");
+    require(progress && tabs, "missing progress color controls");
+    tabs->setCurrentWidget(window.findChild<QWidget*>("syncPage"));
+    window.show();
+    progress->show();
+    const QColor blue{"#0078d4"};
+    for (const bool dark : {false, true}) {
+        auto palette = progress->palette();
+        palette.setColor(
+            QPalette::Button, dark ? QColor{"#303030"} : QColor{"#f0f0f0"}
+        );
+        palette.setColor(QPalette::ButtonText, dark ? Qt::white : Qt::black);
+        palette.setColor(QPalette::Highlight, Qt::green);
+        progress->setPalette(palette);
+        for (const int value : {0, 1, 50, 100}) {
+            progress->setValue(value);
+            QCoreApplication::processEvents();
+            require(
+                progress->text() == QString::number(value) + "%" &&
+                    progress->alignment() == Qt::AlignCenter,
+                "progress text was not a centered numeric percentage"
+            );
+            const auto image = progress->grab().toImage().convertToFormat(
+                QImage::Format_RGB32
+            );
+            std::size_t blue_pixels = 0;
+            for (int y = 0; y < image.height(); ++y) {
+                for (int x = 0; x < image.width(); ++x) {
+                    if (image.pixelColor(x, y) == blue) {
+                        ++blue_pixels;
+                    }
+                }
+            }
+            require(
+                !image.isNull(), "progress rendering returned an empty image"
+            );
+            const auto area = static_cast<std::size_t>(image.width()) *
+                              static_cast<std::size_t>(image.height());
+            require(
+                value == 0   ? blue_pixels == 0
+                : value == 1 ? blue_pixels > 0 && blue_pixels < area / 20
+                             : blue_pixels > area / 8,
+                "progress fill was not blue or misrepresented empty/small "
+                "progress"
+            );
+            if (value == 50) {
+                require(
+                    image.pixelColor(
+                        image.width() * 3 / 4, image.height() / 2
+                    ) != blue,
+                    "half-complete progress painted the unfilled track blue"
+                );
+            }
+        }
+    }
+}
+
 void test_progress_phases() {
     Fixture fixture;
     gui::Localization localization{gui::Language::english};
@@ -1111,7 +1423,8 @@ void test_progress_phases() {
             wait_until([&] { return !progress->isHidden(); }) &&
                 progress->maximum() == 100 && progress->value() == 0 &&
                 hint->isHidden() && status->text() == "Downloading files..." &&
-                progress->text() == "Downloads: 0%",
+                progress->text() == "0%" &&
+                progress->alignment() == Qt::AlignCenter,
             "terminal newline reset download progress to an indeterminate phase"
         );
         step = 4;
@@ -1126,13 +1439,14 @@ void test_progress_phases() {
             wait_until([&] {
                 return transfer->text().contains("50 B / 100 B");
             }) &&
-                progress->value() == 50 && progress->text() == "Downloads: 50%",
+                progress->value() == 50 && progress->text() == "50%",
             "byte progress or terminal newline handling was incorrect"
         );
         localization.set_language(gui::Language::simplified_chinese);
         QCoreApplication::processEvents();
         require(
-            progress->value() == 50 && progress->text() == "下载：50%" &&
+            progress->value() == 50 && progress->text() == "50%" &&
+                progress->alignment() == Qt::AlignCenter &&
                 progress->accessibleName() == "下载进度",
             "download percentage changed or lost its label during translation"
         );
@@ -1434,8 +1748,9 @@ void test_progress_and_stop() {
             observer.message(
                 events::MessageKind::information,
                 "pending_delta_invalidated",
-                "Saved remote changes no longer match the account, filters or "
-                "applied cursor; fetching remote changes again..."
+                "Saved remote changes no longer match the account, filters, "
+                "hash policy, unsupported formats or applied cursor; fetching "
+                "remote changes again..."
             );
             observer.message(
                 events::MessageKind::information,
@@ -1545,8 +1860,9 @@ void test_progress_and_stop() {
                 "正在恢复已保存的远端变更；仅检查后续增量并重新生成本地计划…"
             ) &&
             messages->toPlainText().contains(
-                "已保存的远端变更与账号、筛选或已应用游标不匹配；正在重新获取远"
-                "端变更…"
+                "已保存的远端变更与账号、筛选、哈希策略、不支持格式规则或已应用"
+                "游标不匹配；"
+                "正在重新获取远端变更…"
             ) &&
             messages->toPlainText().contains(
                 "远端目录变更或未识别的删除可能影响已保存的路径；正在获取完整远"
@@ -1731,9 +2047,12 @@ int main(int argc, char* argv[]) {
         test_controller_lifecycle();
         test_history_bound();
         test_session_logs_and_tabs();
+        test_unsupported_format_reporting();
+        test_live_log_threshold();
         test_controller_preview_cache();
         test_controller_pending_delta_restart();
         test_preview_and_apply();
+        test_progress_color();
         test_progress_phases();
         test_readable_transfer_numbers();
         test_progress_and_stop();

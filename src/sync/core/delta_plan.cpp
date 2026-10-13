@@ -1,4 +1,6 @@
 #include "sync/core/delta_plan.hpp"
+#include "graph/support.hpp"
+#include "onedrive/util/sha256.hpp"
 #include "sync/filter/remote_path.hpp"
 
 #include <algorithm>
@@ -10,6 +12,15 @@
 #include <vector>
 
 namespace onedrive::sync::engine_detail {
+
+std::string sync_scope_fingerprint(std::string_view filter) {
+    return util::sha256_hex(
+        graph::client_detail::Json::array(
+            {filter, graph::client_detail::unsupported_format_policy()}
+        )
+            .dump()
+    );
+}
 
 graph::RemoteItem remote_item(const storage::BlockedItem& item) {
     return {
@@ -26,6 +37,9 @@ graph::RemoteItem remote_item(const storage::BlockedItem& item) {
         .root = false,
         .malware = item.reason_code == "malware_detected",
         .content_hash = item.content_hash,
+        .unsupported_format = item.reason_code.starts_with("unsupported_")
+                                  ? item.reason_code.substr(12)
+                                  : "",
     };
 }
 
@@ -41,6 +55,23 @@ void add_blocked_retries(
     for (const auto& item : blocked) {
         if (!changed_ids.contains(item.remote_id)) {
             delta.changes.push_back(remote_item(item));
+        }
+    }
+}
+
+void preserve_unsupported_deletions(
+    graph::DeltaResult& delta, const std::vector<storage::BlockedItem>& blocked
+) {
+    for (const auto& item : blocked) {
+        if (!item.reason_code.starts_with("unsupported_")) {
+            continue;
+        }
+        const auto changed = std::ranges::find(
+            delta.changes, item.remote_id, &graph::RemoteItem::id
+        );
+        if (changed != delta.changes.end() && changed->deleted) {
+            *changed = remote_item(item);
+            changed->deleted = true;
         }
     }
 }

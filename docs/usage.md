@@ -51,7 +51,11 @@ onedrive-cpp state migrate --yes
 ```
 
 Supported levels are `trace`, `debug`, `info`, `warn`, `error`, `critical`,
-and `off`. A configured log file rotates at 5 MiB and retains three older
+and `off`. This is a minimum severity for backend diagnostics: `--log-level warn`
+retains warnings, errors and critical messages. It does not filter command
+results; use `--quiet` to suppress lower-severity result messages. The TUI also
+omits trace/debug/info backend details from its activity list, even when enabled
+in file logging. A configured log file rotates at 5 MiB and retains three older
 files. The parent directory must already exist, be owned by the current user,
 contain no symbolic-link path components, and not be writable by other users.
 The active log and every rotated file must be regular, single-link files owned
@@ -60,6 +64,17 @@ hard links. Authentication tokens, device codes, authorization headers, proxy
 passwords, and preauthorized transfer URLs are never written to logs. Logs can
 still contain account and Drive display names, remote item names, and local
 paths, so retain the enforced private permissions when copying diagnostics.
+
+With debug logging enabled, download integrity diagnostics include the remote item
+ID, eTag, expected and downloaded sizes, initial resume and durable checkpoint
+offsets, hash source, and expected and calculated hashes. If a streamed hash
+fails verification, the client recomputes SHA-256 and QuickXorHash from disk
+before discarding the temporary file, and logs whether they match the streamed
+hashes. A disk recheck failure is logged without replacing the original integrity
+error. These diagnostics do not disable validation or accept a failed download.
+All additional diagnostics use debug severity; the original integrity failure
+remains a warning. Enable `debug` in the logging configuration before reproducing
+the issue. Successful downloads also record their integrity context at debug level.
 
 `--color=auto` is the default: styling is enabled only for a terminal and is
 disabled when `NO_COLOR` is set. `always` forces ANSI styling and `never`
@@ -191,8 +206,8 @@ unsupported versions and integrity/schema failures remain unhealthy. The
 command returns 1 if any database needs an upgrade or fails a check.
 
 `inspect verify [PATH]` performs the same metadata checks as `inspect files`.
-With `--mode content`, it additionally computes the saved Graph SHA-256 or
-QuickXorHash and reports `verified`, `hash-mismatch`, or `hash-unavailable`.
+With `--mode content`, it additionally computes the saved QuickXorHash, SHA-1,
+or legacy SHA-256 and reports `verified`, `hash-mismatch`, or `hash-unavailable`.
 Content hashes are retained with item state after validated downloads and
 remote metadata updates; older tracked files may remain unavailable until a
 later synchronization records a hash.

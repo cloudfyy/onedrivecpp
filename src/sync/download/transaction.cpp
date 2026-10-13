@@ -9,6 +9,7 @@
 #include <format>
 #include <limits>
 #include <stdexcept>
+#include <string_view>
 #include <variant>
 
 namespace onedrive::sync::detail {
@@ -210,6 +211,7 @@ PreparedDownload prepare_download(
         item.remote_path,
         completed_bytes
     );
+    const auto initial_offset = completed_bytes;
     std::uintmax_t relaxed_accounted_bytes = 0;
     const auto account_relaxed_bytes = [&](std::uintmax_t observed_bytes) {
         if (item.validate_content) {
@@ -304,9 +306,71 @@ PreparedDownload prepare_download(
                 hashes.quick_xor = quick_xor_hash(temporary);
             }
         }
+        const bool uses_sha1 =
+            item.content_hash.has_value() &&
+            item.content_hash->algorithm == util::FileHashAlgorithm::sha1;
+        if (uses_sha1) {
+            hashes.sha1 = sha1_hash(temporary);
+        }
         const std::string& fingerprint = hashes.sha256;
+        const std::string_view algorithm =
+            !item.content_hash.has_value() ? "none"
+            : item.content_hash->algorithm == util::FileHashAlgorithm::sha256
+                ? "SHA-256"
+            : uses_sha1 ? "SHA-1"
+                        : "QuickXorHash";
+        spdlog::debug(
+            "Download integrity diagnostics for '{}': remote_id='{}', "
+            "eTag='{}', expected_size={}, downloaded_size={}, "
+            "initial_offset={}, checkpoint_offset={}, hash_source={}, "
+            "remote_algorithm={}, remote_hash='{}', sha256='{}', "
+            "quick_xor='{}', sha1='{}'",
+            item.remote_path,
+            item.id,
+            item.etag,
+            item.size,
+            downloaded_size,
+            initial_offset,
+            completed_bytes,
+            streamed_hashes.has_value() && !uses_sha1 ? "stream" : "disk",
+            algorithm,
+            item.content_hash.has_value() ? item.content_hash->value
+                                          : std::string_view{},
+            hashes.sha256,
+            hashes.quick_xor,
+            hashes.sha1
+        );
         if (item.validate_content) {
-            verify_download_integrity(item, hashes);
+            try {
+                verify_download_integrity(item, hashes);
+            } catch (const DownloadIntegrityError&) {
+                if (streamed_hashes.has_value() && !uses_sha1 &&
+                    spdlog::should_log(spdlog::level::debug)) {
+                    try {
+                        const auto disk_sha256 = content_fingerprint(temporary);
+                        const auto disk_quick_xor = quick_xor_hash(temporary);
+                        spdlog::debug(
+                            "Download integrity disk recheck for '{}': "
+                            "sha256='{}', quick_xor='{}', "
+                            "sha256_matches_stream={}, "
+                            "quick_xor_matches_stream={}",
+                            item.remote_path,
+                            disk_sha256,
+                            disk_quick_xor,
+                            disk_sha256 == hashes.sha256,
+                            disk_quick_xor == hashes.quick_xor
+                        );
+                    } catch (const std::exception& error) {
+                        spdlog::debug(
+                            "Download integrity disk recheck failed for '{}': "
+                            "{}",
+                            item.remote_path,
+                            error.what()
+                        );
+                    }
+                }
+                throw;
+            }
         } else {
             if (downloaded_size >
                 static_cast<std::uintmax_t>(

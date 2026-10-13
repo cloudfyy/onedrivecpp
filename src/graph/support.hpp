@@ -270,8 +270,22 @@ http::HttpResult perform_with_retries(
     std::string_view description
 );
 [[nodiscard]] bool item_is_malware(const Json& value);
+struct UnsupportedItem {
+    std::string_view format_id;
+    bool package{false};
+};
+[[nodiscard]] std::optional<UnsupportedItem>
+item_unsupported_format(const Json& value);
+[[nodiscard]] Json unsupported_format_policy();
+[[nodiscard]] std::string unsupported_format_message(std::string_view id);
+void mark_unsupported_descendants(std::vector<RemoteItem>& items);
+enum class ContentValidation {
+    strict,
+    relaxed,
+};
+
 [[nodiscard]] std::optional<util::FileHash> item_content_hash(
-    const Json& value
+    const Json& value, ContentValidation validation = ContentValidation::strict
 );
 [[nodiscard]] std::string item_ctag(const Json& item);
 [[nodiscard]] DriveInfo parse_drive_info(
@@ -282,11 +296,6 @@ http::HttpResult perform_with_retries(
 enum class DriveItemKind {
     file_only,
     file_or_directory,
-};
-
-enum class ContentValidation {
-    strict,
-    relaxed,
 };
 
 [[nodiscard]] RemoteItem parse_drive_item(

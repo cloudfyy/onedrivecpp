@@ -3,6 +3,9 @@
 #include "app/preflight.hpp"
 #include "onedrive/logging/logging.hpp"
 
+#include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
+
 namespace {
 
 namespace exit_code = onedrive::exit_code;
@@ -70,6 +73,66 @@ int test_logout_without_credentials() {
         onedrive::test::read_file(paths.token_directory / "account.json") !=
             account_metadata) {
         return fail("logout without a refresh token changed account metadata");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_log_level_thresholds() {
+    const std::vector markers{
+        "cli threshold trace", "cli threshold debug", "cli threshold info",
+        "cli threshold warning", "cli threshold error", "cli threshold critical"
+    };
+    for (const auto& [threshold, first] :
+         {std::pair{"trace", 0U}, std::pair{"debug", 1U},
+          std::pair{"info", 2U}, std::pair{"warn", 3U},
+          std::pair{"error", 4U}, std::pair{"critical", 5U},
+          std::pair{"off", 6U}}) {
+        CliFixture fixture;
+        bool emitted = false;
+        fixture.runtime_factory.authentication_response_override =
+            [&](const onedrive::http::HttpRequest&)
+            -> std::optional<onedrive::http::HttpResult> {
+                if (!std::exchange(emitted, true)) {
+                    spdlog::trace("{}", markers[0]);
+                    spdlog::debug("{}", markers[1]);
+                    spdlog::info("{}", markers[2]);
+                    spdlog::warn("{}", markers[3]);
+                    spdlog::error("{}", markers[4]);
+                    spdlog::critical("{}", markers[5]);
+                }
+                return std::nullopt;
+            };
+        const auto result = run_application(
+            fixture.runtime_factory,
+            {"onedrive-cpp", "account", "login", "--config",
+             fixture.config_path.string(), "--ui", "console",
+             "--output", "json", "--log-level", threshold}
+        );
+        if (result.exit_code != exit_code::success || !emitted) {
+            return fail("CLI logging threshold changed the command outcome");
+        }
+        const auto logged = onedrive::test::read_file(fixture.log_path);
+        for (std::size_t index = 0; index < markers.size(); ++index) {
+            if (logged.contains(markers[index]) != (index >= first)) {
+                return fail(
+                    "CLI --log-level did not retain its severity and all higher levels"
+                );
+            }
+        }
+        std::istringstream output{result.standard_output};
+        std::string line;
+        bool completed = false;
+        while (std::getline(output, line)) {
+            const auto event = nlohmann::json::parse(line);
+            if (event.at("event") == "authentication_succeeded") {
+                completed = event.at("level") == "info";
+            }
+        }
+        if (!completed || (first == markers.size() && !logged.empty())) {
+            return fail(
+                "CLI log filtering suppressed command results or ignored logging off"
+            );
+        }
     }
     return EXIT_SUCCESS;
 }
@@ -729,6 +792,10 @@ int test_flow() {
 
 int main() {
     if (const auto result = test_logout_without_credentials();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const auto result = test_log_level_thresholds();
         result != EXIT_SUCCESS) {
         return result;
     }

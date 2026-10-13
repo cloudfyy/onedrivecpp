@@ -166,6 +166,10 @@ MainWindow::MainWindow(
     sync_layout->addWidget(sync_status_);
     sync_progress_ = new QProgressBar{sync_group_};
     sync_progress_->setObjectName("syncProgress");
+    sync_progress_->setAlignment(Qt::AlignCenter);
+    sync_progress_->setStyleSheet(
+        "QProgressBar#syncProgress::chunk { background-color: #0078d4; }"
+    );
     sync_layout->addWidget(sync_progress_);
     sync_progress_hint_ = make_value_label({});
     sync_progress_hint_->setObjectName("syncProgressHint");
@@ -534,6 +538,7 @@ void MainWindow::retranslate_ui() {
     log_level_->setItemText(5, tr("Error"));
     log_level_->setItemText(6, tr("Critical"));
     log_level_->setAccessibleName(tr("Log level"));
+    log_level_->setToolTip(tr("Show messages at this level or higher."));
     log_autoscroll_->setText(tr("Auto-scroll"));
     copy_logs_button_->setText(tr("Copy logs"));
     copy_logs_button_->setToolTip(tr("Copy the currently displayed logs."));
@@ -739,8 +744,15 @@ QString MainWindow::log_event_text(const events::Event& event) const {
         }
         if (message->event == "pending_delta_invalidated") {
             return tr(
-                "Saved remote changes no longer match the account, filters or "
-                "applied cursor; fetching remote changes again..."
+                "Saved remote changes no longer match the account, filters, "
+                "hash policy, unsupported formats or applied cursor; fetching "
+                "remote changes again..."
+            );
+        }
+        if (message->event == "sync_filter_changed") {
+            return tr(
+                "Synchronization filters or unsupported-format rules changed; "
+                "fetching the full remote state..."
             );
         }
         if (message->event == "pending_delta_hierarchy_changed") {
@@ -754,8 +766,10 @@ QString MainWindow::log_event_text(const events::Event& event) const {
                    std::get_if<events::SectionEvent>(&event)) {
         auto text = QString::fromStdString(section->title);
         for (const auto& field : section->fields) {
-            text += "\n" + QString::fromStdString(field.label) + " " +
-                    QString::fromStdString(field.value);
+            const auto label = field.key == "unsupported_items"
+                                   ? tr("unsupported format items:")
+                                   : QString::fromStdString(field.label);
+            text += "\n" + label + " " + QString::fromStdString(field.value);
         }
         return text;
     } else if (const auto* summary =
@@ -768,6 +782,14 @@ QString MainWindow::log_event_text(const events::Event& event) const {
             );
     } else if (const auto* blocked =
                    std::get_if<events::BlockedItemEvent>(&event)) {
+        if (blocked->reason_code.starts_with("unsupported_")) {
+            return tr("Unsupported format: %1 [%2]\n"
+                      "Skipped; existing local files are preserved.")
+                .arg(
+                    QString::fromStdString(blocked->path),
+                    QString::fromStdString(blocked->reason_code)
+                );
+        }
         return tr("Blocked: %1 [%2]\n%3")
             .arg(
                 QString::fromStdString(blocked->path),
@@ -898,9 +920,7 @@ void MainWindow::render_sync() {
     sync_progress_->setValue(
         sync_phase_ == SyncPhase::completed ? 100 : percentage
     );
-    sync_progress_->setFormat(
-        show_download ? tr("Downloads: %p%") : QString{"%p%"}
-    );
+    sync_progress_->setFormat("%p%");
     sync_progress_->setAccessibleName(
         show_download ? tr("Download progress") : tr("Synchronization progress")
     );
@@ -1084,7 +1104,7 @@ void MainWindow::render_logs() {
     }
     const int filter = log_level_->currentData().toInt();
     for (const auto& entry : log_history_) {
-        if (filter != -1 && filter != static_cast<int>(entry.kind)) {
+        if (filter != -1 && static_cast<int>(entry.kind) < filter) {
             continue;
         }
         auto text =

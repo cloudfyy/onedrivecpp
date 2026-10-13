@@ -9,6 +9,7 @@
 #include "sync/filter/selective.hpp"
 #include "support/sync.hpp"
 #include "support/common.hpp"
+#include "sync/core/delta_plan.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -908,7 +909,9 @@ public:
     std::optional<onedrive::storage::PendingDelta> pending_remote_delta;
     bool fail_save_pending_delta{false};
     std::optional<std::string> saved_delta_link;
-    std::optional<std::string> saved_sync_filter_fingerprint;
+    std::optional<std::string> saved_sync_filter_fingerprint{
+        onedrive::sync::engine_detail::sync_scope_fingerprint("")
+    };
     bool reverse_state_order{false};
     int upsert_count{0};
     int apply_count{0};

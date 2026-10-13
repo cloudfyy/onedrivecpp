@@ -6,6 +6,58 @@ namespace {
 
 using namespace onedrive::test::graph;
 
+int test_unsupported_root_and_path_metadata() {
+    using Json = nlohmann::json;
+    for (const bool package : {false, true}) {
+        for (const bool relaxed : {false, true}) {
+            Json item{
+                {"id", "notes"},
+                {"name", package ? "Notebook" : "notes.one"},
+                {"eTag", "etag"},
+                {"parentReference", {{"path", "/drive/root:"}}},
+            };
+            if (package) {
+                item["package"] = {{"type", "oneNote"}};
+            } else {
+                item["file"] = {
+                    {"mimeType", "application/msonenote"},
+                    {"hashes", {{"sha256Hash", "unsupported"}}},
+                };
+            }
+            auto transport = std::make_unique<FakeTransport>(
+                std::deque<onedrive::http::HttpResult>{
+                    token_response(),
+                    json_response(
+                        200, Json{{"value", Json::array({item})}}.dump()
+                    ),
+                    json_response(200, item.dump()),
+                }
+            );
+            onedrive::graph::MicrosoftGraphClient client{
+                wrap_transport(std::move(transport)),
+                wrap_token_store(std::make_unique<FakeTokenStore>("refresh")),
+                auth_options(),
+                {.endpoint = "https://graph.example.test/v1.0",
+                 .relaxed_download_validation = relaxed},
+            };
+            const auto root = client.list_root();
+            const auto looked_up =
+                client.item_by_path(item["name"].get<std::string>());
+            if (root.size() != 1 || root[0].unsupported_format != "onenote" ||
+                root[0].directory != package || root[0].content_hash ||
+                looked_up.unsupported_format != "onenote" ||
+                looked_up.directory != package || looked_up.content_hash ||
+                !looked_up.last_modified.empty() ||
+                looked_up.validate_content == relaxed) {
+                return fail(
+                    "root/path metadata did not identify an unsupported format"
+                );
+            }
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_list_root_with_refresh_and_pagination() {
     auto transport = std::make_unique<
         FakeTransport>(std::deque<onedrive::http::HttpResult>{
@@ -367,7 +419,7 @@ int test_item_lookup_by_encoded_path() {
         onedrive::http::HttpResponse{
             .status_code = 200,
             .body =
-                R"json({"id":"file-id","name":"report #1.txt","eTag":"file-etag","cTag":"file-ctag","size":4,"fileSystemInfo":{"lastModifiedDateTime":"2026-10-04T00:00:00Z"},"parentReference":{"id":"folder-id","path":"/drive/root:/Folder A"},"file":{"hashes":{"sha256Hash":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}}})json",
+                R"json({"id":"file-id","name":"report #1.txt","eTag":"file-etag","cTag":"file-ctag","size":4,"fileSystemInfo":{"lastModifiedDateTime":"2026-10-04T00:00:00Z"},"parentReference":{"id":"folder-id","path":"/drive/root:/Folder A"},"file":{"hashes":{"sha256Hash":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","quickXorHash":"ZAgDHcIAAAAAAAAABAAAAAAAAAA="}}})json",
         },
     });
     auto* transport_pointer = transport.get();
@@ -390,12 +442,13 @@ int test_item_lookup_by_encoded_path() {
         item.size != 4 || item.directory ||
         item.last_modified != "2026-10-04T00:00:00Z" || !item.content_hash ||
         item.content_hash->algorithm !=
-            onedrive::util::FileHashAlgorithm::sha256 ||
+            onedrive::util::FileHashAlgorithm::quick_xor ||
+        item.content_hash->value != "ZAgDHcIAAAAAAAAABAAAAAAAAAA=" ||
         transport_pointer->queued.requests.size() != 2 ||
         transport_pointer->queued.requests[1].url !=
             "https://graph.example.test/v1.0/me/drive/root:/Folder%20A/"
             "report%20%231.txt?$select=id,name,eTag,cTag,size,fileSystemInfo,"
-            "parentReference,file,folder,deleted,malware,remoteItem" ||
+            "parentReference,file,folder,deleted,malware,remoteItem,package" ||
         !has_header(
             transport_pointer->queued.requests[1], "Authorization: ******"
         )) {
@@ -920,6 +973,9 @@ int test_profile_photo_rejects_invalid_responses() {
 } // namespace
 
 int main() {
+    if (test_unsupported_root_and_path_metadata() != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
     if (const int result = test_list_root_with_refresh_and_pagination();
         result != EXIT_SUCCESS) {
         return result;

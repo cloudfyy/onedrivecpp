@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace {
 
@@ -217,10 +218,68 @@ int test_shared_sha256_hasher() {
     return EXIT_SUCCESS;
 }
 
+int test_sha1_hashes(const std::filesystem::path& root) {
+    namespace detail = onedrive::sync::detail;
+    const auto path = root / "sha1.bin";
+    for (const auto& [contents, expected] :
+         std::vector<std::pair<std::string, std::string>>{
+             {"", "da39a3ee5e6b4b0d3255bfef95601890afd80709"},
+             {"abc", "a9993e364706816aba3e25717850c26c9cd0d89d"},
+             {"data", "a17c9aaa61e80a1bf71d0d850af4e5baa9800bbd"},
+         }) {
+        write_file(path, contents);
+        if (detail::sha1_hash(path) != expected ||
+            detail::file_content_hash(
+                path, onedrive::util::FileHashAlgorithm::sha1
+            ) != expected) {
+            return fail("SHA-1 file hashing did not match reference vectors");
+        }
+    }
+    std::string binary;
+    for (unsigned index = 0; index != 256U * 513U; ++index) {
+        binary.push_back(static_cast<char>(index % 256U));
+    }
+    write_file(path, binary);
+    if (detail::sha1_hash(path) != "ee1c183efc7084be47e411bec6d42f8c749da7b6") {
+        return fail(
+            "SHA-1 hashing failed across binary read-buffer boundaries"
+        );
+    }
+    auto item = remote_item({
+        .algorithm = onedrive::util::FileHashAlgorithm::sha1,
+        .value = "A17C9AAA61E80A1BF71D0D850AF4E5BAA9800BBD",
+    });
+    detail::verify_download_integrity(
+        item,
+        {
+            .sha1 = "a17c9aaa61e80a1bf71d0d850af4e5baa9800bbd",
+        }
+    );
+    try {
+        detail::verify_download_integrity(item, {.sha1 = std::string(40, '0')});
+        return fail("SHA-1 verification accepted mismatched content");
+    } catch (const detail::DownloadIntegrityError& error) {
+        if (!std::string_view{error.what()}.contains(
+                "SHA-1 verification failed"
+            )) {
+            return fail("SHA-1 verification used the wrong algorithm label");
+        }
+    }
+    try {
+        static_cast<void>(detail::sha1_hash(root / "missing-sha1.bin"));
+        return fail("SHA-1 hashing accepted a missing file");
+    } catch (const std::runtime_error&) {
+    }
+    return EXIT_SUCCESS;
+}
+
 }  // namespace
 
 int main() {
     TemporaryDirectory temporary;
+    if (test_sha1_hashes(temporary.path()) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
     if (const int result = test_quick_xor_hash_vectors(temporary.path());
         result != EXIT_SUCCESS) {
         return result;

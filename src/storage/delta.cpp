@@ -308,19 +308,12 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         bind_text(
             database, upsert_blocked_statement.get(), 13, item.reason_message
         );
-        std::string hash_algorithm;
-        std::string hash_value;
-        if (item.content_hash.has_value()) {
-            hash_algorithm =
-                item.content_hash->algorithm == util::FileHashAlgorithm::sha256
-                    ? "sha256"
-                    : "quick_xor";
-            hash_value = item.content_hash->value;
-            if (hash_value.empty()) {
-                throw std::invalid_argument(
-                    "blocked item content hash cannot be empty"
-                );
-            }
+        const auto [hash_algorithm, hash_value] =
+            serialize_file_hash(item.content_hash);
+        if (item.content_hash.has_value() && hash_value.empty()) {
+            throw std::invalid_argument(
+                "blocked item content hash cannot be empty"
+            );
         }
         bind_text(database, upsert_blocked_statement.get(), 14, hash_algorithm);
         bind_text(database, upsert_blocked_statement.get(), 15, hash_value);

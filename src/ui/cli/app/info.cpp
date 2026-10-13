@@ -332,11 +332,6 @@ bool path_matches_filter(std::string_view path, std::string_view filter) {
             path[filter.size()] == '/');
 }
 
-std::string hash_algorithm_name(util::FileHashAlgorithm algorithm) {
-    return algorithm == util::FileHashAlgorithm::sha256 ? "sha256"
-                                                        : "quick_xor";
-}
-
 std::string color_mode_name(cli::ColorMode mode) {
     switch (mode) {
         case cli::ColorMode::automatic:
@@ -1132,17 +1127,17 @@ int verify_files(
                 result = "hash-unavailable";
                 ++unavailable;
             } else {
-                algorithm = hash_algorithm_name(item.content_hash->algorithm);
-                const auto actual =
-                    item.content_hash->algorithm ==
-                            util::FileHashAlgorithm::sha256
-                        ? sync::detail::content_fingerprint(item.local_path)
-                        : sync::detail::quick_xor_hash(item.local_path);
+                algorithm = util::file_hash_algorithm_name(
+                    item.content_hash->algorithm
+                );
+                const auto actual = sync::detail::file_content_hash(
+                    item.local_path, item.content_hash->algorithm
+                );
                 const bool matches =
                     item.content_hash->algorithm ==
-                            util::FileHashAlgorithm::sha256
-                        ? util::ascii_iequals(actual, item.content_hash->value)
-                        : actual == item.content_hash->value;
+                            util::FileHashAlgorithm::quick_xor
+                        ? actual == item.content_hash->value
+                        : util::ascii_iequals(actual, item.content_hash->value);
                 result = matches ? "verified" : "hash-mismatch";
                 matches ? ++verified : ++failed;
             }

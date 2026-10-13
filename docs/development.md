@@ -119,6 +119,12 @@ rejection. A pseudo-terminal runs the real CLI application with the offline
 authentication adapter to verify backend forwarding to the TUI while all enabled
 levels remain in the private file log. Empty health inspection and login
 completion during window closing use Info rather than a separate Success level.
+Display-threshold regressions also cover live arrivals, empty results, copying,
+language switching and retained lower-severity messages after clearing history.
+Pixel checks verify blue progress at 0%, 1%, 50% and 100% in light/dark palettes,
+including an unfilled track. CLI application tests exercise all logging
+thresholds, including `off`, and verify that command results remain independent
+of the backend diagnostic threshold.
 `sync_preview_tests` covers private-cursor reuse in both merge and replacement
 mode, repeated previews, last-change-wins merging, retained unapplied changes,
 cursor expiry and directory hierarchy fallback, scope/filter/state/journal
@@ -143,6 +149,24 @@ applied state. Application tests seed an
 actual cache before early cancellation/identity failures and startup-observer
 exceptions; GUI tests exercise the default production function using whitespace
 credentials that fail locally before HTTP, plus the worker-ownership guard.
+Unsupported formats are configured only in the private, compiled
+`src/graph/unsupported_formats.hpp` rule table. Each rule has a stable, nonempty
+unique ID and display name, MIME/extension sets (both must match), and independent
+package types. Keep IDs stable: `RemoteItem.unsupported_format` and pending Delta
+rows retain them, and durable blocked records use `unsupported_<id>` reason codes.
+Shared metadata and package descendants use the same generic classification.
+The complete rule table participates in pending-cache and synchronization-filter
+fingerprints, so adding rules refreshes metadata without changing the apply
+pipeline or adding per-format database migrations.
+
+`sync_unsupported_tests` exercises real SQLite restart/retry, rule-policy refresh,
+normal-file progress counts and strict hash failure, package descendants,
+bidirectional upload exclusion, and preservation of existing notes and snapshots
+across remote deletions/full refreshes. Graph helper/protocol tests cover all
+configured rules, late-page parents, shared items, ordinary `.one` files and
+metadata errors. Single-download and bilingual GUI regressions cover explicit
+unsupported results, counts, translated history and severity filtering.
+
 Progress regressions explicitly distinguish unknown scan/download totals,
 completed scans and delta summaries, file-count versus byte percentages, and
 download completion versus task completion. `EndDownloadProgressEvent` is a
@@ -163,7 +187,7 @@ compatible pending metadata but never changes it. Scope/filter/applied-baseline
 mismatches invalidate reuse; expired cursors and hierarchy changes fall back.
 `db_pending_delta_tests` covers every raw metadata field and record order,
 transactional replacement/commit cleanup, read-only access, reset/clear and
-schema 26→27 migration. Separate header/item tables avoid a whole-batch SQLite
+schema 26→27 and 27→28 migrations. Separate header/item tables avoid a whole-batch SQLite
 value-size limit. Per-file commits and recovery may update tracked state while
 a batch is pending; unlike session preview caching, durable reuse does not
 require identical item-state vectors.

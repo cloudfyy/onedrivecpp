@@ -1,4 +1,5 @@
 #include "sync/core/plan.hpp"
+#include "graph/support.hpp"
 
 #include "sync/download/target.hpp"
 #include "sync/filesystem/operations.hpp"
@@ -31,9 +32,34 @@ SyncPlan SyncPlan::build(
     plan.state_delta_.apply_mode = apply_mode;
     plan.state_delta_.removals = std::move(snapshot_removals);
     plan.state_delta_.upload_suppressions = std::move(upload_suppressions);
+    for (auto& item : plan.delta_.changes) {
+        if (!item.deleted) {
+            continue;
+        }
+        const auto previous = std::ranges::find(
+            tracked_items, item.id, &storage::ItemState::remote_id
+        );
+        if (previous != tracked_items.end()) {
+            item.name = previous->name;
+            item.parent_id = previous->parent_id;
+            item.remote_path = previous->remote_path;
+            item.directory = previous->directory;
+        }
+    }
+    graph::client_detail::mark_unsupported_descendants(plan.delta_.changes);
 
     for (std::size_t index = 0; index < plan.delta_.changes.size(); ++index) {
         const auto& item = plan.delta_.changes[index];
+        if (!item.unsupported_format.empty()) {
+            plan.block(
+                item,
+                "unsupported_" + item.unsupported_format,
+                graph::client_detail::unsupported_format_message(
+                    item.unsupported_format
+                )
+            );
+            continue;
+        }
         if (item.deleted) {
             plan.removals_.push_back(index);
             spdlog::trace("Remote item deleted: id='{}'", item.id);
@@ -150,6 +176,7 @@ void SyncPlan::block(
         .last_modified = item.last_modified,
         .size = item.size,
         .directory = item.directory,
+        .deleted = item.deleted,
         .reason_code = std::move(reason_code),
         .reason_message = std::move(reason_message),
         .content_hash = item.content_hash,
@@ -224,6 +251,14 @@ std::size_t SyncPlan::move_count() const noexcept {
 
 std::size_t SyncPlan::blocked_count() const noexcept {
     return state_delta_.blocked_upserts.size();
+}
+
+std::size_t SyncPlan::unsupported_count() const noexcept {
+    return static_cast<std::size_t>(std::ranges::count_if(
+        state_delta_.blocked_upserts, [](const storage::BlockedItem& item) {
+            return item.reason_code.starts_with("unsupported_");
+        }
+    ));
 }
 
 std::uintmax_t SyncPlan::download_bytes() const noexcept {

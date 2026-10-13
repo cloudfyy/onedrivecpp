@@ -172,5 +172,43 @@ int main() {
         return fail("negative remote file size was accepted");
     } catch (const std::runtime_error&) {
     }
+    auto note = item("note", "new/note.one");
+    note.unsupported_format = "onenote";
+    auto notebook = item("notebook", "Notebook", true);
+    notebook.unsupported_format = "onenote";
+    auto unsupported_plan = detail::SyncPlan::build(
+        {
+            .changes = {note, {.id = "child", .deleted = true}, notebook},
+            .delta_link = "https://graph.example.test/unsupported",
+        },
+        "me",
+        "/sync",
+        DeltaApplyMode::replace,
+        "",
+        {},
+        {
+            {.drive_id = "me",
+             .remote_id = "note",
+             .name = "note.one",
+             .remote_path = "old/note.one",
+             .local_path = "/sync/old/note.one"},
+            {.drive_id = "me",
+             .remote_id = "child",
+             .name = "child.bin",
+             .remote_path = "Notebook/child.bin",
+             .local_path = "/sync/Notebook/child.bin"},
+        }
+    );
+    if (unsupported_plan.download_count() != 0 ||
+        unsupported_plan.move_count() != 0 ||
+        unsupported_plan.removal_count() != 0 ||
+        unsupported_plan.directory_count() != 0 ||
+        unsupported_plan.unsupported_count() != 3 ||
+        unsupported_plan.blocked(1).reason_code != "unsupported_onenote" ||
+        !unsupported_plan.blocked(1).deleted) {
+        return fail(
+            "unsupported items were scheduled for moves, deletions or downloads"
+        );
+    }
     return EXIT_SUCCESS;
 }

@@ -480,6 +480,7 @@ foreach(
     )
 endforeach()
 target_link_libraries(app_synchronization_tests PRIVATE spdlog::spdlog)
+target_link_libraries(app_flow_tests PRIVATE spdlog::spdlog)
 add_onedrive_test(
     app_queries_tests
     SOURCES tests/app/queries.cpp
@@ -524,7 +525,7 @@ foreach(PREFLIGHT_TEST IN ITEMS state sync invalid)
         LIBRARIES onedrive_app
     )
 endforeach()
-foreach(SYNC_TEST IN ITEMS base delete move move_recovery download upload mode preview persistent_delta)
+foreach(SYNC_TEST IN ITEMS base delete move move_recovery download upload mode preview persistent_delta unsupported)
     add_onedrive_test(
         sync_${SYNC_TEST}_tests
         SOURCES tests/sync/${SYNC_TEST}.cpp
@@ -597,6 +598,7 @@ foreach(DOWNLOAD_TEST IN ITEMS single safe txn relaxed resume recover)
     )
 endforeach()
 target_link_libraries(download_single_tests PRIVATE onedrive_cli)
+target_link_libraries(download_resume_tests PRIVATE spdlog::spdlog)
 add_onedrive_test(
     download_integrity_tests
     SOURCES tests/download/integrity.cpp

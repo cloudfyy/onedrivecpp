@@ -127,18 +127,20 @@ int test_full_refresh_retains_blocked_deletion_snapshot() {
         config.sync_mode = onedrive::sync::SyncMode::bidirectional;
         if (expired_cursor) {
             items.saved_sync_filter_fingerprint =
-                onedrive::sync::detail::SyncList::configured(
-                    {
-                        .rules_path = config.sync_list,
-                        .sync_root = root,
-                        .include_root_files = config.sync_root_files,
-                        .nosync_enabled = config.nosync_enabled,
-                        .dotfiles = config.dotfiles,
-                        .maximum_file_size_bytes =
-                            config.maximum_file_size_bytes,
-                    }
-                )
-                    .fingerprint();
+                onedrive::sync::engine_detail::sync_scope_fingerprint(
+                    onedrive::sync::detail::SyncList::configured(
+                        {
+                            .rules_path = config.sync_list,
+                            .sync_root = root,
+                            .include_root_files = config.sync_root_files,
+                            .nosync_enabled = config.nosync_enabled,
+                            .dotfiles = config.dotfiles,
+                            .maximum_file_size_bytes =
+                                config.maximum_file_size_bytes,
+                        }
+                    )
+                        .fingerprint()
+                );
         }
         const auto synchronize = [&] {
             return onedrive::sync::SyncEngine{
@@ -1023,13 +1025,15 @@ int test_local_deletions() {
     selective_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     selective_config.sync_list = sync_list;
     selective_items.saved_sync_filter_fingerprint =
-        onedrive::sync::detail::SyncList::load(
-            sync_list,
-            onedrive::sync::detail::root_file_policy(
-                selective_config.sync_root_files
+        onedrive::sync::engine_detail::sync_scope_fingerprint(
+            onedrive::sync::detail::SyncList::load(
+                sync_list,
+                onedrive::sync::detail::root_file_policy(
+                    selective_config.sync_root_files
+                )
             )
-        )
-            .fingerprint();
+                .fingerprint()
+        );
     static_cast<void>(onedrive::sync::SyncEngine{
         selective_config,
         selective_graph,
@@ -1086,17 +1090,19 @@ int test_local_deletions() {
     policy_config.dotfiles = onedrive::config::DotfilePolicy::exclude;
     policy_config.maximum_file_size_bytes = 4;
     policy_items.saved_sync_filter_fingerprint =
-        onedrive::sync::detail::SyncList::configured(
-            {
-                .sync_root = policy_root,
-                .include_root_files = policy_config.sync_root_files,
-                .nosync_enabled = policy_config.nosync_enabled,
-                .dotfiles = policy_config.dotfiles,
-                .maximum_file_size_bytes =
-                    policy_config.maximum_file_size_bytes,
-            }
-        )
-            .fingerprint();
+        onedrive::sync::engine_detail::sync_scope_fingerprint(
+            onedrive::sync::detail::SyncList::configured(
+                {
+                    .sync_root = policy_root,
+                    .include_root_files = policy_config.sync_root_files,
+                    .nosync_enabled = policy_config.nosync_enabled,
+                    .dotfiles = policy_config.dotfiles,
+                    .maximum_file_size_bytes =
+                        policy_config.maximum_file_size_bytes,
+                }
+            )
+                .fingerprint()
+        );
     static_cast<void>(onedrive::sync::SyncEngine{
         policy_config,
         policy_graph,

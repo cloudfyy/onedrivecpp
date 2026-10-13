@@ -8,6 +8,51 @@ namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::download;
 
+int test_unsupported_single_downloads() {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path() / "single";
+    std::filesystem::create_directories(root / "Notebook");
+    onedrive::test::write_file(root / "notes.one", "keep notes");
+    onedrive::test::write_file(root / "Notebook/local.bin", "keep package");
+    auto config = onedrive::config::Config::defaults();
+    config.sync_data_directory = root;
+    config.drive_id = "drive-id";
+    FakeGraphClient implementation;
+    FakeItemStore store;
+    onedrive::graph::GraphClient graph{
+        onedrive::util::borrowed_proxy, implementation
+    };
+    onedrive::storage::ItemStore items{onedrive::util::borrowed_proxy, store};
+    std::ostringstream output;
+    std::ostringstream error;
+    const onedrive::cli::Console console{{}, output, error};
+    for (const bool directory : {false, true}) {
+        const std::string path = directory ? "Notebook" : "notes.one";
+        implementation.lookup_item = remote_item("notes", path);
+        implementation.lookup_item.directory = directory;
+        implementation.lookup_item.unsupported_format = "onenote";
+        implementation.lookup_item.validate_content = false;
+        if (onedrive::sync::plan_single_file_download(
+                config, path, graph, console
+            ) != exit_code::blocked ||
+            onedrive::sync::download_single_file(
+                config, path, graph, items, console
+            ) != exit_code::blocked) {
+            return fail("unsupported single-file request was accepted");
+        }
+    }
+    if (implementation.download_count != 0 || !store.states.empty() ||
+        onedrive::test::read_file(root / "notes.one") != "keep notes" ||
+        onedrive::test::read_file(root / "Notebook/local.bin") !=
+            "keep package" ||
+        !(output.str() + error.str()).contains("unsupported_onenote")) {
+        return fail(
+            "unsupported single download changed files/state or hid its reason"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_single_file_download_coordination() {
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "single";
@@ -173,5 +218,8 @@ int test_single_file_download_coordination() {
 } // namespace
 
 int main() {
+    if (test_unsupported_single_downloads() != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
     return test_single_file_download_coordination();
 }

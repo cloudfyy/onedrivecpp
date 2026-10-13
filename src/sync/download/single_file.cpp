@@ -1,5 +1,6 @@
 #include "onedrive/sync/download/single_file.hpp"
 #include "onedrive/exit_code.hpp"
+#include "graph/support.hpp"
 
 #include "onedrive/util/mount.hpp"
 #include "onedrive/util/path_security.hpp"
@@ -43,7 +44,7 @@ SingleFileTarget resolve_target(
     static_cast<void>(detail::local_path_for(configured_root, remote_path));
 
     auto item = graph.item_by_path(remote_path);
-    if (item.directory) {
+    if (item.directory && item.unsupported_format.empty()) {
         throw std::runtime_error(
             "remote path identifies a directory, not a file: " + remote_path
         );
@@ -70,6 +71,33 @@ SingleFileTarget resolve_target(
     };
 }
 
+bool report_unsupported(
+    const SingleFileTarget& target, const events::Observer& observer
+) {
+    if (target.item.unsupported_format.empty()) {
+        return false;
+    }
+    const auto message = graph::client_detail::unsupported_format_message(
+        target.item.unsupported_format
+    );
+    spdlog::warn(
+        "Unsupported remote item '{}': {}", target.item.remote_path, message
+    );
+    observer.blocked_item(
+        target.item.remote_path,
+        "unsupported_" + target.item.unsupported_format,
+        message
+    );
+    observer.section(
+        "single_download_plan",
+        "Single-file download plan:",
+        {{.label = "unsupported format items:",
+          .key = "unsupported_items",
+          .value = "1"}}
+    );
+    return true;
+}
+
 }  // namespace
 
 int plan_single_file_download(
@@ -79,6 +107,9 @@ int plan_single_file_download(
     const events::Observer& observer
 ) {
     const auto target = resolve_target(config, remote_path, graph);
+    if (report_unsupported(target, observer)) {
+        return exit_code::blocked;
+    }
     observer.section(
         "single_download_plan",
         "Single-file download plan:",
@@ -119,6 +150,9 @@ int download_single_file(
     const events::Observer& observer
 ) {
     auto target = resolve_target(config, remote_path, graph);
+    if (report_unsupported(target, observer)) {
+        return exit_code::blocked;
+    }
     auto& item = target.item;
     const auto& configured_root = target.configured_root;
     const auto& destination = target.destination;

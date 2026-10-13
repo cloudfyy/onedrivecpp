@@ -28,6 +28,7 @@
 #include <string_view>
 #include <thread>
 #include <type_traits>
+#include <unordered_map>
 #include <unordered_set>
 #include <utility>
 #include <variant>
@@ -57,6 +58,8 @@ DeltaResult MicrosoftGraphClient::list_delta(
 
     std::unordered_set<std::string> visited_urls;
     DeltaChanges changes;
+    // A package parent can arrive on a later page than its children.
+    std::unordered_map<std::string, Json> hash_metadata;
     DeltaResult result;
     std::size_t page_number = 1;
     std::size_t scanned_item_count = 0;
@@ -140,7 +143,12 @@ DeltaResult MicrosoftGraphClient::list_delta(
                         "Microsoft Graph returned a delta item with an empty ID"
                     );
                 }
+                hash_metadata.erase(item.id);
                 if (!item.deleted) {
+                    const auto unsupported = item_unsupported_format(value);
+                    if (unsupported) {
+                        item.unsupported_format = unsupported->format_id;
+                    }
                     item.name = value.at("name").get<std::string>();
                     if (const auto etag = value.find("eTag");
                         etag != value.end()) {
@@ -153,7 +161,8 @@ DeltaResult MicrosoftGraphClient::list_delta(
                         item.etag = etag->get<std::string>();
                     }
                     item.ctag = item_ctag(value);
-                    item.directory = value.contains("folder");
+                    item.directory = value.contains("folder") ||
+                                     (unsupported && unsupported->package);
                     item.root = value.contains("root");
                     if (!item.root) {
                         item.remote_path = item_remote_path(value, item.name);
@@ -173,18 +182,23 @@ DeltaResult MicrosoftGraphClient::list_delta(
                         size != value.end() && size->is_number_integer()) {
                         item.size = size->get<std::int64_t>();
                     }
-                    item.content_hash = item_content_hash(value);
+                    if (const auto file = value.find("file");
+                        file != value.end() &&
+                        item.unsupported_format.empty()) {
+                        hash_metadata.emplace(
+                            item.id,
+                            Json{
+                                {"id", item.id},
+                                {"name", item.name},
+                                {"file", *file}
+                            }
+                        );
+                    }
                     item.malware = item_is_malware(value);
                     if (item.name.empty() ||
                         (!item.root && item.remote_path.empty()) || item.size < 0) {
                         throw std::runtime_error(
                             "Microsoft Graph returned a delta item with invalid metadata"
-                        );
-                    }
-                    if (!item.directory && item.last_modified.empty()) {
-                        throw std::runtime_error(
-                            "Microsoft Graph delta file is missing "
-                            "fileSystemInfo.lastModifiedDateTime"
                         );
                     }
                 }
@@ -244,6 +258,27 @@ DeltaResult MicrosoftGraphClient::list_delta(
     }
 
     result.changes = std::move(changes).release();
+    mark_unsupported_descendants(result.changes);
+    for (auto& item : result.changes) {
+        if (item.deleted || !item.unsupported_format.empty()) {
+            continue;
+        }
+        if (!item.directory && item.last_modified.empty()) {
+            throw std::runtime_error(
+                "Microsoft Graph delta file is missing "
+                "fileSystemInfo.lastModifiedDateTime"
+            );
+        }
+        if (const auto metadata = hash_metadata.find(item.id);
+            metadata != hash_metadata.end()) {
+            item.content_hash = item_content_hash(
+                metadata->second,
+                options_.relaxed_download_validation
+                    ? ContentValidation::relaxed
+                    : ContentValidation::strict
+            );
+        }
+    }
     spdlog::info(
         "Completed Microsoft Graph delta query: {} pages, {} changes",
         page_number - 1,

@@ -9,6 +9,10 @@
 
 namespace onedrive::sync::engine_detail {
 
+[[nodiscard]] std::string sync_scope_fingerprint(std::string_view filter);
+void preserve_unsupported_deletions(
+    graph::DeltaResult& delta, const std::vector<storage::BlockedItem>& blocked
+);
 void add_blocked_retries(
     graph::DeltaResult& delta,
     const std::vector<storage::BlockedItem>& blocked

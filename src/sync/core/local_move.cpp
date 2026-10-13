@@ -156,6 +156,8 @@ bool remote_file_content_unchanged(
     detail::DownloadHashes hashes;
     if (item.content_hash->algorithm == util::FileHashAlgorithm::sha256) {
         hashes.sha256 = detail::content_fingerprint(path);
+    } else if (item.content_hash->algorithm == util::FileHashAlgorithm::sha1) {
+        hashes.sha1 = detail::sha1_hash(path);
     } else {
         hashes.quick_xor = detail::quick_xor_hash(path);
     }

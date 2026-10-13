@@ -48,6 +48,37 @@ int test_remote_moves() {
         return fail("remote file rename was not applied locally");
     }
 
+    const auto sha1_root = temporary.path() / "sha1-rename";
+    std::filesystem::create_directory(sha1_root);
+    onedrive::test::write_file(sha1_root / "old.txt", "data");
+    auto sha1_item = file("sha1-move", "new.txt", 4);
+    sha1_item.etag = "new-etag";
+    sha1_item.content_hash = onedrive::util::FileHash{
+        .algorithm = onedrive::util::FileHashAlgorithm::sha1,
+        .value = "A17C9AAA61E80A1BF71D0D850AF4E5BAA9800BBD",
+    };
+    FakeGraphClient sha1_graph;
+    sha1_graph.changes = {sha1_item};
+    FakeItemStore sha1_items;
+    sha1_items.saved_delta_link = "saved";
+    sha1_items.items.emplace(
+        "sha1-move", tracked_item(sha1_root, "sha1-move", "old.txt")
+    );
+    FakeMetrics sha1_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(sha1_root, false),
+            sha1_graph,
+            sha1_items,
+            sha1_metrics,
+            &default_console
+        }
+                .synchronize() != exit_code::success ||
+        std::filesystem::exists(sha1_root / "old.txt") ||
+        onedrive::test::read_file(sha1_root / "new.txt") != "data" ||
+        sha1_graph.download_count != 0) {
+        return fail("SHA-1-verified remote move downloaded unchanged content");
+    }
+
     const auto journal_failure_root = temporary.path() / "move-journal-failure";
     std::filesystem::create_directories(journal_failure_root);
     {
@@ -1707,13 +1738,15 @@ int test_local_move_uploads() {
     selective_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     selective_config.sync_list = sync_list;
     selective_items.saved_sync_filter_fingerprint =
-        onedrive::sync::detail::SyncList::load(
-            sync_list,
-            onedrive::sync::detail::root_file_policy(
-                selective_config.sync_root_files
+        onedrive::sync::engine_detail::sync_scope_fingerprint(
+            onedrive::sync::detail::SyncList::load(
+                sync_list,
+                onedrive::sync::detail::root_file_policy(
+                    selective_config.sync_root_files
+                )
             )
-        )
-            .fingerprint();
+                .fingerprint()
+        );
     static_cast<void>(onedrive::sync::SyncEngine{
         selective_config,
         selective_graph,
@@ -1764,13 +1797,15 @@ int test_local_move_uploads() {
     selective_parent_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     selective_parent_config.sync_list = sync_list;
     selective_parent_items.saved_sync_filter_fingerprint =
-        onedrive::sync::detail::SyncList::load(
-            sync_list,
-            onedrive::sync::detail::root_file_policy(
-                selective_parent_config.sync_root_files
+        onedrive::sync::engine_detail::sync_scope_fingerprint(
+            onedrive::sync::detail::SyncList::load(
+                sync_list,
+                onedrive::sync::detail::root_file_policy(
+                    selective_parent_config.sync_root_files
+                )
             )
-        )
-            .fingerprint();
+                .fingerprint()
+        );
     static_cast<void>(onedrive::sync::SyncEngine{
         selective_parent_config,
         selective_parent_graph,

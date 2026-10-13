@@ -30,6 +30,11 @@ copy the reference project's D implementation.
   completion, a manual page, a hardened systemd user service, and Debian
   packaging.
 
+OneNote files and packages recognized from Graph metadata are not supported.
+They are explicitly reported and skipped while other files continue; existing
+local copies are preserved and the sync exits with status 2.
+See [unsupported formats](docs/synchronization.md#unsupported-formats).
+
 ## Documentation
 
 The [documentation guide](docs/README.md) organizes the manuals into three
@@ -203,9 +208,11 @@ saved configuration, not unsaved Settings drafts. A saved `sync.dry_run = true`
 keeps **Sync now** in preview mode; the GUI never overrides the remote-deletion
 safety limit. Tasks run in a background worker using the same service and state
 directory lock as the CLI. The task page shows a concise result/error summary
-and **View logs** opens the details. Download progress includes file/byte counts, speed and an estimated remaining
-time when available. Uploads currently have messages but no percentage display.
-The percentage is explicitly download progress, not whole-task progress.
+and **View logs** opens the details. The progress bar is blue and displays only a
+centered numeric percentage (for example, `50%`). Download progress
+includes file/byte counts, speed and an estimated remaining time when available.
+Uploads currently have messages but no percentage display.
+The percentage measures downloads, not whole-task progress.
 Scanning and other phases without measurable totals display an explanatory
 message instead of a full-looking indeterminate bar. Overall 100% appears only
 after successful task completion.
@@ -234,8 +241,9 @@ recovery records.
 
 **Logs** retains up to 500 application events across tasks for the current GUI
 session, with timestamps, operation names and levels; omissions are explicitly
-shown. Filter by level, toggle auto-scroll, copy the displayed logs or clear
-history without stopping a task. Tab/language switches preserve tasks, filters
+shown. The level filter is a minimum severity: Warning shows Warning, Error and
+Critical; All levels shows everything. Toggle auto-scroll, copy the displayed
+logs or clear history without stopping a task. Tab/language switches preserve tasks, filters
 and history. Backend logs are included according to the configured logging level,
 including each download's file path and size. Frontend and backend share the
 same six levels: Trace, Debug, Info, Warning, Error and Critical. Successful

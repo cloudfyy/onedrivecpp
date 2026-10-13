@@ -72,6 +72,8 @@ onedrive-cpp transfer download "Documents/report.pdf"
 checkpoint 恢复、完整性校验、磁盘空间预留、本地修改保护和原子安装。目录以及
 带有 Graph `malware` facet 的文件会被拒绝。程序会更新该文件的 item 快照，但
 不会推进 Drive `deltaLink`。
+识别为不支持格式的目标（包括 OneNote 文件／包）会明确报告为阻塞项并返回状态码 2，
+不会下载或修改本地文件。单文件预览和宽松校验模式也遵循这一规则。
 
 使用 `download --dry-run` 可以显示解析后的远端路径、本地目标和预期大小，不会
 创建 item 数据库或修改下载文件：
@@ -117,6 +119,30 @@ facet 的文件，以及被阻塞目录的子项，也会持久化为 blocked it
 游标安全推进后，`transfer sync` 返回状态码 2。此后的每次增量同步都会自动重试 blocked
 item；操作成功或远端项目删除后，记录会被清除。认证、Graph、数据库、同步根
 目录权限、整体磁盘容量和下载传输错误仍属于致命错误。
+
+## 不支持的格式
+
+内置规则集中保存在 `src/graph/unsupported_formats.hpp`。目前按
+`package.type = "oneNote"`，或 **MIME + 后缀**识别 OneNote：后缀为 `.one`／`.onetoc2`，
+且 MIME 为 `application/msonenote` 或 `application/octet-stream`。MIME 和后缀采用
+ASCII 不区分大小写比较；不会仅凭后缀排除普通文件。共享条目的元数据也会检查。
+识别出的包及其后代不会进入传输计划或远端哈希校验，即使父包出现在后续 Delta 页。
+
+这些条目持久化为 `unsupported_onenote` 阻塞项，不计入下载成功数。其他文件继续
+同步，完整性校验不变。计划及执行结果提供 `unsupported_items` 数量，它是阻塞项
+总数的子集；GUI 显示原因及数量，并将任务显示为同步未完成。有不支持的条目时，
+最终退出码为 2。
+
+已有本地文件及可信快照会保留；已知不支持的项目在远端被删除，或全量刷新中未出现，
+也不会触发本地删除。后续同步仍会明确报告这些条目，不会自动重试下载或上传。
+如果新的元数据不再命中规则，则恢复普通冲突保护和完整性校验。
+这不构成 OneNote 备份，需要另外通过 OneNote 导出笔记。
+
+规则表随程序发布，不从用户配置读取。每条规则包含稳定的格式标识、显示名称、
+MIME、后缀和 package 类型。待应用批次保存格式标识，阻塞原因码采用
+`unsupported_<id>`；新增格式无需为同步及持久化流程增加格式专用分支。
+规则表参与同步范围及缓存指纹计算；规则变化会重新获取完整元数据，但不会删除
+已下载文件，也不会提前推进已应用游标。
 
 ## 移动与删除
 
@@ -164,10 +190,21 @@ SQLite pending-move journal。项目状态、Delta 游标和 journal 清理会�
 ## 完整性、Journal 与断点恢复
 
 Microsoft Graph 提供文件内容哈希时，程序会在临时文件进入待安装 journal 前
-校验内容：优先使用 SHA-256，否则使用 OneDrive/SharePoint QuickXorHash。
+使用 OneDrive/SharePoint QuickXorHash 校验内容；缺少该字段时，使用旧版 SHA-1 字段。
+微软已[弃用 OneDrive Personal 的 SHA-1](https://devblogs.microsoft.com/microsoft365dev/deprecation-of-sha1hash-on-onedrive-personal/)，
+不再保证该字段可用。若服务端仍提供 SHA-1，客户端会严格校验；不匹配后不会换算法放行。
+Graph 的[官方哈希文档](https://learn.microsoft.com/en-us/graph/api/resources/hashes?view=graph-rest-1.0)
+明确标注 `sha256Hash` 不受支持，因此客户端不会将其用作远端完整性哈希。
+严格模式下，仅包含 `sha256Hash` 而没有 QuickXorHash 或 SHA-1 的元数据会被明确
+拒绝，错误会指出远端项目 ID 和名称，不会静默跳过哈希校验。显式启用的宽松模式
+仍会跳过远端大小与哈希校验，并记录警告。
+元数据缓存作用域包含哈希策略：升级后会重新获取尚未应用批次的元数据，
+同时保留已安装文件与持久化的部分下载。
 对于从 byte 0 开始的下载，程序会在写入数据时增量计算 SHA-256 和
 QuickXorHash，并将流式 SHA-256 同时用作崩溃恢复指纹。如果断点续传或重试期间
 的字节 offset 不连续，程序会安全回退，重新计算完整文件的哈希。
+SHA-1 从已下载的完整临时文件计算，断点续传同样适用。该远端校验方式不会替换
+本地恢复使用的 SHA-256 指纹；哈希不一致时，也不会改用另一个算法放行。
 
 如果哈希不匹配，程序会删除 partial 检查点和临时文件，使下次尝试从 byte 0
 重新下载。本地 SHA-256 指纹仅用于保护崩溃恢复状态，不能替代远端完整性哈希。

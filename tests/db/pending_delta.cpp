@@ -31,7 +31,8 @@ auto fields(const graph::RemoteItem& item) {
         item.root,
         item.malware,
         item.content_hash,
-        item.validate_content
+        item.validate_content,
+        item.unsupported_format
     );
 }
 
@@ -63,13 +64,22 @@ storage::PendingDelta sample() {
                          .name = "dir",
                          .remote_path = "dir",
                          .directory = true,
-                         .root = true},
+                         .root = true,
+                         .unsupported_format = "onenote"},
                         {.id = "gone",
                          .deleted = true,
                          .malware = true,
                          .content_hash =
                              util::FileHash{
                                  util::FileHashAlgorithm::quick_xor, "quick"
+                             }},
+                        {.id = "sha1",
+                         .name = "sha1.one",
+                         .etag = "sha1-etag",
+                         .content_hash =
+                             util::FileHash{
+                                 util::FileHashAlgorithm::sha1,
+                                 "a17c9aaa61e80a1bf71d0d850af4e5baa9800bbd"
                              }},
                     },
                 .delta_link = "fetched",
@@ -98,7 +108,7 @@ void test_round_trip_and_transactions() {
         const auto summary =
             storage::read_state_summary(temporary.path(), "me");
         require(
-            summary.pending_deltas == 1 && summary.pending_delta_changes == 3,
+            summary.pending_deltas == 1 && summary.pending_delta_changes == 4,
             "status did not expose pending remote metadata"
         );
         require(
@@ -238,10 +248,50 @@ void test_version_26_upgrade() {
     require(
         database.delta_link("me") == "old-cursor" &&
             !database.pending_delta("me") &&
-            schema_version_is(temporary.path() / "items.sqlite3", 27),
+            schema_version_is(temporary.path() / "items.sqlite3", 28),
         "version 26 upgrade lost the applied cursor"
     );
     database.save_pending_delta(sample());
+}
+
+void test_version_27_upgrade() {
+    test::TemporaryDirectory temporary;
+    auto expected = sample();
+    {
+        storage::ItemDatabase database{temporary.path(), identity()};
+        database.open();
+        database.apply_delta({.drive_id = "me", .delta_link = "applied"});
+        database.save_pending_delta(expected);
+    }
+    require(
+        execute_schema(
+            temporary.path() / "items.sqlite3",
+            "ALTER TABLE pending_delta_change DROP COLUMN unsupported_format;"
+            "PRAGMA user_version = 27;"
+        ),
+        "cannot create version 27 fixture"
+    );
+    for (auto& item : expected.delta.changes) {
+        item.unsupported_format.clear();
+    }
+    storage::ItemDatabase database{temporary.path(), identity()};
+    database.open();
+    const auto loaded = database.pending_delta("me");
+    require(
+        loaded &&
+            loaded->delta.changes.size() == expected.delta.changes.size() &&
+            database.delta_link("me") == "applied" &&
+            schema_version_is(temporary.path() / "items.sqlite3", 28),
+        "version 27 migration lost pending or applied metadata"
+    );
+    for (std::size_t index = 0; index < expected.delta.changes.size();
+         ++index) {
+        require(
+            fields(loaded->delta.changes[index]) ==
+                fields(expected.delta.changes[index]),
+            "version 27 migration changed existing item metadata"
+        );
+    }
 }
 
 } // namespace
@@ -250,6 +300,7 @@ int main() {
     try {
         test_round_trip_and_transactions();
         test_version_26_upgrade();
+        test_version_27_upgrade();
         return EXIT_SUCCESS;
     } catch (const std::exception& error) {
         return onedrive::test::fail(error.what());

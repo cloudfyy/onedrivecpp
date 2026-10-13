@@ -417,6 +417,31 @@ int test_inspection() {
         !verified.standard_output.contains(R"("algorithm":"sha256")")) {
         return fail("inspect verify did not validate saved content hash");
     }
+    fixture.runtime_factory.item_states[0].content_hash =
+        onedrive::util::FileHash{
+            .algorithm = onedrive::util::FileHashAlgorithm::sha1,
+            .value = "8FDB7E2FA84F4FAF0D9B92F466DF424EC47A165B",
+        };
+    const auto sha1_verified = run_application(
+        fixture.runtime_factory,
+        {
+            "onedrive-cpp",
+            "inspect",
+            "verify",
+            "Documents/ok.txt",
+            "--mode",
+            "content",
+            "--config",
+            fixture.config_path.string(),
+            "--output",
+            "json",
+        }
+    );
+    if (sha1_verified.exit_code != exit_code::success ||
+        !sha1_verified.standard_output.contains(R"("result":"verified")") ||
+        !sha1_verified.standard_output.contains(R"("algorithm":"sha1")")) {
+        return fail("inspect verify did not validate supported SHA-1 content");
+    }
     fixture.runtime_factory.item_states[0].content_hash->value = "incorrect";
     const auto mismatch = run_application(
         fixture.runtime_factory,

@@ -52,9 +52,11 @@ void create_drive_state_schema(sqlite3* database) {
     );
 }
 
-void create_pending_delta_schema(sqlite3* database) {
-    execute_sql(
-        database,
+namespace {
+void create_pending_delta_schema_impl(
+    sqlite3* database, bool unsupported_formats
+) {
+    std::string sql =
         "CREATE TABLE IF NOT EXISTS pending_delta ("
         "drive_id TEXT PRIMARY KEY NOT NULL,"
         "scope_fingerprint TEXT NOT NULL,"
@@ -82,11 +84,23 @@ void create_pending_delta_schema(sqlite3* database) {
         "malware INTEGER NOT NULL CHECK(malware IN (0,1)),"
         "content_hash_algorithm TEXT NOT NULL,"
         "content_hash_value TEXT NOT NULL,"
-        "validate_content INTEGER NOT NULL CHECK(validate_content IN (0,1)),"
-        "PRIMARY KEY(drive_id, remote_id),"
-        "UNIQUE(drive_id, position)"
-        ");"
-    );
+        "validate_content INTEGER NOT NULL CHECK(validate_content IN (0,1)),";
+    if (unsupported_formats) {
+        sql += "unsupported_format TEXT NOT NULL DEFAULT '',";
+    }
+    sql += "PRIMARY KEY(drive_id, remote_id),"
+           "UNIQUE(drive_id, position)"
+           ");";
+    execute_sql(database, sql.c_str());
+}
+} // namespace
+
+void create_pending_delta_schema(sqlite3* database) {
+    create_pending_delta_schema_impl(database, true);
+}
+
+void create_pending_delta_v27_schema(sqlite3* database) {
+    create_pending_delta_schema_impl(database, false);
 }
 
 void create_pending_download_schema(sqlite3* database) {

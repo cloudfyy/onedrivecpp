@@ -19,6 +19,7 @@ public:
 struct DownloadHashes {
     std::string sha256;
     std::string quick_xor;
+    std::string sha1;
 };
 
 class StreamingDownloadHasher final {
@@ -46,6 +47,10 @@ private:
 
 [[nodiscard]] std::string quick_xor_hash(
     const std::filesystem::path& path
+);
+[[nodiscard]] std::string sha1_hash(const std::filesystem::path& path);
+[[nodiscard]] std::string file_content_hash(
+    const std::filesystem::path& path, util::FileHashAlgorithm algorithm
 );
 void verify_download_integrity(
     const graph::RemoteItem& item,

@@ -3,6 +3,7 @@
 #include "onedrive/storage/status.hpp"
 #include "support/common.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdlib>
 #include <filesystem>
@@ -22,6 +23,89 @@ namespace {
 using namespace onedrive::test::db;
 using onedrive::test::fail;
 using onedrive::test::TemporaryDirectory;
+
+int test_hash_algorithm_round_trip() {
+    namespace storage = onedrive::storage;
+    namespace util = onedrive::util;
+    TemporaryDirectory temporary;
+    const std::vector<util::FileHashAlgorithm> algorithms{
+        util::FileHashAlgorithm::quick_xor,
+        util::FileHashAlgorithm::sha256,
+        util::FileHashAlgorithm::sha1,
+    };
+    {
+        storage::ItemDatabase database{temporary.path(), identity()};
+        database.open();
+        for (const auto algorithm : algorithms) {
+            const std::string id{util::file_hash_algorithm_name(algorithm)};
+            const storage::ItemState state{
+                .drive_id = "me",
+                .remote_id = id,
+                .name = id + ".bin",
+                .etag = "etag",
+                .remote_path = id + ".bin",
+                .local_path = temporary.path() / (id + ".bin"),
+                .size = 4,
+                .content_hash = util::FileHash{algorithm, "saved-hash"},
+            };
+            database.upsert(state);
+            database.save_partial_download({
+                .item = state,
+                .temporary_path = temporary.path() / (id + ".partial"),
+                .completed_bytes = 2,
+            });
+            database.save_pending_download({
+                .item = state,
+                .temporary_path = temporary.path() / (id + ".pending"),
+                .content_fingerprint = std::string(64, 'a'),
+            });
+            database.apply_delta({
+                .drive_id = "me",
+                .blocked_upserts = {{
+                    .remote_id = id,
+                    .reason_code = "local_modification",
+                    .reason_message = "modified local file",
+                    .content_hash = state.content_hash,
+                }},
+                .delta_link = "saved-cursor",
+            });
+        }
+    }
+    storage::ItemDatabase reopened{temporary.path(), identity()};
+    reopened.open();
+    const auto pending = reopened.pending_downloads("me");
+    const auto blocked = reopened.blocked_items("me");
+    if (pending.size() != 3 || blocked.size() != 3) {
+        return fail("content hash journals lost records during restart");
+    }
+    for (const auto algorithm : algorithms) {
+        const std::string id{util::file_hash_algorithm_name(algorithm)};
+        const auto state = reopened.find("me", id);
+        const auto partial = reopened.partial_download("me", id);
+        const auto matches = [&](const auto& record) {
+            return record.content_hash &&
+                   record.content_hash->algorithm == algorithm &&
+                   record.content_hash->value == "saved-hash";
+        };
+        if (!state || !matches(*state) || !partial ||
+            partial->completed_bytes != 2 || partial->item.etag != "etag" ||
+            !std::ranges::any_of(
+                pending,
+                [&](const auto& record) {
+                    return record.item.remote_id == id &&
+                           record.content_fingerprint == std::string(64, 'a');
+                }
+            ) ||
+            !std::ranges::any_of(blocked, [&](const auto& record) {
+                return record.remote_id == id && matches(record);
+            })) {
+            return fail(
+                "content hash algorithm did not survive database restart"
+            );
+        }
+    }
+    return EXIT_SUCCESS;
+}
 
 int test_full_refresh_preserves_blocked_snapshots() {
     TemporaryDirectory temporary;
@@ -121,6 +205,9 @@ int test_full_refresh_preserves_blocked_snapshots() {
 } // namespace
 
 int main() {
+    if (test_hash_algorithm_round_trip() != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
     if (const int result = test_full_refresh_preserves_blocked_snapshots();
         result != EXIT_SUCCESS) {
         return result;

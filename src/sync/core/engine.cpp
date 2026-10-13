@@ -1,6 +1,7 @@
 #include "onedrive/sync/core/engine.hpp"
 #include "onedrive/exit_code.hpp"
 #include "graph/delta_changes.hpp"
+#include "graph/support.hpp"
 
 #include "onedrive/sync/cancellation.hpp"
 #include "onedrive/ui/common/observer.hpp"
@@ -268,6 +269,7 @@ void report_execution_summary(
     const engine_detail::ExecutionSummary& execution,
     const detail::UploadSummary& upload,
     std::size_t blocked,
+    std::size_t unsupported,
     const events::Observer& observer
 ) {
     observer.section(
@@ -328,6 +330,11 @@ void report_execution_summary(
                 .label = "blocked:",
                 .key = "blocked",
                 .value = std::to_string(blocked),
+            },
+            {
+                .label = "unsupported format items:",
+                .key = "unsupported_items",
+                .value = std::to_string(unsupported),
             },
         }
     );
@@ -417,15 +424,19 @@ std::optional<PreviewCache::State> PreviewCache::capture_state(
 std::string PreviewCache::scope_fingerprint(const config::Config& config) {
     const auto value = scope(config);
     return util::sha256_hex(
-        nlohmann::json::array({value.sync_root.string(),
-                               value.state_root.string(),
-                               value.drive_id,
-                               value.graph_endpoint,
-                               value.application_id,
-                               value.tenant,
-                               value.auth_endpoint,
-                               value.auth_scope,
-                               static_cast<int>(value.validation)})
+        nlohmann::json::array(
+            {value.sync_root.string(),
+             value.state_root.string(),
+             value.drive_id,
+             value.graph_endpoint,
+             value.application_id,
+             value.tenant,
+             value.auth_endpoint,
+             value.auth_scope,
+             static_cast<int>(value.validation),
+             "graph-quickxor-sha1-v1",
+             graph::client_detail::unsupported_format_policy()}
+        )
             .dump()
     );
 }
@@ -543,7 +554,8 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
             .dotfiles = config_.dotfiles,
             .maximum_file_size_bytes = config_.maximum_file_size_bytes,
         });
-        const std::string sync_filter_fingerprint = sync_filter.fingerprint();
+        const std::string sync_filter_fingerprint =
+            engine_detail::sync_scope_fingerprint(sync_filter.fingerprint());
         const auto previous_delta_link = items_.delta_link(config_.drive_id);
         const auto previous_sync_filter_fingerprint =
             items_.sync_filter_fingerprint(config_.drive_id);
@@ -566,8 +578,10 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
             observer.message(
                 events::MessageKind::information,
                 "pending_delta_invalidated",
-                "Saved remote changes no longer match the account, filters or "
-                "applied cursor; fetching remote changes again..."
+                "Saved remote changes no longer match the account, filters, "
+                "hash policy, unsupported formats or applied cursor; fetching "
+                "remote changes "
+                "again..."
             );
             pending_delta.reset();
             if (!capabilities.previews()) {
@@ -612,13 +626,15 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
         }
         if (sync_filter_changed && !retained_delta) {
             spdlog::info(
-                "Selective synchronization rules changed; fetching the full "
+                "Synchronization filters or unsupported-format rules changed; "
+                "fetching the full "
                 "remote state"
             );
             observer.message(
                 events::MessageKind::information,
                 "sync_filter_changed",
-                "Selective synchronization rules changed; fetching the full "
+                "Synchronization filters or unsupported-format rules changed; "
+                "fetching the full "
                 "remote state..."
             );
         }
@@ -719,6 +735,8 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
                     }
                     if (cached && cached->directory &&
                         (change.deleted ||
+                         cached->unsupported_format !=
+                             change.unsupported_format ||
                          cached->remote_path != change.remote_path)) {
                         return true;
                     }
@@ -786,6 +804,9 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
             delta, apply_mode, items_.partial_downloads(config_.drive_id)
         );
         const auto previously_blocked = items_.blocked_items(config_.drive_id);
+        engine_detail::preserve_unsupported_deletions(
+            delta, previously_blocked
+        );
         if (apply_mode == storage::DeltaApplyMode::merge &&
             !previously_blocked.empty()) {
             engine_detail::add_blocked_retries(delta, previously_blocked);
@@ -934,6 +955,7 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
                 "Persisting remote delta for drive '{}'", config_.drive_id
             );
             blocked_count = plan.blocked_count();
+            const auto unsupported_count = plan.unsupported_count();
             throw_if_cancelled(stop_token);
             items_.apply_delta(plan.release_state_delta());
             discard_orphaned_partial_files(orphaned_partials);
@@ -958,7 +980,11 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
                 blocked_count += upload_summary.blocked;
             }
             report_execution_summary(
-                summary, upload_summary, blocked_count, observer
+                summary,
+                upload_summary,
+                blocked_count,
+                unsupported_count,
+                observer
             );
         }
 

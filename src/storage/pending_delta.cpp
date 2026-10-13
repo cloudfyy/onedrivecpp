@@ -63,9 +63,9 @@ void ItemDatabase::save_pending_delta_on_worker(const PendingDelta& delta) {
         "INSERT INTO pending_delta_change (drive_id, remote_id, position,"
         "name, etag, ctag, parent_id, remote_path, last_modified, size,"
         "directory, deleted, root, malware, content_hash_algorithm,"
-        "content_hash_value, validate_content)"
+        "content_hash_value, validate_content, unsupported_format)"
         " VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,"
-        "?11, ?12, ?13, ?14, ?15, ?16, ?17);"
+        "?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18);"
     };
     std::int64_t position = 0;
     for (const auto& item : delta.delta.changes) {
@@ -93,6 +93,7 @@ void ItemDatabase::save_pending_delta_on_worker(const PendingDelta& delta) {
         bind_text(database, change.get(), 15, algorithm);
         bind_text(database, change.get(), 16, value);
         bind_integer(database, change.get(), 17, item.validate_content);
+        bind_text(database, change.get(), 18, item.unsupported_format);
         change.execute("cannot save pending remote change");
         change.reset();
     }
@@ -143,7 +144,8 @@ ItemDatabase::pending_delta_on_worker(const std::string& drive_id) const {
         database,
         "SELECT remote_id, name, etag, ctag, parent_id, remote_path,"
         "last_modified, size, directory, deleted, root, malware,"
-        "content_hash_algorithm, content_hash_value, validate_content"
+        "content_hash_algorithm, content_hash_value, validate_content,"
+        "unsupported_format"
         " FROM pending_delta_change WHERE drive_id = ?1 ORDER BY position;"
     };
     bind_text(database, changes.get(), 1, drive_id);
@@ -167,6 +169,7 @@ ItemDatabase::pending_delta_on_worker(const std::string& drive_id) const {
                 "pending remote change"
             ),
             .validate_content = sqlite3_column_int(changes.get(), 14) != 0,
+            .unsupported_format = column_text(changes.get(), 15),
         });
     }
     return result;

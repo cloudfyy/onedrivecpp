@@ -1,4 +1,5 @@
 #include "graph/support.hpp"
+#include "graph/unsupported_formats.hpp"
 #include "support/common.hpp"
 
 #include <chrono>
@@ -37,6 +38,114 @@ struct MoveOnlyPageFetcher {
     }
     Json operator()(const std::string&) && = delete;
 };
+
+int test_unsupported_formats() {
+    for (const auto& rule : detail::unsupported_format_rules) {
+        for (const auto mime : rule.mime_types) {
+            for (const auto extension : rule.extensions) {
+                const Json value{
+                    {"name", "notes" + std::string{extension}},
+                    {"file",
+                     {{"mimeType", mime},
+                      {"hashes", {{"sha256Hash", "unsupported"}}}}}
+                };
+                const auto found = detail::item_unsupported_format(value);
+                if (!found || found->format_id != rule.id || found->package ||
+                    detail::item_content_hash(value) ||
+                    !detail::unsupported_format_message(rule.id).contains(
+                        rule.display_name
+                    )) {
+                    return fail(
+                        "built-in format rule was not applied consistently"
+                    );
+                }
+                const auto shortcut = detail::item_unsupported_format(
+                    Json{{"name", "shortcut"}, {"remoteItem", value}}
+                );
+                if (!shortcut || shortcut->format_id != rule.id) {
+                    return fail("shared unsupported format was not recognized");
+                }
+            }
+        }
+        for (const auto package : rule.package_types) {
+            const auto found = detail::item_unsupported_format(
+                Json{{"package", {{"type", package}}}}
+            );
+            if (!found || found->format_id != rule.id || !found->package) {
+                return fail("configured package type was not recognized");
+            }
+        }
+    }
+    const std::vector<Json> ordinary{
+        {{"name", "notes.one"}, {"file", {{"mimeType", "text/plain"}}}},
+        {{"name", "data.bin"},
+         {"file", {{"mimeType", "application/octet-stream"}}}},
+        {{"name", "notes.one"}, {"file", Json::object()}},
+        {{"name", "notes.one.zip"},
+         {"file", {{"mimeType", "application/msonenote"}}}},
+        {{"name", "notes.txt"},
+         {"file", {{"mimeType", "application/msonenote"}}}},
+        {{"package", {{"type", "other"}}}},
+    };
+    for (const auto& value : ordinary) {
+        if (detail::item_unsupported_format(value)) {
+            return fail("extension or MIME alone excluded an ordinary file");
+        }
+    }
+    const auto upper = detail::item_unsupported_format(
+        Json{
+            {"name", "NOTES.ONETOC2"},
+            {"file", {{"mimeType", "APPLICATION/MSONENOTE"}}}
+        }
+    );
+    if (!upper || upper->format_id != "onenote" ||
+        !throws_with<std::runtime_error>(
+            [] {
+                static_cast<void>(detail::item_unsupported_format(
+                    Json{{"file", {{"mimeType", 42}}}}
+                ));
+            },
+            "invalid file mimeType"
+        ) ||
+        !throws_with<std::runtime_error>(
+            [] {
+                static_cast<void>(
+                    detail::item_unsupported_format(Json{{"package", true}})
+                );
+            },
+            "invalid package facet"
+        ) ||
+        !throws_with<std::runtime_error>(
+            [] {
+                static_cast<void>(detail::item_unsupported_format(
+                    Json{{"package", {{"type", 42}}}}
+                ));
+            },
+            "invalid package type"
+        ) ||
+        !throws_with<std::logic_error>(
+            [] {
+                static_cast<void>(
+                    detail::unsupported_format_message("unknown")
+                );
+            },
+            "unknown unsupported format"
+        )) {
+        return fail(
+            "format rules lost case handling or explicit invalid-metadata "
+            "errors"
+        );
+    }
+    const auto policy = detail::unsupported_format_policy();
+    if (!policy.is_array() ||
+        policy.size() != detail::unsupported_format_rules.size() ||
+        policy[0]["id"] != "onenote" || policy[0]["mime_types"].size() != 2 ||
+        policy[0]["extensions"].size() != 2 ||
+        policy[0]["package_types"] != Json::array({"oneNote"})) {
+        return fail("metadata cache policy did not capture the built-in rules");
+    }
+    return EXIT_SUCCESS;
+}
 
 int test_repeated_page_fetcher() {
     const auto fetch = [](auto operation) {
@@ -429,7 +538,7 @@ int test_hashes_and_drive_items() {
                     }}
                 ));
             },
-            "invalid sha256Hash"
+            "unsupported sha256Hash without quickXorHash"
         ) ||
         !throws_with(
             [] {
@@ -440,14 +549,14 @@ int test_hashes_and_drive_items() {
                     }}
                 ));
             },
-            "invalid sha256Hash"
+            "unsupported sha256Hash without quickXorHash"
         )) {
         return fail("invalid Graph file hash facet was accepted");
     }
-    const auto sha = detail::item_content_hash(
+    const auto combined = detail::item_content_hash(
         Json{{
             "file",
-            {{"hashes", {{"sha256Hash", sha256}}}},
+            {{"hashes", {{"sha256Hash", sha256}, {"quickXorHash", quick_xor}}}},
         }}
     );
     const auto quick = detail::item_content_hash(
@@ -456,8 +565,97 @@ int test_hashes_and_drive_items() {
             {{"hashes", {{"quickXorHash", quick_xor}}}},
         }}
     );
-    if (!sha || sha->value != sha256 || !quick || quick->value != quick_xor) {
+    if (!combined || combined->value != quick_xor ||
+        combined->algorithm != onedrive::util::FileHashAlgorithm::quick_xor ||
+        !quick || quick->value != quick_xor) {
         return fail("valid Graph file hash was not parsed");
+    }
+    const std::string sha1{"A17C9AAA61E80A1BF71D0D850AF4E5BAA9800BBD"};
+    for (const bool unsupported_present : {false, true}) {
+        Json hashes{{"sha1Hash", sha1}};
+        if (unsupported_present) {
+            hashes["sha256Hash"] = sha256;
+        }
+        const auto parsed =
+            detail::item_content_hash(Json{{"file", {{"hashes", hashes}}}});
+        if (!parsed ||
+            parsed->algorithm != onedrive::util::FileHashAlgorithm::sha1 ||
+            parsed->value != sha1) {
+            return fail(
+                "supported Graph SHA-1 was not selected without QuickXorHash"
+            );
+        }
+        hashes["quickXorHash"] = quick_xor;
+        const auto preferred =
+            detail::item_content_hash(Json{{"file", {{"hashes", hashes}}}});
+        if (!preferred || preferred->algorithm !=
+                              onedrive::util::FileHashAlgorithm::quick_xor) {
+            return fail("SHA-1 replaced the preferred QuickXorHash");
+        }
+    }
+    for (const auto& invalid_sha1 :
+         {Json(""),
+          Json(nullptr),
+          Json(42),
+          Json("short"),
+          Json(std::string(40, 'g'))}) {
+        if (!throws_with(
+                [&] {
+                    static_cast<void>(detail::item_content_hash(
+                        Json{
+                            {"file",
+                             {{"hashes",
+                               {
+                                   {"sha1Hash", invalid_sha1},
+                                   {"sha256Hash", sha256},
+                               }}}},
+                        }
+                    ));
+                },
+                "invalid sha1Hash"
+            )) {
+            return fail(
+                "invalid SHA-1 metadata fell back to unsupported SHA-256"
+            );
+        }
+    }
+    for (const auto& unsupported :
+         {Json(sha256), Json("short"), Json(""), Json(nullptr), Json(42)}) {
+        const Json document{
+            {"file", {{"hashes", {{"sha256Hash", unsupported}}}}},
+        };
+        if (!throws_with(
+                [&] { static_cast<void>(detail::item_content_hash(document)); },
+                "unsupported sha256Hash without quickXorHash"
+            ) ||
+            detail::item_content_hash(
+                document, detail::ContentValidation::relaxed
+            )) {
+            return fail("unsupported Graph SHA-256 was used as a content hash");
+        }
+        auto with_quick_xor = document;
+        with_quick_xor["file"]["hashes"]["quickXorHash"] = quick_xor;
+        const auto supported = detail::item_content_hash(with_quick_xor);
+        if (!supported || supported->value != quick_xor ||
+            supported->algorithm !=
+                onedrive::util::FileHashAlgorithm::quick_xor) {
+            return fail(
+                "unsupported SHA-256 prevented supported hash validation"
+            );
+        }
+        with_quick_xor["file"]["hashes"]["quickXorHash"] = "invalid=";
+        if (!throws_with(
+                [&] {
+                    static_cast<void>(
+                        detail::item_content_hash(with_quick_xor)
+                    );
+                },
+                "invalid quickXorHash"
+            )) {
+            return fail(
+                "invalid QuickXorHash fell back to unsupported SHA-256"
+            );
+        }
     }
     if (!throws_with(
             [] {
@@ -496,7 +694,8 @@ int test_hashes_and_drive_items() {
             },
         },
         {"size", 4},
-        {"file", {{"hashes", {{"sha256Hash", sha256}}}}},
+        {"file",
+         {{"hashes", {{"sha256Hash", sha256}, {"quickXorHash", quick_xor}}}}},
         {
             "fileSystemInfo",
             {{"lastModifiedDateTime", "2026-10-07T00:00:00Z"}},
@@ -544,6 +743,9 @@ int test_hashes_and_drive_items() {
 } // namespace
 
 int main() {
+    if (test_unsupported_formats() != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
     if (const int result = test_repeated_page_fetcher();
         result != EXIT_SUCCESS) {
         return result;

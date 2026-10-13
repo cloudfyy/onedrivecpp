@@ -100,6 +100,9 @@ durable checkpoint recovery, integrity validation, disk-space reservation,
 local-modification protection, and atomic installation. Directories and files
 marked with the Graph `malware` facet are rejected. The downloaded item
 snapshot is updated, but the Drive `deltaLink` is not advanced.
+Unsupported-format targets, including recognized OneNote files/packages, are
+reported as blocked with exit status 2 without downloading or changing local
+files. This also applies to single-file previews and relaxed validation.
 
 Use `download --dry-run` to display the resolved remote path, local destination,
 and expected size without creating the item database or changing downloaded
@@ -156,6 +159,37 @@ retry or remote deletion clears the record.
 Authentication, Graph, database, root-permission, disk-capacity, and download
 transport failures remain fatal.
 
+## Unsupported formats
+
+The built-in rules in `src/graph/unsupported_formats.hpp` currently identify
+OneNote by `package.type = "oneNote"`, or by both a `.one`/`.onetoc2` extension
+and a MIME type of `application/msonenote` or `application/octet-stream`.
+MIME and extension comparisons are ASCII case-insensitive; an extension alone
+does not exclude an ordinary file. Shared-item metadata is checked too.
+Recognized packages and their descendants are excluded from transfer plans
+before remote hash validation, even if a parent appears on a later Delta page.
+
+These items are durably reported as `unsupported_onenote`, not as successful
+downloads. Other files continue synchronizing with unchanged integrity checks.
+The plan and execution summary expose `unsupported_items`, a subset of blocked
+items; the GUI displays the reason and count and reports an incomplete sync.
+The final exit status is 2 when unsupported items remain.
+
+Existing local files and tracked snapshots are preserved, including when a
+known unsupported item is deleted remotely or omitted from a full refresh.
+Blocked unsupported items remain blocked on subsequent syncs instead of being
+downloaded or uploaded. If fresh metadata no longer matches a rule, normal
+conflict and integrity checks apply again. This is not a OneNote backup;
+export notebooks separately through OneNote.
+
+The internal rule table is shipped with the program, not read from user
+configuration. Each entry supplies a stable format ID, display name, MIME types,
+extensions, and package types. Format IDs are retained in pending batches;
+blocked reason codes use `unsupported_<id>`. Adding formats does not require
+format-specific changes to synchronization or persistence. The table participates
+in synchronization/cache fingerprints, so changed rules cause a full metadata
+refresh without deleting downloaded files or advancing the applied cursor early.
+
 ## Moves and deletions
 
 When a Delta item retains its remote ID but changes path, the client safely
@@ -208,9 +242,21 @@ Pending deletions covering blocked items remain journaled and deferred.
 ## Integrity, journals, and resumable recovery
 
 When Microsoft Graph supplies a file content hash, the completed temporary
-file is verified before it can enter the install journal. SHA-256 is preferred
-when present; otherwise the client verifies the OneDrive/SharePoint
-QuickXorHash. Downloads starting at byte zero calculate SHA-256 and
+file is verified before it can enter the install journal using the
+OneDrive/SharePoint QuickXorHash, or legacy SHA-1 when QuickXorHash is
+absent. The Graph
+[`hashes` documentation](https://learn.microsoft.com/en-us/graph/api/resources/hashes?view=graph-rest-1.0)
+marks `sha256Hash` as unsupported, so it is never used as a remote integrity
+hash. Strict validation rejects metadata containing only `sha256Hash` without
+either QuickXorHash or SHA-1 rather than silently dropping hash verification.
+Microsoft has [deprecated SHA-1 for OneDrive Personal](https://devblogs.microsoft.com/microsoft365dev/deprecation-of-sha1hash-on-onedrive-personal/);
+its availability is not guaranteed. A supplied SHA-1 is still verified strictly;
+the client does not switch algorithms after a mismatch.
+The error identifies the remote item ID and name. Explicit relaxed
+validation continues to skip remote size and hash checks with a warning.
+The metadata cache scope includes the hash policy: upgrading refreshes saved
+unapplied batches while preserving installed files and durable partial downloads.
+Downloads starting at byte zero calculate SHA-256 and
 QuickXorHash incrementally as bytes are written, and reuse the streamed SHA-256
 as the recovery fingerprint. Resumed downloads, or transfers whose byte
 offsets become discontinuous during retry, safely fall back to hashing the
@@ -218,6 +264,10 @@ completed file. A mismatch removes the partial checkpoint and temporary file
 so the next attempt restarts from byte zero. The local SHA-256 fingerprint
 protects crash recovery state and is not treated as a substitute for a remote
 integrity hash.
+SHA-1 is calculated from the completed temporary file, including for resumed
+downloads. This remote checksum fallback does not replace the local SHA-256
+recovery fingerprint. Unsupported-only metadata is still rejected; a mismatch
+never falls back to a different algorithm.
 
 After validation, the Graph content-hash algorithm and value are retained in
 the item snapshot. `inspect verify --mode content` reuses that saved hash for

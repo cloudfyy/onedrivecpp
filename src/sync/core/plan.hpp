@@ -49,6 +49,7 @@ public:
     [[nodiscard]] std::size_t removal_count() const noexcept;
     [[nodiscard]] std::size_t move_count() const noexcept;
     [[nodiscard]] std::size_t blocked_count() const noexcept;
+    [[nodiscard]] std::size_t unsupported_count() const noexcept;
     [[nodiscard]] std::uintmax_t download_bytes() const noexcept;
 
 private:

@@ -1,6 +1,10 @@
 #include "support.hpp"
 #include "onedrive/storage/item_database.hpp"
 #include "onedrive/exit_code.hpp"
+#include "onedrive/util/sha256.hpp"
+#include "sync/download/integrity.hpp"
+
+#include <nlohmann/json.hpp>
 
 namespace {
 
@@ -355,6 +359,119 @@ void test_partial_download_survives_restart() {
     );
 }
 
+void test_legacy_hash_policy_refresh_preserves_downloads() {
+    for (const bool incremental : {false, true}) {
+        Fixture fixture;
+        if (incremental) {
+            FakeGraphClient seed;
+            require(
+                fixture.run(seed) == 0, "cannot seed legacy applied cursor"
+            );
+        }
+        auto completed = file("completed", "completed.txt", 4);
+        completed.content_hash = util::FileHash{
+            .algorithm = util::FileHashAlgorithm::sha256,
+            .value = util::sha256_hex("same"),
+        };
+        auto partial = file("partial", "partial.one", 4);
+        partial.content_hash = util::FileHash{
+            .algorithm = util::FileHashAlgorithm::sha256,
+            .value = std::string(64, '0'),
+        };
+        FakeGraphClient first;
+        first.changes = {completed, partial};
+        first.contents["completed"] = "same";
+        fixture.interrupt(first, true);
+        auto pending = *fixture.pending();
+        const auto applied = pending.applied_delta_link;
+        const auto& config = fixture.config;
+        pending.scope_fingerprint = util::sha256_hex(
+            nlohmann::json::array(
+                {
+                    config.sync_data_directory.string(),
+                    config.state_directory.string(),
+                    config.drive_id,
+                    config.graph_endpoint,
+                    config.application_id,
+                    config.azure_tenant_id,
+                    config.auth_endpoint,
+                    config.auth_scope,
+                    static_cast<int>(config.download_validation),
+                }
+            )
+                .dump()
+        );
+        const auto destination = config.sync_data_directory / "partial.one";
+        const auto temporary =
+            config.sync_data_directory / ".partial.one.onedrive-partial-legacy";
+        test::write_file(temporary, "da");
+        {
+            storage::ItemDatabase database{
+                config.state_directory, fixture.identity()
+            };
+            database.open();
+            database.save_pending_delta(pending);
+            database.save_partial_download({
+                .item =
+                    {
+                        .drive_id = config.drive_id,
+                        .remote_id = partial.id,
+                        .name = partial.name,
+                        .etag = partial.etag,
+                        .remote_path = partial.remote_path,
+                        .local_path = destination,
+                        .size = partial.size,
+                    },
+                .temporary_path = temporary,
+                .completed_bytes = 2,
+            });
+        }
+        completed.content_hash = util::FileHash{
+            .algorithm = util::FileHashAlgorithm::quick_xor,
+            .value = sync::detail::quick_xor_hash(
+                config.sync_data_directory / "completed.txt"
+            ),
+        };
+        partial.content_hash = util::FileHash{
+            .algorithm = util::FileHashAlgorithm::quick_xor,
+            .value = "ZAgDHcIAAAAAAAAABAAAAAAAAAA=",
+        };
+        FakeGraphClient fresh;
+        fresh.delta_override = [&](const auto& cursor) {
+            require(
+                cursor == applied, "legacy hash policy reused the failed cursor"
+            );
+            return graph::DeltaResult{
+                .changes = {completed, partial},
+                .delta_link = "https://graph.example.test/refreshed",
+            };
+        };
+        fresh.contents["partial"] = "data";
+        require(
+            fixture.run(fresh) == 0 && fresh.download_count == 1 &&
+                fresh.last_download_offset == 2 && !fixture.pending() &&
+                test::read_file(config.sync_data_directory / "completed.txt") ==
+                    "same" &&
+                test::read_file(destination) == "data" &&
+                !std::filesystem::exists(temporary),
+            "legacy hash refresh discarded installed files or partial bytes"
+        );
+        storage::ItemDatabase database{
+            config.state_directory, fixture.identity()
+        };
+        database.open();
+        for (const auto& id : {"completed", "partial"}) {
+            const auto state = database.find(config.drive_id, id);
+            require(
+                state && state->content_hash &&
+                    state->content_hash->algorithm ==
+                        util::FileHashAlgorithm::quick_xor,
+                "refreshed snapshot retained unsupported Graph SHA-256"
+            );
+        }
+    }
+}
+
 void test_persistence_failure_stops_before_downloads() {
     Fixture fixture;
     FakeItemStore store;
@@ -389,6 +506,7 @@ int main() {
         test_scope_and_baseline_invalidation();
         test_cursor_and_hierarchy_fallback();
         test_partial_download_survives_restart();
+        test_legacy_hash_policy_refresh_preserves_downloads();
         test_persistence_failure_stops_before_downloads();
         return EXIT_SUCCESS;
     } catch (const std::exception& error) {

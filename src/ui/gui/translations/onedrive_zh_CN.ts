@@ -115,8 +115,22 @@
         <translation>正在恢复已保存的远端变更；仅检查后续增量并重新生成本地计划…</translation>
     </message>
     <message>
-        <source>Saved remote changes no longer match the account, filters or applied cursor; fetching remote changes again...</source>
-        <translation>已保存的远端变更与账号、筛选或已应用游标不匹配；正在重新获取远端变更…</translation>
+        <source>Saved remote changes no longer match the account, filters, hash policy, unsupported formats or applied cursor; fetching remote changes again...</source>
+        <translation>已保存的远端变更与账号、筛选、哈希策略、不支持格式规则或已应用游标不匹配；正在重新获取远端变更…</translation>
+    </message>
+    <message>
+        <source>Synchronization filters or unsupported-format rules changed; fetching the full remote state...</source>
+        <translation>同步筛选或不支持格式规则已变更；正在获取完整远端状态…</translation>
+    </message>
+    <message>
+        <source>unsupported format items:</source>
+        <translation>不支持格式的项目数：</translation>
+    </message>
+    <message>
+        <source>Unsupported format: %1 [%2]
+Skipped; existing local files are preserved.</source>
+        <translation>不支持的格式：%1 [%2]
+已跳过；保留已有本地文件。</translation>
     </message>
     <message>
         <source>Remote directory changes or unidentified deletions may affect saved paths; fetching the full remote state...</source>
@@ -136,11 +150,6 @@
         <location filename="../main_window.cpp" line="847"/>
         <source>This phase has no percentage progress. See logs for details.</source>
         <translation>当前阶段没有可计算的百分比进度，详情请查看日志。</translation>
-    </message>
-    <message>
-        <location filename="../main_window.cpp" line="830"/>
-        <source>Downloads: %p%</source>
-        <translation>下载：%p%</translation>
     </message>
     <message>
         <location filename="../main_window.cpp" line="833"/>
@@ -195,6 +204,10 @@
         <location filename="../main_window.cpp" line="496"/>
         <source>Log level</source>
         <translation>日志级别</translation>
+    </message>
+    <message>
+        <source>Show messages at this level or higher.</source>
+        <translation>显示此级别及更高级别的日志。</translation>
     </message>
     <message>
         <location filename="../main_window.cpp" line="497"/>

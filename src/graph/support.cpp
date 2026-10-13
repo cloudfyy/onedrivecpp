@@ -1,7 +1,7 @@
 #include "graph/support.hpp"
+#include "graph/unsupported_formats.hpp"
 
 #include "onedrive/util/remote_time.hpp"
-#include "onedrive/util/sha256.hpp"
 #include "util/ascii.hpp"
 #include "util/uri.hpp"
 
@@ -9,6 +9,7 @@
 #include <charconv>
 #include <format>
 #include <stdexcept>
+#include <unordered_map>
 #include <utility>
 
 namespace onedrive::graph::client_detail {
@@ -342,7 +343,174 @@ bool item_is_malware(const Json& value) {
             has_malware_facet(*remote_item, "remoteItem"));
 }
 
-std::optional<util::FileHash> item_content_hash(const Json& value) {
+std::optional<UnsupportedItem> item_unsupported_format(const Json& value) {
+    if (const auto package = value.find("package"); package != value.end()) {
+        if (!package->is_object()) {
+            throw std::runtime_error{
+                "Microsoft Graph returned an invalid package facet"
+            };
+        }
+        if (const auto type = package->find("type"); type != package->end()) {
+            if (!type->is_string()) {
+                throw std::runtime_error{
+                    "Microsoft Graph returned an invalid package type"
+                };
+            }
+            for (const auto& rule : unsupported_format_rules) {
+                if (std::ranges::find(
+                        rule.package_types, type->get_ref<const std::string&>()
+                    ) != rule.package_types.end()) {
+                    return UnsupportedItem{rule.id, true};
+                }
+            }
+        }
+    }
+    if (const auto* remote = remote_item_facet(value)) {
+        const auto kind = item_unsupported_format(*remote);
+        if (kind) {
+            return kind;
+        }
+    }
+    const auto file = value.find("file");
+    if (file == value.end()) {
+        return std::nullopt;
+    }
+    if (!file->is_object()) {
+        throw std::runtime_error{
+            "Microsoft Graph returned an invalid file facet"
+        };
+    }
+    const auto mime = file->find("mimeType");
+    if (mime == file->end()) {
+        return std::nullopt;
+    }
+    if (!mime->is_string()) {
+        throw std::runtime_error{
+            "Microsoft Graph returned an invalid file mimeType"
+        };
+    }
+    const auto& mime_type = mime->get_ref<const std::string&>();
+    const auto name = value.find("name");
+    if (name == value.end() || !name->is_string()) {
+        return std::nullopt;
+    }
+    const std::string_view filename = name->get_ref<const std::string&>();
+    const auto dot = filename.rfind('.');
+    const auto extension = dot == std::string_view::npos ? std::string_view{}
+                                                         : filename.substr(dot);
+    for (const auto& rule : unsupported_format_rules) {
+        if (std::ranges::any_of(
+                rule.mime_types,
+                [&](std::string_view mime) {
+                    return util::ascii_iequals(mime_type, mime);
+                }
+            ) &&
+            std::ranges::any_of(rule.extensions, [&](std::string_view suffix) {
+                return util::ascii_iequals(extension, suffix);
+            })) {
+            return UnsupportedItem{rule.id, false};
+        }
+    }
+    return std::nullopt;
+}
+
+Json unsupported_format_policy() {
+    auto result = Json::array();
+    for (const auto& rule : unsupported_format_rules) {
+        result.push_back({
+            {"id", rule.id},
+            {"display_name", rule.display_name},
+            {"mime_types",
+             std::vector<std::string_view>{
+                 rule.mime_types.begin(), rule.mime_types.end()
+             }},
+            {"extensions",
+             std::vector<std::string_view>{
+                 rule.extensions.begin(), rule.extensions.end()
+             }},
+            {"package_types",
+             std::vector<std::string_view>{
+                 rule.package_types.begin(), rule.package_types.end()
+             }},
+        });
+    }
+    return result;
+}
+
+std::string unsupported_format_message(std::string_view id) {
+    const auto rule = std::ranges::find(
+        unsupported_format_rules, id, &UnsupportedFormatRule::id
+    );
+    if (rule == unsupported_format_rules.end()) {
+        throw std::logic_error{
+            "unknown unsupported format: " + std::string{id}
+        };
+    }
+    return std::format(
+        "{} items are unsupported; skipped without modifying existing local "
+        "files",
+        rule->display_name
+    );
+}
+
+void mark_unsupported_descendants(std::vector<RemoteItem>& items) {
+    if (std::ranges::none_of(items, [](const RemoteItem& item) {
+            return !item.unsupported_format.empty() && item.directory;
+        })) {
+        return;
+    }
+    std::vector<std::size_t> directories;
+    std::unordered_multimap<std::string, std::size_t> children;
+    for (std::size_t index = 0; index < items.size(); ++index) {
+        const auto& item = items[index];
+        if (!item.unsupported_format.empty() && item.directory) {
+            directories.push_back(index);
+        }
+        if (!item.parent_id.empty()) {
+            children.emplace(item.parent_id, index);
+        }
+    }
+    const auto initial_directories = directories;
+    for (std::size_t index = 0; index < items.size(); ++index) {
+        auto& item = items[index];
+        if (!item.unsupported_format.empty()) {
+            continue;
+        }
+        for (const auto parent_index : initial_directories) {
+            const auto& path = items[parent_index].remote_path;
+            if (!path.empty() && item.remote_path.starts_with(path) &&
+                item.remote_path.size() > path.size() &&
+                item.remote_path[path.size()] == '/') {
+                item.unsupported_format =
+                    items[parent_index].unsupported_format;
+                if (item.directory) {
+                    directories.push_back(index);
+                }
+                break;
+            }
+        }
+    }
+    for (std::size_t cursor = 0; cursor < directories.size(); ++cursor) {
+        const auto [begin, end] =
+            children.equal_range(items[directories[cursor]].id);
+        for (auto child = begin; child != end; ++child) {
+            auto& item = items[child->second];
+            if (item.unsupported_format.empty()) {
+                item.unsupported_format =
+                    items[directories[cursor]].unsupported_format;
+                if (item.directory) {
+                    directories.push_back(child->second);
+                }
+            }
+        }
+    }
+}
+
+std::optional<util::FileHash>
+item_content_hash(const Json& value, ContentValidation validation) {
+    if (item_unsupported_format(value)) {
+        return std::nullopt;
+    }
     const auto file = value.find("file");
     if (file == value.end()) {
         return std::nullopt;
@@ -361,8 +529,8 @@ std::optional<util::FileHash> item_content_hash(const Json& value) {
             "Microsoft Graph returned an invalid file hash facet"
         );
     }
-    const auto read_hash = [&](std::string_view name)
-        -> std::optional<std::string> {
+    const auto read_hash =
+        [&](std::string_view name) -> std::optional<std::string> {
         const auto hash = hashes->find(std::string{name});
         if (hash == hashes->end()) {
             return std::nullopt;
@@ -375,25 +543,6 @@ std::optional<util::FileHash> item_content_hash(const Json& value) {
         }
         return hash->get<std::string>();
     };
-    if (auto sha256 = read_hash("sha256Hash"); sha256.has_value()) {
-        const bool valid =
-            sha256.value().size() == util::sha256_hex_characters &&
-            std::ranges::all_of(
-                sha256.value(),
-                [](unsigned char character) {
-                    return std::isxdigit(character) != 0;
-                }
-            );
-        if (!valid) {
-            throw std::runtime_error(
-                "Microsoft Graph returned an invalid sha256Hash"
-            );
-        }
-        return util::FileHash{
-            .algorithm = util::FileHashAlgorithm::sha256,
-            .value = std::move(sha256.value()),
-        };
-    }
     if (auto quick_xor = read_hash("quickXorHash");
         quick_xor.has_value()) {
         constexpr std::size_t quick_xor_base64_characters = 28;
@@ -418,6 +567,33 @@ std::optional<util::FileHash> item_content_hash(const Json& value) {
             .value = std::move(quick_xor.value()),
         };
     }
+    if (auto sha1 = read_hash("sha1Hash"); sha1.has_value()) {
+        constexpr std::size_t sha1_hex_characters = 40;
+        if (sha1->size() != sha1_hex_characters ||
+            !std::ranges::all_of(*sha1, [](unsigned char character) {
+                return std::isxdigit(character) != 0;
+            })) {
+            throw std::runtime_error(
+                "Microsoft Graph returned an invalid sha1Hash"
+            );
+        }
+        return util::FileHash{
+            .algorithm = util::FileHashAlgorithm::sha1,
+            .value = std::move(sha1.value()),
+        };
+    }
+    if (hashes->contains("sha256Hash") &&
+        validation == ContentValidation::strict) {
+        throw std::runtime_error(
+            std::format(
+                "Microsoft Graph returned unsupported sha256Hash without "
+                "quickXorHash or sha1Hash for drive item '{}' ('{}'); "
+                "cannot verify the remote content hash",
+                value.value("id", std::string{}),
+                value.value("name", std::string{})
+            )
+        );
+    }
     return std::nullopt;
 }
 
@@ -441,6 +617,7 @@ RemoteItem parse_drive_item(
     DriveItemKind kind
 ) {
     try {
+        const auto unsupported = item_unsupported_format(json);
         RemoteItem item{
             .id = json.at("id").get<std::string>(),
             .name = json.at("name").get<std::string>(),
@@ -450,12 +627,15 @@ RemoteItem parse_drive_item(
             .remote_path = {},
             .last_modified = {},
             .size = 0,
-            .directory = json.contains("folder"),
+            .directory = json.contains("folder") ||
+                         (unsupported && unsupported->package),
             .deleted = json.contains("deleted"),
             .root = json.contains("root"),
             .malware = item_is_malware(json),
-            .content_hash = item_content_hash(json),
+            .content_hash = item_content_hash(json, validation),
             .validate_content = validation == ContentValidation::strict,
+            .unsupported_format =
+                unsupported ? std::string{unsupported->format_id} : "",
         };
         item.remote_path = item_remote_path(json, item.name);
         if (const auto parent = json.find("parentReference");
@@ -475,9 +655,10 @@ RemoteItem parse_drive_item(
         }
         if (item.id.empty() || item.name.empty() || item.etag.empty() ||
             item.remote_path.empty() || item.deleted || item.root ||
-            (item.directory && kind == DriveItemKind::file_only) ||
+            (item.directory && kind == DriveItemKind::file_only &&
+             item.unsupported_format.empty()) ||
             item.size < 0 ||
-            item.last_modified.empty()) {
+            (item.last_modified.empty() && item.unsupported_format.empty())) {
             throw std::runtime_error(
                 "Microsoft Graph returned invalid " +
                 std::string{description} + " metadata"

@@ -89,6 +89,11 @@ void report_plan(
                 .value = std::to_string(plan.blocked_count()),
             },
             {
+                .label = "unsupported format items:",
+                .key = "unsupported_items",
+                .value = std::to_string(plan.unsupported_count()),
+            },
+            {
                 .label = "local moves:",
                 .key = "local_moves",
                 .value = std::to_string(move_count),

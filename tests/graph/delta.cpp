@@ -1,9 +1,90 @@
 #include "support.hpp"
 #include "graph/delta_changes.hpp"
+#include "graph/support.hpp"
 
 namespace {
 
 using namespace onedrive::test::graph;
+
+int test_unsupported_delta_across_pages() {
+    using Json = nlohmann::json;
+    auto transport = std::make_unique<
+        FakeTransport>(std::deque<onedrive::http::HttpResult>{
+        token_response(),
+        json_response(
+            200,
+            Json{
+                {"value",
+                 Json::array({
+                     {{"id", "child"},
+                      {"name", "data.bin"},
+                      {"parentReference",
+                       {{"id", "middle"},
+                        {"path", "/drive/root:/Notebook/Sub"}}},
+                      {"file", {{"hashes", {{"sha256Hash", "unsupported"}}}}}},
+                     {{"id", "notes"},
+                      {"name", "notes.one"},
+                      {"parentReference", {{"path", "/drive/root:"}}},
+                      {"file",
+                       {{"mimeType", "application/msonenote"},
+                        {"hashes", {{"sha1Hash", "unreliable"}}}}}},
+                 })},
+                {"@odata.nextLink", "https://graph.example.test/v1.0/page2"}
+            }
+                .dump()
+        ),
+        json_response(
+            200,
+            Json{
+                {"value",
+                 Json::array({
+                     {{"id", "middle"},
+                      {"name", "Sub"},
+                      {"folder", Json::object()},
+                      {"parentReference",
+                       {{"id", "package"}, {"path", "/drive/root:/Notebook"}}}},
+                     {{"id", "package"},
+                      {"name", "Notebook"},
+                      {"package", {{"type", "oneNote"}}},
+                      {"parentReference", {{"path", "/drive/root:"}}}},
+                     {{"id", "ordinary"},
+                      {"name", "backup.one"},
+                      {"parentReference", {{"path", "/drive/root:"}}},
+                      {"fileSystemInfo",
+                       {{"lastModifiedDateTime", "2026-10-02T00:00:00Z"}}},
+                      {"file",
+                       {{"mimeType", "text/plain"},
+                        {"hashes",
+                         {{"sha1Hash",
+                           "a17c9aaa61e80a1bf71d0d850af4e5baa9800bbd"}}}}}},
+                 })},
+                {"@odata.deltaLink", "https://graph.example.test/v1.0/delta"}
+            }
+                .dump()
+        ),
+    });
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(std::make_unique<FakeTokenStore>("refresh")),
+        auth_options(),
+        {.endpoint = "https://graph.example.test/v1.0"},
+    };
+    const auto delta = client.list_delta(std::nullopt);
+    if (delta.changes.size() != 5 ||
+        delta.changes[0].unsupported_format != "onenote" ||
+        delta.changes[1].unsupported_format != "onenote" ||
+        delta.changes[2].unsupported_format != "onenote" ||
+        delta.changes[3].unsupported_format != "onenote" ||
+        !delta.changes[3].directory || delta.changes[0].content_hash ||
+        delta.changes[1].content_hash ||
+        !delta.changes[4].unsupported_format.empty() ||
+        !delta.changes[4].content_hash) {
+        return fail(
+            "late package metadata did not safely exclude its children"
+        );
+    }
+    return EXIT_SUCCESS;
+}
 
 int test_shared_delta_changes() {
     namespace graph = onedrive::graph;
@@ -19,6 +100,7 @@ int test_shared_delta_changes() {
                 .value = std::string(64, '0'),
             },
         .validate_content = false,
+        .unsupported_format = "onenote",
     };
     graph::RemoteItem second{.id = "second", .deleted = true};
     auto latest = first;
@@ -27,6 +109,7 @@ int test_shared_delta_changes() {
     latest.malware = false;
     latest.validate_content = true;
     latest.content_hash.reset();
+    latest.unsupported_format.clear();
     graph::client_detail::DeltaChanges changes{
         std::vector<graph::RemoteItem>{first, second, latest}
     };
@@ -44,9 +127,10 @@ int test_shared_delta_changes() {
     if (result.size() != 3 || result[0].id != "first" ||
         result[0].name != "new.txt" || result[0].remote_path != "new.txt" ||
         result[0].malware || result[0].content_hash ||
-        !result[0].validate_content || result[1].id != "second" ||
-        result[1].deleted || result[1].name != "restored.txt" ||
-        result[2].id != "third" || !result[2].root) {
+        !result[0].validate_content || !result[0].unsupported_format.empty() ||
+        result[1].id != "second" || result[1].deleted ||
+        result[1].name != "restored.txt" || result[2].id != "third" ||
+        !result[2].root) {
         return fail(
             "shared delta merge retained old flags or changed first-seen order"
         );
@@ -317,10 +401,9 @@ int test_delta_with_pagination() {
         delta.changes[2].last_modified != "2026-10-01T23:59:58.123456789Z" ||
         !delta.changes[2].content_hash ||
         delta.changes[2].content_hash->algorithm !=
-            onedrive::util::FileHashAlgorithm::sha256 ||
+            onedrive::util::FileHashAlgorithm::quick_xor ||
         delta.changes[2].content_hash->value !=
-            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-            "A" ||
+            "SgAAAAAAAAAAAAAAAQAAAAAAAAA=" ||
         delta.changes[2].validate_content ||
         delta.changes[3].last_modified != "2026-10-01T21:00:00Z" ||
         !delta.changes[3].malware || !delta.changes[4].deleted ||
@@ -602,7 +685,8 @@ int test_delta_request_cancellation() {
 } // namespace
 
 int main() {
-    if (test_shared_delta_changes() != EXIT_SUCCESS ||
+    if (test_unsupported_delta_across_pages() != EXIT_SUCCESS ||
+        test_shared_delta_changes() != EXIT_SUCCESS ||
         test_delta_transport_and_shape_failures() != EXIT_SUCCESS ||
         test_delta_cancelled_before_request_or_between_pages() !=
             EXIT_SUCCESS) {

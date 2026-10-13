@@ -198,6 +198,7 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
                 require_graph_page_values(json, "root");
             const std::size_t page_item_count = values.size();
             for (const auto& value : values) {
+                const auto unsupported = item_unsupported_format(value);
                 RemoteItem item{
                     .id = value.at("id").get<std::string>(),
                     .name = value.at("name").get<std::string>(),
@@ -207,19 +208,26 @@ std::vector<RemoteItem> MicrosoftGraphClient::list_root() const {
                     .remote_path = {},
                     .last_modified = {},
                     .size = 0,
-                    .directory = value.contains("folder"),
+                    .directory = value.contains("folder") ||
+                                 (unsupported && unsupported->package),
                     .deleted = false,
                     .root = false,
                     .content_hash = std::nullopt,
-                    .validate_content =
-                        !options_.relaxed_download_validation,
+                    .validate_content = !options_.relaxed_download_validation,
+                    .unsupported_format =
+                        unsupported ? std::string{unsupported->format_id} : "",
                 };
                 if (item.id.empty() || item.name.empty() || item.etag.empty()) {
                     throw std::runtime_error(
                         "Microsoft Graph returned a drive item with empty metadata"
                     );
                 }
-                item.content_hash = item_content_hash(value);
+                item.content_hash = item_content_hash(
+                    value,
+                    options_.relaxed_download_validation
+                        ? ContentValidation::relaxed
+                        : ContentValidation::strict
+                );
                 item.malware = item_is_malware(value);
                 items.push_back(std::move(item));
             }
@@ -260,10 +268,11 @@ RemoteItem MicrosoftGraphClient::item_by_path(
     std::stop_token stop_token
 ) const {
     const auto encoded_path = percent_encode_remote_path(remote_path);
-    const std::string url =
-        graph_drive_prefix(options_) + "/root:/" + encoded_path +
-        "?$select=id,name,eTag,cTag,size,fileSystemInfo,parentReference,file,folder,"
-        "deleted,malware,remoteItem";
+    const std::string url = graph_drive_prefix(options_) + "/root:/" +
+                            encoded_path +
+                            "?$select=id,name,eTag,cTag,size,fileSystemInfo,"
+                            "parentReference,file,folder,"
+                            "deleted,malware,remoteItem,package";
     const auto response = perform_with_retries(
         [&] {
             return transport_->perform(http::HttpRequest{

@@ -45,11 +45,8 @@ using DownloadData = std::function<void(
 )>;
 using DownloadCheckpoint =
     std::function<void(std::uint64_t completed_bytes)>;
-using DeltaProgress = std::function<void(
-    std::size_t pages,
-    std::size_t items,
-    util::ProgressState state
-)>;
+using DeltaProgress = std::function<
+    void(std::size_t pages, std::size_t items, util::ProgressState state)>;
 
 struct RemoteItem {
     std::string id;
@@ -66,6 +63,7 @@ struct RemoteItem {
     bool malware{false};
     std::optional<util::FileHash> content_hash;
     bool validate_content{true};
+    std::string unsupported_format{};
 };
 
 struct DeltaResult {
@@ -131,7 +129,8 @@ public:
         NotificationFailureKind kind, const std::string& message
     )
         : std::runtime_error{message},
-          kind_{kind} {}
+          kind_{kind} {
+    }
 
     [[nodiscard]] bool unauthorized() const noexcept {
         return kind_ == NotificationFailureKind::unauthorized;
@@ -168,11 +167,10 @@ public:
 
 class UploadResourceError final : public std::runtime_error {
 public:
-    UploadResourceError(
-        std::string reason_code, const std::string& message
-    )
+    UploadResourceError(std::string reason_code, const std::string& message)
         : std::runtime_error{message},
-          reason_code_{std::move(reason_code)} {}
+          reason_code_{std::move(reason_code)} {
+    }
 
     [[nodiscard]] const std::string& reason_code() const noexcept {
         return reason_code_;
@@ -207,9 +205,7 @@ struct GraphOptions {
     std::uint64_t simple_upload_threshold_bytes{
         std::uint64_t{250} * 1000U * 1000U
     };
-    std::uint64_t upload_chunk_size_bytes{
-        std::uint64_t{10} * 1024U * 1024U
-    };
+    std::uint64_t upload_chunk_size_bytes{std::uint64_t{10} * 1024U * 1024U};
     http::DownloadTransportOptions download_transport;
     http::UploadTransportOptions upload_transport;
     bool relaxed_download_validation{false};
@@ -228,96 +224,99 @@ PRO_DEF_MEM_DISPATCH(GraphMoveItemDispatch, move_item);
 PRO_DEF_MEM_DISPATCH(GraphNotificationChannelDispatch, notification_channel);
 PRO_DEF_MEM_DISPATCH(GraphRefreshAccessTokenDispatch, refresh_access_token);
 
-struct GraphClientFacade : pro::facade_builder
-    ::add_convention<
-        GraphDriveIdentityDispatch,
-        account::DriveIdentity(std::stop_token) const
-    >
-    ::add_convention<
-        GraphListRootDispatch,
-        std::vector<RemoteItem>() const
-    >
-    ::add_convention<
-        GraphItemByPathDispatch,
-        RemoteItem(const std::string&) const
-    >
-    ::add_convention<
-        GraphItemByPathDispatch,
-        RemoteItem(const std::string&, std::stop_token) const
-    >
-    ::add_convention<
-        GraphListDeltaDispatch,
-        DeltaResult(
-            const std::optional<std::string>&,
-            const DeltaProgress&,
-            std::stop_token
-        ) const
-    >
-    ::add_convention<
-        GraphDownloadFileDispatch,
-        void(
-            const std::string&,
-            const std::string&,
-            std::uint64_t,
-            const std::filesystem::path&,
-            std::uint64_t,
-            std::stop_token,
-            const DownloadProgress&,
-            const DownloadCheckpoint&,
-            const DownloadData&
-        ) const
-    >
-    ::add_convention<
-        GraphUploadFileDispatch,
-        RemoteItem(
-            const std::string&,
-            const std::optional<std::string>&,
-            const std::string&,
-            const std::filesystem::path&,
-            const std::optional<UploadSession>&,
-            const UploadCheckpoint&,
-            std::stop_token
-        ) const
-    >
-    ::add_convention<
-        GraphCreateDirectoryDispatch,
-        RemoteItem(const std::string&) const
-    >
-    ::add_convention<
-        GraphCreateDirectoryDispatch,
-        RemoteItem(const std::string&, std::stop_token) const
-    >
-    ::add_convention<
-        GraphDeleteItemDispatch,
-        void(const std::string&, const std::string&) const
-    >
-    ::add_convention<
-        GraphDeleteItemDispatch,
-        void(const std::string&, const std::string&, std::stop_token) const
-    >
-    ::add_convention<
-        GraphMoveItemDispatch,
-        RemoteItem(
-            const std::string&,
-            const std::string&,
-            const std::string&
-        ) const
-    >
-    ::add_convention<
-        GraphMoveItemDispatch,
-        RemoteItem(
-            const std::string&,
-            const std::string&,
-            const std::string&,
-            std::stop_token
-        ) const
-    >
-    ::add_convention<
-        GraphNotificationChannelDispatch,
-        NotificationChannel() const
-    >
-    ::add_convention<GraphRefreshAccessTokenDispatch, void() const>
-    ::build {};
+struct GraphClientFacade
+    : pro::facade_builder ::add_convention<
+          GraphDriveIdentityDispatch,
+          account::DriveIdentity(std::stop_token) const>::
+          add_convention<
+              GraphListRootDispatch,
+              std::vector<RemoteItem>() const>::
+              add_convention<
+                  GraphItemByPathDispatch,
+                  RemoteItem(const std::string&) const>::
+                  add_convention<
+                      GraphItemByPathDispatch,
+                      RemoteItem(const std::string&, std::stop_token) const>::
+                      add_convention<
+                          GraphListDeltaDispatch,
+                          DeltaResult(
+                              const std::optional<std::string>&,
+                              const DeltaProgress&,
+                              std::stop_token
+                          ) const>::
+                          add_convention<
+                              GraphDownloadFileDispatch,
+                              void(
+                                  const std::string&,
+                                  const std::string&,
+                                  std::uint64_t,
+                                  const std::filesystem::path&,
+                                  std::uint64_t,
+                                  std::stop_token,
+                                  const DownloadProgress&,
+                                  const DownloadCheckpoint&,
+                                  const DownloadData&
+                              ) const>::
+                              add_convention<
+                                  GraphUploadFileDispatch,
+                                  RemoteItem(
+                                      const std::string&,
+                                      const std::optional<std::string>&,
+                                      const std::string&,
+                                      const std::filesystem::path&,
+                                      const std::optional<UploadSession>&,
+                                      const UploadCheckpoint&,
+                                      std::stop_token
+                                  ) const>::
+                                  add_convention<
+                                      GraphCreateDirectoryDispatch,
+                                      RemoteItem(const std::string&) const>::
+                                      add_convention<
+                                          GraphCreateDirectoryDispatch,
+                                          RemoteItem(
+                                              const std::string&,
+                                              std::stop_token
+                                          ) const>::
+                                          add_convention<
+                                              GraphDeleteItemDispatch,
+                                              void(
+                                                  const std::string&,
+                                                  const std::string&
+                                              ) const>::
+                                              add_convention<
+                                                  GraphDeleteItemDispatch,
+                                                  void(
+                                                      const std::string&,
+                                                      const std::string&,
+                                                      std::stop_token
+                                                  ) const>::
+                                                  add_convention<
+                                                      GraphMoveItemDispatch,
+                                                      RemoteItem(
+                                                          const std::string&,
+                                                          const std::string&,
+                                                          const std::string&
+                                                      ) const>::
+                                                      add_convention<
+                                                          GraphMoveItemDispatch,
+                                                          RemoteItem(
+                                                              const std::
+                                                                  string&,
+                                                              const std::
+                                                                  string&,
+                                                              const std::
+                                                                  string&,
+                                                              std::stop_token
+                                                          ) const>::
+                                                          add_convention<
+                                                              GraphNotificationChannelDispatch,
+                                                              NotificationChannel()
+                                                                  const>::
+                                                              add_convention<
+                                                                  GraphRefreshAccessTokenDispatch,
+                                                                  void()
+                                                                      const>::
+                                                                  build {};
 
 class GraphClient : private onedrive::util::ProxyService<GraphClientFacade> {
     using Base = onedrive::util::ProxyService<GraphClientFacade>;
@@ -409,14 +408,12 @@ public:
         );
     }
 
-    [[nodiscard]] RemoteItem create_directory(
-        const std::string& remote_path
-    ) const {
+    [[nodiscard]] RemoteItem
+    create_directory(const std::string& remote_path) const {
         return implementation()->create_directory(remote_path);
     }
     [[nodiscard]] RemoteItem create_directory(
-        const std::string& remote_path,
-        std::stop_token stop_token
+        const std::string& remote_path, std::stop_token stop_token
     ) const {
         return implementation()->create_directory(
             remote_path, std::move(stop_token)
@@ -424,8 +421,7 @@ public:
     }
 
     void delete_item(
-        const std::string& remote_id,
-        const std::string& expected_etag
+        const std::string& remote_id, const std::string& expected_etag
     ) const {
         implementation()->delete_item(remote_id, expected_etag);
     }
@@ -445,9 +441,7 @@ public:
         const std::string& destination_path
     ) const {
         return implementation()->move_item(
-            remote_id,
-            expected_etag,
-            destination_path
+            remote_id, expected_etag, destination_path
         );
     }
     [[nodiscard]] RemoteItem move_item(
@@ -487,25 +481,21 @@ PRO_DEF_MEM_DISPATCH(GraphDriveInfoDispatch, drive_info);
 PRO_DEF_MEM_DISPATCH(GraphListSharedDispatch, list_shared_resources);
 PRO_DEF_MEM_DISPATCH(GraphSearchSitesDispatch, search_sites);
 
-struct GraphInfoClientFacade : pro::facade_builder
-    ::add_convention<
-        GraphDriveIdentityDispatch,
-        account::DriveIdentity() const
-    >
-    ::add_convention<
-        GraphListDrivesDispatch,
-        std::vector<DriveInfo>() const
-    >
-    ::add_convention<GraphDriveInfoDispatch, DriveInfo() const>
-    ::add_convention<
-        GraphListSharedDispatch,
-        std::vector<SharedResource>() const
-    >
-    ::add_convention<
-        GraphSearchSitesDispatch,
-        std::vector<SiteInfo>(const std::string&) const
-    >
-    ::build {};
+struct GraphInfoClientFacade
+    : pro::facade_builder ::add_convention<
+          GraphDriveIdentityDispatch,
+          account::DriveIdentity() const>::
+          add_convention<
+              GraphListDrivesDispatch,
+              std::vector<DriveInfo>() const>::
+              add_convention<GraphDriveInfoDispatch, DriveInfo() const>::
+                  add_convention<
+                      GraphListSharedDispatch,
+                      std::vector<SharedResource>() const>::
+                      add_convention<
+                          GraphSearchSitesDispatch,
+                          std::vector<SiteInfo>(const std::string&)
+                              const>::build {};
 
 class GraphInfoClient
     : private onedrive::util::ProxyService<GraphInfoClientFacade> {
@@ -526,8 +516,7 @@ public:
         return implementation()->drive_info();
     }
 
-    [[nodiscard]] std::vector<SharedResource>
-    list_shared_resources() const {
+    [[nodiscard]] std::vector<SharedResource> list_shared_resources() const {
         return implementation()->list_shared_resources();
     }
 
@@ -558,8 +547,7 @@ public:
     drive_identity(std::stop_token token = {}) const;
     [[nodiscard]] std::vector<DriveInfo> list_drives() const;
     [[nodiscard]] DriveInfo drive_info() const;
-    [[nodiscard]] std::vector<SharedResource>
-    list_shared_resources() const;
+    [[nodiscard]] std::vector<SharedResource> list_shared_resources() const;
     [[nodiscard]] std::vector<SiteInfo>
     search_sites(const std::string& query) const;
     [[nodiscard]] std::vector<RemoteItem> list_root() const;
@@ -576,8 +564,7 @@ public:
         std::stop_token stop_token = {}
     ) const;
     void delete_item(
-        const std::string& remote_id,
-        const std::string& expected_etag
+        const std::string& remote_id, const std::string& expected_etag
     ) const;
     void delete_item(
         const std::string& remote_id,
@@ -595,16 +582,13 @@ public:
         const std::string& destination_path,
         std::stop_token stop_token
     ) const;
+    [[nodiscard]] RemoteItem
+    create_directory(const std::string& remote_path) const;
     [[nodiscard]] RemoteItem create_directory(
-        const std::string& remote_path
-    ) const;
-    [[nodiscard]] RemoteItem create_directory(
-        const std::string& remote_path,
-        std::stop_token stop_token
+        const std::string& remote_path, std::stop_token stop_token
     ) const;
     [[nodiscard]] RemoteItem item_by_path(
-        const std::string& remote_path,
-        std::stop_token stop_token
+        const std::string& remote_path, std::stop_token stop_token
     ) const;
     [[nodiscard]] DeltaResult list_delta(
         const std::optional<std::string>& delta_link,
@@ -658,10 +642,8 @@ private:
 
     [[nodiscard]] std::string
     access_token(const std::stop_token& stop_token = {}) const;
-    [[nodiscard]] http::HttpResponse graph_get(
-        const std::string& url,
-        std::string_view description
-    ) const;
+    [[nodiscard]] http::HttpResponse
+    graph_get(const std::string& url, std::string_view description) const;
     void invalidate_access_token() const;
 };
 
