@@ -152,6 +152,7 @@ private:
     std::optional<events::DeltaProgressEvent> sync_delta_;
     std::optional<events::DownloadProgressEvent> sync_download_;
     struct LogEntry {
+        std::size_t sequence;
         QDateTime timestamp;
         LogOperation operation;
         events::MessageKind kind;
@@ -160,6 +161,7 @@ private:
         QString detail;
     };
     std::deque<LogEntry> log_history_;
+    std::size_t next_log_sequence_{};
     std::size_t log_omitted_{};
     QComboBox* log_level_{};
     QCheckBox* log_autoscroll_{};

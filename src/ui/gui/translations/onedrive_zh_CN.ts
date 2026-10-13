@@ -283,6 +283,10 @@ Skipped; existing local files are preserved.</source>
         <location filename="../main_window.cpp" line="479"/>
         <location filename="../main_window.cpp" line="486"/>
         <location filename="../main_window.cpp" line="1052"/>
+        <source>Sync</source>
+        <translation>同步</translation>
+    </message>
+    <message>
         <source>Synchronization</source>
         <translation>同步</translation>
     </message>

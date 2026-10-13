@@ -32,6 +32,8 @@
 #include <QCheckBox>
 #include <QClipboard>
 #include <QComboBox>
+#include <QTextBlock>
+#include <QTextCursor>
 
 #include <exception>
 #include <utility>
@@ -40,6 +42,14 @@ namespace onedrive::gui {
 namespace {
 
 constexpr std::size_t maximum_log_history = 500;
+
+class LogBlockData final : public QTextBlockUserData {
+public:
+    explicit LogBlockData(std::size_t sequence)
+        : sequence{sequence} {
+    }
+    std::size_t sequence;
+};
 
 QString short_detail(const QString& text) {
     const auto first_line = text.section('\n', 0, 0);
@@ -216,6 +226,7 @@ MainWindow::MainWindow(
     log_messages_ = new QPlainTextEdit{logs_page_};
     log_messages_->setObjectName("logMessages");
     log_messages_->setReadOnly(true);
+    log_messages_->setUndoRedoEnabled(false);
     logs_layout->addWidget(log_messages_);
     tabs->addTab(logs_page_, tr("Logs"));
 
@@ -961,7 +972,13 @@ void MainWindow::append_log_event(
         ++log_omitted_;
     }
     log_history_.push_back(
-        {QDateTime::currentDateTime(), operation, kind, event, source, detail}
+        {next_log_sequence_++,
+         QDateTime::currentDateTime(),
+         operation,
+         kind,
+         event,
+         source,
+         detail}
     );
 }
 
@@ -1099,8 +1116,10 @@ void MainWindow::log_startup_errors() {
 
 void MainWindow::render_logs() {
     QStringList messages;
+    QList<std::optional<std::size_t>> sequences;
     if (log_omitted_ != 0) {
         messages << tr("Earlier events omitted: %1").arg(number(log_omitted_));
+        sequences.push_back(std::nullopt);
     }
     const int filter = log_level_->currentData().toInt();
     for (const auto& entry : log_history_) {
@@ -1147,21 +1166,66 @@ void MainWindow::render_logs() {
             operation = tr("Preview");
             break;
         case LogOperation::synchronization:
-            operation = tr("Synchronization");
+            operation = tr("Sync");
             break;
         }
         messages << QString{"[%1] [%2] %3"}.arg(
             entry.timestamp.toString("yyyy-MM-dd HH:mm:ss.zzz"), operation, text
         );
+        sequences.push_back(entry.sequence);
     }
     const auto content = messages.join("\n");
     if (log_messages_->toPlainText() != content) {
         auto* scroll = log_messages_->verticalScrollBar();
         const auto position = scroll->value();
-        log_messages_->setPlainText(content);
-        scroll->setValue(
-            log_autoscroll_->isChecked() ? scroll->maximum() : position
-        );
+        const auto visible =
+            log_messages_->cursorForPosition(QPoint{0, 0}).block();
+        const auto line_offset = position - visible.firstLineNumber();
+        auto header = visible;
+        while (header.isValid() && !header.userData()) {
+            header = header.previous();
+        }
+        const auto* data = header.isValid()
+                               ? dynamic_cast<LogBlockData*>(header.userData())
+                               : nullptr;
+        const auto anchor = data ? std::optional{data->sequence} : std::nullopt;
+        const auto block_offset = visible.blockNumber() - header.blockNumber();
+        const auto horizontal = log_messages_->horizontalScrollBar()->value();
+        log_messages_->clear();
+        QTextCursor cursor{log_messages_->document()};
+        cursor.beginEditBlock();
+        QTextBlock restored;
+        for (qsizetype index = 0; index < messages.size(); ++index) {
+            if (index != 0) {
+                cursor.insertBlock();
+            }
+            auto block = cursor.block();
+            cursor.insertText(messages[index]);
+            if (sequences[index]) {
+                block.setUserData(new LogBlockData{*sequences[index]});
+                if (anchor == sequences[index]) {
+                    restored = block;
+                }
+            }
+        }
+        cursor.endEditBlock();
+        if (log_autoscroll_->isChecked()) {
+            scroll->setValue(scroll->maximum());
+        } else if (restored.isValid()) {
+            // History eviction changes line numbers; follow the retained event.
+            for (int offset = 0;
+                 offset < block_offset && restored.next().isValid() &&
+                 !restored.next().userData();
+                 ++offset) {
+                restored = restored.next();
+            }
+            log_messages_->setTextCursor(QTextCursor{restored});
+            log_messages_->ensureCursorVisible();
+            scroll->setValue(restored.firstLineNumber() + line_offset);
+        } else {
+            scroll->setValue(anchor ? 0 : position);
+        }
+        log_messages_->horizontalScrollBar()->setValue(horizontal);
     }
     copy_logs_button_->setEnabled(!content.isEmpty());
     clear_logs_button_->setEnabled(!log_history_.empty() || log_omitted_ != 0);

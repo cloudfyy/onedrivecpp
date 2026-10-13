@@ -22,6 +22,7 @@
 #include <QRegularExpression>
 #include <QScrollBar>
 #include <QTabWidget>
+#include <QTextBlock>
 
 #include <spdlog/spdlog.h>
 
@@ -701,10 +702,10 @@ void test_session_logs_and_tabs() {
     require(
         tabs->currentWidget() == logs_page &&
             timestamp.match(first_history).hasMatch() &&
-            first_history.contains("[Synchronization] Info: run 1 info 0") &&
+            first_history.contains("[Sync] Info: run 1 info 0") &&
             !first_history.contains("saved-token") &&
             first_history.contains(
-                "[Synchronization] Error: raw failure\n/path/file %1"
+                "[Sync] Error: raw failure\n/path/file %1"
             ) &&
             messages->verticalScrollBar()->maximum() > 0 &&
             messages->verticalScrollBar()->value() ==
@@ -878,6 +879,124 @@ void test_session_logs_and_tabs() {
         !messages->toPlainText().contains("run 1 info") &&
             messages->toPlainText().contains("raw failure"),
         "clear did not discard old session records"
+    );
+}
+
+void test_live_log_scroll() {
+    Fixture fixture;
+    std::atomic<int> requested{};
+    std::atomic<int> emitted{-1};
+    gui::MainWindow window{
+        gui::load_app_state_view_model(fixture.file),
+        {},
+        nullptr,
+        [&](config::Config,
+            const events::Observer& observer,
+            std::stop_token token) {
+            for (int phase = 0; phase < 4; ++phase) {
+                while (requested < phase && !token.stop_requested()) {
+                    QThread::msleep(1);
+                }
+                if (token.stop_requested()) {
+                    return exit_code::cancelled;
+                }
+                const int count = phase == 2 ? 400 : 120;
+                for (int index = 0; index < count; ++index) {
+                    observer.message(
+                        events::MessageKind::information,
+                        "scroll",
+                        std::format(
+                            "scroll phase {} entry {}\n{}",
+                            phase,
+                            index,
+                            std::string(240, 'x')
+                        )
+                    );
+                }
+                emitted = phase;
+            }
+            while (!token.stop_requested()) {
+                QThread::msleep(1);
+            }
+            return exit_code::cancelled;
+        }
+    };
+    window.show();
+    auto* tabs = window.findChild<QTabWidget*>("mainTabs");
+    auto* messages = window.findChild<QPlainTextEdit*>("logMessages");
+    auto* option = window.findChild<QCheckBox*>("logAutoScroll");
+    auto* sync = button(window, "startSyncButton");
+    tabs->setCurrentWidget(window.findChild<QWidget*>("logsPage"));
+    const auto advance = [&](int phase, int last) {
+        requested = phase;
+        require(
+            wait_until([&] {
+                return emitted == phase &&
+                       messages->toPlainText().contains(
+                           QString{"scroll phase %1 entry %2"}.arg(phase).arg(
+                               last
+                           )
+                       );
+            }),
+            "scrolling task did not deliver its next log batch"
+        );
+        QCoreApplication::processEvents();
+    };
+    const auto visible_text = [&] {
+        const auto cursor = messages->cursorForPosition(QPoint{0, 0});
+        const auto visible = cursor.block();
+        auto header = visible;
+        while (header.isValid() && !header.text().startsWith('[')) {
+            header = header.previous();
+        }
+        return std::tuple{
+            header.text(),
+            visible.blockNumber() - header.blockNumber(),
+            cursor.positionInBlock()
+        };
+    };
+    sync->click();
+    advance(0, 119);
+    auto* scroll = messages->verticalScrollBar();
+    require(
+        scroll->maximum() > 0 && scroll->value() == scroll->maximum(),
+        "live auto-scroll did not follow the latest logs"
+    );
+    option->setChecked(false);
+    const auto at_bottom = visible_text();
+    advance(1, 119);
+    require(
+        visible_text() == at_bottom &&
+            scroll->value() < scroll->maximum(),
+        "disabling auto-scroll at the bottom still followed live arrivals"
+    );
+    const auto anchor = messages->document()->find("scroll phase 1 entry 80");
+    require(!anchor.isNull(), "cannot locate a retained scroll anchor");
+    messages->setTextCursor(anchor);
+    messages->centerCursor();
+    QCoreApplication::processEvents();
+    const auto before_overflow = visible_text();
+    advance(2, 399);
+    require(
+        messages->toPlainText().startsWith("Earlier events omitted:") &&
+            visible_text() == before_overflow,
+        "bounded history moved the reading position with auto-scroll disabled"
+    );
+    scroll->setValue(0);
+    advance(3, 119);
+    require(
+        scroll->value() == 0,
+        "expired scroll anchors did not stay at the oldest retained logs"
+    );
+    option->setChecked(true);
+    require(
+        scroll->value() == scroll->maximum(),
+        "re-enabling auto-scroll did not return to the latest logs"
+    );
+    button(window, "stopSyncButton")->click();
+    require(
+        wait_until([&] { return sync->isEnabled(); }),
+        "scrolling task did not stop"
     );
 }
 
@@ -2049,6 +2168,7 @@ int main(int argc, char* argv[]) {
         test_session_logs_and_tabs();
         test_unsupported_format_reporting();
         test_live_log_threshold();
+        test_live_log_scroll();
         test_controller_preview_cache();
         test_controller_pending_delta_restart();
         test_preview_and_apply();

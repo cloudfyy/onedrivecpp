@@ -242,8 +242,11 @@ recovery records.
 **Logs** retains up to 500 application events across tasks for the current GUI
 session, with timestamps, operation names and levels; omissions are explicitly
 shown. The level filter is a minimum severity: Warning shows Warning, Error and
-Critical; All levels shows everything. Toggle auto-scroll, copy the displayed
-logs or clear history without stopping a task. Tab/language switches preserve tasks, filters
+Critical; All levels shows everything. The English synchronization log tag is
+`Sync`. With auto-scroll disabled, incoming events preserve the visible entry,
+including when older history is discarded; if that entry expires, the view stays
+at the oldest retained logs. Re-enabling auto-scroll jumps to the latest entry.
+Copy the displayed logs or clear history without stopping a task. Tab/language switches preserve tasks, filters
 and history. Backend logs are included according to the configured logging level,
 including each download's file path and size. Frontend and backend share the
 same six levels: Trace, Debug, Info, Warning, Error and Critical. Successful
