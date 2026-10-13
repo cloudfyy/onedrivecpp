@@ -163,11 +163,6 @@ Skipped; existing local files are preserved.</source>
         <translation>日志</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="490"/>
-        <source>View logs</source>
-        <translation>查看日志</translation>
-    </message>
-    <message>
         <location filename="../main_window.cpp" line="491"/>
         <source>All levels</source>
         <translation>所有级别</translation>

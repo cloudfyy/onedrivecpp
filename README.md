@@ -208,7 +208,7 @@ saved configuration, not unsaved Settings drafts. A saved `sync.dry_run = true`
 keeps **Sync now** in preview mode; the GUI never overrides the remote-deletion
 safety limit. Tasks run in a background worker using the same service and state
 directory lock as the CLI. The task page shows a concise result/error summary
-and **View logs** opens the details. The progress bar is blue and displays only a
+with details available in the **Logs** tab. The progress bar is blue and displays only a
 centered numeric percentage (for example, `50%`). Download progress
 includes file/byte counts, speed and an estimated remaining time when available.
 Uploads currently have messages but no percentage display.

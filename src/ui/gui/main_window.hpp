@@ -167,7 +167,6 @@ private:
     QCheckBox* log_autoscroll_{};
     QPushButton* copy_logs_button_{};
     QPushButton* clear_logs_button_{};
-    QPushButton* view_logs_button_{};
     QLabel* overview_sync_status_{};
     QGroupBox* sync_group_{};
     QPushButton* preview_button_{};

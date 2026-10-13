@@ -680,8 +680,9 @@ void test_session_logs_and_tabs() {
     auto* draft = window.findChild<QLineEdit*>("sync.data_directory");
     draft->setText("keep draft");
     require(
-        !window.findChild<QPushButton*>("openSyncButton"),
-        "overview retained an unnecessary synchronization button"
+        !window.findChild<QPushButton*>("openSyncButton") &&
+            !window.findChild<QPushButton*>("viewLogsButton"),
+        "GUI retained unnecessary synchronization or log navigation buttons"
     );
     tabs->setCurrentWidget(sync_page);
     sync->click();
@@ -693,7 +694,7 @@ void test_session_logs_and_tabs() {
                 "Synchronization completed.",
         "tab switching reset the task, draft or overview summary"
     );
-    button(window, "viewLogsButton")->click();
+    tabs->setCurrentWidget(logs_page);
     QCoreApplication::processEvents();
     const auto first_history = messages->toPlainText();
     const QRegularExpression timestamp{

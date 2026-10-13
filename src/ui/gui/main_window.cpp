@@ -187,9 +187,6 @@ MainWindow::MainWindow(
     transfer_status_ = make_value_label({});
     transfer_status_->setObjectName("transferStatus");
     sync_layout->addWidget(transfer_status_);
-    view_logs_button_ = new QPushButton{sync_group_};
-    view_logs_button_->setObjectName("viewLogsButton");
-    sync_layout->addWidget(view_logs_button_);
     sync_page_layout->addWidget(sync_group_);
     sync_page_layout->addStretch();
     tabs->addTab(sync_page_, tr("Synchronization"));
@@ -324,9 +321,6 @@ MainWindow::MainWindow(
     connect(
         stop_sync_button_, &QPushButton::clicked, this, &MainWindow::stop_sync
     );
-    connect(view_logs_button_, &QPushButton::clicked, this, [this] {
-        tabs_->setCurrentWidget(logs_page_);
-    });
     connect(
         log_level_,
         &QComboBox::currentIndexChanged,
@@ -540,7 +534,6 @@ void MainWindow::retranslate_ui() {
     preview_button_->setText(tr("Preview changes"));
     sync_button_->setText(tr("Sync now"));
     stop_sync_button_->setText(tr("Stop"));
-    view_logs_button_->setText(tr("View logs"));
     log_level_->setItemText(0, tr("All levels"));
     log_level_->setItemText(1, tr("Trace"));
     log_level_->setItemText(2, tr("Debug"));
