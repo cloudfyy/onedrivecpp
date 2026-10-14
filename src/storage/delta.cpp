@@ -52,13 +52,6 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         };
         bind_text(database, replace_statement.get(), 1, delta.drive_id);
         replace_statement.execute("cannot replace drive items");
-        Statement replace_blocked_statement{
-            database, "DELETE FROM blocked_item WHERE drive_id = ?1;"
-        };
-        bind_text(database, replace_blocked_statement.get(), 1, delta.drive_id);
-        replace_blocked_statement.execute(
-            "cannot replace blocked drive items"
-        );
         for (const auto& item : retained_items) {
             upsert_on_worker(item);
         }
@@ -253,72 +246,11 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         delete_blocked_statement.reset();
     }
 
-    Statement upsert_blocked_statement{
-        database,
-        "INSERT INTO blocked_item ("
-        "drive_id, remote_id, parent_id, name, etag, ctag, remote_path, "
-        "last_modified, size, directory, deleted, reason_code, reason_message, "
-        "content_hash_algorithm, content_hash_value"
-        ") VALUES ("
-        "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15"
-        ") "
-        "ON CONFLICT(drive_id, remote_id) DO UPDATE SET "
-        "parent_id = excluded.parent_id, name = excluded.name, "
-        "etag = excluded.etag, ctag = excluded.ctag, "
-        "remote_path = excluded.remote_path, "
-        "last_modified = excluded.last_modified, size = excluded.size, "
-        "directory = excluded.directory, deleted = excluded.deleted, "
-        "reason_code = excluded.reason_code, "
-        "reason_message = excluded.reason_message, "
-        "content_hash_algorithm = excluded.content_hash_algorithm, "
-        "content_hash_value = excluded.content_hash_value, "
-        "last_attempt = unixepoch(), "
-        "attempt_count = blocked_item.attempt_count + 1;"
-    };
-    for (auto& item : delta.blocked_upserts) {
-        if (item.remote_id.empty() || item.reason_code.empty() ||
-            item.reason_message.empty()) {
-            throw std::invalid_argument(
-                "blocked item requires an ID, reason code, and reason message"
-            );
+    if (!delta.blocked_items_saved) {
+        for (auto& item : delta.blocked_upserts) {
+            item.drive_id = delta.drive_id;
+            save_blocked_item_on_worker(item);
         }
-        item.drive_id = delta.drive_id;
-        bind_text(database, upsert_blocked_statement.get(), 1, item.drive_id);
-        bind_text(database, upsert_blocked_statement.get(), 2, item.remote_id);
-        bind_text(database, upsert_blocked_statement.get(), 3, item.parent_id);
-        bind_text(database, upsert_blocked_statement.get(), 4, item.name);
-        bind_text(database, upsert_blocked_statement.get(), 5, item.etag);
-        bind_text(database, upsert_blocked_statement.get(), 6, item.ctag);
-        bind_text(
-            database, upsert_blocked_statement.get(), 7, item.remote_path
-        );
-        bind_text(
-            database, upsert_blocked_statement.get(), 8, item.last_modified
-        );
-        bind_integer(database, upsert_blocked_statement.get(), 9, item.size);
-        bind_integer(
-            database, upsert_blocked_statement.get(), 10, item.directory ? 1 : 0
-        );
-        bind_integer(
-            database, upsert_blocked_statement.get(), 11, item.deleted ? 1 : 0
-        );
-        bind_text(
-            database, upsert_blocked_statement.get(), 12, item.reason_code
-        );
-        bind_text(
-            database, upsert_blocked_statement.get(), 13, item.reason_message
-        );
-        const auto [hash_algorithm, hash_value] =
-            serialize_file_hash(item.content_hash);
-        if (item.content_hash.has_value() && hash_value.empty()) {
-            throw std::invalid_argument(
-                "blocked item content hash cannot be empty"
-            );
-        }
-        bind_text(database, upsert_blocked_statement.get(), 14, hash_algorithm);
-        bind_text(database, upsert_blocked_statement.get(), 15, hash_value);
-        upsert_blocked_statement.execute("cannot persist blocked item");
-        upsert_blocked_statement.reset();
     }
 
     Statement state_statement{
@@ -349,6 +281,99 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
         delta.apply_mode == DeltaApplyMode::replace ? "replaced" : "updated",
         query_count(database, "SELECT COUNT(*) FROM item;")
     );
+}
+
+void ItemDatabase::save_blocked_item(BlockedItem item) {
+    impl_->invoke([this, item = std::move(item)] {
+        save_blocked_item_on_worker(item);
+    });
+}
+
+void ItemDatabase::remove_blocked_item(
+    const std::string& drive_id, const std::string& remote_id
+) {
+    impl_->invoke([this, drive_id, remote_id] {
+        auto* database = impl_->database.get();
+        if (!database) {
+            throw std::runtime_error{"state database is not open"};
+        }
+        if (drive_id.empty() || remote_id.empty()) {
+            throw std::invalid_argument{
+                "blocked item removal requires drive and item IDs"
+            };
+        }
+        Statement statement{
+            database,
+            "DELETE FROM blocked_item WHERE drive_id = ?1 AND remote_id = ?2;"
+        };
+        bind_text(database, statement.get(), 1, drive_id);
+        bind_text(database, statement.get(), 2, remote_id);
+        statement.execute("cannot remove blocked item");
+    });
+}
+
+void ItemDatabase::save_blocked_item_on_worker(const BlockedItem& item) {
+    auto* database = impl_->database.get();
+    if (!database) {
+        throw std::runtime_error{"state database is not open"};
+    }
+    if (item.drive_id.empty() || item.remote_id.empty() ||
+        item.reason_code.empty() || item.reason_message.empty()) {
+        throw std::invalid_argument{"blocked item requires drive and item IDs, "
+                                    "reason code, and reason message"};
+    }
+    Statement upsert_blocked_statement{
+        database,
+        "INSERT INTO blocked_item ("
+        "drive_id, remote_id, parent_id, name, etag, ctag, remote_path, "
+        "last_modified, size, directory, deleted, reason_code, reason_message, "
+        "content_hash_algorithm, content_hash_value"
+        ") VALUES ("
+        "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15"
+        ") "
+        "ON CONFLICT(drive_id, remote_id) DO UPDATE SET "
+        "parent_id = excluded.parent_id, name = excluded.name, "
+        "etag = excluded.etag, ctag = excluded.ctag, "
+        "remote_path = excluded.remote_path, "
+        "last_modified = excluded.last_modified, size = excluded.size, "
+        "directory = excluded.directory, deleted = excluded.deleted, "
+        "reason_code = excluded.reason_code, "
+        "reason_message = excluded.reason_message, "
+        "content_hash_algorithm = excluded.content_hash_algorithm, "
+        "content_hash_value = excluded.content_hash_value, "
+        "last_attempt = unixepoch(), "
+        "attempt_count = blocked_item.attempt_count + 1;"
+    };
+    bind_text(database, upsert_blocked_statement.get(), 1, item.drive_id);
+    bind_text(database, upsert_blocked_statement.get(), 2, item.remote_id);
+    bind_text(database, upsert_blocked_statement.get(), 3, item.parent_id);
+    bind_text(database, upsert_blocked_statement.get(), 4, item.name);
+    bind_text(database, upsert_blocked_statement.get(), 5, item.etag);
+    bind_text(database, upsert_blocked_statement.get(), 6, item.ctag);
+    bind_text(database, upsert_blocked_statement.get(), 7, item.remote_path);
+    bind_text(database, upsert_blocked_statement.get(), 8, item.last_modified);
+    bind_integer(database, upsert_blocked_statement.get(), 9, item.size);
+    bind_integer(
+        database, upsert_blocked_statement.get(), 10, item.directory ? 1 : 0
+    );
+    bind_integer(
+        database, upsert_blocked_statement.get(), 11, item.deleted ? 1 : 0
+    );
+    bind_text(database, upsert_blocked_statement.get(), 12, item.reason_code);
+    bind_text(
+        database, upsert_blocked_statement.get(), 13, item.reason_message
+    );
+    const auto [hash_algorithm, hash_value] =
+        serialize_file_hash(item.content_hash);
+    if (item.content_hash.has_value() && hash_value.empty()) {
+        throw std::invalid_argument(
+            "blocked item content hash cannot be empty"
+        );
+    }
+    bind_text(database, upsert_blocked_statement.get(), 14, hash_algorithm);
+    bind_text(database, upsert_blocked_statement.get(), 15, hash_value);
+    upsert_blocked_statement.execute("cannot persist blocked item");
+    upsert_blocked_statement.reset();
 }
 
 } // namespace onedrive::storage

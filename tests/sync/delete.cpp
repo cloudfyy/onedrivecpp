@@ -882,6 +882,8 @@ int test_local_deletions() {
         }
     }
     if (!guarded_graph.deleted_items.empty() ||
+        guarded_items.blocked.size() != 1 ||
+        guarded_items.blocked[0].reason_code != "upload_delete_limit" ||
         !guarded_items.pending_deletes_by_id.empty() ||
         guarded_items.items.size() != 3 || guarded_metrics.last_success ||
         !guarded_output.str().contains("\"delete_operations\":\"1\"") ||
@@ -918,6 +920,8 @@ int test_local_deletions() {
             &guarded_dry_console
         }
                 .synchronize() != exit_code::success ||
+        guarded_dry_items.blocked.size() != 1 ||
+        guarded_dry_items.blocked[0].reason_code != "upload_delete_limit" ||
         !guarded_dry_graph.deleted_items.empty() ||
         guarded_dry_items.items.size() != 3 ||
         !guarded_dry_output.str().contains(
@@ -947,6 +951,7 @@ int test_local_deletions() {
                 {"guard-directory", "etag"},
             } ||
         !guarded_items.items.empty() || !guarded_metrics.last_success ||
+        !guarded_items.blocked.empty() ||
         !guarded_output.str().contains("\"event\":\"large_delete_forced\"")) {
         return fail("explicit large-delete override did not execute the plan");
     }

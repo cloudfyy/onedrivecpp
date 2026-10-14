@@ -15,7 +15,8 @@ void preserve_unsupported_deletions(
 );
 void add_blocked_retries(
     graph::DeltaResult& delta,
-    const std::vector<storage::BlockedItem>& blocked
+    const std::vector<storage::BlockedItem>& blocked,
+    bool full_refresh = false
 );
 void add_full_refresh_deletions(
     graph::DeltaResult& delta,

@@ -95,6 +95,10 @@ public:
     );
     [[nodiscard]] std::vector<BlockedItem>
     blocked_items(const std::string& drive_id) const;
+    void save_blocked_item(BlockedItem item);
+    void remove_blocked_item(
+        const std::string& drive_id, const std::string& remote_id
+    );
     bool reset(const std::string& drive_id);
     ClearedState clear(const std::string& drive_id);
     [[nodiscard]] std::optional<std::string>
@@ -175,6 +179,7 @@ private:
     );
     [[nodiscard]] std::vector<BlockedItem>
     blocked_items_on_worker(const std::string& drive_id) const;
+    void save_blocked_item_on_worker(const BlockedItem& item);
     bool reset_on_worker(const std::string& drive_id);
     ClearedState clear_on_worker(const std::string& drive_id);
     [[nodiscard]] std::optional<std::string>

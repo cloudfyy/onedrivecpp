@@ -202,9 +202,54 @@ int test_full_refresh_preserves_blocked_snapshots() {
     return EXIT_SUCCESS;
 }
 
+int test_immediate_blocked_persistence() {
+    TemporaryDirectory temporary;
+    {
+        onedrive::storage::ItemDatabase database{temporary.path(), identity()};
+        database.open();
+        onedrive::storage::BlockedItem item;
+        item.drive_id = "me";
+        item.remote_id = "discovered";
+        item.remote_path = "notes.one";
+        item.reason_code = "unsupported_onenote";
+        item.reason_message = "Unsupported OneNote file";
+        database.save_blocked_item(item);
+        database.save_blocked_item(item);
+        if (database.delta_link("me") || !database.drive_items("me").empty() ||
+            database.blocked_items("me").at(0).attempt_count != 2) {
+            return fail(
+                "immediate diagnostics changed sync state or duplicated "
+                "attempts"
+            );
+        }
+        database.apply_delta({
+            .drive_id = "me",
+            .delta_link = "refreshed",
+            .apply_mode = onedrive::storage::DeltaApplyMode::replace,
+        });
+    }
+    onedrive::storage::ItemDatabase reopened{temporary.path(), identity()};
+    reopened.open();
+    const auto saved = reopened.blocked_items("me");
+    if (saved.size() != 1 || saved[0].attempt_count != 2) {
+        return fail("full refresh/restart erased unseen blockers");
+    }
+    reopened.remove_blocked_item("other", "discovered");
+    if (reopened.blocked_items("me").size() != 1) {
+        return fail("removing a blocker crossed drive identities");
+    }
+    reopened.remove_blocked_item("me", "discovered");
+    return reopened.blocked_items("me").empty()
+               ? EXIT_SUCCESS
+               : fail("confirmed blocker removal was not persisted");
+}
+
 } // namespace
 
 int main() {
+    if (test_immediate_blocked_persistence() != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
     if (test_hash_algorithm_round_trip() != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }

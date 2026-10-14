@@ -580,8 +580,8 @@ int test_flow() {
                 "downloads, 42 bytes, 0 deferred local removals"
             ) ||
             !contents.contains(
-                "Dry run left synchronization state unchanged for drive "
-                "'drive-id'"
+                "Dry run preserved files, snapshots, and cursor; saved blocked "
+                "diagnostics for drive 'drive-id'"
             ) ||
             !contents.contains("Synchronization dry run completed")) {
             return fail("sync dry-run diagnostics were not written to the log");
@@ -607,7 +607,7 @@ int test_flow() {
     if (single_dry_run.exit_code != exit_code::success ||
         !single_dry_run.standard_output.contains("Single-file download plan") ||
         std::filesystem::exists(single_destination) ||
-        runtime_factory.item_store_count != stores_before_single_download ||
+        runtime_factory.item_store_count != stores_before_single_download + 1 ||
         runtime_factory.item_store_apply_delta_count != 0) {
         return fail("single-file download dry run changed local state");
     }
@@ -629,7 +629,7 @@ int test_flow() {
         ) ||
         !std::filesystem::is_regular_file(single_destination) ||
         std::filesystem::file_size(single_destination) != 42 ||
-        runtime_factory.item_store_count != stores_before_single_download + 1 ||
+        runtime_factory.item_store_count != stores_before_single_download + 2 ||
         runtime_factory.item_store_apply_delta_count != 0) {
         return fail("single-file download was not safely dispatched");
     }

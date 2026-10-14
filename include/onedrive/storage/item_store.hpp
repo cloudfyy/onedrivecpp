@@ -64,6 +64,11 @@ struct BlockedItem {
     std::uint64_t attempt_count{0};
     std::optional<util::FileHash> content_hash;
 
+    [[nodiscard]] bool local_upload() const noexcept {
+        // Reserved for local diagnostics whose IDs must never reach Graph.
+        return reason_code.starts_with("upload_");
+    }
+
     bool operator==(const BlockedItem&) const = default;
 };
 
@@ -93,6 +98,7 @@ struct ItemDelta {
     std::string delta_link;
     std::string sync_filter_fingerprint;
     DeltaApplyMode apply_mode{DeltaApplyMode::merge};
+    bool blocked_items_saved{false};
 };
 
 struct PendingDownload {
@@ -213,6 +219,8 @@ PRO_DEF_MEM_DISPATCH(
     StoreRemoveUploadSuppressionDispatch, remove_upload_suppression
 );
 PRO_DEF_MEM_DISPATCH(StoreBlockedDispatch, blocked_items);
+PRO_DEF_MEM_DISPATCH(StoreSaveBlockedDispatch, save_blocked_item);
+PRO_DEF_MEM_DISPATCH(StoreRemoveBlockedDispatch, remove_blocked_item);
 PRO_DEF_MEM_DISPATCH(StoreResetDispatch, reset);
 PRO_DEF_MEM_DISPATCH(StoreClearDispatch, clear);
 PRO_DEF_MEM_DISPATCH(StoreDeltaLinkDispatch, delta_link);
@@ -223,7 +231,7 @@ PRO_DEF_MEM_DISPATCH(StoreFindDispatch, find);
 PRO_DEF_MEM_DISPATCH(StoreDriveItemsDispatch, drive_items);
 PRO_DEF_MEM_DISPATCH(StoreSizeDispatch, size);
 
-struct ItemStoreFacade : pro::facade_builder ::add_convention<StoreSavePendingDeltaDispatch, void(PendingDelta)>::add_convention<
+struct ItemStoreFacade : pro::facade_builder ::add_convention<StoreSaveBlockedDispatch, void(BlockedItem)>::add_convention<StoreRemoveBlockedDispatch, void(const std::string&, const std::string&)>::add_convention<StoreSavePendingDeltaDispatch, void(PendingDelta)>::add_convention<
                              StorePendingDeltaDispatch,
                              std::optional<PendingDelta>(const std::string&)
                                  const>::
@@ -503,6 +511,16 @@ public:
     [[nodiscard]] std::vector<BlockedItem>
     blocked_items(const std::string& drive_id) const {
         return implementation()->blocked_items(drive_id);
+    }
+
+    void save_blocked_item(BlockedItem item) {
+        implementation()->save_blocked_item(std::move(item));
+    }
+
+    void remove_blocked_item(
+        const std::string& drive_id, const std::string& remote_id
+    ) {
+        implementation()->remove_blocked_item(drive_id, remote_id);
     }
 
     bool reset(const std::string& drive_id) {

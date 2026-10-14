@@ -49,12 +49,21 @@ storage::ItemState uploaded_directory_state(
 }
 
 void require_local_directory(
-    const storage::PendingUpload& upload
+    const storage::PendingUpload& upload, storage::ItemStore& items
 ) {
     std::error_code error;
     const auto status =
         std::filesystem::symlink_status(upload.local_path, error);
     if (error || !std::filesystem::is_directory(status)) {
+        save_upload_blocked(
+            items,
+            upload.drive_id,
+            upload.remote_path,
+            true,
+            "local_modification",
+            "local directory changed during upload: " +
+                upload.local_path.string()
+        );
         throw LocalModificationConflictError(
             "local directory changed during upload: " +
             upload.local_path.string()
@@ -142,7 +151,7 @@ LocalCommittedDirectoryUpload commit_created_directory(
 ) {
     const auto& pending = transaction.pending;
     const auto& remote = transaction.remote;
-    require_local_directory(pending);
+    require_local_directory(pending, items);
     if (remote.remote_path != pending.remote_path || !remote.directory) {
         throw std::runtime_error(
             "Microsoft Graph directory response does not match '" +
@@ -246,6 +255,15 @@ bool upload_directory(
     try {
         remote = graph.create_directory(upload.remote_path, stop_token);
     } catch (const graph::UploadConflictError&) {
+        save_upload_blocked(
+            items,
+            drive_id,
+            upload.remote_path,
+            true,
+            "remote_conflict",
+            "remote item conflicts with local directory '" +
+                upload.remote_path + "'"
+        );
         items.remove_pending_upload(drive_id, upload.remote_path);
         throw LocalModificationConflictError(
             "remote item conflicts with local directory '" +
@@ -257,6 +275,14 @@ bool upload_directory(
         pending.failure_message = error.what();
         pending.failure_attempt_count = 1;
         items.save_pending_upload(pending);
+        save_upload_blocked(
+            items,
+            drive_id,
+            upload.remote_path,
+            true,
+            error.reason_code(),
+            error.what()
+        );
         ++summary.blocked;
         observer.message(
             events::MessageKind::warning,
@@ -272,6 +298,7 @@ bool upload_directory(
         sync_root, std::move(graph_created), items, metadata
     ));
     ++summary.created_directories;
+    items.remove_blocked_item(drive_id, upload_blocked_id(upload.remote_path));
     observer.message(
         events::MessageKind::information,
         "local_directory_created",
@@ -283,10 +310,11 @@ bool upload_directory(
 GraphCreatedDirectoryUpload recover_created_directory(
     JournaledDirectoryUpload transaction,
     graph::GraphClient& graph,
+    storage::ItemStore& items,
     const std::stop_token& stop_token
 ) {
     const auto& upload = transaction.pending;
-    require_local_directory(upload);
+    require_local_directory(upload, items);
     graph::RemoteItem remote;
     try {
         remote = graph.create_directory(upload.remote_path, stop_token);
@@ -315,10 +343,9 @@ void recover_pending_directory(
     auto journaled = JournaledDirectoryUpload{
         PendingDirectoryUploadPayload{std::move(upload)},
     };
-    auto graph_created =
-        recover_created_directory(
-            std::move(journaled), graph, stop_token
-        );
+    auto graph_created = recover_created_directory(
+        std::move(journaled), graph, items, stop_token
+    );
     static_cast<void>(commit_created_directory(
         sync_root, std::move(graph_created), items, metadata
     ));

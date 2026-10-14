@@ -34,6 +34,9 @@
 #include <QComboBox>
 #include <QTextBlock>
 #include <QTextCursor>
+#include <QTreeWidget>
+#include <QHeaderView>
+#include <QSignalBlocker>
 
 #include <exception>
 #include <utility>
@@ -188,7 +191,87 @@ MainWindow::MainWindow(
     transfer_status_->setObjectName("transferStatus");
     sync_layout->addWidget(transfer_status_);
     sync_page_layout->addWidget(sync_group_);
-    sync_page_layout->addStretch();
+    blocked_group_ = new QGroupBox{sync_page_};
+    blocked_group_->setObjectName("blockedItemsGroup");
+    auto* blocked_layout = new QVBoxLayout{blocked_group_};
+    auto* blocked_actions = new QHBoxLayout;
+    blocked_filter_ = new QLineEdit{blocked_group_};
+    blocked_filter_->setObjectName("blockedItemsFilter");
+    blocked_reason_ = new QComboBox{blocked_group_};
+    blocked_reason_->setObjectName("blockedItemsReason");
+    blocked_refresh_ = new QPushButton{blocked_group_};
+    blocked_refresh_->setObjectName("refreshBlockedItemsButton");
+    blocked_actions->addWidget(blocked_filter_, 1);
+    blocked_actions->addWidget(blocked_reason_);
+    blocked_actions->addWidget(blocked_refresh_);
+    blocked_layout->addLayout(blocked_actions);
+    blocked_status_ = make_value_label({});
+    blocked_status_->setObjectName("blockedItemsStatus");
+    blocked_layout->addWidget(blocked_status_);
+    blocked_table_ = new QTreeWidget{blocked_group_};
+    blocked_table_->setObjectName("blockedItemsTable");
+    blocked_table_->setColumnCount(2);
+    blocked_table_->setRootIsDecorated(false);
+    blocked_table_->setSelectionMode(QAbstractItemView::SingleSelection);
+    blocked_table_->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    blocked_table_->header()->setSectionResizeMode(
+        1, QHeaderView::ResizeToContents
+    );
+    blocked_layout->addWidget(blocked_table_, 1);
+    blocked_details_ = new QPlainTextEdit{blocked_group_};
+    blocked_details_->setObjectName("blockedItemsDetails");
+    blocked_details_->setReadOnly(true);
+    blocked_details_->setMaximumHeight(130);
+    blocked_layout->addWidget(blocked_details_);
+    sync_page_layout->addWidget(blocked_group_, 1);
+    connect(
+        blocked_filter_,
+        &QLineEdit::textChanged,
+        this,
+        &MainWindow::render_blocked_items
+    );
+    connect(
+        blocked_reason_,
+        &QComboBox::currentIndexChanged,
+        this,
+        &MainWindow::render_blocked_items
+    );
+    connect(
+        blocked_table_,
+        &QTreeWidget::itemSelectionChanged,
+        this,
+        &MainWindow::render_blocked_details
+    );
+    connect(
+        blocked_refresh_,
+        &QPushButton::clicked,
+        this,
+        &MainWindow::refresh_blocked_items
+    );
+    connect(
+        &synchronization_,
+        &SyncController::blocked_items_ready,
+        this,
+        [this](
+            const std::vector<storage::BlockedItem>& items, const QString& error
+        ) {
+            blocked_items_ = items;
+            blocked_error_ = error;
+            const QSignalBlocker blocker{blocked_reason_};
+            const auto selected = blocked_reason_->currentData().toString();
+            blocked_reason_->clear();
+            blocked_reason_->addItem(tr("All reasons"), QString{});
+            for (const auto& item : items) {
+                const auto code = QString::fromStdString(item.reason_code);
+                if (blocked_reason_->findData(code) < 0) {
+                    blocked_reason_->addItem(code, code);
+                }
+            }
+            const auto index = blocked_reason_->findData(selected);
+            blocked_reason_->setCurrentIndex(index < 0 ? 0 : index);
+            render_blocked_items();
+        }
+    );
     tabs->addTab(sync_page_, tr("Synchronization"));
 
     logs_page_ = new QWidget{tabs};
@@ -384,6 +467,9 @@ MainWindow::MainWindow(
             log_sync_result();
             refresh_actions();
             render_sync();
+            if (!closing_) {
+                refresh_blocked_items();
+            }
             if (closing_) {
                 close();
             }
@@ -510,6 +596,13 @@ void MainWindow::retranslate_ui() {
     tabs_->setTabText(1, tr("Synchronization"));
     tabs_->setTabText(2, tr("Logs"));
     tabs_->setTabText(3, tr("Settings"));
+    blocked_filter_->setPlaceholderText(tr("Search paths and reasons"));
+    blocked_refresh_->setText(tr("Refresh"));
+    blocked_table_->setHeaderLabels({tr("Path"), tr("Reason")});
+    if (blocked_reason_->count() != 0) {
+        blocked_reason_->setItemText(0, tr("All reasons"));
+    }
+    render_blocked_items();
     const auto set_label =
         [](QFormLayout* layout, int row, const QString& text) {
             auto* label = qobject_cast<QLabel*>(
@@ -736,6 +829,92 @@ void MainWindow::receive_sync_events(
     }
     render_sync();
     render_logs();
+    if (std::ranges::any_of(batch, [](const auto& event) {
+            if (std::holds_alternative<events::BlockedItemEvent>(event)) {
+                return true;
+            }
+            const auto* message = std::get_if<events::MessageEvent>(&event);
+            return message && message->kind == events::MessageKind::warning;
+        })) {
+        refresh_blocked_items();
+    }
+}
+
+void MainWindow::refresh_blocked_items() {
+    if (closing_) {
+        return;
+    }
+    synchronization_.refresh_blocked_items(state_.config_file);
+}
+
+void MainWindow::render_blocked_items() {
+    const auto* current = blocked_table_->currentItem();
+    const auto selected =
+        current ? current->data(0, Qt::UserRole).toString() : QString{};
+    const QSignalBlocker blocker{blocked_table_};
+    blocked_table_->clear();
+    const auto search = blocked_filter_->text();
+    const auto reason = blocked_reason_->currentData().toString();
+    for (const auto& item : blocked_items_) {
+        const auto path = QString::fromStdString(item.remote_path);
+        const auto code = QString::fromStdString(item.reason_code);
+        const auto message = QString::fromStdString(item.reason_message);
+        if ((!reason.isEmpty() && reason != code) ||
+            (!search.isEmpty() && !path.contains(search, Qt::CaseInsensitive) &&
+             !code.contains(search, Qt::CaseInsensitive) &&
+             !message.contains(search, Qt::CaseInsensitive))) {
+            continue;
+        }
+        auto* row = new QTreeWidgetItem{blocked_table_, {path, code}};
+        const auto id = QString::fromStdString(item.remote_id);
+        row->setData(0, Qt::UserRole, id);
+        row->setToolTip(0, path);
+        row->setToolTip(1, message);
+        if (id == selected) {
+            blocked_table_->setCurrentItem(row);
+        }
+    }
+    blocked_group_->setTitle(
+        tr("Blocked items (%1)").arg(blocked_items_.size())
+    );
+    blocked_status_->setText(
+        !blocked_error_.isEmpty()
+            ? tr("Cannot load blocked items: %1").arg(blocked_error_)
+        : blocked_items_.empty()
+            ? tr("No saved blocked items.")
+            : tr("%1 of %2 items shown. Discoveries from previews, sync and "
+                 "monitoring are saved here.")
+                  .arg(blocked_table_->topLevelItemCount())
+                  .arg(blocked_items_.size())
+    );
+    render_blocked_details();
+}
+
+void MainWindow::render_blocked_details() {
+    const auto* row = blocked_table_->currentItem();
+    if (!row) {
+        blocked_details_->clear();
+        blocked_details_->setPlaceholderText(
+            tr("Select an item to view and copy its details.")
+        );
+        return;
+    }
+    const auto id = row->data(0, Qt::UserRole).toString().toStdString();
+    const auto item =
+        std::ranges::find(blocked_items_, id, &storage::BlockedItem::remote_id);
+    if (item == blocked_items_.end()) {
+        return;
+    }
+    blocked_details_->setPlainText(
+        tr("Path: %1\nReason: %2\n%3\nItem ID: %4\nRecorded discoveries: %5")
+            .arg(
+                QString::fromStdString(item->remote_path),
+                QString::fromStdString(item->reason_code),
+                QString::fromStdString(item->reason_message),
+                QString::fromStdString(item->remote_id)
+            )
+            .arg(item->attempt_count)
+    );
 }
 
 QString MainWindow::log_event_text(const events::Event& event) const {
@@ -1355,6 +1534,10 @@ void MainWindow::closeEvent(QCloseEvent* event) {
 }
 
 void MainWindow::refresh_settings(bool preserve_edits) {
+    blocked_items_.clear();
+    blocked_error_.clear();
+    render_blocked_items();
+    refresh_blocked_items();
     config_file_value_->setText(
         QString::fromStdString(state_.config_file.string())
     );

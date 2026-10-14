@@ -576,19 +576,83 @@ FileUploadResult execute_file_upload(
         pending.failure_message = error.what();
         pending.failure_attempt_count = previous_failure_count + 1;
         items.save_pending_upload(pending);
+        save_upload_blocked(
+            items,
+            drive_id,
+            upload.remote_path,
+            false,
+            error.reason_code(),
+            error.what()
+        );
         return {FileUploadStatus::blocked, error.what()};
     } catch (const graph::UploadResourceError& error) {
         pending.failure_code = error.reason_code();
         pending.failure_message = error.what();
         ++pending.failure_attempt_count;
         items.save_pending_upload(pending);
+        save_upload_blocked(
+            items,
+            drive_id,
+            upload.remote_path,
+            false,
+            error.reason_code(),
+            error.what()
+        );
         return {FileUploadStatus::blocked, error.what()};
     } catch (const std::system_error& error) {
         pending.failure_code = local_resource_code(error.code(), "local_read");
         pending.failure_message = error.what();
         pending.failure_attempt_count = previous_failure_count + 1;
         items.save_pending_upload(pending);
+        save_upload_blocked(
+            items,
+            drive_id,
+            upload.remote_path,
+            false,
+            pending.failure_code,
+            error.what()
+        );
         return {FileUploadStatus::blocked, error.what()};
+    } catch (const LocalModificationConflictError& error) {
+        save_upload_blocked(
+            items,
+            drive_id,
+            upload.remote_path,
+            false,
+            "local_modification",
+            error.what()
+        );
+        throw;
+    } catch (const LocalPathConflictError& error) {
+        save_upload_blocked(
+            items,
+            drive_id,
+            upload.remote_path,
+            false,
+            "local_path_conflict",
+            error.what()
+        );
+        throw;
+    } catch (const SafePathConflictError& error) {
+        save_upload_blocked(
+            items,
+            drive_id,
+            upload.remote_path,
+            false,
+            "local_path_conflict",
+            error.what()
+        );
+        throw;
+    } catch (const graph::UploadConflictError& error) {
+        save_upload_blocked(
+            items,
+            drive_id,
+            upload.remote_path,
+            false,
+            "remote_conflict",
+            error.what()
+        );
+        throw;
     }
 }
 
@@ -617,6 +681,9 @@ void recover_pending_uploads(
                     upload.drive_id,
                     upload.remote_path
                 );
+                items.remove_blocked_item(
+                    drive_id, upload_blocked_id(upload.remote_path)
+                );
             }
             continue;
         }
@@ -624,6 +691,9 @@ void recover_pending_uploads(
             if (upload.directory) {
                 recover_pending_directory(
                     sync_root, upload, graph, items, metadata, stop_token
+                );
+                items.remove_blocked_item(
+                    drive_id, upload_blocked_id(upload.remote_path)
                 );
                 observer.message(
                     events::MessageKind::information,
@@ -659,6 +729,9 @@ void recover_pending_uploads(
             const bool source_present = commit_uploaded_file(
                 upload, std::move(state), remote, sync_root, items, metadata
             );
+            items.remove_blocked_item(
+                drive_id, upload_blocked_id(upload.remote_path)
+            );
             observer.message(
                 source_present ? events::MessageKind::information
                                : events::MessageKind::warning,
@@ -675,6 +748,14 @@ void recover_pending_uploads(
             upload.failure_message = error.what();
             ++upload.failure_attempt_count;
             items.save_pending_upload(upload);
+            save_upload_blocked(
+                items,
+                drive_id,
+                upload.remote_path,
+                upload.directory,
+                error.reason_code(),
+                error.what()
+            );
             observer.message(
                 events::MessageKind::warning,
                 "pending_upload_resource_blocked",
@@ -682,6 +763,14 @@ void recover_pending_uploads(
                     "': " + error.what()
             );
         } catch (const RemoteUploadConflictError& error) {
+            save_upload_blocked(
+                items,
+                drive_id,
+                upload.remote_path,
+                upload.directory,
+                "remote_conflict",
+                error.what()
+            );
             items.remove_pending_upload(
                 upload.drive_id,
                 upload.remote_path
@@ -697,6 +786,16 @@ void recover_pending_uploads(
                 std::string{error.what()} +
                     "; reconciling it through the remote delta."
             );
+        } catch (const LocalModificationConflictError& error) {
+            save_upload_blocked(
+                items,
+                drive_id,
+                upload.remote_path,
+                upload.directory,
+                "local_modification",
+                error.what()
+            );
+            throw;
         }
     }
 }

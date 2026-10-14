@@ -212,7 +212,9 @@ void test_ordinary_integrity_failure_remains_fatal() {
     FakeGraphClient graph;
     auto ordinary = supported_file("ordinary", "ordinary.one");
     ordinary.content_hash->value = std::string(40, '0');
-    graph.changes = {ordinary};
+    auto notes = file("notes", "notes.one", 4);
+    notes.unsupported_format = "onenote";
+    graph.changes = {notes, ordinary};
     graph.contents["ordinary"] = "data";
     bool integrity_failed = false;
     try {
@@ -228,6 +230,72 @@ void test_ordinary_integrity_failure_remains_fatal() {
                 fixture.config.sync_data_directory / "ordinary.one"
             ),
         "format policy bypassed an ordinary file's failed integrity check"
+    );
+    storage::ItemDatabase database{
+        fixture.config.state_directory, fixture.identity()
+    };
+    database.open();
+    const auto blocked = database.blocked_items(fixture.config.drive_id);
+    require(
+        blocked.size() == 1 && blocked[0].remote_id == "notes" &&
+            !database.delta_link(fixture.config.drive_id),
+        "later transfer failure lost an already discovered blocker"
+    );
+}
+
+void test_preview_persists_diagnostics_without_committing_sync_state() {
+    Fixture fixture;
+    fixture.config.dry_run = true;
+    FakeGraphClient graph;
+    auto notes = file("notes", "notes.one", 4);
+    notes.unsupported_format = "onenote";
+    auto malware = file("malware", "danger.exe", 4);
+    malware.malware = true;
+    graph.changes = {notes, malware, file("invalid", "../outside", 4)};
+    for (std::uint64_t count = 1; count <= 2; ++count) {
+        require(
+            fixture.run(graph) == exit_code::blocked,
+            "preview accepted blocked remote metadata"
+        );
+        storage::ItemDatabase database{
+            fixture.config.state_directory, fixture.identity()
+        };
+        database.open();
+        const auto blocked = database.blocked_items(fixture.config.drive_id);
+        require(
+            blocked.size() == 3 &&
+                std::ranges::all_of(
+                    blocked,
+                    [=](const auto& item) {
+                        return item.attempt_count == count;
+                    }
+                ) &&
+                database.drive_items(fixture.config.drive_id).empty() &&
+                !database.delta_link(fixture.config.drive_id) &&
+                !database.pending_delta(fixture.config.drive_id) &&
+                graph.download_count == 0 && graph.upload_count == 0 &&
+                !std::filesystem::exists(fixture.config.sync_data_directory),
+            "preview duplicated/lost diagnostics or changed files, cursor, or "
+            "snapshots"
+        );
+    }
+    fixture.config.dry_run = false;
+    graph.changes = {supported_file("malware", "safe.txt")};
+    graph.contents["malware"] = "data";
+    require(
+        fixture.run(graph) == exit_code::blocked,
+        "full refresh failed to preserve unsupported notes"
+    );
+    storage::ItemDatabase database{
+        fixture.config.state_directory, fixture.identity()
+    };
+    database.open();
+    const auto blocked = database.blocked_items(fixture.config.drive_id);
+    require(
+        blocked.size() == 1 && blocked[0].remote_id == "notes" &&
+            test::read_file(fixture.config.sync_data_directory / "safe.txt") ==
+                "data",
+        "confirmed supported/deleted items retained obsolete blockers"
     );
 }
 
@@ -255,8 +323,10 @@ void test_pending_restart_keeps_format_classification() {
         const auto pending = database.pending_delta(fixture.config.drive_id);
         require(
             pending && pending->delta.changes.size() == 1 &&
-                pending->delta.changes[0].unsupported_format == "onenote",
-            "pending batch lost format classification"
+                pending->delta.changes[0].unsupported_format == "onenote" &&
+                database.blocked_items(fixture.config.drive_id).size() == 1 &&
+                !database.delta_link(fixture.config.drive_id),
+            "cancellation lost discovered blockers or advanced the cursor"
         );
     }
     FakeGraphClient resumed;
@@ -286,6 +356,7 @@ int main() {
         test_existing_notes_and_durable_retries();
         test_package_children_and_ordinary_one_files();
         test_ordinary_integrity_failure_remains_fatal();
+        test_preview_persists_diagnostics_without_committing_sync_state();
         test_pending_restart_keeps_format_classification();
         return EXIT_SUCCESS;
     } catch (const std::exception& error) {

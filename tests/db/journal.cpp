@@ -2,6 +2,7 @@
 #include "onedrive/storage/item_database.hpp"
 #include "support/common.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <cstdlib>
 #include <filesystem>
@@ -359,8 +360,20 @@ int main() {
             database.pending_moves("other-drive").size() != 1 ||
             database.upload_suppressions("me").size() != 1 ||
             database.upload_suppressions("other-drive").size() != 1 ||
-            database.blocked_items("me").size() != 1 ||
-            database.blocked_items("me")[0].remote_id != "fresh-blocked-me" ||
+            database.blocked_items("me").size() != 2 ||
+            !std::ranges::any_of(
+                database.blocked_items("me"),
+                [](const auto& item) {
+                    return item.remote_id == "fresh-blocked-me";
+                }
+            ) ||
+            !std::ranges::any_of(
+                database.blocked_items("me"),
+                [](const auto& item) {
+                    return item.remote_id == "blocked-me" &&
+                           item.attempt_count == 1;
+                }
+            ) ||
             database.blocked_items("other-drive").size() != 1) {
             return fail(
                 "initial delta did not replace only the selected drive"
@@ -435,7 +448,7 @@ int main() {
         const auto cleared = database.clear("me");
         if (cleared.items != 1 || cleared.pending_downloads != 1 ||
             cleared.partial_downloads != 1 || cleared.pending_moves != 1 ||
-            cleared.upload_suppressions != 1 || cleared.blocked_items != 1 ||
+            cleared.upload_suppressions != 1 || cleared.blocked_items != 2 ||
             !cleared.delta_link || database.size() != 3 ||
             database.find("me", "fresh-me") ||
             !database.find("other-drive", "keep-me") ||

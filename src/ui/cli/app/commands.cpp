@@ -504,13 +504,13 @@ int execute_command(
     config.sync_data_directory = account::AccountState::drive_data_directory(
         config.sync_data_directory, identity
     );
-    if (operation == Operation::download && config.dry_run) {
-        return sync::plan_single_file_download(
-            config, arguments.remote_download_path, *graph, console
-        );
-    }
     auto items = runtime_factory.create_item_store(config, identity);
     items->open();
+    if (operation == Operation::download && config.dry_run) {
+        return sync::plan_single_file_download(
+            config, arguments.remote_download_path, *graph, *items, console
+        );
+    }
     if (operation == Operation::download) {
         spdlog::info(
             "Starting single-file download for '{}'",

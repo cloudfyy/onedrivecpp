@@ -45,7 +45,8 @@ graph::RemoteItem remote_item(const storage::BlockedItem& item) {
 
 void add_blocked_retries(
     graph::DeltaResult& delta,
-    const std::vector<storage::BlockedItem>& blocked
+    const std::vector<storage::BlockedItem>& blocked,
+    bool full_refresh
 ) {
     std::unordered_set<std::string> changed_ids;
     changed_ids.reserve(delta.changes.size());
@@ -53,8 +54,15 @@ void add_blocked_retries(
         changed_ids.insert(item.id);
     }
     for (const auto& item : blocked) {
+        if (item.local_upload()) {
+            continue;
+        }
         if (!changed_ids.contains(item.remote_id)) {
-            delta.changes.push_back(remote_item(item));
+            auto retry = remote_item(item);
+            if (full_refresh) {
+                retry.deleted = true;
+            }
+            delta.changes.push_back(std::move(retry));
         }
     }
 }

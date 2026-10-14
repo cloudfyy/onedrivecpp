@@ -24,6 +24,7 @@ class QProgressBar;
 class QPlainTextEdit;
 class QComboBox;
 class QCheckBox;
+class QTreeWidget;
 
 namespace onedrive::gui {
 
@@ -84,6 +85,9 @@ private:
     void log_sync_result();
     void log_startup_errors();
     void render_logs();
+    void refresh_blocked_items();
+    void render_blocked_items();
+    void render_blocked_details();
     void open_login_url();
     void refresh_settings(bool preserve_edits = false);
     void refresh_startup_status();
@@ -177,6 +181,15 @@ private:
     QProgressBar* sync_progress_{};
     QLabel* sync_progress_hint_{};
     QPlainTextEdit* log_messages_{};
+    QGroupBox* blocked_group_{};
+    QLineEdit* blocked_filter_{};
+    QComboBox* blocked_reason_{};
+    QPushButton* blocked_refresh_{};
+    QLabel* blocked_status_{};
+    QTreeWidget* blocked_table_{};
+    QPlainTextEdit* blocked_details_{};
+    std::vector<storage::BlockedItem> blocked_items_;
+    QString blocked_error_;
 };
 
 } // namespace onedrive::gui

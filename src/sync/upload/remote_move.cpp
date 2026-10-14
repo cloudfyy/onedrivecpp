@@ -154,6 +154,15 @@ LocalMoveDiscovery discover_local_moves(
                     parent_error
                 ) ||
                 parent_error) {
+                save_upload_blocked(
+                    items,
+                    drive_id,
+                    found->second.remote_path,
+                    item.directory,
+                    "move_conflict",
+                    "local move destination parent is unavailable: " +
+                        found->second.remote_path
+                );
                 throw LocalModificationConflictError(
                     "local move destination parent is unavailable: " +
                     found->second.remote_path
@@ -427,6 +436,15 @@ LocalCommittedRemoteMove execute_pending_remote_move(
 ) {
     const auto& move = transaction.move;
     if (!local_move_identity_matches(sync_root, move)) {
+        save_upload_blocked(
+            items,
+            move.drive_id,
+            move.destination_remote_path,
+            move.directory,
+            "move_conflict",
+            "local move destination identity changed: " +
+                move.destination_local_path.string()
+        );
         items.remove_pending_remote_move(move.drive_id, move.remote_id);
         throw LocalModificationConflictError(
             "local move destination identity changed: " +
@@ -447,6 +465,15 @@ LocalCommittedRemoteMove execute_pending_remote_move(
         );
         if (existing.id != move.remote_id ||
             existing.directory != move.directory) {
+            save_upload_blocked(
+                items,
+                move.drive_id,
+                move.destination_remote_path,
+                move.directory,
+                "move_conflict",
+                "remote move conflicts with '" + move.destination_remote_path +
+                    "'"
+            );
             items.remove_pending_remote_move(
                 move.drive_id,
                 move.remote_id
@@ -468,6 +495,15 @@ LocalCommittedRemoteMove execute_pending_remote_move(
             committed_move.destination_remote_path ||
         committed_remote.directory != committed_move.directory ||
         !local_move_identity_matches(sync_root, committed_move)) {
+        save_upload_blocked(
+            items,
+            committed_move.drive_id,
+            committed_move.destination_remote_path,
+            committed_move.directory,
+            "move_conflict",
+            "remote move result does not match local identity for '" +
+                committed_move.destination_remote_path + "'"
+        );
         throw LocalModificationConflictError(
             "remote move result does not match local identity for '" +
             committed_move.destination_remote_path + "'"
@@ -485,6 +521,10 @@ LocalCommittedRemoteMove execute_pending_remote_move(
     state.local_device = committed_move.local_device;
     state.local_inode = committed_move.local_inode;
     items.commit_remote_move(committed_move, std::move(state));
+    items.remove_blocked_item(
+        committed_move.drive_id,
+        upload_blocked_id(committed_move.destination_remote_path)
+    );
     return mark_local_remote_move_committed(std::move(graph_committed));
 }
 

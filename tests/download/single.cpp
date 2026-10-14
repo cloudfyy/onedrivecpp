@@ -2,6 +2,8 @@
 #include "onedrive/exit_code.hpp"
 #include "onedrive/ui/cli/console.hpp"
 
+#include <algorithm>
+
 namespace {
 
 namespace exit_code = onedrive::exit_code;
@@ -33,7 +35,7 @@ int test_unsupported_single_downloads() {
         implementation.lookup_item.unsupported_format = "onenote";
         implementation.lookup_item.validate_content = false;
         if (onedrive::sync::plan_single_file_download(
-                config, path, graph, console
+                config, path, graph, items, console
             ) != exit_code::blocked ||
             onedrive::sync::download_single_file(
                 config, path, graph, items, console
@@ -42,6 +44,8 @@ int test_unsupported_single_downloads() {
         }
     }
     if (implementation.download_count != 0 || !store.states.empty() ||
+        store.blocked.size() != 1 ||
+        store.blocked[0].reason_code != "unsupported_onenote" ||
         onedrive::test::read_file(root / "notes.one") != "keep notes" ||
         onedrive::test::read_file(root / "Notebook/local.bin") !=
             "keep package" ||
@@ -79,7 +83,7 @@ int test_single_file_download_coordination() {
     unmounted_config.sync_data_mount_point = temporary.path();
     try {
         static_cast<void>(onedrive::sync::plan_single_file_download(
-            unmounted_config, "Documents/single.txt", graph, console
+            unmounted_config, "Documents/single.txt", graph, items, console
         ));
         return fail("single-file plan accepted an unmounted sync disk");
     } catch (const std::runtime_error& exception) {
@@ -93,7 +97,7 @@ int test_single_file_download_coordination() {
     auto dry_config = config;
     dry_config.dry_run = true;
     if (onedrive::sync::plan_single_file_download(
-            dry_config, "Documents/single.txt", graph, console
+            dry_config, "Documents/single.txt", graph, items, console
         ) != exit_code::success ||
         graph_implementation.download_count != 0 ||
         std::filesystem::exists(root / "Documents/single.txt")) {
@@ -147,6 +151,12 @@ int test_single_file_download_coordination() {
         ));
         return fail("single-file download overwrote an untracked local file");
     } catch (const onedrive::sync::detail::LocalModificationConflictError&) {
+    }
+    if (std::ranges::none_of(item_implementation.blocked, [](const auto& item) {
+            return item.remote_id == "conflict" &&
+                   item.reason_code == "local_modification";
+        })) {
+        return fail("single-file conflict was not persisted");
     }
     if (graph_implementation.download_count != 1) {
         return fail("rejected single-file target started a download");

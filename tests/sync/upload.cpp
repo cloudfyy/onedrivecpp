@@ -96,6 +96,10 @@ int test_local_file_uploads() {
     const auto modified = items.find("me", "modified");
     const auto unchanged = items.find("me", "unchanged");
     if (result != exit_code::blocked || graph.upload_count != 2 ||
+        items.blocked.size() != 2 ||
+        std::ranges::any_of(
+            items.blocked, [](const auto& item) { return !item.local_upload(); }
+        ) ||
         graph.uploaded_paths !=
             std::vector<std::string>{"modified.txt", "new.txt"} ||
         !modified ||
@@ -216,7 +220,9 @@ int test_local_file_uploads() {
     }
                           .synchronize());
     const auto quota_pending = resource_items.pending_uploads("me");
-    if (quota_pending.size() != 1 ||
+    if (quota_pending.size() != 1 || resource_items.blocked.size() != 1 ||
+        !resource_items.blocked[0].local_upload() ||
+        resource_items.blocked[0].remote_path != "quota.txt" ||
         quota_pending[0].remote_path != "quota.txt" ||
         quota_pending[0].failure_code != "remote_quota" ||
         quota_pending[0].failure_attempt_count != 1 ||
@@ -234,6 +240,8 @@ int test_local_file_uploads() {
     }
                           .synchronize());
     if (resource_items.pending_uploads("me").size() != 1 ||
+        resource_items.blocked.size() != 1 ||
+        resource_items.blocked[0].attempt_count != 2 ||
         resource_items.pending_uploads("me")[0].failure_attempt_count != 2) {
         return fail("remote quota retry did not update its failure state");
     }
@@ -247,6 +255,7 @@ int test_local_file_uploads() {
     }
                           .synchronize());
     if (!resource_items.pending_uploads("me").empty() ||
+        !resource_items.blocked.empty() ||
         !resource_items.find("me", "uploaded-4")) {
         return fail("remote quota upload did not recover");
     }

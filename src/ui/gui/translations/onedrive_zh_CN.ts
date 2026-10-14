@@ -111,6 +111,58 @@
 <context>
     <name>onedrive::gui::MainWindow</name>
     <message>
+        <source>Blocked items (%1)</source>
+        <translation>阻止项（%1）</translation>
+    </message>
+    <message>
+        <source>Search paths and reasons</source>
+        <translation>搜索路径和原因</translation>
+    </message>
+    <message>
+        <source>All reasons</source>
+        <translation>所有原因</translation>
+    </message>
+    <message>
+        <source>Refresh</source>
+        <translation>刷新</translation>
+    </message>
+    <message>
+        <source>Path</source>
+        <translation>路径</translation>
+    </message>
+    <message>
+        <source>Reason</source>
+        <translation>原因</translation>
+    </message>
+    <message>
+        <source>No saved blocked items.</source>
+        <translation>没有已保存的阻止项。</translation>
+    </message>
+    <message>
+        <source>Cannot load blocked items: %1</source>
+        <translation>无法加载阻止项：%1</translation>
+    </message>
+    <message>
+        <source>%1 of %2 items shown. Discoveries from previews, sync and monitoring are saved here.</source>
+        <translation>显示 %1 项，共 %2 项。预览、同步和监控发现的阻止项统一保存在此处。</translation>
+    </message>
+    <message>
+        <source>Select an item to view and copy its details.</source>
+        <translation>选择一个项目以查看和复制详情。</translation>
+    </message>
+    <message>
+        <source>Path: %1
+Reason: %2
+%3
+Item ID: %4
+Recorded discoveries: %5</source>
+        <translation>路径：%1
+原因：%2
+%3
+项目 ID：%4
+记录次数：%5</translation>
+    </message>
+    <message>
         <source>Restoring saved remote changes; checking only subsequent changes and rebuilding the local plan...</source>
         <translation>正在恢复已保存的远端变更；仅检查后续增量并重新生成本地计划…</translation>
     </message>

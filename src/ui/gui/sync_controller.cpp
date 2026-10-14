@@ -4,6 +4,7 @@
 #include "app/preflight.hpp"
 #include "onedrive/app/factory.hpp"
 #include "onedrive/app/synchronization.hpp"
+#include "onedrive/app/queries.hpp"
 #include "onedrive/exit_code.hpp"
 #include "onedrive/logging/logging.hpp"
 
@@ -98,6 +99,53 @@ SyncController::~SyncController() {
     cancel();
     if (worker_.joinable()) {
         worker_.join();
+    }
+    if (blocked_worker_.joinable()) {
+        blocked_worker_.join();
+    }
+}
+
+void SyncController::refresh_blocked_items(
+    const std::filesystem::path& config_file
+) {
+    if (blocked_refreshing_) {
+        blocked_refresh_pending_ = config_file;
+        return;
+    }
+    blocked_refreshing_ = true;
+    try {
+        blocked_worker_ = std::jthread{[this, config_file] {
+            std::vector<storage::BlockedItem> items;
+            QString error;
+            try {
+                bool missing = false;
+                const auto config = load_configuration(config_file, missing);
+                if (!missing) {
+                    items = app::load_blocked_items(config);
+                }
+            } catch (const std::exception& exception) {
+                error = QString::fromUtf8(exception.what());
+            }
+            QMetaObject::invokeMethod(
+                this,
+                [this, items = std::move(items), error] {
+                    blocked_worker_.join();
+                    blocked_refreshing_ = false;
+                    if (blocked_refresh_pending_) {
+                        const auto pending = std::exchange(
+                            blocked_refresh_pending_, std::nullopt
+                        );
+                        refresh_blocked_items(*pending);
+                        return;
+                    }
+                    Q_EMIT blocked_items_ready(items, error);
+                },
+                Qt::QueuedConnection
+            );
+        }};
+    } catch (const std::exception& error) {
+        blocked_refreshing_ = false;
+        Q_EMIT blocked_items_ready({}, QString::fromUtf8(error.what()));
     }
 }
 

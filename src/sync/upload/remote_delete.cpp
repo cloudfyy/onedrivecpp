@@ -37,6 +37,9 @@ bool covers_blocked_item(
     const std::vector<storage::BlockedItem>& blocked
 ) {
     return std::ranges::any_of(blocked, [&](const auto& item) {
+        if (item.reason_code.starts_with("upload_delete_")) {
+            return false;
+        }
         return item.remote_id == deletion.remote_id ||
                item.remote_path == deletion.remote_path ||
                (deletion.directory && remote_path_is_descendant(
@@ -72,6 +75,9 @@ DeletionPlan discover_deletions(
     std::unordered_set<std::string> blocked_paths;
     const auto blocked = items.blocked_items(drive_id);
     for (const auto& item : blocked) {
+        if (item.reason_code.starts_with("upload_delete_")) {
+            continue;
+        }
         blocked_ids.insert(item.remote_id);
         blocked_paths.insert(item.remote_path);
     }
@@ -198,8 +204,33 @@ bool enforce_remote_deletion_limit(
     const DeletionPlan& plan,
     RemoteDeletionGuard guard,
     const events::Observer& observer,
-    ExecutionMode execution_mode
+    ExecutionMode execution_mode,
+    storage::ItemStore* items
 ) {
+    if (items) {
+        for (const auto& deletion : plan.operations) {
+            if (plan.affected_items > guard.maximum_affected_items &&
+                !guard.force) {
+                save_upload_blocked(
+                    *items,
+                    deletion.drive_id,
+                    deletion.remote_path,
+                    deletion.directory,
+                    "delete_limit",
+                    std::format(
+                        "Remote deletion plan affects {} tracked items, "
+                        "exceeding the configured limit of {}.",
+                        plan.affected_items,
+                        guard.maximum_affected_items
+                    )
+                );
+            } else {
+                items->remove_blocked_item(
+                    deletion.drive_id, upload_blocked_id(deletion.remote_path)
+                );
+            }
+        }
+    }
     if (plan.affected_items <= guard.maximum_affected_items) {
         return false;
     }
@@ -369,6 +400,15 @@ LocalCommittedRemoteDelete execute_pending_delete(
 ) {
     const auto& deletion = transaction.deletion;
     if (!local_path_is_missing(deletion.local_path)) {
+        save_upload_blocked(
+            items,
+            deletion.drive_id,
+            deletion.remote_path,
+            deletion.directory,
+            "delete_conflict",
+            "local item reappeared during remote deletion: " +
+                deletion.local_path.string()
+        );
         items.remove_pending_delete(
             deletion.drive_id,
             deletion.remote_id
@@ -383,6 +423,14 @@ LocalCommittedRemoteDelete execute_pending_delete(
             deletion.remote_id, deletion.expected_etag, stop_token
         );
     } catch (const graph::UploadConflictError&) {
+        save_upload_blocked(
+            items,
+            deletion.drive_id,
+            deletion.remote_path,
+            deletion.directory,
+            "delete_conflict",
+            "remote item changed after local deletion: " + deletion.remote_path
+        );
         items.remove_pending_delete(
             deletion.drive_id,
             deletion.remote_id
@@ -395,6 +443,10 @@ LocalCommittedRemoteDelete execute_pending_delete(
     auto graph_deleted =
         mark_remote_delete_graph_deleted(std::move(transaction));
     items.commit_delete(graph_deleted.deletion);
+    items.remove_blocked_item(
+        graph_deleted.deletion.drive_id,
+        upload_blocked_id(graph_deleted.deletion.remote_path)
+    );
     return mark_remote_delete_local_committed(std::move(graph_deleted));
 }
 
@@ -459,7 +511,7 @@ void recover_pending_deletes(
     const auto plan =
         deletion_plan_for(std::move(active), items.drive_items(drive_id));
     static_cast<void>(enforce_remote_deletion_limit(
-        plan, deletion_guard, observer, ExecutionMode::apply
+        plan, deletion_guard, observer, ExecutionMode::apply, &items
     ));
     for (const auto& deletion : plan.operations) {
         throw_if_cancelled(stop_token);

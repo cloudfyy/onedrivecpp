@@ -4,6 +4,7 @@
 #include "onedrive/graph/graph_client.hpp"
 #include "onedrive/metrics/metrics.hpp"
 #include "onedrive/storage/status.hpp"
+#include "onedrive/storage/item_store.hpp"
 #include "onedrive/sync/capabilities.hpp"
 
 namespace onedrive::config {
@@ -34,5 +35,9 @@ struct SyncStatusSnapshot {
 [[nodiscard]] SyncStatusSnapshot load_sync_status_snapshot(
     const config::Config& config, const RuntimeFactory& runtime_factory
 );
+
+// Local diagnostics only: does not contact Graph or create/migrate state.
+[[nodiscard]] std::vector<storage::BlockedItem>
+load_blocked_items(const config::Config& config);
 
 } // namespace onedrive::app

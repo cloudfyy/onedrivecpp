@@ -219,6 +219,16 @@ after successful task completion.
 **Stop** requests cancellation and waits for cleanup. Login, logout and settings
 changes are disabled during a task; closing the window cancels and joins it.
 
+The **Blocked items** list below synchronization status reads the active Drive's
+saved database without contacting Graph. Preview, synchronization and CLI Monitor
+discoveries share this list; there is no separate preview-only list. Search paths
+or reasons, filter by reason code, and select a row to view/copy its full details.
+Refresh rereads saved records. Clearing logs does not clear blockers, and records
+survive task failure, cancellation and application restarts. A later validated
+resolution removes the corresponding record; merely not seeing it does not.
+Preview may create/update blocked diagnostics, but never transfers files,
+advances the applied cursor or commits normal file snapshots.
+
 The GUI retains complete preview metadata in memory: the next preview/sync
 checks only changes since that preview, merges them with unapplied changes,
 and rebuilds the plan against current local files. Preview never advances the

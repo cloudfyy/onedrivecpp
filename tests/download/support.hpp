@@ -376,7 +376,20 @@ public:
 
     [[nodiscard]] std::vector<onedrive::storage::BlockedItem>
     blocked_items(const std::string&) const {
-        return {};
+        return blocked;
+    }
+
+    std::vector<onedrive::storage::BlockedItem> blocked;
+    void save_blocked_item(onedrive::storage::BlockedItem item) {
+        std::erase_if(blocked, [&](const auto& previous) {
+            return previous.remote_id == item.remote_id;
+        });
+        blocked.push_back(std::move(item));
+    }
+    void remove_blocked_item(const std::string&, const std::string& remote_id) {
+        std::erase_if(blocked, [&](const auto& item) {
+            return item.remote_id == remote_id;
+        });
     }
 
     bool reset(const std::string&) {

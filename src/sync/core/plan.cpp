@@ -21,9 +21,12 @@ SyncPlan SyncPlan::build(
     std::string sync_filter_fingerprint,
     std::vector<std::string> snapshot_removals,
     const std::vector<storage::ItemState>& tracked_items,
-    std::vector<storage::UploadSuppression> upload_suppressions
+    std::vector<storage::UploadSuppression> upload_suppressions,
+    storage::ItemStore* blocked_store
 ) {
     SyncPlan plan;
+    plan.blocked_store_ = blocked_store;
+    plan.state_delta_.blocked_items_saved = blocked_store != nullptr;
     plan.delta_ = std::move(delta);
     plan.state_delta_.drive_id = drive_id;
     plan.state_delta_.delta_link = plan.delta_.delta_link;
@@ -181,6 +184,9 @@ void SyncPlan::block(
         .reason_message = std::move(reason_message),
         .content_hash = item.content_hash,
     };
+    if (blocked_store_) {
+        blocked_store_->save_blocked_item(blocked);
+    }
     if (existing == state_delta_.blocked_upserts.end()) {
         state_delta_.blocked_upserts.push_back(std::move(blocked));
     } else {
@@ -203,7 +209,7 @@ void SyncPlan::block_removal(
     std::string reason_message
 ) {
     std::erase(state_delta_.blocked_removals, item.remote_id);
-    state_delta_.blocked_upserts.push_back({
+    storage::BlockedItem blocked{
         .drive_id = state_delta_.drive_id,
         .remote_id = item.remote_id,
         .parent_id = item.parent_id,
@@ -218,7 +224,11 @@ void SyncPlan::block_removal(
         .reason_code = std::move(reason_code),
         .reason_message = std::move(reason_message),
         .content_hash = std::nullopt,
-    });
+    };
+    if (blocked_store_) {
+        blocked_store_->save_blocked_item(blocked);
+    }
+    state_delta_.blocked_upserts.push_back(std::move(blocked));
 }
 
 const storage::BlockedItem& SyncPlan::blocked(std::size_t index) const {

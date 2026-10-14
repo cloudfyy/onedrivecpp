@@ -468,7 +468,7 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
         );
         std::filesystem::path sync_root =
             onedrive::util::normalized_absolute(config_.sync_data_directory);
-        const auto cache_state =
+        auto cache_state =
             preview_cache_ && (capabilities.previews() || previous_preview)
                 ? PreviewCache::capture_state(items_, config_.drive_id)
                 : std::nullopt;
@@ -807,9 +807,12 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
         engine_detail::preserve_unsupported_deletions(
             delta, previously_blocked
         );
-        if (apply_mode == storage::DeltaApplyMode::merge &&
-            !previously_blocked.empty()) {
-            engine_detail::add_blocked_retries(delta, previously_blocked);
+        if (!previously_blocked.empty()) {
+            engine_detail::add_blocked_retries(
+                delta,
+                previously_blocked,
+                apply_mode == storage::DeltaApplyMode::replace
+            );
             spdlog::debug(
                 "Added {} blocked items to the synchronization retry plan",
                 previously_blocked.size()
@@ -891,7 +894,8 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
             sync_filter_fingerprint,
             std::move(snapshot_removals),
             tracked_items,
-            std::move(upload_suppressions)
+            std::move(upload_suppressions),
+            &items_
         );
         throw_if_cancelled(stop_token);
         for (const auto& partial : orphaned_partials) {
@@ -926,7 +930,8 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
                 report_upload_plan(config_, upload_summary, observer);
             }
             spdlog::debug(
-                "Dry run left synchronization state unchanged for drive '{}'",
+                "Dry run preserved files, snapshots, and cursor; saved blocked "
+                "diagnostics for drive '{}'",
                 config_.drive_id
             );
         } else {
@@ -989,6 +994,12 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
         }
 
         throw_if_cancelled(stop_token);
+        if (capabilities.previews() && cache_state) {
+            cache_state->blocked = items_.blocked_items(config_.drive_id);
+            std::ranges::sort(
+                cache_state->blocked, {}, &storage::BlockedItem::remote_id
+            );
+        }
         record_result(metrics::SyncRunOutcome::succeeded);
         report_completion(
             blocked_count, capabilities.previews(), started_at, observer

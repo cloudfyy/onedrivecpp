@@ -4,6 +4,8 @@
 #include "main_window.hpp"
 #include "sync_controller.hpp"
 #include "onedrive/app/synchronization.hpp"
+#include "onedrive/app/queries.hpp"
+#include "onedrive/storage/item_database.hpp"
 
 #include <QApplication>
 #include <QElapsedTimer>
@@ -23,6 +25,8 @@
 #include <QScrollBar>
 #include <QTabWidget>
 #include <QTextBlock>
+#include <QTreeWidget>
+#include <QGroupBox>
 
 #include <spdlog/spdlog.h>
 
@@ -89,6 +93,149 @@ QPushButton* button(QWidget& window, const char* name) {
     auto* result = window.findChild<QPushButton*>(name);
     require(result != nullptr, "missing synchronization control");
     return result;
+}
+
+void test_persistent_blocked_viewer() {
+    Fixture fixture;
+    const auto directory = account::AccountState::locate(
+                               fixture.config.state_directory, fixture.identity
+    )
+                               .drive_directory;
+    {
+        storage::ItemDatabase database{directory, fixture.identity};
+        database.open();
+        storage::BlockedItem item;
+        item.drive_id = fixture.identity.drive_id;
+        item.remote_id = "notes";
+        item.remote_path = "Documents/notes.one";
+        item.reason_code = "unsupported_onenote";
+        item.reason_message = "OneNote is unsupported";
+        database.save_blocked_item(item);
+        database.save_blocked_item(item);
+        item.remote_id = "upload:local";
+        item.remote_path = "local.txt";
+        item.reason_code = "upload_resource";
+        item.reason_message = "Remote quota exceeded";
+        database.save_blocked_item(item);
+    }
+    require(
+        app::load_blocked_items(fixture.config).size() == 2,
+        "offline query did not find the active drive's saved blockers"
+    );
+    gui::Localization localization{gui::Language::english};
+    int run = 0;
+    gui::MainWindow window{
+        gui::load_app_state_view_model(fixture.file),
+        {},
+        &localization,
+        [&](config::Config, const events::Observer& observer, std::stop_token) {
+            ++run;
+            storage::ItemDatabase database{directory, fixture.identity};
+            database.open();
+            storage::BlockedItem item;
+            item.drive_id = fixture.identity.drive_id;
+            item.remote_id = "new-" + std::to_string(run);
+            item.remote_path = item.remote_id + ".txt";
+            item.reason_code = "local_modification";
+            item.reason_message = "Local file changed";
+            database.save_blocked_item(item);
+            observer.blocked_item(
+                item.remote_path, item.reason_code, item.reason_message
+            );
+            if (run == 2) {
+                throw std::runtime_error{"independent task failure"};
+            }
+            return run == 3 ? exit_code::cancelled : exit_code::blocked;
+        }
+    };
+    window.show();
+    auto* table = window.findChild<QTreeWidget*>("blockedItemsTable");
+    auto* search = window.findChild<QLineEdit*>("blockedItemsFilter");
+    auto* reason = window.findChild<QComboBox*>("blockedItemsReason");
+    auto* details = window.findChild<QPlainTextEdit*>("blockedItemsDetails");
+    require(
+        table && search && reason && details &&
+            wait_until([&] { return table->topLevelItemCount() == 2; }),
+        "startup did not display persisted blockers"
+    );
+    search->setText("DOCUMENTS");
+    require(table->topLevelItemCount() == 1, "blocked path search failed");
+    table->setCurrentItem(table->topLevelItem(0));
+    require(
+        details->toPlainText().contains("Documents/notes.one") &&
+            details->toPlainText().contains("Recorded discoveries: 2"),
+        "blocked details lost the reason, path or discovery count"
+    );
+    search->clear();
+    reason->setCurrentIndex(reason->findData("upload_resource"));
+    require(
+        table->topLevelItemCount() == 1 &&
+            table->topLevelItem(0)->text(0) == "local.txt",
+        "blocked reason filter failed"
+    );
+    reason->setCurrentIndex(0);
+    for (int index = 1; index <= 3; ++index) {
+        auto* start = button(
+            window, index == 1 ? "previewSyncButton" : "startSyncButton"
+        );
+        start->click();
+        require(
+            wait_until([&] {
+                return start->isEnabled() &&
+                       table->topLevelItemCount() == 2 + index;
+            }),
+            "preview/failure/cancellation lost persistent discoveries"
+        );
+    }
+    button(window, "clearLogsButton")->click();
+    require(
+        table->topLevelItemCount() == 5, "clearing logs erased blocked items"
+    );
+    localization.set_language(gui::Language::simplified_chinese);
+    require(
+        wait_until([&] {
+            return window.findChild<QGroupBox*>("blockedItemsGroup")->title() ==
+                   "阻止项（5）";
+        }),
+        "blocked viewer was not translated"
+    );
+    test::write_file(directory / "drive.json", "{ invalid metadata");
+    button(window, "refreshBlockedItemsButton")->click();
+    require(
+        wait_until([&] {
+            return window.findChild<QLabel*>("blockedItemsStatus")
+                ->text()
+                .contains("无法加载阻止项");
+        }),
+        "database query failure was shown as an empty successful result"
+    );
+}
+
+void test_blocked_query_discards_stale_results() {
+    Fixture first;
+    Fixture second;
+    gui::SyncController controller{gui::SynchronizationFunction{}};
+    int delivered = 0;
+    QString query_error;
+    QObject::connect(
+        &controller,
+        &gui::SyncController::blocked_items_ready,
+        [&](const auto& items, const QString& error) {
+            ++delivered;
+            query_error = error;
+            require(
+                items.empty(), "stale account blockers leaked into a new query"
+            );
+        }
+    );
+    test::write_file(first.file, "invalid = [");
+    controller.refresh_blocked_items(first.file);
+    controller.refresh_blocked_items(second.file);
+    require(
+        wait_until([&] { return delivered != 0; }) && delivered == 1 &&
+            query_error.isEmpty(),
+        "superseded query emitted stale data/errors"
+    );
 }
 
 void test_controller() {
@@ -2161,6 +2308,8 @@ int main(int argc, char* argv[]) {
     gui::Localization localization{gui::Language::english};
     try {
         test_controller();
+        test_persistent_blocked_viewer();
+        test_blocked_query_discards_stale_results();
         test_controller_logging();
         test_controller_logging_after_failure();
         test_default_controller_without_usable_credentials();

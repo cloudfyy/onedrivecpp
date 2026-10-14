@@ -9,6 +9,7 @@
 #include "onedrive/util/unique_file_descriptor.hpp"
 #include "onedrive/ui/common/observer.hpp"
 #include "onedrive/util/path_security.hpp"
+#include "onedrive/util/sha256.hpp"
 #include "util/typestate.hpp"
 #include "sync/filesystem/operations.hpp"
 #include "sync/filesystem/metadata.hpp"
@@ -43,6 +44,30 @@
 #include <unistd.h>
 
 namespace onedrive::sync::detail {
+
+std::string upload_blocked_id(std::string_view remote_path) {
+    return "upload:" + util::sha256_hex(remote_path);
+}
+
+void save_upload_blocked(
+    storage::ItemStore& items,
+    const std::string& drive_id,
+    const std::string& remote_path,
+    bool directory,
+    std::string_view reason,
+    std::string_view message
+) {
+    storage::BlockedItem item;
+    item.drive_id = drive_id;
+    item.remote_id = upload_blocked_id(remote_path);
+    item.name = std::filesystem::path{remote_path}.filename().string();
+    item.remote_path = remote_path;
+    item.directory = directory;
+    item.reason_code = "upload_" + std::string{reason};
+    item.reason_message = message;
+    items.save_blocked_item(std::move(item));
+}
+
 namespace {
 
 using util::StateTransaction;
@@ -57,12 +82,13 @@ std::vector<UploadCandidate> discover_uploads(
     const SyncList* sync_list,
     std::size_t& blocked,
     const events::Observer& observer,
-    bool cleanup_suppressions,
+    ExecutionMode execution_mode,
     const std::unordered_set<std::string>& skipped_local_paths = {}
 ) {
+    const bool applying = execution_mode == ExecutionMode::apply;
     std::unordered_map<std::string, storage::ItemState> tracked;
     for (auto item : items.drive_items(drive_id)) {
-        if (cleanup_suppressions) {
+        if (applying) {
             std::error_code identity_error;
             const auto status = std::filesystem::symlink_status(
                 item.local_path,
@@ -102,14 +128,36 @@ std::vector<UploadCandidate> discover_uploads(
         );
     }
     std::unordered_set<std::string> blocked_ids;
+    std::unordered_set<std::string> local_path_blockers;
+    std::unordered_set<std::string> local_upload_paths;
+    const auto pending_uploads = items.pending_uploads(drive_id);
     std::unordered_set<std::string> blocked_paths;
     for (const auto& item : items.blocked_items(drive_id)) {
+        if (item.local_upload()) {
+            local_upload_paths.insert(item.remote_path);
+            if (item.reason_code.starts_with("upload_delete_")) {
+                local_path_blockers.insert(item.remote_path);
+                continue;
+            }
+            if (local_path_is_missing(sync_root.path() / item.remote_path) &&
+                std::ranges::none_of(pending_uploads, [&](const auto& pending) {
+                    return pending.remote_path == item.remote_path;
+                })) {
+                items.remove_blocked_item(drive_id, item.remote_id);
+                continue;
+            }
+            if (item.reason_code == "upload_symbolic_link" ||
+                item.reason_code == "upload_type_conflict") {
+                local_path_blockers.insert(item.remote_path);
+            }
+            continue;
+        }
         blocked_ids.insert(item.remote_id);
         blocked_paths.insert(item.remote_path);
     }
     std::unordered_map<std::string, storage::PendingUpload>
         resource_blocked_uploads;
-    for (auto pending : items.pending_uploads(drive_id)) {
+    for (auto pending : pending_uploads) {
         if (!pending.failure_code.empty() &&
             (!pending.snapshot_path.empty() || pending.directory)) {
             resource_blocked_uploads.emplace(
@@ -160,7 +208,7 @@ std::vector<UploadCandidate> discover_uploads(
                     parent.lexically_normal().string()
                 );
             }
-        } else if (cleanup_suppressions) {
+        } else if (applying) {
             items.remove_upload_suppression(
                 drive_id,
                 suppression.local_path
@@ -180,6 +228,14 @@ std::vector<UploadCandidate> discover_uploads(
             const auto path = entry.path();
             if (std::filesystem::is_symlink(status)) {
                 ++blocked;
+                save_upload_blocked(
+                    items,
+                    drive_id,
+                    path.lexically_relative(sync_root.path()).generic_string(),
+                    false,
+                    "symbolic_link",
+                    "Refusing to upload symbolic link '" + path.string() + "'."
+                );
                 observer.message(
                     events::MessageKind::warning,
                     "local_upload_blocked",
@@ -227,6 +283,16 @@ std::vector<UploadCandidate> discover_uploads(
                 );
                 failed != resource_blocked_uploads.end()) {
                 ++blocked;
+                if (!applying) {
+                    save_upload_blocked(
+                        items,
+                        drive_id,
+                        remote_path,
+                        directory,
+                        failed->second.failure_code,
+                        failed->second.failure_message
+                    );
+                }
                 observer.message(
                     events::MessageKind::warning,
                     "local_upload_resource_blocked",
@@ -254,6 +320,15 @@ std::vector<UploadCandidate> discover_uploads(
             if (directory && previous != tracked.end() &&
                 !previous->second.directory) {
                 ++blocked;
+                save_upload_blocked(
+                    items,
+                    drive_id,
+                    remote_path,
+                    true,
+                    "type_conflict",
+                    "Refusing to replace a tracked remote file with a local "
+                    "directory."
+                );
                 observer.message(
                     events::MessageKind::warning,
                     "local_upload_blocked",
@@ -267,6 +342,15 @@ std::vector<UploadCandidate> discover_uploads(
                     return TreeWalkAction::continue_walk;
                 }
                 ++blocked;
+                save_upload_blocked(
+                    items,
+                    drive_id,
+                    remote_path,
+                    false,
+                    "type_conflict",
+                    "Refusing to replace a tracked remote directory with a "
+                    "local file."
+                );
                 observer.message(
                     events::MessageKind::warning,
                     "local_upload_blocked",
@@ -274,6 +358,11 @@ std::vector<UploadCandidate> discover_uploads(
                         remote_path + "' with a local file."
                 );
                 return TreeWalkAction::continue_walk;
+            }
+            if (local_path_blockers.contains(remote_path)) {
+                items.remove_blocked_item(
+                    drive_id, upload_blocked_id(remote_path)
+                );
             }
             if (directory || previous == tracked.end() ||
                 !local_snapshot_matches(previous->second, path)) {
@@ -285,6 +374,10 @@ std::vector<UploadCandidate> discover_uploads(
                                     : std::optional{previous->second},
                     .directory = directory,
                 });
+            } else if (local_upload_paths.contains(remote_path)) {
+                items.remove_blocked_item(
+                    drive_id, upload_blocked_id(remote_path)
+                );
             }
             return TreeWalkAction::continue_walk;
         }
@@ -346,7 +439,11 @@ UploadSummary upload_local_changes(
     summary.planned_deletions = deletion_plan.operations.size();
     summary.affected_deletions = deletion_plan.affected_items;
     summary.large_delete_blocked = enforce_remote_deletion_limit(
-        deletion_plan, deletion_guard, observer, capabilities.execution_mode()
+        deletion_plan,
+        deletion_guard,
+        observer,
+        capabilities.execution_mode(),
+        &items
     );
     if (capabilities.previews()) {
         const auto uploads = discover_uploads(
@@ -356,7 +453,7 @@ UploadSummary upload_local_changes(
             sync_list,
             summary.blocked,
             observer,
-            false,
+            capabilities.execution_mode(),
             moves.moved_local_paths
         );
         summary.planned = static_cast<std::size_t>(
@@ -421,10 +518,20 @@ UploadSummary upload_local_changes(
     summary.planned_deletions = deletion_plan.operations.size();
     summary.affected_deletions = deletion_plan.affected_items;
     summary.large_delete_blocked = enforce_remote_deletion_limit(
-        deletion_plan, deletion_guard, observer, capabilities.execution_mode()
+        deletion_plan,
+        deletion_guard,
+        observer,
+        capabilities.execution_mode(),
+        &items
     );
     auto uploads = discover_uploads(
-        sync_root, drive_id, items, sync_list, summary.blocked, observer, true
+        sync_root,
+        drive_id,
+        items,
+        sync_list,
+        summary.blocked,
+        observer,
+        capabilities.execution_mode()
     );
     summary.planned = static_cast<std::size_t>(std::ranges::count(
         uploads,
@@ -507,6 +614,9 @@ UploadSummary upload_local_changes(
         case FileUploadStatus::skipped:
             return;
         case FileUploadStatus::uploaded:
+            items.remove_blocked_item(
+                drive_id, upload_blocked_id(upload.remote_path)
+            );
             ++summary.uploaded;
             if (!result.message.empty()) {
                 observer.message(

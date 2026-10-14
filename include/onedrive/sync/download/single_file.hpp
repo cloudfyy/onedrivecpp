@@ -13,6 +13,7 @@ namespace onedrive::sync {
     const config::Config& config,
     const std::string& remote_path,
     graph::GraphClient& graph,
+    storage::ItemStore& items,
     const events::Observer& observer
 );
 [[nodiscard]] int download_single_file(

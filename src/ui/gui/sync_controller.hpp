@@ -37,6 +37,7 @@ public:
     void start(const std::filesystem::path& config_file, bool preview);
     void cancel();
     void invalidate_preview();
+    void refresh_blocked_items(const std::filesystem::path& config_file);
     [[nodiscard]] bool running() const noexcept;
 
 Q_SIGNALS:
@@ -44,6 +45,9 @@ Q_SIGNALS:
     void
     events_ready(const std::vector<events::Event>& batch, std::size_t omitted);
     void finished(int result, QString error, bool preview);
+    void blocked_items_ready(
+        const std::vector<storage::BlockedItem>& items, QString error
+    );
 
 private:
     void queue_event(const events::Event& event);
@@ -59,6 +63,9 @@ private:
     std::deque<events::Event> pending_events_;
     std::size_t omitted_events_{};
     bool delivery_pending_{};
+    std::jthread blocked_worker_;
+    bool blocked_refreshing_{};
+    std::optional<std::filesystem::path> blocked_refresh_pending_;
 };
 
 } // namespace onedrive::gui

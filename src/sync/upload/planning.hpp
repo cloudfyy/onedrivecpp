@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <vector>
 
@@ -25,6 +26,16 @@ struct UploadCandidate {
     std::optional<storage::ItemState> previous;
     bool directory{false};
 };
+
+[[nodiscard]] std::string upload_blocked_id(std::string_view remote_path);
+void save_upload_blocked(
+    storage::ItemStore& items,
+    const std::string& drive_id,
+    const std::string& remote_path,
+    bool directory,
+    std::string_view reason,
+    std::string_view message
+);
 
 struct DeletionPlan {
     std::vector<storage::PendingDelete> operations;
@@ -64,7 +75,8 @@ struct LocalMoveDiscovery {
     const DeletionPlan& plan,
     RemoteDeletionGuard guard,
     const events::Observer& observer,
-    ExecutionMode execution_mode
+    ExecutionMode execution_mode,
+    storage::ItemStore* items = nullptr
 );
 [[nodiscard]] LocalMoveDiscovery discover_local_moves(
     const SafeSyncRoot& sync_root,

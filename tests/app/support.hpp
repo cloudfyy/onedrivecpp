@@ -460,7 +460,7 @@ public:
         const std::vector<onedrive::storage::ItemState>& items,
         const std::vector<onedrive::storage::PartialDownload>& partials,
         const std::vector<onedrive::storage::PendingDownload>& pending,
-        const std::vector<onedrive::storage::BlockedItem>& blocked
+        std::vector<onedrive::storage::BlockedItem>& blocked
     )
         : open_count_{open_count},
           apply_delta_count_{apply_delta_count},
@@ -601,6 +601,29 @@ public:
         return {filtered.begin(), filtered.end()};
     }
 
+    void save_blocked_item(onedrive::storage::BlockedItem item) {
+        const auto existing =
+            std::ranges::find_if(blocked_, [&](const auto& saved) {
+                return saved.drive_id == item.drive_id &&
+                       saved.remote_id == item.remote_id;
+            });
+        item.attempt_count =
+            existing == blocked_.end() ? 1 : existing->attempt_count + 1;
+        if (existing == blocked_.end()) {
+            blocked_.push_back(std::move(item));
+        } else {
+            *existing = std::move(item);
+        }
+    }
+
+    void remove_blocked_item(
+        const std::string& drive_id, const std::string& remote_id
+    ) {
+        std::erase_if(blocked_, [&](const auto& item) {
+            return item.drive_id == drive_id && item.remote_id == remote_id;
+        });
+    }
+
     bool reset(const std::string& drive_id) {
         ++reset_count_;
         reset_drive_id_ = drive_id;
@@ -659,7 +682,7 @@ private:
     const std::vector<onedrive::storage::ItemState>& items_;
     const std::vector<onedrive::storage::PartialDownload>& partials_;
     const std::vector<onedrive::storage::PendingDownload>& pending_;
-    const std::vector<onedrive::storage::BlockedItem>& blocked_;
+    std::vector<onedrive::storage::BlockedItem>& blocked_;
 };
 
 class FakeMonitor final {
@@ -868,7 +891,7 @@ public:
     std::vector<onedrive::storage::PartialDownload>
         partial_download_states;
     std::vector<onedrive::storage::PendingDownload> pending_download_states;
-    std::vector<onedrive::storage::BlockedItem> blocked_item_states;
+    mutable std::vector<onedrive::storage::BlockedItem> blocked_item_states;
 };
 
 RunResult run_application(

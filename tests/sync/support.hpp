@@ -504,7 +504,6 @@ public:
                     }
                 );
             });
-            blocked.clear();
         }
         for (const auto& remote_id : delta.removals) {
             items.erase(remote_id);
@@ -530,6 +529,9 @@ public:
             });
         }
         for (const auto& item : delta.blocked_upserts) {
+            if (delta.blocked_items_saved) {
+                break;
+            }
             const auto existing = std::ranges::find(
                 blocked,
                 item.remote_id,
@@ -839,6 +841,27 @@ public:
             std::ranges::reverse(result);
         }
         return result;
+    }
+
+    void save_blocked_item(onedrive::storage::BlockedItem item) {
+        const std::scoped_lock lock{mutex};
+        const auto existing = std::ranges::find(
+            blocked, item.remote_id, &onedrive::storage::BlockedItem::remote_id
+        );
+        item.attempt_count =
+            existing == blocked.end() ? 1 : existing->attempt_count + 1;
+        if (existing == blocked.end()) {
+            blocked.push_back(std::move(item));
+        } else {
+            *existing = std::move(item);
+        }
+    }
+
+    void remove_blocked_item(const std::string&, const std::string& remote_id) {
+        const std::scoped_lock lock{mutex};
+        std::erase_if(blocked, [&](const auto& item) {
+            return item.remote_id == remote_id;
+        });
     }
 
     bool reset(const std::string&) {

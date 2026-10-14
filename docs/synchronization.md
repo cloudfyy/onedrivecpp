@@ -124,16 +124,28 @@ only after every page has been processed successfully, so a partial failure
 does not lose unapplied changes.
 
 `--dry-run` queries remote changes and reports directory creations, file
-downloads, download bytes, and local removals, but does not create files or
-update SQLite state. Normal mode creates remote directories and downloads
+downloads, download bytes, and local removals, but does not transfer or change
+synchronized files, advance the applied cursor, or commit ordinary snapshots.
+It does create/update SQLite blocked-item diagnostics. Normal mode creates remote directories and downloads
 added or changed files. Each download is written to a temporary file in the
 target directory, size-checked, flushed, and atomically replaced. Each
 concurrent worker commits its completed file immediately instead of retaining
 the entire batch as temporary files, so a later independent failure does not
 discard completed transfers. The `deltaLink` advances after every change is
-either applied successfully or durably recorded as blocked in the same SQLite
-transaction. Local snapshots for completed files support safe retries after a
+either applied successfully or durably recorded as blocked. Diagnostics are saved
+as soon as a blocker is discovered, independently of the final delta transaction.
+Local snapshots for completed files support safe retries after a
 systemic failure.
+
+Preview, synchronization and Monitor use one `blocked_item` table. Records are
+upserted by Drive/item identity, counting repeated discoveries rather than
+duplicating rows. Failure, cancellation and full refresh do not clear the table;
+only confirmed resolution/removal clears a record. Local upload diagnostics use
+reserved `upload_*` reason codes and path-derived `upload:` identifiers, never
+Graph item IDs; they are revalidated locally and never inserted into remote delta
+retries. Resource failures, unsafe local types and deletion safeguards are saved
+alongside remote blockers. Operational failures without an identified blocked
+item still report normal task errors, not artificial item records.
 
 ## Concurrency and conflict protection
 

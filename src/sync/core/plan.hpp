@@ -20,7 +20,8 @@ public:
         std::string sync_filter_fingerprint,
         std::vector<std::string> snapshot_removals = {},
         const std::vector<storage::ItemState>& tracked_items = {},
-        std::vector<storage::UploadSuppression> upload_suppressions = {}
+        std::vector<storage::UploadSuppression> upload_suppressions = {},
+        storage::ItemStore* blocked_store = nullptr
     );
 
     [[nodiscard]] const graph::RemoteItem& directory(std::size_t index) const;
@@ -60,6 +61,7 @@ private:
     std::vector<std::size_t> removals_;
     std::vector<std::size_t> moves_;
     std::uintmax_t download_bytes_{0};
+    storage::ItemStore* blocked_store_{};
 };
 
 } // namespace onedrive::sync::detail
