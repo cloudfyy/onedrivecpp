@@ -3,6 +3,7 @@
 #include "sync/upload/directory.hpp"
 #include "sync/upload/errors.hpp"
 #include "sync/upload/orchestration.hpp"
+#include "sync/download/progress.hpp"
 
 #include "onedrive/ui/common/observer.hpp"
 #include "onedrive/sync/cancellation.hpp"
@@ -417,7 +418,8 @@ graph::RemoteItem recover_uploaded_item(
     storage::PendingUpload& upload,
     graph::GraphClient& graph,
     storage::ItemStore& items,
-    const std::stop_token& stop_token
+    const std::stop_token& stop_token,
+    const graph::UploadProgress& progress
 ) {
     const auto session = upload.upload_url.empty() ?
         std::nullopt :
@@ -441,7 +443,8 @@ graph::RemoteItem recover_uploaded_item(
             upload.snapshot_path,
             session,
             checkpoint,
-            stop_token
+            stop_token,
+            progress
         );
     } catch (const graph::UploadConflictError&) {
         const auto remote = graph.item_by_path(
@@ -492,7 +495,8 @@ FileUploadResult execute_file_upload(
     storage::ItemStore& items,
     const FilesystemMetadata& metadata,
     std::uint64_t previous_failure_count,
-    const std::stop_token& stop_token
+    const std::stop_token& stop_token,
+    const graph::UploadProgress& progress
 ) {
     storage::PendingUpload pending{
         .drive_id = drive_id,
@@ -539,7 +543,8 @@ FileUploadResult execute_file_upload(
             pending.snapshot_path,
             std::nullopt,
             checkpoint,
-            stop_token
+            stop_token,
+            progress
         );
         if (remote.remote_path != upload.remote_path ||
             remote.size != baseline.size) {
@@ -657,7 +662,7 @@ FileUploadResult execute_file_upload(
     }
 }
 
-void recover_pending_uploads(
+std::size_t recover_pending_uploads(
     const SafeSyncRoot& sync_root,
     const std::string& drive_id,
     graph::GraphClient& graph,
@@ -667,7 +672,26 @@ void recover_pending_uploads(
     const std::stop_token& stop_token
 ) {
     const auto blocked = items.blocked_items(drive_id);
-    for (auto upload : items.pending_uploads(drive_id)) {
+    auto pending = items.pending_uploads(drive_id);
+    std::vector<std::uint64_t> sizes;
+    std::vector<std::optional<std::size_t>> progress_indices;
+    for (const auto& upload : pending) {
+        if (upload.directory) {
+            progress_indices.push_back(std::nullopt);
+        } else {
+            if (upload.local_size < 0) {
+                throw std::runtime_error{
+                    "pending upload has a negative size: " + upload.remote_path
+                };
+            }
+            progress_indices.push_back(sizes.size());
+            sizes.push_back(static_cast<std::uint64_t>(upload.local_size));
+        }
+    }
+    UploadProgressTracker progress{std::move(sizes), observer};
+    std::size_t recovered_files = 0;
+    for (std::size_t index = 0; index < pending.size(); ++index) {
+        auto upload = pending[index];
         throw_if_cancelled(stop_token);
         if (const auto* blocker = blocked_recovery(
                 blocked, upload.remote_id.value_or(""), upload.remote_path
@@ -697,6 +721,7 @@ void recover_pending_uploads(
                     drive_id, upload_blocked_id(upload.remote_path)
                 );
             }
+            progress.skip(progress_indices[index].value());
             continue;
         }
         try {
@@ -725,8 +750,22 @@ void recover_pending_uploads(
                     upload.snapshot_path.string()
                 );
             }
-            const auto remote =
-                recover_uploaded_item(upload, graph, items, stop_token);
+            const auto remote = recover_uploaded_item(
+                upload,
+                graph,
+                items,
+                stop_token,
+                [&](std::uint64_t completed,
+                    std::uint64_t total,
+                    std::uint64_t transferred) {
+                    progress.update(
+                        progress_indices[index].value(),
+                        completed,
+                        total,
+                        transferred
+                    );
+                }
+            );
             auto state = uploaded_state(
                 remote,
                 upload.local_path,
@@ -744,6 +783,8 @@ void recover_pending_uploads(
             items.remove_blocked_item(
                 drive_id, upload_blocked_id(upload.remote_path)
             );
+            progress.finish(progress_indices[index].value());
+            ++recovered_files;
             observer.message(
                 source_present ? events::MessageKind::information
                                : events::MessageKind::warning,
@@ -810,6 +851,7 @@ void recover_pending_uploads(
             throw;
         }
     }
+    return recovered_files;
 }
 
 }  // namespace onedrive::sync::detail

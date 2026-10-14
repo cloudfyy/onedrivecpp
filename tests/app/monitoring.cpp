@@ -39,6 +39,17 @@ public:
         });
     }
 
+    [[nodiscard]] std::vector<onedrive::events::SyncPhase> phases() const {
+        std::vector<onedrive::events::SyncPhase> result;
+        for (const auto& event : events) {
+            if (const auto* phase =
+                    std::get_if<onedrive::events::SyncPhaseEvent>(&event)) {
+                result.push_back(phase->phase);
+            }
+        }
+        return result;
+    }
+
 protected:
     void on_event(const onedrive::events::Event& event) const override {
         events.push_back(event);
@@ -67,7 +78,8 @@ int test_monitoring_service() {
 
     if (result != exit_code::success ||
         !observer.has_message("monitor_ready") ||
-        !observer.has_message("monitor_status") ||
+        !observer.has_message("monitor_status") || observer.phases().empty() ||
+        observer.phases().back() != onedrive::events::SyncPhase::waiting ||
         observer.operation_states() !=
             std::vector<onedrive::events::OperationState>{
                 onedrive::events::OperationState::watching,

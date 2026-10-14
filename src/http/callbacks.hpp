@@ -95,6 +95,7 @@ struct HeaderContext {
 
 struct ProgressContext {
     const DownloadProgress* callback{};
+    const UploadProgress* upload_callback{};
     std::stop_token stop_token;
     bool cancelled{false};
     bool failed{false};

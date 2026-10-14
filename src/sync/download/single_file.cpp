@@ -274,6 +274,8 @@ int download_single_file(
         };
         auto state = detail::item_state_for(config.drive_id, item, destination);
         detail::DownloadProgressEstimator progress_estimator;
+        std::uint64_t transferred_bytes = 0;
+        observer.sync_phase(events::SyncPhase::downloading);
         const auto installed = detail::commit_download(
             items,
             safe_root,
@@ -290,14 +292,27 @@ int download_single_file(
                 {},
                 [&](std::uint64_t downloaded, std::uint64_t total) {
                     observer.download_progress(
-                        downloaded >= total ? 1U : 0U,
+                        0,
                         1,
                         downloaded,
                         total,
-                        downloaded >= total ? util::ProgressState::completed
-                                            : util::ProgressState::ongoing,
-                        progress_estimator.sample(downloaded, total)
+                        util::ProgressState::ongoing,
+                        progress_estimator.sample(
+                            downloaded,
+                            total,
+                            transferred_bytes,
+                            detail::DownloadProgressEstimator::Clock::now()
+                        )
                     );
+                },
+                [&](std::uint64_t bytes) {
+                    if (bytes > std::numeric_limits<std::uint64_t>::max() -
+                                    transferred_bytes) {
+                        throw std::overflow_error{
+                            "download transfer byte count overflow"
+                        };
+                    }
+                    transferred_bytes += bytes;
                 }
             ),
             {
@@ -311,6 +326,21 @@ int download_single_file(
                     );
                 },
             }
+        );
+        const auto installed_bytes =
+            static_cast<std::uint64_t>(installed.local_size);
+        observer.download_progress(
+            1,
+            1,
+            installed_bytes,
+            installed_bytes,
+            util::ProgressState::completed,
+            progress_estimator.sample(
+                installed_bytes,
+                installed_bytes,
+                transferred_bytes,
+                detail::DownloadProgressEstimator::Clock::now()
+            )
         );
         spdlog::info(
             "Downloaded single remote file '{}' to '{}'",

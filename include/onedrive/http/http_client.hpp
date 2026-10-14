@@ -37,6 +37,8 @@ using DownloadThrottle = std::function<bool(
     const std::stop_token& stop_token
 )>;
 using UploadThrottle = DownloadThrottle;
+using UploadProgress =
+    std::function<void(std::uint64_t uploaded, std::uint64_t total)>;
 
 enum class HttpMethod {
     get,
@@ -69,6 +71,7 @@ struct HttpRequest {
     std::size_t maximum_redirects{0};
     DownloadThrottle download_throttle{};
     UploadThrottle upload_throttle{};
+    UploadProgress upload_progress{};
     std::stop_token stop_token;
 };
 

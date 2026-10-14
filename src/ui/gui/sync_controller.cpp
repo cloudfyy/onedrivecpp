@@ -55,7 +55,8 @@ private:
 
 bool is_progress(const events::Event& event) {
     return std::holds_alternative<events::DeltaProgressEvent>(event) ||
-           std::holds_alternative<events::DownloadProgressEvent>(event);
+           std::holds_alternative<events::DownloadProgressEvent>(event) ||
+           std::holds_alternative<events::UploadProgressEvent>(event);
 }
 
 } // namespace

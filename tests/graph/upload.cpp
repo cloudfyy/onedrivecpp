@@ -1,4 +1,5 @@
 #include "support.hpp"
+#include <array>
 
 namespace {
 
@@ -18,6 +19,14 @@ int test_simple_file_uploads() {
         ),
     });
     auto* transport_pointer = transport.get();
+    transport_pointer->on_perform =
+        [](const onedrive::http::HttpRequest& request) {
+            if (request.upload_progress) {
+                request.upload_progress(
+                    request.body.size(), request.body.size()
+                );
+            }
+        };
     onedrive::graph::MicrosoftGraphClient client{
         wrap_transport(std::move(transport)),
         wrap_token_store(
@@ -34,8 +43,26 @@ int test_simple_file_uploads() {
         std::ofstream output{source, std::ios::binary};
         output << "payload";
     }
-    const auto created =
-        client.upload_file("Folder A/new #1.txt", std::nullopt, "", source);
+    std::vector<std::array<std::uint64_t, 3>> progress;
+    const auto created = client.upload_file(
+        "Folder A/new #1.txt",
+        std::nullopt,
+        "",
+        source,
+        std::nullopt,
+        {},
+        {},
+        [&](std::uint64_t completed, std::uint64_t total, std::uint64_t sent) {
+            progress.push_back({completed, total, sent});
+        }
+    );
+    if (progress.empty() ||
+        progress.front() != std::array<std::uint64_t, 3>{0, 7, 0} ||
+        progress.back() != std::array<std::uint64_t, 3>{7, 7, 7}) {
+        return fail(
+            "simple upload progress did not count actual payload bytes"
+        );
+    }
     const auto updated = client.upload_file(
         "Folder A/new #1.txt", std::string{"file/id"}, "old-etag", source
     );
@@ -295,6 +322,13 @@ int test_upload_sessions() {
         },
     });
     auto* transport_pointer = transport.get();
+    transport_pointer
+        ->on_perform = [](const onedrive::http::HttpRequest& request) {
+        if (request.upload_progress) {
+            request.upload_progress(request.body.size(), request.body.size());
+            request.upload_progress(request.body.size(), request.body.size());
+        }
+    };
     std::vector<std::chrono::seconds> sleeps;
     onedrive::graph::MicrosoftGraphClient client{
         wrap_transport(std::move(transport)),
@@ -321,6 +355,7 @@ int test_upload_sessions() {
         output << std::string(total_size, 'x');
     }
     std::vector<onedrive::graph::UploadSession> upload_checkpoints;
+    std::uint64_t transferred = 0;
     const auto uploaded = client.upload_file(
         "Folder/large.bin",
         std::nullopt,
@@ -329,8 +364,17 @@ int test_upload_sessions() {
         std::nullopt,
         [&](const onedrive::graph::UploadSession& checkpoint) {
             upload_checkpoints.push_back(checkpoint);
+        },
+        {},
+        [&](std::uint64_t, std::uint64_t, std::uint64_t sent) {
+            transferred = sent;
         }
     );
+    if (transferred != total_size + chunk_size) {
+        return fail(
+            "upload retry bytes were lost or duplicate callbacks double-counted"
+        );
+    }
     const auto& requests = transport_pointer->queued.requests;
     if (uploaded.id != "session-file" || requests.size() != 5 ||
         requests[1].method != onedrive::http::HttpMethod::post ||
@@ -450,6 +494,14 @@ int test_upload_session_resume() {
         },
     });
     auto* transport_pointer = transport.get();
+    transport_pointer->on_perform =
+        [](const onedrive::http::HttpRequest& request) {
+            if (request.upload_progress) {
+                request.upload_progress(
+                    request.body.size(), request.body.size()
+                );
+            }
+        };
     onedrive::graph::MicrosoftGraphClient client{
         wrap_transport(std::move(transport)),
         wrap_token_store(std::make_unique<FakeTokenStore>(std::nullopt)),
@@ -462,6 +514,7 @@ int test_upload_session_resume() {
         },
     };
     std::vector<onedrive::graph::UploadSession> checkpoints;
+    std::vector<std::array<std::uint64_t, 3>> progress;
     const auto uploaded = client.upload_file(
         "Folder/large.bin",
         std::nullopt,
@@ -474,8 +527,21 @@ int test_upload_session_resume() {
         },
         [&](const onedrive::graph::UploadSession& checkpoint) {
             checkpoints.push_back(checkpoint);
+        },
+        {},
+        [&](std::uint64_t completed, std::uint64_t total, std::uint64_t sent) {
+            progress.push_back({completed, total, sent});
         }
     );
+    if (progress.empty() ||
+        progress.front() !=
+            std::array<std::uint64_t, 3>{chunk_size, total_size, 0} ||
+        progress.back() !=
+            std::array<std::uint64_t, 3>{total_size, total_size, 7}) {
+        return fail(
+            "resumed upload counted historical bytes as new network traffic"
+        );
+    }
     if (uploaded.id != "resumed-file" ||
         transport_pointer->queued.requests.size() != 2 ||
         transport_pointer->queued.requests[0].method !=

@@ -2,11 +2,13 @@
 
 #include "onedrive/logging/logging.hpp"
 #include "onedrive/util/progress.hpp"
+#include "onedrive/sync/capabilities.hpp"
 
 #include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -20,11 +22,14 @@ struct Field {
     std::string value;
 };
 
-struct DownloadProgressMetrics {
+struct TransferProgressMetrics {
     std::uint64_t bytes_per_second{0};
     std::optional<std::uint64_t> estimated_seconds_remaining;
     std::uint64_t elapsed_milliseconds{0};
 };
+
+using DownloadProgressMetrics = TransferProgressMetrics;
+using UploadProgressMetrics = TransferProgressMetrics;
 
 struct DeltaSummary {
     std::size_t pages{0};
@@ -74,6 +79,46 @@ struct DownloadProgressEvent {
 
 struct EndDownloadProgressEvent {};
 
+struct UploadProgressEvent {
+    std::size_t completed_files{0};
+    std::size_t file_count{0};
+    std::uint64_t uploaded{0};
+    std::uint64_t total{0};
+    util::ProgressState state{util::ProgressState::ongoing};
+    UploadProgressMetrics metrics;
+};
+
+struct EndUploadProgressEvent {};
+
+enum class SyncPhase {
+    preparing,
+    scanning,
+    scanning_local,
+    downloading,
+    uploading,
+    applying,
+    waiting,
+};
+
+struct SyncPhaseEvent {
+    SyncPhase phase;
+};
+
+struct SyncContextEvent {
+    sync::SyncMode direction;
+    bool preview{false};
+};
+
+[[nodiscard]] std::string_view sync_phase_name(SyncPhase phase);
+
+struct SyncSummaryEvent {
+    std::size_t downloaded{0};
+    std::size_t uploaded{0};
+    std::size_t moved{0};
+    std::size_t deleted{0};
+    std::size_t blocked{0};
+};
+
 enum class OperationKind {
     authentication,
     synchronization,
@@ -103,7 +148,12 @@ using Event = std::variant<
     BlockedItemEvent,
     DownloadProgressEvent,
     EndDownloadProgressEvent,
-    OperationStateEvent>;
+    OperationStateEvent,
+    UploadProgressEvent,
+    EndUploadProgressEvent,
+    SyncPhaseEvent,
+    SyncSummaryEvent,
+    SyncContextEvent>;
 
 [[nodiscard]] unsigned download_progress_percentage(
     std::size_t completed_files,

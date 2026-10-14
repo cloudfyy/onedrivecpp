@@ -199,21 +199,24 @@ when needed, and report authentication or connectivity errors.
 Sync-path validation does not prevent login when authentication/state settings
 are usable; synchronization requires valid sync settings and saved credentials.
 
-The main tabs are **Overview / Synchronization / Logs / Settings**. Overview
+The main tabs are **Overview / Synchronization status / Logs / Settings**. Overview
 shows account and directory information plus the current/latest sync result.
 Overview has no synchronization buttons; task controls are on the Synchronization tab.
 
-In **Synchronization**, use **Preview changes** to inspect the plan
+In **Synchronization status**, use **Preview changes** to inspect the plan
 without changing synchronized files, then **Sync now** to apply it. Both use
 saved configuration, not unsaved Settings drafts. A saved `sync.dry_run = true`
 keeps **Sync now** in preview mode; the GUI never overrides the remote-deletion
 safety limit. Tasks run in a background worker using the same service and state
 directory lock as the CLI. The task page shows a concise result/error summary
-with details available in the **Logs** tab. The progress bar is blue and displays only a
-centered numeric percentage (for example, `50%`). Download progress
-includes file/byte counts, speed and an estimated remaining time when available.
-Uploads currently have messages but no percentage display.
-The percentage measures downloads, not whole-task progress.
+with details available in the **Logs** tab. The page shows the configured direction
+and one-time task mode, separate upload/download counts, bytes, speed and an
+estimated remaining time when available. Blue progress bars display centered
+numeric percentages (for example, `50%`). Transfer percentages measure their own
+direction, not the whole task; uploading 100% does not complete synchronization.
+Saved resume offsets and reused downloads do not inflate current-round network
+speed. The round summary retains download/upload/move/delete/block counts and the
+last finish time.
 Scanning and other phases without measurable totals display an explanatory
 message instead of a full-looking indeterminate bar. Overall 100% appears only
 after successful task completion.

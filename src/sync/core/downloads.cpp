@@ -15,6 +15,8 @@
 #include <atomic>
 #include <cstdint>
 #include <mutex>
+#include <limits>
+#include <stdexcept>
 #include <stop_token>
 #include <thread>
 
@@ -45,6 +47,7 @@ DownloadBatch download_files(
     if (tasks.empty() && completed.files == 0) {
         return batch;
     }
+    observer.sync_phase(events::SyncPhase::downloading);
 
     std::atomic_size_t next_task{0};
     std::stop_source stop;
@@ -62,6 +65,7 @@ DownloadBatch download_files(
         tasks.size(), DownloadTaskState::active
     );
     std::uint64_t downloaded_bytes = completed.bytes;
+    std::uint64_t transferred_bytes = 0;
     std::uint64_t total_bytes = completed.bytes;
     for (const auto& task : tasks) {
         total_bytes += static_cast<std::uint64_t>(task.item.size);
@@ -76,7 +80,7 @@ DownloadBatch download_files(
             util::ProgressState::completed :
             util::ProgressState::ongoing;
     const auto initial_metrics = progress_estimator.sample(
-        downloaded_bytes, total_bytes, started_at
+        downloaded_bytes, total_bytes, transferred_bytes, started_at
     );
     if (progress_reporter.should_report(
             completed_files,
@@ -134,9 +138,7 @@ DownloadBatch download_files(
                 return;
             }
             const auto metrics = progress_estimator.sample(
-                downloaded_bytes,
-                total_bytes,
-                sampled_at
+                downloaded_bytes, total_bytes, transferred_bytes, sampled_at
             );
             observer.download_progress(
                 completed_files,
@@ -224,6 +226,17 @@ DownloadBatch download_files(
                                     downloaded,
                                     util::ProgressState::ongoing
                                 );
+                            },
+                            [&](std::uint64_t bytes) {
+                                const std::scoped_lock lock{observer_mutex};
+                                if (bytes >
+                                    std::numeric_limits<std::uint64_t>::max() -
+                                        transferred_bytes) {
+                                    throw std::overflow_error{
+                                        "download transfer byte count overflow"
+                                    };
+                                }
+                                transferred_bytes += bytes;
                             }
                         ),
                         {

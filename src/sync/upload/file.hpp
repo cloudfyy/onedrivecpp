@@ -30,7 +30,8 @@ struct FileUploadResult {
     storage::ItemStore& items,
     const FilesystemMetadata& metadata,
     std::uint64_t previous_failure_count,
-    const std::stop_token& stop_token
+    const std::stop_token& stop_token,
+    const graph::UploadProgress& progress = {}
 );
 
 }  // namespace onedrive::sync::detail

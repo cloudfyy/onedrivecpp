@@ -389,7 +389,8 @@ public:
         const std::filesystem::path&,
         const std::optional<onedrive::graph::UploadSession>&,
         const onedrive::graph::UploadCheckpoint&,
-        std::stop_token
+        std::stop_token,
+        const onedrive::graph::UploadProgress& = {}
     ) const {
         throw std::logic_error{"upload was not expected"};
     }

@@ -392,7 +392,37 @@ private:
 
     void update(const EndDownloadProgressEvent&) {}
 
-    void update(const OperationStateEvent&) {}
+    void update(const UploadProgressEvent& event) {
+        upload_ = event;
+    }
+    void update(const EndUploadProgressEvent&) {
+    }
+    void update(const SyncPhaseEvent& event) {
+        phase_ = event.phase;
+        if (event.phase == events::SyncPhase::preparing) {
+            round_incomplete_ = true;
+            download_.reset();
+            upload_.reset();
+        }
+    }
+    void update(const events::SyncContextEvent& event) {
+        context_ = event;
+    }
+    void update(const SyncSummaryEvent& event) {
+        summary_ = event;
+        round_incomplete_ = event.blocked != 0;
+        if (monitoring_) {
+            phase_ = events::SyncPhase::waiting;
+        }
+    }
+    void update(const OperationStateEvent& event) {
+        if (event.operation == OperationKind::monitoring) {
+            monitoring_ = event.state == OperationState::watching;
+            if (monitoring_) {
+                phase_ = events::SyncPhase::waiting;
+            }
+        }
+    }
 
     Element header() const {
         const auto view_name = [&] {
@@ -461,12 +491,27 @@ private:
     }
 
     Element download_status() const {
+        return transfer_status(*download_, download_->downloaded, "DOWNLOADS");
+    }
+
+    template <typename Progress>
+    Element transfer_status(
+        const Progress& transfer, std::uint64_t bytes, std::string_view title
+    ) const {
+        if (transfer.total == 0 && transfer.file_count == 0 &&
+            transfer.state == util::ProgressState::ongoing) {
+            return vbox({
+                       emphasized(text(std::string{title})),
+                       text("Totals unknown; percentage unavailable."),
+                   }) |
+                   border;
+        }
         const auto percentage = download_progress_percentage(
-            download_->completed_files,
-            download_->file_count,
-            download_->downloaded,
-            download_->total,
-            download_->state
+            transfer.completed_files,
+            transfer.file_count,
+            bytes,
+            transfer.total,
+            transfer.state
         );
         auto progress = gauge(
             static_cast<float>(percentage) / 100.0F
@@ -475,42 +520,46 @@ private:
         auto details = fmt::format(
             "{}%  {} / {}  {}/s",
             percentage,
-            format_bytes(download_->downloaded),
-            format_bytes(download_->total),
-            format_bytes(download_->metrics.bytes_per_second)
+            format_bytes(bytes),
+            format_bytes(transfer.total),
+            format_bytes(transfer.metrics.bytes_per_second)
         );
-        if (download_->state == util::ProgressState::completed) {
+        if (transfer.state == util::ProgressState::completed) {
             details += fmt::format(
                 "  elapsed {}",
-                download_->metrics.elapsed_milliseconds < 1000 ?
-                    "<1s" :
-                    format_duration(
-                        download_->metrics.elapsed_milliseconds / 1000
-                    )
+                transfer.metrics.elapsed_milliseconds < 1000
+                    ? "<1s"
+                    : format_duration(
+                          transfer.metrics.elapsed_milliseconds / 1000
+                      )
             );
         } else {
             details += fmt::format(
                 "  ETA {}",
-                download_->metrics.estimated_seconds_remaining.has_value() ?
-                    format_duration(
-                        *download_->metrics.estimated_seconds_remaining
-                    ) :
-                    "calculating..."
+                transfer.metrics.estimated_seconds_remaining.has_value()
+                    ? format_duration(
+                          *transfer.metrics.estimated_seconds_remaining
+                      )
+                    : "calculating..."
             );
         }
         return vbox({
-            emphasized(text(fmt::format(
-                "DOWNLOADS  {}/{} files",
-                download_->completed_files,
-                download_->file_count
-            ))),
-            hbox({
-                text("["),
-                std::move(progress) | flex,
-                text("]"),
-            }),
-            text(std::move(details)),
-        }) | border;
+                   emphasized(text(
+                       fmt::format(
+                           "{}  {}/{} files",
+                           title,
+                           transfer.completed_files,
+                           transfer.file_count
+                       )
+                   )),
+                   hbox({
+                       text("["),
+                       std::move(progress) | flex,
+                       text("]"),
+                   }),
+                   text(std::move(details)),
+               }) |
+               border;
     }
 
     Element partial_results(int rows_available) const {
@@ -586,6 +635,48 @@ private:
         }
         if (download_) {
             content.push_back(download_status());
+        }
+        if (upload_) {
+            content.push_back(
+                transfer_status(*upload_, upload_->uploaded, "UPLOADS")
+            );
+        }
+        if (context_) {
+            content.push_back(text(
+                fmt::format(
+                    "Direction: {} // {}{}",
+                    sync::sync_mode_name(context_->direction),
+                    monitoring_ ? "automatic monitoring" : "one-time",
+                    context_->preview ? " // preview" : ""
+                )
+            ));
+        }
+        if (phase_) {
+            content.push_back(text(
+                fmt::format(
+                    "{}: {}",
+                    monitoring_ ? "MONITORING" : "SYNC",
+                    events::sync_phase_name(*phase_)
+                )
+            ));
+        }
+        if (summary_) {
+            content.push_back(text(
+                fmt::format(
+                    "Last round: {} downloaded, {} uploaded, {} moved, {} "
+                    "deleted, {} blocked{}",
+                    summary_->downloaded,
+                    summary_->uploaded,
+                    summary_->moved,
+                    summary_->deleted,
+                    summary_->blocked,
+                    summary_->blocked ? " // incomplete" : ""
+                )
+            ));
+        }
+        if (monitoring_ && phase_ == events::SyncPhase::waiting &&
+            round_incomplete_) {
+            content.push_back(text("Last synchronization round incomplete."));
         }
         const bool paged_list =
             (view_ == TuiView::drives || view_ == TuiView::blocked) &&
@@ -720,6 +811,12 @@ private:
     std::size_t blocked_items_{0};
     std::string last_blocked_;
     std::optional<DownloadProgressEvent> download_;
+    std::optional<UploadProgressEvent> upload_;
+    std::optional<events::SyncPhase> phase_;
+    std::optional<SyncSummaryEvent> summary_;
+    bool monitoring_{false};
+    bool round_incomplete_{false};
+    std::optional<events::SyncContextEvent> context_;
 };
 
 }  // namespace

@@ -68,10 +68,15 @@ int monitor_account(
             [&config, &graph, &items, &metrics, &observer](
                 const std::stop_token& sync_stop_token
             ) {
-                return sync::SyncEngine{
-                    config, *graph, *items, *metrics, &observer
+                const auto result =
+                    sync::SyncEngine{
+                        config, *graph, *items, *metrics, &observer
+                    }
+                        .synchronize(sync_stop_token);
+                if (!sync_stop_token.stop_requested()) {
+                    observer.sync_phase(events::SyncPhase::waiting);
                 }
-                    .synchronize(sync_stop_token);
+                return result;
             }
         };
         auto monitor = runtime_factory.create_monitor(

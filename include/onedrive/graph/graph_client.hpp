@@ -187,6 +187,11 @@ struct UploadSession {
 };
 
 using UploadCheckpoint = std::function<void(const UploadSession&)>;
+// Logical progress includes resumed bytes; transferred counts this call's wire
+// bytes.
+using UploadProgress = std::function<void(
+    std::uint64_t completed, std::uint64_t total, std::uint64_t transferred
+)>;
 
 struct GraphOptions {
     std::string drive_id{"me"};
@@ -270,7 +275,8 @@ struct GraphClientFacade
                                       const std::filesystem::path&,
                                       const std::optional<UploadSession>&,
                                       const UploadCheckpoint&,
-                                      std::stop_token
+                                      std::stop_token,
+                                      const UploadProgress&
                                   ) const>::
                                   add_convention<
                                       GraphCreateDirectoryDispatch,
@@ -401,7 +407,8 @@ public:
         const std::filesystem::path& source,
         const std::optional<UploadSession>& session = std::nullopt,
         const UploadCheckpoint& checkpoint = {},
-        std::stop_token stop_token = {}
+        std::stop_token stop_token = {},
+        const UploadProgress& progress = {}
     ) const {
         return implementation()->upload_file(
             remote_path,
@@ -410,7 +417,8 @@ public:
             source,
             session,
             checkpoint,
-            std::move(stop_token)
+            std::move(stop_token),
+            progress
         );
     }
 
@@ -567,7 +575,8 @@ public:
         const std::filesystem::path& source,
         const std::optional<UploadSession>& session = std::nullopt,
         const UploadCheckpoint& checkpoint = {},
-        std::stop_token stop_token = {}
+        std::stop_token stop_token = {},
+        const UploadProgress& progress = {}
     ) const;
     void delete_item(
         const std::string& remote_id, const std::string& expected_etag

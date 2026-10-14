@@ -10,6 +10,19 @@ namespace {
 
 using onedrive::test::fail;
 
+class UploadObserver final : public onedrive::events::Observer {
+public:
+    mutable std::vector<onedrive::events::UploadProgressEvent> progress;
+
+private:
+    void on_event(const onedrive::events::Event& event) const override {
+        if (const auto* value =
+                std::get_if<onedrive::events::UploadProgressEvent>(&event)) {
+            progress.push_back(*value);
+        }
+    }
+};
+
 }  // namespace
 
 int main() {
@@ -20,6 +33,65 @@ int main() {
         onedrive::sync::detail::DownloadProgressReporter;
 
     const Estimator::Clock::time_point started{};
+    Estimator large{started};
+    const auto large_bytes = (std::uint64_t{1} << 63U) + 16'384;
+    if (large.sample(large_bytes, large_bytes, started + 1s).bytes_per_second !=
+        large_bytes) {
+        return fail("large transfer rates overflowed signed rounding");
+    }
+    Estimator resumed{started};
+    const auto history = resumed.sample(900, 1000, 0, started + 1s);
+    const auto current = resumed.sample(950, 1000, 50, started + 2s);
+    const auto idle = resumed.sample(950, 1000, 50, started + 3s);
+    if (history.bytes_per_second != 0 || history.estimated_seconds_remaining ||
+        current.bytes_per_second != 50 ||
+        current.estimated_seconds_remaining != 1 ||
+        idle.bytes_per_second >= current.bytes_per_second) {
+        return fail(
+            "transfer estimator counted history or kept a stale idle speed"
+        );
+    }
+    UploadObserver observer;
+    onedrive::sync::detail::UploadProgressTracker uploads{{1000, 0}, observer};
+    uploads.update(0, 900, 1000, 0);
+    if (observer.progress.back().metrics.bytes_per_second != 0 ||
+        observer.progress.back().metrics.estimated_seconds_remaining) {
+        return fail(
+            "resumed upload baseline generated fictitious speed or ETA"
+        );
+    }
+    uploads.finish(0);
+    if (observer.progress.back().state !=
+            onedrive::util::ProgressState::ongoing ||
+        observer.progress.back().completed_files != 1) {
+        return fail("upload batch completed before its zero-byte file");
+    }
+    uploads.finish(1);
+    const auto count = observer.progress.size();
+    uploads.finish(1);
+    if (observer.progress.back().state !=
+            onedrive::util::ProgressState::completed ||
+        observer.progress.back().completed_files != 2 ||
+        observer.progress.back().uploaded != 1000 ||
+        observer.progress.size() != count) {
+        return fail("upload batch lost completion or counted a file twice");
+    }
+    UploadObserver skipped_observer;
+    onedrive::sync::detail::UploadProgressTracker skipped{
+        {3, 4}, skipped_observer
+    };
+    skipped.update(1, 4, 4, 4);
+    skipped.finish(1);
+    skipped.skip(0);
+    if (skipped_observer.progress.back().file_count != 1 ||
+        skipped_observer.progress.back().completed_files != 1 ||
+        skipped_observer.progress.back().total != 4 ||
+        skipped_observer.progress.back().state !=
+            onedrive::util::ProgressState::completed) {
+        return fail(
+            "disappeared upload source left a fictitious pending transfer"
+        );
+    }
     Estimator estimator{started};
     const auto first = estimator.sample(100, 1'000, started + 1s);
     const auto second = estimator.sample(300, 1'000, started + 2s);

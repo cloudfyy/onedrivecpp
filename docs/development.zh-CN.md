@@ -15,6 +15,18 @@
 匹配和 CLI 已说明的 ASCII 匹配，不重复维护字段筛选或数据库访问逻辑。
 CLI 输出继续复用现有 Console 事件及文本／JSON／TUI 后端。
 
+## 共享传输进度
+
+上传与下载复用 `TransferProgressEstimator` 和既有的进度节流器；
+`DownloadProgressEstimator` 保留为兼容别名。累计完成字节与本次操作新增网络载荷
+字节分别传入；历史恢复偏移和复用文件可以推进完成进度，但不得产生虚假的速度或
+剩余时间。上传重试计入实际发送字节，重复回调不能重复计数。
+
+`SyncContextEvent`、`SyncPhaseEvent`、`SyncSummaryEvent` 分别传递前端无关的方向、
+阶段和本轮数量，操作生命周期事件保持独立。上传批次完成不等于整轮同步完成，
+Monitor 每轮结束也不等于监控退出；GUI 最终结果仍以清理完成后的 worker 结束为准。
+新增事件必须同时接入文本、JSON、TUI、GUI 转发和 GUI 历史消费者。
+
 ## GUI 本地化
 
 启用 `ONEDRIVE_BUILD_GUI=ON` 时需要 Qt 6.8+ 和 Linguist 工具；

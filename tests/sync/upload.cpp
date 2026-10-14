@@ -10,6 +10,77 @@ namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::sync;
 
+class TransferObserver final : public onedrive::events::Observer {
+public:
+    mutable std::vector<onedrive::events::UploadProgressEvent> progress;
+    mutable std::optional<onedrive::events::SyncSummaryEvent> summary;
+
+private:
+    void on_event(const onedrive::events::Event& event) const override {
+        if (const auto* value =
+                std::get_if<onedrive::events::UploadProgressEvent>(&event)) {
+            progress.push_back(*value);
+        } else if (const auto* value =
+                       std::get_if<onedrive::events::SyncSummaryEvent>(
+                           &event
+                       )) {
+            summary = *value;
+        }
+    }
+};
+
+int test_upload_progress_pipeline() {
+    for (const bool blocked : {false, true}) {
+        onedrive::test::TemporaryDirectory temporary;
+        const auto root = temporary.path() / "uploads";
+        std::filesystem::create_directory(root);
+        onedrive::test::write_file(root / "file.txt", "payload");
+        if (!blocked) {
+            onedrive::test::write_file(root / "empty.txt", "");
+        }
+        FakeGraphClient graph;
+        if (blocked) {
+            graph.upload_resource_error_path = "file.txt";
+        }
+        FakeItemStore items;
+        items.saved_delta_link = "saved";
+        FakeMetrics metrics;
+        auto config = config_for(root, false);
+        config.sync_mode = onedrive::sync::SyncMode::upload_only;
+        TransferObserver observer;
+        const auto result =
+            onedrive::sync::SyncEngine{config, graph, items, metrics, &observer}
+                .synchronize();
+        if (observer.progress.empty() || !observer.summary ||
+            result != (blocked ? exit_code::blocked : exit_code::success) ||
+            observer.summary->uploaded != (blocked ? 0U : 2U) ||
+            observer.summary->blocked != (blocked ? 1U : 0U)) {
+            return fail(
+                "upload pipeline did not emit typed progress and round counts"
+            );
+        }
+        const auto& final = observer.progress.back();
+        if (blocked) {
+            if (std::ranges::any_of(observer.progress, [](const auto& event) {
+                    return event.state ==
+                           onedrive::util::ProgressState::completed;
+                })) {
+                return fail(
+                    "resource-blocked upload emitted successful batch "
+                    "completion"
+                );
+            }
+        } else if (final.file_count != 2 || final.completed_files != 2 ||
+                   final.uploaded != 7 || final.total != 7 ||
+                   final.state != onedrive::util::ProgressState::completed) {
+            return fail(
+                "upload progress lost concurrency or zero-byte file completion"
+            );
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_local_file_uploads() {
     const onedrive::cli::Console default_console;
     onedrive::test::TemporaryDirectory temporary;
@@ -830,9 +901,8 @@ int test_pending_upload_recovery() {
     graph.upload_conflict = true;
     graph.lookup_item = file("recovered-upload", "recover.txt", 7);
     graph.contents.emplace("recovered-upload", "payload");
-    if (onedrive::sync::SyncEngine{
-            config, graph, items, metrics, &default_console
-        }
+    TransferObserver observer;
+    if (onedrive::sync::SyncEngine{config, graph, items, metrics, &observer}
                 .synchronize() != exit_code::success ||
         graph.upload_count != 2 || graph.download_count != 1 ||
         !items.pending_uploads_by_path.empty() ||
@@ -847,6 +917,13 @@ int test_pending_upload_recovery() {
         ) ||
         !metrics.last_success) {
         return fail("completed pending upload was not verified and recovered");
+    }
+    if (!observer.summary || observer.summary->uploaded != 1 ||
+        observer.progress.empty() ||
+        observer.progress.back().completed_files != 1 ||
+        observer.progress.back().state !=
+            onedrive::util::ProgressState::completed) {
+        return fail("round upload totals omitted a recovered upload");
     }
     return EXIT_SUCCESS;
 }
@@ -1323,6 +1400,9 @@ int test_external_cancellation_preserves_upload_journal() {
 } // namespace
 
 int main() {
+    if (test_upload_progress_pipeline() != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
     if (const int result = test_missing_upload_source();
         result != EXIT_SUCCESS) {
         return result;

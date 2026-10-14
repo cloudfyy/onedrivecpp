@@ -9,6 +9,29 @@ Running without arguments or using `--help` (including subcommand help) shows
 the application name and build version above the usage details. `--version`
 prints only the application name and version.
 
+Uploads use the same shared transfer metrics and output backends as downloads.
+Console output adds `UL` / `Upload done` progress; the TUI retains separate
+upload/download panels and the current scan/transfer/apply/wait phase. In Monitor
+mode, a finished round returns to waiting without marking the monitor stopped;
+an incomplete round remains indicated while waiting.
+
+JSON retains the existing `download_progress` and `execution_summary` formats.
+Additional `upload_progress` records contain `completed_files`, `file_count`,
+`uploaded_bytes`, `total_bytes`, `percentage`, `completed`, `bytes_per_second`,
+`estimated_seconds_remaining`, and `elapsed_milliseconds`. Unknown upload totals
+produce `percentage: null`, not a fabricated 0%/100%. `sync_context` reports the
+configured `direction` and `preview` flag; `sync_phase` reports `preparing`,
+`scanning`, `scanning_local`, `downloading`, `uploading`, `applying`, or `waiting`.
+Consumers should ignore unneeded additional event types. `--quiet` suppresses
+these progress/context/phase records.
+
+Transfer counters may include saved progress, but speed counts only payload bytes
+transferred during the current operation, including retransmitted upload bodies,
+not historical resume offsets or reused local downloads. Upload file completion
+requires successful remote validation and local state commit; transfer 100% is
+not the final synchronization result. Check the command exit status and final
+summary. Stop/failure retains resumable journals rather than reporting completion.
+
 Runtime diagnostics are written to standard error with `info` severity by
 default. systemd captures that stream automatically:
 

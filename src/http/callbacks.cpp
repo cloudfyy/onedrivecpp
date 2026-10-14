@@ -394,24 +394,28 @@ int report_progress(
     void* context,
     curl_off_t download_total,
     curl_off_t downloaded,
-    curl_off_t,
-    curl_off_t
+    curl_off_t upload_total,
+    curl_off_t uploaded
 ) noexcept {
     auto& progress = *static_cast<ProgressContext*>(context);
     if (progress.stop_token.stop_requested()) {
         progress.cancelled = true;
         return curl_progress_abort;
     }
-    if (progress.callback == nullptr || !*progress.callback) {
-        return curl_progress_continue;
-    }
     try {
-        (*progress.callback)(
-            downloaded < 0 ? 0U : static_cast<std::uint64_t>(downloaded),
-            download_total < 0 ?
-                0U :
-                static_cast<std::uint64_t>(download_total)
-        );
+        if (progress.callback && *progress.callback) {
+            (*progress.callback)(
+                downloaded < 0 ? 0U : static_cast<std::uint64_t>(downloaded),
+                download_total < 0 ? 0U
+                                   : static_cast<std::uint64_t>(download_total)
+            );
+        }
+        if (progress.upload_callback && *progress.upload_callback) {
+            (*progress.upload_callback)(
+                uploaded < 0 ? 0U : static_cast<std::uint64_t>(uploaded),
+                upload_total < 0 ? 0U : static_cast<std::uint64_t>(upload_total)
+            );
+        }
         return curl_progress_continue;
     } catch (...) {
         progress.failed = true;

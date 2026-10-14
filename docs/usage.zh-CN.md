@@ -8,6 +8,25 @@
 不带参数运行或使用 `--help`（包括子命令帮助）时，用法说明顶部显示应用名称和
 构建版本。`--version` 仅输出应用名称和版本号。
 
+上传复用下载已有的共享传输统计和输出后端。Console 增加 `UL`／`Upload done`
+进度；TUI 分别保留上传、下载面板，并显示扫描、传输、应用变更、等待阶段。
+Monitor 每轮结束后回到等待，不会被当成监控任务已退出；有阻止或失败的轮次在
+等待时保留未完成提示。
+
+JSON 保留原有 `download_progress` 和 `execution_summary` 格式，新增
+`upload_progress`，包含 `completed_files`、`file_count`、`uploaded_bytes`、
+`total_bytes`、`percentage`、`completed`、`bytes_per_second`、
+`estimated_seconds_remaining` 和 `elapsed_milliseconds`。上传总量未知时，
+`percentage` 为 `null`，不会伪造 0%／100%。`sync_context` 提供配置的 `direction`
+和 `preview` 标记；`sync_phase` 为 `preparing`、`scanning`、`scanning_local`、
+`downloading`、`uploading`、`applying` 或 `waiting`。消费者应忽略不需要的新增事件；
+`--quiet` 会抑制上述进度、上下文和阶段记录。
+
+累计进度可包含恢复偏移，但速度只统计本次操作新增的有效载荷网络字节，上传重传
+也计入传输量，历史恢复偏移或复用的本地下载文件不计入。上传文件须通过远端结果
+验证并提交本地状态后才算完成；单方向 100% 不代表同步最终成功，应结合退出码和
+最终摘要判断。停止或失败时保留可恢复的日志，不伪装成传输完成。
+
 运行诊断默认以 `info` 级别写入标准错误。systemd 会自动收集该输出：
 
 ```bash

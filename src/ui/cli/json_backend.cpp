@@ -116,23 +116,48 @@ private:
     }
 
     void render(const DownloadProgressEvent& event) {
+        render_transfer(
+            event, event.downloaded, "download_progress", "downloaded_bytes"
+        );
+    }
+
+    void render(const UploadProgressEvent& event) {
+        render_transfer(
+            event,
+            event.uploaded,
+            "upload_progress",
+            "uploaded_bytes",
+            event.total != 0 || event.file_count != 0 ||
+                event.state == util::ProgressState::completed
+        );
+    }
+
+    template <typename Progress>
+    void render_transfer(
+        const Progress& event,
+        std::uint64_t bytes,
+        std::string_view event_name,
+        std::string_view bytes_key,
+        bool measurable = true
+    ) {
         if (options_.quiet) {
             return;
         }
         const auto percentage = download_progress_percentage(
             event.completed_files,
             event.file_count,
-            event.downloaded,
+            bytes,
             event.total,
             event.state
         );
         output_ << nlohmann::json{
-            {"event", "download_progress"},
+            {"event", event_name},
             {"completed_files", event.completed_files},
             {"file_count", event.file_count},
-            {"downloaded_bytes", event.downloaded},
+            {std::string{bytes_key}, bytes},
             {"total_bytes", event.total},
-            {"percentage", percentage},
+            {"percentage", measurable ? nlohmann::json(percentage)
+                                     : nlohmann::json(nullptr)},
             {
                 "completed",
                 event.state == util::ProgressState::completed
@@ -159,6 +184,26 @@ private:
     void render(const EndDownloadProgressEvent&) {}
 
     void render(const OperationStateEvent&) {}
+    void render(const EndUploadProgressEvent&) {
+    }
+    void render(const SyncPhaseEvent& event) {
+        if (!options_.quiet) {
+            output_ << nlohmann::json{
+                {"event", "sync_phase"}, {"phase", events::sync_phase_name(event.phase)}
+            }.dump() << '\n';
+        }
+    }
+    void render(const SyncSummaryEvent&) {
+    }
+    void render(const events::SyncContextEvent& event) {
+        if (!options_.quiet) {
+            output_ << nlohmann::json{
+                {"event", "sync_context"},
+                {"direction", sync::sync_mode_name(event.direction)},
+                {"preview", event.preview},
+            }.dump() << '\n';
+        }
+    }
 
     ConsoleOptions options_;
     std::ostream& output_;

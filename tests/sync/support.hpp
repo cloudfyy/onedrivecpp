@@ -218,7 +218,8 @@ public:
         const std::filesystem::path& source,
         const std::optional<onedrive::graph::UploadSession>& session,
         const onedrive::graph::UploadCheckpoint& checkpoint,
-        std::stop_token stop_token
+        std::stop_token stop_token,
+        const onedrive::graph::UploadProgress& progress = {}
     ) const {
         int upload_number = 0;
         {
@@ -290,6 +291,12 @@ public:
                 before_upload_return = {};
             }
             callback();
+        }
+        if (progress) {
+            const auto size = std::filesystem::file_size(source);
+            const auto resumed = session ? session->completed_bytes : 0;
+            progress(resumed, size, 0);
+            progress(size, size, size - std::min(size, resumed));
         }
         return {
             .id =

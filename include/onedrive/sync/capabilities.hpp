@@ -1,4 +1,5 @@
 #pragma once
+#include <string_view>
 
 namespace onedrive::sync {
 
@@ -7,6 +8,19 @@ enum class SyncMode {
     upload_only,
     download_only,
 };
+
+[[nodiscard]] constexpr std::string_view
+sync_mode_name(SyncMode mode) noexcept {
+    switch (mode) {
+    case SyncMode::bidirectional:
+        return "bidirectional";
+    case SyncMode::upload_only:
+        return "upload_only";
+    case SyncMode::download_only:
+        return "download_only";
+    }
+    return "unknown";
+}
 
 enum class DeletePolicy {
     propagate,

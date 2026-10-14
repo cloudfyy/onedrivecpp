@@ -286,6 +286,7 @@ HttpResult perform_request(
     header_context.write_context = &write_context;
     ProgressContext progress_context{
         .callback = &progress,
+        .upload_callback = &request.upload_progress,
         .stop_token = request.stop_token,
         .cancelled = false,
         .failed = false,
@@ -423,8 +424,8 @@ HttpResult perform_request(
     if (result == CURLE_OK) {
         result = set_option(CURLOPT_USERAGENT, build_info::user_agent);
     }
-    const bool monitor_progress =
-        progress || request.stop_token.stop_possible();
+    const bool monitor_progress = progress || request.upload_progress ||
+                                  request.stop_token.stop_possible();
     if (result == CURLE_OK && monitor_progress) {
         result = set_option(CURLOPT_NOPROGRESS, 0L);
     }
@@ -521,16 +522,23 @@ HttpResult perform_request(
             });
         }
         if (progress_context.failed) {
-            return std::unexpected(HttpError{
-                .message = "download progress callback failed: " +
-                           callback_failure_detail(CallbackFailure{
-                               .kind =
-                                   CallbackFailureKind::data_callback,
-                               .system_error = 0,
-                               .detail = CallbackFailureDetail::none,
-                               .exception = progress_context.exception,
-                           }),
-            });
+            return std::unexpected(
+                HttpError{
+                    .message =
+                        std::string{
+                            request.upload_progress ? "upload" : "download"
+                        } +
+                        " progress callback failed: " +
+                        callback_failure_detail(
+                            CallbackFailure{
+                                .kind = CallbackFailureKind::data_callback,
+                                .system_error = 0,
+                                .detail = CallbackFailureDetail::none,
+                                .exception = progress_context.exception,
+                            }
+                        ),
+                }
+            );
         }
         if (header_context.size_exceeded) {
             return std::unexpected(HttpError{

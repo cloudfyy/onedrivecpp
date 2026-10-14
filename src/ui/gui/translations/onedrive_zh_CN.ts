@@ -111,78 +111,98 @@
 <context>
     <name>onedrive::gui::MainWindow</name>
     <message>
+        <location filename="../main_window.cpp" line="998"/>
         <source>Policy: %1</source>
         <translation>处理策略：%1</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="1021"/>
         <source>Fixed policy: skip unsupported content and protect local copies. This policy cannot be changed.</source>
         <translation>固定策略：跳过不支持的内容并保护本地副本。此策略不可修改。</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="1026"/>
         <source>Fixed safety policy: unsafe operations cannot be forced.</source>
         <translation>固定安全策略：不允许强制执行不安全操作。</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="1007"/>
         <source>Uses the configured local-conflict policy; changes are applied only after validation.</source>
         <translation>遵循已配置的本地冲突策略，仅在验证通过后应用变更。</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="1012"/>
         <source>Uses the configured remote-deletion safeguard; it is never bypassed automatically.</source>
         <translation>遵循已配置的远端删除保护，不会自动绕过。</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="1028"/>
         <source>Retry after resources recover; clear only after verified resolution.</source>
         <translation>资源恢复后重试，确认问题已解决后才移除记录。</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="1034"/>
         <source>Revalidate the conflict before retrying; unsafe operations cannot be forced.</source>
         <translation>重新验证冲突后再重试，不允许强制执行不安全操作。</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="1039"/>
         <source>Unrecognized reason: keep blocked, with no automatic retry or override.</source>
         <translation>无法识别的原因：保留阻止，不自动重试，也不允许强制绕过。</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="957"/>
         <source>Blocked items (%1)</source>
         <translation>阻止项（%1）</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="618"/>
         <source>Search paths and reasons</source>
         <translation>搜索路径和原因</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="281"/>
+        <location filename="../main_window.cpp" line="622"/>
         <source>All reasons</source>
         <translation>所有原因</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="619"/>
         <source>Refresh</source>
         <translation>刷新</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="620"/>
         <source>Path</source>
         <translation>路径</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="620"/>
         <source>Reason</source>
         <translation>原因</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="963"/>
         <source>No saved blocked items.</source>
         <translation>没有已保存的阻止项。</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="961"/>
         <source>Cannot load blocked items: %1</source>
         <translation>无法加载阻止项：%1</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="964"/>
         <source>%1 of %2 items shown. Discoveries from previews, sync and monitoring are saved here.</source>
         <translation>显示 %1 项，共 %2 项。预览、同步和监控发现的阻止项统一保存在此处。</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="977"/>
         <source>Select an item to view and copy its details.</source>
         <translation>选择一个项目以查看和复制详情。</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="988"/>
         <source>Path: %1
 Reason: %2
 %3
@@ -195,458 +215,472 @@ Recorded discoveries: %5</source>
 记录次数：%5</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="1050"/>
         <source>Restoring saved remote changes; checking only subsequent changes and rebuilding the local plan...</source>
         <translation>正在恢复已保存的远端变更；仅检查后续增量并重新生成本地计划…</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="1056"/>
         <source>Saved remote changes no longer match the account, filters, hash policy, unsupported formats or applied cursor; fetching remote changes again...</source>
         <translation>已保存的远端变更与账号、筛选、哈希策略、不支持格式规则或已应用游标不匹配；正在重新获取远端变更…</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="1063"/>
         <source>Synchronization filters or unsupported-format rules changed; fetching the full remote state...</source>
         <translation>同步筛选或不支持格式规则已变更；正在获取完整远端状态…</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="1080"/>
         <source>unsupported format items:</source>
         <translation>不支持格式的项目数：</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="1097"/>
         <source>Unsupported format: %1 [%2]
 Skipped; existing local files are preserved.</source>
         <translation>不支持的格式：%1 [%2]
 已跳过；保留已有本地文件。</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="1069"/>
         <source>Remote directory changes or unidentified deletions may affect saved paths; fetching the full remote state...</source>
         <translation>远端目录变更或未识别的删除可能影响已保存的路径；正在获取完整远端状态…</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="839"/>
+        <location filename="../main_window.cpp" line="1319"/>
         <source>Remote totals are unknown; a percentage cannot be calculated.</source>
         <translation>远端总量未知，无法计算百分比。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="844"/>
+        <location filename="../main_window.cpp" line="1324"/>
         <source>Download totals are unknown; a percentage cannot be calculated.</source>
         <translation>下载总量未知，无法计算百分比。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="847"/>
+        <location filename="../main_window.cpp" line="1331"/>
         <source>This phase has no percentage progress. See logs for details.</source>
         <translation>当前阶段没有可计算的百分比进度，详情请查看日志。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="833"/>
+        <location filename="../main_window.cpp" line="1312"/>
         <source>Download progress</source>
         <translation>下载进度</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="181"/>
-        <location filename="../main_window.cpp" line="464"/>
+        <location filename="../main_window.cpp" line="329"/>
+        <location filename="../main_window.cpp" line="616"/>
         <source>Logs</source>
         <translation>日志</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="491"/>
+        <location filename="../main_window.cpp" line="649"/>
         <source>All levels</source>
         <translation>所有级别</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="492"/>
+        <location filename="../main_window.cpp" line="652"/>
         <source>Information</source>
         <translation>信息</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="493"/>
+        <location filename="../main_window.cpp" line="650"/>
         <source>Trace</source>
         <translation>跟踪</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="651"/>
         <source>Debug</source>
         <translation>调试</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="655"/>
         <source>Critical</source>
         <translation>严重</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="494"/>
+        <location filename="../main_window.cpp" line="653"/>
         <source>Warning</source>
         <translation>警告</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="495"/>
+        <location filename="../main_window.cpp" line="654"/>
         <source>Error</source>
         <translation>错误</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="496"/>
+        <location filename="../main_window.cpp" line="656"/>
         <source>Log level</source>
         <translation>日志级别</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="657"/>
         <source>Show messages at this level or higher.</source>
         <translation>显示此级别及更高级别的日志。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="497"/>
+        <location filename="../main_window.cpp" line="658"/>
         <source>Auto-scroll</source>
         <translation>自动滚动</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="498"/>
+        <location filename="../main_window.cpp" line="659"/>
         <source>Copy logs</source>
         <translation>复制日志</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="499"/>
+        <location filename="../main_window.cpp" line="660"/>
         <source>Copy the currently displayed logs.</source>
         <translation>复制当前显示的日志。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="500"/>
+        <location filename="../main_window.cpp" line="661"/>
         <source>Clear logs</source>
         <translation>清空日志</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="502"/>
+        <location filename="../main_window.cpp" line="663"/>
         <source>Clear session history without stopping the active task.</source>
         <translation>清空本次运行的日志历史，不停止正在执行的任务。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="516"/>
+        <location filename="../main_window.cpp" line="677"/>
         <source>Session logs</source>
         <translation>本次运行日志</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1040"/>
+        <location filename="../main_window.cpp" line="1538"/>
         <source>Application</source>
         <translation>应用</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1046"/>
+        <location filename="../main_window.cpp" line="1544"/>
         <source>Configuration</source>
         <translation>配置</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1049"/>
+        <location filename="../main_window.cpp" line="1547"/>
         <source>Preview</source>
         <translation>预览</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="436"/>
+        <location filename="../main_window.cpp" line="588"/>
         <source>Application started.</source>
         <translation>应用已启动。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1302"/>
+        <location filename="../main_window.cpp" line="1853"/>
         <source>Configuration reloaded.</source>
         <translation>配置已重新加载。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="774"/>
-        <location filename="../main_window.cpp" line="936"/>
+        <location filename="../main_window.cpp" line="1188"/>
+        <location filename="../main_window.cpp" line="1426"/>
         <source>Preview failed (exit code %1). See logs for details.</source>
         <translation>预览失败（退出码 %1）。详情请查看日志。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="776"/>
-        <location filename="../main_window.cpp" line="939"/>
+        <location filename="../main_window.cpp" line="1190"/>
+        <location filename="../main_window.cpp" line="1429"/>
         <source>Synchronization failed (exit code %1). See details in logs.</source>
         <translation>同步失败（退出码 %1）。详情请查看日志。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="110"/>
-        <location filename="../main_window.cpp" line="148"/>
-        <location filename="../main_window.cpp" line="463"/>
-        <location filename="../main_window.cpp" line="479"/>
-        <location filename="../main_window.cpp" line="486"/>
-        <location filename="../main_window.cpp" line="1052"/>
+        <location filename="../main_window.cpp" line="1550"/>
         <source>Sync</source>
         <translation>同步</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="158"/>
+        <location filename="../main_window.cpp" line="638"/>
+        <location filename="../main_window.cpp" line="645"/>
         <source>Synchronization</source>
         <translation>同步</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="487"/>
+        <location filename="../main_window.cpp" line="646"/>
         <source>Preview changes</source>
         <translation>预览变更</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="488"/>
+        <location filename="../main_window.cpp" line="647"/>
         <source>Sync now</source>
         <translation>立即同步</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="489"/>
+        <location filename="../main_window.cpp" line="648"/>
         <source>Stop</source>
         <translation>停止</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="505"/>
+        <location filename="../main_window.cpp" line="666"/>
         <source>Preview using saved settings; no synchronized files are changed.</source>
         <translation>使用已保存的设置预览，不修改同步文件。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="508"/>
+        <location filename="../main_window.cpp" line="669"/>
         <source>Use saved settings; files may be uploaded, downloaded or deleted.</source>
         <translation>使用已保存的设置，可能上传、下载或删除文件。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="511"/>
+        <location filename="../main_window.cpp" line="672"/>
         <source>Request cancellation and wait for the task to finish.</source>
         <translation>请求取消，并等待任务结束。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="517"/>
-        <location filename="../main_window.cpp" line="833"/>
+        <location filename="../main_window.cpp" line="678"/>
+        <location filename="../main_window.cpp" line="1312"/>
         <source>Synchronization progress</source>
         <translation>同步进度</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="728"/>
+        <location filename="../main_window.cpp" line="1128"/>
         <source>Ready. Tasks use saved settings.</source>
         <translation>已就绪。任务使用已保存的设置。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="729"/>
+        <location filename="../main_window.cpp" line="1129"/>
         <source>Sign in and save valid settings to synchronize.</source>
         <translation>请登录并保存有效设置后同步。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="610"/>
-        <location filename="../main_window.cpp" line="732"/>
+        <location filename="../main_window.cpp" line="774"/>
+        <location filename="../main_window.cpp" line="1132"/>
         <source>Preparing preview...</source>
         <translation>正在准备预览…</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="611"/>
-        <location filename="../main_window.cpp" line="733"/>
+        <location filename="../main_window.cpp" line="775"/>
+        <location filename="../main_window.cpp" line="1133"/>
         <source>Preparing synchronization...</source>
         <translation>正在准备同步…</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="308"/>
-        <location filename="../main_window.cpp" line="736"/>
+        <location filename="../main_window.cpp" line="457"/>
+        <location filename="../main_window.cpp" line="1136"/>
         <source>Previewing changes...</source>
         <translation>正在预览变更…</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="309"/>
-        <location filename="../main_window.cpp" line="737"/>
+        <location filename="../main_window.cpp" line="458"/>
+        <location filename="../main_window.cpp" line="1137"/>
         <source>Synchronizing...</source>
         <translation>正在同步…</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="741"/>
+        <location filename="../main_window.cpp" line="1144"/>
         <source>Scanning remote changes: %1 pages, %2 items.</source>
         <translation>正在扫描远端变更：%1 页，%2 个项目。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="745"/>
+        <location filename="../main_window.cpp" line="1156"/>
         <source>Downloading files...</source>
         <translation>正在下载文件…</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="634"/>
-        <location filename="../main_window.cpp" line="748"/>
+        <location filename="../main_window.cpp" line="798"/>
+        <location filename="../main_window.cpp" line="1162"/>
         <source>Stopping; waiting for the task to finish...</source>
         <translation>正在停止，等待任务结束…</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="753"/>
-        <location filename="../main_window.cpp" line="897"/>
+        <location filename="../main_window.cpp" line="1167"/>
+        <location filename="../main_window.cpp" line="1387"/>
         <source>Preview completed. No synchronized files were changed.</source>
         <translation>预览完成。未修改同步文件。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="754"/>
-        <location filename="../main_window.cpp" line="900"/>
+        <location filename="../main_window.cpp" line="1168"/>
+        <location filename="../main_window.cpp" line="1390"/>
         <source>Synchronization completed.</source>
         <translation>同步完成。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="757"/>
-        <location filename="../main_window.cpp" line="907"/>
+        <location filename="../main_window.cpp" line="1171"/>
+        <location filename="../main_window.cpp" line="1397"/>
         <source>Preview cancelled.</source>
         <translation>预览已取消。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="758"/>
-        <location filename="../main_window.cpp" line="908"/>
+        <location filename="../main_window.cpp" line="1172"/>
+        <location filename="../main_window.cpp" line="1398"/>
         <source>Synchronization cancelled.</source>
         <translation>同步已取消。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="763"/>
-        <location filename="../main_window.cpp" line="916"/>
+        <location filename="../main_window.cpp" line="1177"/>
+        <location filename="../main_window.cpp" line="1406"/>
         <source>Preview incomplete: some items were blocked.</source>
         <translation>预览未完成：部分项目被阻塞。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="764"/>
-        <location filename="../main_window.cpp" line="917"/>
+        <location filename="../main_window.cpp" line="1178"/>
+        <location filename="../main_window.cpp" line="1407"/>
         <source>Synchronization incomplete: some items were blocked.</source>
         <translation>同步未完成：部分项目被阻塞。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="768"/>
-        <location filename="../main_window.cpp" line="927"/>
+        <location filename="../main_window.cpp" line="1182"/>
+        <location filename="../main_window.cpp" line="1417"/>
         <source>Preview failed: %1</source>
         <translation>预览失败：%1</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="769"/>
-        <location filename="../main_window.cpp" line="928"/>
+        <location filename="../main_window.cpp" line="1183"/>
+        <location filename="../main_window.cpp" line="1418"/>
         <source>Synchronization failed: %1</source>
         <translation>同步失败：%1</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="795"/>
+        <location filename="../main_window.cpp" line="1209"/>
         <source>Downloads: %1 / %2 files; %3 / %4; %5/s</source>
         <translation>下载：%1 / %2 个文件；%3 / %4；%5/秒</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="807"/>
+        <location filename="../main_window.cpp" line="1225"/>
+        <location filename="../main_window.cpp" line="1254"/>
         <source>; about %1 remaining</source>
         <translation>；预计剩余 %1</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="86"/>
         <source>%1 d %2 h</source>
         <translation>%1 天 %2 小时</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="90"/>
         <source>%1 h %2 min</source>
         <translation>%1 小时 %2 分钟</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="94"/>
         <source>%1 min %2 s</source>
         <translation>%1 分钟 %2 秒</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="97"/>
         <source>%1 s</source>
         <translation>%1 秒</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1011"/>
+        <location filename="../main_window.cpp" line="1502"/>
         <source>Earlier events omitted: %1</source>
         <translation>已省略较早的 %1 条事件</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1025"/>
+        <location filename="../main_window.cpp" line="1523"/>
         <source>Info: %1</source>
         <translation>信息：%1</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1028"/>
+        <location filename="../main_window.cpp" line="1517"/>
         <source>Trace: %1</source>
         <translation>跟踪：%1</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="1520"/>
         <source>Debug: %1</source>
         <translation>调试：%1</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="1532"/>
         <source>Critical: %1</source>
         <translation>严重：%1</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1031"/>
+        <location filename="../main_window.cpp" line="1526"/>
         <source>Warning: %1</source>
         <translation>警告：%1</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1034"/>
+        <location filename="../main_window.cpp" line="1529"/>
         <source>Error: %1</source>
         <translation>错误：%1</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="705"/>
+        <location filename="../main_window.cpp" line="1087"/>
         <source>Remote changes: %1 files, %2 folders, %3 deletions.</source>
         <translation>远端变更：%1 个文件，%2 个文件夹，%3 项删除。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="713"/>
+        <location filename="../main_window.cpp" line="1104"/>
         <source>Blocked: %1 [%2]
 %3</source>
         <translation>阻塞：%1 [%2]
 %3</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="99"/>
-        <location filename="../main_window.cpp" line="1115"/>
+        <location filename="../main_window.cpp" line="147"/>
+        <location filename="../main_window.cpp" line="1659"/>
         <source>Log out</source>
         <translation>退出登录</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1141"/>
+        <location filename="../main_window.cpp" line="1686"/>
         <source>Signed out. Saved credentials removed.</source>
         <translation>已退出登录。保存的凭据已移除。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1142"/>
+        <location filename="../main_window.cpp" line="1687"/>
         <source>No saved authentication was present.</source>
         <translation>没有保存的登录凭据。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1148"/>
+        <location filename="../main_window.cpp" line="1693"/>
         <source>Cannot log out: %1</source>
         <translation>无法退出登录：%1</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1172"/>
+        <location filename="../main_window.cpp" line="1717"/>
         <source>Cannot open the system browser. Copy the login URL below into your browser.</source>
         <translation>无法打开系统浏览器。请将下方登录链接复制到浏览器中。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="240"/>
-        <location filename="../main_window.cpp" line="459"/>
+        <location filename="../main_window.cpp" line="388"/>
+        <location filename="../main_window.cpp" line="611"/>
         <source>Help</source>
         <translation>帮助</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="242"/>
-        <location filename="../main_window.cpp" line="460"/>
+        <location filename="../main_window.cpp" line="390"/>
+        <location filename="../main_window.cpp" line="612"/>
         <source>About</source>
         <translation>关于</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="562"/>
+        <location filename="../main_window.cpp" line="723"/>
         <source>About OneDrive client</source>
         <translation>关于 OneDrive 客户端</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="566"/>
+        <location filename="../main_window.cpp" line="727"/>
         <source>&lt;b&gt;OneDrive client&lt;/b&gt;&lt;br&gt;Version: %1&lt;br&gt;An independent, open-source OneDrive client.&lt;br&gt;License: GPL-3.0-or-later&lt;br&gt;Project: &lt;a href=&quot;https://github.com/cloudfyy/onedrivecpp&quot;&gt;https://github.com/cloudfyy/onedrivecpp&lt;/a&gt;</source>
         <translation>&lt;b&gt;OneDrive 客户端&lt;/b&gt;&lt;br&gt;版本：%1&lt;br&gt;独立开源的 OneDrive 客户端。&lt;br&gt;许可证：GPL-3.0-or-later&lt;br&gt;项目：&lt;a href=&quot;https://github.com/cloudfyy/onedrivecpp&quot;&gt;https://github.com/cloudfyy/onedrivecpp&lt;/a&gt;</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="208"/>
-        <location filename="../main_window.cpp" line="522"/>
+        <location filename="../main_window.cpp" line="356"/>
+        <location filename="../main_window.cpp" line="683"/>
         <source>Reload configuration</source>
         <translation>重新加载配置</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1230"/>
+        <location filename="../main_window.cpp" line="1779"/>
         <source>Sign in is unavailable. Resolve the errors in Settings, then reload the configuration.</source>
         <translation>暂时无法登录。请在设置中解决错误，然后重新加载配置。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1240"/>
+        <location filename="../main_window.cpp" line="1789"/>
         <source>Saved sign-in information found. It will be checked when connecting to OneDrive.</source>
         <translation>已找到保存的登录信息，连接 OneDrive 时会检查登录状态。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="959"/>
-        <location filename="../main_window.cpp" line="1261"/>
+        <location filename="../main_window.cpp" line="1449"/>
+        <location filename="../main_window.cpp" line="1810"/>
         <source>Configuration file is missing. Using defaults; complete setup in Settings.</source>
         <translation>配置文件不存在。正在使用默认值；请在设置中完成配置。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="968"/>
-        <location filename="../main_window.cpp" line="1266"/>
+        <location filename="../main_window.cpp" line="1458"/>
+        <location filename="../main_window.cpp" line="1816"/>
         <source>Configuration could not be loaded:
 %1
 Import a valid TOML file, or repair this file and reload. The original file has not been changed.</source>
@@ -655,16 +689,16 @@ Import a valid TOML file, or repair this file and reload. The original file has 
 请导入有效的 TOML 文件，或修复此文件后重新加载。原文件未被修改。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="980"/>
-        <location filename="../main_window.cpp" line="1273"/>
+        <location filename="../main_window.cpp" line="1470"/>
+        <location filename="../main_window.cpp" line="1822"/>
         <source>Authentication configuration needs attention:
 %1</source>
         <translation>身份验证配置需要处理：
 %1</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="988"/>
-        <location filename="../main_window.cpp" line="1277"/>
+        <location filename="../main_window.cpp" line="1478"/>
+        <location filename="../main_window.cpp" line="1828"/>
         <source>Local account credentials could not be read:
 %1
 Repair the state directory or select another one in Settings, then reload.</source>
@@ -673,8 +707,8 @@ Repair the state directory or select another one in Settings, then reload.</sour
 请修复状态目录或在设置中选择其他目录，然后重新加载。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1000"/>
-        <location filename="../main_window.cpp" line="1284"/>
+        <location filename="../main_window.cpp" line="1490"/>
+        <location filename="../main_window.cpp" line="1836"/>
         <source>Sync directory needs attention before synchronization:
 %1</source>
         <translation>同步前需要处理同步目录：
@@ -682,185 +716,251 @@ Repair the state directory or select another one in Settings, then reload.</sour
     </message>
     <message>
         <location filename="../main.cpp" line="39"/>
-        <location filename="../main_window.cpp" line="72"/>
-        <location filename="../main_window.cpp" line="458"/>
+        <location filename="../main_window.cpp" line="120"/>
+        <location filename="../main_window.cpp" line="610"/>
         <source>onedrive client</source>
         <translation>OneDrive 客户端</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="524"/>
+        <location filename="../main_window.cpp" line="685"/>
         <source>Browse…</source>
         <translation>浏览…</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="86"/>
-        <location filename="../main_window.cpp" line="473"/>
-        <location filename="../main_window.cpp" line="1043"/>
+        <location filename="../main_window.cpp" line="134"/>
+        <location filename="../main_window.cpp" line="632"/>
+        <location filename="../main_window.cpp" line="1541"/>
         <source>Account</source>
         <translation>账号</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="87"/>
-        <location filename="../main_window.cpp" line="190"/>
-        <location filename="../main_window.cpp" line="474"/>
-        <location filename="../main_window.cpp" line="480"/>
+        <location filename="../main_window.cpp" line="135"/>
+        <location filename="../main_window.cpp" line="338"/>
+        <location filename="../main_window.cpp" line="633"/>
+        <location filename="../main_window.cpp" line="639"/>
         <source>Configuration file</source>
         <translation>配置文件</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="88"/>
-        <location filename="../main_window.cpp" line="475"/>
+        <location filename="../main_window.cpp" line="136"/>
+        <location filename="../main_window.cpp" line="634"/>
         <source>Sync directory</source>
         <translation>同步目录</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="89"/>
-        <location filename="../main_window.cpp" line="476"/>
+        <location filename="../main_window.cpp" line="137"/>
+        <location filename="../main_window.cpp" line="635"/>
         <source>State directory</source>
         <translation>状态目录</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="91"/>
-        <location filename="../main_window.cpp" line="1250"/>
-        <location filename="../main_window.hpp" line="127"/>
+        <location filename="../main_window.cpp" line="139"/>
+        <location filename="../main_window.cpp" line="1799"/>
+        <location filename="../main_window.hpp" line="133"/>
         <source>Sign in to connect a OneDrive account.</source>
         <translation>登录以连接 OneDrive 账号。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="94"/>
-        <location filename="../main_window.cpp" line="477"/>
+        <location filename="../main_window.cpp" line="142"/>
+        <location filename="../main_window.cpp" line="636"/>
         <source>Login</source>
         <translation>登录</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="95"/>
-        <location filename="../main_window.cpp" line="478"/>
+        <location filename="../main_window.cpp" line="143"/>
+        <location filename="../main_window.cpp" line="637"/>
         <source>Browser login</source>
         <translation>浏览器登录</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="97"/>
-        <location filename="../main_window.cpp" line="484"/>
+        <location filename="../main_window.cpp" line="145"/>
+        <location filename="../main_window.cpp" line="643"/>
         <source>Sign in</source>
         <translation>登录账号</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1115"/>
+        <location filename="../main_window.cpp" line="1659"/>
         <source>Cancel login</source>
         <translation>取消登录</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="111"/>
-        <location filename="../main_window.cpp" line="462"/>
+        <location filename="../main_window.cpp" line="159"/>
+        <location filename="../main_window.cpp" line="614"/>
         <source>Overview</source>
         <translation>概览</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="197"/>
-        <location filename="../main_window.cpp" line="483"/>
+        <location filename="../main_window.cpp" line="293"/>
+        <location filename="../main_window.cpp" line="615"/>
+        <source>Synchronization status</source>
+        <translation>同步状态</translation>
+    </message>
+    <message>
+        <location filename="../main_window.cpp" line="345"/>
+        <location filename="../main_window.cpp" line="642"/>
         <source>Follow system light/dark appearance</source>
         <translation>跟随系统浅色／深色外观</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="199"/>
-        <location filename="../main_window.cpp" line="481"/>
+        <location filename="../main_window.cpp" line="347"/>
+        <location filename="../main_window.cpp" line="640"/>
         <source>Appearance</source>
         <translation>外观</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="202"/>
-        <location filename="../main_window.cpp" line="520"/>
+        <location filename="../main_window.cpp" line="350"/>
+        <location filename="../main_window.cpp" line="681"/>
         <source>Import TOML…</source>
         <translation>导入 TOML…</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="203"/>
-        <location filename="../main_window.cpp" line="521"/>
+        <location filename="../main_window.cpp" line="351"/>
+        <location filename="../main_window.cpp" line="682"/>
         <source>Save settings</source>
         <translation>保存设置</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="218"/>
-        <location filename="../main_window.cpp" line="465"/>
+        <location filename="../main_window.cpp" line="366"/>
+        <location filename="../main_window.cpp" line="617"/>
         <source>Settings</source>
         <translation>设置</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="222"/>
-        <location filename="../main_window.cpp" line="540"/>
+        <location filename="../main_window.cpp" line="370"/>
+        <location filename="../main_window.cpp" line="701"/>
         <source>Language</source>
         <translation>语言</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="353"/>
-        <location filename="../main_window.cpp" line="536"/>
+        <location filename="../main_window.cpp" line="506"/>
+        <location filename="../main_window.cpp" line="697"/>
         <source>Complete authorization in your system browser.</source>
         <translation>请在系统浏览器中完成授权。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="357"/>
+        <location filename="../main_window.cpp" line="510"/>
         <source>Waiting for browser authorization (up to 5 minutes)...</source>
         <translation>正在等待浏览器授权（最多 5 分钟）…</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="375"/>
+        <location filename="../main_window.cpp" line="528"/>
         <source>Login cancelled.</source>
         <translation>登录已取消。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="378"/>
+        <location filename="../main_window.cpp" line="531"/>
         <source>Login failed: %1</source>
         <translation>登录失败：%1</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="384"/>
-        <location filename="../main_window.cpp" line="394"/>
+        <location filename="../main_window.cpp" line="537"/>
+        <location filename="../main_window.cpp" line="547"/>
         <source>Signed in. Account credentials saved.</source>
         <translation>已登录。账号凭据已保存。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="406"/>
-        <location filename="../main_window.cpp" line="417"/>
+        <location filename="../main_window.cpp" line="558"/>
+        <location filename="../main_window.cpp" line="569"/>
         <source>Login completed, but account status could not be refreshed: %1</source>
         <translation>登录已完成，但无法刷新账号状态：%1</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="545"/>
+        <location filename="../main_window.cpp" line="706"/>
         <source>System language</source>
         <translation>系统语言</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="548"/>
+        <location filename="../main_window.cpp" line="709"/>
         <source>English</source>
         <translation>英语</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="551"/>
+        <location filename="../main_window.cpp" line="712"/>
         <source>Simplified Chinese</source>
         <translation>简体中文</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1081"/>
+        <location filename="../main_window.cpp" line="1119"/>
+        <source>Upload only</source>
+        <translation>仅上传</translation>
+    </message>
+    <message>
+        <location filename="../main_window.cpp" line="1121"/>
+        <source>Download only</source>
+        <translation>仅下载</translation>
+    </message>
+    <message>
+        <location filename="../main_window.cpp" line="1122"/>
+        <source>Bidirectional</source>
+        <translation>双向同步</translation>
+    </message>
+    <message>
+        <location filename="../main_window.cpp" line="1123"/>
+        <source>Direction: %1; mode: One-time</source>
+        <translation>同步方向：%1；运行方式：单次</translation>
+    </message>
+    <message>
+        <location filename="../main_window.cpp" line="1139"/>
+        <source>Applying changes...</source>
+        <translation>正在应用变更...</translation>
+    </message>
+    <message>
+        <location filename="../main_window.cpp" line="1153"/>
+        <source>Scanning local changes...</source>
+        <translation>正在扫描本地变更...</translation>
+    </message>
+    <message>
+        <location filename="../main_window.cpp" line="1159"/>
+        <source>Uploading files...</source>
+        <translation>正在上传文件...</translation>
+    </message>
+    <message>
+        <location filename="../main_window.cpp" line="1241"/>
+        <source>Uploads: %1 / %2 files; %3 / %4; %5/s</source>
+        <translation>上传：%1 / %2 个文件；%3 / %4；%5/秒</translation>
+    </message>
+    <message>
+        <location filename="../main_window.cpp" line="1271"/>
+        <source>Upload progress</source>
+        <translation>上传进度</translation>
+    </message>
+    <message>
+        <location filename="../main_window.cpp" line="1277"/>
+        <source>Round totals: %1 downloaded, %2 uploaded, %3 moved, %4 deleted, %5 blocked.</source>
+        <translation>本轮统计：下载 %1，上传 %2，移动 %3，删除 %4，阻止 %5。</translation>
+    </message>
+    <message>
+        <location filename="../main_window.cpp" line="1289"/>
+        <source> Last finished: %1.</source>
+        <translation> 最近结束：%1。</translation>
+    </message>
+    <message>
+        <location filename="../main_window.cpp" line="1327"/>
+        <source>Upload totals are unknown; a percentage cannot be calculated.</source>
+        <translation>上传总量未知，无法计算百分比。</translation>
+    </message>
+    <message>
+        <location filename="../main_window.cpp" line="1624"/>
         <source>Starting browser login...</source>
         <translation>正在启动浏览器登录…</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1089"/>
+        <location filename="../main_window.cpp" line="1633"/>
         <source>Cannot start login: %1</source>
         <translation>无法启动登录：%1</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1102"/>
+        <location filename="../main_window.cpp" line="1646"/>
         <source>Cancelling login...</source>
         <translation>正在取消登录…</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1160"/>
+        <location filename="../main_window.cpp" line="1705"/>
         <source>Cannot open browser: the login URL is not a valid HTTPS address.</source>
         <translation>无法打开浏览器：登录 URL 不是有效的 HTTPS 地址。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1339"/>
+        <location filename="../main_window.cpp" line="1890"/>
         <source>Save these directory changes?
 
 Existing files and synchronization state will not be moved.</source>
@@ -869,7 +969,7 @@ Existing files and synchronization state will not be moved.</source>
 现有文件和同步状态不会被移动。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1343"/>
+        <location filename="../main_window.cpp" line="1894"/>
         <source>
 
 Sync directory:
@@ -884,7 +984,7 @@ Inspect a dry run before the next synchronization.</source>
 下次同步前请检查试运行结果。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1352"/>
+        <location filename="../main_window.cpp" line="1903"/>
         <source>
 
 State directory:
@@ -899,13 +999,13 @@ Existing account state and credentials will remain in the old location.</source>
 现有账号状态和凭据将保留在原位置。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1362"/>
+        <location filename="../main_window.cpp" line="1913"/>
         <source>Confirm directory changes</source>
         <translation>确认目录更改</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1384"/>
-        <location filename="../main_window.cpp" line="1457"/>
+        <location filename="../main_window.cpp" line="1935"/>
+        <location filename="../main_window.cpp" line="2008"/>
         <source>
 Previous configuration backed up to:
 %1</source>
@@ -914,45 +1014,45 @@ Previous configuration backed up to:
 %1</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1387"/>
+        <location filename="../main_window.cpp" line="1938"/>
         <source>Settings saved</source>
         <translation>设置已保存</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1324"/>
-        <location filename="../main_window.cpp" line="1397"/>
+        <location filename="../main_window.cpp" line="1875"/>
+        <location filename="../main_window.cpp" line="1948"/>
         <source>Cannot save settings</source>
         <translation>无法保存设置</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1319"/>
-        <location filename="../main_window.cpp" line="1325"/>
-        <location filename="../main_window.cpp" line="1392"/>
-        <location filename="../main_window.cpp" line="1398"/>
+        <location filename="../main_window.cpp" line="1870"/>
+        <location filename="../main_window.cpp" line="1876"/>
+        <location filename="../main_window.cpp" line="1943"/>
+        <location filename="../main_window.cpp" line="1949"/>
         <source>Settings could not be saved:
 %1</source>
         <translation>设置保存失败：
 %1</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1377"/>
-        <location filename="../main_window.cpp" line="1382"/>
+        <location filename="../main_window.cpp" line="1928"/>
+        <location filename="../main_window.cpp" line="1933"/>
         <source>Settings saved. Changes take effect on the next operation.</source>
         <translation>设置已保存。更改将在下次操作时生效。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1410"/>
-        <location filename="../main_window.cpp" line="1439"/>
+        <location filename="../main_window.cpp" line="1961"/>
+        <location filename="../main_window.cpp" line="1990"/>
         <source>Import configuration</source>
         <translation>导入配置</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1412"/>
+        <location filename="../main_window.cpp" line="1963"/>
         <source>TOML files (*.toml);;All files (*)</source>
         <translation>TOML 文件 (*.toml);;所有文件 (*)</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1422"/>
+        <location filename="../main_window.cpp" line="1973"/>
         <source>Import this configuration to the active user configuration?
 
 Sync directory: %1
@@ -971,24 +1071,24 @@ Relative file references will be resolved from the active configuration director
 相对文件引用将基于当前配置目录解析。当前配置将被备份。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1452"/>
-        <location filename="../main_window.cpp" line="1455"/>
+        <location filename="../main_window.cpp" line="2003"/>
+        <location filename="../main_window.cpp" line="2006"/>
         <source>Configuration imported.</source>
         <translation>配置已导入。</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1461"/>
+        <location filename="../main_window.cpp" line="2012"/>
         <source>Configuration imported</source>
         <translation>配置已导入</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1472"/>
+        <location filename="../main_window.cpp" line="2023"/>
         <source>Cannot import configuration</source>
         <translation>无法导入配置</translation>
     </message>
     <message>
-        <location filename="../main_window.cpp" line="1467"/>
-        <location filename="../main_window.cpp" line="1473"/>
+        <location filename="../main_window.cpp" line="2018"/>
+        <location filename="../main_window.cpp" line="2024"/>
         <source>Configuration could not be imported:
 %1</source>
         <translation>配置导入失败：
@@ -1856,7 +1956,7 @@ Relative file references will be resolved from the active configuration director
 <context>
     <name>onedrive::gui::SyncController</name>
     <message>
-        <location filename="../sync_controller.cpp" line="100"/>
+        <location filename="../sync_controller.cpp" line="175"/>
         <source>Synchronization is already running.</source>
         <translation>同步正在运行。</translation>
     </message>

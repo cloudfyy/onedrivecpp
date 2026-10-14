@@ -361,7 +361,8 @@ RemoteItem MicrosoftGraphClient::upload_file(
     const std::filesystem::path& source,
     const std::optional<UploadSession>& saved_session,
     const UploadCheckpoint& checkpoint,
-    std::stop_token stop_token
+    std::stop_token stop_token,
+    const UploadProgress& progress
 ) const {
     if (remote_id.has_value() != !expected_etag.empty() ||
         expected_etag.find_first_of("\r\n") != std::string::npos) {
@@ -379,6 +380,29 @@ RemoteItem MicrosoftGraphClient::upload_file(
         );
     }
 
+    std::uint64_t transferred = 0;
+    std::uint64_t attempt_uploaded = 0;
+    const auto report_progress = [&](std::uint64_t offset,
+                                     std::uint64_t current) {
+        const auto bytes =
+            std::min(current, static_cast<std::uint64_t>(size) - offset);
+        if (bytes > attempt_uploaded) {
+            const auto additional = bytes - attempt_uploaded;
+            if (additional >
+                std::numeric_limits<std::uint64_t>::max() - transferred) {
+                throw std::overflow_error{
+                    "upload transfer byte count overflow"
+                };
+            }
+            transferred += additional;
+            attempt_uploaded = bytes;
+        }
+        if (progress) {
+            progress(
+                offset + bytes, static_cast<std::uint64_t>(size), transferred
+            );
+        }
+    };
     const auto drive_prefix = graph_drive_prefix(options_);
     const auto& upload_transport = options_.upload_transport;
     const auto& transfer = upload_transport.transfer;
@@ -409,6 +433,9 @@ RemoteItem MicrosoftGraphClient::upload_file(
     };
 
     if (size <= options_.simple_upload_threshold_bytes && !saved_session) {
+        if (progress) {
+            progress(0, static_cast<std::uint64_t>(size), 0);
+        }
         if (size > static_cast<std::uintmax_t>(
                        std::numeric_limits<std::size_t>::max()
                    )) {
@@ -450,24 +477,31 @@ RemoteItem MicrosoftGraphClient::upload_file(
         }
         const auto response = perform_with_retries(
             [&] {
-                return transport_->perform(http::HttpRequest{
-                    .method = http::HttpMethod::put,
-                    .url = url,
-                    .headers = headers,
-                    .body = body,
-                    .connect_timeout = transfer.connect_timeout,
-                    .operation_timeout = transfer.operation_timeout,
-                    .low_speed_timeout = transfer.low_speed_timeout,
-                    .low_speed_limit_bytes_per_second =
-                        transfer.low_speed_limit_bytes_per_second,
-                    .maximum_send_speed_bytes_per_second =
-                        maximum_send_speed,
-                    .http_version = transfer.http_version,
-                    .ip_version = transfer.ip_version,
-                    .maximum_response_size = maximum_json_response_bytes,
-                    .upload_throttle = upload_throttle,
-                    .stop_token = stop_token,
-                });
+                attempt_uploaded = 0;
+                return transport_->perform(
+                    http::HttpRequest{
+                        .method = http::HttpMethod::put,
+                        .url = url,
+                        .headers = headers,
+                        .body = body,
+                        .connect_timeout = transfer.connect_timeout,
+                        .operation_timeout = transfer.operation_timeout,
+                        .low_speed_timeout = transfer.low_speed_timeout,
+                        .low_speed_limit_bytes_per_second =
+                            transfer.low_speed_limit_bytes_per_second,
+                        .maximum_send_speed_bytes_per_second =
+                            maximum_send_speed,
+                        .http_version = transfer.http_version,
+                        .ip_version = transfer.ip_version,
+                        .maximum_response_size = maximum_json_response_bytes,
+                        .upload_throttle = upload_throttle,
+                        .upload_progress =
+                            [&](std::uint64_t bytes, std::uint64_t) {
+                                report_progress(0, bytes);
+                            },
+                        .stop_token = stop_token,
+                    }
+                );
             },
             options_,
             options_.maximum_throttle_retries,
@@ -489,6 +523,13 @@ RemoteItem MicrosoftGraphClient::upload_file(
         }
         const auto json = parse_graph_json(*response, "upload");
         require_upload_success(*response, json);
+        if (progress) {
+            progress(
+                static_cast<std::uint64_t>(size),
+                static_cast<std::uint64_t>(size),
+                transferred
+            );
+        }
         return parse_drive_item(
             json,
             "upload response",
@@ -703,6 +744,9 @@ RemoteItem MicrosoftGraphClient::upload_file(
         },
         std::move(resolved_session)
     );
+    if (progress) {
+        progress(active_session.session.completed_bytes, total_size, 0);
+    }
 
     std::ifstream input{source, std::ios::binary};
     if (!input) {
@@ -757,24 +801,31 @@ RemoteItem MicrosoftGraphClient::upload_file(
         };
         const auto chunk_response = perform_with_retries(
             [&] {
-                return transport_->perform(http::HttpRequest{
-                    .method = http::HttpMethod::put,
-                    .url = active_session.session.upload_url,
-                    .headers = chunk_headers,
-                    .body = body,
-                    .connect_timeout = transfer.connect_timeout,
-                    .operation_timeout = transfer.operation_timeout,
-                    .low_speed_timeout = transfer.low_speed_timeout,
-                    .low_speed_limit_bytes_per_second =
-                        transfer.low_speed_limit_bytes_per_second,
-                    .maximum_send_speed_bytes_per_second =
-                        maximum_send_speed,
-                    .http_version = transfer.http_version,
-                    .ip_version = transfer.ip_version,
-                    .maximum_response_size = maximum_json_response_bytes,
-                    .upload_throttle = upload_throttle,
-                    .stop_token = stop_token,
-                });
+                attempt_uploaded = 0;
+                return transport_->perform(
+                    http::HttpRequest{
+                        .method = http::HttpMethod::put,
+                        .url = active_session.session.upload_url,
+                        .headers = chunk_headers,
+                        .body = body,
+                        .connect_timeout = transfer.connect_timeout,
+                        .operation_timeout = transfer.operation_timeout,
+                        .low_speed_timeout = transfer.low_speed_timeout,
+                        .low_speed_limit_bytes_per_second =
+                            transfer.low_speed_limit_bytes_per_second,
+                        .maximum_send_speed_bytes_per_second =
+                            maximum_send_speed,
+                        .http_version = transfer.http_version,
+                        .ip_version = transfer.ip_version,
+                        .maximum_response_size = maximum_json_response_bytes,
+                        .upload_throttle = upload_throttle,
+                        .upload_progress =
+                            [&](std::uint64_t sent, std::uint64_t) {
+                                report_progress(offset, std::min(sent, bytes));
+                            },
+                        .stop_token = stop_token,
+                    }
+                );
             },
             options_,
             options_.maximum_throttle_retries,
@@ -800,6 +851,9 @@ RemoteItem MicrosoftGraphClient::upload_file(
             parse_graph_json(*chunk_response, "upload fragment");
         require_upload_success(*chunk_response, chunk_json);
         const auto next_offset = end + 1;
+        if (progress) {
+            progress(next_offset, total_size, transferred);
+        }
         if (chunk_response->status_code == http::status::accepted) {
             if (next_offset >= total_size) {
                 throw std::runtime_error(

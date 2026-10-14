@@ -4,6 +4,53 @@ namespace {
 
 using namespace onedrive::test::download;
 
+int test_resumed_network_accounting() {
+    namespace detail = onedrive::sync::detail;
+    DownloadFixture fixture;
+    const auto item = remote_item("resumed", "resumed.txt");
+    const auto destination = fixture.root / "resumed.txt";
+    const auto temporary = detail::temporary_path_for(destination);
+    onedrive::test::write_file(temporary, "da");
+    fixture.items.save_partial_download({
+        .item = item_state(item, destination),
+        .temporary_path = temporary,
+        .completed_bytes = 2,
+    });
+    onedrive::graph::GraphClient graph{
+        onedrive::util::borrowed_proxy, fixture.graph
+    };
+    onedrive::storage::ItemStore items{
+        onedrive::util::borrowed_proxy, fixture.items
+    };
+    std::uint64_t network_bytes = 0;
+    const auto installed = detail::commit_download(
+        items,
+        fixture.safe_root,
+        fixture.metadata,
+        detail::prepare_download(
+            graph,
+            items,
+            item,
+            item_state(item, destination),
+            destination,
+            {},
+            fixture.metadata,
+            fixture.space,
+            {},
+            {},
+            [&](std::uint64_t bytes) { network_bytes += bytes; }
+        )
+    );
+    if (network_bytes != 2 || fixture.graph.last_initial_offset != 2 ||
+        installed.local_size != 4 ||
+        onedrive::test::read_file(destination) != "data") {
+        return fail(
+            "download metrics counted the saved prefix as current network bytes"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_txn() {
     namespace detail = onedrive::sync::detail;
     DownloadFixture fixture;
@@ -148,5 +195,8 @@ int test_txn() {
 } // namespace
 
 int main() {
+    if (test_resumed_network_accounting() != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
     return test_txn();
 }

@@ -143,7 +143,9 @@ private:
         preparing,
         working,
         scanning,
+        scanning_local,
         transferring,
+        uploading,
         stopping,
         completed,
         cancelled,
@@ -157,6 +159,10 @@ private:
     QString sync_error_;
     std::optional<events::DeltaProgressEvent> sync_delta_;
     std::optional<events::DownloadProgressEvent> sync_download_;
+    std::optional<events::UploadProgressEvent> sync_upload_;
+    std::optional<events::SyncPhase> sync_stage_;
+    std::optional<events::SyncSummaryEvent> sync_summary_;
+    QDateTime sync_finished_at_;
     struct LogEntry {
         std::size_t sequence;
         QDateTime timestamp;
@@ -180,6 +186,10 @@ private:
     QPushButton* stop_sync_button_{};
     QLabel* sync_status_{};
     QLabel* transfer_status_{};
+    QLabel* upload_status_{};
+    QLabel* sync_context_{};
+    QLabel* sync_summary_status_{};
+    QProgressBar* upload_progress_{};
     QProgressBar* sync_progress_{};
     QLabel* sync_progress_hint_{};
     QPlainTextEdit* log_messages_{};

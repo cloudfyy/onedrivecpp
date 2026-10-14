@@ -126,6 +126,16 @@ int main() {
             "progress callback allocation failure crossed the C boundary"
         );
     }
+    onedrive::http::detail::ProgressContext upload_failure{
+        .upload_callback = &failing_progress,
+    };
+    if (onedrive::http::detail::report_progress(&upload_failure, 0, 0, 10, 5) ==
+            0 ||
+        !upload_failure.failed || !upload_failure.exception) {
+        return fail(
+            "upload progress exception crossed the C callback boundary"
+        );
+    }
     try {
         throw 42;
     } catch (...) {
@@ -407,6 +417,7 @@ int main() {
         );
     }};
     std::size_t throttled_upload_bytes = 0;
+    std::vector<std::pair<std::uint64_t, std::uint64_t>> upload_progress;
     const auto put_response = client.perform({
         .method = onedrive::http::HttpMethod::put,
         .url = "http://127.0.0.1:" + std::to_string(port) + "/content",
@@ -415,10 +426,14 @@ int main() {
         .connect_timeout = std::chrono::seconds{2},
         .operation_timeout = std::chrono::seconds{5},
         .http_version = onedrive::http::HttpVersion::http_1_1,
-        .upload_throttle = [&](std::size_t bytes, const std::stop_token&) {
-            throttled_upload_bytes += bytes;
-            return true;
-        },
+        .upload_throttle =
+            [&](std::size_t bytes, const std::stop_token&) {
+                throttled_upload_bytes += bytes;
+                return true;
+            },
+        .upload_progress = [&](
+                               std::uint64_t bytes, std::uint64_t total
+                           ) { upload_progress.emplace_back(bytes, total); },
     });
     put_server.join();
     if (!server_error.empty()) {
@@ -427,7 +442,10 @@ int main() {
     if (!put_response || put_response->status_code != 200 ||
         !put_request.starts_with("PUT /content HTTP/1.1") ||
         !put_request.ends_with("upload-body") ||
-        throttled_upload_bytes != std::string_view{"upload-body"}.size()) {
+        throttled_upload_bytes != std::string_view{"upload-body"}.size() ||
+        upload_progress.empty() ||
+        upload_progress.back() !=
+            std::pair<std::uint64_t, std::uint64_t>{11, 11}) {
         return fail("HTTP PUT request body was not sent correctly");
     }
 

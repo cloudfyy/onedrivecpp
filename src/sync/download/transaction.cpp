@@ -116,7 +116,8 @@ PreparedDownload prepare_download(
     const FilesystemMetadata& metadata,
     DownloadSpaceCoordinator& space,
     std::stop_token stop_token,
-    const graph::DownloadProgress& progress
+    const graph::DownloadProgress& progress,
+    const std::function<void(std::uint64_t)>& transferred
 ) {
     if (item.size < 0) {
         throw std::invalid_argument(
@@ -267,10 +268,12 @@ PreparedDownload prepare_download(
                 space_reservation.consume(newly_durable);
                 completed_bytes = durable_bytes;
             },
-            [&streamed_hasher](
-                std::uint64_t offset,
-                std::span<const std::byte> data
+            [&streamed_hasher, &transferred](
+                std::uint64_t offset, std::span<const std::byte> data
             ) {
+                if (transferred) {
+                    transferred(data.size());
+                }
                 if (streamed_hasher.has_value()) {
                     streamed_hasher->update(offset, data);
                 }

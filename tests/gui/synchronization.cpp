@@ -947,14 +947,13 @@ void test_session_logs_and_tabs() {
     auto* clear = button(window, "clearLogsButton");
     require(
         tabs && tabs->count() == 4 && tabs->tabText(0) == "Overview" &&
-            tabs->tabText(1) == "Synchronization" &&
+            tabs->tabText(1) == "Synchronization status" &&
             tabs->tabText(2) == "Logs" && tabs->tabText(3) == "Settings" &&
             tabs->currentWidget() == overview &&
             sync_page->isAncestorOf(sync) && !overview->isAncestorOf(sync) &&
             logs_page->isAncestorOf(messages) && messages->isReadOnly() &&
             scroll_option->isChecked() && level->count() == 7 &&
-            level->itemText(1) == "Trace" &&
-            level->itemText(2) == "Debug" &&
+            level->itemText(1) == "Trace" && level->itemText(2) == "Debug" &&
             level->itemText(6) == "Critical",
         "GUI tasks and logs were not separated into tabs"
     );
@@ -1683,6 +1682,134 @@ void test_progress_color() {
             }
         }
     }
+}
+
+void test_upload_progress_phases() {
+    Fixture fixture;
+    gui::Localization localization{gui::Language::english};
+    std::atomic<int> step{};
+    gui::MainWindow window{
+        gui::load_app_state_view_model(fixture.file),
+        {},
+        &localization,
+        [&](config::Config,
+            const events::Observer& observer,
+            std::stop_token token) {
+            observer.sync_context(sync::SyncMode::upload_only, false);
+            for (int stage = 0; stage < 4; ++stage) {
+                while (step < stage && !token.stop_requested()) {
+                    QThread::msleep(1);
+                }
+                if (token.stop_requested()) {
+                    return exit_code::cancelled;
+                }
+                if (stage == 0) {
+                    observer.upload_progress({});
+                } else if (stage == 1) {
+                    observer.download_progress(
+                        1, 1, 10, 10, util::ProgressState::completed
+                    );
+                    observer.upload_progress(
+                        {.completed_files = 0,
+                         .file_count = 1,
+                         .uploaded = 50,
+                         .total = 100,
+                         .metrics = {
+                             .bytes_per_second = 25,
+                             .estimated_seconds_remaining = 2
+                         }}
+                    );
+                } else if (stage == 2) {
+                    observer.upload_progress(
+                        {.completed_files = 1,
+                         .file_count = 1,
+                         .uploaded = 100,
+                         .total = 100,
+                         .state = util::ProgressState::completed}
+                    );
+                    observer.sync_phase(events::SyncPhase::applying);
+                } else {
+                    observer.sync_summary(
+                        {.downloaded = 1,
+                         .uploaded = 1,
+                         .moved = 2,
+                         .deleted = 3,
+                         .blocked = 1}
+                    );
+                }
+            }
+            return exit_code::blocked;
+        }
+    };
+    auto* start = button(window, "startSyncButton");
+    auto* progress = window.findChild<QProgressBar*>("uploadProgress");
+    auto* download_progress = window.findChild<QProgressBar*>("syncProgress");
+    auto* status = window.findChild<QLabel*>("syncStatus");
+    auto* upload = window.findChild<QLabel*>("uploadStatus");
+    auto* hint = window.findChild<QLabel*>("syncProgressHint");
+    auto* summary = window.findChild<QLabel*>("syncSummary");
+    auto* context = window.findChild<QLabel*>("syncContext");
+    require(
+        progress && upload && summary && context,
+        "missing upload status controls"
+    );
+    start->click();
+    require(
+        wait_until([&] {
+            return hint->text().contains("Upload totals are unknown");
+        }) &&
+            progress->isHidden(),
+        "unknown upload totals produced a percentage"
+    );
+    step = 1;
+    require(
+        wait_until([&] { return progress->value() == 50; }) &&
+            !progress->isHidden() && status->text() == "Uploading files..." &&
+            upload->text().contains("about 2 s remaining") &&
+            context->text().contains("Upload only") &&
+            window.findChild<QLabel*>("transferStatus")
+                ->text()
+                .contains("Downloads:"),
+        "upload progress replaced download state or lost direction/rate/ETA"
+    );
+    localization.set_language(gui::Language::simplified_chinese);
+    QCoreApplication::processEvents();
+    require(
+        status->text() == "正在上传文件..." &&
+            progress->accessibleName() == "上传进度" &&
+            upload->text().startsWith("上传：") &&
+            context->text().contains("仅上传") && progress->value() == 50,
+        "upload state did not translate without resetting progress"
+    );
+    step = 2;
+    require(
+        wait_until([&] { return status->text() == "正在应用变更..."; }) &&
+            progress->value() == 100 && !start->isEnabled() &&
+            download_progress->isHidden(),
+        "upload 100% was mistaken for overall synchronization completion"
+    );
+    step = 3;
+    require(
+        wait_until([&] { return start->isEnabled(); }) &&
+            status->text().contains("同步未完成") &&
+            summary->text().contains("上传 1") &&
+            summary->text().contains("最近结束"),
+        "blocked round lost its result, counters, or finish time"
+    );
+    step = 0;
+    start->click();
+    require(
+        wait_until([&] {
+            return !start->isEnabled() && progress->value() == 0;
+        }) &&
+            progress->isHidden() && !upload->text().contains("100"),
+        "new round retained stale upload progress"
+    );
+    button(window, "stopSyncButton")->click();
+    require(
+        wait_until([&] { return start->isEnabled(); }),
+        "upload progress task did not stop safely"
+    );
 }
 
 void test_progress_phases() {
@@ -2459,6 +2586,7 @@ int main(int argc, char* argv[]) {
         test_preview_and_apply();
         test_progress_color();
         test_progress_phases();
+        test_upload_progress_phases();
         test_readable_transfer_numbers();
         test_progress_and_stop();
         test_results_and_preflight();

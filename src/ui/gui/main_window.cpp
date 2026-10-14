@@ -179,6 +179,9 @@ MainWindow::MainWindow(
     sync_status_ = make_value_label({});
     sync_status_->setObjectName("syncStatus");
     sync_layout->addWidget(sync_status_);
+    sync_context_ = make_value_label({});
+    sync_context_->setObjectName("syncContext");
+    sync_layout->addWidget(sync_context_);
     sync_progress_ = new QProgressBar{sync_group_};
     sync_progress_->setObjectName("syncProgress");
     sync_progress_->setAlignment(Qt::AlignCenter);
@@ -192,6 +195,19 @@ MainWindow::MainWindow(
     transfer_status_ = make_value_label({});
     transfer_status_->setObjectName("transferStatus");
     sync_layout->addWidget(transfer_status_);
+    upload_progress_ = new QProgressBar{sync_group_};
+    upload_progress_->setObjectName("uploadProgress");
+    upload_progress_->setAlignment(Qt::AlignCenter);
+    upload_progress_->setStyleSheet(
+        "QProgressBar#uploadProgress::chunk { background-color: #0078d4; }"
+    );
+    sync_layout->addWidget(upload_progress_);
+    upload_status_ = make_value_label({});
+    upload_status_->setObjectName("uploadStatus");
+    sync_layout->addWidget(upload_status_);
+    sync_summary_status_ = make_value_label({});
+    sync_summary_status_->setObjectName("syncSummary");
+    sync_layout->addWidget(sync_summary_status_);
     sync_page_layout->addWidget(sync_group_);
     blocked_group_ = new QGroupBox{sync_page_};
     blocked_group_->setObjectName("blockedItemsGroup");
@@ -274,7 +290,7 @@ MainWindow::MainWindow(
             render_blocked_items();
         }
     );
-    tabs->addTab(sync_page_, tr("Synchronization"));
+    tabs->addTab(sync_page_, tr("Synchronization status"));
 
     logs_page_ = new QWidget{tabs};
     logs_page_->setObjectName("logsPage");
@@ -460,6 +476,7 @@ MainWindow::MainWindow(
             sync_result_ = result;
             sync_error_ = error;
             sync_stopping_ = false;
+            sync_finished_at_ = QDateTime::currentDateTime();
             sync_phase_ = !error.isEmpty()               ? SyncPhase::failed
                           : result == exit_code::success ? SyncPhase::completed
                           : result == exit_code::cancelled
@@ -595,7 +612,7 @@ void MainWindow::retranslate_ui() {
     about_action_->setText(tr("About"));
     QApplication::setApplicationDisplayName(windowTitle());
     tabs_->setTabText(0, tr("Overview"));
-    tabs_->setTabText(1, tr("Synchronization"));
+    tabs_->setTabText(1, tr("Synchronization status"));
     tabs_->setTabText(2, tr("Logs"));
     tabs_->setTabText(3, tr("Settings"));
     blocked_filter_->setPlaceholderText(tr("Search paths and reasons"));
@@ -748,6 +765,9 @@ void MainWindow::start_sync(bool preview) {
     sync_error_.clear();
     sync_delta_.reset();
     sync_download_.reset();
+    sync_upload_.reset();
+    sync_stage_.reset();
+    sync_summary_.reset();
     log_message(
         preview ? LogOperation::preview : LogOperation::synchronization,
         events::MessageKind::information,
@@ -788,7 +808,60 @@ void MainWindow::receive_sync_events(
     log_omitted_ += omitted;
     for (const auto& event : batch) {
         // This marks a terminal newline, not completion of a download batch.
-        if (std::holds_alternative<events::EndDownloadProgressEvent>(event)) {
+        if (std::holds_alternative<events::EndDownloadProgressEvent>(event) ||
+            std::holds_alternative<events::EndUploadProgressEvent>(event)) {
+            continue;
+        }
+        if (const auto* phase = std::get_if<events::SyncPhaseEvent>(&event)) {
+            sync_stage_ = phase->phase;
+            if (!sync_stopping_) {
+                switch (phase->phase) {
+                case events::SyncPhase::preparing:
+                    sync_phase_ = SyncPhase::preparing;
+                    break;
+                case events::SyncPhase::scanning:
+                    if (!sync_delta_) {
+                        sync_delta_ = events::DeltaProgressEvent{
+                            0, 0, util::ProgressState::ongoing
+                        };
+                    }
+                    sync_phase_ = SyncPhase::scanning;
+                    break;
+                case events::SyncPhase::scanning_local:
+                    sync_phase_ = SyncPhase::scanning_local;
+                    break;
+                case events::SyncPhase::downloading:
+                    sync_phase_ = SyncPhase::transferring;
+                    break;
+                case events::SyncPhase::uploading:
+                    sync_phase_ = SyncPhase::uploading;
+                    break;
+                default:
+                    sync_phase_ = SyncPhase::working;
+                    break;
+                }
+            }
+            continue;
+        }
+        if (const auto* context =
+                std::get_if<events::SyncContextEvent>(&event)) {
+            state_.sync_mode = context->direction;
+            sync_preview_ = context->preview;
+            continue;
+        }
+        if (const auto* summary =
+                std::get_if<events::SyncSummaryEvent>(&event)) {
+            sync_summary_ = *summary;
+            continue;
+        }
+        if (const auto* upload =
+                std::get_if<events::UploadProgressEvent>(&event)) {
+            sync_upload_ = *upload;
+            if (!sync_stopping_) {
+                sync_phase_ = upload->state == util::ProgressState::ongoing
+                                  ? SyncPhase::uploading
+                                  : SyncPhase::working;
+            }
             continue;
         }
         if (const auto* delta =
@@ -1042,6 +1115,12 @@ void MainWindow::render_sync() {
     const auto locale = locale_for_language(
         localization_ ? localization_->language() : Language::automatic
     );
+    const auto direction = state_.sync_mode == sync::SyncMode::upload_only
+                               ? tr("Upload only")
+                           : state_.sync_mode == sync::SyncMode::download_only
+                               ? tr("Download only")
+                               : tr("Bidirectional");
+    sync_context_->setText(tr("Direction: %1; mode: One-time").arg(direction));
     QString status;
     switch (sync_phase_) {
     case SyncPhase::idle:
@@ -1056,6 +1135,9 @@ void MainWindow::render_sync() {
     case SyncPhase::working:
         status = sync_preview_ ? tr("Previewing changes...")
                                : tr("Synchronizing...");
+        if (!sync_preview_ && sync_stage_ == events::SyncPhase::applying) {
+            status = tr("Applying changes...");
+        }
         break;
     case SyncPhase::scanning:
         status =
@@ -1067,8 +1149,14 @@ void MainWindow::render_sync() {
                     locale.toString(static_cast<qulonglong>(sync_delta_->items))
                 );
         break;
+    case SyncPhase::scanning_local:
+        status = tr("Scanning local changes...");
+        break;
     case SyncPhase::transferring:
         status = tr("Downloading files...");
+        break;
+    case SyncPhase::uploading:
+        status = tr("Uploading files...");
         break;
     case SyncPhase::stopping:
         status = tr("Stopping; waiting for the task to finish...");
@@ -1142,6 +1230,67 @@ void MainWindow::render_sync() {
     }
     transfer_status_->setText(transfer);
     transfer_status_->setVisible(!transfer.isEmpty());
+    QString upload_text;
+    const bool measurable_upload =
+        sync_upload_ &&
+        (sync_upload_->total != 0 || sync_upload_->file_count != 0 ||
+         sync_upload_->state == util::ProgressState::completed);
+    if (sync_upload_) {
+        const auto& upload = *sync_upload_;
+        upload_text =
+            tr("Uploads: %1 / %2 files; %3 / %4; %5/s")
+                .arg(
+                    locale.toString(
+                        static_cast<qulonglong>(upload.completed_files)
+                    ),
+                    locale.toString(static_cast<qulonglong>(upload.file_count)),
+                    data_size(upload.uploaded, locale),
+                    data_size(upload.total, locale),
+                    data_size(upload.metrics.bytes_per_second, locale)
+                );
+        if (upload.metrics.estimated_seconds_remaining &&
+            synchronization_.running() && sync_phase_ == SyncPhase::uploading) {
+            upload_text +=
+                tr("; about %1 remaining")
+                    .arg(duration(
+                        *upload.metrics.estimated_seconds_remaining, locale
+                    ));
+        }
+        upload_progress_->setRange(0, 100);
+        upload_progress_->setValue(
+            static_cast<int>(events::download_progress_percentage(
+                upload.completed_files,
+                upload.file_count,
+                upload.uploaded,
+                upload.total,
+                upload.state
+            ))
+        );
+    }
+    upload_progress_->setFormat("%p%");
+    upload_progress_->setAccessibleName(tr("Upload progress"));
+    upload_progress_->setVisible(measurable_upload);
+    upload_status_->setText(upload_text);
+    upload_status_->setVisible(!upload_text.isEmpty());
+    QString summary;
+    if (sync_summary_) {
+        summary = tr("Round totals: %1 downloaded, %2 uploaded, %3 moved, %4 "
+                     "deleted, %5 blocked.")
+                      .arg(
+                          number(sync_summary_->downloaded),
+                          number(sync_summary_->uploaded),
+                          number(sync_summary_->moved),
+                          number(sync_summary_->deleted),
+                          number(sync_summary_->blocked)
+                      );
+    }
+    if (sync_finished_at_.isValid()) {
+        summary +=
+            tr(" Last finished: %1.")
+                .arg(locale.toString(sync_finished_at_, QLocale::ShortFormat));
+    }
+    sync_summary_status_->setText(summary);
+    sync_summary_status_->setVisible(!summary.isEmpty());
     const bool measurable_download =
         sync_download_ &&
         (sync_download_->total != 0 || sync_download_->file_count != 0 ||
@@ -1164,7 +1313,8 @@ void MainWindow::render_sync() {
     );
     sync_progress_->setVisible(show_progress);
     QString hint;
-    if (synchronization_.running() && !show_progress) {
+    if (synchronization_.running() && !show_progress &&
+        !(sync_phase_ == SyncPhase::uploading && measurable_upload)) {
         if (sync_phase_ == SyncPhase::scanning) {
             hint = tr(
                 "Remote totals are unknown; a percentage cannot be calculated."
@@ -1173,6 +1323,10 @@ void MainWindow::render_sync() {
             hint =
                 tr("Download totals are unknown; a percentage cannot be "
                    "calculated.");
+        } else if (sync_phase_ == SyncPhase::uploading && !measurable_upload) {
+            hint = tr(
+                "Upload totals are unknown; a percentage cannot be calculated."
+            );
         } else {
             hint = tr(
                 "This phase has no percentage progress. See logs for details."

@@ -273,6 +273,13 @@ void report_execution_summary(
     std::size_t unsupported,
     const events::Observer& observer
 ) {
+    observer.sync_summary({
+        .downloaded = execution.downloaded,
+        .uploaded = upload.uploaded,
+        .moved = execution.moved + upload.moved,
+        .deleted = execution.removed + upload.deleted,
+        .blocked = blocked,
+    });
     observer.section(
         "execution_summary",
         "Synchronization summary:",
@@ -467,6 +474,8 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
         onedrive::util::require_sync_mount(
             config_.sync_data_directory, config_.sync_data_mount_point
         );
+        observer.sync_context(config_.sync_mode, capabilities.previews());
+        observer.sync_phase(events::SyncPhase::preparing);
         std::filesystem::path sync_root =
             onedrive::util::normalized_absolute(config_.sync_data_directory);
         auto cache_state =
@@ -475,6 +484,7 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
                 : std::nullopt;
         std::optional<detail::SafeSyncRoot> safe_root;
         std::optional<detail::FilesystemMetadata> metadata;
+        std::size_t recovered_uploads = 0;
         if (capabilities.previews()) {
             report_dry_run_configuration(config_, items_, observer);
             const auto pending = items_.pending_downloads(config_.drive_id);
@@ -535,7 +545,7 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
                         stop_token
                     );
                 }
-                detail::recover_pending_uploads(
+                recovered_uploads = detail::recover_pending_uploads(
                     *safe_root,
                     config_.drive_id,
                     graph_,
@@ -681,6 +691,7 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
         graph::DeltaResult delta;
         std::size_t delta_pages = 0;
         std::size_t delta_scanned_items = 0;
+        observer.sync_phase(events::SyncPhase::scanning);
         const auto delta_progress =
             [&observer, &delta_pages, &delta_scanned_items](
                 std::size_t pages, std::size_t items, util::ProgressState state
@@ -947,6 +958,7 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
                 "execution_started",
                 "Executing synchronization plan..."
             );
+            observer.sync_phase(events::SyncPhase::applying);
             const auto summary = engine_detail::execute_plan(
                 plan,
                 *safe_root,
@@ -963,6 +975,7 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
                 stop_token
             );
             throw_if_cancelled(stop_token);
+            observer.sync_phase(events::SyncPhase::applying);
             spdlog::debug(
                 "Persisting remote delta for drive '{}'", config_.drive_id
             );
@@ -991,6 +1004,8 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
                 );
                 blocked_count += upload_summary.blocked;
             }
+            observer.sync_phase(events::SyncPhase::applying);
+            upload_summary.uploaded += recovered_uploads;
             report_execution_summary(
                 summary,
                 upload_summary,
@@ -1001,6 +1016,9 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
         }
 
         throw_if_cancelled(stop_token);
+        if (capabilities.previews()) {
+            observer.sync_summary({.blocked = blocked_count});
+        }
         if (capabilities.previews() && cache_state) {
             cache_state->blocked = items_.blocked_items(config_.drive_id);
             std::ranges::sort(

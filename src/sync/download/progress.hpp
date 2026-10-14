@@ -5,14 +5,16 @@
 #include <chrono>
 #include <cstdint>
 #include <optional>
+#include <mutex>
+#include <vector>
 
 namespace onedrive::sync::detail {
 
-class DownloadProgressEstimator final {
+class TransferProgressEstimator final {
 public:
     using Clock = std::chrono::steady_clock;
 
-    explicit DownloadProgressEstimator(
+    explicit TransferProgressEstimator(
         Clock::time_point started_at = Clock::now()
     );
 
@@ -21,6 +23,12 @@ public:
         std::uint64_t total,
         Clock::time_point sampled_at = Clock::now()
     );
+    [[nodiscard]] events::TransferProgressMetrics sample(
+        std::uint64_t completed,
+        std::uint64_t total,
+        std::uint64_t transferred,
+        Clock::time_point sampled_at
+    );
 
 private:
     Clock::time_point started_at_;
@@ -28,6 +36,8 @@ private:
     std::uint64_t last_downloaded_{0};
     std::optional<double> smoothed_bytes_per_second_;
 };
+
+using DownloadProgressEstimator = TransferProgressEstimator;
 
 class DownloadProgressReporter final {
 public:
@@ -52,6 +62,43 @@ private:
     std::uint64_t last_observed_downloaded_{0};
     unsigned last_reported_percentage_{0};
     bool reported_{false};
+};
+
+using TransferProgressReporter = DownloadProgressReporter;
+
+class UploadProgressTracker final {
+public:
+    UploadProgressTracker(
+        std::vector<std::uint64_t> sizes, const events::Observer& observer
+    );
+    void update(
+        std::size_t index,
+        std::uint64_t completed,
+        std::uint64_t total,
+        std::uint64_t transferred
+    );
+    void finish(std::size_t index);
+    void skip(std::size_t index);
+
+private:
+    struct File {
+        std::uint64_t size;
+        std::uint64_t completed{0};
+        std::uint64_t transferred{0};
+        bool finished{false};
+    };
+    void report(bool force = false);
+    const events::Observer& observer_;
+    std::mutex mutex_;
+    std::vector<File> files_;
+    std::uint64_t total_{0};
+    std::uint64_t completed_{0};
+    std::uint64_t transferred_{0};
+    std::size_t file_count_{0};
+    std::size_t finished_{0};
+    TransferProgressEstimator estimator_;
+    TransferProgressReporter reporter_;
+    TransferProgressEstimator::Clock::time_point last_reported_at_{};
 };
 
 }  // namespace onedrive::sync::detail

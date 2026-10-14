@@ -25,6 +25,7 @@ struct UploadCandidate {
     std::string remote_path;
     std::optional<storage::ItemState> previous;
     bool directory{false};
+    std::uint64_t size{0};
 };
 
 [[nodiscard]] std::string upload_blocked_id(std::string_view remote_path);

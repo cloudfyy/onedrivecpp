@@ -41,6 +41,11 @@ public:
         const DownloadProgressMetrics& metrics = {}
     ) const;
     void end_download_progress() const;
+    void upload_progress(const UploadProgressEvent& progress) const;
+    void end_upload_progress() const;
+    void sync_phase(SyncPhase phase) const;
+    void sync_context(sync::SyncMode direction, bool preview) const;
+    void sync_summary(const SyncSummaryEvent& summary) const;
     void operation_state(
         OperationKind operation, OperationState state
     ) const;

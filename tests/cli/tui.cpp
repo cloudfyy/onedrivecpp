@@ -906,6 +906,38 @@ int test_message_levels() {
 } // namespace
 
 int main() {
+    {
+        using namespace onedrive::cli;
+        std::ostringstream output;
+        std::ostringstream error;
+        const Console console{detail::make_ftxui_console_backend(
+            {.ui = UiMode::tui, .view = TuiView::watch}, output, error, 120, 40
+        )};
+        console.operation_state(
+            OperationKind::monitoring, OperationState::watching
+        );
+        console.sync_context(onedrive::sync::SyncMode::bidirectional, false);
+        console.sync_phase(onedrive::events::SyncPhase::preparing);
+        console.download_progress(
+            1, 1, 10, 10, onedrive::util::ProgressState::completed
+        );
+        console.upload_progress(
+            {.completed_files = 0, .file_count = 1, .uploaded = 5, .total = 10}
+        );
+        console.sync_summary({.downloaded = 1, .uploaded = 0, .blocked = 1});
+        console.sync_phase(onedrive::events::SyncPhase::waiting);
+        const auto rendered = output.str();
+        const auto frame = rendered.substr(rendered.rfind("\033[H"));
+        if (!frame.contains("DOWNLOADS") || !frame.contains("UPLOADS") ||
+            !frame.contains("automatic monitoring") ||
+            !frame.contains("MONITORING: waiting") ||
+            !frame.contains("Last synchronization round incomplete.")) {
+            return fail(
+                "TUI lost separate transfer progress or stopped monitoring "
+                "after a round"
+            );
+        }
+    }
     if (const auto result = test_message_levels(); result != EXIT_SUCCESS) {
         return result;
     }

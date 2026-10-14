@@ -51,7 +51,7 @@ struct RemoteDeletionGuard {
     std::size_t upload_concurrency,
     const std::stop_token& stop_token
 );
-void recover_pending_uploads(
+[[nodiscard]] std::size_t recover_pending_uploads(
     const SafeSyncRoot& sync_root,
     const std::string& drive_id,
     graph::GraphClient& graph,

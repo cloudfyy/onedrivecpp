@@ -4,6 +4,7 @@
 #include "sync/upload/planning.hpp"
 #include "sync/upload/remote_delete.hpp"
 #include "sync/upload/remote_move.hpp"
+#include "sync/download/progress.hpp"
 
 #include "onedrive/sync/cancellation.hpp"
 #include "onedrive/sync/blocked_policy.hpp"
@@ -377,6 +378,7 @@ std::vector<UploadCandidate> discover_uploads(
                                     ? std::nullopt
                                     : std::optional{previous->second},
                     .directory = directory,
+                    .size = file_size.value_or(0),
                 });
             } else if (local_upload_paths.contains(remote_path)) {
                 items.remove_blocked_item(
@@ -428,6 +430,7 @@ UploadSummary upload_local_changes(
         );
     }
     UploadSummary summary;
+    observer.sync_phase(events::SyncPhase::scanning_local);
     auto moves = discover_local_moves(
         sync_root,
         drive_id,
@@ -472,6 +475,7 @@ UploadSummary upload_local_changes(
         return summary;
     }
 
+    observer.sync_phase(events::SyncPhase::applying);
     auto move_parents = discover_move_parent_uploads(
         sync_root,
         drive_id,
@@ -528,6 +532,7 @@ UploadSummary upload_local_changes(
         capabilities.execution_mode(),
         &items
     );
+    observer.sync_phase(events::SyncPhase::scanning_local);
     auto uploads = discover_uploads(
         sync_root,
         drive_id,
@@ -555,6 +560,7 @@ UploadSummary upload_local_changes(
             );
         }
     }
+    observer.sync_phase(events::SyncPhase::applying);
     for (const auto& deletion : deletion_plan.operations) {
         throw_if_cancelled(stop_token);
         execute_new_remote_delete(deletion, graph, items, stop_token);
@@ -585,6 +591,11 @@ UploadSummary upload_local_changes(
         ++first_file;
     }
 
+    std::vector<std::uint64_t> upload_sizes;
+    for (std::size_t index = first_file; index < uploads.size(); ++index) {
+        upload_sizes.push_back(uploads[index].size);
+    }
+    UploadProgressTracker progress{std::move(upload_sizes), observer};
     std::atomic_size_t next_upload{first_file};
     std::stop_source stop;
     std::stop_callback cancel_workers{
@@ -603,7 +614,8 @@ UploadSummary upload_local_changes(
                 std::uint64_t{0} :
                 previous->second;
         };
-    const auto upload_file = [&](const UploadCandidate& upload) {
+    const auto upload_file = [&](std::size_t index) {
+        const auto& upload = uploads[index];
         const auto result = execute_file_upload(
             upload,
             sync_root,
@@ -612,17 +624,26 @@ UploadSummary upload_local_changes(
             items,
             metadata,
             previous_failure_count(upload.remote_path),
-            stop.get_token()
+            stop.get_token(),
+            [&](std::uint64_t completed,
+                std::uint64_t total,
+                std::uint64_t transferred) {
+                progress.update(
+                    index - first_file, completed, total, transferred
+                );
+            }
         );
         const std::scoped_lock lock{result_mutex};
         switch (result.status) {
         case FileUploadStatus::skipped:
+            progress.skip(index - first_file);
             return;
         case FileUploadStatus::uploaded:
             items.remove_blocked_item(
                 drive_id, upload_blocked_id(upload.remote_path)
             );
             ++summary.uploaded;
+            progress.finish(index - first_file);
             if (!result.message.empty()) {
                 observer.message(
                     events::MessageKind::warning,
@@ -655,7 +676,7 @@ UploadSummary upload_local_changes(
                 return;
             }
             try {
-                upload_file(uploads[index]);
+                upload_file(index);
             } catch (...) {
                 {
                     const std::scoped_lock lock{result_mutex};

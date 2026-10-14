@@ -19,6 +19,22 @@ in the GUI and the CLI's documented ASCII matching without duplicating field
 selection or database access. CLI output continues through the existing
 Console events and text/JSON/TUI backends.
 
+## Shared transfer progress
+
+Upload and download reporting reuse `TransferProgressEstimator` and the existing
+progress throttle; `DownloadProgressEstimator` remains a compatibility alias.
+Pass logical completed bytes separately from current-operation transferred
+payload bytes. Saved offsets and reused files can advance completion but must
+never manufacture speed or ETA. Upload retry attempts contribute their actual
+sent bytes without double-counting repeated callbacks.
+
+`SyncContextEvent`, `SyncPhaseEvent`, and `SyncSummaryEvent` carry UI-neutral
+direction, phase, and round counts. Operation lifecycle events remain separate:
+an upload batch completing does not finish synchronization, and a Monitor round
+finishing does not stop the monitor. Terminal GUI results still come from worker
+completion after cleanup. New event variants must be handled by the text, JSON,
+TUI, GUI forwarding, and GUI history consumers together.
+
 ## GUI localization
 
 Enable `ONEDRIVE_BUILD_GUI=ON` with Qt 6.8+ and the Linguist tools.

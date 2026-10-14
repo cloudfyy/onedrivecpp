@@ -29,6 +29,7 @@ AppStateViewModel load_app_state_view_model(
         missing ? ConfigurationStatus::missing : ConfigurationStatus::valid;
     state.sync_directory = config.sync_data_directory;
     state.state_directory = config.state_directory;
+    state.sync_mode = config.sync_mode;
     try {
         app::detail::validate_authentication_config(config);
     } catch (const std::runtime_error& error) {

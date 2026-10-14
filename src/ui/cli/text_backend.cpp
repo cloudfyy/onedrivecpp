@@ -86,6 +86,7 @@ private:
         if (message_suppressed(options_, event.kind)) {
             return;
         }
+        render(EndDownloadProgressEvent{});
         std::ostream& stream =
             event.kind == MessageKind::error ||
                     event.kind == MessageKind::critical
@@ -103,6 +104,7 @@ private:
         if (options_.quiet) {
             return;
         }
+        render(EndDownloadProgressEvent{});
         if (styled_) {
             output_ << "\033[1;36m" << event.title << "\033[0m\n";
         } else {
@@ -177,6 +179,28 @@ private:
     }
 
     void render(const DownloadProgressEvent& event) {
+        render_transfer(event, event.downloaded, "DL", "Done");
+    }
+
+    void render(const UploadProgressEvent& event) {
+        if (event.total == 0 && event.file_count == 0 &&
+            event.state == util::ProgressState::ongoing) {
+            if (!options_.quiet) {
+                render(EndDownloadProgressEvent{});
+                output_ << "UL: totals unknown; percentage unavailable\n";
+            }
+            return;
+        }
+        render_transfer(event, event.uploaded, "UL", "Upload done");
+    }
+
+    template <typename Progress>
+    void render_transfer(
+        const Progress& event,
+        std::uint64_t bytes,
+        std::string_view active_label,
+        std::string_view completed_label
+    ) {
         if (options_.quiet) {
             return;
         }
@@ -185,17 +209,17 @@ private:
         const auto percentage = download_progress_percentage(
             event.completed_files,
             event.file_count,
-            event.downloaded,
+            bytes,
             event.total,
             event.state
         );
         auto line = fmt::format(
             "{}: {}/{} files, {}% ({}/{})",
-            completed ? "Done" : "DL",
+            completed ? completed_label : active_label,
             event.completed_files,
             event.file_count,
             percentage,
-            format_bytes(event.downloaded),
+            format_bytes(bytes),
             format_bytes(event.total)
         );
         if (event.metrics.bytes_per_second != 0) {
@@ -243,6 +267,25 @@ private:
     }
 
     void render(const OperationStateEvent&) {}
+    void render(const SyncPhaseEvent& event) {
+        render(EndDownloadProgressEvent{});
+        if (!options_.quiet) {
+            output_ << "Phase: " << events::sync_phase_name(event.phase)
+                    << '\n';
+        }
+    }
+    void render(const SyncSummaryEvent&) {
+    }
+    void render(const events::SyncContextEvent& event) {
+        if (!options_.quiet) {
+            output_ << "Synchronization: "
+                    << sync::sync_mode_name(event.direction)
+                    << (event.preview ? " (preview)\n" : "\n");
+        }
+    }
+    void render(const EndUploadProgressEvent&) {
+        render(EndDownloadProgressEvent{});
+    }
 
     ConsoleOptions options_;
     std::ostream& output_;

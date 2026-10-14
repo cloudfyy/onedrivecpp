@@ -82,7 +82,8 @@ static_assert(!std::copyable<DownloadCommitOptions>);
     const FilesystemMetadata& metadata,
     DownloadSpaceCoordinator& space,
     std::stop_token stop_token,
-    const graph::DownloadProgress& progress = {}
+    const graph::DownloadProgress& progress = {},
+    const std::function<void(std::uint64_t)>& transferred = {}
 );
 [[nodiscard]] storage::ItemState commit_download(
     storage::ItemStore& items,

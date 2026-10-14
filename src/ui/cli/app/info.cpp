@@ -42,18 +42,6 @@
 namespace onedrive::app::detail {
 namespace {
 
-std::string sync_mode_name(sync::SyncMode mode) {
-    switch (mode) {
-    case sync::SyncMode::bidirectional:
-        return "bidirectional";
-    case sync::SyncMode::upload_only:
-        return "upload_only";
-    case sync::SyncMode::download_only:
-        return "download_only";
-    }
-    return "unknown";
-}
-
 std::string delete_policy_name(sync::DeletePolicy policy) {
     return policy == sync::DeletePolicy::propagate ? "propagate" : "preserve";
 }
@@ -644,7 +632,7 @@ int show_status(
             {
                 .label = "mode:",
                 .key = "mode",
-                .value = sync_mode_name(snapshot.sync_mode),
+                .value = std::string{sync::sync_mode_name(snapshot.sync_mode)},
             },
             {
                 .label = "delete policy:",
@@ -1301,8 +1289,8 @@ int show_config(
                 .label = "data mount point:",
                 .key = "data_mount_point",
                 .value = config.sync_data_mount_point
-                           ? config.sync_data_mount_point->string()
-                           : "none",
+                             ? config.sync_data_mount_point->string()
+                             : "none",
             },
             {
                 .label = "configured drive:",
@@ -1317,7 +1305,7 @@ int show_config(
             {
                 .label = "sync mode:",
                 .key = "sync_mode",
-                .value = sync_mode_name(config.sync_mode),
+                .value = std::string{sync::sync_mode_name(config.sync_mode)},
             },
             {
                 .label = "delete policy:",

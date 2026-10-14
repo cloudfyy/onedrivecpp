@@ -1,4 +1,5 @@
 #pragma once
+#include "onedrive/sync/capabilities.hpp"
 
 #include <filesystem>
 #include <string>
@@ -15,6 +16,7 @@ struct AppStateViewModel {
     std::filesystem::path config_file;
     std::filesystem::path sync_directory;
     std::filesystem::path state_directory;
+    sync::SyncMode sync_mode{sync::SyncMode::bidirectional};
     AccountStatus account_status{AccountStatus::no_account};
     ConfigurationStatus configuration_status{ConfigurationStatus::valid};
     std::string configuration_error;

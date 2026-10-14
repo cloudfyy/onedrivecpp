@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <string>
+#include <stdexcept>
 
 namespace onedrive::events {
 namespace {
@@ -11,6 +12,26 @@ constexpr unsigned completed_percentage = 100;
 constexpr unsigned maximum_incomplete_percentage = 99;
 
 } // namespace
+
+std::string_view sync_phase_name(SyncPhase phase) {
+    switch (phase) {
+    case SyncPhase::preparing:
+        return "preparing";
+    case SyncPhase::scanning:
+        return "scanning";
+    case SyncPhase::scanning_local:
+        return "scanning_local";
+    case SyncPhase::downloading:
+        return "downloading";
+    case SyncPhase::uploading:
+        return "uploading";
+    case SyncPhase::applying:
+        return "applying";
+    case SyncPhase::waiting:
+        return "waiting";
+    }
+    throw std::logic_error{"unknown synchronization phase"};
+}
 
 std::scoped_lock<std::mutex> Observer::lock() const {
     return std::scoped_lock{mutex_};
@@ -132,6 +153,31 @@ void Observer::download_progress(
 void Observer::end_download_progress() const {
     const std::scoped_lock lock{mutex_};
     on_event(EndDownloadProgressEvent{});
+}
+
+void Observer::upload_progress(const UploadProgressEvent& progress) const {
+    const std::scoped_lock lock{mutex_};
+    on_event(progress);
+}
+
+void Observer::end_upload_progress() const {
+    const std::scoped_lock lock{mutex_};
+    on_event(EndUploadProgressEvent{});
+}
+
+void Observer::sync_phase(SyncPhase phase) const {
+    const std::scoped_lock lock{mutex_};
+    on_event(SyncPhaseEvent{phase});
+}
+
+void Observer::sync_context(sync::SyncMode direction, bool preview) const {
+    const std::scoped_lock lock{mutex_};
+    on_event(SyncContextEvent{direction, preview});
+}
+
+void Observer::sync_summary(const SyncSummaryEvent& summary) const {
+    const std::scoped_lock lock{mutex_};
+    on_event(summary);
 }
 
 void Observer::operation_state(

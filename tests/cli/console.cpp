@@ -48,6 +48,88 @@ int main() {
     using namespace onedrive::cli;
     using onedrive::util::ProgressState;
 
+    {
+        std::ostringstream output;
+        std::ostringstream error;
+        const Console upload_json{{.output = OutputMode::json}, output, error};
+        upload_json.upload_progress(
+            {.completed_files = 0,
+             .file_count = 2,
+             .uploaded = 50,
+             .total = 100,
+             .metrics = {
+                 .bytes_per_second = 25, .estimated_seconds_remaining = 2
+             }}
+        );
+        upload_json.upload_progress(
+            {.completed_files = 2,
+             .file_count = 2,
+             .uploaded = 100,
+             .total = 100,
+             .state = ProgressState::completed}
+        );
+        upload_json.upload_progress({});
+        upload_json.sync_phase(onedrive::events::SyncPhase::uploading);
+        upload_json.sync_context(onedrive::sync::SyncMode::upload_only, false);
+        upload_json.end_upload_progress();
+        std::istringstream lines{output.str()};
+        std::string line;
+        std::vector<nlohmann::json> records;
+        while (std::getline(lines, line)) {
+            records.push_back(nlohmann::json::parse(line));
+        }
+        if (records.size() != 5 || records[0]["event"] != "upload_progress" ||
+            records[0]["uploaded_bytes"] != 50 ||
+            records[0]["percentage"] != 50 ||
+            records[0]["bytes_per_second"] != 25 ||
+            records[0]["estimated_seconds_remaining"] != 2 ||
+            records[1]["completed"] != true ||
+            !records[2]["percentage"].is_null() ||
+            records[3]["phase"] != "uploading" ||
+            records[4]["direction"] != "upload_only" || !error.str().empty()) {
+            return fail(
+                "upload JSON events lost progress, phase, or unknown totals"
+            );
+        }
+        std::ostringstream text;
+        const Console upload_text{{}, text, error};
+        upload_text.upload_progress(
+            {.completed_files = 1,
+             .file_count = 2,
+             .uploaded = 50,
+             .total = 100}
+        );
+        upload_text.upload_progress(
+            {.completed_files = 2,
+             .file_count = 2,
+             .uploaded = 100,
+             .total = 100,
+             .state = ProgressState::completed}
+        );
+        upload_text.upload_progress({});
+        if (!text.str().contains("UL: 1/2 files, 50%") ||
+            !text.str().contains("Upload done: 2/2 files, 100%") ||
+            !text.str().contains(
+                "UL: totals unknown; percentage unavailable"
+            )) {
+            return fail(
+                "console upload progress did not preserve direction or totals"
+            );
+        }
+        std::ostringstream quiet_output;
+        const Console quiet_upload{
+            {.output = OutputMode::json, .quiet = true}, quiet_output, error
+        };
+        quiet_upload.upload_progress({});
+        quiet_upload.sync_phase(onedrive::events::SyncPhase::waiting);
+        quiet_upload.sync_context(
+            onedrive::sync::SyncMode::bidirectional, true
+        );
+        if (!quiet_output.str().empty()) {
+            return fail("quiet output leaked upload events");
+        }
+    }
+
     std::ostringstream plain_output;
     std::ostringstream plain_error;
     const Console plain{
