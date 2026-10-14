@@ -46,11 +46,10 @@ int open_beneath(
 }  // namespace
 
 SafeSyncRoot::SafeSyncRoot(const std::filesystem::path& root)
-    : root_{std::filesystem::absolute(root).lexically_normal()},
-      descriptor_{::open(
-          root_.c_str(),
-          O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
-      )} {
+    : root_{util::normalized_absolute(root)},
+      descriptor_{
+          ::open(root_.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
+      } {
     if (!descriptor_) {
         throw std::runtime_error(
             "cannot open synchronization root '" + root_.string() + "': " +
@@ -72,8 +71,7 @@ const std::filesystem::path& SafeSyncRoot::path() const noexcept {
 std::filesystem::path SafeSyncRoot::relative_path(
     const std::filesystem::path& path
 ) const {
-    const auto normalized =
-        std::filesystem::absolute(path).lexically_normal();
+    const auto normalized = util::normalized_absolute(path);
     const auto relative = normalized.lexically_relative(root_);
     if (relative.empty() && normalized != root_) {
         throw std::runtime_error(
@@ -295,10 +293,7 @@ FilesystemIdentity SafeSyncRoot::identity(
             path.string()
         );
     }
-    return {
-        .device = static_cast<std::uint64_t>(status.st_dev),
-        .inode = static_cast<std::uint64_t>(status.st_ino),
-    };
+    return util::filesystem_identity(status);
 }
 
 bool SafeSyncRoot::remove(

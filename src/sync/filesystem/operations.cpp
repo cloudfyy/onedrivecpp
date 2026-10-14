@@ -119,7 +119,7 @@ std::filesystem::path prepare_sync_root(
             absolute_root, S_IRWXU, "synchronization directory"
         );
     }
-    const auto root = std::filesystem::weakly_canonical(absolute_root);
+    const auto root = util::canonical_directory(absolute_root);
     if (created) {
         spdlog::debug("Created synchronization root '{}'", root.string());
     }

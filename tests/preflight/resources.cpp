@@ -378,6 +378,22 @@ int test_races_and_missing_roots() {
             return fail("registration race did not retain exactly one owner");
         }
     }
+    const auto missing_root = temporary.path() / "missing-alias";
+    Child missing{"hold", missing_root, state1, "monitor"};
+    if (missing.ready() != 'A') {
+        return fail("missing-root alias test could not acquire a root");
+    }
+    Child missing_alias{
+        "hold", missing_root / "child" / "..", state2, "synchronize"
+    };
+    if (missing_alias.ready() != 'B' || missing_alias.wait() != 2 ||
+        std::filesystem::exists(missing_root)) {
+        return fail("missing directory alias bypassed lexical root ownership");
+    }
+    missing.release();
+    if (missing.wait() != 0) {
+        return fail("missing-root holder failed to release its lease");
+    }
     const auto root = temporary.path() / "root";
     std::filesystem::create_directory(root);
     const auto link = temporary.path() / "alias";
@@ -392,6 +408,18 @@ int test_races_and_missing_roots() {
             "symbolic link"
         )) {
         return fail("symbolic-link synchronization root bypassed validation");
+    }
+    const auto state_link = temporary.path() / "state-alias";
+    std::filesystem::create_directory_symlink(state1, state_link);
+    if (!test::throws_with<std::runtime_error>(
+            [&] {
+                const auto lock = app::detail::acquire_runtime_lock(
+                    state_link, "synchronize"
+                );
+            },
+            "cannot safely open path"
+        )) {
+        return fail("runtime lock opening followed a symbolic-link parent");
     }
     Child holder{"hold", root, state1, "monitor"};
     if (holder.ready() != 'A') {

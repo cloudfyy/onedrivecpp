@@ -5,6 +5,7 @@
 #include "onedrive/util/mount.hpp"
 #include "onedrive/util/path_security.hpp"
 #include "onedrive/util/system_error.hpp"
+#include "sync/filesystem/operations.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -253,18 +254,10 @@ void prepare_sync_directory(const config::Config& config, Operation operation) {
         return;
     }
 
-    std::filesystem::create_directories(config.sync_data_directory);
-    onedrive::util::reject_symlink_components(
-        config.sync_data_directory,
-        "sync directory"
+    const auto root = sync::detail::prepare_sync_root(
+        config.sync_data_directory, config.sync_permissions
     );
-    if (config.sync_permissions ==
-        config::SyncPermissionsMode::private_access) {
-        onedrive::util::secure_owned_directory(
-            config.sync_data_directory, private_directory_mode, "sync directory"
-        );
-    }
-    probe_writable_directory(config.sync_data_directory);
+    probe_writable_directory(root);
 }
 
 void validate_authentication_config(const config::Config& config) {

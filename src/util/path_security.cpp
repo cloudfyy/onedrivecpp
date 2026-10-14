@@ -86,6 +86,15 @@ std::filesystem::path normalized_absolute(
     return std::filesystem::absolute(path).lexically_normal();
 }
 
+std::filesystem::path canonical_directory(const std::filesystem::path& path) {
+    auto directory =
+        std::filesystem::weakly_canonical(normalized_absolute(path));
+    if (directory != directory.root_path() && directory.filename().empty()) {
+        directory = directory.parent_path();
+    }
+    return directory;
+}
+
 bool path_contains(
     const std::filesystem::path& parent,
     const std::filesystem::path& child

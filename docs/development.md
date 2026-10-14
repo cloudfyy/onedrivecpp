@@ -59,6 +59,20 @@ text. Regression coverage uses exec'd subprocesses for direction pairs,
 overlapping/missing/aliased roots, atomic startup races, crash release, and shared
 service ownership during Monitor waiting.
 
+Reuse `canonical_directory` for directory canonicalization, including trailing
+separator aliases of missing roots. Directory validation returns the canonical
+sync path so lease acquisition does not resolve it again. Application preparation
+delegates creation and permission handling to the existing `prepare_sync_root`;
+its write probe remains separate, and independent engine boundary checks stay
+enabled. Lock files use `open_path_no_symlinks`, while lock inspection and
+`SafeSyncRoot` share the utility `FilesystemIdentity` representation.
+
+Lock metadata reuses `read_private_file`'s descriptor overload. It borrows the
+locked descriptor and uses `pread` without changing its offset or reopening its
+path. The path overload delegates to the same validation/reading code. Metadata
+writes must remain in-place: atomic replacement would change the inode and
+detach the path from its held OS lock.
+
 ## GUI localization
 
 Enable `ONEDRIVE_BUILD_GUI=ON` with Qt 6.8+ and the Linguist tools.

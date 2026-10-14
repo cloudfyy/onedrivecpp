@@ -450,16 +450,12 @@ std::string update_settings(
     return contents;
 }
 
-void validate_sync_state_directories(
+std::filesystem::path validate_sync_state_directories(
     const std::filesystem::path& sync_directory,
     const std::filesystem::path& state_directory
 ) {
-    const auto sync = std::filesystem::weakly_canonical(
-        util::normalized_absolute(sync_directory)
-    );
-    const auto state = std::filesystem::weakly_canonical(
-        util::normalized_absolute(state_directory)
-    );
+    const auto sync = util::canonical_directory(sync_directory);
+    const auto state = util::canonical_directory(state_directory);
     if (sync == sync.root_path()) {
         throw std::runtime_error(
             "sync.data_directory must not be the filesystem root"
@@ -471,6 +467,7 @@ void validate_sync_state_directories(
             "another"
         );
     }
+    return sync;
 }
 
 bool has_auth_scope(std::string_view scopes, std::string_view expected) {

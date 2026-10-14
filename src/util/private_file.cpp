@@ -36,8 +36,17 @@ std::string read_private_file(
     const UniqueFD descriptor{
         open_path_no_symlinks(path, O_RDONLY | O_NONBLOCK)
     };
+    return read_private_file(descriptor.get(), path, description, requirements);
+}
+
+std::string read_private_file(
+    int descriptor,
+    const std::filesystem::path& path,
+    std::string_view description,
+    PrivateFileRequirements requirements
+) {
     struct stat status{};
-    if (::fstat(descriptor.get(), &status) == -1) {
+    if (::fstat(descriptor, &status) == -1) {
         throw_errno_error(
             "cannot inspect " + std::string{description} + " file '" +
             path.string() + "'"
@@ -86,8 +95,12 @@ std::string read_private_file(
     constexpr std::size_t read_buffer_bytes = 4096;
     std::array<char, read_buffer_bytes> buffer{};
     while (true) {
-        const auto count =
-            ::read(descriptor.get(), buffer.data(), buffer.size());
+        const auto count = ::pread(
+            descriptor,
+            buffer.data(),
+            buffer.size(),
+            static_cast<off_t>(contents.size())
+        );
         if (count == -1 && errno == EINTR) {
             continue;
         }

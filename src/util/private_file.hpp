@@ -28,4 +28,12 @@ struct PrivateFileRequirements {
     PrivateFileRequirements requirements
 );
 
+// Borrows the descriptor and reads from the start without changing its offset.
+[[nodiscard]] std::string read_private_file(
+    int descriptor,
+    const std::filesystem::path& path,
+    std::string_view description,
+    PrivateFileRequirements requirements
+);
+
 } // namespace onedrive::util

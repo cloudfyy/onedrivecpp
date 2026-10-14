@@ -3,14 +3,31 @@
 #include "onedrive/util/unique_file_descriptor.hpp"
 
 #include <filesystem>
+#include <cstdint>
 #include <string_view>
 #include <sys/stat.h>
 
 namespace onedrive::util {
 
+struct FilesystemIdentity {
+    std::uint64_t device{0};
+    std::uint64_t inode{0};
+    bool operator==(const FilesystemIdentity&) const = default;
+};
+
+[[nodiscard]] constexpr FilesystemIdentity
+filesystem_identity(const struct stat& status) noexcept {
+    return {
+        .device = static_cast<std::uint64_t>(status.st_dev),
+        .inode = static_cast<std::uint64_t>(status.st_ino),
+    };
+}
+
 [[nodiscard]] std::filesystem::path normalized_absolute(
     const std::filesystem::path& path
 );
+[[nodiscard]] std::filesystem::path
+canonical_directory(const std::filesystem::path& path);
 [[nodiscard]] bool path_contains(
     const std::filesystem::path& parent,
     const std::filesystem::path& child

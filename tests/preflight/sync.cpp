@@ -26,6 +26,14 @@ int test_sync() {
     );
     {
         const RuntimePreflight preflight{config, Operation::synchronize};
+        const auto resolved = onedrive::config::validate_sync_state_directories(
+            config.sync_data_directory / ".", config.state_directory
+        );
+        if (resolved != config.sync_data_directory) {
+            return fail(
+                "directory validation did not return the canonical sync path"
+            );
+        }
         if (std::filesystem::exists(config.sync_data_directory)) {
             return fail(
                 "sync preflight created the sync directory before claiming it"

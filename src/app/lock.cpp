@@ -5,6 +5,7 @@
 #include "onedrive/util/sha256.hpp"
 #include "onedrive/ui/common/observer.hpp"
 #include "onedrive/config/config.hpp"
+#include "util/private_file.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -25,7 +26,7 @@ namespace onedrive::app::detail {
 namespace {
 
 constexpr mode_t private_file_mode = S_IRUSR | S_IWUSR;
-constexpr std::size_t maximum_metadata_size = 65536;
+constexpr auto maximum_metadata_size = util::maximum_private_file_size;
 
 using Json = nlohmann::json;
 
@@ -58,33 +59,18 @@ Json owner_json(const LockOwner& owner) {
     };
 }
 
-std::string read_metadata(int descriptor) {
-    std::string result;
-    char buffer[4096];
-    for (;;) {
-        const auto bytes = ::pread(
-            descriptor,
-            buffer,
-            sizeof(buffer),
-            static_cast<off_t>(result.size())
-        );
-        if (bytes == -1) {
-            if (errno == EINTR) {
-                continue;
-            }
-            throw std::runtime_error(
-                "cannot read lock metadata: " +
-                util::system_error_message(errno)
-            );
+std::string read_metadata(int descriptor, const std::filesystem::path& path) {
+    return util::read_private_file(
+        descriptor,
+        path,
+        "runtime lock",
+        {
+            .required_owner = ::geteuid(),
+            .exact_permissions = std::nullopt,
+            .permission_requirement = "must be owned by the current user",
+            .require_single_link = true,
         }
-        if (bytes == 0) {
-            return result;
-        }
-        result.append(buffer, static_cast<std::size_t>(bytes));
-        if (result.size() > maximum_metadata_size) {
-            throw std::runtime_error("lock metadata exceeds the size limit");
-        }
-    }
+    );
 }
 
 LockOwner parse_owner(const Json& json) {
@@ -141,17 +127,8 @@ void write_metadata(int descriptor, const Json& metadata) {
 }
 
 util::UniqueFD open_lock(const std::filesystem::path& path) {
-    util::UniqueFD descriptor{::open(
-        path.c_str(),
-        O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW,
-        private_file_mode
-    )};
-    if (!descriptor) {
-        throw std::runtime_error(
-            "cannot open runtime lock '" + path.string() +
-            "': " + util::system_error_message(errno)
-        );
-    }
+    auto descriptor =
+        util::open_path_no_symlinks(path, O_RDWR | O_CREAT, private_file_mode);
     static_cast<void>(util::secure_owned_regular_file(
         descriptor.get(), path, private_file_mode, "runtime lock"
     ));
@@ -173,13 +150,18 @@ bool try_lock(int descriptor) {
     return true;
 }
 
-struct DirectoryIdentity {
-    std::uint64_t device;
-    std::uint64_t inode;
-    bool operator==(const DirectoryIdentity&) const = default;
-};
+using DirectoryIdentity = util::FilesystemIdentity;
 
-NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(DirectoryIdentity, device, inode)
+Json identity_json(const DirectoryIdentity& identity) {
+    return {{"device", identity.device}, {"inode", identity.inode}};
+}
+
+DirectoryIdentity identity_from_json(const Json& json) {
+    return {
+        .device = json.at("device").get<std::uint64_t>(),
+        .inode = json.at("inode").get<std::uint64_t>(),
+    };
+}
 
 struct RootIdentity {
     std::optional<DirectoryIdentity> root;
@@ -204,10 +186,7 @@ RootIdentity inspect_root(const std::filesystem::path& root) {
                     path.string()
                 );
             }
-            const DirectoryIdentity identity{
-                static_cast<std::uint64_t>(status.st_dev),
-                static_cast<std::uint64_t>(status.st_ino),
-            };
+            const auto identity = util::filesystem_identity(status);
             result.ancestors.push_back(identity);
             if (path == root) {
                 result.root = identity;
@@ -231,10 +210,9 @@ util::UniqueFD acquire_sync_lock(
     const std::filesystem::path& state_directory,
     std::string_view operation
 ) {
-    config::validate_sync_state_directories(requested, state_directory);
-    util::reject_symlink_components(requested, "sync directory");
     const auto root =
-        std::filesystem::weakly_canonical(util::normalized_absolute(requested));
+        config::validate_sync_state_directories(requested, state_directory);
+    util::reject_symlink_components(requested, "sync directory");
     const auto registry = std::filesystem::path{"/tmp"} /
                           ("onedrive-cpp-locks-" + std::to_string(::geteuid()));
     if (::mkdir(registry.c_str(), S_IRWXU) == -1 && errno != EEXIST) {
@@ -260,15 +238,7 @@ util::UniqueFD acquire_sync_lock(
         if (entry.path().extension() != ".lease") {
             continue;
         }
-        util::UniqueFD lease{
-            ::open(entry.path().c_str(), O_RDWR | O_CLOEXEC | O_NOFOLLOW)
-        };
-        if (!lease) {
-            throw std::runtime_error(
-                "cannot inspect synchronization lease: " +
-                util::system_error_message(errno)
-            );
-        }
+        const auto lease = util::open_path_no_symlinks(entry.path(), O_RDWR);
         static_cast<void>(util::inspect_owned_regular_file(
             lease.get(), entry.path(), "synchronization lease"
         ));
@@ -280,7 +250,8 @@ util::UniqueFD acquire_sync_lock(
             }
             continue;
         }
-        const auto metadata = Json::parse(read_metadata(lease.get()));
+        const auto metadata =
+            Json::parse(read_metadata(lease.get(), entry.path()));
         if (metadata.at("version").get<int>() != 1) {
             throw std::runtime_error(
                 "unsupported synchronization lease version"
@@ -292,11 +263,17 @@ util::UniqueFD acquire_sync_lock(
         }
         RootIdentity held{
             .root = std::nullopt,
-            .ancestors =
-                metadata.at("ancestors").get<std::vector<DirectoryIdentity>>(),
+            .ancestors = {},
         };
+        const auto& ancestors = metadata.at("ancestors");
+        if (!ancestors.is_array()) {
+            throw std::runtime_error("invalid synchronization lease ancestors");
+        }
+        for (const auto& ancestor : ancestors) {
+            held.ancestors.push_back(identity_from_json(ancestor));
+        }
         if (!metadata.at("root_identity").is_null()) {
-            held.root = metadata.at("root_identity").get<DirectoryIdentity>();
+            held.root = identity_from_json(metadata.at("root_identity"));
         }
         if (util::path_contains(root, owner.sync_directory) ||
             util::path_contains(owner.sync_directory, root) ||
@@ -314,9 +291,12 @@ util::UniqueFD acquire_sync_lock(
     }
     auto metadata = owner_json(current_owner(state_directory, root, operation));
     metadata["version"] = 1;
-    metadata["ancestors"] = identity.ancestors;
+    metadata["ancestors"] = Json::array();
+    for (const auto& ancestor : identity.ancestors) {
+        metadata["ancestors"].push_back(identity_json(ancestor));
+    }
     metadata["root_identity"] =
-        identity.root ? Json(*identity.root) : Json(nullptr);
+        identity.root ? identity_json(*identity.root) : Json(nullptr);
     write_metadata(lease.get(), metadata);
     return lease;
 }
@@ -383,7 +363,7 @@ onedrive::util::UniqueFD acquire_runtime_lock(
     const auto path = state_directory / "onedrive-cpp.lock";
     auto descriptor = open_lock(path);
     if (!try_lock(descriptor.get())) {
-        const auto content = read_metadata(descriptor.get());
+        const auto content = read_metadata(descriptor.get(), path);
         LockOwner owner;
         const auto metadata = Json::parse(content, nullptr, false);
         if (metadata.is_object()) {

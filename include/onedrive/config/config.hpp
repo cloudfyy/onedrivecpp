@@ -140,7 +140,8 @@ struct SettingPatch {
     std::string_view contents,
     const std::vector<SettingPatch>& patches
 );
-void validate_sync_state_directories(
+// Returns the canonical synchronization directory after validating both roots.
+std::filesystem::path validate_sync_state_directories(
     const std::filesystem::path& sync_directory,
     const std::filesystem::path& state_directory
 );

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "onedrive/config/config.hpp"
-#include "onedrive/util/unique_file_descriptor.hpp"
+#include "onedrive/util/path_security.hpp"
 
 #include <cstdint>
 #include <filesystem>
@@ -20,10 +20,7 @@ public:
     using std::runtime_error::runtime_error;
 };
 
-struct FilesystemIdentity {
-    std::uint64_t device{0};
-    std::uint64_t inode{0};
-};
+using FilesystemIdentity = util::FilesystemIdentity;
 
 enum class FilesystemItemKind {
     file,
