@@ -567,7 +567,7 @@ MainWindow::MainWindow(
     log_message(
         LogOperation::application,
         events::MessageKind::information,
-        QT_TR_NOOP("Application started. Credentials were not checked online.")
+        QT_TR_NOOP("Application started.")
     );
     log_message(
         LogOperation::account,
@@ -1628,8 +1628,8 @@ void MainWindow::refresh_settings(bool preserve_edits) {
     } else if (state_.account_status == AccountStatus::credentials_available) {
         set_login_status(
             QT_TR_NOOP(
-                "Saved credentials have not been verified online. "
-                "No sign-in is required at startup."
+                "Saved sign-in information found. "
+                "It will be checked when connecting to OneDrive."
             ),
             {},
             events::MessageKind::information,

@@ -13,6 +13,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QTabWidget>
 #include <QThread>
@@ -68,7 +69,18 @@ void check_window(
     const auto* sign_in = window.findChild<QPushButton*>("signInButton");
     const auto* status = window.findChild<QLabel*>("startupStatus");
     const auto* login_status = window.findChild<QLabel*>("loginStatus");
+    const auto* logs = window.findChild<QPlainTextEdit*>("logMessages");
     require(sign_in && status && login_status, "startup controls are missing");
+    require(
+        logs &&
+            logs->toPlainText().contains(
+                "[Application] Info: Application started."
+            ) &&
+            !logs->toPlainText().contains(
+                "Credentials were not checked online"
+            ),
+        "startup log implied a credential problem"
+    );
     require(sign_in->isEnabled() == sign_in_enabled,
             "startup sign-in availability is incorrect");
     const auto* logout = window.findChild<QPushButton*>("accountActionButton");
@@ -102,8 +114,17 @@ void check_window(
                 "missing configuration was not reported as setup");
     }
     if (state.account_status == gui::AccountStatus::credentials_available) {
-        require(login_status->text().contains("not been verified online"),
-                "saved credentials were represented as online verified");
+        const QString message =
+            "Saved sign-in information found. "
+            "It will be checked when connecting to OneDrive.";
+        require(
+            login_status->text() == message &&
+                logs->toPlainText().contains(message) &&
+                !logs->toPlainText().contains(
+                    "No sign-in is required at startup"
+                ),
+            "saved sign-in status was ambiguous or implied online verification"
+        );
     }
     if (!state.account_error.empty()) {
         require(status->text().contains(QString::fromStdString(state.account_error)),
@@ -116,6 +137,19 @@ void check_window(
                 "重新加载配置",
             "recovery control did not retranslate");
     require(logout->text() == "退出登录", "logout control did not retranslate");
+    require(
+        logs->toPlainText().contains("应用已启动。"),
+        "startup log did not retranslate"
+    );
+    if (state.account_status == gui::AccountStatus::credentials_available) {
+        const QString message =
+            "已找到保存的登录信息，连接 OneDrive 时会检查登录状态。";
+        require(
+            login_status->text() == message &&
+                logs->toPlainText().contains(message),
+            "saved sign-in status did not retranslate clearly"
+        );
+    }
     if (!english.isEmpty()) {
         require(status->text() != english, "startup error did not retranslate");
     }

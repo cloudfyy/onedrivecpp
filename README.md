@@ -193,8 +193,9 @@ in). Invalid configuration or
 unreadable account state keeps Settings available and disables sign-in until
 repaired. Import a valid TOML file, or edit the active file and use **Reload
 configuration**. Invalid files are not silently overwritten; imports preserve
-their contents in a backup. Saved credentials are explicitly unverified online;
-later operations refresh them and report authentication or connectivity errors.
+their contents in a backup. Startup reports whether saved sign-in information
+was found locally; online operations check authentication, refresh credentials
+when needed, and report authentication or connectivity errors.
 Sync-path validation does not prevent login when authentication/state settings
 are usable; synchronization requires valid sync settings and saved credentials.
 

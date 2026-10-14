@@ -335,8 +335,8 @@ Skipped; existing local files are preserved.</source>
     </message>
     <message>
         <location filename="../main_window.cpp" line="436"/>
-        <source>Application started. Credentials were not checked online.</source>
-        <translation>应用已启动。未在线验证凭据。</translation>
+        <source>Application started.</source>
+        <translation>应用已启动。</translation>
     </message>
     <message>
         <location filename="../main_window.cpp" line="1302"/>
@@ -635,8 +635,8 @@ Skipped; existing local files are preserved.</source>
     </message>
     <message>
         <location filename="../main_window.cpp" line="1240"/>
-        <source>Saved credentials have not been verified online. No sign-in is required at startup.</source>
-        <translation>已保存的凭据尚未经在线验证。启动时无需登录。</translation>
+        <source>Saved sign-in information found. It will be checked when connecting to OneDrive.</source>
+        <translation>已找到保存的登录信息，连接 OneDrive 时会检查登录状态。</translation>
     </message>
     <message>
         <location filename="../main_window.cpp" line="959"/>
