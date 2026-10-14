@@ -9,7 +9,9 @@
 namespace onedrive::app::detail {
 
 RuntimePreflight::RuntimePreflight(
-    const config::Config& config, Operation operation
+    const config::Config& config,
+    Operation operation,
+    const events::Observer* observer
 ) {
     const auto capabilities = operation_capabilities(operation);
     if (capabilities.validates_authentication_config) {
@@ -34,7 +36,16 @@ RuntimePreflight::RuntimePreflight(
         return;
     }
     secure_state_directory(config.state_directory);
-    lock_descriptor_ = acquire_runtime_lock(config.state_directory);
+    try {
+        lock_descriptor_ = acquire_runtime_lock(
+            config.state_directory, operation_name(operation)
+        );
+    } catch (const RuntimeBusyError& error) {
+        if (observer) {
+            report_runtime_busy(error, *observer);
+        }
+        throw;
+    }
 
     validate_private_file(
         config.state_directory / "active_account",
@@ -60,7 +71,7 @@ RuntimePreflight::RuntimePreflight(
         );
     }
     if (capabilities.requires_sync_directory) {
-        prepare_sync_directory(config, operation);
+        validate_sync_directory(config, operation);
     }
 }
 

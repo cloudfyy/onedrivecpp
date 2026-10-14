@@ -291,8 +291,36 @@ bytes, and skips. The result reports actual removed records/files/bytes, skips,
 and failures; any skip or failure returns exit status 1, even if other candidates
 were cleaned. Byte counts are logical file sizes, not guaranteed recovered disk
 blocks. An orphan-only cleanup does not create a missing database.
-The runtime lock covers processes sharing the same state directory; stop other
-tools or configurations that might write to the same data directory before cleanup.
+Cleanup holds both the state-directory lock and the resolved synchronization-root
+lease. Stop non-participating tools that might write to the same data directory.
+
+## Concurrent tasks and busy resources
+
+CLI, GUI, and the systemd user service share the state-directory runtime lock.
+Monitor holds it for its entire lifetime, including waiting between rounds.
+Stopping does not release locks until workers and cleanup have finished.
+
+Sync/preview, Monitor, single-file download, and partial-file cleanup also claim
+the resolved account/Drive synchronization directory. Different state directories
+cannot bypass this protection: identical and parent/child roots are rejected,
+while independent sibling Drive roots may run concurrently. Path normalization
+and directory device/inode identities detect aliases; symbolic links remain
+unsupported. Preflight validates the configured path without creating or changing
+sync directories; synchronization prepares the resolved root only after claiming it.
+
+The private registry is `/tmp/onedrive-cpp-locks-<effective-UID>` (directory mode
+`0700`, files `0600`). All participating processes must use the same local `/tmp`
+namespace; do not isolate this service with `PrivateTmp=true`. This protection is
+per Linux user and local machine, not a cross-user or cross-host filesystem lock.
+Other tools and older clients that do not participate must still be stopped.
+
+A rejected request fails rather than being forwarded or queued. `runtime_busy`
+diagnostics identify the resource, requested directory, owner PID, operation,
+start time, and state/sync directories; JSON emits a section with string-valued
+`values` plus an error message. Metadata contains no authentication credentials.
+OS locks, not PID existence, decide whether a resource is busy. A crash releases
+the locks automatically; stale directory leases are reclaimed at the next claim.
+Do not delete lock files to unlock a live process; stop its owner instead.
 
 ## Offline database upgrades
 

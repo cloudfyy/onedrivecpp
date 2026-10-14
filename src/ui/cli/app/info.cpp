@@ -1,5 +1,6 @@
 #include "info.hpp"
 #include "drive_fields.hpp"
+#include "app/lock.hpp"
 
 #include "onedrive/account/account_state.hpp"
 #include "onedrive/exit_code.hpp"
@@ -1507,6 +1508,9 @@ int cleanup_state(
 ) {
     dry_run = dry_run || config.dry_run;
     auto inspection = open_inspection_store(config, runtime_factory);
+    const auto sync_lock = acquire_sync_directory_lock(
+        inspection.sync_root, config.state_directory, "cleanup_state", console
+    );
     const auto partials =
         inspection.items
             ? inspection.items->partial_downloads(inspection.identity.drive_id)

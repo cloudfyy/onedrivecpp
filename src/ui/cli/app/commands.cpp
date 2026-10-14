@@ -1,6 +1,7 @@
 #include "commands.hpp"
 #include "discover.hpp"
 #include "info.hpp"
+#include "app/lock.hpp"
 
 #include "onedrive/account/account_state.hpp"
 #include "onedrive/exit_code.hpp"
@@ -508,6 +509,9 @@ int execute_command(
     config.drive_id = identity.drive_id;
     config.sync_data_directory = account::AccountState::drive_data_directory(
         config.sync_data_directory, identity
+    );
+    const auto sync_lock = acquire_sync_directory_lock(
+        config.sync_data_directory, config.state_directory, "download", console
     );
     auto items = runtime_factory.create_item_store(config, identity);
     items->open();

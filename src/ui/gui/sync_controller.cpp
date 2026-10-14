@@ -218,7 +218,7 @@ void SyncController::start(
                         };
                     const logging::Session logging{config.logging};
                     const app::detail::RuntimePreflight preflight{
-                        config, app::detail::Operation::synchronize
+                        config, app::detail::Operation::synchronize, &observer
                     };
                     if (invalidated) {
                         observer.message(

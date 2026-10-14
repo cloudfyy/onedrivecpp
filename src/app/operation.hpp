@@ -1,5 +1,7 @@
 #pragma once
 
+#include <string_view>
+
 namespace onedrive::app::detail {
 
 enum class Operation {
@@ -25,6 +27,54 @@ enum class Operation {
     monitor,
     synchronize,
 };
+
+constexpr std::string_view operation_name(Operation operation) noexcept {
+    switch (operation) {
+    case Operation::authenticate:
+        return "authenticate";
+    case Operation::logout:
+        return "logout";
+    case Operation::diagnose:
+        return "diagnose";
+    case Operation::drives:
+        return "drives";
+    case Operation::shared:
+        return "shared";
+    case Operation::sites:
+        return "sites";
+    case Operation::quota:
+        return "quota";
+    case Operation::status:
+        return "status";
+    case Operation::blocked:
+        return "blocked";
+    case Operation::storage:
+        return "storage";
+    case Operation::partials:
+        return "partials";
+    case Operation::files:
+        return "files";
+    case Operation::verify:
+        return "verify";
+    case Operation::config:
+        return "config";
+    case Operation::reset_cursor:
+        return "reset_cursor";
+    case Operation::cleanup_state:
+        return "cleanup_state";
+    case Operation::migrate_state:
+        return "migrate_state";
+    case Operation::clear_state:
+        return "clear_state";
+    case Operation::download:
+        return "download";
+    case Operation::monitor:
+        return "monitor";
+    case Operation::synchronize:
+        return "synchronize";
+    }
+    return "unknown";
+}
 
 struct OperationCapabilities {
     bool supports_tui{false};

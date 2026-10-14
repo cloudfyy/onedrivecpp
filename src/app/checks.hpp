@@ -19,6 +19,7 @@ void prepare_sync_directory(
     const config::Config& config,
     Operation operation
 );
+void validate_sync_directory(const config::Config& config, Operation operation);
 void validate_authentication_config(const config::Config& config);
 
 }  // namespace onedrive::app::detail

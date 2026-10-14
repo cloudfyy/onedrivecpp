@@ -202,9 +202,8 @@ void probe_writable_directory(const std::filesystem::path& directory) {
     }
 }
 
-void prepare_sync_directory(
-    const config::Config& config,
-    Operation operation
+void validate_sync_directory(
+    const config::Config& config, Operation operation
 ) {
     if (config.sync_data_directory.empty()) {
         throw std::runtime_error("sync.data_directory must not be empty");
@@ -246,6 +245,10 @@ void prepare_sync_directory(
             config.sync_data_directory.string()
         );
     }
+}
+
+void prepare_sync_directory(const config::Config& config, Operation operation) {
+    validate_sync_directory(config, operation);
     if (operation != Operation::synchronize || config.dry_run) {
         return;
     }

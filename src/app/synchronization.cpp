@@ -8,6 +8,8 @@
 #include "onedrive/sync/core/engine.hpp"
 #include "onedrive/ui/common/observer.hpp"
 #include "operation_state.hpp"
+#include "lock.hpp"
+#include "checks.hpp"
 #include "onedrive/graph/graph_client.hpp"
 
 #include <utility>
@@ -56,6 +58,13 @@ int synchronize_account(
             account::AccountState::drive_data_directory(
                 config.sync_data_directory, identity
             );
+        const auto sync_lock = detail::acquire_sync_directory_lock(
+            config.sync_data_directory,
+            config.state_directory,
+            "synchronize",
+            observer
+        );
+        detail::prepare_sync_directory(config, detail::Operation::synchronize);
         auto items = runtime_factory.create_item_store(config, identity);
         items->open();
         auto metrics = runtime_factory.create_metrics(config, identity);

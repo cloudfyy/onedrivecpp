@@ -1,8 +1,16 @@
 #include "support.hpp"
+#include "app/checks.hpp"
+#include "app/lock.hpp"
+#include "onedrive/ui/common/observer.hpp"
 
 namespace {
 
 using namespace onedrive::test::preflight;
+
+class Observer final : public onedrive::events::Observer {
+    void on_event(const onedrive::events::Event&) const override {
+    }
+};
 
 int test_sync() {
     using onedrive::app::detail::Operation;
@@ -18,9 +26,22 @@ int test_sync() {
     );
     {
         const RuntimePreflight preflight{config, Operation::synchronize};
-        if (!std::filesystem::is_directory(config.sync_data_directory)) {
-            return fail("sync preflight did not create the sync directory");
+        if (std::filesystem::exists(config.sync_data_directory)) {
+            return fail(
+                "sync preflight created the sync directory before claiming it"
+            );
         }
+        const Observer observer;
+        const auto sync_lock =
+            onedrive::app::detail::acquire_sync_directory_lock(
+                config.sync_data_directory,
+                config.state_directory,
+                "synchronize",
+                observer
+            );
+        onedrive::app::detail::prepare_sync_directory(
+            config, Operation::synchronize
+        );
         const auto sync_permissions =
             std::filesystem::status(config.sync_data_directory).permissions();
         if ((sync_permissions & std::filesystem::perms::all) !=
@@ -56,6 +77,17 @@ int test_sync() {
     );
     {
         const RuntimePreflight preflight{config, Operation::synchronize};
+        const Observer observer;
+        const auto sync_lock =
+            onedrive::app::detail::acquire_sync_directory_lock(
+                config.sync_data_directory,
+                config.state_directory,
+                "synchronize",
+                observer
+            );
+        onedrive::app::detail::prepare_sync_directory(
+            config, Operation::synchronize
+        );
     }
     if ((std::filesystem::status(config.sync_data_directory).permissions() &
          std::filesystem::perms::all) !=

@@ -4,11 +4,19 @@
 #include "onedrive/config/config.hpp"
 #include "operation.hpp"
 
+namespace onedrive::events {
+class Observer;
+}
+
 namespace onedrive::app::detail {
 
 class RuntimePreflight {
 public:
-    RuntimePreflight(const config::Config& config, Operation operation);
+    RuntimePreflight(
+        const config::Config& config,
+        Operation operation,
+        const events::Observer* observer = nullptr
+    );
     ~RuntimePreflight() = default;
 
     RuntimePreflight(const RuntimePreflight&) = delete;

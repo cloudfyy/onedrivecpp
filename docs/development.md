@@ -35,6 +35,30 @@ finishing does not stop the monitor. Terminal GUI results still come from worker
 completion after cleanup. New event variants must be handled by the text, JSON,
 TUI, GUI forwarding, and GUI history consumers together.
 
+## Cross-process synchronization ownership
+
+Keep `RuntimePreflight` alive across the entire frontend operation. It validates
+authentication and paths and holds the state-directory OS lock, but does not
+create/probe/chmod synchronization directories. After resolving the account/Drive
+root, shared synchronization/Monitor services acquire a root lease before opening
+the item store or preparing data directories. Single-file download and cleanup use
+the same acquisition helper. Monitor rounds reuse its held lease, including while
+waiting; never reacquire it for each round.
+
+The per-effective-UID private local registry uses a short-lived `flock` gate to
+serialize lease inspection, stale removal, and registration. Each live lease has
+its own exclusive OS lock, canonical root path, root/ancestor device/inode
+identities, and bounded versioned owner metadata. Conflicting lexical roots or
+filesystem identities reject acquisition. Only an OS-unlocked lease can be
+removed; live malformed metadata fails closed. RAII descriptors and `O_CLOEXEC`
+preserve cleanup/crash/exec behavior without relying on PID liveness.
+
+`RuntimeBusyError` carries structured ownership facts. Frontends report them
+through shared `runtime_busy` section/message events rather than parsing exception
+text. Regression coverage uses exec'd subprocesses for direction pairs,
+overlapping/missing/aliased roots, atomic startup races, crash release, and shared
+service ownership during Monitor waiting.
+
 ## GUI localization
 
 Enable `ONEDRIVE_BUILD_GUI=ON` with Qt 6.8+ and the Linguist tools.

@@ -8,6 +8,14 @@ add_onedrive_test(
 
 find_program(BASH_EXECUTABLE bash REQUIRED)
 
+add_onedrive_test(
+    sync_resource_lock_tests
+    SOURCES tests/preflight/resources.cpp
+    INCLUDE_DIRS src tests
+    LIBRARIES onedrive_cli
+)
+set_tests_properties(sync_resource_lock_tests PROPERTIES TIMEOUT 30)
+
 add_test(NAME cli_help_tests COMMAND onedrive-cpp --help)
 add_test(NAME cli_no_args_tests COMMAND onedrive-cpp)
 add_test(NAME cli_subcommand_help_tests COMMAND onedrive-cpp transfer sync --help)

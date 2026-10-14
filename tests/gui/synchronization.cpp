@@ -1,5 +1,6 @@
 #include "app/support.hpp"
 #include "app/preflight.hpp"
+#include "app/lock.hpp"
 #include "localization.hpp"
 #include "main_window.hpp"
 #include "sync_controller.hpp"
@@ -2561,6 +2562,60 @@ void test_close_and_availability() {
     );
 }
 
+void test_shared_root_busy() {
+    class IgnoreEvents final : public events::Observer {
+        void on_event(const events::Event&) const override {
+        }
+    };
+    for (const auto language :
+         {gui::Language::english, gui::Language::simplified_chinese}) {
+        Fixture fixture;
+        gui::Localization localization{language};
+        test::app::FakeRuntimeFactory implementation;
+        const app::RuntimeFactory factory{util::borrowed_proxy, implementation};
+        gui::MainWindow window{
+            gui::load_app_state_view_model(fixture.file),
+            {},
+            &localization,
+            [&](config::Config active,
+                const events::Observer& observer,
+                std::stop_token token) {
+                return app::synchronize_account(
+                    std::move(active), factory, observer, token
+                );
+            }
+        };
+        const auto root = account::AccountState::drive_data_directory(
+            fixture.config.sync_data_directory, fixture.identity
+        );
+        const IgnoreEvents quiet;
+        auto holder = app::detail::acquire_sync_directory_lock(
+            root, fixture.root.path() / "external-state", "monitor", quiet
+        );
+        auto* preview = button(window, "previewSyncButton");
+        preview->click();
+        require(
+            wait_until([&] { return preview->isEnabled(); }) &&
+                implementation.item_store_count == 0 &&
+                !std::filesystem::exists(root) &&
+                window.findChild<QLabel*>("syncStatus")
+                    ->text()
+                    .contains("owner PID") &&
+                window.findChild<QPlainTextEdit*>("logMessages")
+                    ->toPlainText()
+                    .contains("monitor"),
+            "GUI ignored shared root ownership or lost the busy diagnostics"
+        );
+        holder.reset();
+        preview->click();
+        require(
+            wait_until([&] { return preview->isEnabled(); }) &&
+                implementation.item_store_count == 1,
+            "GUI could not retry after the external root owner stopped"
+        );
+    }
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -2590,6 +2645,7 @@ int main(int argc, char* argv[]) {
         test_readable_transfer_numbers();
         test_progress_and_stop();
         test_results_and_preflight();
+        test_shared_root_busy();
         test_close_and_availability();
     } catch (const std::exception& error) {
         return test::fail(error.what());
