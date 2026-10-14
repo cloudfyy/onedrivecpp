@@ -6,6 +6,7 @@
 #include "settings_editor.hpp"
 #include "onedrive/version.hpp"
 #include "onedrive/app/factory.hpp"
+#include "onedrive/app/queries.hpp"
 #include "onedrive/exit_code.hpp"
 #include "onedrive/util/byte_size.hpp"
 
@@ -855,17 +856,21 @@ void MainWindow::render_blocked_items() {
     const QSignalBlocker blocker{blocked_table_};
     blocked_table_->clear();
     const auto search = blocked_filter_->text();
-    const auto reason = blocked_reason_->currentData().toString();
+    const auto reason = blocked_reason_->currentData().toString().toStdString();
+    const auto reason_filter =
+        reason.empty() ? std::nullopt : std::optional<std::string_view>{reason};
+    const auto text_matches = [&search](const std::string& text) {
+        return QString::fromStdString(text).contains(
+            search, Qt::CaseInsensitive
+        );
+    };
     for (const auto& item : blocked_items_) {
+        if (!app::matches_blocked_item(item, reason_filter, text_matches)) {
+            continue;
+        }
         const auto path = QString::fromStdString(item.remote_path);
         const auto code = QString::fromStdString(item.reason_code);
         const auto message = QString::fromStdString(item.reason_message);
-        if ((!reason.isEmpty() && reason != code) ||
-            (!search.isEmpty() && !path.contains(search, Qt::CaseInsensitive) &&
-             !code.contains(search, Qt::CaseInsensitive) &&
-             !message.contains(search, Qt::CaseInsensitive))) {
-            continue;
-        }
         auto* row = new QTreeWidgetItem{blocked_table_, {path, code}};
         const auto id = QString::fromStdString(item.remote_id);
         row->setData(0, Qt::UserRole, id);

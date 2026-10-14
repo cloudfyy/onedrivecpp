@@ -30,6 +30,13 @@ namespace onedrive::app::detail {
     const cli::Console& console
 );
 
+[[nodiscard]] int show_blocked(
+    const config::Config& config,
+    const cli::Console& console,
+    const std::optional<std::string>& reason,
+    std::string_view search
+);
+
 [[nodiscard]] int show_partials(
     const config::Config& config,
     const RuntimeFactory& runtime_factory,

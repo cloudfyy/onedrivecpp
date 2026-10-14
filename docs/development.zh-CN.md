@@ -3,6 +3,18 @@
 [English](development.md) | 简体中文 |
 [文档中心](README.zh-CN.md)
 
+## GUI 与 CLI 功能同步
+
+新增或修改面向用户的业务能力时，必须同步更新对应的 GUI 与 CLI 入口，
+并同时维护帮助、文档和回归测试。复用共享的应用查询／服务与策略规则，
+不要在两个前端分别实现业务逻辑。纯展示控件不要求界面形式一致；
+有意保留的能力差异必须明确记录，不能默默延后。
+
+阻止项查询共用 `load_blocked_items` 离线访问状态，以及 `matches_blocked_item`
+进行原因精确匹配和可搜索字段选择。前端只提供文本匹配方式，保留 GUI 的 Qt Unicode
+匹配和 CLI 已说明的 ASCII 匹配，不重复维护字段筛选或数据库访问逻辑。
+CLI 输出继续复用现有 Console 事件及文本／JSON／TUI 后端。
+
 ## GUI 本地化
 
 启用 `ONEDRIVE_BUILD_GUI=ON` 时需要 Qt 6.8+ 和 Linguist 工具；
@@ -194,6 +206,14 @@ GUI 集成测试只使用本地 loopback 连接。
 cmake --build build/debug --target auth_code_tests auth_code_typestate_tests auth_code_failure_tests browser_request_tests gui_login_tests monitor_socket_tests monitor_socket_transport_tests monitor_notify_tests
 ctest --test-dir build/debug -R '^(auth_code_tests|auth_code_typestate_tests|auth_code_failure_tests|browser_request_tests|gui_login_tests|monitor_socket_tests|monitor_socket_transport_tests|monitor_notify_tests)$' --output-on-failure
 ```
+
+阻止项回归中，`app_queries_tests` 验证 SQLite 只读查询、配置／实际 Drive ID
+选择、损坏或有歧义的元数据及不安全的状态路径。`graph_support_tests`、
+`sync_unsupported_tests` 和 `blocked_policy_tests` 覆盖祖先验证／取消、
+同一 Drive 的上下文筛选，以及文件精确匹配与目录子树恢复保护。
+`gui_synchronization_tests` 检查中英文策略说明；`download_single_tests`
+验证非法远端元数据和本地路径冲突落库，且不传输内容、不修改同步根目录外的文件。
+这些场景无需在线访问 Graph。
 
 重建覆盖率程序后，应归档原有的 `coverage/profiles` 目录，再新建空目录并运行
 CTest。用 `python3 tools/coverage_report.py build/coverage --name state-machines`

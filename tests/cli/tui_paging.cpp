@@ -208,7 +208,25 @@ private:
                         "Inspection result retained"
                     );
                 }
-                if (view == TuiView::partials && pages > 0) {
+                if (view == TuiView::blocked && pages > 0) {
+                    for (int page = 1; page <= pages; ++page) {
+                        console.section(
+                            "blocked_item",
+                            "Blocked item:",
+                            {{.label = "remote path:",
+                              .key = "remote_path",
+                              .value = "folder/item-" + std::to_string(page) +
+                                       ".txt"}}
+                        );
+                    }
+                    console.section(
+                        "blocked_item_summary",
+                        "Blocked item summary:",
+                        {{.label = "recorded:",
+                          .key = "recorded",
+                          .value = std::to_string(pages)}}
+                    );
+                } else if (view == TuiView::partials && pages > 0) {
                     onedrive::test::emit_partial_results(
                         console, static_cast<std::size_t>(pages)
                     );
@@ -357,9 +375,29 @@ int main() {
             terminal.send("q");
             terminal.expect_exit();
         }
+        {
+            TerminalPager pager{3, 30, -1, TuiView::blocked};
+            pager.expect_result("Item 1/3", "folder/item-1.txt");
+            if (!pager.output().contains("recorded: 3")) {
+                return onedrive::test::fail(
+                    "blocked-item paging lost its summary"
+                );
+            }
+            pager.send("n");
+            pager.expect_result("Item 2/3", "folder/item-2.txt");
+            pager.send("\033[C");
+            pager.expect_result("Item 3/3", "folder/item-3.txt");
+            pager.send("p");
+            pager.expect_result("Item 2/3", "folder/item-2.txt");
+            pager.send("\033[D");
+            pager.expect_result("Item 1/3", "folder/item-1.txt");
+            pager.send("q");
+            pager.expect_exit();
+        }
         for (const auto view : {
                  TuiView::health,
                  TuiView::status,
+                 TuiView::blocked,
                  TuiView::drives,
                  TuiView::shared,
                  TuiView::sites,

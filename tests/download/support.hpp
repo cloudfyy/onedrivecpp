@@ -86,7 +86,7 @@ public:
     [[nodiscard]] onedrive::graph::RemoteItem
     item_by_path(const std::string& path) const {
         ++path_lookup_count;
-        if (path != lookup_item.remote_path) {
+        if (path != lookup_request_path.value_or(lookup_item.remote_path)) {
             throw std::runtime_error{"unexpected single path lookup"};
         }
         return lookup_item;
@@ -230,6 +230,7 @@ public:
     std::vector<std::uint64_t> progress_updates;
     bool send_checkpoint{true};
     onedrive::graph::RemoteItem lookup_item;
+    std::optional<std::string> lookup_request_path;
     mutable int path_lookup_count{0};
     mutable int download_count{0};
     mutable std::string last_expected_etag;

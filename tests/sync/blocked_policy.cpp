@@ -189,6 +189,17 @@ void test_recovery_guard_matches_identity_and_subtrees() {
         "recovery guard missed a blocked identity/subtree or blocked an "
         "independent transfer"
     );
+    notes.directory = false;
+    const std::array file_blocked{notes};
+    require(
+        blocked_recovery(file_blocked, "", "Notebook") == &file_blocked[0] &&
+            blocked_recovery(file_blocked, "", "") == nullptr &&
+            blocked_recovery(file_blocked, "other", "") == nullptr &&
+            blocked_recovery(file_blocked, "", "Notebook/section.one") ==
+                nullptr &&
+            blocked_recovery({}, notes.remote_id, notes.remote_path) == nullptr,
+        "recovery guard treated empty identities or a file as a subtree"
+    );
 }
 
 } // namespace

@@ -3,6 +3,22 @@
 English | [简体中文](development.zh-CN.md) |
 [Documentation index](README.md)
 
+## GUI and CLI feature parity
+
+New or changed user-facing business capabilities must update the corresponding
+GUI and CLI entry points together, including help, documentation, and regression
+tests. Reuse shared application queries/services and strategy rules; do not
+implement separate behavior in each frontend. Presentation-only controls need
+not have identical interfaces, but any intentional capability gap must be
+documented rather than silently deferred.
+
+Blocked-item inspection shares `load_blocked_items` for offline state access
+and `matches_blocked_item` for exact reason and searchable-field selection.
+Frontends supply only the text matcher, preserving Qt's Unicode-aware matching
+in the GUI and the CLI's documented ASCII matching without duplicating field
+selection or database access. CLI output continues through the existing
+Console events and text/JSON/TUI backends.
+
 ## GUI localization
 
 Enable `ONEDRIVE_BUILD_GUI=ON` with Qt 6.8+ and the Linguist tools.
@@ -366,6 +382,16 @@ fragmented text across `CURLE_AGAIN`; no network or real browser is needed.
 cmake --build build/debug --target auth_code_tests auth_code_typestate_tests auth_code_failure_tests browser_request_tests gui_login_tests monitor_socket_tests monitor_socket_transport_tests monitor_notify_tests
 ctest --test-dir build/debug -R '^(auth_code_tests|auth_code_typestate_tests|auth_code_failure_tests|browser_request_tests|gui_login_tests|monitor_socket_tests|monitor_socket_transport_tests|monitor_notify_tests)$' --output-on-failure
 ```
+
+Blocked-item regressions in `app_queries_tests` exercise read-only SQLite queries,
+configured/canonical Drive selection, malformed or ambiguous metadata, and unsafe
+state paths. `graph_support_tests`, `sync_unsupported_tests`, and
+`blocked_policy_tests` cover ancestor validation/cancellation, same-Drive context
+filtering, and exact-file versus directory-subtree recovery guards.
+`gui_synchronization_tests` checks strategy descriptions in both languages;
+`download_single_tests` checks invalid remote metadata and persisted local-path
+conflicts without transferring content or changing files outside the sync root.
+These scenarios require no online Graph access.
 
 After rebuilding coverage binaries, archive the exact old `coverage/profiles`
 directory and create an empty replacement before running CTest. Generate a

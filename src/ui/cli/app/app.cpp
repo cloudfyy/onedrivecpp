@@ -26,6 +26,8 @@ cli::TuiView tui_view(detail::Operation operation) noexcept {
             return cli::TuiView::health;
         case detail::Operation::status:
             return cli::TuiView::status;
+        case detail::Operation::blocked:
+            return cli::TuiView::blocked;
         case detail::Operation::drives:
             return cli::TuiView::drives;
         case detail::Operation::shared:

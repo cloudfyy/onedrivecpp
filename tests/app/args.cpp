@@ -38,6 +38,7 @@ int test_ui_option_help() {
              {"transfer", "watch"},
              {"inspect", "health"},
              {"inspect", "status"},
+             {"inspect", "blocked"},
              {"inspect", "drives"},
              {"inspect", "shared"},
              {"inspect", "sites"},
@@ -217,6 +218,7 @@ int test_args() {
     if (inspect_help.exit_code != exit_code::success ||
         !inspect_help.standard_output.contains("health") ||
         !inspect_help.standard_output.contains("status") ||
+        !inspect_help.standard_output.contains("blocked") ||
         !inspect_help.standard_output.contains("drives") ||
         !inspect_help.standard_output.contains("shared") ||
         !inspect_help.standard_output.contains("sites") ||
@@ -249,6 +251,32 @@ int test_args() {
         !status_help.standard_output.contains("--ui") ||
         !status_help.standard_output.contains("--theme")) {
         return fail("status help was not available");
+    }
+    const auto blocked_help = run_application(
+        runtime_factory, {"onedrive-cpp", "inspect", "blocked", "--help"}
+    );
+    if (blocked_help.exit_code != exit_code::success ||
+        !blocked_help.standard_output.contains("--reason") ||
+        !blocked_help.standard_output.contains("--search") ||
+        !blocked_help.standard_output.contains("--output") ||
+        !blocked_help.standard_output.contains("--ui")) {
+        return fail("inspect blocked help was not available");
+    }
+    const auto blocked = parse_test_arguments(
+        {"onedrive-cpp",
+         "inspect",
+         "blocked",
+         "--reason",
+         "future_reason",
+         "--search",
+         "Documents"}
+    );
+    if (blocked.exit_code ||
+        blocked.arguments.operation !=
+            onedrive::app::detail::Operation::blocked ||
+        blocked.arguments.blocked_reason != "future_reason" ||
+        blocked.arguments.blocked_search != "Documents") {
+        return fail("inspect blocked arguments were not preserved");
     }
     const auto files_help = run_application(
         runtime_factory, {"onedrive-cpp", "inspect", "files", "--help"}

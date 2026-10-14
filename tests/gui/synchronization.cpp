@@ -31,6 +31,7 @@
 #include <spdlog/spdlog.h>
 
 #include <atomic>
+#include <array>
 #include <limits>
 #include <thread>
 #include <tuple>
@@ -115,7 +116,7 @@ void test_persistent_blocked_viewer() {
         item.remote_id = "upload:local";
         item.remote_path = "local.txt";
         item.reason_code = "upload_resource";
-        item.reason_message = "Remote quota exceeded";
+        item.reason_message = "Remote quota exceeded: Ä space 空间不足";
         database.save_blocked_item(item);
     }
     require(
@@ -174,7 +175,27 @@ void test_persistent_blocked_viewer() {
             table->topLevelItem(0)->text(0) == "local.txt",
         "blocked reason filter failed"
     );
+    search->setText("ä SPACE");
+    require(
+        table->topLevelItemCount() == 1,
+        "shared blocker filtering lost GUI Unicode case-insensitive search"
+    );
+    search->setText("空间不足");
+    require(
+        table->topLevelItemCount() == 1,
+        "shared blocker filtering lost UTF-8 message search"
+    );
+    search->setText("UNSUPPORTED_ONENOTE");
+    require(
+        table->topLevelItemCount() == 0,
+        "shared blocker filtering did not combine reason and text filters"
+    );
     reason->setCurrentIndex(0);
+    require(
+        table->topLevelItemCount() == 1,
+        "shared blocker filtering omitted reason-code search"
+    );
+    search->clear();
     for (int index = 1; index <= 3; ++index) {
         auto* start = button(
             window, index == 1 ? "previewSyncButton" : "startSyncButton"
@@ -216,6 +237,112 @@ void test_persistent_blocked_viewer() {
         }),
         "database query failure was shown as an empty successful result"
     );
+}
+
+void test_blocked_policy_descriptions() {
+    struct PolicyCase {
+        const char* reason;
+        const char* english;
+        const char* chinese;
+    };
+    constexpr std::array cases{
+        PolicyCase{
+            "unsupported_onenote",
+            "Fixed policy: skip unsupported content and protect local copies. "
+            "This policy cannot be changed.",
+            "固定策略：跳过不支持的内容并保护本地副本。此策略不可修改。",
+        },
+        PolicyCase{
+            "malware_detected",
+            "Fixed safety policy: unsafe operations cannot be forced.",
+            "固定安全策略：不允许强制执行不安全操作。",
+        },
+        PolicyCase{
+            "local_modification",
+            "Uses the configured local-conflict policy; changes are applied "
+            "only after validation.",
+            "遵循已配置的本地冲突策略，仅在验证通过后应用变更。",
+        },
+        PolicyCase{
+            "upload_delete_limit",
+            "Uses the configured remote-deletion safeguard; it is never "
+            "bypassed automatically.",
+            "遵循已配置的远端删除保护，不会自动绕过。",
+        },
+        PolicyCase{
+            "upload_remote_quota",
+            "Retry after resources recover; clear only after verified "
+            "resolution.",
+            "资源恢复后重试，确认问题已解决后才移除记录。",
+        },
+        PolicyCase{
+            "upload_remote_conflict",
+            "Revalidate the conflict before retrying; unsafe operations cannot "
+            "be forced.",
+            "重新验证冲突后再重试，不允许强制执行不安全操作。",
+        },
+        PolicyCase{
+            "upload_delete_conflict",
+            "Revalidate the conflict before retrying; unsafe operations cannot "
+            "be forced.",
+            "重新验证冲突后再重试，不允许强制执行不安全操作。",
+        },
+        PolicyCase{
+            "future_reason",
+            "Unrecognized reason: keep blocked, with no automatic retry or "
+            "override.",
+            "无法识别的原因：保留阻止，不自动重试，也不允许强制绕过。",
+        },
+    };
+    Fixture fixture;
+    const auto directory = account::AccountState::locate(
+                               fixture.config.state_directory, fixture.identity
+    )
+                               .drive_directory;
+    {
+        storage::ItemDatabase database{directory, fixture.identity};
+        database.open();
+        for (const auto& policy : cases) {
+            storage::BlockedItem item;
+            item.drive_id = fixture.identity.drive_id;
+            item.remote_id = policy.reason;
+            item.remote_path = item.remote_id + ".txt";
+            item.reason_code = policy.reason;
+            item.reason_message = "Saved diagnostic";
+            database.save_blocked_item(item);
+        }
+    }
+    gui::Localization localization{gui::Language::english};
+    gui::MainWindow window{
+        gui::load_app_state_view_model(fixture.file), {}, &localization
+    };
+    window.show();
+    auto* table = window.findChild<QTreeWidget*>("blockedItemsTable");
+    auto* details = window.findChild<QPlainTextEdit*>("blockedItemsDetails");
+    require(
+        table && details && wait_until([&] {
+            return table->topLevelItemCount() == static_cast<int>(cases.size());
+        }),
+        "policy description fixtures were not loaded"
+    );
+    for (const auto language :
+         {gui::Language::english, gui::Language::simplified_chinese}) {
+        localization.set_language(language);
+        for (const auto& policy : cases) {
+            const auto rows = table->findItems(
+                QString::fromUtf8(policy.reason), Qt::MatchExactly, 1
+            );
+            require(rows.size() == 1, "policy description row is missing");
+            table->setCurrentItem(rows.front());
+            const auto* expected = language == gui::Language::english
+                                       ? policy.english
+                                       : policy.chinese;
+            require(
+                details->toPlainText().contains(QString::fromUtf8(expected)),
+                "blocked strategy description was wrong or untranslated"
+            );
+        }
+    }
 }
 
 void test_blocked_query_discards_stale_results() {
@@ -2316,6 +2443,7 @@ int main(int argc, char* argv[]) {
     try {
         test_controller();
         test_persistent_blocked_viewer();
+        test_blocked_policy_descriptions();
         test_blocked_query_discards_stale_results();
         test_controller_logging();
         test_controller_logging_after_failure();

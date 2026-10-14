@@ -5,6 +5,24 @@
 #include <cstdlib>
 
 int main() {
+    using onedrive::util::ascii_icontains;
+    static_assert(ascii_icontains("Content-Range", "RANGE"));
+    static_assert(ascii_icontains("", ""));
+    if (!ascii_icontains("Documents/notes.one", "DOCUMENTS") ||
+        !ascii_icontains("Documents/notes.one", "S/NOTES") ||
+        !ascii_icontains("Documents/notes.one", ".ONE") ||
+        !ascii_icontains("text", "") ||
+        !ascii_icontains("\xc3\xa9", "\xc3\xa9") ||
+        !ascii_icontains(
+            std::string_view{"a\0B", 3}, std::string_view{"\0b", 2}
+        ) ||
+        ascii_icontains("", "text") ||
+        ascii_icontains("short", "longer needle") ||
+        ascii_icontains("Content", "none") || ascii_icontains("\xc4", "\xe4")) {
+        return onedrive::test::fail(
+            "ASCII substring matching changed boundaries or non-ASCII bytes"
+        );
+    }
     if (!onedrive::util::ascii_iequals("Content-Range", "content-range") ||
         onedrive::util::ascii_iequals("Content", "Contents") ||
         onedrive::util::ascii_iequals("\xc4", "\xe4")) {

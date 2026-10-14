@@ -39,6 +39,19 @@ namespace onedrive::util {
     return true;
 }
 
+[[nodiscard]] constexpr bool
+ascii_icontains(std::string_view text, std::string_view needle) noexcept {
+    if (needle.size() > text.size()) {
+        return false;
+    }
+    for (std::size_t index = 0; index <= text.size() - needle.size(); ++index) {
+        if (ascii_iequals(text.substr(index, needle.size()), needle)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 [[nodiscard]] constexpr std::string_view trim_ascii_whitespace(
     std::string_view value
 ) noexcept {

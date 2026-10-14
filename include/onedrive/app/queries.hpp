@@ -7,6 +7,11 @@
 #include "onedrive/storage/item_store.hpp"
 #include "onedrive/sync/capabilities.hpp"
 
+#include <concepts>
+#include <optional>
+#include <string>
+#include <string_view>
+
 namespace onedrive::config {
 struct Config;
 }
@@ -39,5 +44,18 @@ struct SyncStatusSnapshot {
 // Local diagnostics only: does not contact Graph or create/migrate state.
 [[nodiscard]] std::vector<storage::BlockedItem>
 load_blocked_items(const config::Config& config);
+
+// Frontends retain their own text case/Unicode rules, but share field
+// selection.
+template <std::predicate<const std::string&> TextMatches>
+[[nodiscard]] bool matches_blocked_item(
+    const storage::BlockedItem& item,
+    std::optional<std::string_view> reason,
+    TextMatches text_matches
+) {
+    return (!reason || *reason == item.reason_code) &&
+           (text_matches(item.remote_path) || text_matches(item.reason_code) ||
+            text_matches(item.reason_message));
+}
 
 } // namespace onedrive::app

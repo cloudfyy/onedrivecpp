@@ -294,6 +294,11 @@ int execute_command(
     if (operation == Operation::status) {
         return show_status(config, runtime_factory, console);
     }
+    if (operation == Operation::blocked) {
+        return show_blocked(
+            config, console, arguments.blocked_reason, arguments.blocked_search
+        );
+    }
     if (operation == Operation::storage) {
         return show_storage(config, runtime_factory, console);
     }

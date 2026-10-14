@@ -24,6 +24,7 @@ int test_inspection_completion() {
     constexpr std::array inspection_views{
         TuiView::health,
         TuiView::status,
+        TuiView::blocked,
         TuiView::drives,
         TuiView::shared,
         TuiView::sites,

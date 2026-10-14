@@ -149,6 +149,149 @@ int test_unsupported_formats() {
     return EXIT_SUCCESS;
 }
 
+int test_ancestor_metadata_validation() {
+    const Json folder{
+        {"id", "folder"},
+        {"name", "Folder"},
+        {"folder", Json::object()},
+        {"parentReference", {{"id", "root"}, {"path", "/drive/root:"}}},
+    };
+    const auto parsed = detail::parse_item_ancestry(folder);
+    if (parsed.id != "folder" || parsed.name != "Folder" ||
+        parsed.parent_id != "root" || parsed.remote_path != "Folder" ||
+        !parsed.directory || parsed.root || parsed.content_hash ||
+        !parsed.unsupported_format.empty()) {
+        return fail("ancestor metadata lost the ID, path, or directory type");
+    }
+    std::vector<Json> invalid;
+    for (const auto field : {"id", "name"}) {
+        auto missing = folder;
+        missing.erase(field);
+        invalid.push_back(missing);
+        auto empty = folder;
+        empty[field] = "";
+        invalid.push_back(empty);
+    }
+    auto deleted = folder;
+    deleted["deleted"] = Json::object();
+    invalid.push_back(deleted);
+    auto invalid_parent = folder;
+    invalid_parent["parentReference"] = "not an object";
+    invalid.push_back(invalid_parent);
+    invalid_parent = folder;
+    invalid_parent["parentReference"]["id"] = 42;
+    invalid.push_back(invalid_parent);
+    for (const auto& value : invalid) {
+        if (!throws_with<std::runtime_error>(
+                [&] { static_cast<void>(detail::parse_item_ancestry(value)); },
+                "invalid ancestry"
+            )) {
+            return fail(
+                "invalid ancestor JSON was accepted or hid its context"
+            );
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_ancestor_failure_and_cancellation_boundaries() {
+    namespace graph = onedrive::graph;
+    const graph::RemoteItem recycle{
+        .id = "recycle",
+        .name = "OneNote_RecycleBin",
+        .parent_id = "parent",
+        .remote_path = "Notebook/OneNote_RecycleBin",
+        .directory = true,
+    };
+    const graph::RemoteItem child{
+        .id = "child",
+        .name = "data.bin",
+        .parent_id = "recycle",
+        .remote_path = "Notebook/OneNote_RecycleBin/data.bin",
+    };
+    const graph::RemoteItem parent{
+        .id = "parent",
+        .name = "Notebook",
+        .parent_id = "root",
+        .remote_path = "Notebook",
+        .directory = true,
+    };
+    for (const bool cached : {false, true}) {
+        for (const bool deleted : {false, true}) {
+            auto invalid = parent;
+            invalid.deleted = deleted;
+            invalid.directory = deleted;
+            auto items = std::vector{child, recycle};
+            if (cached) {
+                items.push_back(invalid);
+            }
+            int lookups = 0;
+            if (!throws_with<std::runtime_error>(
+                    [&] {
+                        detail::resolve_unsupported_ancestry(
+                            items, {}, [&](const std::string&) {
+                                ++lookups;
+                                return invalid;
+                            }
+                        );
+                    },
+                    "invalid ancestor"
+                ) ||
+                lookups != (cached ? 0 : 1)) {
+                return fail(
+                    "a file/deleted ancestor was accepted or re-queried"
+                );
+            }
+        }
+    }
+    for (const bool during_walk : {false, true}) {
+        std::stop_source stop;
+        auto items = std::vector{child, recycle};
+        int lookups = 0;
+        if (!throws_with<graph::RequestCancelledError>(
+                [&] {
+                    detail::resolve_unsupported_ancestry(
+                        items,
+                        {},
+                        [&](const std::string&) {
+                            ++lookups;
+                            stop.request_stop();
+                            auto result = parent;
+                            if (!during_walk) {
+                                result.unsupported_format = "onenote";
+                            }
+                            return result;
+                        },
+                        stop.get_token()
+                    );
+                },
+                "cancelled"
+            ) ||
+            lookups != 1 || items.size() != 2 ||
+            std::ranges::any_of(items, [](const auto& item) {
+                return !item.unsupported_format.empty();
+            })) {
+            return fail(
+                "cancelled ancestry lookup continued or installed results"
+            );
+        }
+    }
+    auto package = parent;
+    package.unsupported_format = "onenote";
+    auto path_only = recycle;
+    path_only.parent_id.clear();
+    auto items = std::vector{child, path_only, package};
+    detail::mark_unsupported_descendants(items);
+    if (std::ranges::any_of(items, [](const auto& item) {
+            return item.unsupported_format != "onenote";
+        })) {
+        return fail(
+            "a path-confirmed directory did not protect its ID-linked child"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_unsupported_ancestry() {
     namespace graph = onedrive::graph;
     graph::RemoteItem package{
@@ -905,7 +1048,9 @@ int test_hashes_and_drive_items() {
 
 int main() {
     if (test_unsupported_formats() != EXIT_SUCCESS ||
-        test_unsupported_ancestry() != EXIT_SUCCESS) {
+        test_unsupported_ancestry() != EXIT_SUCCESS ||
+        test_ancestor_metadata_validation() != EXIT_SUCCESS ||
+        test_ancestor_failure_and_cancellation_boundaries() != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
     if (const int result = test_repeated_page_fetcher();

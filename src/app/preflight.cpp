@@ -28,6 +28,11 @@ RuntimePreflight::RuntimePreflight(
         );
     }
 
+    if (operation == Operation::blocked) {
+        // Share the GUI's read-only validation without locking or creating
+        // state.
+        return;
+    }
     secure_state_directory(config.state_directory);
     lock_descriptor_ = acquire_runtime_lock(config.state_directory);
 

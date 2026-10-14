@@ -39,6 +39,9 @@ onedrive-cpp inspect shared
 onedrive-cpp inspect sites Engineering
 onedrive-cpp inspect quota
 onedrive-cpp inspect status
+onedrive-cpp inspect blocked
+onedrive-cpp inspect blocked --reason unsupported_onenote --output json
+onedrive-cpp inspect blocked --search Documents --ui tui
 onedrive-cpp inspect storage
 onedrive-cpp inspect partials
 onedrive-cpp inspect files Documents --status modified
@@ -161,6 +164,28 @@ configured drive. `inspect status` combines the active account and canonical Dri
 identity with local read-only state: sync mode, delete policy, last recorded
 synchronization result, tracked and blocked item counts, pending journals,
 Delta cursor, selective-sync fingerprint, and WebSocket configuration.
+
+`inspect blocked` reads the same saved blockers as the GUI for the active account
+and configured Drive, entirely offline. It does not require an application ID
+or refresh token, create state directories/databases, acquire the synchronization
+lock, or start a transfer. Each record includes its path, reason code/message,
+Drive/item IDs, recorded discovery count, strategy control, and whether recovery
+is allowed by the shared strategy. Discovery counts are not download retry counts.
+This command cannot change a strategy or unblock an item.
+SQLite may create its normal WAL coordination files while reading an existing
+database; the saved records and cursors remain unchanged.
+Use `--reason CODE` for an exact reason-code filter (including unknown/future
+codes), and `--search TEXT` to search paths, reason codes, and messages together.
+Search ignores ASCII case and matches other UTF-8 bytes verbatim; both filters
+can be combined. The summary shows the total recorded and filtered counts.
+Missing account/Drive/database state produces an empty result; malformed,
+ambiguous, or unsafe state and database failures return an error, not an empty
+success. JSON emits one `blocked_item` section per matching record followed by
+`blocked_item_summary`, using the standard string-valued `values` object.
+An empty selection also emits `no_blocked_items`. Finding blockers is a successful
+query (exit 0), not a synchronization failure. The TUI retains each record as a
+page; use Left/Right or `n`/`p` to browse and Enter/`q` to exit. Use console or
+JSON output if a small terminal clips details.
 
 `inspect storage` reports the resolved Drive data root, filesystem capacity and
 available space, tracked file bytes, partial-download bytes, and the state

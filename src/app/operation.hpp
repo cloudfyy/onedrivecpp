@@ -11,6 +11,7 @@ enum class Operation {
     sites,
     quota,
     status,
+    blocked,
     storage,
     partials,
     files,
@@ -47,6 +48,8 @@ constexpr OperationCapabilities operation_capabilities(
             return {};
         case Operation::diagnose:
             return {.supports_tui = true};
+        case Operation::blocked:
+            return {.supports_tui = true, .requires_drive_id = true};
         case Operation::drives:
             return {
                 .supports_tui = true,

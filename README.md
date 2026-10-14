@@ -227,6 +227,9 @@ or reasons, filter by reason code, and select a row to view/copy its full detail
 Refresh rereads saved records. Clearing logs does not clear blockers, and records
 survive task failure, cancellation and application restarts. A later validated
 resolution removes the corresponding record; merely not seeing it does not.
+The CLI reads the same records offline with `onedrive-cpp inspect blocked`;
+`--reason CODE` and `--search TEXT` filter results, and `--output json` supports
+automation. See [usage](docs/usage.md) for fields and TUI controls.
 Preview may create/update blocked diagnostics, but never transfers files,
 advances the applied cursor or commits normal file snapshots.
 

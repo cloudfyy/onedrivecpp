@@ -9,6 +9,7 @@
 #include "onedrive/storage/status.hpp"
 #include "onedrive/util/path_security.hpp"
 #include "onedrive/sync/capabilities.hpp"
+#include "onedrive/sync/blocked_policy.hpp"
 #include "sync/download/integrity.hpp"
 #include "sync/filesystem/operations.hpp"
 #include "sync/filesystem/safe_sync_root.hpp"
@@ -854,6 +855,85 @@ int show_storage(
                 .value = inspection.items ? inspection.database_path.string()
                                           : "absent",
             },
+        }
+    );
+    return exit_code::success;
+}
+
+int show_blocked(
+    const config::Config& config,
+    const cli::Console& console,
+    const std::optional<std::string>& reason,
+    std::string_view search
+) {
+    const auto blocked = load_blocked_items(config);
+    const auto reason_filter =
+        reason ? std::optional<std::string_view>{*reason} : std::nullopt;
+    const auto text_matches = [search](const std::string& text) {
+        return util::ascii_icontains(text, search);
+    };
+    std::size_t shown = 0;
+    for (const auto& item : blocked) {
+        if (!matches_blocked_item(item, reason_filter, text_matches)) {
+            continue;
+        }
+        const auto& strategy = sync::blocked_item_strategy(item.reason_code);
+        const auto control = strategy.traits().control;
+        const std::string policy_control =
+            control == sync::BlockedPolicyControl::local_conflict_configuration
+                ? "local_conflict_configuration"
+            : control ==
+                    sync::BlockedPolicyControl::remote_deletion_configuration
+                ? "remote_deletion_configuration"
+                : "fixed";
+        console.section(
+            "blocked_item",
+            "Blocked item:",
+            {
+                {.label = "remote path:",
+                 .key = "remote_path",
+                 .value = item.remote_path},
+                {.label = "reason:",
+                 .key = "reason_code",
+                 .value = item.reason_code},
+                {.label = "detail:",
+                 .key = "reason_message",
+                 .value = item.reason_message},
+                {.label = "Drive ID:",
+                 .key = "drive_id",
+                 .value = item.drive_id},
+                {.label = "item ID:",
+                 .key = "remote_id",
+                 .value = item.remote_id},
+                {.label = "recorded discoveries:",
+                 .key = "attempt_count",
+                 .value = std::to_string(item.attempt_count)},
+                {.label = "policy control:",
+                 .key = "policy_control",
+                 .value = policy_control},
+                {.label = "recovery allowed:",
+                 .key = "recovery_allowed",
+                 .value = strategy.allows_recovery() ? "true" : "false"},
+            }
+        );
+        ++shown;
+    }
+    if (shown == 0) {
+        console.message(
+            cli::MessageKind::information,
+            "no_blocked_items",
+            blocked.empty() ? "No saved blocked items."
+                            : "No saved blocked items match the filters."
+        );
+    }
+    console.section(
+        "blocked_item_summary",
+        "Blocked item summary:",
+        {
+            {.label = "recorded:",
+             .key = "recorded",
+             .value = std::to_string(blocked.size())},
+            {.label = "shown:", .key = "shown", .value = std::to_string(shown)},
         }
     );
     return exit_code::success;

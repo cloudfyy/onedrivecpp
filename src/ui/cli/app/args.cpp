@@ -87,6 +87,9 @@ ParseResult parse_arguments(int argc, char* argv[]) {
     auto* inspect_status = inspect->add_subcommand(
         "status", "Show read-only synchronization status"
     );
+    auto* inspect_blocked = inspect->add_subcommand(
+        "blocked", "List saved blocked items without connecting to OneDrive"
+    );
     auto* inspect_storage = inspect->add_subcommand(
         "storage", "Show local synchronization storage usage"
     );
@@ -140,6 +143,7 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         std::pair{inspect_sites, Operation::sites},
         std::pair{inspect_quota, Operation::quota},
         std::pair{inspect_status, Operation::status},
+        std::pair{inspect_blocked, Operation::blocked},
         std::pair{inspect_storage, Operation::storage},
         std::pair{inspect_partials, Operation::partials},
         std::pair{inspect_files, Operation::files},
@@ -281,6 +285,14 @@ ParseResult parse_arguments(int argc, char* argv[]) {
             "QUERY", arguments.site_query, "SharePoint site search query"
         )
         ->required();
+    inspect_blocked->add_option(
+        "--reason", arguments.blocked_reason, "Only show this exact reason code"
+    );
+    inspect_blocked->add_option(
+        "--search",
+        arguments.blocked_search,
+        "Search paths, reason codes, and messages (ASCII case-insensitive)"
+    );
     inspect_files->add_option(
         "PATH",
         arguments.inspect_path,
@@ -323,26 +335,12 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         return result;
     }
 
-    arguments.operation = *account_login       ? Operation::authenticate
-                          : *account_logout    ? Operation::logout
-                          : *inspect_health    ? Operation::diagnose
-                          : *inspect_drives    ? Operation::drives
-                          : *inspect_shared    ? Operation::shared
-                          : *inspect_sites     ? Operation::sites
-                          : *inspect_quota     ? Operation::quota
-                          : *inspect_status    ? Operation::status
-                          : *inspect_storage   ? Operation::storage
-                          : *inspect_partials  ? Operation::partials
-                          : *inspect_files     ? Operation::files
-                          : *inspect_verify    ? Operation::verify
-                          : *inspect_config    ? Operation::config
-                          : *reset_cursor      ? Operation::reset_cursor
-                          : *cleanup_state     ? Operation::cleanup_state
-                          : *migrate_state     ? Operation::migrate_state
-                          : *clear_state       ? Operation::clear_state
-                          : *transfer_download ? Operation::download
-                          : *transfer_watch    ? Operation::monitor
-                                               : Operation::synchronize;
+    for (const auto& [command, operation] : command_operations) {
+        if (*command) {
+            arguments.operation = operation;
+            break;
+        }
+    }
     return result;
 }
 

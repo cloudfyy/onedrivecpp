@@ -37,6 +37,9 @@ onedrive-cpp inspect shared
 onedrive-cpp inspect sites Engineering
 onedrive-cpp inspect quota
 onedrive-cpp inspect status
+onedrive-cpp inspect blocked
+onedrive-cpp inspect blocked --reason unsupported_onenote --output json
+onedrive-cpp inspect blocked --search Documents --ui tui
 onedrive-cpp inspect storage
 onedrive-cpp inspect partials
 onedrive-cpp inspect files Documents --status modified
@@ -134,6 +137,21 @@ blocked 文件。不同状态可重叠，例如已有本地文件仍可能有待
 合并当前账号及规范 Drive 身份与本地只读状态，包括同步模式、删除策略、最后一次
 同步结果、tracked/blocked 数量、pending journal、Delta cursor、
 selective-sync fingerprint 和 WebSocket 配置。
+
+`inspect blocked` 完全离线读取当前账号、配置 Drive 中与 GUI 相同的持久化阻止项。
+不要求应用 ID 或刷新令牌，不创建状态目录／数据库、不获取同步运行锁，也不启动传输。
+每项显示路径、原因代码／详情、Drive／item ID、累计发现次数、策略控制方式及共享策略
+是否允许恢复。发现次数不是下载重试次数；此命令不能更改策略或解除阻止。
+`--reason CODE` 精确筛选原因代码，允许查询未知／未来代码；`--search TEXT`
+同时搜索路径、原因代码和详情，忽略 ASCII 大小写，其他 UTF-8 字节按原样匹配。
+两个筛选可组合，摘要分别显示已记录总数和匹配数。
+读取现有数据库时，SQLite 可能创建常规 WAL 协调文件，但不更改已保存记录或游标。
+缺少账号／Drive／数据库时显示空结果；损坏、有歧义或不安全的状态以及数据库错误
+明确报错，不伪装为成功的空列表。JSON 为每个匹配项输出 `blocked_item`，
+最后输出 `blocked_item_summary`，沿用标准的字符串字段 `values` 对象；
+空结果还输出 `no_blocked_items`。查询到阻止项仍正常返回 0，不表示同步失败。
+TUI 分页保留各项详情，左右方向键或 `n`／`p` 翻页，Enter／`q` 退出；
+终端过小导致详情被裁剪时可改用 Console 或 JSON。
 
 `inspect storage` 显示解析后的 Drive 数据目录、文件系统容量和可用空间、tracked
 文件字节数、partial download 占用以及状态数据库路径。`inspect partials` 列出每个

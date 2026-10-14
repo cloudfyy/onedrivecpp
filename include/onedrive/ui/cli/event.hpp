@@ -27,6 +27,7 @@ enum class TuiView {
     auth,
     health,
     status,
+    blocked,
     drives,
     shared,
     sites,

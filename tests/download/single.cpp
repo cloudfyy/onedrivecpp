@@ -1,6 +1,7 @@
 #include "support.hpp"
 #include "onedrive/exit_code.hpp"
 #include "onedrive/ui/cli/console.hpp"
+#include "sync/filesystem/safe_sync_root.hpp"
 
 #include <algorithm>
 
@@ -75,6 +76,101 @@ int test_unsupported_single_downloads() {
     return EXIT_SUCCESS;
 }
 
+int test_single_file_invalid_metadata_and_paths() {
+    TemporaryDirectory temporary;
+    auto config = onedrive::config::Config::defaults();
+    config.sync_data_directory = temporary.path() / "sync";
+    config.drive_id = "drive-id";
+    config.filesystem_metadata =
+        onedrive::config::FilesystemMetadataMode::database;
+    config.local_conflict = onedrive::config::LocalConflictPolicy::backup;
+    FakeGraphClient implementation;
+    FakeItemStore store;
+    onedrive::graph::GraphClient graph{
+        onedrive::util::borrowed_proxy, implementation
+    };
+    onedrive::storage::ItemStore items{onedrive::util::borrowed_proxy, store};
+    std::ostringstream output;
+    std::ostringstream error;
+    const onedrive::cli::Console console{{}, output, error};
+    implementation.lookup_item = remote_item("negative", "negative.txt");
+    implementation.lookup_item.size = -1;
+    if (!onedrive::test::throws_with<std::runtime_error>(
+            [&] {
+                static_cast<void>(onedrive::sync::plan_single_file_download(
+                    config, "negative.txt", graph, items, console
+                ));
+            },
+            "size exceeds the supported range"
+        ) ||
+        std::filesystem::exists(config.sync_data_directory)) {
+        return fail("invalid remote size created local synchronization state");
+    }
+    implementation.lookup_request_path = "safe.txt";
+    implementation.lookup_item = remote_item("escape", "../outside.txt");
+    if (!onedrive::test::throws_with<std::runtime_error>(
+            [&] {
+                static_cast<void>(onedrive::sync::download_single_file(
+                    config, "safe.txt", graph, items, console
+                ));
+            },
+            "remote"
+        ) ||
+        store.blocked.size() != 1 ||
+        store.blocked[0].reason_code != "invalid_remote_path" ||
+        implementation.download_count != 0) {
+        return fail("unsafe returned metadata was not rejected and recorded");
+    }
+    implementation.lookup_request_path.reset();
+    for (const bool parent_link : {false, true}) {
+        const std::string path =
+            parent_link ? "linked/file.txt" : "directory.txt";
+        implementation.lookup_item =
+            remote_item(parent_link ? "parent-link" : "directory", path);
+        std::filesystem::create_directories(config.sync_data_directory);
+        const auto outside = temporary.path() / "outside";
+        if (parent_link) {
+            std::filesystem::create_directory(outside);
+            onedrive::test::write_file(outside / "keep.txt", "keep");
+            std::filesystem::create_directory_symlink(
+                outside, config.sync_data_directory / "linked"
+            );
+        } else {
+            std::filesystem::create_directory(
+                config.sync_data_directory / "directory.txt"
+            );
+        }
+        bool rejected = false;
+        try {
+            static_cast<void>(onedrive::sync::download_single_file(
+                config, path, graph, items, console
+            ));
+        } catch (const onedrive::sync::detail::SafePathConflictError&) {
+            rejected = parent_link;
+        } catch (const onedrive::sync::detail::LocalPathConflictError&) {
+            rejected = !parent_link;
+        }
+        if (!rejected || implementation.download_count != 0 ||
+            std::ranges::none_of(
+                store.blocked,
+                [&](const auto& blocked) {
+                    return blocked.remote_id == implementation.lookup_item.id &&
+                           blocked.reason_code == "local_path_conflict";
+                }
+            ) ||
+            (parent_link &&
+             (onedrive::test::read_file(outside / "keep.txt") != "keep" ||
+              std::filesystem::exists(outside / "file.txt")))) {
+            return fail(
+                "single-file path conflict was not recorded or changed "
+                "local "
+                "data"
+            );
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_single_file_download_coordination() {
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "single";
@@ -105,13 +201,10 @@ int test_single_file_download_coordination() {
         ));
         return fail("single-file plan accepted an unmounted sync disk");
     } catch (const std::runtime_error& exception) {
-        if (!std::string{exception.what()}.contains(
-                "not currently mounted"
-            )) {
+        if (!std::string{exception.what()}.contains("not currently mounted")) {
             throw;
         }
     }
-
     auto dry_config = config;
     dry_config.dry_run = true;
     if (onedrive::sync::plan_single_file_download(
@@ -246,7 +339,8 @@ int test_single_file_download_coordination() {
 } // namespace
 
 int main() {
-    if (test_unsupported_single_downloads() != EXIT_SUCCESS) {
+    if (test_unsupported_single_downloads() != EXIT_SUCCESS ||
+        test_single_file_invalid_metadata_and_paths() != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
     return test_single_file_download_coordination();

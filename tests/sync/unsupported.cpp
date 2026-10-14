@@ -311,6 +311,24 @@ void test_persisted_ancestry_and_drive_isolation() {
         directory.directory = true;
         store.items.emplace(directory.remote_id, directory);
     }
+    auto ignored_file = store.items.at("selected-middle");
+    ignored_file.remote_id = "selected-file";
+    ignored_file.directory = false;
+    store.items.emplace(ignored_file.remote_id, ignored_file);
+    auto ignored = store.blocked.front();
+    ignored.remote_id = "selected-deleted";
+    ignored.deleted = true;
+    store.blocked.push_back(ignored);
+    ignored.remote_id = "selected-file";
+    ignored.deleted = false;
+    ignored.directory = false;
+    store.blocked.push_back(ignored);
+    ignored.directory = true;
+    for (const auto reason : {"malware_detected", "future_reason"}) {
+        ignored.remote_id = reason;
+        ignored.reason_code = reason;
+        store.blocked.push_back(ignored);
+    }
     const auto context = sync::blocked_ancestor_context("selected", items);
     require(
         context.size() == 2 && std::ranges::all_of(
