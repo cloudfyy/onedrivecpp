@@ -88,6 +88,8 @@ private:
     void refresh_blocked_items();
     void render_blocked_items();
     void render_blocked_details();
+    [[nodiscard]] QString
+    blocked_policy_text(const storage::BlockedItem& item) const;
     void open_login_url();
     void refresh_settings(bool preserve_edits = false);
     void refresh_startup_status();

@@ -1,4 +1,5 @@
 #include "sync/download/recovery.hpp"
+#include "onedrive/sync/blocked_policy.hpp"
 
 #include "sync/filesystem/operations.hpp"
 #include "onedrive/util/remote_time.hpp"
@@ -119,8 +120,19 @@ void recover_pending_downloads(
         pending.size(),
         drive_id
     );
+    const auto blocked = items.blocked_items(drive_id);
     for (auto download : pending) {
         validate_pending_download(download, sync_root);
+        if (const auto* blocker = blocked_recovery(
+                blocked, download.item.remote_id, download.item.remote_path
+            )) {
+            spdlog::warn(
+                "Deferred pending download '{}' due to blocked policy '{}'",
+                download.item.remote_path,
+                blocker->reason_code
+            );
+            continue;
+        }
         const auto destination = download.item.local_path;
         spdlog::debug(
             "Recovering pending download '{}' to '{}'",

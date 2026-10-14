@@ -2,6 +2,7 @@
 #include "sync/upload/remote_delete.hpp"
 #include "sync/upload/planning.hpp"
 #include "onedrive/sync/cancellation.hpp"
+#include "onedrive/sync/blocked_policy.hpp"
 #include "onedrive/ui/common/observer.hpp"
 #include "util/typestate.hpp"
 #include "sync/filesystem/operations.hpp"
@@ -37,7 +38,9 @@ bool covers_blocked_item(
     const std::vector<storage::BlockedItem>& blocked
 ) {
     return std::ranges::any_of(blocked, [&](const auto& item) {
-        if (item.reason_code.starts_with("upload_delete_")) {
+        if (!blocked_item_strategy(item.reason_code)
+                 .traits()
+                 .protects_remote_deletions) {
             return false;
         }
         return item.remote_id == deletion.remote_id ||
@@ -75,7 +78,9 @@ DeletionPlan discover_deletions(
     std::unordered_set<std::string> blocked_paths;
     const auto blocked = items.blocked_items(drive_id);
     for (const auto& item : blocked) {
-        if (item.reason_code.starts_with("upload_delete_")) {
+        if (!blocked_item_strategy(item.reason_code)
+                 .traits()
+                 .protects_remote_deletions) {
             continue;
         }
         blocked_ids.insert(item.remote_id);
@@ -207,7 +212,9 @@ bool enforce_remote_deletion_limit(
     ExecutionMode execution_mode,
     storage::ItemStore* items
 ) {
-    if (items) {
+    if (items && !plan.operations.empty()) {
+        const auto blocked =
+            items->blocked_items(plan.operations.front().drive_id);
         for (const auto& deletion : plan.operations) {
             if (plan.affected_items > guard.maximum_affected_items &&
                 !guard.force) {
@@ -225,9 +232,15 @@ bool enforce_remote_deletion_limit(
                     )
                 );
             } else {
-                items->remove_blocked_item(
-                    deletion.drive_id, upload_blocked_id(deletion.remote_path)
+                const auto id = upload_blocked_id(deletion.remote_path);
+                const auto existing = std::ranges::find(
+                    blocked, id, &storage::BlockedItem::remote_id
                 );
+                if (existing != blocked.end() &&
+                    blocked_item_strategy(existing->reason_code)
+                        .resolved_by(BlockedResolution::deletion_allowed)) {
+                    items->remove_blocked_item(deletion.drive_id, id);
+                }
             }
         }
     }

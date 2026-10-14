@@ -1,5 +1,6 @@
 #include "graph/support.hpp"
 #include "graph/unsupported_formats.hpp"
+#include "graph/delta_changes.hpp"
 
 #include "onedrive/util/remote_time.hpp"
 #include "util/ascii.hpp"
@@ -432,6 +433,11 @@ Json unsupported_format_policy() {
              std::vector<std::string_view>{
                  rule.package_types.begin(), rule.package_types.end()
              }},
+            {"ancestor_probe_directories",
+             std::vector<std::string_view>{
+                 rule.ancestor_probe_directories.begin(),
+                 rule.ancestor_probe_directories.end()
+             }},
         });
     }
     return result;
@@ -453,7 +459,33 @@ std::string unsupported_format_message(std::string_view id) {
     );
 }
 
-void mark_unsupported_descendants(std::vector<RemoteItem>& items) {
+void mark_unsupported_descendants(
+    std::vector<RemoteItem>& items,
+    std::span<const RemoteItem> known_directories
+) {
+    if (!known_directories.empty()) {
+        DeltaChanges merged;
+        for (auto directory : known_directories) {
+            // Saved paths are lookup hints; only IDs prove cached ancestry.
+            if (!directory.unsupported_format.empty()) {
+                directory.remote_path.clear();
+            }
+            merged.upsert(std::move(directory));
+        }
+        for (const auto& item : items) {
+            merged.upsert(item);
+        }
+        auto hierarchy = std::move(merged).release();
+        mark_unsupported_descendants(hierarchy);
+        std::unordered_map<std::string, std::string> formats;
+        for (const auto& item : hierarchy) {
+            formats.emplace(item.id, item.unsupported_format);
+        }
+        for (auto& item : items) {
+            item.unsupported_format = formats.at(item.id);
+        }
+        return;
+    }
     if (std::ranges::none_of(items, [](const RemoteItem& item) {
             return !item.unsupported_format.empty() && item.directory;
         })) {
@@ -461,8 +493,10 @@ void mark_unsupported_descendants(std::vector<RemoteItem>& items) {
     }
     std::vector<std::size_t> directories;
     std::unordered_multimap<std::string, std::size_t> children;
+    std::unordered_set<std::string> known_ids;
     for (std::size_t index = 0; index < items.size(); ++index) {
         const auto& item = items[index];
+        known_ids.insert(item.id);
         if (!item.unsupported_format.empty() && item.directory) {
             directories.push_back(index);
         }
@@ -473,7 +507,8 @@ void mark_unsupported_descendants(std::vector<RemoteItem>& items) {
     const auto initial_directories = directories;
     for (std::size_t index = 0; index < items.size(); ++index) {
         auto& item = items[index];
-        if (!item.unsupported_format.empty()) {
+        if (!item.unsupported_format.empty() ||
+            known_ids.contains(item.parent_id)) {
             continue;
         }
         for (const auto parent_index : initial_directories) {
@@ -503,6 +538,180 @@ void mark_unsupported_descendants(std::vector<RemoteItem>& items) {
                 }
             }
         }
+    }
+}
+
+RemoteItem parse_item_ancestry(const Json& json) {
+    try {
+        const auto unsupported = item_unsupported_format(json);
+        RemoteItem item;
+        item.id = json.at("id").get<std::string>();
+        item.name = json.at("name").get<std::string>();
+        item.root = json.contains("root");
+        item.deleted = json.contains("deleted");
+        item.directory = item.root || json.contains("folder") ||
+                         (unsupported && unsupported->package);
+        if (unsupported) {
+            item.unsupported_format = unsupported->format_id;
+        }
+        if (const auto parent = json.find("parentReference");
+            parent != json.end()) {
+            if (!parent->is_object()) {
+                throw std::runtime_error{
+                    "Microsoft Graph returned invalid ancestry parent metadata"
+                };
+            }
+            if (const auto id = parent->find("id"); id != parent->end()) {
+                item.parent_id = id->get<std::string>();
+            }
+        }
+        if (!item.root) {
+            item.remote_path = item_remote_path(json, item.name);
+        }
+        if (item.id.empty() || item.name.empty() || item.deleted) {
+            throw std::runtime_error{
+                "Microsoft Graph returned invalid ancestry metadata"
+            };
+        }
+        return item;
+    } catch (const Json::exception& error) {
+        throw std::runtime_error{
+            "Microsoft Graph returned invalid ancestry metadata: " +
+            std::string{error.what()}
+        };
+    }
+}
+
+void resolve_unsupported_ancestry(
+    std::vector<RemoteItem>& items,
+    std::span<const RemoteItem> known_directories,
+    const std::function<RemoteItem(const std::string&)>& lookup,
+    std::stop_token stop_token
+) {
+    if (stop_token.stop_requested()) {
+        throw RequestCancelledError{
+            "Microsoft Graph ancestry lookup was cancelled"
+        };
+    }
+    if (items.empty()) {
+        return;
+    }
+    mark_unsupported_descendants(items, known_directories);
+    std::unordered_map<std::string, RemoteItem> ancestors;
+    std::vector<std::string_view> saved_paths;
+    for (const auto& directory : known_directories) {
+        ancestors.insert_or_assign(directory.id, directory);
+        if (!directory.unsupported_format.empty() &&
+            !directory.remote_path.empty()) {
+            saved_paths.push_back(directory.remote_path);
+        }
+    }
+    for (const auto& item : items) {
+        ancestors.insert_or_assign(item.id, item);
+    }
+    std::vector<std::string> fetched_ids;
+    for (const auto& item : items) {
+        if (stop_token.stop_requested()) {
+            throw RequestCancelledError{
+                "Microsoft Graph ancestry lookup was cancelled"
+            };
+        }
+        if (item.deleted || !ancestors.at(item.id).unsupported_format.empty()) {
+            continue;
+        }
+        const bool saved_path_hint =
+            std::ranges::any_of(saved_paths, [&](std::string_view path) {
+                return item.remote_path.starts_with(path) &&
+                       item.remote_path.size() > path.size() &&
+                       item.remote_path[path.size()] == '/';
+            });
+        const bool needs_probe =
+            saved_path_hint ||
+            std::ranges::any_of(
+                unsupported_format_rules, [&](const auto& rule) {
+                    return std::ranges::any_of(
+                        rule.ancestor_probe_directories,
+                        [&](std::string_view name) {
+                            std::string_view path = item.remote_path;
+                            while (!path.empty()) {
+                                const auto separator = path.find('/');
+                                if (util::ascii_iequals(
+                                        path.substr(0, separator), name
+                                    )) {
+                                    return true;
+                                }
+                                if (separator == std::string_view::npos) {
+                                    break;
+                                }
+                                path.remove_prefix(separator + 1);
+                            }
+                            return false;
+                        }
+                    );
+                }
+            );
+        if (!needs_probe) {
+            continue;
+        }
+        std::unordered_set<std::string> visited;
+        const RemoteItem* current = &ancestors.at(item.id);
+        while (!current->root && current->unsupported_format.empty()) {
+            if (stop_token.stop_requested()) {
+                throw RequestCancelledError{
+                    "Microsoft Graph ancestry lookup was cancelled"
+                };
+            }
+            if (!visited.insert(current->id).second) {
+                throw std::runtime_error{
+                    "Microsoft Graph returned a cyclic ancestry for '" +
+                    item.remote_path + "'"
+                };
+            }
+            auto parent = ancestors.find(current->parent_id);
+            if (parent == ancestors.end()) {
+                if (current->parent_id.empty()) {
+                    throw std::runtime_error{
+                        "Microsoft Graph ancestry is missing a parent ID for "
+                        "'" +
+                        current->remote_path + "'"
+                    };
+                }
+                const auto parent_id = current->parent_id;
+                auto fetched = lookup(parent_id);
+                if (fetched.id != parent_id || !fetched.directory ||
+                    fetched.deleted) {
+                    throw std::runtime_error{
+                        "Microsoft Graph returned an invalid ancestor for '" +
+                        item.remote_path + "'"
+                    };
+                }
+                fetched_ids.push_back(parent_id);
+                parent = ancestors.emplace(parent_id, std::move(fetched)).first;
+            }
+            if (parent->second.deleted || !parent->second.directory) {
+                throw std::runtime_error{
+                    "Microsoft Graph returned an invalid ancestor for '" +
+                    item.remote_path + "'"
+                };
+            }
+            current = &parent->second;
+        }
+    }
+    auto hierarchy = items;
+    for (const auto& id : fetched_ids) {
+        hierarchy.push_back(ancestors.at(id));
+    }
+    mark_unsupported_descendants(hierarchy, known_directories);
+    std::unordered_map<std::string, std::string> formats;
+    for (const auto& item : hierarchy) {
+        formats.emplace(item.id, item.unsupported_format);
+    }
+    for (auto& item : items) {
+        item.unsupported_format = formats.at(item.id);
+    }
+    for (const auto& id : fetched_ids) {
+        const auto found = std::ranges::find(hierarchy, id, &RemoteItem::id);
+        items.push_back(*found);
     }
 }
 
@@ -614,7 +823,8 @@ RemoteItem parse_drive_item(
     const Json& json,
     std::string_view description,
     ContentValidation validation,
-    DriveItemKind kind
+    DriveItemKind kind,
+    std::string_view inherited_unsupported_format
 ) {
     try {
         const auto unsupported = item_unsupported_format(json);
@@ -632,10 +842,15 @@ RemoteItem parse_drive_item(
             .deleted = json.contains("deleted"),
             .root = json.contains("root"),
             .malware = item_is_malware(json),
-            .content_hash = item_content_hash(json, validation),
+            .content_hash = inherited_unsupported_format.empty()
+                                ? item_content_hash(json, validation)
+                                : std::nullopt,
             .validate_content = validation == ContentValidation::strict,
             .unsupported_format =
-                unsupported ? std::string{unsupported->format_id} : "",
+                !inherited_unsupported_format.empty()
+                    ? std::string{inherited_unsupported_format}
+                : unsupported ? std::string{unsupported->format_id}
+                              : "",
         };
         item.remote_path = item_remote_path(json, item.name);
         if (const auto parent = json.find("parentReference");

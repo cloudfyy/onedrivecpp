@@ -278,7 +278,17 @@ struct UnsupportedItem {
 item_unsupported_format(const Json& value);
 [[nodiscard]] Json unsupported_format_policy();
 [[nodiscard]] std::string unsupported_format_message(std::string_view id);
-void mark_unsupported_descendants(std::vector<RemoteItem>& items);
+void mark_unsupported_descendants(
+    std::vector<RemoteItem>& items,
+    std::span<const RemoteItem> known_directories = {}
+);
+[[nodiscard]] RemoteItem parse_item_ancestry(const Json& json);
+void resolve_unsupported_ancestry(
+    std::vector<RemoteItem>& items,
+    std::span<const RemoteItem> known_directories,
+    const std::function<RemoteItem(const std::string&)>& lookup,
+    std::stop_token stop_token = {}
+);
 enum class ContentValidation {
     strict,
     relaxed,
@@ -302,7 +312,8 @@ enum class DriveItemKind {
     const Json& json,
     std::string_view description,
     ContentValidation validation,
-    DriveItemKind kind = DriveItemKind::file_only
+    DriveItemKind kind = DriveItemKind::file_only,
+    std::string_view inherited_unsupported_format = {}
 );
 
 }  // namespace onedrive::graph::client_detail

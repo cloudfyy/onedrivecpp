@@ -1,5 +1,6 @@
 #include "onedrive/sync/download/single_file.hpp"
 #include "onedrive/exit_code.hpp"
+#include "onedrive/sync/blocked_policy.hpp"
 #include "graph/support.hpp"
 
 #include "onedrive/util/mount.hpp"
@@ -16,6 +17,7 @@
 #include <spdlog/spdlog.h>
 
 #include <filesystem>
+#include <algorithm>
 #include <format>
 #include <limits>
 #include <stdexcept>
@@ -29,6 +31,27 @@ struct SingleFileTarget {
     std::filesystem::path configured_root;
     std::filesystem::path destination;
 };
+
+bool report_unknown_blocker(
+    const SingleFileTarget& target,
+    const std::string& drive_id,
+    storage::ItemStore& items,
+    const events::Observer& observer
+) {
+    const auto blocked = items.blocked_items(drive_id);
+    const auto existing = std::ranges::find(
+        blocked, target.item.id, &storage::BlockedItem::remote_id
+    );
+    if (existing == blocked.end() ||
+        blocked_item_strategy(existing->reason_code).traits().kind !=
+            BlockedPolicyKind::unknown) {
+        return false;
+    }
+    observer.blocked_item(
+        existing->remote_path, existing->reason_code, existing->reason_message
+    );
+    return true;
+}
 
 void save_blocked(
     storage::ItemStore& items,
@@ -68,7 +91,9 @@ SingleFileTarget resolve_target(
         onedrive::util::normalized_absolute(config.sync_data_directory);
     static_cast<void>(detail::local_path_for(configured_root, remote_path));
 
-    auto item = graph.item_by_path(remote_path);
+    const auto known_directories =
+        blocked_ancestor_context(config.drive_id, items);
+    auto item = graph.item_by_path(remote_path, {}, known_directories);
     if (item.directory && item.unsupported_format.empty()) {
         throw std::runtime_error(
             "remote path identifies a directory, not a file: " + remote_path
@@ -157,7 +182,8 @@ int plan_single_file_download(
     const events::Observer& observer
 ) {
     const auto target = resolve_target(config, remote_path, graph, items);
-    if (report_unsupported(target, config.drive_id, items, observer)) {
+    if (report_unsupported(target, config.drive_id, items, observer) ||
+        report_unknown_blocker(target, config.drive_id, items, observer)) {
         return exit_code::blocked;
     }
     observer.section(
@@ -201,7 +227,8 @@ int download_single_file(
 ) {
     auto target = resolve_target(config, remote_path, graph, items);
     try {
-        if (report_unsupported(target, config.drive_id, items, observer)) {
+        if (report_unsupported(target, config.drive_id, items, observer) ||
+            report_unknown_blocker(target, config.drive_id, items, observer)) {
             return exit_code::blocked;
         }
         auto& item = target.item;

@@ -64,7 +64,9 @@ public:
         throw std::logic_error{"single path lookup was not expected"};
     }
     [[nodiscard]] onedrive::graph::RemoteItem item_by_path(
-        const std::string& path, std::stop_token stop_token
+        const std::string& path,
+        std::stop_token stop_token,
+        std::span<const onedrive::graph::RemoteItem> = {}
     ) const {
         if (stop_token.stop_requested()) {
             throw onedrive::graph::RequestCancelledError{
@@ -77,7 +79,8 @@ public:
     [[nodiscard]] onedrive::graph::DeltaResult list_delta(
         const std::optional<std::string>& delta_link,
         const onedrive::graph::DeltaProgress& progress,
-        std::stop_token
+        std::stop_token,
+        std::span<const onedrive::graph::RemoteItem> = {}
     ) const {
         delta_requests.push_back(delta_link);
         if (delta_link && reject_saved_cursor) {

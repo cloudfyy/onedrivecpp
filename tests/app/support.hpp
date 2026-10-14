@@ -310,7 +310,9 @@ public:
         };
     }
     [[nodiscard]] onedrive::graph::RemoteItem item_by_path(
-        const std::string& remote_path, std::stop_token stop_token
+        const std::string& remote_path,
+        std::stop_token stop_token,
+        std::span<const onedrive::graph::RemoteItem> = {}
     ) const {
         if (stop_token.stop_requested()) {
             throw onedrive::graph::RequestCancelledError{
@@ -323,7 +325,8 @@ public:
     [[nodiscard]] onedrive::graph::DeltaResult list_delta(
         const std::optional<std::string>& cursor,
         const onedrive::graph::DeltaProgress& progress,
-        std::stop_token token
+        std::stop_token token,
+        std::span<const onedrive::graph::RemoteItem> = {}
     ) const {
         if (delta_override_) {
             auto result = delta_override_(cursor, token);

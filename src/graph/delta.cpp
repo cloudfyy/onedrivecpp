@@ -40,7 +40,8 @@ using namespace client_detail;
 DeltaResult MicrosoftGraphClient::list_delta(
     const std::optional<std::string>& delta_link,
     const DeltaProgress& progress,
-    std::stop_token stop_token
+    std::stop_token stop_token,
+    std::span<const RemoteItem> known_directories
 ) const {
     if (stop_token.stop_requested()) {
         throw RequestCancelledError{"Microsoft Graph delta request cancelled"};
@@ -258,7 +259,12 @@ DeltaResult MicrosoftGraphClient::list_delta(
     }
 
     result.changes = std::move(changes).release();
-    mark_unsupported_descendants(result.changes);
+    resolve_unsupported_ancestry(
+        result.changes,
+        known_directories,
+        [&](const std::string& id) { return ancestor_by_id(id, stop_token); },
+        stop_token
+    );
     for (auto& item : result.changes) {
         if (item.deleted || !item.unsupported_format.empty()) {
             continue;

@@ -6,6 +6,7 @@
 #include "sync/upload/remote_move.hpp"
 
 #include "onedrive/sync/cancellation.hpp"
+#include "onedrive/sync/blocked_policy.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"
 #include "onedrive/ui/common/observer.hpp"
 #include "onedrive/util/path_security.hpp"
@@ -133,21 +134,24 @@ std::vector<UploadCandidate> discover_uploads(
     const auto pending_uploads = items.pending_uploads(drive_id);
     std::unordered_set<std::string> blocked_paths;
     for (const auto& item : items.blocked_items(drive_id)) {
-        if (item.local_upload()) {
-            local_upload_paths.insert(item.remote_path);
-            if (item.reason_code.starts_with("upload_delete_")) {
-                local_path_blockers.insert(item.remote_path);
-                continue;
+        const auto& strategy = blocked_item_strategy(item.reason_code);
+        if (!strategy.traits().protects_uploads) {
+            if (strategy.resolved_by(
+                    BlockedResolution::current_remote_snapshot
+                )) {
+                local_upload_paths.insert(item.remote_path);
             }
-            if (local_path_is_missing(sync_root.path() / item.remote_path) &&
+            if (strategy.resolved_by(
+                    BlockedResolution::source_removed_without_pending_upload
+                ) &&
+                local_path_is_missing(sync_root.path() / item.remote_path) &&
                 std::ranges::none_of(pending_uploads, [&](const auto& pending) {
                     return pending.remote_path == item.remote_path;
                 })) {
                 items.remove_blocked_item(drive_id, item.remote_id);
                 continue;
             }
-            if (item.reason_code == "upload_symbolic_link" ||
-                item.reason_code == "upload_type_conflict") {
+            if (strategy.resolved_by(BlockedResolution::safe_local_path)) {
                 local_path_blockers.insert(item.remote_path);
             }
             continue;
@@ -531,7 +535,8 @@ UploadSummary upload_local_changes(
         sync_list,
         summary.blocked,
         observer,
-        capabilities.execution_mode()
+        capabilities.execution_mode(),
+        moves.protected_local_paths
     );
     summary.planned = static_cast<std::size_t>(std::ranges::count(
         uploads,

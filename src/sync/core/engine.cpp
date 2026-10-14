@@ -9,6 +9,7 @@
 #include "onedrive/util/path_security.hpp"
 #include "onedrive/util/sha256.hpp"
 #include "sync/core/delta_plan.hpp"
+#include "onedrive/sync/blocked_policy.hpp"
 #include "onedrive/sync/capabilities.hpp"
 #include "sync/core/downloads.hpp"
 #include "sync/core/plan_execute.hpp"
@@ -688,9 +689,17 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
                 delta_scanned_items = items;
                 observer.delta_progress(pages, items, state);
             };
+        const auto known_directories =
+            blocked_ancestor_context(config_.drive_id, items_);
         try {
-            delta =
-                graph_.list_delta(query_delta_link, delta_progress, stop_token);
+            delta = graph_.list_delta(
+                query_delta_link,
+                delta_progress,
+                stop_token,
+                query_delta_link
+                    ? std::span<const graph::RemoteItem>{known_directories}
+                    : std::span<const graph::RemoteItem>{}
+            );
         } catch (const graph::DeltaCursorInvalidError& error) {
             previous_preview.reset();
             retained_delta.reset();
@@ -804,9 +813,7 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
             delta, apply_mode, items_.partial_downloads(config_.drive_id)
         );
         const auto previously_blocked = items_.blocked_items(config_.drive_id);
-        engine_detail::preserve_unsupported_deletions(
-            delta, previously_blocked
-        );
+        engine_detail::preserve_blocked_deletions(delta, previously_blocked);
         if (!previously_blocked.empty()) {
             engine_detail::add_blocked_retries(
                 delta,

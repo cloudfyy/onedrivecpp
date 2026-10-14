@@ -54,6 +54,24 @@ int test_unsupported_single_downloads() {
             "unsupported single download changed files/state or hid its reason"
         );
     }
+    implementation.lookup_item = remote_item("unknown", "mystery.txt");
+    onedrive::storage::BlockedItem unknown;
+    unknown.drive_id = config.drive_id;
+    unknown.remote_id = "unknown";
+    unknown.remote_path = "mystery.txt";
+    unknown.reason_code = "future_reason";
+    unknown.reason_message = "Unrecognized policy";
+    store.save_blocked_item(unknown);
+    if (onedrive::sync::plan_single_file_download(
+            config, "mystery.txt", graph, items, console
+        ) != exit_code::blocked ||
+        onedrive::sync::download_single_file(
+            config, "mystery.txt", graph, items, console
+        ) != exit_code::blocked ||
+        implementation.download_count != 0 ||
+        std::filesystem::exists(root / "mystery.txt")) {
+        return fail("single-file request bypassed an unknown blocked policy");
+    }
     return EXIT_SUCCESS;
 }
 

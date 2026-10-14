@@ -1,4 +1,5 @@
 #include "sync/core/delta_plan.hpp"
+#include "onedrive/sync/blocked_policy.hpp"
 #include "graph/support.hpp"
 #include "onedrive/util/sha256.hpp"
 #include "sync/filter/remote_path.hpp"
@@ -22,27 +23,6 @@ std::string sync_scope_fingerprint(std::string_view filter) {
     );
 }
 
-graph::RemoteItem remote_item(const storage::BlockedItem& item) {
-    return {
-        .id = item.remote_id,
-        .name = item.name,
-        .etag = item.etag,
-        .ctag = item.ctag,
-        .parent_id = item.parent_id,
-        .remote_path = item.remote_path,
-        .last_modified = item.last_modified,
-        .size = item.size,
-        .directory = item.directory,
-        .deleted = item.deleted,
-        .root = false,
-        .malware = item.reason_code == "malware_detected",
-        .content_hash = item.content_hash,
-        .unsupported_format = item.reason_code.starts_with("unsupported_")
-                                  ? item.reason_code.substr(12)
-                                  : "",
-    };
-}
-
 void add_blocked_retries(
     graph::DeltaResult& delta,
     const std::vector<storage::BlockedItem>& blocked,
@@ -54,32 +34,30 @@ void add_blocked_retries(
         changed_ids.insert(item.id);
     }
     for (const auto& item : blocked) {
-        if (item.local_upload()) {
-            continue;
-        }
         if (!changed_ids.contains(item.remote_id)) {
-            auto retry = remote_item(item);
-            if (full_refresh) {
-                retry.deleted = true;
+            if (auto retry = blocked_item_strategy(item.reason_code)
+                                 .remote_retry(item, full_refresh)) {
+                delta.changes.push_back(std::move(*retry));
             }
-            delta.changes.push_back(std::move(retry));
         }
     }
 }
 
-void preserve_unsupported_deletions(
+void preserve_blocked_deletions(
     graph::DeltaResult& delta, const std::vector<storage::BlockedItem>& blocked
 ) {
     for (const auto& item : blocked) {
-        if (!item.reason_code.starts_with("unsupported_")) {
+        const auto& strategy = blocked_item_strategy(item.reason_code);
+        if (!strategy.traits().preserves_remote_deletion) {
             continue;
         }
         const auto changed = std::ranges::find(
             delta.changes, item.remote_id, &graph::RemoteItem::id
         );
         if (changed != delta.changes.end() && changed->deleted) {
-            *changed = remote_item(item);
-            changed->deleted = true;
+            if (auto preserved = strategy.remote_retry(item, true)) {
+                *changed = std::move(*preserved);
+            }
         }
     }
 }

@@ -1,5 +1,6 @@
 #include "sync/upload/remote_move.hpp"
 #include "sync/upload/planning.hpp"
+#include "onedrive/sync/blocked_policy.hpp"
 #include "onedrive/sync/cancellation.hpp"
 #include "onedrive/ui/common/observer.hpp"
 #include "util/typestate.hpp"
@@ -89,6 +90,7 @@ LocalMoveDiscovery discover_local_moves(
     );
 
     const auto tracked = items.drive_items(drive_id);
+    const auto blocked = items.blocked_items(drive_id);
     std::unordered_set<std::string> tracked_paths;
     for (const auto& item : tracked) {
         tracked_paths.insert(item.remote_path);
@@ -125,6 +127,16 @@ LocalMoveDiscovery discover_local_moves(
         discovery.moved_local_paths.insert(
             found->second.path.lexically_normal().string()
         );
+        // Local moves reuse stored remote metadata, like journal recovery.
+        if (blocked_recovery(blocked, item.remote_id, item.remote_path) ||
+            blocked_recovery(
+                blocked, item.remote_id, found->second.remote_path
+            )) {
+            discovery.protected_local_paths.insert(
+                found->second.path.lexically_normal().string()
+            );
+            continue;
+        }
         if (sync_list != nullptr &&
             (sync_list->excludes(
                  found->second.remote_path,
@@ -557,8 +569,19 @@ void recover_pending_remote_moves(
     const events::Observer& observer,
     const std::stop_token& stop_token
 ) {
+    const auto blocked = items.blocked_items(drive_id);
     for (const auto& move : items.pending_remote_moves(drive_id)) {
         throw_if_cancelled(stop_token);
+        if (const auto* blocker = blocked_recovery(
+                blocked, move.remote_id, move.destination_remote_path
+            )) {
+            observer.blocked_item(
+                blocker->remote_path,
+                blocker->reason_code,
+                blocker->reason_message
+            );
+            continue;
+        }
         const auto previous = items.find(drive_id, move.remote_id);
         if (!previous) {
             throw std::runtime_error(

@@ -113,6 +113,7 @@ add_library(onedrive_core
     src/sync/filesystem/safe_backup.cpp
     src/sync/filter/selective.cpp
     src/sync/download/single_file.cpp
+    src/sync/core/blocked_policy.cpp
     src/sync/core/plan.cpp
     src/sync/core/delta_plan.cpp
     src/sync/core/engine.cpp

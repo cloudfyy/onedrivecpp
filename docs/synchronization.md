@@ -147,6 +147,31 @@ retries. Resource failures, unsafe local types and deletion safeguards are saved
 alongside remote blockers. Operational failures without an identified blocked
 item still report normal task errors, not artificial item records.
 
+### Blocked-item strategies
+
+`BlockedItem` stores diagnostic facts, not a saved policy or user override.
+The compiled-in `blocked_item_strategy(reason_code)` registry selects an
+immutable strategy shared by the CLI, GUI and Monitor. Remote strategies rebuild
+retry metadata and preserve format/security restrictions; local strategies decide
+which observations can resolve a blocker and whether uploads or remote deletions
+must be protected. Multiple reasons reuse the same implementation rather than
+requiring one class per reason.
+
+Unsupported formats, including OneNote packages and their descendants, use a
+fixed, non-configurable strategy: skip ordinary transfers and protect local
+copies, including when a remote deletion is reported. Local modification uses the
+existing conflict configuration; the large-deletion safeguard uses the existing
+deletion configuration. Neither creates a generic force/unblock action. Resource
+failures remain blocked until an actual resolution is verified; merely finding a
+safe path does not prove that a quota/storage failure has recovered.
+
+Pending download/upload/move recovery also consults the strategy, retaining
+journals when recovery is prohibited. Unknown reason codes are retained and
+reported as blocked, do not generate remote retries, and cannot be automatically
+cleared, including after a full refresh. GUI details describe the same policy
+selected by the engine; the viewer does not edit policies. No database migration
+is needed, and existing `reason_code` values remain compatible.
+
 ## Concurrency and conflict protection
 
 Each download holds an operation-coordinator lease keyed by
@@ -181,6 +206,23 @@ does not exclude an ordinary file. Shared-item metadata is checked too.
 Recognized packages and their descendants are excluded from transfer plans
 before remote hash validation, even if a parent appears on a later Delta page.
 
+`OneNote_RecycleBin` is an ancestry-lookup hint, not a name-only exclusion.
+For that directory or its descendants, missing ancestors are resolved using
+current metadata, then same-account/Drive tracked directories and saved
+unsupported-directory records, and finally Graph parent-ID lookups when needed.
+Incremental queries reuse saved ancestry; full refreshes use fresh metadata.
+Parent lookups are shared within each query. A confirmed unsupported ancestor
+protects its subtree, and newly fetched unsupported directories are included in
+the synchronization diagnostics. Queried directory metadata also participates
+in planning, so saved paths alone cannot override newly confirmed parent IDs.
+Fresh directory metadata takes precedence over
+old associations after a move or type change. An ordinary same-name directory
+without a confirmed association remains eligible for normal synchronization and
+integrity checks; merely containing a `.one` file does not classify its parent.
+Lookup failures, invalid ancestor identities, and cycles are explicit errors,
+not evidence that a directory is supported or permanently unsupported.
+Single-file lookup uses the same ancestry rules.
+
 These items are durably reported as `unsupported_onenote`, not as successful
 downloads. Other files continue synchronizing with unchanged integrity checks.
 The plan and execution summary expose `unsupported_items`, a subset of blocked
@@ -196,7 +238,8 @@ export notebooks separately through OneNote.
 
 The internal rule table is shipped with the program, not read from user
 configuration. Each entry supplies a stable format ID, display name, MIME types,
-extensions, and package types. Format IDs are retained in pending batches;
+extensions, package types, and ancestor-probe directory names. Format IDs are
+retained in pending batches;
 blocked reason codes use `unsupported_<id>`. Adding formats does not require
 format-specific changes to synchronization or persistence. The table participates
 in synchronization/cache fingerprints, so changed rules cause a full metadata

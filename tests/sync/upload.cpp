@@ -1,5 +1,6 @@
 #include "support.hpp"
 #include "onedrive/exit_code.hpp"
+#include "onedrive/sync/blocked_policy.hpp"
 
 #include <algorithm>
 
@@ -98,7 +99,12 @@ int test_local_file_uploads() {
     if (result != exit_code::blocked || graph.upload_count != 2 ||
         items.blocked.size() != 2 ||
         std::ranges::any_of(
-            items.blocked, [](const auto& item) { return !item.local_upload(); }
+            items.blocked,
+            [](const auto& item) {
+                return onedrive::sync::blocked_item_strategy(item.reason_code)
+                           .traits()
+                           .origin != onedrive::sync::BlockedOrigin::local;
+            }
         ) ||
         graph.uploaded_paths !=
             std::vector<std::string>{"modified.txt", "new.txt"} ||
@@ -221,7 +227,11 @@ int test_local_file_uploads() {
                           .synchronize());
     const auto quota_pending = resource_items.pending_uploads("me");
     if (quota_pending.size() != 1 || resource_items.blocked.size() != 1 ||
-        !resource_items.blocked[0].local_upload() ||
+        onedrive::sync::blocked_item_strategy(
+            resource_items.blocked[0].reason_code
+        )
+                .traits()
+                .origin != onedrive::sync::BlockedOrigin::local ||
         resource_items.blocked[0].remote_path != "quota.txt" ||
         quota_pending[0].remote_path != "quota.txt" ||
         quota_pending[0].failure_code != "remote_quota" ||

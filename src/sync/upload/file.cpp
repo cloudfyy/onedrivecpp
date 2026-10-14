@@ -1,4 +1,5 @@
 #include "sync/upload/file.hpp"
+#include "onedrive/sync/blocked_policy.hpp"
 #include "sync/upload/directory.hpp"
 #include "sync/upload/errors.hpp"
 #include "sync/upload/orchestration.hpp"
@@ -665,8 +666,19 @@ void recover_pending_uploads(
     const events::Observer& observer,
     const std::stop_token& stop_token
 ) {
+    const auto blocked = items.blocked_items(drive_id);
     for (auto upload : items.pending_uploads(drive_id)) {
         throw_if_cancelled(stop_token);
+        if (const auto* blocker = blocked_recovery(
+                blocked, upload.remote_id.value_or(""), upload.remote_path
+            )) {
+            observer.blocked_item(
+                blocker->remote_path,
+                blocker->reason_code,
+                blocker->reason_message
+            );
+            continue;
+        }
         if (!upload.failure_code.empty() && upload.snapshot_path.empty() &&
             !upload.directory) {
             std::error_code status_error;

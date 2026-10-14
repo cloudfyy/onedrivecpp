@@ -1,4 +1,5 @@
 #include "sync/core/plan.hpp"
+#include "onedrive/sync/blocked_policy.hpp"
 #include "graph/support.hpp"
 
 #include "sync/download/target.hpp"
@@ -10,6 +11,7 @@
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
+#include <unordered_map>
 
 namespace onedrive::sync::detail {
 
@@ -49,10 +51,29 @@ SyncPlan SyncPlan::build(
             item.directory = previous->directory;
         }
     }
-    graph::client_detail::mark_unsupported_descendants(plan.delta_.changes);
+    const auto ancestor_context =
+        blocked_store ? blocked_ancestor_context(drive_id, *blocked_store)
+                      : std::vector<graph::RemoteItem>{};
+    graph::client_detail::mark_unsupported_descendants(
+        plan.delta_.changes, ancestor_context
+    );
 
+    std::unordered_map<std::string, storage::BlockedItem> unknown_blocks;
+    if (blocked_store) {
+        for (auto blocked : blocked_store->blocked_items(drive_id)) {
+            if (blocked_item_strategy(blocked.reason_code).traits().kind ==
+                BlockedPolicyKind::unknown) {
+                unknown_blocks.emplace(blocked.remote_id, std::move(blocked));
+            }
+        }
+    }
     for (std::size_t index = 0; index < plan.delta_.changes.size(); ++index) {
         const auto& item = plan.delta_.changes[index];
+        if (const auto previous = unknown_blocks.find(item.id);
+            previous != unknown_blocks.end()) {
+            plan.state_delta_.blocked_upserts.push_back(previous->second);
+            continue;
+        }
         if (!item.unsupported_format.empty()) {
             plan.block(
                 item,
@@ -118,6 +139,14 @@ SyncPlan SyncPlan::build(
         plan.state_delta_.upserts.push_back(
             item_state_for(drive_id, item, std::move(local_path))
         );
+    }
+    for (const auto& [id, blocked] : unknown_blocks) {
+        if (std::ranges::none_of(
+                plan.state_delta_.blocked_upserts,
+                [&](const auto& item) { return item.remote_id == id; }
+            )) {
+            plan.state_delta_.blocked_upserts.push_back(blocked);
+        }
     }
     std::ranges::sort(plan.directories_, {}, [&plan](std::size_t index) {
         return std::ranges::count(plan.delta_.changes[index].remote_path, '/');
@@ -266,7 +295,8 @@ std::size_t SyncPlan::blocked_count() const noexcept {
 std::size_t SyncPlan::unsupported_count() const noexcept {
     return static_cast<std::size_t>(std::ranges::count_if(
         state_delta_.blocked_upserts, [](const storage::BlockedItem& item) {
-            return item.reason_code.starts_with("unsupported_");
+            return blocked_item_strategy(item.reason_code).traits().kind ==
+                   BlockedPolicyKind::unsupported_format;
         }
     ));
 }

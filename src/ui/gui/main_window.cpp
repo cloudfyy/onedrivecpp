@@ -1,4 +1,5 @@
 #include "main_window.hpp"
+#include "onedrive/sync/blocked_policy.hpp"
 
 #include "configuration.hpp"
 #include "localization.hpp"
@@ -915,6 +916,54 @@ void MainWindow::render_blocked_details() {
             )
             .arg(item->attempt_count)
     );
+    blocked_details_->appendPlainText(
+        tr("Policy: %1").arg(blocked_policy_text(*item))
+    );
+}
+
+QString
+MainWindow::blocked_policy_text(const storage::BlockedItem& item) const {
+    const auto& traits = sync::blocked_item_strategy(item.reason_code).traits();
+    switch (traits.control) {
+    case sync::BlockedPolicyControl::local_conflict_configuration:
+        return tr(
+            "Uses the configured local-conflict policy; changes are applied "
+            "only after validation."
+        );
+    case sync::BlockedPolicyControl::remote_deletion_configuration:
+        return tr(
+            "Uses the configured remote-deletion safeguard; it is never "
+            "bypassed automatically."
+        );
+    case sync::BlockedPolicyControl::fixed:
+        break;
+    }
+    switch (traits.kind) {
+    case sync::BlockedPolicyKind::unsupported_format:
+        return tr(
+            "Fixed policy: skip unsupported content and protect local copies. "
+            "This policy cannot be changed."
+        );
+    case sync::BlockedPolicyKind::safety:
+        return tr("Fixed safety policy: unsafe operations cannot be forced.");
+    case sync::BlockedPolicyKind::resource:
+        return tr(
+            "Retry after resources recover; clear only after verified "
+            "resolution."
+        );
+    case sync::BlockedPolicyKind::conflict:
+    case sync::BlockedPolicyKind::remote_deletion:
+        return tr(
+            "Revalidate the conflict before retrying; unsafe operations cannot "
+            "be forced."
+        );
+    case sync::BlockedPolicyKind::unknown:
+        return tr(
+            "Unrecognized reason: keep blocked, with no automatic retry or "
+            "override."
+        );
+    }
+    Q_UNREACHABLE();
 }
 
 QString MainWindow::log_event_text(const events::Event& event) const {
@@ -965,7 +1014,8 @@ QString MainWindow::log_event_text(const events::Event& event) const {
             );
     } else if (const auto* blocked =
                    std::get_if<events::BlockedItemEvent>(&event)) {
-        if (blocked->reason_code.starts_with("unsupported_")) {
+        if (sync::blocked_item_strategy(blocked->reason_code).traits().kind ==
+            sync::BlockedPolicyKind::unsupported_format) {
             return tr("Unsupported format: %1 [%2]\n"
                       "Skipped; existing local files are preserved.")
                 .arg(

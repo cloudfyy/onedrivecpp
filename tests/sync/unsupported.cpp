@@ -1,6 +1,8 @@
 #include "support.hpp"
 #include "onedrive/exit_code.hpp"
 #include "onedrive/storage/item_database.hpp"
+#include "onedrive/util/sha256.hpp"
+#include "onedrive/sync/blocked_policy.hpp"
 
 namespace {
 
@@ -73,6 +75,8 @@ graph::RemoteItem supported_file(std::string id, std::string path) {
 void test_existing_notes_and_durable_retries() {
     Fixture fixture;
     fixture.config.sync_mode = sync::SyncMode::bidirectional;
+    fixture.config.local_conflict = config::LocalConflictPolicy::backup;
+    fixture.config.force_large_delete = true;
     const auto notes_path = fixture.config.sync_data_directory / "notes.one";
     std::filesystem::create_directories(notes_path.parent_path());
     test::write_file(notes_path, "keep notes");
@@ -162,6 +166,17 @@ void test_existing_notes_and_durable_retries() {
             test::read_file(notes_path) == "keep notes",
         "full-refresh reconciliation removed an unsupported local note"
     );
+    const auto renamed_path = notes_path.parent_path() / "renamed.one";
+    std::filesystem::rename(notes_path, renamed_path);
+    FakeGraphClient local_move;
+    require(
+        fixture.run(local_move) == exit_code::blocked &&
+            local_move.moved_remote_items.empty() &&
+            local_move.upload_count == 0 &&
+            test::read_file(renamed_path) == "keep notes",
+        "local rename or configurable conflict/deletion options bypassed the "
+        "fixed format strategy"
+    );
 }
 
 void test_package_children_and_ordinary_one_files() {
@@ -204,6 +219,107 @@ void test_package_children_and_ordinary_one_files() {
             !std::filesystem::exists(root / "Notebook/Sub/no-parent.bin"),
         "package descendants were transferred or ordinary .one/prefix siblings "
         "were skipped"
+    );
+}
+
+void test_persisted_ancestry_and_drive_isolation() {
+    Fixture fixture;
+    fixture.config.dry_run = true;
+    {
+        storage::ItemDatabase database{
+            fixture.config.state_directory, fixture.identity()
+        };
+        database.open();
+        storage::BlockedItem package;
+        package.drive_id = fixture.config.drive_id;
+        package.remote_id = "package";
+        package.name = package.remote_path = "Notebook";
+        package.directory = true;
+        package.reason_code = "unsupported_onenote";
+        package.reason_message = "Unsupported OneNote notebook";
+        database.save_blocked_item(package);
+        const auto filter = sync::detail::SyncList::configured({
+            .rules_path = fixture.config.sync_list,
+            .sync_root = fixture.config.sync_data_directory,
+            .include_root_files = fixture.config.sync_root_files,
+            .nosync_enabled = fixture.config.nosync_enabled,
+            .dotfiles = fixture.config.dotfiles,
+            .maximum_file_size_bytes = fixture.config.maximum_file_size_bytes,
+        });
+        database.apply_delta({
+            .drive_id = fixture.config.drive_id,
+            .upserts = {{
+                .drive_id = fixture.config.drive_id,
+                .remote_id = "middle",
+                .parent_id = "package",
+                .name = "Sub",
+                .remote_path = "Notebook/Sub",
+                .local_path =
+                    fixture.config.sync_data_directory / "Notebook/Sub",
+                .directory = true,
+            }},
+            .delta_link = "https://graph.example.test/seed",
+            .sync_filter_fingerprint =
+                sync::engine_detail::sync_scope_fingerprint(
+                    filter.fingerprint()
+                ),
+        });
+    }
+    auto recycle = file("recycle", "Notebook/Sub/OneNote_RecycleBin", 0);
+    recycle.directory = true;
+    recycle.parent_id = "middle";
+    auto child =
+        supported_file("child", "Notebook/Sub/OneNote_RecycleBin/data.bin");
+    child.parent_id = "recycle";
+    FakeGraphClient graph;
+    graph.changes = {child, recycle};
+    require(
+        fixture.run(graph) == exit_code::blocked &&
+            fixture.observer.field("unsupported_items", "3") &&
+            fixture.observer.field("download_files", "0"),
+        "a partial delta bypassed persisted OneNote ancestry"
+    );
+    {
+        storage::ItemDatabase database{
+            fixture.config.state_directory, fixture.identity()
+        };
+        database.open();
+        require(
+            database.blocked_items(fixture.config.drive_id).size() == 3 &&
+                database.delta_link(fixture.config.drive_id) ==
+                    "https://graph.example.test/seed" &&
+                graph.download_count == 0 && graph.upload_count == 0 &&
+                !std::filesystem::exists(fixture.config.sync_data_directory),
+            "ancestry preview lost blockers or changed synchronized state"
+        );
+    }
+
+    FakeItemStore store;
+    storage::ItemStore items{util::borrowed_proxy, store};
+    for (const auto& drive : {"selected", "other"}) {
+        storage::BlockedItem blocked;
+        blocked.drive_id = drive;
+        blocked.remote_id = std::string{drive} + "-package";
+        blocked.remote_path = "Notebook";
+        blocked.directory = true;
+        blocked.reason_code = "unsupported_onenote";
+        store.blocked.push_back(blocked);
+        storage::ItemState directory;
+        directory.drive_id = drive;
+        directory.remote_id = std::string{drive} + "-middle";
+        directory.remote_path = "Notebook/Sub";
+        directory.directory = true;
+        store.items.emplace(directory.remote_id, directory);
+    }
+    const auto context = sync::blocked_ancestor_context("selected", items);
+    require(
+        context.size() == 2 && std::ranges::all_of(
+                                   context,
+                                   [](const auto& item) {
+                                       return item.id.starts_with("selected-");
+                                   }
+                               ),
+        "ancestor context leaked another Drive's same-path records"
     );
 }
 
@@ -349,15 +465,153 @@ void test_pending_restart_keeps_format_classification() {
     );
 }
 
+void test_unknown_blockers_are_not_retried_or_cleared() {
+    Fixture fixture;
+    fixture.config.sync_mode = sync::SyncMode::bidirectional;
+    std::filesystem::create_directories(fixture.config.sync_data_directory);
+    test::write_file(fixture.config.sync_data_directory / "local.txt", "keep");
+    {
+        storage::ItemDatabase database{
+            fixture.config.state_directory, fixture.identity()
+        };
+        database.open();
+        storage::BlockedItem blocked;
+        blocked.drive_id = fixture.config.drive_id;
+        blocked.remote_id = "mystery";
+        blocked.remote_path = "mystery.txt";
+        blocked.reason_code = "future_blocker";
+        blocked.reason_message = "Unknown policy";
+        database.save_blocked_item(blocked);
+        blocked.remote_id = "upload:unknown";
+        blocked.remote_path = "local.txt";
+        blocked.reason_code = "upload_future";
+        database.save_blocked_item(blocked);
+    }
+    for (const bool fresh_change : {false, true}) {
+        FakeGraphClient graph;
+        if (fresh_change) {
+            graph.changes = {supported_file("mystery", "mystery.txt")};
+            graph.contents["mystery"] = "data";
+        }
+        require(
+            fixture.run(graph) == exit_code::blocked &&
+                graph.download_count == 0 && graph.upload_count == 0 &&
+                test::read_file(
+                    fixture.config.sync_data_directory / "local.txt"
+                ) == "keep" &&
+                !std::filesystem::exists(
+                    fixture.config.sync_data_directory / "mystery.txt"
+                ),
+            "unknown blocker was silently bypassed by a refresh or local scan"
+        );
+    }
+    storage::ItemDatabase database{
+        fixture.config.state_directory, fixture.identity()
+    };
+    database.open();
+    require(
+        database.blocked_items(fixture.config.drive_id).size() == 2,
+        "unknown blockers were cleared without a recognized resolution policy"
+    );
+}
+
+void test_fixed_policies_guard_pending_recovery() {
+    Fixture fixture;
+    fixture.config.sync_mode = sync::SyncMode::bidirectional;
+    const auto root = fixture.config.sync_data_directory;
+    std::filesystem::create_directories(root);
+    const auto temporary = root / ".notes.one.onedrive-partial-recovery";
+    const auto snapshot = root / ".local.txt.onedrive-upload-recovery";
+    test::write_file(temporary, "data");
+    test::write_file(snapshot, "data");
+    test::write_file(root / "local.txt", "data");
+    {
+        storage::ItemDatabase database{
+            fixture.config.state_directory, fixture.identity()
+        };
+        database.open();
+        storage::BlockedItem blocked;
+        blocked.drive_id = fixture.config.drive_id;
+        blocked.remote_id = "notes";
+        blocked.remote_path = "notes.one";
+        blocked.reason_code = "unsupported_onenote";
+        blocked.reason_message = "Unsupported OneNote file";
+        database.save_blocked_item(blocked);
+        database.save_pending_download({
+            .item =
+                {
+                    .drive_id = fixture.config.drive_id,
+                    .remote_id = "notes",
+                    .etag = "etag",
+                    .remote_path = "notes.one",
+                    .local_path = root / "notes.one",
+                    .last_modified = "2026-10-02T00:00:00Z",
+                    .size = 4,
+                },
+            .temporary_path = temporary,
+            .content_fingerprint = util::sha256_hex("data"),
+        });
+        blocked.remote_id = "notes-move";
+        blocked.remote_path = "move.one";
+        database.save_blocked_item(blocked);
+        database.save_pending_remote_move({
+            .drive_id = fixture.config.drive_id,
+            .remote_id = "notes-move",
+            .expected_etag = "etag",
+            .source_remote_path = "old.one",
+            .destination_remote_path = "move.one",
+            .source_local_path = root / "old.one",
+            .destination_local_path = root / "move.one",
+            .local_device = 1,
+            .local_inode = 2,
+        });
+        blocked.remote_id = "upload:unknown";
+        blocked.remote_path = "local.txt";
+        blocked.reason_code = "upload_future";
+        blocked.reason_message = "Unrecognized upload policy";
+        database.save_blocked_item(blocked);
+        database.save_pending_upload({
+            .drive_id = fixture.config.drive_id,
+            .remote_path = "local.txt",
+            .local_path = root / "local.txt",
+            .snapshot_path = snapshot,
+            .content_fingerprint = util::sha256_hex("data"),
+            .local_size = 4,
+        });
+    }
+    FakeGraphClient graph;
+    require(
+        fixture.run(graph) == exit_code::blocked && graph.upload_count == 0 &&
+            graph.download_count == 0 &&
+            !std::filesystem::exists(root / "notes.one") &&
+            std::filesystem::exists(temporary) &&
+            std::filesystem::exists(snapshot),
+        "pending recovery bypassed a fixed or unknown blocking strategy"
+    );
+    storage::ItemDatabase database{
+        fixture.config.state_directory, fixture.identity()
+    };
+    database.open();
+    require(
+        database.pending_downloads(fixture.config.drive_id).size() == 1 &&
+            database.pending_uploads(fixture.config.drive_id).size() == 1 &&
+            database.pending_remote_moves(fixture.config.drive_id).size() == 1,
+        "blocked recovery discarded journals instead of deferring them"
+    );
+}
+
 } // namespace
 
 int main() {
     try {
         test_existing_notes_and_durable_retries();
         test_package_children_and_ordinary_one_files();
+        test_persisted_ancestry_and_drive_isolation();
         test_ordinary_integrity_failure_remains_fatal();
         test_preview_persists_diagnostics_without_committing_sync_state();
         test_pending_restart_keeps_format_classification();
+        test_unknown_blockers_are_not_retried_or_cleared();
+        test_fixed_policies_guard_pending_recovery();
         return EXIT_SUCCESS;
     } catch (const std::exception& error) {
         return test::fail(error.what());

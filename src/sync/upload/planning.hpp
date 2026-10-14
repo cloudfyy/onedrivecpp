@@ -46,6 +46,7 @@ struct LocalMoveDiscovery {
     std::vector<storage::PendingRemoteMove> moves;
     std::unordered_set<std::string> moved_remote_ids;
     std::unordered_set<std::string> moved_local_paths;
+    std::unordered_set<std::string> protected_local_paths;
 };
 
 [[nodiscard]] inline bool reserved_local_name(

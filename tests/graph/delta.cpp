@@ -86,6 +86,153 @@ int test_unsupported_delta_across_pages() {
     return EXIT_SUCCESS;
 }
 
+int test_onenote_partial_delta_ancestry() {
+    namespace graph = onedrive::graph;
+    using Json = nlohmann::json;
+    for (const bool cached : {false, true}) {
+        auto responses = std::deque<onedrive::http::HttpResult>{
+            token_response(),
+            graph_page(
+                Json::array(
+                    {
+                        {{"id", "child"},
+                         {"name", "data.bin"},
+                         {"parentReference",
+                          {{"id", "recycle"},
+                           {"path",
+                            "/drive/root:/Notebook/OneNote_RecycleBin"}}},
+                         {"file",
+                          {{"hashes", {{"sha256Hash", "unsupported"}}}}}},
+                    }
+                )
+                    .dump(),
+                std::nullopt,
+                "https://graph.example.test/v1.0/delta"
+            )
+        };
+        std::vector<graph::RemoteItem> context;
+        if (cached) {
+            context = {
+                {.id = "package",
+                 .name = "Notebook",
+                 .remote_path = "Notebook",
+                 .directory = true,
+                 .unsupported_format = "onenote"},
+                {.id = "recycle",
+                 .name = "OneNote_RecycleBin",
+                 .parent_id = "package",
+                 .remote_path = "Notebook/OneNote_RecycleBin",
+                 .directory = true},
+            };
+        } else {
+            responses.push_back(json_response(
+                200,
+                Json{
+                    {"id", "recycle"},
+                    {"name", "OneNote_RecycleBin"},
+                    {"folder", Json::object()},
+                    {"parentReference",
+                     {{"id", "package"}, {"path", "/drive/root:/Notebook"}}},
+                }
+                    .dump()
+            ));
+            responses.push_back(json_response(
+                200,
+                Json{
+                    {"id", "package"},
+                    {"name", "Notebook"},
+                    {"package", {{"type", "oneNote"}}},
+                    {"parentReference", {{"path", "/drive/root:"}}},
+                }
+                    .dump()
+            ));
+        }
+        auto transport = std::make_unique<FakeTransport>(std::move(responses));
+        const auto* recorded = transport.get();
+        graph::MicrosoftGraphClient client{
+            wrap_transport(std::move(transport)),
+            wrap_token_store(std::make_unique<FakeTokenStore>("refresh")),
+            auth_options(),
+            {.endpoint = "https://graph.example.test/v1.0"},
+        };
+        const auto result = client.list_delta(
+            "https://graph.example.test/v1.0/old", {}, {}, context
+        );
+        if (result.changes.size() != (cached ? 1U : 3U) ||
+            recorded->queued.requests.size() != (cached ? 2U : 4U) ||
+            std::ranges::any_of(result.changes, [](const auto& item) {
+                return item.unsupported_format != "onenote" ||
+                       item.content_hash.has_value();
+            })) {
+            return fail(
+                "partial delta ancestry was not resolved before strict hash "
+                "validation or discovered package diagnostics were lost"
+            );
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_onenote_ancestor_lookup_failures() {
+    namespace od = onedrive;
+    using Json = nlohmann::json;
+    for (const bool cancelled : {false, true}) {
+        auto transport =
+            std::make_unique<FakeTransport>(std::deque<od::http::HttpResult>{
+                token_response(),
+                graph_page(
+                    Json::array({
+                                    {{"id", "recycle"},
+                                     {"name", "OneNote_RecycleBin"},
+                                     {"folder", Json::object()},
+                                     {"parentReference",
+                                      {{"id", "package"},
+                                       {"path", "/drive/root:/Notebook"}}}},
+                                })
+                        .dump(),
+                    std::nullopt,
+                    "https://graph.example.test/v1.0/delta"
+                ),
+                cancelled
+                    ? od::http::HttpResult{std::unexpected{od::http::HttpError{
+                          .code = od::http::HttpErrorCode::cancelled,
+                          .message = "ancestor request cancelled",
+                      }}}
+                    : od::http::HttpResult{graph_error_response(
+                          403, "accessDenied", "ancestor access denied"
+                      )},
+            });
+        const auto* recorded = transport.get();
+        od::graph::MicrosoftGraphClient client{
+            wrap_transport(std::move(transport)),
+            wrap_token_store(std::make_unique<FakeTokenStore>("refresh")),
+            auth_options(),
+            {.endpoint = "https://graph.example.test/v1.0"},
+        };
+        std::stop_source stop;
+        bool rejected = false;
+        try {
+            static_cast<void>(
+                client.list_delta(std::nullopt, {}, stop.get_token())
+            );
+        } catch (const od::graph::RequestCancelledError&) {
+            rejected = cancelled;
+        } catch (const std::runtime_error& error) {
+            rejected = !cancelled && std::string_view{error.what()}.contains(
+                                         "ancestor access denied"
+                                     );
+        }
+        if (!rejected || recorded->queued.requests.size() != 3 ||
+            !recorded->queued.requests.back().stop_token.stop_possible()) {
+            return fail(
+                "ancestor access failure/cancellation silently allowed a "
+                "same-name directory or lost cancellation"
+            );
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_shared_delta_changes() {
     namespace graph = onedrive::graph;
     graph::RemoteItem first{
@@ -686,6 +833,8 @@ int test_delta_request_cancellation() {
 
 int main() {
     if (test_unsupported_delta_across_pages() != EXIT_SUCCESS ||
+        test_onenote_partial_delta_ancestry() != EXIT_SUCCESS ||
+        test_onenote_ancestor_lookup_failures() != EXIT_SUCCESS ||
         test_shared_delta_changes() != EXIT_SUCCESS ||
         test_delta_transport_and_shape_failures() != EXIT_SUCCESS ||
         test_delta_cancelled_before_request_or_between_pages() !=

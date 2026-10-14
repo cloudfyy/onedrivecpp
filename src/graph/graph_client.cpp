@@ -144,7 +144,8 @@ MicrosoftGraphClient::~MicrosoftGraphClient() = default;
 
 http::HttpResponse MicrosoftGraphClient::graph_get(
     const std::string& url,
-    std::string_view description
+    std::string_view description,
+    std::stop_token stop_token
 ) const {
     auto response = client_detail::perform_with_retries(
         [&] {
@@ -153,17 +154,24 @@ http::HttpResponse MicrosoftGraphClient::graph_get(
                 .url = url,
                 .headers = {
                     "Accept: application/json",
-                    "Authorization: Bearer " + access_token(),
+                    "Authorization: Bearer " + access_token(stop_token),
                 },
                 .body = {},
-                .stop_token = {},
+                .stop_token = stop_token,
             });
         },
         options_,
         options_.maximum_throttle_retries,
         sleep_,
-        description
+        description,
+        stop_token
     );
+    if (stop_token.stop_requested() ||
+        (!response && response.error().code == http::HttpErrorCode::cancelled)) {
+        throw RequestCancelledError{
+            "Microsoft Graph " + std::string{description} + " was cancelled"
+        };
+    }
     if (!response) {
         throw std::runtime_error(
             "Microsoft Graph " + std::string{description} +

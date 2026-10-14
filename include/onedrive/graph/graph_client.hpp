@@ -236,13 +236,17 @@ struct GraphClientFacade
                   RemoteItem(const std::string&) const>::
                   add_convention<
                       GraphItemByPathDispatch,
-                      RemoteItem(const std::string&, std::stop_token) const>::
+                      RemoteItem(
+                          const std::string&, std::stop_token,
+                          std::span<const RemoteItem>
+                      ) const>::
                       add_convention<
                           GraphListDeltaDispatch,
                           DeltaResult(
                               const std::optional<std::string>&,
                               const DeltaProgress&,
-                              std::stop_token
+                              std::stop_token,
+                              std::span<const RemoteItem>
                           ) const>::
                           add_convention<
                               GraphDownloadFileDispatch,
@@ -339,20 +343,22 @@ public:
         return implementation()->item_by_path(remote_path);
     }
     [[nodiscard]] RemoteItem item_by_path(
-        const std::string& remote_path, std::stop_token stop_token
+        const std::string& remote_path, std::stop_token stop_token,
+        std::span<const RemoteItem> known_directories = {}
     ) const {
         return implementation()->item_by_path(
-            remote_path, std::move(stop_token)
+            remote_path, std::move(stop_token), known_directories
         );
     }
 
     [[nodiscard]] DeltaResult list_delta(
         const std::optional<std::string>& delta_link,
         const DeltaProgress& progress = {},
-        std::stop_token stop_token = {}
+        std::stop_token stop_token = {},
+        std::span<const RemoteItem> known_directories = {}
     ) const {
         return implementation()->list_delta(
-            delta_link, progress, std::move(stop_token)
+            delta_link, progress, std::move(stop_token), known_directories
         );
     }
 
@@ -588,12 +594,14 @@ public:
         const std::string& remote_path, std::stop_token stop_token
     ) const;
     [[nodiscard]] RemoteItem item_by_path(
-        const std::string& remote_path, std::stop_token stop_token
+        const std::string& remote_path, std::stop_token stop_token,
+        std::span<const RemoteItem> known_directories = {}
     ) const;
     [[nodiscard]] DeltaResult list_delta(
         const std::optional<std::string>& delta_link,
         const DeltaProgress& progress = {},
-        std::stop_token stop_token = {}
+        std::stop_token stop_token = {},
+        std::span<const RemoteItem> known_directories = {}
     ) const;
     [[nodiscard]] NotificationChannel notification_channel() const;
     void refresh_access_token() const;
@@ -643,7 +651,13 @@ private:
     [[nodiscard]] std::string
     access_token(const std::stop_token& stop_token = {}) const;
     [[nodiscard]] http::HttpResponse
-    graph_get(const std::string& url, std::string_view description) const;
+    graph_get(
+        const std::string& url, std::string_view description,
+        std::stop_token stop_token = {}
+    ) const;
+    [[nodiscard]] RemoteItem ancestor_by_id(
+        const std::string& remote_id, std::stop_token stop_token
+    ) const;
     void invalidate_access_token() const;
 };
 

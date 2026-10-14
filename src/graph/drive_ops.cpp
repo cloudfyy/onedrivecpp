@@ -265,7 +265,8 @@ RemoteItem MicrosoftGraphClient::item_by_path(
 
 RemoteItem MicrosoftGraphClient::item_by_path(
     const std::string& remote_path,
-    std::stop_token stop_token
+    std::stop_token stop_token,
+    std::span<const RemoteItem> known_directories
 ) const {
     const auto encoded_path = percent_encode_remote_path(remote_path);
     const std::string url = graph_drive_prefix(options_) + "/root:/" +
@@ -307,14 +308,37 @@ RemoteItem MicrosoftGraphClient::item_by_path(
     const auto json = parse_graph_json(*response, "path lookup");
     require_successful_graph_response(json, response->status_code);
 
+    std::vector<RemoteItem> ancestry{parse_item_ancestry(json)};
+    resolve_unsupported_ancestry(
+        ancestry,
+        known_directories,
+        [&](const std::string& id) { return ancestor_by_id(id, stop_token); },
+        stop_token
+    );
     return parse_drive_item(
         json,
         "path lookup",
-        options_.relaxed_download_validation ?
-            ContentValidation::relaxed :
-            ContentValidation::strict,
-        DriveItemKind::file_or_directory
+        options_.relaxed_download_validation ? ContentValidation::relaxed
+                                             : ContentValidation::strict,
+        DriveItemKind::file_or_directory,
+        ancestry.front().unsupported_format
     );
+}
+
+RemoteItem MicrosoftGraphClient::ancestor_by_id(
+    const std::string& remote_id, std::stop_token stop_token
+) const {
+    return parse_item_ancestry(parse_graph_json(
+        graph_get(
+            graph_drive_prefix(options_) + "/items/" +
+                percent_encode_uri_component(remote_id) +
+                "?$select=id,name,parentReference,folder,package,root,deleted,"
+                "file",
+            "ancestor lookup",
+            stop_token
+        ),
+        "ancestor lookup"
+    ));
 }
 
 RemoteItem MicrosoftGraphClient::create_directory(

@@ -229,6 +229,11 @@ resolution removes the corresponding record; merely not seeing it does not.
 Preview may create/update blocked diagnostics, but never transfers files,
 advances the applied cursor or commits normal file snapshots.
 
+Blocked-item details also explain the shared engine strategy. OneNote and other
+unsupported-format restrictions are fixed and cannot be changed. Other reasons
+follow their own revalidation rules and existing conflict/deletion settings;
+the viewer does not provide a generic unblock/override action.
+
 The GUI retains complete preview metadata in memory: the next preview/sync
 checks only changes since that preview, merges them with unapplied changes,
 and rebuilds the plan against current local files. Preview never advances the

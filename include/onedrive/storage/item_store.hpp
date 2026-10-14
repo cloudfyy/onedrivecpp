@@ -64,11 +64,6 @@ struct BlockedItem {
     std::uint64_t attempt_count{0};
     std::optional<util::FileHash> content_hash;
 
-    [[nodiscard]] bool local_upload() const noexcept {
-        // Reserved for local diagnostics whose IDs must never reach Graph.
-        return reason_code.starts_with("upload_");
-    }
-
     bool operator==(const BlockedItem&) const = default;
 };
 

@@ -1,5 +1,11 @@
 include(${PROJECT_SOURCE_DIR}/cmake/TestHelpers.cmake)
 
+add_onedrive_test(
+    blocked_policy_tests
+    SOURCES tests/sync/blocked_policy.cpp
+    INCLUDE_DIRS src tests
+)
+
 find_program(BASH_EXECUTABLE bash REQUIRED)
 
 add_test(NAME cli_help_tests COMMAND onedrive-cpp --help)

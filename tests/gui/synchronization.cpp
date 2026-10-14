@@ -163,7 +163,8 @@ void test_persistent_blocked_viewer() {
     table->setCurrentItem(table->topLevelItem(0));
     require(
         details->toPlainText().contains("Documents/notes.one") &&
-            details->toPlainText().contains("Recorded discoveries: 2"),
+            details->toPlainText().contains("Recorded discoveries: 2") &&
+            details->toPlainText().contains("This policy cannot be changed."),
         "blocked details lost the reason, path or discovery count"
     );
     search->clear();
@@ -198,6 +199,12 @@ void test_persistent_blocked_viewer() {
                    "阻止项（5）";
         }),
         "blocked viewer was not translated"
+    );
+    search->setText("notes.one");
+    table->setCurrentItem(table->topLevelItem(0));
+    require(
+        details->toPlainText().contains("此策略不可修改"),
+        "fixed OneNote policy was not translated or exposed in details"
     );
     test::write_file(directory / "drive.json", "{ invalid metadata");
     button(window, "refreshBlockedItemsButton")->click();

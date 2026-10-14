@@ -111,6 +111,38 @@
 <context>
     <name>onedrive::gui::MainWindow</name>
     <message>
+        <source>Policy: %1</source>
+        <translation>处理策略：%1</translation>
+    </message>
+    <message>
+        <source>Fixed policy: skip unsupported content and protect local copies. This policy cannot be changed.</source>
+        <translation>固定策略：跳过不支持的内容并保护本地副本。此策略不可修改。</translation>
+    </message>
+    <message>
+        <source>Fixed safety policy: unsafe operations cannot be forced.</source>
+        <translation>固定安全策略：不允许强制执行不安全操作。</translation>
+    </message>
+    <message>
+        <source>Uses the configured local-conflict policy; changes are applied only after validation.</source>
+        <translation>遵循已配置的本地冲突策略，仅在验证通过后应用变更。</translation>
+    </message>
+    <message>
+        <source>Uses the configured remote-deletion safeguard; it is never bypassed automatically.</source>
+        <translation>遵循已配置的远端删除保护，不会自动绕过。</translation>
+    </message>
+    <message>
+        <source>Retry after resources recover; clear only after verified resolution.</source>
+        <translation>资源恢复后重试，确认问题已解决后才移除记录。</translation>
+    </message>
+    <message>
+        <source>Revalidate the conflict before retrying; unsafe operations cannot be forced.</source>
+        <translation>重新验证冲突后再重试，不允许强制执行不安全操作。</translation>
+    </message>
+    <message>
+        <source>Unrecognized reason: keep blocked, with no automatic retry or override.</source>
+        <translation>无法识别的原因：保留阻止，不自动重试，也不允许强制绕过。</translation>
+    </message>
+    <message>
         <source>Blocked items (%1)</source>
         <translation>阻止项（%1）</translation>
     </message>

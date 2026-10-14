@@ -58,6 +58,111 @@ int test_unsupported_root_and_path_metadata() {
     return EXIT_SUCCESS;
 }
 
+int test_onenote_ancestor_path_lookup() {
+    using Json = nlohmann::json;
+    for (const bool related : {false, true}) {
+        for (const bool cached : {false, true}) {
+            Json target{
+                {"id", "child"},
+                {"name", "data.bin"},
+                {"eTag", "etag"},
+                {"size", 4},
+                {"parentReference",
+                 {{"id", "recycle"},
+                  {"path", "/drive/root:/Notebook/OneNote_RecycleBin"}}},
+                {"file", {{"hashes", {{"sha256Hash", "unsupported"}}}}},
+            };
+            if (!related) {
+                target["file"]["hashes"] = {
+                    {"sha1Hash", "a17c9aaa61e80a1bf71d0d850af4e5baa9800bbd"}
+                };
+                target["fileSystemInfo"] = {
+                    {"lastModifiedDateTime", "2026-10-14T00:00:00Z"}
+                };
+            }
+            const Json recycle{
+                {"id", "recycle"},
+                {"name", "OneNote_RecycleBin"},
+                {"folder", Json::object()},
+                {"parentReference",
+                 {{"id", "package"}, {"path", "/drive/root:/Notebook"}}},
+            };
+            Json parent{
+                {"id", "package"},
+                {"name", "Notebook"},
+                {"parentReference", {{"id", "root"}, {"path", "/drive/root:"}}},
+            };
+            parent[related ? "package" : "folder"] =
+                related ? Json{{"type", "oneNote"}} : Json::object();
+            auto responses = std::deque<onedrive::http::HttpResult>{
+                token_response(), json_response(200, target.dump())
+            };
+            std::vector<onedrive::graph::RemoteItem> context;
+            if (cached) {
+                context = {
+                    {.id = "root",
+                     .name = "Drive",
+                     .directory = true,
+                     .root = true},
+                    {.id = "package",
+                     .name = "Notebook",
+                     .parent_id = "root",
+                     .remote_path = "Notebook",
+                     .directory = true,
+                     .unsupported_format = related ? "onenote" : ""},
+                    {.id = "recycle",
+                     .name = "OneNote_RecycleBin",
+                     .parent_id = "package",
+                     .remote_path = "Notebook/OneNote_RecycleBin",
+                     .directory = true},
+                };
+            } else {
+                responses.push_back(json_response(200, recycle.dump()));
+                responses.push_back(json_response(200, parent.dump()));
+                if (!related) {
+                    responses.push_back(json_response(
+                        200,
+                        Json{
+                            {"id", "root"},
+                            {"name", "Drive"},
+                            {"root", Json::object()}
+                        }.dump()
+                    ));
+                }
+            }
+            auto transport =
+                std::make_unique<FakeTransport>(std::move(responses));
+            const auto* recorded = transport.get();
+            onedrive::graph::MicrosoftGraphClient client{
+                wrap_transport(std::move(transport)),
+                wrap_token_store(std::make_unique<FakeTokenStore>("refresh")),
+                auth_options(),
+                {.drive_id = "selected-drive",
+                 .endpoint = "https://graph.example.test/v1.0"},
+            };
+            const auto item = client.item_by_path(
+                "Notebook/OneNote_RecycleBin/data.bin", {}, context
+            );
+            if ((item.unsupported_format == "onenote") != related ||
+                item.content_hash.has_value() == related ||
+                recorded->queued.requests.size() != (cached    ? 2U
+                                                     : related ? 4U
+                                                               : 5U) ||
+                (!cached &&
+                 !recorded->queued.requests[2].url.starts_with(
+                     "https://graph.example.test/v1.0/drives/selected-drive/"
+                     "items/recycle?"
+                 ))) {
+                return fail(
+                    "single path lookup lost ancestry, drive scope, or hash "
+                    "validation for an ordinary same-name directory"
+                );
+            }
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_list_root_with_refresh_and_pagination() {
     auto transport = std::make_unique<
         FakeTransport>(std::deque<onedrive::http::HttpResult>{
@@ -973,7 +1078,8 @@ int test_profile_photo_rejects_invalid_responses() {
 } // namespace
 
 int main() {
-    if (test_unsupported_root_and_path_metadata() != EXIT_SUCCESS) {
+    if (test_unsupported_root_and_path_metadata() != EXIT_SUCCESS ||
+        test_onenote_ancestor_path_lookup() != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
     if (const int result = test_list_root_with_refresh_and_pagination();
