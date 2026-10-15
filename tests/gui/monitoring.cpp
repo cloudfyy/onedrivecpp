@@ -8,8 +8,10 @@
 #include "sync_controller.hpp"
 #include "onedrive/app/monitoring.hpp"
 #include "onedrive/monitor/monitor.hpp"
+#include "onedrive/logging/logging.hpp"
 
 #include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
 
 #include <QApplication>
 #include <QAbstractButton>
@@ -676,7 +678,7 @@ void test_readonly_discovery_and_unsafe_endpoint() {
         fixture.config.state_directory / "monitor-control.sock", "not a socket"
     );
     gui::MonitorController controller;
-    controller.set_configuration(fixture.file);
+    controller.set_state_directory(fixture.config.state_directory);
     controller.refresh();
     require(
         wait_until([&] { return !controller.busy(); }) &&
@@ -779,7 +781,7 @@ void test_controller_configuration_generations() {
         &controller,
         [&](const auto&) { ++failures; }
     );
-    controller.set_configuration(first.file);
+    controller.set_state_directory(first.config.state_directory);
     controller.refresh();
     require(
         controller.busy() && !controller.requesting() &&
@@ -789,7 +791,7 @@ void test_controller_configuration_generations() {
             ),
         "a status query did not exclude concurrent control requests"
     );
-    controller.set_configuration(second.file);
+    controller.set_state_directory(second.config.state_directory);
     QObject::connect(
         &controller, &gui::MonitorController::changed, &controller, [&] {
             obsolete_status |=
@@ -810,7 +812,7 @@ void test_controller_configuration_generations() {
     require(
         controller.requesting(), "an active control request was not observable"
     );
-    controller.set_configuration({});
+    controller.set_state_directory({});
     require(
         wait_until([&] { return !controller.busy(); }) &&
             !controller.status() && !controller.owner() &&
@@ -822,7 +824,7 @@ void test_controller_configuration_generations() {
     controller.refresh();
     require(!controller.busy(), "cleared configuration started another query");
 
-    controller.set_configuration(first.file);
+    controller.set_state_directory(first.config.state_directory);
     controller.refresh();
     require(
         wait_until([&] { return !controller.busy() && controller.status(); }),
@@ -848,28 +850,17 @@ void test_controller_configuration_generations() {
     );
 }
 
-void test_controller_invalid_configuration_and_stale_endpoint() {
-    Fixture fixture;
+void test_controller_missing_target_and_stale_endpoint() {
     gui::MonitorController controller;
-    for (const auto& contents : {
-             std::string{},
-             std::string{"config_version = 2\n[state]\ndirectory = \"\"\n"},
-             std::string{"[broken TOML"},
-         }) {
-        if (contents.empty()) {
-            std::filesystem::remove(fixture.file);
-        } else {
-            test::write_file(fixture.file, contents);
-        }
-        controller.set_configuration(fixture.file);
-        controller.refresh();
-        require(
-            wait_until([&] { return !controller.busy(); }) &&
-                controller.uncertain() && !controller.runtime_free() &&
-                !controller.status() && !controller.error().isEmpty(),
-            "invalid configuration was presented as a free Monitor"
-        );
-    }
+    controller.refresh();
+    require(
+        !controller.busy() &&
+            test::throws_with<std::logic_error>(
+                [&] { controller.request(monitor::ControlCommand::stop, {}); },
+                "No state directory"
+            ),
+        "an unselected Monitor target was queried or accepted a control request"
+    );
 
     Fixture running;
     const auto gates = running.temporary.path() / "gates";
@@ -880,7 +871,7 @@ void test_controller_invalid_configuration_and_stale_endpoint() {
         child.process.waitForFinished(5000),
         "cannot stop stale endpoint fixture"
     );
-    controller.set_configuration(running.file);
+    controller.set_state_directory(running.config.state_directory);
     controller.refresh();
     require(
         wait_until([&] { return !controller.busy(); }) &&
@@ -935,7 +926,7 @@ void test_readonly_owner_errors() {
     );
     test::write_file(path, "invalid metadata");
     gui::MonitorController controller;
-    controller.set_configuration(fixture.file);
+    controller.set_state_directory(fixture.config.state_directory);
     controller.refresh();
     require(
         wait_until([&] { return !controller.busy(); }) &&
@@ -1047,6 +1038,73 @@ void test_external_replacement_during_confirmation() {
     );
 }
 
+void test_polling_reuses_selected_directory_without_config_logs() {
+    Fixture fixture;
+    const auto lock = app::detail::acquire_runtime_lock(
+        fixture.config.state_directory, "monitor"
+    );
+    monitor::ControlServer server{
+        fixture.config.state_directory, fixture.config.sync_data_directory
+    };
+    std::atomic_int messages{0};
+    std::atomic_int configuration_messages{0};
+    const logging::Session logging{{
+        .level = "debug",
+        .message_sink = [&](logging::Severity, std::string_view message) {
+            ++messages;
+            if (message == "TOML configuration loaded and validated") {
+                ++configuration_messages;
+            }
+        },
+    }};
+    const auto config = config::Config::load(fixture.file);
+    require(
+        configuration_messages == 1,
+        "configuration debug logging was disabled instead of fixing polling"
+    );
+    gui::MonitorController controller;
+    controller.set_state_directory(config.state_directory);
+    std::filesystem::remove(fixture.file);
+    const int before = messages.load();
+    for (int iteration = 0; iteration < 3; ++iteration) {
+        controller.refresh();
+        require(
+            wait_until([&] { return !controller.busy(); }) &&
+                controller.status() && controller.error().isEmpty() &&
+                controller.status()->sync_directory ==
+                    config.sync_data_directory,
+            "status polling reloaded a removed configuration instead of using "
+            "the selected directory"
+        );
+    }
+    controller.request(
+        monitor::ControlCommand::trigger, controller.status()->target()
+    );
+    require(
+        wait_until([&] { return !controller.busy(); }) &&
+            controller.error().isEmpty() && server.take_trigger(),
+        "manual triggering reloaded configuration or lost its selected target"
+    );
+    controller.request(
+        monitor::ControlCommand::stop, controller.status()->target()
+    );
+    require(
+        wait_until([&] { return !controller.busy(); }) &&
+            controller.error().isEmpty() &&
+            server.stop_token().stop_requested(),
+        "manual stopping reloaded configuration or lost its selected target"
+    );
+    require(
+        messages == before && configuration_messages == 1,
+        "Monitor status/control polling emitted configuration debug noise"
+    );
+    spdlog::debug("ordinary debug diagnostic remains enabled");
+    require(
+        messages == before + 1,
+        "fixing Monitor polling suppressed unrelated debug diagnostics"
+    );
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -1062,9 +1120,10 @@ int main(int argc, char* argv[]) {
         test_overlapping_root_is_not_attached();
         test_readonly_discovery_and_unsafe_endpoint();
         test_controller_configuration_generations();
-        test_controller_invalid_configuration_and_stale_endpoint();
+        test_controller_missing_target_and_stale_endpoint();
         test_readonly_owner_errors();
         test_external_replacement_during_confirmation();
+        test_polling_reuses_selected_directory_without_config_logs();
     } catch (const std::exception& error) {
         return test::fail(error.what());
     }

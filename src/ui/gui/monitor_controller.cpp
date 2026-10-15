@@ -1,7 +1,5 @@
 #include "monitor_controller.hpp"
 
-#include "configuration.hpp"
-
 #include <stdexcept>
 
 namespace onedrive::gui {
@@ -16,8 +14,10 @@ MonitorController::~MonitorController() {
     }
 }
 
-void MonitorController::set_configuration(const std::filesystem::path& file) {
-    config_file_ = file;
+void MonitorController::set_state_directory(
+    const std::filesystem::path& directory
+) {
+    state_directory_ = directory;
     ++generation_;
     status_.reset();
     owner_.reset();
@@ -53,7 +53,7 @@ MonitorController::owner() const noexcept {
 }
 
 void MonitorController::refresh() {
-    if (!busy_ && !config_file_.empty()) {
+    if (!busy_ && !state_directory_.empty()) {
         try {
             query(monitor::ControlCommand::status, std::nullopt);
         } catch (const std::exception& error) {
@@ -73,6 +73,11 @@ void MonitorController::request(
             "A Monitor status or control request is already running."
         );
     }
+    if (state_directory_.empty()) {
+        throw std::logic_error(
+            "No state directory is selected for Monitor control."
+        );
+    }
     query(command, std::move(expected_target));
 }
 
@@ -83,28 +88,19 @@ void MonitorController::query(
     busy_ = true;
     requesting_ = command != monitor::ControlCommand::status;
     const auto generation = generation_;
-    const auto file = config_file_;
+    const auto directory = state_directory_;
     try {
-        worker_ =
-            std::jthread{[this, file, generation, command, expected_target] {
+        worker_ = std::jthread{
+            [this, directory, generation, command, expected_target] {
                 std::optional<monitor::ControlReply> reply;
                 std::optional<app::detail::LockOwner> owner;
                 QString error;
                 bool uncertain = false;
                 bool runtime_free = false;
                 try {
-                    bool missing = false;
-                    const auto config = load_configuration(file, missing);
-                    if (missing || config.state_directory.empty()) {
-                        throw std::runtime_error(
-                            "Save a valid configuration before controlling a "
-                            "Monitor."
-                        );
-                    }
                     if (command == monitor::ControlCommand::status) {
                         try {
-                            reply =
-                                monitor::find_control(config.state_directory);
+                            reply = monitor::find_control(directory);
                         } catch (const std::system_error& failure) {
                             uncertain =
                                 failure.code() != std::errc::connection_refused;
@@ -114,14 +110,13 @@ void MonitorController::query(
                             error = QString::fromUtf8(failure.what());
                         }
                         if (!reply) {
-                            owner = app::detail::inspect_runtime_owner(
-                                config.state_directory
-                            );
+                            owner =
+                                app::detail::inspect_runtime_owner(directory);
                             runtime_free = !owner;
                         }
                     } else {
                         reply = monitor::request_control(
-                            config.state_directory, command, expected_target
+                            directory, command, expected_target
                         );
                     }
                 } catch (const std::exception& failure) {
@@ -170,7 +165,8 @@ void MonitorController::query(
                     },
                     Qt::QueuedConnection
                 );
-            }};
+            }
+        };
         Q_EMIT changed();
     } catch (...) {
         busy_ = false;

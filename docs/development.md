@@ -107,7 +107,10 @@ restart after updating. CLI snapshots expose the same identity.
 GUI-owned monitoring reuses `SyncController::start_task`, runtime preflight,
 `app::monitor_account`, event forwarding, cancellation and completion. The
 separate `MonitorController` only queries/controls IPC on one bounded background
-worker. Configuration generations discard outdated callbacks; Qt receives results
+worker. The selected state directory comes from the already loaded GUI view model;
+polling and control do not reload TOML or emit configuration-loaded debug messages.
+Saving/importing/reloading settings updates this selection. Selection generations
+discard outdated callbacks; Qt receives results
 on its event thread. One-second polling never starts a second synchronization engine.
 `inspect_runtime_owner` checks only an existing state-lock inode, reusing safe
 open/flock/metadata helpers without creating or rewriting it. Socket disappearance

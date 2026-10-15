@@ -370,7 +370,9 @@ Closing the window cancels only its own task and waits for cleanup.
 
 The GUI automatically discovers an external CLI/service Monitor in the selected
 state directory, refreshing snapshots asynchronously every second without
-authentication. **Sync now** requests that Monitor while waiting; it is disabled
+authentication. Polling reuses the loaded state directory rather than rereading
+configuration every second; use Reload after editing the configuration externally.
+**Sync now** requests that Monitor while waiting; it is disabled
 during an active round or pending request. Stopping an external Monitor requires
 confirmation. Controls pin both PID and instance identity, so a replacement task,
 even in the same process, cannot inherit an earlier confirmation. Closing the

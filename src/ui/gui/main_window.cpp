@@ -579,7 +579,7 @@ MainWindow::MainWindow(
                         ? QString{}
                         : QString::number(result)
                 );
-                monitor_.set_configuration(state_.config_file);
+                monitor_.set_state_directory(state_.state_directory);
                 refresh_monitor();
             } else {
                 log_sync_result();
@@ -2128,10 +2128,10 @@ void MainWindow::closeEvent(QCloseEvent* event) {
 }
 
 void MainWindow::refresh_settings(bool preserve_edits) {
-    monitor_.set_configuration(
+    monitor_.set_state_directory(
         state_.configuration_status == ConfigurationStatus::valid &&
                 !state_.state_directory.empty()
-            ? state_.config_file
+            ? state_.state_directory
             : std::filesystem::path{}
     );
     refresh_monitor();

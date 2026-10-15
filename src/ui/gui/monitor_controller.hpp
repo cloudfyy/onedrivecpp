@@ -15,7 +15,7 @@ class MonitorController final : public QObject {
 public:
     explicit MonitorController(QObject* parent = nullptr);
     ~MonitorController() override;
-    void set_configuration(const std::filesystem::path& config_file);
+    void set_state_directory(const std::filesystem::path& state_directory);
     void refresh();
     void request(
         monitor::ControlCommand command, monitor::ControlTarget expected_target
@@ -40,7 +40,7 @@ private:
         monitor::ControlCommand command,
         std::optional<monitor::ControlTarget> expected_target
     );
-    std::filesystem::path config_file_;
+    std::filesystem::path state_directory_;
     std::optional<monitor::ControlReply> status_;
     std::optional<app::detail::LockOwner> owner_;
     QString error_;
