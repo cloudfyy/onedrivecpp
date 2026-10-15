@@ -73,6 +73,34 @@ path. The path overload delegates to the same validation/reading code. Metadata
 writes must remain in-place: atomic replacement would change the inode and
 detach the path from its held OS lock.
 
+## Shared Monitor control
+
+`monitor::request_control` and `ControlServer` are UI-neutral local IPC shared by
+CLI and future GUI controls. Production Monitor owns the server inside `run_loop`,
+under the outer state/root locks. Its IPC-only thread remains responsive while
+the scheduler runs a synchronous callback; it never runs another sync engine.
+Versioned, size-limited Unix seqpacket messages reject arbitrary configuration
+and directory fields. Both ends verify `SO_PEERCRED`; private-directory and socket
+validation reuse filesystem-security helpers. Cleanup checks endpoint identity
+before unlinking, preserving replacements.
+
+Manual pending requests use a mutex and eventfd. The combined cancellation token
+joins external and IPC stop requests. Manual/local/remote pending work uses the
+existing state machine and coalesces into a serial catch-up round. Watch the root
+(or its nearest existing ancestor during first creation) before initial sync;
+drain queued changes before rebuilding watches. A file created and deleted in the
+same drained batch is transient work, preventing filesystem capability probes
+from continually retriggering synchronization without filtering user filenames.
+Stop acknowledgement precedes callback cleanup and lock release; later triggers
+are rejected. Round failure/blocked results remain observable without stopping
+the existing monitor policy.
+
+Exec'd subprocess regressions cover responsive status, request coalescing,
+local changes, cancellation, locks through cleanup, CLI offline text/JSON, crash
+restart, invalid packets/replies, endpoint permissions/replacement, and timeouts.
+This step intentionally leaves GUI Monitor controls deferred; implement them
+with this client/shared scheduler rather than silently forwarding ordinary sync.
+
 ## GUI localization
 
 Enable `ONEDRIVE_BUILD_GUI=ON` with Qt 6.8+ and the Linguist tools.

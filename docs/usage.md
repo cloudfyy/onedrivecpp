@@ -322,6 +322,45 @@ OS locks, not PID existence, decide whether a resource is busy. A crash releases
 the locks automatically; stale directory leases are reclaimed at the next claim.
 Do not delete lock files to unlock a live process; stop its owner instead.
 
+## Explicit local Monitor control
+
+Start monitoring with `transfer watch`, then use the same configuration/state
+directory for explicit control:
+
+```bash
+onedrive-cpp monitor status --config ~/.config/onedrive-cpp/config.toml
+onedrive-cpp monitor trigger --config ~/.config/onedrive-cpp/config.toml
+onedrive-cpp monitor stop --config ~/.config/onedrive-cpp/config.toml
+```
+
+These commands need no authentication, do not contact Graph, and do not open
+databases or claim the Monitor's runtime locks. They control only the already
+running task; requests cannot supply another root or change its configuration.
+`status` reports lifecycle state (`starting`, `synchronizing`, `waiting`, or
+`stopping`), PID, actual sync directory, a pending manual request, completed-round
+count, and the last round's exit code (`none` before the first completion). It is
+a snapshot, not a detailed transfer-progress feed. `--output json` emits the
+existing `monitor_control` section with string-valued `values`.
+
+`trigger` starts a check promptly while waiting. Requests during a round merge
+into one subsequent check, shared with local/remote changes; rounds never run
+concurrently. `stop` cancels the active round and rejects further triggers.
+`accepted`/`merged` acknowledge the request, **not successful synchronization or
+finished shutdown**. Locks remain held until the owner finishes cleanup.
+Ordinary `transfer sync` and a second `transfer watch` still fail on busy resources;
+they are never implicitly forwarded. A busy Monitor diagnostic suggests these
+explicit controls.
+
+The endpoint is `monitor-control.sock` in the private state directory (`0700`),
+with socket permissions `0600` and same-user peer checks. Protocol v1 accepts
+only bounded JSON command packets; socket connection/read/write waits are bounded
+to two seconds each. Missing, unsafe, unresponsive, or stale endpoints return an
+error, never an idle-looking success. A new Monitor reclaims an owned inactive
+socket after obtaining its normal runtime lock; do not delete a live endpoint.
+Long state-directory paths exceeding the Unix socket limit fail explicitly.
+GUI Monitor controls remain deferred to the next GUI integration step; it will
+reuse this shared interface rather than introduce another synchronization engine.
+
 ## Offline database upgrades
 
 `state migrate --dry-run` lists existing databases and their current and target

@@ -148,7 +148,8 @@ std::unique_ptr<monitor::FileMonitor> ProductionRuntimeFactory::create_monitor(
             config.monitor_poll_interval
         ),
         config.monitor_settle_delay,
-        std::move(notifications)
+        std::move(notifications),
+        config.state_directory
     );
 }
 

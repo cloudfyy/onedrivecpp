@@ -45,6 +45,36 @@ PID、操作、启动时间和状态／同步目录；JSON 通过既有 section 
 崩溃自动释放锁，下一次登记回收陈旧目录记录；不要删除锁文件来解除活跃任务占用，
 应停止持有者。
 
+### 显式本地 Monitor 控制
+
+先用 `transfer watch` 启动监控，再通过相同配置／状态目录显式控制：
+
+```bash
+onedrive-cpp monitor status --config ~/.config/onedrive-cpp/config.toml
+onedrive-cpp monitor trigger --config ~/.config/onedrive-cpp/config.toml
+onedrive-cpp monitor stop --config ~/.config/onedrive-cpp/config.toml
+```
+
+这些命令无需认证、不访问 Graph、不打开数据库，也不争抢 Monitor 持有的运行锁。
+只能控制已运行的任务，请求不能更换同步根目录或配置。`status` 返回生命周期状态
+（`starting`、`synchronizing`、`waiting`、`stopping`）、PID、实际同步目录、是否有
+待处理手动请求、已完成轮数和最近一轮退出码（首次完成前为 `none`）。
+这是状态快照，不是详细传输进度流；`--output json` 复用 `monitor_control` section，
+其中 `values` 延续既有字符串类型。
+
+等待时 `trigger` 尽快发起检查；执行期间重复请求合并为一次后续检查，与本地／远端
+变化共用串行调度器，不并发执行同步。`stop` 取消活动轮次，停止中拒绝新触发。
+`accepted`／`merged` **只表示请求已接受／已合并，不表示同步成功或停止清理完成**；
+持有者结束清理后才释放锁。普通 `transfer sync` 和第二个 `transfer watch` 仍明确
+报忙，不隐式转发；持有者为 Monitor 时，占用诊断提示上述显式命令。
+
+端点为私有状态目录内的 `monitor-control.sock`，目录权限 `0700`、socket 权限
+`0600`，两端校验当前用户身份。v1 协议只接受限长 JSON 命令，连接／读／写等待
+分别限制为两秒。缺失、不安全、不响应及陈旧端点均明确失败，不返回空闲形状的
+成功结果。新 Monitor 取得正常运行锁后可回收属于当前用户的非活动 socket；
+不要删除活跃端点。状态目录路径超过 Unix socket 长度限制时明确报错。
+GUI 监控控制暂留下一步接入，将复用该共享接口，不另建同步引擎。
+
 运行诊断默认以 `info` 级别写入标准错误。systemd 会自动收集该输出：
 
 ```bash

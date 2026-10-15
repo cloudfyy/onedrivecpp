@@ -80,7 +80,8 @@ public:
         SyncCallback synchronize,
         std::chrono::milliseconds poll_interval,
         std::chrono::milliseconds settle_delay,
-        NotificationCallbacks notifications = {}
+        NotificationCallbacks notifications = {},
+        std::filesystem::path control_directory = {}
     );
     [[nodiscard]] int run() const;
     [[nodiscard]] int run(bool keyboard_exit) const;
@@ -101,6 +102,7 @@ private:
     std::chrono::milliseconds poll_interval_;
     std::chrono::milliseconds settle_delay_;
     NotificationCallbacks notifications_;
+    std::filesystem::path control_directory_;
 };
 
 }  // namespace onedrive::monitor

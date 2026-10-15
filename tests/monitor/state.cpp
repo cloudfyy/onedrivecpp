@@ -15,6 +15,63 @@ int test_state_machine() {
         .settle_delay = 20ms,
     };
     const MonitorTimePoint origin{};
+    for (MonitorState ready : {
+             MonitorState{StartingState{}},
+             MonitorState{IdleState{origin + 100ms}},
+             MonitorState{SettlingState{
+                 origin + 20ms,
+                 origin + 100ms,
+                 SynchronizationReason::local_changes
+             }},
+         }) {
+        auto manual = transition_monitor(ready, ManualTriggerEvent{}, timing);
+        if (manual.effect != MonitorEffect::synchronize ||
+            std::get<SynchronizingState>(manual.state).reason !=
+                SynchronizationReason::manual_request) {
+            return fail("manual trigger did not synchronize immediately");
+        }
+        for (int count = 0; count < 5; ++count) {
+            manual =
+                transition_monitor(manual.state, ManualTriggerEvent{}, timing);
+            if (manual.effect != MonitorEffect::none) {
+                return fail("manual trigger started a concurrent round");
+            }
+        }
+        manual = transition_monitor(
+            manual.state,
+            LocalChangeEvent{LocalChangeKind::filesystem, origin},
+            timing
+        );
+        manual = transition_monitor(manual.state, RemoteChangeEvent{}, timing);
+        const auto& pending = std::get<SynchronizingState>(manual.state);
+        if (!pending.manual_request_pending || !pending.local_change_pending ||
+            !pending.remote_notification_pending) {
+            return fail("simultaneous Monitor changes were lost");
+        }
+        manual = transition_monitor(
+            manual.state,
+            SynchronizationCompletedEvent{exit_code::blocked, origin},
+            timing
+        );
+        if (manual.effect != MonitorEffect::synchronize) {
+            return fail("pending manual work did not survive a blocked round");
+        }
+        manual = transition_monitor(
+            manual.state,
+            SynchronizationCompletedEvent{exit_code::success, origin},
+            timing
+        );
+        if (manual.effect != MonitorEffect::none ||
+            !std::holds_alternative<IdleState>(manual.state)) {
+            return fail("coalesced triggers scheduled more than one follow-up");
+        }
+    }
+    const auto stopped_manual =
+        transition_monitor(StoppedState{}, ManualTriggerEvent{}, timing);
+    if (stopped_manual.effect != MonitorEffect::none ||
+        !std::holds_alternative<StoppedState>(stopped_manual.state)) {
+        return fail("stopped Monitor accepted a manual trigger");
+    }
     MonitorState state = StartingState{};
     if (next_deadline(state)) {
         return fail("starting monitor unexpectedly had a deadline");

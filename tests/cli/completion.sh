@@ -26,7 +26,24 @@ assert_contains transfer "${COMPREPLY[@]}"
 assert_contains inspect "${COMPREPLY[@]}"
 assert_contains state "${COMPREPLY[@]}"
 assert_contains account "${COMPREPLY[@]}"
+assert_contains monitor "${COMPREPLY[@]}"
 assert_contains --version "${COMPREPLY[@]}"
+
+COMP_WORDS=(onedrive-cpp monitor "")
+COMP_CWORD=2
+_onedrive_cpp_completion
+assert_contains status "${COMPREPLY[@]}"
+assert_contains trigger "${COMPREPLY[@]}"
+assert_contains stop "${COMPREPLY[@]}"
+
+for action in status trigger stop; do
+    COMP_WORDS=(onedrive-cpp monitor "$action" --)
+    COMP_CWORD=3
+    _onedrive_cpp_completion
+    assert_contains --config "${COMPREPLY[@]}"
+    assert_contains --output "${COMPREPLY[@]}"
+    assert_contains --quiet "${COMPREPLY[@]}"
+done
 
 COMP_WORDS=(onedrive-cpp transfer "")
 COMP_CWORD=2

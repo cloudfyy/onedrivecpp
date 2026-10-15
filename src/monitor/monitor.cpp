@@ -1,5 +1,6 @@
 #include "onedrive/monitor/monitor.hpp"
 #include "onedrive/exit_code.hpp"
+#include "onedrive/monitor/control.hpp"
 
 #include "monitor/signal.hpp"
 #include "monitor/input.hpp"
@@ -7,6 +8,7 @@
 #include "monitor/socket.hpp"
 #include "monitor/state.hpp"
 #include "onedrive/util/system_error.hpp"
+#include "onedrive/util/path_security.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"
 
 #include <array>
@@ -26,6 +28,7 @@
 #include <sys/signalfd.h>
 #include <system_error>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <unistd.h>
 
@@ -80,18 +83,26 @@ constexpr std::uint32_t watch_mask =
 
 class WatchSet final {
 public:
-    explicit WatchSet(const std::filesystem::path& root)
+    explicit WatchSet(const std::filesystem::path& root, bool starting = false)
         : descriptor_{::inotify_init1(IN_NONBLOCK | IN_CLOEXEC)} {
         if (descriptor_.get() < 0) {
             util::throw_errno_error("inotify_init1 failed");
         }
         std::error_code error;
         if (!std::filesystem::is_directory(root, error)) {
-            if (error) {
+            if (error && error != std::errc::no_such_file_or_directory) {
                 throw std::system_error{
                     error,
                     "cannot inspect monitor root '" + root.string() + "'"
                 };
+            }
+            if (starting && !std::filesystem::exists(root)) {
+                auto parent = util::normalized_absolute(root).parent_path();
+                while (!std::filesystem::is_directory(parent)) {
+                    parent = parent.parent_path();
+                }
+                add_watch(parent);
+                return;
             }
             throw std::runtime_error(
                 "monitor root is not a directory: " + root.string()
@@ -105,17 +116,18 @@ public:
     }
 
     void rebuild(const std::filesystem::path& root) {
-        for (const auto& [watch, path] : paths_) {
+        const auto previous = std::exchange(paths_, {});
+        add_tree(root);
+        for (const auto& [watch, path] : previous) {
             static_cast<void>(path);
-            if (::inotify_rm_watch(descriptor_.get(), watch) < 0 &&
+            if (!paths_.contains(watch) &&
+                ::inotify_rm_watch(descriptor_.get(), watch) < 0 &&
                 errno != EINVAL) {
                 util::throw_errno_error(
                     "cannot remove inotify watch while rebuilding"
                 );
             }
         }
-        paths_.clear();
-        add_tree(root);
     }
 
     [[nodiscard]] std::optional<detail::LocalChangeKind> drain(
@@ -125,7 +137,8 @@ public:
             std::size_t{64} * 1024U;
         alignas(inotify_event)
             std::array<char, inotify_read_buffer_bytes> buffer{};
-        bool changed = false;
+        std::unordered_set<std::filesystem::path> changed;
+        std::unordered_set<std::filesystem::path> created;
         bool overflow = false;
         while (true) {
             const auto bytes = ::read(
@@ -164,7 +177,6 @@ public:
 
                 if ((event->mask & IN_Q_OVERFLOW) != 0U) {
                     overflow = true;
-                    changed = true;
                     continue;
                 }
                 const auto watched = paths_.find(event->wd);
@@ -182,9 +194,21 @@ public:
                 if (event->len != 0U && event->name[0] != '\0') {
                     path /= event->name;
                 }
+                if (!util::path_contains(root, path) &&
+                    !util::path_contains(path, root)) {
+                    continue;
+                }
+                if ((event->mask & IN_CREATE) != 0U &&
+                    !changed.contains(path)) {
+                    created.insert(path);
+                }
                 if ((event->mask & IN_ISDIR) != 0U &&
                     (event->mask & (IN_CREATE | IN_MOVED_TO)) != 0U) {
-                    add_tree(path);
+                    if (util::path_contains(root, path)) {
+                        add_tree(path);
+                    } else {
+                        add_watch(path);
+                    }
                 }
                 if ((event->mask &
                      (IN_ATTRIB | IN_CLOSE_WRITE | IN_DELETE |
@@ -192,7 +216,12 @@ public:
                       IN_MOVED_TO)) != 0U ||
                     ((event->mask & IN_CREATE) != 0U &&
                      (event->mask & IN_ISDIR) != 0U)) {
-                    changed = true;
+                    changed.insert(path);
+                }
+                // Transient sync probes leave no local work, unlike edits or
+                // deletions of files that existed before this event batch.
+                if ((event->mask & IN_DELETE) != 0U && created.contains(path)) {
+                    changed.erase(path);
                 }
             }
         }
@@ -206,7 +235,7 @@ public:
         if (overflow) {
             return detail::LocalChangeKind::watch_overflow;
         }
-        if (changed) {
+        if (!changed.empty()) {
             return detail::LocalChangeKind::filesystem;
         }
         return std::nullopt;
@@ -315,13 +344,15 @@ Monitor::Monitor(
     SyncCallback synchronize,
     std::chrono::milliseconds poll_interval,
     std::chrono::milliseconds settle_delay,
-    NotificationCallbacks notifications
+    NotificationCallbacks notifications,
+    std::filesystem::path control_directory
 )
     : root_{std::move(root)},
       synchronize_{std::move(synchronize)},
       poll_interval_{poll_interval},
       settle_delay_{settle_delay},
-      notifications_{std::move(notifications)} {
+      notifications_{std::move(notifications)},
+      control_directory_{std::move(control_directory)} {
     if (!synchronize_) {
         throw std::invalid_argument("monitor synchronization callback is empty");
     }
@@ -363,10 +394,39 @@ int Monitor::run(const std::stop_token& stop_token) const {
 }
 
 int Monitor::run_loop(
-    const std::stop_token& stop_token,
+    const std::stop_token& external_stop_token,
     int signal_descriptor,
     bool keyboard_exit
 ) const {
+    std::unique_ptr<ControlServer> control;
+    if (!control_directory_.empty()) {
+        control = std::make_unique<ControlServer>(control_directory_, root_);
+    }
+    std::stop_source combined_stop;
+    std::stop_callback external_stop{external_stop_token, [&] {
+                                         combined_stop.request_stop();
+                                         if (control) {
+                                             control->request_stop();
+                                         }
+                                     }};
+    const auto control_token =
+        control ? control->stop_token() : std::stop_token{};
+    std::stop_callback ipc_stop{control_token, [&] {
+                                    combined_stop.request_stop();
+                                }};
+    const auto stop_token = combined_stop.get_token();
+    const auto synchronize = [&] {
+        if (control) {
+            control->check_error();
+            control->begin_round();
+        }
+        const int result = synchronize_(stop_token);
+        if (control) {
+            control->finish_round(result);
+            control->check_error();
+        }
+        return result;
+    };
     const detail::MonitorTiming timing{
         .poll_interval = poll_interval_,
         .settle_delay = settle_delay_,
@@ -377,12 +437,16 @@ int Monitor::run_loop(
     };
     detail::MonitorState state = detail::StartingState{};
     if (stop_token.stop_requested()) {
+        if (control) {
+            control->check_error();
+        }
         state = detail::transition_monitor(
                     state, detail::StopRequestedEvent{}, timing
         )
                     .state;
         return exit_code::success;
     }
+    WatchSet watches{root_, true};
 
     auto transition =
         detail::transition_monitor(state, detail::StartEvent{}, timing);
@@ -393,7 +457,7 @@ int Monitor::run_loop(
         "Running synchronization triggered by {}",
         detail::synchronization_reason_name(initial_reason)
     );
-    const int initial_result = synchronize_(stop_token);
+    const int initial_result = synchronize();
     if (initial_result != exit_code::success) {
         spdlog::warn(
             "Initial monitor synchronization completed with status {}",
@@ -401,13 +465,20 @@ int Monitor::run_loop(
         );
     }
     if (stop_token.stop_requested()) {
+        if (control) {
+            control->check_error();
+        }
         state = detail::transition_monitor(
                     state, detail::StopRequestedEvent{}, timing
         )
                     .state;
         return exit_code::success;
     }
-    WatchSet watches{root_};
+    if (!std::filesystem::is_directory(root_)) {
+        throw std::runtime_error(
+            "monitor root is not a directory: " + root_.string()
+        );
+    }
     onedrive::util::UniqueFD stop_descriptor{
         ::eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC)
     };
@@ -545,6 +616,10 @@ int Monitor::run_loop(
         });
     }
     const auto shutdown = [&] {
+        if (control) {
+            control->request_stop();
+            control->check_error();
+        }
         spdlog::info("Monitor shutdown requested");
         state = detail::transition_monitor(
                     state, detail::StopRequestedEvent{}, timing
@@ -557,7 +632,7 @@ int Monitor::run_loop(
     };
 
     while (true) {
-        std::array<pollfd, 5> descriptors{{
+        std::array<pollfd, 6> descriptors{{
             {
                 .fd = watches.descriptor(),
                 .events = POLLIN,
@@ -570,25 +645,25 @@ int Monitor::run_loop(
             },
             {
                 .fd = signal_descriptor,
-                .events = static_cast<short>(
-                    signal_descriptor >= 0 ? POLLIN : 0
-                ),
+                .events =
+                    static_cast<short>(signal_descriptor >= 0 ? POLLIN : 0),
                 .revents = 0,
             },
             {
-                .fd = notification_socket ?
-                          notification_socket->descriptor() :
-                          -1,
-                .events = static_cast<short>(
-                    notification_socket ? POLLIN : 0
-                ),
+                .fd = notification_socket ? notification_socket->descriptor()
+                                          : -1,
+                .events = static_cast<short>(notification_socket ? POLLIN : 0),
                 .revents = 0,
             },
             {
                 .fd = keyboard.descriptor(),
-                .events = static_cast<short>(
-                    keyboard.descriptor() >= 0 ? POLLIN : 0
-                ),
+                .events =
+                    static_cast<short>(keyboard.descriptor() >= 0 ? POLLIN : 0),
+                .revents = 0,
+            },
+            {
+                .fd = control ? control->descriptor() : -1,
+                .events = static_cast<short>(control ? POLLIN : 0),
                 .revents = 0,
             },
         }};
@@ -704,7 +779,11 @@ int Monitor::run_loop(
                 std::chrono::steady_clock::now()
             });
         }
-        if (notification_sync_requested) {
+        if (control && control->take_trigger()) {
+            transition = detail::transition_monitor(
+                state, detail::ManualTriggerEvent{}, timing
+            );
+        } else if (notification_sync_requested) {
             transition = detail::transition_monitor(
                 state, detail::RemoteChangeEvent{}, timing
             );
@@ -726,23 +805,42 @@ int Monitor::run_loop(
             "Monitor synchronization triggered by {}",
             detail::synchronization_reason_name(reason)
         );
-        const int result = synchronize_(stop_token);
-        if (result != exit_code::success) {
-            spdlog::warn(
-                "Monitor synchronization completed with status {}",
-                result
+        do {
+            const int result = synchronize();
+            if (result != exit_code::success) {
+                spdlog::warn(
+                    "Monitor synchronization completed with status {}", result
+                );
+            }
+            if (stop_token.stop_requested()) {
+                return shutdown();
+            }
+            if (const auto changed = watches.drain(root_)) {
+                state = detail::transition_monitor(
+                            state,
+                            detail::LocalChangeEvent{
+                                *changed, std::chrono::steady_clock::now()
+                            },
+                            timing
+                )
+                            .state;
+            }
+            if (control && control->take_trigger()) {
+                state = detail::transition_monitor(
+                            state, detail::ManualTriggerEvent{}, timing
+                )
+                            .state;
+            }
+            watches.rebuild(root_);
+            transition = detail::transition_monitor(
+                state,
+                detail::SynchronizationCompletedEvent{
+                    result, std::chrono::steady_clock::now()
+                },
+                timing
             );
-        }
-        watches.rebuild(root_);
-        state = detail::transition_monitor(
-                    state,
-                    detail::SynchronizationCompletedEvent{
-                        .status = result,
-                        .completed_at = std::chrono::steady_clock::now(),
-                    },
-                    timing
-        )
-                    .state;
+            state = transition.state;
+        } while (transition.effect == detail::MonitorEffect::synchronize);
     }
 }
 

@@ -1,6 +1,6 @@
 _onedrive_cpp_completion()
 {
-    local current previous command="" account_action="" inspect_action="" state_action="" transfer_action="" word
+    local current previous command="" account_action="" inspect_action="" state_action="" transfer_action="" monitor_action="" word
     COMPREPLY=()
     current="${COMP_WORDS[COMP_CWORD]}"
     previous="${COMP_WORDS[COMP_CWORD-1]}"
@@ -54,7 +54,7 @@ _onedrive_cpp_completion()
 
     for word in "${COMP_WORDS[@]:1:COMP_CWORD-1}"; do
         case "$word" in
-            account|inspect|state|transfer)
+            account|inspect|state|transfer|monitor)
                 if [[ -z "$command" ]]; then
                     command="$word"
                 fi
@@ -67,6 +67,13 @@ _onedrive_cpp_completion()
             health|status|drives|shared|sites|quota|storage|partials|files|verify|config)
                 if [[ "$command" == "inspect" ]]; then
                     inspect_action="$word"
+                elif [[ "$command" == "monitor" && "$word" == "status" ]]; then
+                    monitor_action="$word"
+                fi
+                ;;
+            trigger|stop)
+                if [[ "$command" == "monitor" ]]; then
+                    monitor_action="$word"
                 fi
                 ;;
             reset-cursor|cleanup|migrate|clear)
@@ -84,7 +91,7 @@ _onedrive_cpp_completion()
 
     if [[ -z "$command" ]]; then
         mapfile -t COMPREPLY < <(compgen -W \
-            "account inspect state transfer --help --version" \
+            "account inspect state transfer monitor --help --version" \
             -- "$current")
         return
     fi
@@ -99,6 +106,17 @@ _onedrive_cpp_completion()
         --help
     "
     case "$command" in
+        monitor)
+            if [[ -z "$monitor_action" ]]; then
+                mapfile -t COMPREPLY < <(
+                    compgen -W "status trigger stop --help" -- "$current"
+                )
+            else
+                mapfile -t COMPREPLY < <(
+                    compgen -W "$common_options" -- "$current"
+                )
+            fi
+            ;;
         account)
             case "$account_action" in
                 login)

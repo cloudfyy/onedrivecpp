@@ -16,6 +16,7 @@ enum class SynchronizationReason {
     watch_overflow,
     remote_notification,
     graph_poll,
+    manual_request,
 };
 
 enum class LocalChangeKind {
@@ -38,6 +39,8 @@ struct SettlingState {
 struct SynchronizingState {
     SynchronizationReason reason;
     bool remote_notification_pending{false};
+    bool manual_request_pending{false};
+    bool local_change_pending{false};
 };
 
 struct StoppedState {};
@@ -72,6 +75,7 @@ struct DeadlineReachedEvent {
 };
 
 struct RemoteChangeEvent {};
+struct ManualTriggerEvent {};
 
 struct SynchronizationCompletedEvent {
     int status;
@@ -84,6 +88,7 @@ using MonitorEvent = std::variant<
     StartEvent,
     LocalChangeEvent,
     RemoteChangeEvent,
+    ManualTriggerEvent,
     DeadlineReachedEvent,
     SynchronizationCompletedEvent,
     StopRequestedEvent>;
@@ -194,6 +199,29 @@ synchronization_reason(LocalChangeKind kind) noexcept {
                 };
             },
             [](SynchronizingState current,
+               const ManualTriggerEvent&) -> MonitorTransition {
+                current.manual_request_pending = true;
+                return {.state = current, .effect = MonitorEffect::none};
+            },
+            [](SynchronizingState current,
+               const LocalChangeEvent&) -> MonitorTransition {
+                current.local_change_pending = true;
+                return {.state = current, .effect = MonitorEffect::none};
+            },
+            [](StoppedState current,
+               const ManualTriggerEvent&) -> MonitorTransition {
+                return {.state = current, .effect = MonitorEffect::none};
+            },
+            [](auto&&, const ManualTriggerEvent&) -> MonitorTransition {
+                return {
+                    .state =
+                        SynchronizingState{
+                            SynchronizationReason::manual_request
+                        },
+                    .effect = MonitorEffect::synchronize,
+                };
+            },
+            [](SynchronizingState current,
                const RemoteChangeEvent&) -> MonitorTransition {
                 current.remote_notification_pending = true;
                 return {
@@ -204,11 +232,18 @@ synchronization_reason(LocalChangeKind kind) noexcept {
             [&](SynchronizingState current,
                 const SynchronizationCompletedEvent& completed)
                 -> MonitorTransition {
-                if (current.remote_notification_pending) {
+                if (current.manual_request_pending ||
+                    current.local_change_pending ||
+                    current.remote_notification_pending) {
                     return {
                         .state =
                             SynchronizingState{
-                                SynchronizationReason::remote_notification,
+                                current.manual_request_pending
+                                    ? SynchronizationReason::manual_request
+                                : current.local_change_pending
+                                    ? SynchronizationReason::local_changes
+                                    : SynchronizationReason::
+                                          remote_notification,
                             },
                         .effect = MonitorEffect::synchronize,
                     };
@@ -257,6 +292,8 @@ synchronization_reason_name(SynchronizationReason reason) noexcept {
         return "a remote change notification";
     case SynchronizationReason::graph_poll:
         return "the Graph polling interval";
+    case SynchronizationReason::manual_request:
+        return "an explicit Monitor trigger";
     }
     std::unreachable();
 }

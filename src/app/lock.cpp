@@ -355,6 +355,17 @@ void report_runtime_busy(
         }
     );
     observer.message(events::MessageKind::error, "runtime_busy", error.what());
+    if (error.owner.operation == "monitor") {
+        observer.message(
+            events::MessageKind::information,
+            "monitor_control_hint",
+            "Use 'onedrive-cpp monitor status|trigger|stop --config "
+            "<owner-config>' "
+            "to explicitly control the Monitor using the owner's state "
+            "directory. "
+            "Ordinary synchronization is not forwarded or queued."
+        );
+    }
 }
 
 onedrive::util::UniqueFD acquire_runtime_lock(

@@ -439,6 +439,32 @@ Run an initial synchronization, then monitor the local Drive tree recursively
 with inotify and poll Microsoft Graph periodically. Local event bursts are
 coalesced before synchronization. SIGINT and SIGTERM stop the monitor cleanly
 after the active synchronization finishes.
+.TP
+.B monitor status
+Query the running Monitor in the configured state directory without
+authentication, Graph access, database creation, or acquiring its runtime locks.
+Report lifecycle state, PID, actual sync directory, pending manual work,
+completed rounds and the last round result. This is a snapshot, not transfer progress.
+.TP
+.B monitor trigger
+Explicitly request synchronization from that Monitor. While waiting, synchronize
+promptly; during a round, repeated requests merge into one serial follow-up check.
+Ordinary transfer sync is never implicitly forwarded.
+.TP
+.B monitor stop
+Request cancellation of the active round and shutdown. Later triggers are rejected.
+Trigger/stop report accepted or merged requests, not completed synchronization
+or cleanup. State/root locks remain held until the Monitor exits.
+.PP
+These controls support common output/logging options, including
+.BR "\-\-output json" .
+The monitor_control section uses string-valued values. The private state directory
+has mode 0700; monitor-control.sock has mode 0600. Both peers must belong to the
+current user. Versioned JSON packets are bounded; connection/read/write waits
+are limited to two seconds each. Missing, stale, unsafe, unresponsive or
+overlong endpoints fail explicitly. A new Monitor reclaims owned inactive sockets
+after acquiring its normal runtime lock; never delete a live endpoint.
+GUI Monitor controls are deferred to the next integration step.
 .SH OPTIONS
 .TP
 .BR \-h ", " \-\-help

@@ -341,6 +341,27 @@ blocked item，不执行跨挂载点复制后删除。
 执行一次初始同步，然后通过 inotify 递归监控本地 Drive 树，并定期轮询
 Microsoft Graph。本地事件突发会先合并再同步。SIGINT 和 SIGTERM 会唤醒等待，
 并在活动同步完成后干净退出。
+.TP
+.B monitor status
+查询当前配置状态目录内已运行的 Monitor，无需认证、不访问 Graph、不创建数据库，
+也不争抢运行锁。返回生命周期状态、PID、实际同步目录、待处理手动请求、已完成
+轮数和最近一轮结果；这是快照，不是传输进度。
+.TP
+.B monitor trigger
+显式请求现有 Monitor 同步。等待时尽快执行，活动轮次中重复请求合并为一次串行
+补查；普通 transfer sync 不会隐式转发。
+.TP
+.B monitor stop
+请求取消活动轮次并停止，停止中拒绝新触发。trigger／stop 只确认请求已接受或
+合并，不表示同步成功或清理完成；状态／根目录锁持续到 Monitor 退出。
+.PP
+控制命令支持通用输出／日志选项，包括
+.BR "\-\-output json" 。
+monitor_control section 的 values 延续字符串类型。状态目录权限为 0700，
+monitor-control.sock 为 0600，两端校验当前用户身份。带版本 JSON 消息限长，
+连接／读／写等待分别限制两秒。缺失、陈旧、不安全、不响应或过长端点明确失败；
+新 Monitor 取得正常运行锁后可回收属于当前用户的非活动 socket，不要删除活跃
+端点。GUI Monitor 控制暂留下一步接入。
 .SH 选项
 .TP
 .BR \-h ", " \-\-help

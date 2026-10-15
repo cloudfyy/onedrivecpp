@@ -128,6 +128,7 @@ int test_args() {
         !help.standard_output.contains("inspect") ||
         !help.standard_output.contains("state") ||
         !help.standard_output.contains("transfer") ||
+        !help.standard_output.contains("monitor") ||
         !help.standard_output.contains("onedrive-cpp [OPTIONS] SUBCOMMAND") ||
         help.standard_output.contains("build/release/onedrive-cpp")) {
         return fail("no-argument invocation did not show command help");
@@ -166,6 +167,29 @@ int test_args() {
     const auto transfer_help = run_application(
         runtime_factory, {"onedrive-cpp", "transfer", "--help"}
     );
+    using onedrive::app::detail::Operation;
+    for (const auto& [action, operation] : {
+             std::pair{"status", Operation::monitor_status},
+             {"trigger", Operation::monitor_trigger},
+             {"stop", Operation::monitor_stop},
+         }) {
+        const auto parsed = parse_test_arguments(
+            {"onedrive-cpp", "monitor", action, "--output", "json", "--quiet"}
+        );
+        const auto control_help = run_application(
+            runtime_factory, {"onedrive-cpp", "monitor", action, "--help"}
+        );
+        if (parsed.exit_code || parsed.arguments.operation != operation ||
+            control_help.exit_code != exit_code::success ||
+            !control_help.standard_output.contains("--config") ||
+            !control_help.standard_output.contains("--output") ||
+            control_help.standard_output.contains("--ui")) {
+            return fail(
+                "Monitor control parser/help did not preserve offline console "
+                "options"
+            );
+        }
+    }
     if (transfer_help.exit_code != exit_code::success ||
         !transfer_help.standard_output.contains("sync") ||
         !transfer_help.standard_output.contains("download") ||

@@ -9,6 +9,14 @@ add_onedrive_test(
 find_program(BASH_EXECUTABLE bash REQUIRED)
 
 add_onedrive_test(
+    monitor_control_tests
+    SOURCES tests/monitor/control.cpp
+    INCLUDE_DIRS src tests
+    LIBRARIES onedrive_cli
+)
+set_tests_properties(monitor_control_tests PROPERTIES TIMEOUT 30)
+
+add_onedrive_test(
     sync_resource_lock_tests
     SOURCES tests/preflight/resources.cpp
     INCLUDE_DIRS src tests

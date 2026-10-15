@@ -30,6 +30,12 @@ RuntimePreflight::RuntimePreflight(
         );
     }
 
+    if (operation == Operation::monitor_status ||
+        operation == Operation::monitor_trigger ||
+        operation == Operation::monitor_stop) {
+        inspect_state_directory(config.state_directory);
+        return;
+    }
     if (operation == Operation::blocked) {
         // Share the GUI's read-only validation without locking or creating
         // state.

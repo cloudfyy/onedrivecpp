@@ -26,6 +26,9 @@ enum class Operation {
     download,
     monitor,
     synchronize,
+    monitor_status,
+    monitor_trigger,
+    monitor_stop,
 };
 
 constexpr std::string_view operation_name(Operation operation) noexcept {
@@ -72,6 +75,12 @@ constexpr std::string_view operation_name(Operation operation) noexcept {
         return "monitor";
     case Operation::synchronize:
         return "synchronize";
+    case Operation::monitor_status:
+        return "monitor_status";
+    case Operation::monitor_trigger:
+        return "monitor_trigger";
+    case Operation::monitor_stop:
+        return "monitor_stop";
     }
     return "unknown";
 }
@@ -95,6 +104,9 @@ constexpr OperationCapabilities operation_capabilities(
             };
         case Operation::logout:
         case Operation::migrate_state:
+        case Operation::monitor_status:
+        case Operation::monitor_trigger:
+        case Operation::monitor_stop:
             return {};
         case Operation::diagnose:
             return {.supports_tui = true};

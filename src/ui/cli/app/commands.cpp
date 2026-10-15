@@ -2,6 +2,7 @@
 #include "discover.hpp"
 #include "info.hpp"
 #include "app/lock.hpp"
+#include "onedrive/monitor/control.hpp"
 
 #include "onedrive/account/account_state.hpp"
 #include "onedrive/exit_code.hpp"
@@ -210,6 +211,57 @@ int execute_command(
     const cli::Console& console
 ) {
     const auto operation = arguments.operation;
+    if (operation == Operation::monitor_status ||
+        operation == Operation::monitor_trigger ||
+        operation == Operation::monitor_stop) {
+        const auto reply = monitor::request_control(
+            config.state_directory,
+            operation == Operation::monitor_status
+                ? monitor::ControlCommand::status
+            : operation == Operation::monitor_trigger
+                ? monitor::ControlCommand::trigger
+                : monitor::ControlCommand::stop
+        );
+        console.section(
+            "monitor_control",
+            "Local Monitor control:",
+            {
+                {.label = "request:",
+                 .key = "request",
+                 .value = std::string{operation_name(operation)}},
+                {.label = "acknowledgement:",
+                 .key = "acknowledgement",
+                 .value = reply.acknowledgement},
+                {.label = "state:", .key = "state", .value = reply.state},
+                {.label = "PID:",
+                 .key = "pid",
+                 .value = std::to_string(reply.pid)},
+                {.label = "sync directory:",
+                 .key = "sync_directory",
+                 .value = reply.sync_directory.string()},
+                {.label = "pending:",
+                 .key = "pending",
+                 .value = reply.pending ? "true" : "false"},
+                {.label = "completed rounds:",
+                 .key = "completed_rounds",
+                 .value = std::to_string(reply.completed_rounds)},
+                {.label = "last result:",
+                 .key = "last_result",
+                 .value = reply.last_result ? std::to_string(*reply.last_result)
+                                            : "none"},
+            }
+        );
+        if (operation != Operation::monitor_status) {
+            console.message(
+                cli::MessageKind::information,
+                "monitor_request_acknowledged",
+                "Monitor request " + reply.acknowledgement +
+                    ". This acknowledges the request, not synchronization or "
+                    "shutdown completion."
+            );
+        }
+        return exit_code::success;
+    }
     if (operation == Operation::migrate_state) {
         return migrate_state(config, arguments, console);
     }

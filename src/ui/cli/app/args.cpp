@@ -134,6 +134,21 @@ ParseResult parse_arguments(int argc, char* argv[]) {
     auto* transfer_watch = transfer->add_subcommand(
         "watch", "Watch for synchronization changes"
     );
+    auto* monitor = application.add_subcommand(
+        "monitor", "Explicitly control the running local Monitor"
+    );
+    monitor->require_subcommand(1);
+    auto* monitor_status = monitor->add_subcommand(
+        "status", "Query the running Monitor without connecting to OneDrive"
+    );
+    auto* monitor_trigger = monitor->add_subcommand(
+        "trigger",
+        "Request a synchronization check (acknowledgement, not completion)"
+    );
+    auto* monitor_stop = monitor->add_subcommand(
+        "stop",
+        "Request cancellation and shutdown (acknowledgement, not completion)"
+    );
     const std::array command_operations{
         std::pair{account_login, Operation::authenticate},
         std::pair{account_logout, Operation::logout},
@@ -156,6 +171,9 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         std::pair{transfer_sync, Operation::synchronize},
         std::pair{transfer_download, Operation::download},
         std::pair{transfer_watch, Operation::monitor},
+        std::pair{monitor_status, Operation::monitor_status},
+        std::pair{monitor_trigger, Operation::monitor_trigger},
+        std::pair{monitor_stop, Operation::monitor_stop},
     };
 
     const auto add_common_options = [&](CLI::App& command) {
