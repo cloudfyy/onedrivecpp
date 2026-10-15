@@ -298,7 +298,7 @@ MainWindow::MainWindow(
             render_blocked_items();
         }
     );
-    tabs->addTab(sync_page_, tr("Synchronization status"));
+    tabs->addTab(sync_page_, tr("Sync"));
 
     logs_page_ = new QWidget{tabs};
     logs_page_->setObjectName("logsPage");
@@ -712,7 +712,7 @@ void MainWindow::retranslate_ui() {
     about_action_->setText(tr("About"));
     QApplication::setApplicationDisplayName(windowTitle());
     tabs_->setTabText(0, tr("Overview"));
-    tabs_->setTabText(1, tr("Synchronization status"));
+    tabs_->setTabText(1, tr("Sync"));
     tabs_->setTabText(2, tr("Logs"));
     tabs_->setTabText(3, tr("Settings"));
     blocked_filter_->setPlaceholderText(tr("Search paths and reasons"));

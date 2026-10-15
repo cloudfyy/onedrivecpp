@@ -385,6 +385,8 @@ Skipped; existing local files are preserved.</source>
         <translation>同步失败（退出码 %1）。详情请查看日志。</translation>
     </message>
     <message>
+        <location filename="../main_window.cpp" line="301"/>
+        <location filename="../main_window.cpp" line="715"/>
         <location filename="../main_window.cpp" line="1917"/>
         <source>Sync</source>
         <translation>同步</translation>
@@ -788,12 +790,6 @@ Repair the state directory or select another one in Settings, then reload.</sour
         <location filename="../main_window.cpp" line="714"/>
         <source>Overview</source>
         <translation>概览</translation>
-    </message>
-    <message>
-        <location filename="../main_window.cpp" line="301"/>
-        <location filename="../main_window.cpp" line="715"/>
-        <source>Synchronization status</source>
-        <translation>同步状态</translation>
     </message>
     <message>
         <location filename="../main_window.cpp" line="353"/>

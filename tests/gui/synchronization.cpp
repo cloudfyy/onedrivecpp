@@ -948,7 +948,7 @@ void test_session_logs_and_tabs() {
     auto* clear = button(window, "clearLogsButton");
     require(
         tabs && tabs->count() == 4 && tabs->tabText(0) == "Overview" &&
-            tabs->tabText(1) == "Synchronization status" &&
+            tabs->tabText(1) == "Sync" &&
             tabs->tabText(2) == "Logs" && tabs->tabText(3) == "Settings" &&
             tabs->currentWidget() == overview &&
             sync_page->isAncestorOf(sync) && !overview->isAncestorOf(sync) &&

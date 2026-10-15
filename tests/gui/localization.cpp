@@ -218,7 +218,7 @@ void test_window_and_settings(bool chinese) {
         tabs && tabs->tabText(0) == expected(chinese, "Overview", "概览") &&
             tabs->count() == 4 &&
             tabs->tabText(1) ==
-                expected(chinese, "Synchronization status", "同步状态") &&
+                expected(chinese, "Sync", "同步") &&
             tabs->tabText(2) == expected(chinese, "Logs", "日志") &&
             tabs->tabText(3) == expected(chinese, "Settings", "设置"),
         "tab labels were not translated"
@@ -629,7 +629,7 @@ void test_runtime_language(bool system_chinese) {
                     window.windowTitle() &&
                 tabs->tabText(0) == expected(chinese, "Overview", "概览") &&
                 tabs->tabText(1) ==
-                    expected(chinese, "Synchronization status", "同步状态") &&
+                    expected(chinese, "Sync", "同步") &&
                 tabs->tabText(2) == expected(chinese, "Logs", "日志") &&
                 tabs->tabText(3) == expected(chinese, "Settings", "设置") &&
                 sign_in->text() == expected(chinese, "Sign in", "登录账号") &&
