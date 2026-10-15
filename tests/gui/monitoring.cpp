@@ -9,6 +9,8 @@
 #include "onedrive/app/monitoring.hpp"
 #include "onedrive/monitor/monitor.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <QApplication>
 #include <QAbstractButton>
 #include <QElapsedTimer>
@@ -746,6 +748,305 @@ void test_readonly_discovery_and_unsafe_endpoint() {
     );
 }
 
+void test_controller_configuration_generations() {
+    Fixture first;
+    Fixture second;
+    const auto first_lock = app::detail::acquire_runtime_lock(
+        first.config.state_directory, "monitor"
+    );
+    const auto second_lock = app::detail::acquire_runtime_lock(
+        second.config.state_directory, "monitor"
+    );
+    monitor::ControlServer first_server{
+        first.config.state_directory, first.config.sync_data_directory
+    };
+    monitor::ControlServer second_server{
+        second.config.state_directory, second.config.sync_data_directory
+    };
+    gui::MonitorController controller;
+    int acknowledgements = 0;
+    int failures = 0;
+    bool obsolete_status = false;
+    QObject::connect(
+        &controller,
+        &gui::MonitorController::acknowledged,
+        &controller,
+        [&](auto, const auto&) { ++acknowledgements; }
+    );
+    QObject::connect(
+        &controller,
+        &gui::MonitorController::request_failed,
+        &controller,
+        [&](const auto&) { ++failures; }
+    );
+    controller.set_configuration(first.file);
+    controller.refresh();
+    require(
+        controller.busy() && !controller.requesting() &&
+            test::throws_with<std::logic_error>(
+                [&] { controller.request(monitor::ControlCommand::stop, {}); },
+                "already running"
+            ),
+        "a status query did not exclude concurrent control requests"
+    );
+    controller.set_configuration(second.file);
+    QObject::connect(
+        &controller, &gui::MonitorController::changed, &controller, [&] {
+            obsolete_status |=
+                controller.status() && controller.status()->sync_directory ==
+                                           first.config.sync_data_directory;
+        }
+    );
+    require(
+        wait_until([&] { return !controller.busy() && controller.status(); }) &&
+            controller.status()->sync_directory ==
+                second.config.sync_data_directory &&
+            !obsolete_status && acknowledgements == 0 && failures == 0,
+        "an old configuration query overwrote the selected Monitor"
+    );
+
+    const auto target = controller.status()->target();
+    controller.request(monitor::ControlCommand::trigger, target);
+    require(
+        controller.requesting(), "an active control request was not observable"
+    );
+    controller.set_configuration({});
+    require(
+        wait_until([&] { return !controller.busy(); }) &&
+            !controller.status() && !controller.owner() &&
+            controller.error().isEmpty() && !controller.requesting() &&
+            acknowledgements == 0 && failures == 0 &&
+            second_server.take_trigger(),
+        "an obsolete control callback updated a cleared configuration"
+    );
+    controller.refresh();
+    require(!controller.busy(), "cleared configuration started another query");
+
+    controller.set_configuration(first.file);
+    controller.refresh();
+    require(
+        wait_until([&] { return !controller.busy() && controller.status(); }),
+        "configuration discovery did not resume after clearing"
+    );
+    controller.request(
+        monitor::ControlCommand::trigger,
+        {controller.status()->pid, "obsolete-instance"}
+    );
+    require(
+        wait_until([&] { return !controller.busy(); }) && failures == 1 &&
+            acknowledgements == 0 && controller.uncertain() &&
+            !controller.runtime_free() &&
+            controller.error().contains("owner changed") &&
+            controller.status() && !first_server.take_trigger(),
+        "a failed control request hid its error or mutated the Monitor"
+    );
+    controller.refresh();
+    require(
+        wait_until([&] { return !controller.busy(); }) &&
+            !controller.uncertain() && controller.error().isEmpty(),
+        "a fresh status query did not recover from a rejected request"
+    );
+}
+
+void test_controller_invalid_configuration_and_stale_endpoint() {
+    Fixture fixture;
+    gui::MonitorController controller;
+    for (const auto& contents : {
+             std::string{},
+             std::string{"config_version = 2\n[state]\ndirectory = \"\"\n"},
+             std::string{"[broken TOML"},
+         }) {
+        if (contents.empty()) {
+            std::filesystem::remove(fixture.file);
+        } else {
+            test::write_file(fixture.file, contents);
+        }
+        controller.set_configuration(fixture.file);
+        controller.refresh();
+        require(
+            wait_until([&] { return !controller.busy(); }) &&
+                controller.uncertain() && !controller.runtime_free() &&
+                !controller.status() && !controller.error().isEmpty(),
+            "invalid configuration was presented as a free Monitor"
+        );
+    }
+
+    Fixture running;
+    const auto gates = running.temporary.path() / "gates";
+    std::filesystem::create_directory(gates);
+    Child child{running, gates};
+    child.process.kill();
+    require(
+        child.process.waitForFinished(5000),
+        "cannot stop stale endpoint fixture"
+    );
+    controller.set_configuration(running.file);
+    controller.refresh();
+    require(
+        wait_until([&] { return !controller.busy(); }) &&
+            !controller.error().isEmpty() && !controller.uncertain() &&
+            controller.runtime_free() && !controller.status() &&
+            !controller.owner(),
+        "a refused stale endpoint hid its error or retained released ownership"
+    );
+    const auto lock = app::detail::acquire_runtime_lock(
+        running.config.state_directory, "monitor"
+    );
+    controller.refresh();
+    require(
+        wait_until([&] { return !controller.busy(); }) && controller.owner() &&
+            !controller.runtime_free() && !controller.error().isEmpty(),
+        "a refused endpoint bypassed an active startup/cleanup lock"
+    );
+}
+
+void test_readonly_owner_errors() {
+    Fixture fixture;
+    const auto path = fixture.config.state_directory / "onedrive-cpp.lock";
+    std::filesystem::create_symlink(fixture.file, path);
+    require(
+        test::throws_with<std::system_error>(
+            [&] {
+                static_cast<void>(app::detail::inspect_runtime_owner(
+                    fixture.config.state_directory
+                ));
+            },
+            "cannot safely open path"
+        ),
+        "ownership inspection followed a lock symlink"
+    );
+    std::filesystem::remove(path);
+    const auto lock = app::detail::acquire_runtime_lock(
+        fixture.config.state_directory, "monitor"
+    );
+    auto metadata = nlohmann::json::parse(test::read_file(path));
+    metadata["pid"] = 0;
+    test::write_file(path, metadata.dump());
+    require(
+        test::throws_with<std::runtime_error>(
+            [&] {
+                static_cast<void>(app::detail::inspect_runtime_owner(
+                    fixture.config.state_directory
+                ));
+            },
+            "invalid lock owner metadata"
+        ),
+        "ownership inspection accepted an invalid occupied owner identity"
+    );
+    test::write_file(path, "invalid metadata");
+    gui::MonitorController controller;
+    controller.set_configuration(fixture.file);
+    controller.refresh();
+    require(
+        wait_until([&] { return !controller.busy(); }) &&
+            controller.uncertain() && !controller.runtime_free() &&
+            !controller.error().isEmpty(),
+        "corrupt occupied lock metadata was treated as released resources"
+    );
+    std::filesystem::create_hard_link(path, path.string() + ".alias");
+    require(
+        test::throws_with<std::runtime_error>(
+            [&] {
+                static_cast<void>(app::detail::inspect_runtime_owner(
+                    fixture.config.state_directory
+                ));
+            },
+            "single-link"
+        ),
+        "ownership inspection accepted a hard-linked lock"
+    );
+}
+
+void test_external_replacement_during_confirmation() {
+    Fixture fixture;
+    auto lock = app::detail::acquire_runtime_lock(
+        fixture.config.state_directory, "monitor"
+    );
+    auto server = std::make_unique<monitor::ControlServer>(
+        fixture.config.state_directory, fixture.config.sync_data_directory
+    );
+    server->finish_round(exit_code::success);
+    gui::MainWindow window{gui::load_app_state_view_model(fixture.file)};
+    window.show();
+    require(
+        wait_until([&] {
+            return text(window, "monitorStatus").contains("External Monitor") &&
+                   button(window, "startSyncButton")->isEnabled() &&
+                   button(window, "stopSyncButton")->isEnabled();
+        }),
+        "external waiting Monitor did not become controllable"
+    );
+    bool confirmed = false;
+    std::exception_ptr failure;
+    QTimer::singleShot(0, [&] {
+        if (auto* dialog =
+                qobject_cast<QMessageBox*>(QApplication::activeModalWidget())) {
+            try {
+                server.reset();
+                server = std::make_unique<monitor::ControlServer>(
+                    fixture.config.state_directory,
+                    fixture.config.sync_data_directory
+                );
+                server->finish_round(exit_code::success);
+                confirmed = true;
+            } catch (...) {
+                failure = std::current_exception();
+            }
+            dialog->button(confirmed ? QMessageBox::Yes : QMessageBox::No)
+                ->click();
+        }
+    });
+    button(window, "stopSyncButton")->click();
+    if (failure) {
+        std::rethrow_exception(failure);
+    }
+    require(
+        confirmed && wait_until([&] {
+            return window.findChild<QPlainTextEdit*>("logMessages")
+                ->toPlainText()
+                .contains("Monitor request failed:");
+        }) &&
+            !server->stop_token().stop_requested(),
+        "a stop confirmation was inherited by a replacement Monitor"
+    );
+    require(
+        wait_until([&] {
+            return button(window, "startSyncButton")->isEnabled();
+        }),
+        "GUI did not recover after an instance mismatch"
+    );
+    static_cast<void>(monitor::request_control(
+        fixture.config.state_directory, monitor::ControlCommand::trigger
+    ));
+    button(window, "startSyncButton")->click();
+    require(
+        wait_until([&] {
+            return window.findChild<QPlainTextEdit*>("logMessages")
+                ->toPlainText()
+                .contains("Monitor request merged;");
+        }) &&
+            server->take_trigger(),
+        "GUI did not preserve merged-request acknowledgement semantics"
+    );
+    server->begin_round();
+    server->finish_round(exit_code::failure);
+    require(
+        wait_until([&] {
+            return text(window, "syncStatus").contains("Monitoring continues.");
+        }),
+        "an external failed round was hidden or treated as task termination"
+    );
+    server.reset();
+    lock = {};
+    require(
+        wait_until([&] {
+            return text(window, "syncStatus") == "Monitoring stopped." &&
+                   button(window, "startMonitorButton")->isEnabled();
+        }),
+        "external shutdown did not release GUI actions after lock cleanup"
+    );
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -760,6 +1061,10 @@ int main(int argc, char* argv[]) {
         test_external_window();
         test_overlapping_root_is_not_attached();
         test_readonly_discovery_and_unsafe_endpoint();
+        test_controller_configuration_generations();
+        test_controller_invalid_configuration_and_stale_endpoint();
+        test_readonly_owner_errors();
+        test_external_replacement_during_confirmation();
     } catch (const std::exception& error) {
         return test::fail(error.what());
     }

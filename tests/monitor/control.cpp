@@ -209,8 +209,31 @@ void test_process_control() {
             "status did not report active initial round facts"
         );
     }
+    std::string boundary_packet{R"({"version":2,"command":"status"})"};
+    boundary_packet.resize(4096, ' ');
+    if (raw_request(state, boundary_packet).at("ok") != true) {
+        throw std::runtime_error(
+            "the maximum-sized valid control packet was rejected"
+        );
+    }
+    boundary_packet.push_back(' ');
+    const auto oversized = raw_request(state, boundary_packet);
+    if (oversized.at("ok") != false ||
+        !oversized.at("error").get<std::string>().contains("oversized")) {
+        throw std::runtime_error(
+            "an oversized valid control packet bypassed the size limit"
+        );
+    }
     for (const auto& packet : {
              std::string{R"({"version":9,"command":"trigger"})"},
+             std::string{R"({"version":1,"command":"trigger"})"},
+             std::string{R"({"version":"2","command":"trigger"})"},
+             std::string{R"({"version":2})"},
+             std::string{R"({"version":2,"command":1})"},
+             std::string{
+                 R"({"version":2,"command":"trigger","instance_id":1})"
+             },
+             std::string{"[]"},
              std::string{R"({"version":2,"command":"unknown"})"},
              std::string{
                  R"({"version":2,"command":"trigger","config":"other"})"
@@ -219,6 +242,7 @@ void test_process_control() {
                  R"({"version":2,"command":"trigger","instance_id":"obsolete"})"
              },
              std::string{"not JSON"},
+             std::string{},
              std::string(4097, 'x'),
          }) {
         const auto reply = raw_request(state, packet);
@@ -633,6 +657,11 @@ void test_client_protocol_and_timeout() {
           "completed_rounds",
           "last_result",
           "acknowledgement",
+          "pending",
+          "unexpected_field",
+          "oversized",
+          "not_json",
+          "closed",
           "timeout"}) {
         util::UniqueFD listener{
             ::socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0)
@@ -674,6 +703,9 @@ void test_client_protocol_and_timeout() {
                     std::this_thread::sleep_for(2200ms);
                     return;
                 }
+                if (field == "closed") {
+                    return;
+                }
                 Json reply = valid;
                 if (field == "instance_id" || field == "empty_instance_id") {
                     reply["instance_id"] =
@@ -685,7 +717,10 @@ void test_client_protocol_and_timeout() {
                             ? Json(-1)
                             : Json("invalid");
                 }
-                const auto content = reply.dump();
+                const auto content =
+                    field == "oversized"  ? std::string(4097, 'x')
+                    : field == "not_json" ? std::string{"not JSON"}
+                                          : reply.dump();
                 if (::send(
                         client.get(),
                         content.data(),
@@ -702,8 +737,13 @@ void test_client_protocol_and_timeout() {
         try {
             static_cast<void>(control_status(state));
         } catch (const std::exception& error) {
-            rejected = field != "timeout" ||
-                       std::string_view{error.what()}.contains("timed out");
+            const std::string_view detail{error.what()};
+            rejected = field == "timeout"     ? detail.contains("timed out")
+                       : field == "oversized" ? detail.contains("oversized")
+                       : field == "not_json"  ? detail.contains("parse_error")
+                       : field == "closed" ? detail.contains("disconnected") ||
+                                                 detail.contains("empty")
+                                           : true;
         }
         worker.join();
         std::filesystem::remove(path);
@@ -735,6 +775,21 @@ void test_same_process_instance_replacement() {
         current.instance_id == previous.instance_id) {
         throw std::runtime_error(
             "Monitor replacement reused an instance identity"
+        );
+    }
+    if (!test::throws_with<std::runtime_error>(
+            [&] {
+                static_cast<void>(monitor::request_control(
+                    state,
+                    monitor::ControlCommand::trigger,
+                    monitor::ControlTarget{current.pid, ""}
+                ));
+            },
+            "owner changed"
+        ) ||
+        control_status(state).pending) {
+        throw std::runtime_error(
+            "an empty target identity controlled a Monitor"
         );
     }
     for (const auto command :

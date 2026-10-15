@@ -121,6 +121,10 @@ confirmation; external snapshots never fabricate direction, progress or round
 timestamps. Offscreen and exec'd subprocess regressions cover owned rounds,
 blocked results, trigger/stop/close, external ownership, read-only lock inspection,
 cleanup occupancy, unsafe endpoints and overlapping roots across state directories.
+Coverage regressions also switch configuration while IPC callbacks are pending,
+replace a same-PID Monitor during stop confirmation, and check recovery from
+stale/refused endpoints, rejected controls and corrupt occupied-lock metadata.
+Obsolete callbacks must not publish snapshots or acknowledgements for the new selection.
 Systemd unit management remains separate from stopping a running Monitor through IPC.
 
 ## GUI localization
