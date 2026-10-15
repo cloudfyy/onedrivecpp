@@ -391,6 +391,27 @@ onedrive::util::UniqueFD acquire_runtime_lock(
     return descriptor;
 }
 
+std::optional<LockOwner>
+inspect_runtime_owner(const std::filesystem::path& directory) {
+    const auto path = directory / "onedrive-cpp.lock";
+    util::UniqueFD descriptor;
+    try {
+        descriptor = util::open_path_no_symlinks(path, O_RDONLY);
+    } catch (const std::system_error& error) {
+        if (error.code() == std::errc::no_such_file_or_directory) {
+            return std::nullopt;
+        }
+        throw;
+    }
+    static_cast<void>(
+        util::inspect_owned_regular_file(descriptor.get(), path, "runtime lock")
+    );
+    if (try_lock(descriptor.get())) {
+        return std::nullopt;
+    }
+    return parse_owner(Json::parse(read_metadata(descriptor.get(), path)));
+}
+
 util::UniqueFD acquire_sync_directory_lock(
     const std::filesystem::path& sync_directory,
     const std::filesystem::path& state_directory,

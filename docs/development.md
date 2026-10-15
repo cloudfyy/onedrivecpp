@@ -76,7 +76,7 @@ detach the path from its held OS lock.
 ## Shared Monitor control
 
 `monitor::request_control` and `ControlServer` are UI-neutral local IPC shared by
-CLI and future GUI controls. Production Monitor owns the server inside `run_loop`,
+CLI and GUI controls. Production Monitor owns the server inside `run_loop`,
 under the outer state/root locks. Its IPC-only thread remains responsive while
 the scheduler runs a synchronous callback; it never runs another sync engine.
 Versioned, size-limited Unix seqpacket messages reject arbitrary configuration
@@ -98,8 +98,30 @@ the existing monitor policy.
 Exec'd subprocess regressions cover responsive status, request coalescing,
 local changes, cancellation, locks through cleanup, CLI offline text/JSON, crash
 restart, invalid packets/replies, endpoint permissions/replacement, and timeouts.
-This step intentionally leaves GUI Monitor controls deferred; implement them
-with this client/shared scheduler rather than silently forwarding ordinary sync.
+Protocol v2 adds an opaque per-server `instance_id`; `ControlTarget` freezes
+PID plus instance identity for GUI requests, including before modal stop
+confirmation. The server rejects stale identities before mutating scheduler
+state, even when a new Monitor shares the previous PID. Older v1 tasks must
+restart after updating. CLI snapshots expose the same identity.
+
+GUI-owned monitoring reuses `SyncController::start_task`, runtime preflight,
+`app::monitor_account`, event forwarding, cancellation and completion. The
+separate `MonitorController` only queries/controls IPC on one bounded background
+worker. Configuration generations discard outdated callbacks; Qt receives results
+on its event thread. One-second polling never starts a second synchronization engine.
+`inspect_runtime_owner` checks only an existing state-lock inode, reusing safe
+open/flock/metadata helpers without creating or rewriting it. Socket disappearance
+therefore cannot masquerade as released resources. Unexpected errors remain visible
+and uncertain ownership fails closed. Invalid IPC blocks new synchronization tasks;
+settings/account recovery is allowed only when lock inspection establishes free
+resources. An empty state-directory setting is not probed as the working directory.
+
+Closing the GUI cancels/waits only for its own worker. External stops require
+confirmation; external snapshots never fabricate direction, progress or round
+timestamps. Offscreen and exec'd subprocess regressions cover owned rounds,
+blocked results, trigger/stop/close, external ownership, read-only lock inspection,
+cleanup occupancy, unsafe endpoints and overlapping roots across state directories.
+Systemd unit management remains separate from stopping a running Monitor through IPC.
 
 ## GUI localization
 
@@ -137,7 +159,7 @@ entry in `src/ui/gui/translations/onedrive_zh_CN.ts`, and rebuild:
 ```bash
 cmake --preset debug -DONEDRIVE_BUILD_GUI=ON -DONEDRIVE_ENABLE_GRAPH_E2E=OFF
 cmake --build build/debug --target onedrive_gui_lupdate
-cmake --build build/debug --target onedrive-cpp-gui gui_settings_tests gui_startup_state_tests gui_localization_tests gui_startup_options_tests gui_login_tests gui_synchronization_tests gui_state_view_model_tests gui_system_appearance_tests browser_request_tests
+cmake --build build/debug --target onedrive-cpp-gui gui_settings_tests gui_startup_state_tests gui_localization_tests gui_startup_options_tests gui_login_tests gui_synchronization_tests gui_monitoring_tests gui_state_view_model_tests gui_system_appearance_tests browser_request_tests
 ctest --test-dir build/debug -R '^(gui_.*|browser_request_tests)$' --output-on-failure
 ```
 
@@ -159,8 +181,8 @@ desktop/native-dialog check.
 
 Settings phases one and two are implemented: account/directories, sync rules,
 transfers, network, monitor, and advanced/logging, including advanced account
-endpoints, scope arrays and mount requirements. GUI monitor workers, directory
-migration and service integration remain deferred.
+endpoints, scope arrays and mount requirements. GUI monitoring uses the shared
+worker/service and IPC; directory migration and systemd unit management remain deferred.
 `SettingsEditor` keeps one widget-backed draft across all six tabs. Enum
 `itemData` contains parser values, never translated labels. Numeric text fields
 avoid Qt's 32-bit spin-box truncation and validate nonnegative TOML int64 values.

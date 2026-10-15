@@ -218,6 +218,39 @@ if(ONEDRIVE_BUILD_GUI)
         TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     )
     add_onedrive_test(
+        gui_monitoring_tests
+        SOURCES
+            tests/gui/monitoring.cpp
+            src/ui/gui/sync_controller.cpp
+            src/ui/gui/sync_controller.hpp
+            src/ui/gui/login_controller.cpp
+            src/ui/gui/login_controller.hpp
+            src/ui/gui/main_window.cpp
+            src/ui/gui/main_window.hpp
+            src/ui/gui/settings_editor.cpp
+            src/ui/gui/settings_editor.hpp
+            src/ui/gui/configuration.cpp
+            src/ui/gui/app_state_view_model.cpp
+        INCLUDE_DIRS src src/ui/gui tests ${PROJECT_BINARY_DIR}/generated
+        LIBRARIES onedrive_cli Qt6::Widgets Qt6::Network
+            onedrive_gui_localization spdlog::spdlog
+    )
+    set_target_properties(gui_monitoring_tests PROPERTIES AUTOMOC ON)
+    set_tests_properties(gui_monitoring_tests PROPERTIES
+        TIMEOUT 60 ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
+    )
+    target_compile_definitions(gui_monitoring_tests PRIVATE
+        ONEDRIVE_CLI_EXECUTABLE="$<TARGET_FILE:onedrive-cpp>"
+    )
+    foreach(GUI_MONITOR_TEST IN ITEMS
+        gui_synchronization_tests gui_monitoring_tests
+    )
+        target_sources(${GUI_MONITOR_TEST} PRIVATE
+            "${PROJECT_SOURCE_DIR}/src/ui/gui/monitor_controller.cpp"
+            "${PROJECT_SOURCE_DIR}/src/ui/gui/monitor_controller.hpp"
+        )
+    endforeach()
+    add_onedrive_test(
         gui_localization_tests
         SOURCES
             src/ui/gui/login_controller.cpp
@@ -242,6 +275,8 @@ if(ONEDRIVE_BUILD_GUI)
         target_sources(${GUI_WINDOW_TEST} PRIVATE
             "${PROJECT_SOURCE_DIR}/src/ui/gui/sync_controller.cpp"
             "${PROJECT_SOURCE_DIR}/src/ui/gui/sync_controller.hpp"
+            "${PROJECT_SOURCE_DIR}/src/ui/gui/monitor_controller.cpp"
+            "${PROJECT_SOURCE_DIR}/src/ui/gui/monitor_controller.hpp"
         )
         target_link_libraries(${GUI_WINDOW_TEST} PRIVATE spdlog::spdlog)
     endforeach()

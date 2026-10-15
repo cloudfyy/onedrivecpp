@@ -57,7 +57,7 @@ onedrive-cpp monitor stop --config ~/.config/onedrive-cpp/config.toml
 
 这些命令无需认证、不访问 Graph、不打开数据库，也不争抢 Monitor 持有的运行锁。
 只能控制已运行的任务，请求不能更换同步根目录或配置。`status` 返回生命周期状态
-（`starting`、`synchronizing`、`waiting`、`stopping`）、PID、实际同步目录、是否有
+（`starting`、`synchronizing`、`waiting`、`stopping`）、PID、实例标识 `instance_id`、实际同步目录、是否有
 待处理手动请求、已完成轮数和最近一轮退出码（首次完成前为 `none`）。
 这是状态快照，不是详细传输进度流；`--output json` 复用 `monitor_control` section，
 其中 `values` 延续既有字符串类型。
@@ -69,11 +69,29 @@ onedrive-cpp monitor stop --config ~/.config/onedrive-cpp/config.toml
 报忙，不隐式转发；持有者为 Monitor 时，占用诊断提示上述显式命令。
 
 端点为私有状态目录内的 `monitor-control.sock`，目录权限 `0700`、socket 权限
-`0600`，两端校验当前用户身份。v1 协议只接受限长 JSON 命令，连接／读／写等待
+`0600`，两端校验当前用户身份。v2 协议只接受限长 JSON 命令，连接／读／写等待
 分别限制为两秒。缺失、不安全、不响应及陈旧端点均明确失败，不返回空闲形状的
 成功结果。新 Monitor 取得正常运行锁后可回收属于当前用户的非活动 socket；
 不要删除活跃端点。状态目录路径超过 Unix socket 长度限制时明确报错。
-GUI 监控控制暂留下一步接入，将复用该共享接口，不另建同步引擎。
+升级后须重启旧 v1 Monitor；协议不兼容会明确报错。
+
+### GUI 监控与外部任务所有权
+
+**启动监控**按已保存配置运行共享 Monitor 服务，包括 `sync.dry_run`。GUI 自有任务
+复用原同步 worker、取消和上传／下载事件；等待时保留上轮计数与完成时间，
+每轮完成或单方向 100% 不代表监控退出。关闭窗口只取消自己的任务，并等待清理。
+
+GUI 自动发现所选状态目录中的外部 CLI／service Monitor，每秒异步刷新无需认证的
+状态快照。等待时**立即同步**请求现有 Monitor，执行中或已有待处理请求时禁用重复
+触发。停止外部 Monitor 须明确确认；控制固定 PID 和实例标识，另一个任务即使在
+同一进程重启，也不会继承之前的确认。关闭窗口不会停止外部 Monitor。
+
+外部快照没有实时传输进度、同步方向或本轮完成时间，GUI 不伪造这些信息。socket
+消失不等于清理完成：只读检查已有状态锁，占用期间仍禁用新任务及设置／账号修改。
+其他 IPC 错误明确显示；所有权不确定时禁止启动任务。即使 IPC 无效，只读锁检查
+确认运行资源已空闲时仍允许设置／账号修复。不同状态目录的重叠根目录仍
+明确报忙，不自动附加或接管。IPC 停止不禁用 systemd unit，也不修改重启策略；
+systemd 启动／重启管理和目录迁移仍属于后续工作。
 
 运行诊断默认以 `info` 级别写入标准错误。systemd 会自动收集该输出：
 

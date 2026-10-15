@@ -1,4 +1,5 @@
 #include "main_window.hpp"
+#include <QTimer>
 #include "onedrive/sync/blocked_policy.hpp"
 
 #include "configuration.hpp"
@@ -111,12 +112,13 @@ MainWindow::MainWindow(
     AppStateViewModel state,
     AuthenticationFunction authenticate,
     Localization* localization,
-    SynchronizationFunction synchronize
+    SynchronizationFunction synchronize,
+    MonitoringFunction monitor
 )
     : state_{std::move(state)},
       localization_{localization},
       login_{std::move(authenticate)},
-      synchronization_{std::move(synchronize)} {
+      synchronization_{std::move(synchronize), nullptr, std::move(monitor)} {
     setWindowTitle(tr("onedrive client"));
     resize(860, 520);
 
@@ -169,16 +171,22 @@ MainWindow::MainWindow(
     preview_button_->setObjectName("previewSyncButton");
     sync_button_ = new QPushButton{sync_group_};
     sync_button_->setObjectName("startSyncButton");
+    monitor_button_ = new QPushButton{sync_group_};
+    monitor_button_->setObjectName("startMonitorButton");
     stop_sync_button_ = new QPushButton{sync_group_};
     stop_sync_button_->setObjectName("stopSyncButton");
     sync_actions->addWidget(preview_button_);
     sync_actions->addWidget(sync_button_);
+    sync_actions->addWidget(monitor_button_);
     sync_actions->addWidget(stop_sync_button_);
     sync_actions->addStretch();
     sync_layout->addLayout(sync_actions);
     sync_status_ = make_value_label({});
     sync_status_->setObjectName("syncStatus");
     sync_layout->addWidget(sync_status_);
+    monitor_status_ = make_value_label({});
+    monitor_status_->setObjectName("monitorStatus");
+    sync_layout->addWidget(monitor_status_);
     sync_context_ = make_value_label({});
     sync_context_->setObjectName("syncContext");
     sync_layout->addWidget(sync_context_);
@@ -420,6 +428,70 @@ MainWindow::MainWindow(
         start_sync(false);
     });
     connect(
+        monitor_button_,
+        &QPushButton::clicked,
+        this,
+        &MainWindow::start_monitoring
+    );
+    connect(
+        &monitor_,
+        &MonitorController::changed,
+        this,
+        &MainWindow::monitor_changed
+    );
+    connect(
+        &monitor_,
+        &MonitorController::acknowledged,
+        this,
+        [this](
+            monitor::ControlCommand command, const QString& acknowledgement
+        ) {
+            if (command == monitor::ControlCommand::stop) {
+                sync_stopping_ = true;
+                sync_phase_ = SyncPhase::stopping;
+            }
+            log_message(
+                LogOperation::monitoring,
+                events::MessageKind::information,
+                acknowledgement == "merged"
+                    ? QT_TR_NOOP(
+                          "Monitor request merged; this does not mean "
+                          "synchronization or shutdown is complete."
+                      )
+                    : QT_TR_NOOP(
+                          "Monitor request accepted; this does not mean "
+                          "synchronization or shutdown is complete."
+                      )
+            );
+            refresh_actions();
+            render_sync();
+        }
+    );
+    connect(
+        &monitor_,
+        &MonitorController::request_failed,
+        this,
+        [this](const QString& error) {
+            if (!synchronization_.running()) {
+                sync_stopping_ = false;
+            }
+            log_message(
+                LogOperation::monitoring,
+                events::MessageKind::error,
+                QT_TR_NOOP("Monitor request failed: %1"),
+                error
+            );
+            refresh_actions();
+            render_sync();
+        }
+    );
+    monitor_timer_ = new QTimer{this};
+    monitor_timer_->setInterval(1000);
+    connect(
+        monitor_timer_, &QTimer::timeout, this, &MainWindow::refresh_monitor
+    );
+    monitor_timer_->start();
+    connect(
         stop_sync_button_, &QPushButton::clicked, this, &MainWindow::stop_sync
     );
     connect(
@@ -452,10 +524,14 @@ MainWindow::MainWindow(
                 sync_phase_ = SyncPhase::working;
             }
             log_message(
-                preview ? LogOperation::preview : LogOperation::synchronization,
+                sync_monitoring_ ? LogOperation::monitoring
+                : preview        ? LogOperation::preview
+                                 : LogOperation::synchronization,
                 events::MessageKind::information,
-                preview ? QT_TR_NOOP("Previewing changes...")
-                        : QT_TR_NOOP("Synchronizing...")
+                sync_monitoring_
+                    ? QT_TR_NOOP("Starting GUI-owned monitoring...")
+                : preview ? QT_TR_NOOP("Previewing changes...")
+                          : QT_TR_NOOP("Synchronizing...")
             );
             render_sync();
         },
@@ -476,14 +552,38 @@ MainWindow::MainWindow(
             sync_result_ = result;
             sync_error_ = error;
             sync_stopping_ = false;
-            sync_finished_at_ = QDateTime::currentDateTime();
+            if (!sync_monitoring_) {
+                sync_finished_at_ = QDateTime::currentDateTime();
+            }
             sync_phase_ = !error.isEmpty()               ? SyncPhase::failed
                           : result == exit_code::success ? SyncPhase::completed
                           : result == exit_code::cancelled
                               ? SyncPhase::cancelled
                           : result == exit_code::blocked ? SyncPhase::blocked
                                                          : SyncPhase::failed;
-            log_sync_result();
+            if (sync_monitoring_) {
+                log_message(
+                    LogOperation::monitoring,
+                    error.isEmpty() && (result == exit_code::success ||
+                                        result == exit_code::cancelled)
+                        ? events::MessageKind::information
+                        : events::MessageKind::error,
+                    !error.isEmpty() ? QT_TR_NOOP("Monitoring failed: %1")
+                    : result == exit_code::success ||
+                            result == exit_code::cancelled
+                        ? QT_TR_NOOP("Monitoring stopped.")
+                        : QT_TR_NOOP("Monitoring failed (exit code %1)."),
+                    !error.isEmpty() ? error
+                    : result == exit_code::success ||
+                            result == exit_code::cancelled
+                        ? QString{}
+                        : QString::number(result)
+                );
+                monitor_.set_configuration(state_.config_file);
+                refresh_monitor();
+            } else {
+                log_sync_result();
+            }
             refresh_actions();
             render_sync();
             if (!closing_) {
@@ -645,6 +745,7 @@ void MainWindow::retranslate_ui() {
     sync_group_->setTitle(tr("Synchronization"));
     preview_button_->setText(tr("Preview changes"));
     sync_button_->setText(tr("Sync now"));
+    monitor_button_->setText(tr("Start monitoring"));
     stop_sync_button_->setText(tr("Stop"));
     log_level_->setItemText(0, tr("All levels"));
     log_level_->setItemText(1, tr("Trace"));
@@ -668,6 +769,11 @@ void MainWindow::retranslate_ui() {
     sync_button_->setToolTip(
         tr("Use saved settings; files may be uploaded, downloaded or deleted.")
     );
+    monitor_button_->setToolTip(
+        tr("Start a GUI-owned Monitor using saved settings. Closing this "
+           "window stops only its own task.")
+    );
+    monitor_button_->setAccessibleDescription(monitor_button_->toolTip());
     stop_sync_button_->setToolTip(
         tr("Request cancellation and wait for the task to finish.")
     );
@@ -755,11 +861,36 @@ void MainWindow::set_login_status(
 }
 
 void MainWindow::start_sync(bool preview) {
-    if (login_.running() || synchronization_.running() ||
-        !state_.can_synchronize()) {
+    if (!preview && monitor_.status()) {
+        const auto& reply = *monitor_.status();
+        if (reply.state == "waiting" && !reply.pending && !sync_stopping_ &&
+            monitor_.error().isEmpty() && !monitor_.busy()) {
+            request_monitor(monitor::ControlCommand::trigger, reply.target());
+        }
+        return;
+    }
+    if (monitor_busy()) {
+        return;
+    }
+    start_task(preview, false);
+}
+
+void MainWindow::start_monitoring() {
+    if (monitor_busy()) {
+        return;
+    }
+    start_task(false, true);
+}
+
+void MainWindow::start_task(bool preview, bool monitoring) {
+    if (login_.running() || synchronization_.running() || monitor_busy() ||
+        monitor_.uncertain() || !state_.can_synchronize()) {
         return;
     }
     sync_preview_ = preview;
+    sync_monitoring_ = monitoring;
+    had_monitor_ = false;
+    attached_monitor_instance_.clear();
     sync_stopping_ = false;
     sync_phase_ = SyncPhase::preparing;
     sync_error_.clear();
@@ -769,35 +900,174 @@ void MainWindow::start_sync(bool preview) {
     sync_stage_.reset();
     sync_summary_.reset();
     log_message(
-        preview ? LogOperation::preview : LogOperation::synchronization,
+        monitoring ? LogOperation::monitoring
+        : preview  ? LogOperation::preview
+                   : LogOperation::synchronization,
         events::MessageKind::information,
-        preview ? QT_TR_NOOP("Preparing preview...")
-                : QT_TR_NOOP("Preparing synchronization...")
+        monitoring ? QT_TR_NOOP("Starting GUI-owned monitoring...")
+        : preview  ? QT_TR_NOOP("Preparing preview...")
+                   : QT_TR_NOOP("Preparing synchronization...")
     );
     try {
-        synchronization_.start(state_.config_file, preview);
+        if (monitoring) {
+            synchronization_.start_monitoring(state_.config_file);
+        } else {
+            synchronization_.start(state_.config_file, preview);
+        }
     } catch (const std::exception& error) {
         sync_phase_ = SyncPhase::failed;
         sync_error_ = QString::fromUtf8(error.what());
         sync_result_ = exit_code::failure;
-        log_sync_result();
+        if (monitoring) {
+            log_message(
+                LogOperation::monitoring,
+                events::MessageKind::error,
+                QT_TR_NOOP("Monitoring failed: %1"),
+                sync_error_
+            );
+        } else {
+            log_sync_result();
+        }
     }
     refresh_actions();
     render_sync();
 }
 
 void MainWindow::stop_sync() {
+    if (!synchronization_.running() && monitor_.status()) {
+        const auto reply = *monitor_.status();
+        if (reply.state == "stopping" || sync_stopping_ || monitor_.busy()) {
+            return;
+        }
+        const auto confirmed = QMessageBox::question(
+            this,
+            tr("Stop external Monitor?"),
+            tr("Stop Monitor PID %1 for %2? It is not owned by this window. "
+               "Closing the window alone will leave it running.")
+                .arg(
+                    QString::number(reply.pid),
+                    QString::fromStdString(reply.sync_directory.string())
+                ),
+            QMessageBox::Yes | QMessageBox::No,
+            QMessageBox::No
+        );
+        if (confirmed == QMessageBox::Yes) {
+            request_monitor(monitor::ControlCommand::stop, reply.target());
+        }
+        return;
+    }
     if (!synchronization_.running() || sync_stopping_) {
         return;
     }
     sync_stopping_ = true;
     sync_phase_ = SyncPhase::stopping;
     log_message(
-        sync_preview_ ? LogOperation::preview : LogOperation::synchronization,
+        sync_monitoring_ ? LogOperation::monitoring
+        : sync_preview_  ? LogOperation::preview
+                         : LogOperation::synchronization,
         events::MessageKind::information,
         QT_TR_NOOP("Stopping; waiting for the task to finish...")
     );
     synchronization_.cancel();
+    refresh_actions();
+    render_sync();
+}
+
+bool MainWindow::monitor_busy() const {
+    return monitor_.status().has_value() || monitor_.owner().has_value() ||
+           (monitor_.uncertain() && !monitor_.runtime_free());
+}
+
+void MainWindow::refresh_monitor() {
+    if (!closing_ && !login_.running() &&
+        state_.configuration_status == ConfigurationStatus::valid) {
+        monitor_.refresh();
+    }
+}
+
+void MainWindow::request_monitor(
+    monitor::ControlCommand command, monitor::ControlTarget target
+) {
+    try {
+        monitor_.request(command, std::move(target));
+    } catch (const std::exception& error) {
+        log_message(
+            LogOperation::monitoring,
+            events::MessageKind::error,
+            QT_TR_NOOP("Monitor request failed: %1"),
+            QString::fromUtf8(error.what())
+        );
+    }
+}
+
+void MainWindow::monitor_changed() {
+    const bool owns_monitor = synchronization_.running() && sync_monitoring_;
+    const bool attached = monitor_.status().has_value();
+    const bool monitor_owner =
+        monitor_.owner() && monitor_.owner()->operation == "monitor";
+    if (!owns_monitor && !synchronization_.running() &&
+        (attached || monitor_owner)) {
+        if (!had_monitor_ || (attached && attached_monitor_instance_ !=
+                                              monitor_.status()->instance_id)) {
+            sync_delta_.reset();
+            sync_download_.reset();
+            sync_upload_.reset();
+            sync_stage_.reset();
+            sync_summary_.reset();
+            sync_finished_at_ = {};
+            if (attached) {
+                log_message(
+                    LogOperation::monitoring,
+                    events::MessageKind::information,
+                    QT_TR_NOOP(
+                        "Connected to an external Monitor. Closing this window "
+                        "will not stop it."
+                    )
+                );
+            }
+        }
+        sync_monitoring_ = true;
+        sync_preview_ = false;
+        if (attached) {
+            attached_monitor_instance_ = monitor_.status()->instance_id;
+            const auto& reply = *monitor_.status();
+            sync_phase_ = reply.state == "waiting"    ? SyncPhase::waiting
+                          : reply.state == "stopping" ? SyncPhase::stopping
+                          : reply.state == "starting" ? SyncPhase::preparing
+                                                      : SyncPhase::working;
+        } else {
+            sync_phase_ =
+                sync_stopping_ ? SyncPhase::stopping : SyncPhase::preparing;
+        }
+    }
+    if (had_monitor_ && !owns_monitor && !monitor_busy() &&
+        !synchronization_.running()) {
+        attached_monitor_instance_.clear();
+        sync_phase_ = SyncPhase::completed;
+        sync_stopping_ = false;
+        log_message(
+            LogOperation::monitoring,
+            events::MessageKind::information,
+            QT_TR_NOOP("Monitor stopped; runtime resources are available.")
+        );
+    }
+    had_monitor_ = ((attached || monitor_owner) && !owns_monitor) ||
+                   (had_monitor_ && monitor_busy());
+    if (!owns_monitor && !synchronization_.running() &&
+        !monitor_.error().isEmpty()) {
+        sync_phase_ = SyncPhase::monitor_unavailable;
+    }
+    if (last_monitor_error_ != monitor_.error()) {
+        last_monitor_error_ = monitor_.error();
+        if (!last_monitor_error_.isEmpty()) {
+            log_message(
+                LogOperation::monitoring,
+                events::MessageKind::error,
+                QT_TR_NOOP("Monitor status unavailable: %1"),
+                last_monitor_error_
+            );
+        }
+    }
     refresh_actions();
     render_sync();
 }
@@ -817,6 +1087,12 @@ void MainWindow::receive_sync_events(
             if (!sync_stopping_) {
                 switch (phase->phase) {
                 case events::SyncPhase::preparing:
+                    if (sync_monitoring_) {
+                        sync_delta_.reset();
+                        sync_download_.reset();
+                        sync_upload_.reset();
+                        sync_summary_.reset();
+                    }
                     sync_phase_ = SyncPhase::preparing;
                     break;
                 case events::SyncPhase::scanning:
@@ -835,6 +1111,12 @@ void MainWindow::receive_sync_events(
                     break;
                 case events::SyncPhase::uploading:
                     sync_phase_ = SyncPhase::uploading;
+                    break;
+                case events::SyncPhase::waiting:
+                    if (sync_monitoring_) {
+                        sync_phase_ = SyncPhase::waiting;
+                        sync_finished_at_ = QDateTime::currentDateTime();
+                    }
                     break;
                 default:
                     sync_phase_ = SyncPhase::working;
@@ -896,13 +1178,15 @@ void MainWindow::receive_sync_events(
                 sync_phase_ = SyncPhase::working;
             }
             append_log_event(
-                sync_preview_ ? LogOperation::preview
-                              : LogOperation::synchronization,
+                sync_monitoring_ ? LogOperation::monitoring
+                : sync_preview_  ? LogOperation::preview
+                                 : LogOperation::synchronization,
                 event
             );
         }
     }
     render_sync();
+    refresh_actions();
     render_logs();
     if (std::ranges::any_of(batch, [](const auto& event) {
             if (std::holds_alternative<events::BlockedItemEvent>(event)) {
@@ -1120,7 +1404,58 @@ void MainWindow::render_sync() {
                            : state_.sync_mode == sync::SyncMode::download_only
                                ? tr("Download only")
                                : tr("Bidirectional");
-    sync_context_->setText(tr("Direction: %1; mode: One-time").arg(direction));
+    const bool external =
+        !(synchronization_.running() && sync_monitoring_) &&
+        (!attached_monitor_instance_.empty() ||
+         (monitor_.owner() && monitor_.owner()->operation == "monitor"));
+    sync_context_->setText(
+        external ? tr("Direction: not available from external Monitor; mode: "
+                      "Automatic monitoring")
+        : sync_monitoring_
+            ? tr("Direction: %1; mode: Automatic monitoring").arg(direction)
+            : tr("Direction: %1; mode: One-time").arg(direction)
+    );
+    QString monitor_text =
+        monitor_.uncertain()
+            ? tr("Monitor status unavailable. The task may still be running.")
+            : tr("Monitor: not running.");
+    if (monitor_.status()) {
+        const auto& reply = *monitor_.status();
+        monitor_text =
+            tr("%1 Monitor: PID %2; directory: %3; completed rounds: %4; "
+               "pending request: %5; last result: %6.")
+                .arg(
+                    external ? tr("External") : tr("GUI-owned"),
+                    locale.toString(static_cast<qlonglong>(reply.pid)),
+                    QString::fromStdString(reply.sync_directory.string()),
+                    locale.toString(
+                        static_cast<qulonglong>(reply.completed_rounds)
+                    ),
+                    reply.pending ? tr("Yes") : tr("No"),
+                    reply.last_result ? QString::number(*reply.last_result)
+                                      : tr("None")
+                );
+        if (external) {
+            monitor_text +=
+                tr(" External Monitor provides status snapshots, not live "
+                   "transfer progress.");
+        }
+    } else if (monitor_.owner()) {
+        monitor_text =
+            tr("Runtime resources are busy: PID %1; operation: %2. Waiting for "
+               "startup or cleanup; controls are unavailable.")
+                .arg(
+                    QString::number(monitor_.owner()->pid),
+                    QString::fromStdString(monitor_.owner()->operation)
+                );
+    } else if (synchronization_.running() && sync_monitoring_) {
+        monitor_text = tr("Starting GUI-owned monitoring...");
+    }
+    if (!monitor_.error().isEmpty()) {
+        monitor_text += " " + tr("Monitor status unavailable: %1")
+                                  .arg(short_detail(monitor_.error()));
+    }
+    monitor_status_->setText(monitor_text);
     QString status;
     switch (sync_phase_) {
     case SyncPhase::idle:
@@ -1158,18 +1493,37 @@ void MainWindow::render_sync() {
     case SyncPhase::uploading:
         status = tr("Uploading files...");
         break;
+    case SyncPhase::waiting:
+        status = tr("Monitoring; waiting for changes.");
+        if (monitor_.status() && monitor_.status()->last_result &&
+            *monitor_.status()->last_result != exit_code::success) {
+            status +=
+                *monitor_.status()->last_result == exit_code::blocked
+                    ? " " +
+                          tr("Last round incomplete: some items were blocked.")
+                    : " " + tr("Last round failed or was cancelled (exit code "
+                               "%1). Monitoring continues.")
+                                .arg(*monitor_.status()->last_result);
+        }
+        break;
+    case SyncPhase::monitor_unavailable:
+        status =
+            tr("Monitor status unavailable. The task may still be running.");
+        break;
     case SyncPhase::stopping:
         status = tr("Stopping; waiting for the task to finish...");
         break;
     case SyncPhase::completed:
         status =
-            sync_preview_
+            sync_monitoring_ ? tr("Monitoring stopped.")
+            : sync_preview_
                 ? tr("Preview completed. No synchronized files were changed.")
                 : tr("Synchronization completed.");
         break;
     case SyncPhase::cancelled:
-        status = sync_preview_ ? tr("Preview cancelled.")
-                               : tr("Synchronization cancelled.");
+        status = sync_monitoring_ ? tr("Monitoring stopped.")
+                 : sync_preview_  ? tr("Preview cancelled.")
+                                  : tr("Synchronization cancelled.");
         break;
     case SyncPhase::blocked:
         status =
@@ -1178,6 +1532,13 @@ void MainWindow::render_sync() {
                 : tr("Synchronization incomplete: some items were blocked.");
         break;
     case SyncPhase::failed:
+        if (sync_monitoring_) {
+            status =
+                !sync_error_.isEmpty()
+                    ? tr("Monitoring failed: %1").arg(short_detail(sync_error_))
+                    : tr("Monitoring failed (exit code %1).").arg(sync_result_);
+            break;
+        }
         if (!sync_error_.isEmpty()) {
             status = (sync_preview_ ? tr("Preview failed: %1")
                                     : tr("Synchronization failed: %1"))
@@ -1269,7 +1630,11 @@ void MainWindow::render_sync() {
     }
     upload_progress_->setFormat("%p%");
     upload_progress_->setAccessibleName(tr("Upload progress"));
-    upload_progress_->setVisible(measurable_upload);
+    upload_progress_->setVisible(
+        measurable_upload &&
+        !(sync_monitoring_ && (sync_phase_ == SyncPhase::waiting ||
+                               sync_phase_ == SyncPhase::completed))
+    );
     upload_status_->setText(upload_text);
     upload_status_->setVisible(!upload_text.isEmpty());
     QString summary;
@@ -1302,7 +1667,8 @@ void MainWindow::render_sync() {
          sync_phase_ == SyncPhase::cancelled ||
          sync_phase_ == SyncPhase::blocked || sync_phase_ == SyncPhase::failed);
     const bool show_progress =
-        sync_phase_ == SyncPhase::completed || show_download;
+        (!sync_monitoring_ && sync_phase_ == SyncPhase::completed) ||
+        show_download;
     sync_progress_->setRange(0, 100);
     sync_progress_->setValue(
         sync_phase_ == SyncPhase::completed ? 100 : percentage
@@ -1313,7 +1679,8 @@ void MainWindow::render_sync() {
     );
     sync_progress_->setVisible(show_progress);
     QString hint;
-    if (synchronization_.running() && !show_progress &&
+    if (synchronization_.running() && sync_phase_ != SyncPhase::waiting &&
+        !show_progress &&
         !(sync_phase_ == SyncPhase::uploading && measurable_upload)) {
         if (sync_phase_ == SyncPhase::scanning) {
             hint = tr(
@@ -1549,6 +1916,9 @@ void MainWindow::render_logs() {
         case LogOperation::synchronization:
             operation = tr("Sync");
             break;
+        case LogOperation::monitoring:
+            operation = tr("Monitoring");
+            break;
         }
         messages << QString{"[%1] [%2] %3"}.arg(
             entry.timestamp.toString("yyyy-MM-dd HH:mm:ss.zzz"), operation, text
@@ -1615,7 +1985,7 @@ void MainWindow::render_logs() {
 void MainWindow::start_login() {
     if (!state_.can_sign_in() ||
         state_.account_status == AccountStatus::credentials_available ||
-        login_.running() || synchronization_.running()) {
+        login_.running() || synchronization_.running() || monitor_busy()) {
         return;
     }
     cancelling_ = false;
@@ -1650,26 +2020,39 @@ void MainWindow::cancel_login() {
 void MainWindow::refresh_actions() {
     const bool running = login_.running();
     const bool syncing = synchronization_.running();
+    const bool occupied = monitor_busy();
     const bool signed_in =
         state_.account_status == AccountStatus::credentials_available;
     login_button_->setEnabled(
-        !running && !syncing && !signed_in && state_.can_sign_in()
+        !running && !syncing && !occupied && !signed_in && state_.can_sign_in()
     );
     account_action_button_->setText(
         running ? tr("Cancel login") : tr("Log out")
     );
     account_action_button_->setEnabled(
-        !syncing && (running ? !cancelling_ : signed_in)
+        !syncing && (running ? !cancelling_ : !occupied && signed_in)
     );
-    const bool can_sync = !running && !syncing && state_.can_synchronize();
+    const bool can_sync = !running && !syncing && !occupied &&
+                          !monitor_.uncertain() && state_.can_synchronize();
     preview_button_->setEnabled(can_sync);
-    sync_button_->setEnabled(can_sync);
-    stop_sync_button_->setEnabled(syncing && !sync_stopping_);
-    settings_->setEnabled(!running && !syncing);
+    const bool can_trigger =
+        monitor_.status() && monitor_.status()->state == "waiting" &&
+        !monitor_.status()->pending && monitor_.error().isEmpty() &&
+        !monitor_.busy() && !sync_stopping_ && !running &&
+        (!syncing || sync_monitoring_);
+    sync_button_->setEnabled(can_sync || can_trigger);
+    monitor_button_->setEnabled(can_sync);
+    stop_sync_button_->setEnabled(
+        !sync_stopping_ &&
+        (syncing ||
+         (monitor_.status() && monitor_.status()->state != "stopping" &&
+          !monitor_.busy() && monitor_.error().isEmpty()))
+    );
+    settings_->setEnabled(!running && !syncing && !occupied);
 }
 
 void MainWindow::logout() {
-    if (login_.running() || synchronization_.running() ||
+    if (login_.running() || synchronization_.running() || monitor_busy() ||
         state_.account_status != AccountStatus::credentials_available) {
         return;
     }
@@ -1727,6 +2110,8 @@ void MainWindow::open_login_url() {
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
+    closing_ = true;
+    monitor_timer_->stop();
     if (login_.running()) {
         closing_ = true;
         cancel_login();
@@ -1743,6 +2128,13 @@ void MainWindow::closeEvent(QCloseEvent* event) {
 }
 
 void MainWindow::refresh_settings(bool preserve_edits) {
+    monitor_.set_configuration(
+        state_.configuration_status == ConfigurationStatus::valid &&
+                !state_.state_directory.empty()
+            ? state_.config_file
+            : std::filesystem::path{}
+    );
+    refresh_monitor();
     blocked_items_.clear();
     blocked_error_.clear();
     render_blocked_items();
@@ -1841,7 +2233,7 @@ void MainWindow::refresh_startup_status() {
 }
 
 void MainWindow::reload_settings() {
-    if (login_.running() || synchronization_.running()) {
+    if (login_.running() || synchronization_.running() || monitor_busy()) {
         return;
     }
     state_ = load_app_state_view_model(state_.config_file);
@@ -1857,7 +2249,7 @@ void MainWindow::reload_settings() {
 }
 
 void MainWindow::save_settings() {
-    if (login_.running() || synchronization_.running()) {
+    if (login_.running() || synchronization_.running() || monitor_busy()) {
         return;
     }
     std::vector<config::SettingPatch> patches;
@@ -1953,7 +2345,7 @@ void MainWindow::save_settings() {
 }
 
 void MainWindow::import_settings() {
-    if (login_.running() || synchronization_.running()) {
+    if (login_.running() || synchronization_.running() || monitor_busy()) {
         return;
     }
     const auto selected = QFileDialog::getOpenFileName(

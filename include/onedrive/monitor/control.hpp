@@ -11,19 +11,33 @@ namespace onedrive::monitor {
 
 enum class ControlCommand { status, trigger, stop };
 
+struct ControlTarget {
+    std::int64_t pid;
+    std::string instance_id;
+};
+
 struct ControlReply {
     std::string acknowledgement;
     std::string state;
     std::int64_t pid{0};
+    std::string instance_id;
     std::filesystem::path sync_directory;
     bool pending{false};
     std::uint64_t completed_rounds{0};
     std::optional<int> last_result;
+    [[nodiscard]] ControlTarget target() const {
+        return {pid, instance_id};
+    }
 };
 
 [[nodiscard]] ControlReply request_control(
-    const std::filesystem::path& state_directory, ControlCommand command
+    const std::filesystem::path& state_directory,
+    ControlCommand command,
+    std::optional<ControlTarget> expected_target = std::nullopt
 );
+
+[[nodiscard]] std::optional<ControlReply>
+find_control(const std::filesystem::path& state_directory);
 
 class ControlServer final {
 public:

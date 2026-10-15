@@ -17,6 +17,7 @@ namespace onedrive::gui {
 
 using SynchronizationFunction = std::function<
     int(config::Config, const events::Observer&, std::stop_token)>;
+using MonitoringFunction = SynchronizationFunction;
 using CachedSynchronizationFunction = std::function<
     int(config::Config,
         const events::Observer&,
@@ -28,13 +29,16 @@ class SyncController final : public QObject {
 
 public:
     explicit SyncController(
-        SynchronizationFunction synchronize = {}, QObject* parent = nullptr
+        SynchronizationFunction synchronize = {},
+        QObject* parent = nullptr,
+        MonitoringFunction monitor = {}
     );
     explicit SyncController(
         CachedSynchronizationFunction synchronize, QObject* parent = nullptr
     );
     ~SyncController() override;
     void start(const std::filesystem::path& config_file, bool preview);
+    void start_monitoring(const std::filesystem::path& config_file);
     void cancel();
     void invalidate_preview();
     void refresh_blocked_items(const std::filesystem::path& config_file);
@@ -50,10 +54,14 @@ Q_SIGNALS:
     );
 
 private:
+    void start_task(
+        const std::filesystem::path& config_file, bool preview, bool monitoring
+    );
     void queue_event(const events::Event& event);
     void drain_events();
 
     CachedSynchronizationFunction synchronize_;
+    MonitoringFunction monitor_;
     sync::PreviewCache preview_cache_;
     std::filesystem::path preview_config_file_;
     std::string preview_config_fingerprint_;

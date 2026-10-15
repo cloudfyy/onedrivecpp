@@ -835,9 +835,9 @@ public:
 
     [[nodiscard]] std::unique_ptr<onedrive::monitor::FileMonitor>
     create_monitor(
-        const onedrive::config::Config&,
+        const onedrive::config::Config& config,
         onedrive::monitor::SyncCallback synchronize,
-        onedrive::graph::GraphClient&
+        onedrive::graph::GraphClient& graph
     ) const {
         ++monitor_count;
         auto counted_synchronize = [this,
@@ -847,6 +847,11 @@ public:
             ++monitor_sync_count;
             return synchronize(stop_token);
         };
+        if (monitor_override) {
+            return monitor_override(
+                config, std::move(counted_synchronize), graph
+            );
+        }
         return std::make_unique<onedrive::monitor::FileMonitor>(
             std::in_place_type<FakeMonitor>,
             monitor_run_count,
@@ -868,6 +873,12 @@ public:
     std::string configured_drive_id{"me"};
     FakeGraphClient::IdentityOverride identity_override;
     FakeGraphClient::DeltaOverride delta_override;
+    std::function<std::unique_ptr<onedrive::monitor::FileMonitor>(
+        const onedrive::config::Config&,
+        onedrive::monitor::SyncCallback,
+        onedrive::graph::GraphClient&
+    )>
+        monitor_override;
     FakeAuthenticationTransport::ResponseOverride
         authentication_response_override;
     bool empty_shared{false};

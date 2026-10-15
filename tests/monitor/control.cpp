@@ -186,6 +186,22 @@ void test_process_control() {
     Process process{state, root};
     wait_until([&] { return std::filesystem::exists(state / "round"); });
     const auto initial = control_status(state);
+    if (!test::throws_with<std::runtime_error>(
+            [&] {
+                static_cast<void>(monitor::request_control(
+                    state,
+                    monitor::ControlCommand::trigger,
+                    monitor::ControlTarget{initial.pid + 1, initial.instance_id}
+                ));
+            },
+            "owner changed"
+        ) ||
+        control_status(state).pending) {
+        throw std::runtime_error(
+            "owner identity mismatch was allowed to control a replacement "
+            "Monitor"
+        );
+    }
     if (initial.pid != process.pid() || initial.state != "synchronizing" ||
         initial.completed_rounds != 0 || initial.last_result ||
         initial.sync_directory != root) {
@@ -195,9 +211,12 @@ void test_process_control() {
     }
     for (const auto& packet : {
              std::string{R"({"version":9,"command":"trigger"})"},
-             std::string{R"({"version":1,"command":"unknown"})"},
+             std::string{R"({"version":2,"command":"unknown"})"},
              std::string{
-                 R"({"version":1,"command":"trigger","config":"other"})"
+                 R"({"version":2,"command":"trigger","config":"other"})"
+             },
+             std::string{
+                 R"({"version":2,"command":"trigger","instance_id":"obsolete"})"
              },
              std::string{"not JSON"},
              std::string(4097, 'x'),
@@ -388,6 +407,7 @@ void test_cli_and_restart() {
                 !result.standard_output.contains(
                     "\"event\":\"monitor_control\""
                 ) ||
+                !result.standard_output.contains("\"instance_id\":") ||
                 factory.graph_client_count != 0 ||
                 factory.token_store_count != 0 ||
                 factory.item_store_count != 0 ||
@@ -517,6 +537,13 @@ void test_endpoint_validation_and_cleanup() {
     const auto root = temporary.path() / "root";
     app::detail::secure_state_directory(state);
     const auto path = state / "monitor-control.sock";
+    if (monitor::find_control(state) ||
+        app::detail::inspect_runtime_owner(state) ||
+        std::filesystem::exists(state / "onedrive-cpp.lock")) {
+        throw std::runtime_error(
+            "offline Monitor discovery created a runtime lock"
+        );
+    }
     {
         monitor::ControlServer server{state, root};
         struct stat permissions{};
@@ -585,11 +612,12 @@ void test_client_protocol_and_timeout() {
     app::detail::secure_state_directory(state);
     const auto path = state / "monitor-control.sock";
     const Json valid{
-        {"version", 1},
+        {"version", 2},
         {"ok", true},
         {"acknowledgement", "status"},
         {"state", "waiting"},
         {"pid", ::getpid()},
+        {"instance_id", "test-instance"},
         {"sync_directory", "/sync"},
         {"pending", false},
         {"completed_rounds", 0},
@@ -599,6 +627,8 @@ void test_client_protocol_and_timeout() {
          {"version",
           "state",
           "pid",
+          "instance_id",
+          "empty_instance_id",
           "sync_directory",
           "completed_rounds",
           "last_result",
@@ -645,11 +675,16 @@ void test_client_protocol_and_timeout() {
                     return;
                 }
                 Json reply = valid;
-                reply[field] = field == "last_result"
-                                   ? Json(std::uint64_t{2147483648})
-                               : field == "pid" || field == "completed_rounds"
-                                   ? Json(-1)
-                                   : Json("invalid");
+                if (field == "instance_id" || field == "empty_instance_id") {
+                    reply["instance_id"] =
+                        field == "instance_id" ? Json(1) : Json("");
+                } else {
+                    reply[field] =
+                        field == "last_result" ? Json(std::uint64_t{2147483648})
+                        : field == "pid" || field == "completed_rounds"
+                            ? Json(-1)
+                            : Json("invalid");
+                }
                 const auto content = reply.dump();
                 if (::send(
                         client.get(),
@@ -683,6 +718,53 @@ void test_client_protocol_and_timeout() {
     }
 }
 
+void test_same_process_instance_replacement() {
+    test::TemporaryDirectory temporary;
+    const auto state = temporary.path() / "state";
+    const auto root = temporary.path() / "root";
+    app::detail::secure_state_directory(state);
+    const auto lock = app::detail::acquire_runtime_lock(state, "monitor");
+    monitor::ControlTarget previous;
+    {
+        monitor::ControlServer server{state, root};
+        previous = control_status(state).target();
+    }
+    monitor::ControlServer replacement{state, root};
+    const auto current = control_status(state);
+    if (current.pid != previous.pid ||
+        current.instance_id == previous.instance_id) {
+        throw std::runtime_error(
+            "Monitor replacement reused an instance identity"
+        );
+    }
+    for (const auto command :
+         {monitor::ControlCommand::stop, monitor::ControlCommand::trigger}) {
+        if (!test::throws_with<std::runtime_error>(
+                [&] {
+                    static_cast<void>(
+                        monitor::request_control(state, command, previous)
+                    );
+                },
+                "owner changed"
+            ) ||
+            control_status(state).state != "starting" ||
+            control_status(state).pending) {
+            throw std::runtime_error(
+                "a confirmed target controlled a newer Monitor in the same "
+                "process"
+            );
+        }
+    }
+    if (monitor::request_control(
+            state, monitor::ControlCommand::trigger, current.target()
+        )
+            .acknowledgement != "accepted") {
+        throw std::runtime_error(
+            "a confirmed target controlled a newer Monitor in the same process"
+        );
+    }
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -696,6 +778,7 @@ int main(int argc, char* argv[]) {
         test_initial_changes_and_transient_probes();
         test_endpoint_validation_and_cleanup();
         test_client_protocol_and_timeout();
+        test_same_process_instance_replacement();
     } catch (const std::exception& error) {
         return test::fail(error.what());
     }

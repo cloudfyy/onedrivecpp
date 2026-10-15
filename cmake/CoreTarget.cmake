@@ -232,6 +232,8 @@ if(ONEDRIVE_BUILD_GUI)
             ${PROJECT_SOURCE_DIR}/src/ui/gui/login_controller.hpp
             ${PROJECT_SOURCE_DIR}/src/ui/gui/sync_controller.cpp
             ${PROJECT_SOURCE_DIR}/src/ui/gui/sync_controller.hpp
+            ${PROJECT_SOURCE_DIR}/src/ui/gui/monitor_controller.cpp
+            ${PROJECT_SOURCE_DIR}/src/ui/gui/monitor_controller.hpp
         TS_FILES ${PROJECT_SOURCE_DIR}/src/ui/gui/translations/onedrive_zh_CN.ts
         OPTIONS -no-obsolete
     )
@@ -267,6 +269,8 @@ if(ONEDRIVE_BUILD_GUI)
         src/ui/gui/login_controller.hpp
         src/ui/gui/sync_controller.cpp
         src/ui/gui/sync_controller.hpp
+        src/ui/gui/monitor_controller.cpp
+        src/ui/gui/monitor_controller.hpp
         src/ui/gui/system_appearance.cpp
         src/ui/gui/system_appearance.hpp
     )

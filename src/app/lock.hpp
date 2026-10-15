@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <optional>
 
 namespace onedrive::events {
 class Observer;
@@ -43,6 +44,9 @@ void report_runtime_busy(
     const std::filesystem::path& state_directory,
     std::string_view operation = "unknown"
 );
+
+[[nodiscard]] std::optional<LockOwner>
+inspect_runtime_owner(const std::filesystem::path& state_directory);
 
 [[nodiscard]] onedrive::util::UniqueFD acquire_sync_directory_lock(
     const std::filesystem::path& sync_directory,

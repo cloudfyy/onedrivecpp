@@ -4,6 +4,7 @@
 #include "app/preflight.hpp"
 #include "onedrive/app/factory.hpp"
 #include "onedrive/app/synchronization.hpp"
+#include "onedrive/app/monitoring.hpp"
 #include "onedrive/app/queries.hpp"
 #include "onedrive/exit_code.hpp"
 #include "onedrive/logging/logging.hpp"
@@ -62,7 +63,9 @@ bool is_progress(const events::Event& event) {
 } // namespace
 
 SyncController::SyncController(
-    SynchronizationFunction synchronize, QObject* parent
+    SynchronizationFunction synchronize,
+    QObject* parent,
+    MonitoringFunction monitor
 )
     : SyncController{CachedSynchronizationFunction{}, parent} {
     if (synchronize) {
@@ -75,6 +78,9 @@ SyncController::SyncController(
             return function(std::move(config), observer, token);
         };
     }
+    if (monitor) {
+        monitor_ = std::move(monitor);
+    }
 }
 
 SyncController::SyncController(
@@ -82,6 +88,15 @@ SyncController::SyncController(
 )
     : QObject{parent},
       synchronize_{std::move(synchronize)} {
+    monitor_ = [](config::Config config,
+                  const events::Observer& observer,
+                  std::stop_token token) {
+        const app::ProductionRuntimeFactory production;
+        const app::RuntimeFactory factory{util::borrowed_proxy, production};
+        return app::monitor_account(
+            std::move(config), factory, observer, false, token
+        );
+    };
     if (!synchronize_) {
         synchronize_ = [](config::Config config,
                           const events::Observer& observer,
@@ -170,6 +185,18 @@ void SyncController::invalidate_preview() {
 void SyncController::start(
     const std::filesystem::path& config_file, bool preview
 ) {
+    start_task(config_file, preview, false);
+}
+
+void SyncController::start_monitoring(
+    const std::filesystem::path& config_file
+) {
+    start_task(config_file, false, true);
+}
+
+void SyncController::start_task(
+    const std::filesystem::path& config_file, bool preview, bool monitoring
+) {
     if (running_) {
         throw std::logic_error{
             tr("Synchronization is already running.").toStdString()
@@ -177,9 +204,9 @@ void SyncController::start(
     }
     running_ = true;
     try {
-        worker_ = std::jthread{[this,
-                                config_file,
-                                preview](std::stop_token token) {
+        worker_ = std::jthread{[this, config_file, preview, monitoring](
+                                   std::stop_token token
+                               ) {
             const RestoreLogger restore_logger;
             int result = exit_code::failure;
             QString error;
@@ -203,6 +230,9 @@ void SyncController::start(
                     effective_preview = preview || config.dry_run;
                     config.dry_run = effective_preview;
                     config.force_large_delete = false;
+                    if (monitoring) {
+                        preview_cache_.clear();
+                    }
                     Q_EMIT started(effective_preview);
                     const ForwardingObserver observer{
                         [this](const events::Event& event) {
@@ -218,7 +248,10 @@ void SyncController::start(
                         };
                     const logging::Session logging{config.logging};
                     const app::detail::RuntimePreflight preflight{
-                        config, app::detail::Operation::synchronize, &observer
+                        config,
+                        monitoring ? app::detail::Operation::monitor
+                                   : app::detail::Operation::synchronize,
+                        &observer
                     };
                     if (invalidated) {
                         observer.message(
@@ -229,17 +262,19 @@ void SyncController::start(
                         );
                     }
                     result = token.stop_requested() ? exit_code::cancelled
-                                                    : synchronize_(
-                                                          std::move(config),
-                                                          observer,
-                                                          token,
-                                                          &preview_cache_
-                                                      );
+                             : monitoring
+                                 ? monitor_(std::move(config), observer, token)
+                                 : synchronize_(
+                                       std::move(config),
+                                       observer,
+                                       token,
+                                       &preview_cache_
+                                   );
                 }
             } catch (const std::exception& exception) {
                 error = QString::fromUtf8(exception.what());
             }
-            if (!effective_preview ||
+            if (monitoring || !effective_preview ||
                 (result != exit_code::success &&
                  result != exit_code::blocked) ||
                 !error.isEmpty() || token.stop_requested()) {

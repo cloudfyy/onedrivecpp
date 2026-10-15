@@ -3,6 +3,7 @@
 #include "app_state_view_model.hpp"
 #include "login_controller.hpp"
 #include "sync_controller.hpp"
+#include "monitor_controller.hpp"
 
 #include <QMainWindow>
 #include <QDateTime>
@@ -25,6 +26,7 @@ class QPlainTextEdit;
 class QComboBox;
 class QCheckBox;
 class QTreeWidget;
+class QTimer;
 
 namespace onedrive::gui {
 
@@ -39,7 +41,8 @@ public:
         AppStateViewModel state,
         AuthenticationFunction authenticate = {},
         Localization* localization = nullptr,
-        SynchronizationFunction synchronize = {}
+        SynchronizationFunction synchronize = {},
+        MonitoringFunction monitor = {}
     );
 
 private:
@@ -57,6 +60,14 @@ private:
     void logout();
     void refresh_actions();
     void start_sync(bool preview);
+    void start_monitoring();
+    void start_task(bool preview, bool monitoring);
+    void monitor_changed();
+    void refresh_monitor();
+    void request_monitor(
+        monitor::ControlCommand command, monitor::ControlTarget target
+    );
+    [[nodiscard]] bool monitor_busy() const;
     void stop_sync();
     void receive_sync_events(
         const std::vector<events::Event>& batch, std::size_t omitted
@@ -68,7 +79,8 @@ private:
         account,
         configuration,
         preview,
-        synchronization
+        synchronization,
+        monitoring
     };
     void append_log_event(
         LogOperation operation,
@@ -124,6 +136,8 @@ private:
     QLineEdit* state_directory_edit_{};
     LoginController login_;
     SyncController synchronization_;
+    MonitorController monitor_;
+    QTimer* monitor_timer_{};
     QWidget* settings_{};
     QPushButton* login_button_{};
     QPushButton* account_action_button_{};
@@ -146,6 +160,8 @@ private:
         scanning_local,
         transferring,
         uploading,
+        waiting,
+        monitor_unavailable,
         stopping,
         completed,
         cancelled,
@@ -154,6 +170,10 @@ private:
     };
     SyncPhase sync_phase_{SyncPhase::idle};
     bool sync_preview_{};
+    bool sync_monitoring_{};
+    bool had_monitor_{};
+    std::string attached_monitor_instance_;
+    QString last_monitor_error_;
     bool sync_stopping_{};
     int sync_result_{};
     QString sync_error_;
@@ -183,8 +203,10 @@ private:
     QGroupBox* sync_group_{};
     QPushButton* preview_button_{};
     QPushButton* sync_button_{};
+    QPushButton* monitor_button_{};
     QPushButton* stop_sync_button_{};
     QLabel* sync_status_{};
+    QLabel* monitor_status_{};
     QLabel* transfer_status_{};
     QLabel* upload_status_{};
     QLabel* sync_context_{};

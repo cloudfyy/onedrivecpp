@@ -337,7 +337,7 @@ These commands need no authentication, do not contact Graph, and do not open
 databases or claim the Monitor's runtime locks. They control only the already
 running task; requests cannot supply another root or change its configuration.
 `status` reports lifecycle state (`starting`, `synchronizing`, `waiting`, or
-`stopping`), PID, actual sync directory, a pending manual request, completed-round
+`stopping`), PID, per-instance `instance_id`, actual sync directory, a pending manual request, completed-round
 count, and the last round's exit code (`none` before the first completion). It is
 a snapshot, not a detailed transfer-progress feed. `--output json` emits the
 existing `monitor_control` section with string-valued `values`.
@@ -352,14 +352,40 @@ they are never implicitly forwarded. A busy Monitor diagnostic suggests these
 explicit controls.
 
 The endpoint is `monitor-control.sock` in the private state directory (`0700`),
-with socket permissions `0600` and same-user peer checks. Protocol v1 accepts
+with socket permissions `0600` and same-user peer checks. Protocol v2 accepts
 only bounded JSON command packets; socket connection/read/write waits are bounded
 to two seconds each. Missing, unsafe, unresponsive, or stale endpoints return an
 error, never an idle-looking success. A new Monitor reclaims an owned inactive
 socket after obtaining its normal runtime lock; do not delete a live endpoint.
 Long state-directory paths exceeding the Unix socket limit fail explicitly.
-GUI Monitor controls remain deferred to the next GUI integration step; it will
-reuse this shared interface rather than introduce another synchronization engine.
+Restart older v1 Monitors after updating; incompatible protocols fail explicitly.
+
+### GUI monitoring and external ownership
+
+**Start monitoring** runs the shared Monitor service with saved settings, including
+`sync.dry_run`. The GUI-owned task uses the existing synchronization worker,
+cancellation and upload/download events. Waiting retains the last round's totals
+and completion time; a completed round or 100% transfer does not end monitoring.
+Closing the window cancels only its own task and waits for cleanup.
+
+The GUI automatically discovers an external CLI/service Monitor in the selected
+state directory, refreshing snapshots asynchronously every second without
+authentication. **Sync now** requests that Monitor while waiting; it is disabled
+during an active round or pending request. Stopping an external Monitor requires
+confirmation. Controls pin both PID and instance identity, so a replacement task,
+even in the same process, cannot inherit an earlier confirmation. Closing the
+window leaves an external Monitor running.
+
+External snapshots do not provide live transfer progress, direction or round
+completion timestamps; the GUI does not invent them. Missing sockets do not prove
+cleanup has finished: read-only inspection of the existing state lock keeps
+actions disabled while resources remain occupied. Other IPC errors are visible,
+and uncertain ownership blocks new tasks. Settings/account recovery remains
+available when read-only lock inspection establishes that runtime resources are
+free, even if IPC is invalid. Different state directories with overlapping roots
+still fail as busy rather than attaching or taking over.
+Stopping through IPC does not disable a systemd unit or change its restart policy;
+systemd start/restart management and directory migration remain separate future work.
 
 ## Offline database upgrades
 

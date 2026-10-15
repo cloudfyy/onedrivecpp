@@ -134,11 +134,12 @@ when the remote plan is committed. Context/filter/applied-baseline mismatches
 invalidate reuse; expired cursors and directory hierarchy changes require a full
 query. Preview does not write pending batches. State reset discards pending delta
 metadata but preserves file recovery journals.
-Messages display the plan, blocked items and errors. Download progress includes
-counts, speed and an available time estimate; uploads have messages only.
-The percentage describes downloads, not the overall task. Phases without known
+Messages display the plan, blocked items and errors. Upload/download progress includes
+counts, speed and an available time estimate.
+Each percentage describes its transfer direction, not the overall task. Phases without known
 totals show a text explanation rather than an indeterminate progress bar.
-Overall 100% is displayed only after successful task completion.
+Overall 100% is displayed only after successful one-time task completion;
+Monitor rounds return to waiting without claiming the task has exited.
 Login, logout and settings changes are disabled during synchronization.
 Stop requests cancellation; closing the window cancels and waits for task cleanup.
 Logs retains up to 500 application events across tasks for the current session
@@ -147,8 +148,14 @@ levels. Filter by level, toggle auto-scroll, copy displayed logs or clear histor
 Clearing or switching tabs does not stop a task; switching languages preserves
 history and filters. Account logs do not include authorization URLs or tokens.
 This tab does not read the configured log file or create an additional one.
-GUI monitoring and systemd service controls are not implemented;
-use CLI transfer commands for monitoring.
+Start monitoring runs the shared Monitor with saved settings. Sync now requests
+the existing Monitor while waiting, without starting another engine.
+The GUI discovers external Monitors in the same state directory asynchronously.
+Stopping an external Monitor requires confirmation pinned to PID and instance;
+closing the window leaves it running. Closing cancels and waits only for GUI-owned tasks.
+External snapshots do not provide live transfer progress, direction or round timestamps.
+A missing endpoint does not release resources: existing state locks remain authoritative.
+Uncertain ownership blocks new tasks. Systemd unit start/restart controls remain unimplemented.
 .SH COMMANDS
 .TP
 .B account login
@@ -443,7 +450,7 @@ after the active synchronization finishes.
 .B monitor status
 Query the running Monitor in the configured state directory without
 authentication, Graph access, database creation, or acquiring its runtime locks.
-Report lifecycle state, PID, actual sync directory, pending manual work,
+Report lifecycle state, PID, instance identity, actual sync directory, pending manual work,
 completed rounds and the last round result. This is a snapshot, not transfer progress.
 .TP
 .B monitor trigger
@@ -460,11 +467,12 @@ These controls support common output/logging options, including
 .BR "\-\-output json" .
 The monitor_control section uses string-valued values. The private state directory
 has mode 0700; monitor-control.sock has mode 0600. Both peers must belong to the
-current user. Versioned JSON packets are bounded; connection/read/write waits
+current user. Protocol v2 JSON packets are bounded; connection/read/write waits
 are limited to two seconds each. Missing, stale, unsafe, unresponsive or
 overlong endpoints fail explicitly. A new Monitor reclaims owned inactive sockets
 after acquiring its normal runtime lock; never delete a live endpoint.
-GUI Monitor controls are deferred to the next integration step.
+Restart older v1 Monitors after updating. GUI controls reuse this interface;
+IPC stop does not disable a systemd unit or alter its restart policy.
 .SH OPTIONS
 .TP
 .BR \-h ", " \-\-help

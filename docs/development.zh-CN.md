@@ -57,7 +57,7 @@ inode 身份，以及限长、带版本的持有者元数据。路径或文件�
 
 ## 共享 Monitor 控制
 
-`monitor::request_control` 和 `ControlServer` 是前端无关的本地 IPC，供 CLI 与后续
+`monitor::request_control` 和 `ControlServer` 是前端无关的本地 IPC，供 CLI 与
 GUI 控制共用。生产 Monitor 在 `run_loop` 内持有 server，外层状态／根目录锁始终
 有效。仅处理 IPC 的线程在同步回调阻塞期间仍可响应，不执行第二套同步引擎。
 带版本、限长的 Unix seqpacket 消息拒绝任意配置／目录字段；两端通过 `SO_PEERCRED`
@@ -73,7 +73,23 @@ GUI 控制共用。生产 Monitor 在 `run_loop` 内持有 server，外层状态
 
 exec 后的真实子进程回归覆盖状态响应、请求合并、执行中新变化、取消、清理期间
 持锁、CLI 离线文本／JSON、崩溃重启、非法消息／响应、权限／端点替换及超时。
-本步骤有意暂缓 GUI 监控按钮，后续复用该客户端／调度器，不隐式转发普通同步。
+v2 协议增加每个 server 独有的不透明 `instance_id`；GUI 的 `ControlTarget` 固定
+PID 与实例身份，外部停止确认前即复制目标。server 在修改调度状态前拒绝陈旧实例，
+即使新 Monitor 与之前共用 PID 也不能误控。升级后须重启旧 v1 任务；
+CLI 快照也输出同一实例标识。
+
+GUI 自有监控复用 `SyncController::start_task`、运行预检、`app::monitor_account`、
+事件转发、取消与清理完成回调。独立的 `MonitorController` 仅在一个限时后台 worker
+查询／控制 IPC；配置代次丢弃过期回调，通过 Qt 事件线程交付结果。每秒轮询不启动
+第二套同步引擎。`inspect_runtime_owner` 只检查已有状态锁 inode，复用安全打开、
+flock 和元数据工具，不创建或改写锁文件，因此端点消失不能冒充资源已释放。
+异常明确显示，所有权不确定时禁止新任务。IPC 无效时禁止新同步任务，但只读锁检查
+确认资源空闲后仍允许设置／账号修复。空状态目录设置不按工作目录进行探测。
+
+关闭 GUI 只取消并等待自己的 worker；外部停止须确认，不从快照伪造方向、进度或
+本轮完成时间。离屏和 exec 子进程回归覆盖自有轮次、阻止项、触发／停止／关闭、
+外部所有权、只读锁检查、清理期间占用、不安全端点及不同状态目录的重叠根目录。
+systemd unit 管理与通过 IPC 停止已运行 Monitor 分开处理。
 
 ## GUI 本地化
 
@@ -104,7 +120,7 @@ Qt URL 处理器捕获有效浏览器请求，不启动真实浏览器；格式�
 ```bash
 cmake --preset debug -DONEDRIVE_BUILD_GUI=ON -DONEDRIVE_ENABLE_GRAPH_E2E=OFF
 cmake --build build/debug --target onedrive_gui_lupdate
-cmake --build build/debug --target onedrive-cpp-gui gui_settings_tests gui_startup_state_tests gui_localization_tests gui_startup_options_tests gui_login_tests gui_synchronization_tests gui_state_view_model_tests gui_system_appearance_tests browser_request_tests
+cmake --build build/debug --target onedrive-cpp-gui gui_settings_tests gui_startup_state_tests gui_localization_tests gui_startup_options_tests gui_login_tests gui_synchronization_tests gui_monitoring_tests gui_state_view_model_tests gui_system_appearance_tests browser_request_tests
 ctest --test-dir build/debug -R '^(gui_.*|browser_request_tests)$' --output-on-failure
 ```
 
@@ -120,8 +136,8 @@ GUI 及测试程序。不要手动编辑生成的 `.qm` 文件。离屏测试分
 真实桌面及原生对话框验证。
 
 设置改版第一、二阶段已实现账号与目录、同步规则、传输、网络、监控、高级与日志，
-包含高级账号端点、权限范围数组及挂载要求。GUI 监控任务、目录迁移与服务
-集成仍暂缓。`SettingsEditor` 六个子页共用基于控件的草稿；枚举
+包含高级账号端点、权限范围数组及挂载要求。GUI 监控已接入共享 worker／服务及 IPC，
+目录迁移与 systemd unit 管理仍暂缓。`SettingsEditor` 六个子页共用基于控件的草稿；枚举
 `itemData` 保存解析器值，不从翻译文本反推。数字文本框避免 Qt 32 位整数
 截断，验证 TOML 非负 int64 范围。只修改已编辑键；选择性规则留空可删除可选键，
 更改同步模式时移除旧 `sync.upload`，同时保留选择的删除策略。核心补丁工具使用

@@ -30,7 +30,7 @@ namespace onedrive::monitor {
 namespace {
 
 using Json = nlohmann::json;
-constexpr int protocol_version = 1;
+constexpr int protocol_version = 2;
 constexpr std::size_t maximum_packet_size = 4096;
 constexpr auto timeout = std::chrono::seconds{2};
 
@@ -251,6 +251,7 @@ struct ControlServer::Impl {
     std::exception_ptr error;
     std::jthread worker;
     std::optional<util::FilesystemIdentity> identity;
+    std::string instance_id;
 
     Impl(
         const std::filesystem::path& directory,
@@ -307,6 +308,13 @@ struct ControlServer::Impl {
                 );
             }
             identity = util::filesystem_identity(status);
+            instance_id =
+                std::to_string(::getpid()) + ":" +
+                std::to_string(identity->device) + ":" +
+                std::to_string(identity->inode) + ":" +
+                std::to_string(
+                    std::chrono::steady_clock::now().time_since_epoch().count()
+                );
             if (::chmod(path.c_str(), 0600) == -1 ||
                 ::listen(listener.get(), 16) == -1) {
                 util::throw_errno_error(
@@ -379,15 +387,25 @@ struct ControlServer::Impl {
     }
 
     Json dispatch(const Json& request) {
-        if (!request.is_object() || request.size() != 2 ||
+        if (!request.is_object() ||
+            (request.size() != 2 && request.size() != 3) ||
             !request.at("version").is_number_integer() ||
             request.at("version") != protocol_version ||
-            !request.at("command").is_string()) {
+            !request.at("command").is_string() ||
+            (request.size() == 3 && (!request.contains("instance_id") ||
+                                     !request.at("instance_id").is_string()))) {
             throw std::runtime_error(
                 "invalid Monitor control request or protocol version"
             );
         }
         const auto command = request.at("command").get<std::string>();
+        if (request.contains("instance_id") &&
+            request.at("instance_id") != instance_id) {
+            throw std::runtime_error(
+                "Monitor owner changed; refresh its status before controlling "
+                "it"
+            );
+        }
         bool stopping = false;
         Json reply;
         {
@@ -416,6 +434,7 @@ struct ControlServer::Impl {
                 {"acknowledgement", acknowledgement},
                 {"state", state},
                 {"pid", ::getpid()},
+                {"instance_id", instance_id},
                 {"sync_directory", root.string()},
                 {"pending", pending},
                 {"completed_rounds", completed},
@@ -544,7 +563,9 @@ void ControlServer::check_error() const {
 }
 
 ControlReply request_control(
-    const std::filesystem::path& directory, ControlCommand command
+    const std::filesystem::path& directory,
+    ControlCommand command,
+    std::optional<ControlTarget> expected_target
 ) {
     const auto path = endpoint(directory);
     struct stat status{};
@@ -564,10 +585,19 @@ ControlReply request_control(
     const auto socket_address = address(path);
     connect_socket(client.get(), socket_address);
     const auto peer = verify_peer(client.get());
-    send_packet(
-        client.get(),
-        {{"version", protocol_version}, {"command", command_name(command)}}
-    );
+    if (expected_target && (peer.pid != expected_target->pid ||
+                            expected_target->instance_id.empty())) {
+        throw std::runtime_error(
+            "Monitor owner changed; refresh its status before controlling it"
+        );
+    }
+    Json request{
+        {"version", protocol_version}, {"command", command_name(command)}
+    };
+    if (expected_target) {
+        request["instance_id"] = expected_target->instance_id;
+    }
+    send_packet(client.get(), request);
     const auto reply = receive_packet(client.get());
     if (!reply.is_object() || !reply.at("version").is_number_integer() ||
         reply.at("version") != protocol_version) {
@@ -578,8 +608,11 @@ ControlReply request_control(
     if (!reply.at("ok").get<bool>()) {
         throw std::runtime_error(reply.at("error").get<std::string>());
     }
-    if (reply.size() != 9 || !reply.at("pid").is_number_integer() ||
-        reply.at("pid") != peer.pid ||
+    if (reply.size() != 10 || !reply.at("pid").is_number_integer() ||
+        reply.at("pid") != peer.pid || !reply.at("instance_id").is_string() ||
+        reply.at("instance_id").get_ref<const std::string&>().empty() ||
+        (expected_target &&
+         reply.at("instance_id") != expected_target->instance_id) ||
         !reply.at("completed_rounds").is_number_unsigned() ||
         (!reply.at("last_result").is_null() &&
          (!reply.at("last_result").is_number_integer() ||
@@ -591,6 +624,7 @@ ControlReply request_control(
         .acknowledgement = reply.at("acknowledgement").get<std::string>(),
         .state = reply.at("state").get<std::string>(),
         .pid = reply.at("pid").get<std::int64_t>(),
+        .instance_id = reply.at("instance_id").get<std::string>(),
         .sync_directory = reply.at("sync_directory").get<std::string>(),
         .pending = reply.at("pending").get<bool>(),
         .completed_rounds = reply.at("completed_rounds").get<std::uint64_t>(),
@@ -611,6 +645,18 @@ ControlReply request_control(
         );
     }
     return result;
+}
+
+std::optional<ControlReply>
+find_control(const std::filesystem::path& directory) {
+    try {
+        return request_control(directory, ControlCommand::status);
+    } catch (const std::system_error& error) {
+        if (error.code() == std::errc::no_such_file_or_directory) {
+            return std::nullopt;
+        }
+        throw;
+    }
 }
 
 } // namespace onedrive::monitor
