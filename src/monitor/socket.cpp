@@ -370,6 +370,10 @@ private:
                             send_text(connection, command.text);
                             break;
                         case ProtocolEffect::connected:
+                            spdlog::info(
+                                "Notification WebSocket Engine.IO handshake "
+                                "completed"
+                            );
                             publish(SocketEvent::connected);
                             break;
                         case ProtocolEffect::notification:
@@ -403,6 +407,10 @@ private:
                 "cannot connect notification WebSocket"
             );
             connection = handle.get();
+            spdlog::debug(
+                "Notification WebSocket transport connected; waiting for "
+                "Engine.IO handshake"
+            );
             if (stop_token.stop_requested()) {
                 execute(protocol.stop());
                 return;
@@ -416,36 +424,8 @@ private:
                 "cannot obtain notification WebSocket descriptor"
             );
             while (!stop_token.stop_requested()) {
-                pollfd descriptor{
-                    .fd = socket,
-                    .events = POLLIN,
-                    .revents = 0,
-                };
-                const int ready = ::poll(
-                    &descriptor, 1, socket_poll_interval_milliseconds
-                );
-                if (ready < 0 && errno == EINTR) {
-                    continue;
-                }
-                if (ready < 0) {
-                    throw std::system_error{
-                        errno,
-                        std::generic_category(),
-                        "notification WebSocket poll failed"
-                    };
-                }
-                if (ready == 0) {
-                    execute(protocol.tick(now()));
-                    if (protocol.phase() == SocketPhase::disconnected)
-                        return;
-                    continue;
-                }
-                if ((descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) !=
-                    0) {
-                    throw std::runtime_error(
-                        "notification WebSocket became unavailable"
-                    );
-                }
+                // libcurl may buffer frames during the HTTP upgrade or TLS
+                // reads even when the underlying socket is no longer readable.
                 while (!stop_token.stop_requested()) {
                     const auto chunk = receive_chunk(handle.get());
                     if (!chunk)
@@ -465,9 +445,38 @@ private:
                     if (protocol.phase() == SocketPhase::disconnected)
                         return;
                 }
+                if (stop_token.stop_requested())
+                    break;
                 execute(protocol.tick(now()));
                 if (protocol.phase() == SocketPhase::disconnected)
                     return;
+                pollfd descriptor{
+                    .fd = socket,
+                    .events = POLLIN,
+                    .revents = 0,
+                };
+                const int ready = ::poll(
+                    &descriptor, 1, socket_poll_interval_milliseconds
+                );
+                if (ready < 0 && errno == EINTR) {
+                    continue;
+                }
+                if (ready < 0) {
+                    throw std::system_error{
+                        errno,
+                        std::generic_category(),
+                        "notification WebSocket poll failed"
+                    };
+                }
+                if (ready == 0) {
+                    continue;
+                }
+                if ((descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) !=
+                    0) {
+                    throw std::runtime_error(
+                        "notification WebSocket became unavailable"
+                    );
+                }
             }
             execute(protocol.stop());
         } catch (const std::exception& error) {

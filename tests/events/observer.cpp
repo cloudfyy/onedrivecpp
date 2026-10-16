@@ -164,6 +164,16 @@ int test_headless_sync() {
     FakeItemStore items;
     FakeMetrics metrics;
     CapturingObserver observer;
+    std::filesystem::permissions(
+        temporary.path(), std::filesystem::perms::owner_all
+    );
+    const auto log_file = temporary.path() / "sync.log";
+    const onedrive::logging::Session logging{{
+        .file = log_file,
+        .message_sink = [&](MessageKind kind, std::string_view text) {
+            observer.message(kind, "log", text);
+        },
+    }};
     auto config = config_for(root, false);
     if (onedrive::sync::SyncEngine{config, graph, items, metrics, &observer}
                 .synchronize() != onedrive::exit_code::success ||
@@ -185,6 +195,106 @@ int test_headless_sync() {
             "headless observer did not receive completed sync progress"
         );
     }
+    for (const bool preview : {false, true}) {
+        for (const bool blocked : {false, true}) {
+            observer.events.clear();
+            FakeItemStore report_items;
+            FakeMetrics report_metrics;
+            const auto report_config = config_for(
+                temporary.path() / (preview ? "preview" : "apply") /
+                    (blocked ? "blocked" : "clear"),
+                preview
+            );
+            graph.changes.clear();
+            if (blocked) {
+                auto notes = file("notes", "notes.one", 4);
+                notes.unsupported_format = "onenote";
+                graph.changes.push_back(std::move(notes));
+            }
+            const auto result =
+                onedrive::sync::SyncEngine{
+                    report_config,
+                    graph,
+                    report_items,
+                    report_metrics,
+                    &observer
+                }
+                    .synchronize();
+            const auto completions =
+                std::ranges::count_if(observer.events, [](const Event& event) {
+                    const auto* message = std::get_if<MessageEvent>(&event);
+                    return message &&
+                           message->text.starts_with("Synchronization ") &&
+                           message->text.contains("completed");
+                });
+            const auto blockers =
+                std::ranges::count_if(observer.events, [](const Event& event) {
+                    return std::holds_alternative<BlockedItemEvent>(event);
+                });
+            const bool echoed_blocker =
+                std::ranges::any_of(observer.events, [](const Event& event) {
+                    const auto* message = std::get_if<MessageEvent>(&event);
+                    return message && message->event == "log" &&
+                           message->text.starts_with("Blocked remote item");
+                });
+            if (result != (blocked ? onedrive::exit_code::blocked
+                                   : onedrive::exit_code::success) ||
+                completions != 1 || blockers != (blocked ? 1 : 0) ||
+                echoed_blocker) {
+                return fail(
+                    "sync completion or blocker was duplicated or lost"
+                );
+            }
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_sync_summary_accumulation() {
+    SyncSummaryEvent totals;
+    const std::array rounds{
+        SyncSummaryEvent{
+            .downloaded = 1,
+            .uploaded = 2,
+            .moved = 3,
+            .deleted = 4,
+            .blocked = 47
+        },
+        SyncSummaryEvent{.blocked = 47},
+        SyncSummaryEvent{
+            .downloaded = 5,
+            .uploaded = 6,
+            .moved = 7,
+            .deleted = 8,
+            .blocked = 3
+        },
+        SyncSummaryEvent{},
+    };
+    for (const auto& round : rounds) {
+        const auto previous = totals;
+        totals = accumulate_sync_summary(totals, round);
+        if (totals.downloaded != previous.downloaded + round.downloaded ||
+            totals.uploaded != previous.uploaded + round.uploaded ||
+            totals.moved != previous.moved + round.moved ||
+            totals.deleted != previous.deleted + round.deleted ||
+            totals.blocked != round.blocked) {
+            return fail(
+                "shared summary rules lost counts or accumulated blockers"
+            );
+        }
+    }
+    if (totals.downloaded != 6 || totals.uploaded != 8 || totals.moved != 10 ||
+        totals.deleted != 12 || totals.blocked != 0) {
+        return fail(
+            "an empty round reset accumulated operations or stale blockers"
+        );
+    }
+    const auto restarted = accumulate_sync_summary({}, rounds.front());
+    if (restarted.downloaded != 1 || restarted.uploaded != 2 ||
+        restarted.moved != 3 || restarted.deleted != 4 ||
+        restarted.blocked != 47) {
+        return fail("shared summary rules did not support a fresh session");
+    }
     return EXIT_SUCCESS;
 }
 
@@ -193,6 +303,7 @@ int test_headless_sync() {
 int main() {
     if (test_payloads() != EXIT_SUCCESS ||
         test_workers_and_errors() != EXIT_SUCCESS ||
+        test_sync_summary_accumulation() != EXIT_SUCCESS ||
         test_headless_sync() != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }

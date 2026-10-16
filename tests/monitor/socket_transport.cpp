@@ -40,6 +40,7 @@ struct Script {
     std::vector<std::string> sends;
     SendResult send_result{SendResult::complete};
     PerformResult perform_result{PerformResult::success};
+    bool kernel_readable{true};
 };
 std::atomic<Script*> active{nullptr};
 constexpr int fake_descriptor = 987654;
@@ -54,12 +55,14 @@ void run_script(
     std::vector<SocketEvent> expected,
     std::vector<std::string> sends,
     SendResult send_result = SendResult::complete,
-    PerformResult perform_result = PerformResult::success
+    PerformResult perform_result = PerformResult::success,
+    bool kernel_readable = true
 ) {
     Script script;
     script.receives = std::move(receives);
     script.send_result = send_result;
     script.perform_result = perform_result;
+    script.kernel_readable = kernel_readable;
     active = &script;
     SocketIoTransport transport{{}, 1s};
     transport.connect(std::string{"https://notify.example.test/notifications"});
@@ -107,6 +110,25 @@ void test_fragmented_transport() {
          SocketEvent::notification,
          SocketEvent::disconnected},
         {"40", "40/notifications", "3"}
+    );
+}
+
+void test_buffered_transport_without_kernel_readability() {
+    run_script(
+        {
+            {R"(0{"pingInterval":25000,"pingTimeout":20000})"},
+            {R"(40{"sid":"root"})"},
+            {R"(40/notifications,{"sid":"notifications"})"},
+            {R"(42/notifications,["notification",{}])"},
+            {"41/notifications,"},
+        },
+        {SocketEvent::connected,
+         SocketEvent::notification,
+         SocketEvent::disconnected},
+        {"40", "40/notifications"},
+        SendResult::complete,
+        PerformResult::success,
+        false
     );
 }
 
@@ -244,7 +266,7 @@ extern "C" int __wrap_poll(pollfd* descriptors, nfds_t count, int timeout) {
     auto* script = active.load();
     {
         const std::scoped_lock lock{script->mutex};
-        if (!script->receives.empty()) {
+        if (script->kernel_readable && !script->receives.empty()) {
             descriptors[0].revents = POLLIN;
             return 1;
         }
@@ -303,6 +325,7 @@ extern "C" CURLcode __wrap_curl_ws_send(
 int main() {
     try {
         test_fragmented_transport();
+        test_buffered_transport_without_kernel_readability();
         test_transport_failures();
         test_failure_reporting_throws();
         test_transport_stop();

@@ -18,6 +18,11 @@ public:
     void message(
         MessageKind kind, std::string_view event, std::string_view text
     ) const;
+    // Publish a business event and its persistent log without a diagnostic
+    // echo.
+    void report_message(
+        MessageKind kind, std::string_view event, std::string_view text
+    ) const;
     void section(
         std::string_view event,
         std::string_view title,
@@ -28,6 +33,11 @@ public:
     ) const;
     void delta_summary(const DeltaSummary& summary) const;
     void blocked_item(
+        std::string_view path,
+        std::string_view reason_code,
+        std::string_view reason_message
+    ) const;
+    void report_blocked_item(
         std::string_view path,
         std::string_view reason_code,
         std::string_view reason_message

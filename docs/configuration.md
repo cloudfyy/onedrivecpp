@@ -192,6 +192,13 @@ wake the blocking wait and stop cleanly after the active synchronization
 finishes.
 Set `monitor.websocket_enabled = false` to disable Graph Socket.IO/WSS
 notifications; local inotify events and periodic Graph polling remain active.
+The startup message describes this setting, not a successful connection.
+`Notification WebSocket Engine.IO handshake completed` confirms that the
+transport has processed the server's Engine.IO open frame. With debug logging,
+channel acquisition, transport connection, and received Graph notifications are
+also reported. Handshake timeouts and connection failures are warnings; retries
+and fallback polling remain active. Notification URLs and their tokens are not
+included in these diagnostics.
 The request and connect timeouts bound channel acquisition and the WSS
 handshake. The renewal lead refreshes a channel before expiry, while the
 initial and maximum backoff values bound exponential retries. Engine.IO

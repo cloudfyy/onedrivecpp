@@ -82,6 +82,16 @@ during its callback: asynchronous frontends must copy it before posting it to
 their main thread, and callbacks must not re-enter the same observer. Exceptions
 propagate to the publishing caller.
 
+Business messages that also need logging use `Observer::report_message` or
+`report_blocked_item`, rather than separately publishing an event and a diagnostic.
+These helpers retain the configured level, stderr and rotating-file sinks but
+bypass the diagnostic `MessageSink`: GUI and TUI already receive the typed event.
+Ordinary backend diagnostics still use the default logger and its callback.
+Repeated occurrences are preserved; no message-text deduplication is performed.
+The Qt-independent `events::accumulate_sync_summary` owns session-counter rules:
+operation counts accumulate, while the blocked count is replaced by the latest
+round. Frontends remain responsible for reset boundaries and snapshot delivery.
+
 `cli::Console` adapts this interface to the text, JSON, and FTXUI
 `ConsoleBackend` implementations. Confirmation and terminal completion remain
 CLI operations and share the same lock. Existing `cli` event names remain
@@ -251,6 +261,11 @@ rejections, protocol/transport errors, and peer closure publish disconnection
 once. Intentional stop closes without a disconnected wakeup. The adapter drains
 libcurl chunks; text assembly survives `CURLE_AGAIN`, multi-frame messages, and
 interleaved WebSocket ping/pong controls, with a one-MiB message bound.
+The adapter drains `curl_ws_recv` before polling the underlying descriptor and
+waits only after `CURLE_AGAIN`: HTTP upgrade and TLS reads can leave complete
+frames in libcurl while the kernel socket is no longer readable. Kernel
+readiness is not a prerequisite for consuming buffered Engine.IO handshakes or
+notifications.
 
 ## Source tree
 

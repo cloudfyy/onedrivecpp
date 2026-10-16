@@ -31,6 +31,25 @@ constexpr std::size_t maximum_log_file_size =
     std::size_t{5} * 1024U * 1024U;
 constexpr std::size_t retained_log_files = 3;
 constexpr mode_t private_log_mode = S_IRUSR | S_IWUSR;
+constexpr const char* event_logger_name = "onedrive-cpp-events";
+
+spdlog::level::level_enum level_for(Severity severity) {
+    switch (severity) {
+    case Severity::trace:
+        return spdlog::level::trace;
+    case Severity::debug:
+        return spdlog::level::debug;
+    case Severity::information:
+        return spdlog::level::info;
+    case Severity::warning:
+        return spdlog::level::warn;
+    case Severity::error:
+        return spdlog::level::err;
+    case Severity::critical:
+        return spdlog::level::critical;
+    }
+    throw std::logic_error{"unknown log severity"};
+}
 
 Severity severity_for(spdlog::level::level_enum level) noexcept {
     switch (level) {
@@ -300,6 +319,14 @@ spdlog::level::level_enum parse_level(std::string_view level) {
 
 }  // namespace
 
+void write_event(Severity severity, std::string_view message) {
+    auto logger = spdlog::get(event_logger_name);
+    if (!logger) {
+        logger = spdlog::default_logger();
+    }
+    logger->log(level_for(severity), "{}", message);
+}
+
 Session::Session(const Options& options) {
     std::vector<spdlog::sink_ptr> sinks;
     if (options.message_sink) {
@@ -311,12 +338,14 @@ Session::Session(const Options& options) {
             std::make_shared<spdlog::sinks::stderr_color_sink_mt>()
         );
     }
+    auto event_sinks =
+        options.message_sink ? std::vector<spdlog::sink_ptr>{} : sinks;
     if (options.file) {
-        sinks.push_back(std::make_shared<SecureRotatingFileSink>(
-            *options.file,
-            maximum_log_file_size,
-            retained_log_files
-        ));
+        const auto file_sink = std::make_shared<SecureRotatingFileSink>(
+            *options.file, maximum_log_file_size, retained_log_files
+        );
+        sinks.push_back(file_sink);
+        event_sinks.push_back(file_sink);
     }
 
     auto logger = std::make_shared<spdlog::logger>(
@@ -327,6 +356,10 @@ Session::Session(const Options& options) {
     logger->set_level(parse_level(options.level));
     logger->set_pattern("[%Y-%m-%dT%H:%M:%S.%e%z] [%l] %v");
     logger->flush_on(spdlog::level::warn);
+    auto event_logger = logger->clone(event_logger_name);
+    event_logger->sinks() = std::move(event_sinks);
+    spdlog::drop(event_logger_name);
+    spdlog::register_logger(std::move(event_logger));
     spdlog::set_default_logger(std::move(logger));
 }
 

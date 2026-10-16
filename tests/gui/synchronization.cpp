@@ -640,6 +640,82 @@ void test_controller_logging() {
     }
 }
 
+void test_controller_summaries_survive_log_overflow() {
+    Fixture fixture;
+    std::atomic_bool emitted{false};
+    gui::SyncController controller{
+        [&](config::Config, const events::Observer& observer, std::stop_token) {
+            for (const auto& summary : {
+                     events::SyncSummaryEvent{.downloaded = 1, .blocked = 47},
+                     events::SyncSummaryEvent{.blocked = 47},
+                     events::SyncSummaryEvent{
+                         .downloaded = 2,
+                         .uploaded = 3,
+                         .moved = 4,
+                         .deleted = 5,
+                         .blocked = 3
+                     },
+                 }) {
+                observer.sync_summary(summary);
+                for (int index = 0; index < 600; ++index) {
+                    observer.message(
+                        events::MessageKind::debug, "test", "diagnostic"
+                    );
+                }
+            }
+            emitted = true;
+            return exit_code::success;
+        }
+    };
+    bool finished = false;
+    std::size_t omitted = 0;
+    std::optional<events::SyncSummaryEvent> last;
+    events::SyncSummaryEvent total;
+    const auto ui_thread = std::this_thread::get_id();
+    QObject::connect(
+        &controller,
+        &gui::SyncController::summary_ready,
+        [&](const auto& summary, const auto& totals) {
+            require(
+                std::this_thread::get_id() == ui_thread,
+                "round summaries were delivered off the UI thread"
+            );
+            last = summary;
+            total = totals;
+        }
+    );
+    QObject::connect(
+        &controller,
+        &gui::SyncController::events_ready,
+        [&](const auto&, std::size_t dropped) { omitted += dropped; }
+    );
+    QObject::connect(
+        &controller,
+        &gui::SyncController::finished,
+        [&](int, const QString&, bool) { finished = true; }
+    );
+    for (int run = 0; run < 2; ++run) {
+        emitted = false;
+        finished = false;
+        omitted = 0;
+        last.reset();
+        controller.start(fixture.file, false);
+        QElapsedTimer elapsed;
+        elapsed.start();
+        while (!emitted && elapsed.elapsed() < 5000) {
+            QThread::msleep(1);
+        }
+        require(
+            emitted && wait_until([&] { return finished; }) && omitted > 0 &&
+                last && last->downloaded == 2 && last->blocked == 3 &&
+                total.downloaded == 3 && total.uploaded == 3 &&
+                total.moved == 4 && total.deleted == 5 && total.blocked == 3,
+            "diagnostic overflow lost a summary, summed blockers, or leaked "
+            "totals between tasks"
+        );
+    }
+}
+
 void test_controller_logging_after_failure() {
     Fixture fixture;
     const auto previous_logger = spdlog::default_logger();
@@ -2628,6 +2704,7 @@ int main(int argc, char* argv[]) {
         test_blocked_policy_descriptions();
         test_blocked_query_discards_stale_results();
         test_controller_logging();
+        test_controller_summaries_survive_log_overflow();
         test_controller_logging_after_failure();
         test_default_controller_without_usable_credentials();
         test_controller_lifecycle();

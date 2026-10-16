@@ -202,6 +202,11 @@ void SyncController::start_task(
             tr("Synchronization is already running.").toStdString()
         };
     }
+    {
+        const std::scoped_lock lock{events_mutex_};
+        task_totals_ = {};
+        pending_summary_.reset();
+    }
     running_ = true;
     try {
         worker_ = std::jthread{[this, config_file, preview, monitoring](
@@ -299,8 +304,12 @@ void SyncController::start_task(
 
 void SyncController::queue_event(const events::Event& event) {
     const std::scoped_lock lock{events_mutex_};
-    if (is_progress(event) && !pending_events_.empty() &&
-        pending_events_.back().index() == event.index()) {
+    if (const auto* summary = std::get_if<events::SyncSummaryEvent>(&event)) {
+        // Round statistics must survive overflow of the diagnostic event queue.
+        task_totals_ = events::accumulate_sync_summary(task_totals_, *summary);
+        pending_summary_ = *summary;
+    } else if (is_progress(event) && !pending_events_.empty() &&
+               pending_events_.back().index() == event.index()) {
         pending_events_.back() = event;
     } else {
         if (pending_events_.size() == maximum_pending_events) {
@@ -319,6 +328,8 @@ void SyncController::queue_event(const events::Event& event) {
 
 void SyncController::drain_events() {
     std::vector<events::Event> batch;
+    std::optional<events::SyncSummaryEvent> summary;
+    events::SyncSummaryEvent totals;
     std::size_t omitted = 0;
     {
         const std::scoped_lock lock{events_mutex_};
@@ -327,11 +338,16 @@ void SyncController::drain_events() {
             std::make_move_iterator(pending_events_.end())
         );
         pending_events_.clear();
+        summary = std::exchange(pending_summary_, std::nullopt);
+        totals = task_totals_;
         omitted = std::exchange(omitted_events_, 0);
         delivery_pending_ = false;
     }
     if (!batch.empty() || omitted != 0) {
         Q_EMIT events_ready(batch, omitted);
+    }
+    if (summary) {
+        Q_EMIT summary_ready(*summary, totals);
     }
 }
 

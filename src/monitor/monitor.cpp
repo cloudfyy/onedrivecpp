@@ -581,8 +581,18 @@ int Monitor::run_loop(
                         );
                     continue;
                 }
+                spdlog::debug(
+                    "{} Graph notification channel",
+                    command == detail::NotificationCommand::renew_channel
+                        ? "Renewing"
+                        : "Acquiring"
+                );
                 const auto channel = notifications_.acquire_channel();
                 if (channel) {
+                    spdlog::debug(
+                        "Graph notification channel acquired; connecting "
+                        "notification WebSocket"
+                    );
                     notification_transition =
                         detail::transition_notification(
                             std::move(notification_state),
@@ -760,6 +770,10 @@ int Monitor::run_loop(
                     );
                     break;
                 case detail::SocketEvent::notification:
+                    spdlog::debug(
+                        "Graph notification received; requesting Delta "
+                        "synchronization"
+                    );
                     advance_notification(
                         detail::RemoteNotificationReceivedEvent{}
                     );
@@ -775,9 +789,20 @@ int Monitor::run_loop(
             }
         }
         if (notification_socket) {
-            advance_notification(detail::NotificationDeadlineReachedEvent{
-                std::chrono::steady_clock::now()
-            });
+            const auto notification_now = std::chrono::steady_clock::now();
+            if (const auto* connecting =
+                    std::get_if<detail::NotificationConnectingState>(
+                        &notification_state
+                    );
+                connecting && notification_now >= connecting->deadline) {
+                spdlog::warn(
+                    "Notification WebSocket handshake timed out; retrying "
+                    "while Graph polling remains active"
+                );
+            }
+            advance_notification(
+                detail::NotificationDeadlineReachedEvent{notification_now}
+            );
         }
         if (control && control->take_trigger()) {
             transition = detail::transition_monitor(

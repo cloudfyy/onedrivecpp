@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <format>
 #include <string>
 #include <stdexcept>
 
@@ -12,6 +13,41 @@ constexpr unsigned completed_percentage = 100;
 constexpr unsigned maximum_incomplete_percentage = 99;
 
 } // namespace
+
+SyncSummaryEvent accumulate_sync_summary(
+    SyncSummaryEvent totals, const SyncSummaryEvent& round
+) noexcept {
+    totals.downloaded += round.downloaded;
+    totals.uploaded += round.uploaded;
+    totals.moved += round.moved;
+    totals.deleted += round.deleted;
+    totals.blocked = round.blocked;
+    return totals;
+}
+
+void Observer::report_message(
+    MessageKind kind, std::string_view event, std::string_view text
+) const {
+    logging::write_event(kind, text);
+    message(kind, event, text);
+}
+
+void Observer::report_blocked_item(
+    std::string_view path,
+    std::string_view reason_code,
+    std::string_view reason_message
+) const {
+    logging::write_event(
+        MessageKind::warning,
+        std::format(
+            "Blocked remote item '{}': {} ({})",
+            path,
+            reason_message,
+            reason_code
+        )
+    );
+    blocked_item(path, reason_code, reason_message);
+}
 
 std::string_view sync_phase_name(SyncPhase phase) {
     switch (phase) {

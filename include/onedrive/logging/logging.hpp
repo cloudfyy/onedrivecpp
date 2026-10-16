@@ -19,6 +19,10 @@ enum class Severity {
 
 using MessageSink = std::function<void(Severity, std::string_view)>;
 
+// Structured business events already reach the UI through its observer.
+// Retain ordinary log sinks without echoing through MessageSink.
+void write_event(Severity severity, std::string_view message);
+
 struct Options {
     std::string level{"info"};
     std::optional<std::filesystem::path> file;

@@ -358,13 +358,7 @@ void report_completion(
         std::chrono::steady_clock::now() - started_at
     );
     if (blocked != 0) {
-        spdlog::warn(
-            "Synchronization completed with {} blocked items in {} "
-            "milliseconds",
-            blocked,
-            elapsed.count()
-        );
-        observer.message(
+        observer.report_message(
             events::MessageKind::warning,
             "sync_completed_with_issues",
             std::format(
@@ -379,8 +373,7 @@ void report_completion(
     const std::string_view message =
         preview ? "Synchronization dry run completed"
                 : "Synchronization state update completed";
-    spdlog::info("{} in {} milliseconds", message, elapsed.count());
-    observer.message(
+    observer.report_message(
         events::MessageKind::information,
         "sync_completed",
         std::format("{} in {} milliseconds", message, elapsed.count())
@@ -636,12 +629,7 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
             );
         }
         if (sync_filter_changed && !retained_delta) {
-            spdlog::info(
-                "Synchronization filters or unsupported-format rules changed; "
-                "fetching the full "
-                "remote state"
-            );
-            observer.message(
+            observer.report_message(
                 events::MessageKind::information,
                 "sync_filter_changed",
                 "Synchronization filters or unsupported-format rules changed; "

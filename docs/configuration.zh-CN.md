@@ -176,7 +176,13 @@ WebSocket 通知只负责唤醒。每次通知以及重连后的 catch-up 仍通
 重建全部 watch，并安排一次完整同步。
 `SIGINT` 和 `SIGTERM` 会唤醒阻塞等待，并在当前同步结束后安全退出。
 设置 `monitor.websocket_enabled = false` 可禁用 Graph Socket.IO/WSS 通知；
-本地 inotify 事件和 Graph 定时轮询仍保持启用。request/connect timeout 分别限制
+本地 inotify 事件和 Graph 定时轮询仍保持启用。
+启动时的启用说明只表示配置，不表示连接成功。
+`Notification WebSocket Engine.IO handshake completed` 表示传输层已处理服务器的
+Engine.IO open 帧。启用 debug 日志后，还会记录 channel 获取、传输连接及收到
+Graph 通知；握手超时和连接失败会明确警告，重试和兜底轮询保持运行。
+这些诊断不包含通知 URL 或其中的令牌。
+request/connect timeout 分别限制
 channel 获取和 WSS 握手时间，renewal lead 控制提前续期时间，initial/maximum
 backoff 限制指数退避范围。Engine.IO heartbeat 时间由服务器协商，因此不提供
 本地配置。

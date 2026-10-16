@@ -119,6 +119,11 @@ struct SyncSummaryEvent {
     std::size_t blocked{0};
 };
 
+// Operation counts accumulate; blockers describe only the latest round.
+[[nodiscard]] SyncSummaryEvent accumulate_sync_summary(
+    SyncSummaryEvent totals, const SyncSummaryEvent& round
+) noexcept;
+
 enum class OperationKind {
     authentication,
     synchronization,

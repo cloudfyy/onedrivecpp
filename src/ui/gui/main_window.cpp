@@ -228,6 +228,9 @@ MainWindow::MainWindow(
     upload_status_ = make_value_label({});
     upload_status_->setObjectName("uploadStatus");
     sync_layout->addWidget(upload_status_);
+    monitor_totals_status_ = make_value_label({});
+    monitor_totals_status_->setObjectName("monitorTotals");
+    sync_layout->addWidget(monitor_totals_status_);
     sync_summary_status_ = make_value_label({});
     sync_summary_status_->setObjectName("syncSummary");
     sync_layout->addWidget(sync_summary_status_);
@@ -538,16 +541,15 @@ MainWindow::MainWindow(
             if (!sync_stopping_) {
                 sync_phase_ = SyncPhase::working;
             }
-            log_message(
-                sync_monitoring_ ? LogOperation::monitoring
-                : preview        ? LogOperation::preview
-                                 : LogOperation::synchronization,
-                events::MessageKind::information,
-                sync_monitoring_
-                    ? QT_TR_NOOP("Starting GUI-owned monitoring...")
-                : preview ? QT_TR_NOOP("Previewing changes...")
-                          : QT_TR_NOOP("Synchronizing...")
-            );
+            if (!sync_monitoring_) {
+                log_message(
+                    preview ? LogOperation::preview
+                            : LogOperation::synchronization,
+                    events::MessageKind::information,
+                    preview ? QT_TR_NOOP("Previewing changes...")
+                            : QT_TR_NOOP("Synchronizing...")
+                );
+            }
             render_sync();
         },
         Qt::QueuedConnection
@@ -557,6 +559,21 @@ MainWindow::MainWindow(
         &SyncController::events_ready,
         this,
         &MainWindow::receive_sync_events
+    );
+    connect(
+        &synchronization_,
+        &SyncController::summary_ready,
+        this,
+        [this](
+            const events::SyncSummaryEvent& summary,
+            const events::SyncSummaryEvent& totals
+        ) {
+            sync_summary_ = summary;
+            if (sync_monitoring_) {
+                monitor_totals_ = totals;
+            }
+            render_sync();
+        }
     );
     connect(
         &synchronization_,
@@ -914,6 +931,9 @@ void MainWindow::start_task(bool preview, bool monitoring) {
     sync_upload_.reset();
     sync_stage_.reset();
     sync_summary_.reset();
+    monitor_totals_ =
+        monitoring ? std::optional{events::SyncSummaryEvent{}} : std::nullopt;
+    sync_finished_at_ = {};
     log_message(
         monitoring ? LogOperation::monitoring
         : preview  ? LogOperation::preview
@@ -1029,6 +1049,7 @@ void MainWindow::monitor_changed() {
             sync_upload_.reset();
             sync_stage_.reset();
             sync_summary_.reset();
+            monitor_totals_.reset();
             sync_finished_at_ = {};
             if (attached) {
                 log_message(
@@ -1106,7 +1127,6 @@ void MainWindow::receive_sync_events(
                         sync_delta_.reset();
                         sync_download_.reset();
                         sync_upload_.reset();
-                        sync_summary_.reset();
                     }
                     sync_phase_ = SyncPhase::preparing;
                     break;
@@ -1144,11 +1164,6 @@ void MainWindow::receive_sync_events(
                 std::get_if<events::SyncContextEvent>(&event)) {
             state_.sync_mode = context->direction;
             sync_preview_ = context->preview;
-            continue;
-        }
-        if (const auto* summary =
-                std::get_if<events::SyncSummaryEvent>(&event)) {
-            sync_summary_ = *summary;
             continue;
         }
         if (const auto* upload =
@@ -1653,17 +1668,34 @@ void MainWindow::render_sync() {
     );
     upload_status_->setText(upload_text);
     upload_status_->setVisible(!upload_text.isEmpty());
+    QString totals;
+    if (monitor_totals_) {
+        totals = tr("Monitor session totals: %1 downloaded, %2 uploaded, "
+                    "%3 moved, %4 deleted.")
+                     .arg(
+                         number(monitor_totals_->downloaded),
+                         number(monitor_totals_->uploaded),
+                         number(monitor_totals_->moved),
+                         number(monitor_totals_->deleted)
+                     );
+    }
+    monitor_totals_status_->setText(totals);
+    monitor_totals_status_->setVisible(!totals.isEmpty());
     QString summary;
     if (sync_summary_) {
-        summary = tr("Round totals: %1 downloaded, %2 uploaded, %3 moved, %4 "
-                     "deleted, %5 blocked.")
-                      .arg(
-                          number(sync_summary_->downloaded),
-                          number(sync_summary_->uploaded),
-                          number(sync_summary_->moved),
-                          number(sync_summary_->deleted),
-                          number(sync_summary_->blocked)
-                      );
+        summary =
+            (sync_monitoring_
+                 ? tr("Last round totals: %1 downloaded, %2 uploaded, "
+                      "%3 moved, %4 deleted, %5 blocked.")
+                 : tr("Round totals: %1 downloaded, %2 uploaded, %3 moved, "
+                      "%4 deleted, %5 blocked."))
+                .arg(
+                    number(sync_summary_->downloaded),
+                    number(sync_summary_->uploaded),
+                    number(sync_summary_->moved),
+                    number(sync_summary_->deleted),
+                    number(sync_summary_->blocked)
+                );
     }
     if (sync_finished_at_.isValid()) {
         summary +=

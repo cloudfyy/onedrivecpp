@@ -368,6 +368,17 @@ cancellation and upload/download events. Waiting retains the last round's totals
 and completion time; a completed round or 100% transfer does not end monitoring.
 Closing the window cancels only its own task and waits for cleanup.
 
+GUI-owned monitoring shows both **Monitor session totals** and **Last round
+totals**. Downloads, uploads, moves and deletions accumulate from reported round
+summaries for the current Monitor task; an empty follow-up round does not erase
+earlier work. These count operations, not distinct files. Blocked items remain a
+latest-round count, never a sum across rounds. Starting another round preserves
+the last reported summary; stopping or a failed/cancelled round without a summary
+does not discard previously reported work. Clearing logs or changing language
+does not reset statistics. Starting a new Monitor task resets session totals;
+they are not persisted across application restarts. External Monitor snapshots
+do not supply round or session totals, so the GUI leaves them unavailable.
+
 The last-round result uses readable labels: succeeded, failed, incomplete
 (blocked items), or cancelled. Blocked items do not prevent independent safe
 operations from completing. CLI Monitor output retains numeric `last_result`

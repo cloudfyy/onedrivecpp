@@ -182,6 +182,7 @@ private:
     std::optional<events::UploadProgressEvent> sync_upload_;
     std::optional<events::SyncPhase> sync_stage_;
     std::optional<events::SyncSummaryEvent> sync_summary_;
+    std::optional<events::SyncSummaryEvent> monitor_totals_;
     QDateTime sync_finished_at_;
     struct LogEntry {
         std::size_t sequence;
@@ -211,6 +212,7 @@ private:
     QLabel* upload_status_{};
     QLabel* sync_context_{};
     QLabel* sync_summary_status_{};
+    QLabel* monitor_totals_status_{};
     QProgressBar* upload_progress_{};
     QProgressBar* sync_progress_{};
     QLabel* sync_progress_hint_{};

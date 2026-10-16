@@ -1,4 +1,5 @@
 #include "onedrive/logging/logging.hpp"
+#include "onedrive/ui/common/observer.hpp"
 #include "support/common.hpp"
 
 #include <spdlog/spdlog.h>
@@ -188,6 +189,127 @@ int test_message_sink() {
     return EXIT_SUCCESS;
 }
 
+class RecordingObserver final : public onedrive::events::Observer {
+public:
+    mutable std::vector<onedrive::events::Event> events;
+
+private:
+    void on_event(const onedrive::events::Event& event) const override {
+        events.push_back(event);
+    }
+};
+
+int test_business_event_routing() {
+    using namespace onedrive;
+    TemporaryDirectory temporary;
+    std::filesystem::permissions(
+        temporary.path(), std::filesystem::perms::owner_all
+    );
+    const auto log = temporary.path() / "events.log";
+    const std::array severities{
+        logging::Severity::trace,
+        logging::Severity::debug,
+        logging::Severity::information,
+        logging::Severity::warning,
+        logging::Severity::error,
+        logging::Severity::critical
+    };
+    for (const auto& [level, first] :
+         {std::pair{"trace", 0U},
+          std::pair{"debug", 1U},
+          std::pair{"info", 2U},
+          std::pair{"warn", 3U},
+          std::pair{"error", 4U},
+          std::pair{"critical", 5U},
+          std::pair{"off", 6U}}) {
+        RecordingObserver observer;
+        {
+            const logging::Session session{{
+                .level = level,
+                .file = log,
+                .message_sink = [&](logging::Severity severity,
+                                    std::string_view message) {
+                    observer.message(severity, "log", message);
+                },
+            }};
+            for (std::size_t index = 0; index < severities.size(); ++index) {
+                observer.report_message(
+                    severities[index],
+                    "business",
+                    "business severity " + std::to_string(index)
+                );
+            }
+            for (int round = 0; round < 2; ++round) {
+                observer.report_blocked_item(
+                    "notes.one", "unsupported_onenote", "unsupported"
+                );
+                spdlog::warn("ordinary repeated diagnostic");
+            }
+        }
+        const bool warnings_enabled = first <= 3;
+        if (observer.events.size() != (warnings_enabled ? 10U : 8U)) {
+            return fail("business events were echoed into the diagnostic sink");
+        }
+        for (std::size_t index = 0; index < severities.size(); ++index) {
+            const auto& event =
+                std::get<events::MessageEvent>(observer.events[index]);
+            if (event.event != "business" || event.kind != severities[index]) {
+                return fail(
+                    "business event routing lost its structured payload"
+                );
+            }
+        }
+        const auto content = test::read_file(log);
+        for (std::size_t index = 0; index < severities.size(); ++index) {
+            const auto text = "business severity " + std::to_string(index);
+            const auto position = content.find(text);
+            if ((position != std::string::npos) != (index >= first) ||
+                (position != std::string::npos &&
+                 content.find(text, position + text.size()) !=
+                     std::string::npos)) {
+                return fail(
+                    "business file logging duplicated or ignored its level"
+                );
+            }
+        }
+        for (const std::string_view text :
+             {"Blocked remote item 'notes.one': unsupported "
+              "(unsupported_onenote)",
+              "ordinary repeated diagnostic"}) {
+            std::size_t count = 0;
+            for (auto position = content.find(text);
+                 position != std::string::npos;
+                 position = content.find(text, position + text.size())) {
+                ++count;
+            }
+            if (count != (warnings_enabled ? 2U : 0U)) {
+                return fail(
+                    "routing lost repeated occurrences or persistent logs"
+                );
+            }
+        }
+        if (!std::holds_alternative<events::BlockedItemEvent>(
+                observer.events[6]
+            ) ||
+            !std::holds_alternative<events::BlockedItemEvent>(
+                observer.events[warnings_enabled ? 8 : 7]
+            )) {
+            return fail("routing changed typed blocked-item events");
+        }
+        if (warnings_enabled &&
+            (std::get<events::MessageEvent>(observer.events[7]).event !=
+                 "log" ||
+             std::get<events::MessageEvent>(observer.events[9]).event !=
+                 "log")) {
+            return fail(
+                "ordinary backend diagnostics lost their forwarding path"
+            );
+        }
+        std::filesystem::remove(log);
+    }
+    return EXIT_SUCCESS;
+}
+
 }  // namespace
 
 int main() {
@@ -206,5 +328,8 @@ int main() {
         result != EXIT_SUCCESS) {
         return result;
     }
-    return test_message_sink();
+    if (const int result = test_message_sink(); result != EXIT_SUCCESS) {
+        return result;
+    }
+    return test_business_event_routing();
 }

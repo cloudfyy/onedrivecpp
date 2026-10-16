@@ -48,6 +48,10 @@ Q_SIGNALS:
     void started(bool preview);
     void
     events_ready(const std::vector<events::Event>& batch, std::size_t omitted);
+    void summary_ready(
+        const events::SyncSummaryEvent& summary,
+        const events::SyncSummaryEvent& totals
+    );
     void finished(int result, QString error, bool preview);
     void blocked_items_ready(
         const std::vector<storage::BlockedItem>& items, QString error
@@ -69,6 +73,8 @@ private:
     bool running_{};
     std::mutex events_mutex_;
     std::deque<events::Event> pending_events_;
+    std::optional<events::SyncSummaryEvent> pending_summary_;
+    events::SyncSummaryEvent task_totals_;
     std::size_t omitted_events_{};
     bool delivery_pending_{};
     std::jthread blocked_worker_;
