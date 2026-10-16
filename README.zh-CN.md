@@ -335,9 +335,30 @@ sudo cmake --install build/release
 Shell 自动补全都会安装到 `/usr/local`。如需更改前缀，请在配置阶段设置
 `CMAKE_INSTALL_PREFIX`。
 
+启用 `ONEDRIVE_BUILD_GUI=ON` 时，还会安装 `onedrive-cpp-gui`、
+桌面应用入口和 hicolor 应用图标。CLI 和 GUI 一起安装，不生成独立 GUI 包。
+
 ### 快速生成 CPack 包
 
-使用 CPack 快速生成未经过完整 Debian 策略检查的包：
+使用 CPack 快速生成未经过完整 Debian 策略检查的包。
+在 Ubuntu 24.04 上构建 CLI/TUI 包：
+
+```bash
+cmake --preset release -DONEDRIVE_BUILD_GUI=OFF
+cmake --build --preset release
+ctest --preset release
+```
+
+在 Ubuntu 26.04 上，先按“可选桌面 GUI”一节安装 Qt 依赖，
+然后构建 CLI/TUI 与 GUI 合包：
+
+```bash
+cmake --preset release -DONEDRIVE_BUILD_GUI=ON
+cmake --build --preset release
+ctest --preset release
+```
+
+完成对应构建后生成安装包：
 
 ```bash
 cpack --config build/release/CPackConfig.cmake -G DEB
@@ -360,6 +381,10 @@ cmake --preset release \
 Ubuntu 26.04 包仍必须在 Ubuntu 26.04 环境中构建和测试；仅修改后缀不会改变
 二进制 ABI。
 
+本轮正式发布范围为两个发行版的 amd64。Ubuntu 26.04 包包含 Qt
+运行依赖和平台插件；Ubuntu 24.04 包不包含 GUI，也不要求 Qt。
+arm64 不在本轮发布验证范围内。
+
 ### 构建正式 Debian 包
 
 安装打包依赖：
@@ -371,7 +396,24 @@ sudo apt install -y build-essential devscripts debhelper cmake ninja-build \
   nlohmann-json3-dev
 ```
 
-在项目根目录执行：
+Ubuntu 26.04 还需安装 GUI 构建依赖：
+
+```bash
+sudo apt install -y qt6-base-dev qt6-tools-dev qt6-tools-dev-tools \
+  qt6-translations-l10n
+```
+
+在项目根目录，使用 `nogui` 构建 profile 制作 Ubuntu 24.04 CLI/TUI 包，
+不引入 Qt 构建或运行依赖：
+
+```bash
+source "$HOME/.profile"
+chmod +x debian/rules
+DEB_BUILD_PROFILES=nogui dpkg-buildpackage --build=binary --no-sign
+```
+
+在 Ubuntu 26.04 上，不启用 `nogui` profile，将 CLI/TUI 与 GUI
+合并到同一个 `onedrive-cpp` 包：
 
 ```bash
 source "$HOME/.profile"
@@ -386,8 +428,8 @@ dpkg-buildpackage --build=binary --no-sign
 ../onedrive-cpp_1.0.1-1~ubuntu24.04_amd64.deb
 ```
 
-Debian changelog 保留原生构建的发行版后缀。将来增加 Ubuntu 26.04 支持时，应
-在 Ubuntu 26.04 环境中使用对应的 `-1~ubuntu26.04` changelog 版本构建。
+Debian changelog 保留原生构建的发行版后缀。在对应目标环境中使用
+`-1~ubuntu24.04` 或 `-1~ubuntu26.04` 版本；选择构建 profile 不会自动修改版本。
 
 安装并检查：
 
@@ -398,6 +440,9 @@ sudo apt install "../onedrive-cpp_${version}_${architecture}.deb"
 onedrive-cpp --version
 man onedrive-cpp
 ```
+
+Ubuntu 26.04 的应用菜单还会提供 **OneDrive 客户端** 入口。
+可运行 `onedrive-cpp-gui --version` 检查安装后的 GUI 版本。
 
 如需检查 Debian 策略问题：
 

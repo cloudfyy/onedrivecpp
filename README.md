@@ -408,10 +408,32 @@ user service, English and Simplified Chinese manual pages, and shell completion
 files under `/usr/local`. Set `CMAKE_INSTALL_PREFIX` while configuring when a
 different prefix is required.
 
+When `ONEDRIVE_BUILD_GUI=ON`, installation also includes `onedrive-cpp-gui`,
+a desktop application entry, and hicolor application icons. The CLI and GUI
+are installed together; no separate GUI package is produced.
+
 ### Quick CPack package
 
 Use CPack to quickly create a package that has not undergone full Debian
-policy checks:
+policy checks. On Ubuntu 24.04, build the CLI/TUI package:
+
+```bash
+cmake --preset release -DONEDRIVE_BUILD_GUI=OFF
+cmake --build --preset release
+ctest --preset release
+```
+
+On Ubuntu 26.04, install the Qt dependencies listed under
+[Optional desktop GUI](#optional-desktop-gui), then build the combined
+CLI/TUI and GUI package:
+
+```bash
+cmake --preset release -DONEDRIVE_BUILD_GUI=ON
+cmake --build --preset release
+ctest --preset release
+```
+
+After the appropriate build, create the package:
 
 ```bash
 cpack --config build/release/CPackConfig.cmake -G DEB
@@ -436,6 +458,11 @@ cmake --preset release \
 Packages for Ubuntu 26.04 must still be built and tested in an Ubuntu 26.04
 environment; changing the suffix does not change the binary ABI.
 
+The initial release targets amd64 on both distributions. The Ubuntu 26.04
+package includes Qt runtime dependencies and platform plugins; the Ubuntu
+24.04 package has no GUI or Qt requirement. arm64 release validation is
+not included in this scope.
+
 ### Official Debian package
 
 Install the packaging dependencies:
@@ -447,7 +474,24 @@ sudo apt install -y build-essential devscripts debhelper cmake ninja-build \
   nlohmann-json3-dev
 ```
 
-Run the following commands from the project root:
+For Ubuntu 26.04, also install the GUI build dependencies:
+
+```bash
+sudo apt install -y qt6-base-dev qt6-tools-dev qt6-tools-dev-tools \
+  qt6-translations-l10n
+```
+
+From the project root, build the Ubuntu 24.04 CLI/TUI package with the
+`nogui` build profile. This omits Qt build and runtime dependencies:
+
+```bash
+source "$HOME/.profile"
+chmod +x debian/rules
+DEB_BUILD_PROFILES=nogui dpkg-buildpackage --build=binary --no-sign
+```
+
+On Ubuntu 26.04, build without the `nogui` profile to include both CLI/TUI
+and GUI in the same `onedrive-cpp` package:
 
 ```bash
 source "$HOME/.profile"
@@ -463,9 +507,9 @@ for example:
 ../onedrive-cpp_1.0.1-1~ubuntu24.04_amd64.deb
 ```
 
-The Debian changelog carries the native build distribution suffix. When
-adding Ubuntu 26.04 support, build from an Ubuntu 26.04 environment with a
-the corresponding `-1~ubuntu26.04` changelog version.
+The Debian changelog carries the native build distribution suffix. Use the
+matching `-1~ubuntu24.04` or `-1~ubuntu26.04` changelog version in each target
+environment; selecting a build profile does not change that version.
 
 Install and verify the package:
 
@@ -476,6 +520,9 @@ sudo apt install "../onedrive-cpp_${version}_${architecture}.deb"
 onedrive-cpp --version
 man onedrive-cpp
 ```
+
+On Ubuntu 26.04, the application menu also provides **OneDrive Client**.
+Run `onedrive-cpp-gui --version` to check the installed GUI version.
 
 To check for Debian policy issues:
 

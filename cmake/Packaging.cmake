@@ -81,5 +81,8 @@ configure_file(
     @ONLY
 )
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+if(ONEDRIVE_BUILD_GUI)
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "qt6-qpa-plugins, qt6-wayland")
+endif()
 set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
 include(CPack)

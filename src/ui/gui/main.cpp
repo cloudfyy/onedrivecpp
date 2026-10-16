@@ -7,6 +7,7 @@
 #include "onedrive/version.hpp"
 
 #include <QApplication>
+#include <QIcon>
 #include <QMessageBox>
 #include <QTextStream>
 
@@ -17,6 +18,8 @@ int main(int argc, char* argv[]) {
     QApplication application{argc, argv};
     QCoreApplication::setApplicationName("onedrive-cpp-gui");
     QCoreApplication::setApplicationVersion(onedrive::build_info::version);
+    QGuiApplication::setDesktopFileName("onedrive-cpp-gui");
+    QApplication::setWindowIcon(QIcon::fromTheme("onedrive-cpp"));
     QCommandLineParser parser;
     onedrive::gui::Language language;
     try {

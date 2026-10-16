@@ -8,6 +8,15 @@ add_onedrive_test(
 
 find_program(BASH_EXECUTABLE bash REQUIRED)
 
+add_test(
+    NAME packaging_install_tests
+    COMMAND ${CMAKE_COMMAND}
+        -DPROJECT_BUILD_DIR=${PROJECT_BINARY_DIR}
+        -DEXPECT_GUI=${ONEDRIVE_BUILD_GUI}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/packaging/install.cmake
+)
+set_tests_properties(packaging_install_tests PROPERTIES TIMEOUT 60)
+
 add_onedrive_test(
     monitor_control_tests
     SOURCES tests/monitor/control.cpp

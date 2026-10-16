@@ -15,13 +15,17 @@ Build-Depends:
  libsqlite3-dev,
  libssl-dev,
  libtomlplusplus-dev,
- nlohmann-json3-dev
+ nlohmann-json3-dev,
+ qt6-base-dev (>= 6.8) <!nogui>,
+ qt6-tools-dev (>= 6.8) <!nogui>,
+ qt6-tools-dev-tools (>= 6.8) <!nogui>,
+ qt6-translations-l10n (>= 6.8) <!nogui>
 Standards-Version: 4.6.2
 Rules-Requires-Root: no
 
 Package: onedrive-cpp
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends}, ${onedrive:GUI-Depends}
 Suggests: bash-completion, zsh
 Description: modern C++ OneDrive synchronization client scaffold
  A modular C++26 client scaffold with configuration, Microsoft Graph,

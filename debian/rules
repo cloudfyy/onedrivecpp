@@ -4,13 +4,25 @@ export CC := clang-20
 export CXX := clang++-20
 export DEB_BUILD_MAINT_OPTIONS := hardening=+all
 
+ifneq (,$(filter nogui,$(DEB_BUILD_PROFILES)))
+GUI_ENABLED := OFF
+GUI_DEPENDS :=
+else
+GUI_ENABLED := ON
+GUI_DEPENDS := qt6-qpa-plugins, qt6-wayland
+endif
+
 %:
 	dh $@ --buildsystem=cmake+ninja
 
 override_dh_auto_configure:
 	dh_auto_configure -- \
 		-DCMAKE_BUILD_TYPE=Release \
-		-DBUILD_TESTING=ON
+		-DBUILD_TESTING=ON \
+		-DONEDRIVE_BUILD_GUI=$(GUI_ENABLED)
+
+override_dh_gencontrol:
+	dh_gencontrol -- -Vonedrive:GUI-Depends="$(GUI_DEPENDS)"
 
 # The system dwz does not support Clang 20's DWARF sections.
 override_dh_dwz:

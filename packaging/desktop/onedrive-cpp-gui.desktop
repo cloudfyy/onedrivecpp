@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=OneDrive Client
+Name[zh_CN]=OneDrive 客户端
+Comment=Synchronize files with Microsoft OneDrive
+Comment[zh_CN]=与 Microsoft OneDrive 同步文件
+Exec=onedrive-cpp-gui
+Icon=onedrive-cpp
+Terminal=false
+Categories=Network;FileTransfer;

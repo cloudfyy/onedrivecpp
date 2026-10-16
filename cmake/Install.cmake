@@ -1,4 +1,20 @@
 install(TARGETS onedrive-cpp RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+if(ONEDRIVE_BUILD_GUI)
+    install(TARGETS onedrive-cpp-gui
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
+    install(FILES packaging/desktop/onedrive-cpp-gui.desktop
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/applications
+    )
+    install(FILES assets/onedrive-cpp-logo.svg
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
+        RENAME onedrive-cpp.svg
+    )
+    install(FILES assets/onedrive-cpp-logo.png
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/512x512/apps
+        RENAME onedrive-cpp.png
+    )
+endif()
 install(FILES config/onedrive-cpp.toml
     DESTINATION ${ONEDRIVE_SYSTEM_CONFIG_DIR}
 )
