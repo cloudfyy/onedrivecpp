@@ -252,6 +252,13 @@ int execute_command(
                  .key = "last_result",
                  .value = reply.last_result ? std::to_string(*reply.last_result)
                                             : "none"},
+                {.label = "last result name:",
+                 .key = "last_result_name",
+                 .value = reply.last_result
+                              ? std::string{exit_code::sync_result_name(
+                                    *reply.last_result
+                                )}
+                              : "none"},
             }
         );
         if (operation != Operation::monitor_status) {

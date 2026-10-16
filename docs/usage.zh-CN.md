@@ -81,6 +81,15 @@ onedrive-cpp monitor stop --config ~/.config/onedrive-cpp/config.toml
 复用原同步 worker、取消和上传／下载事件；等待时保留上轮计数与完成时间，
 每轮完成或单方向 100% 不代表监控退出。关闭窗口只取消自己的任务，并等待清理。
 
+上一轮结果显示可读名称：成功、失败、未完成（存在阻止项）或已取消。
+存在阻止项不会阻止其他独立且安全的操作完成。CLI Monitor 输出保留数字
+`last_result`，并新增 `last_result_name`：`succeeded`、`failed`、`blocked`、
+`cancelled`、`unknown`；尚无已完成轮次时为 `none`。
+
+本地删除成功后会发送信息级 `local_item_removed` 消息，包含本地路径。
+GUI 日志跨轮次保留最近 500 条事件；选择“所有级别”或“信息”可查看这些消息。
+每轮摘要只统计该轮，不是累计值：上一轮成功删除后，下一轮删除数为 0 属于正常情况。
+
 GUI 自动发现所选状态目录中的外部 CLI／service Monitor，每秒异步刷新无需认证的
 状态快照。轮询复用已加载的状态目录，不每秒重读配置；外部修改配置后须重新加载。
 等待时**立即同步**请求现有 Monitor，执行中或已有待处理请求时禁用重复

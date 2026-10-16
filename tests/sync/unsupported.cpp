@@ -20,6 +20,16 @@ public:
     mutable std::vector<events::Event> captured;
     std::stop_source* stop_at_execution{nullptr};
 
+    bool has_message(std::string_view event_name, std::string_view text) const {
+        const std::scoped_lock lock{mutex_};
+        return std::ranges::any_of(captured, [&](const auto& event) {
+            const auto* message = std::get_if<events::MessageEvent>(&event);
+            return message && message->event == event_name &&
+                   message->kind == events::MessageKind::information &&
+                   message->text.contains(text);
+        });
+    }
+
     bool field(std::string_view key, std::string_view value) const {
         const std::scoped_lock lock{mutex_};
         return std::ranges::any_of(captured, [&](const auto& event) {
@@ -618,6 +628,64 @@ void test_fixed_policies_guard_pending_recovery() {
     );
 }
 
+void test_root_remote_deletion_continues_with_blocked_notes() {
+    for (const auto mode :
+         {sync::SyncMode::download_only, sync::SyncMode::bidirectional}) {
+        Fixture fixture;
+        fixture.config.sync_mode = mode;
+        const std::string filename = "Root document (version 2).pdf";
+        const auto local_path = fixture.config.sync_data_directory / filename;
+        FakeGraphClient initial;
+        auto notes = file("notes", "Notes/unsupported.one", 4);
+        notes.unsupported_format = "onenote";
+        initial.changes = {supported_file("pdf", filename), notes};
+        initial.contents["pdf"] = "data";
+        require(
+            fixture.run(initial) == exit_code::blocked &&
+                test::read_file(local_path) == "data",
+            "blocked notes interrupted downloading an ordinary root file"
+        );
+        fixture.config.dry_run = true;
+        FakeGraphClient preview;
+        preview.changes = {deleted_item("pdf")};
+        require(
+            fixture.run(preview) == exit_code::blocked &&
+                std::filesystem::exists(local_path) &&
+                !fixture.observer.has_message("local_item_removed", filename) &&
+                fixture.observer.field("local_removals", "1"),
+            "preview applied or lost an unrelated root deletion beside blocked "
+            "notes"
+        );
+        fixture.config.dry_run = false;
+        FakeGraphClient apply;
+        apply.changes = {deleted_item("pdf")};
+        require(
+            fixture.run(apply) == exit_code::blocked &&
+                !std::filesystem::exists(local_path) &&
+                fixture.observer.has_message(
+                    "local_item_removed", local_path.string()
+                ) &&
+                apply.upload_count == 0 && apply.deleted_items.empty() &&
+                fixture.observer.field("local_removals", "1"),
+            "blocked notes prevented an ordinary root deletion or resurrected "
+            "it remotely"
+        );
+        storage::ItemDatabase database{
+            fixture.config.state_directory, fixture.identity()
+        };
+        database.open();
+        const auto blocked = database.blocked_items(fixture.config.drive_id);
+        require(
+            !database.find(fixture.config.drive_id, "pdf") &&
+                blocked.size() == 1 &&
+                blocked[0].reason_code == "unsupported_onenote" &&
+                !database.pending_delta(fixture.config.drive_id),
+            "root deletion did not commit independently of unrelated blocked "
+            "notes"
+        );
+    }
+}
+
 } // namespace
 
 int main() {
@@ -630,6 +698,7 @@ int main() {
         test_pending_restart_keeps_format_classification();
         test_unknown_blockers_are_not_retried_or_cleared();
         test_fixed_policies_guard_pending_recovery();
+        test_root_remote_deletion_continues_with_blocked_notes();
         return EXIT_SUCCESS;
     } catch (const std::exception& error) {
         return test::fail(error.what());

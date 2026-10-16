@@ -368,6 +368,18 @@ cancellation and upload/download events. Waiting retains the last round's totals
 and completion time; a completed round or 100% transfer does not end monitoring.
 Closing the window cancels only its own task and waits for cleanup.
 
+The last-round result uses readable labels: succeeded, failed, incomplete
+(blocked items), or cancelled. Blocked items do not prevent independent safe
+operations from completing. CLI Monitor output retains numeric `last_result`
+and adds `last_result_name` (`succeeded`, `failed`, `blocked`, `cancelled`,
+`unknown`, or `none` when no round has finished).
+
+Successful local removals emit an information-level `local_item_removed`
+message containing the local path. The GUI's Logs tab retains events across
+rounds, up to the latest 500 entries; select All levels or Information to see
+these messages. Round summaries describe that round, not cumulative removals:
+a following round can show zero removals after an earlier successful deletion.
+
 The GUI automatically discovers an external CLI/service Monitor in the selected
 state directory, refreshing snapshots asynchronously every second without
 authentication. Polling reuses the loaded state directory rather than rereading

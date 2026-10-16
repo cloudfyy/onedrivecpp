@@ -432,6 +432,9 @@ void test_cli_and_restart() {
                     "\"event\":\"monitor_control\""
                 ) ||
                 !result.standard_output.contains("\"instance_id\":") ||
+                !result.standard_output.contains(
+                    "\"last_result_name\":\"none\""
+                ) ||
                 factory.graph_client_count != 0 ||
                 factory.token_store_count != 0 ||
                 factory.item_store_count != 0 ||
@@ -820,6 +823,22 @@ void test_same_process_instance_replacement() {
     }
 }
 
+void test_sync_result_names() {
+    for (const auto& [code, name] : {
+             std::pair{exit_code::success, std::string_view{"succeeded"}},
+             std::pair{exit_code::failure, std::string_view{"failed"}},
+             std::pair{exit_code::blocked, std::string_view{"blocked"}},
+             std::pair{exit_code::cancelled, std::string_view{"cancelled"}},
+             std::pair{17, std::string_view{"unknown"}},
+         }) {
+        if (exit_code::sync_result_name(code) != name) {
+            throw std::runtime_error(
+                "synchronization result name lost its exit-code meaning"
+            );
+        }
+    }
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -834,6 +853,7 @@ int main(int argc, char* argv[]) {
         test_endpoint_validation_and_cleanup();
         test_client_protocol_and_timeout();
         test_same_process_instance_replacement();
+        test_sync_result_names();
     } catch (const std::exception& error) {
         return test::fail(error.what());
     }

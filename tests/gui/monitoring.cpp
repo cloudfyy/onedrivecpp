@@ -312,6 +312,12 @@ void test_owned_window() {
                         std::this_thread::sleep_for(5ms);
                     }
                     if (!sync_token.stop_requested()) {
+                        observer.message(
+                            events::MessageKind::information,
+                            "local_item_removed",
+                            "Removed remotely deleted local item 'Root "
+                            "document (version 2).pdf'."
+                        );
                         observer.sync_summary({.uploaded = 1, .blocked = 1});
                         observer.sync_phase(events::SyncPhase::waiting);
                     }
@@ -375,6 +381,12 @@ void test_owned_window() {
             text(window, "syncStatus").contains("Last round incomplete") &&
             text(window, "syncContext").contains("Automatic monitoring") &&
             text(window, "syncSummary").contains("1 uploaded") &&
+            window.findChild<QPlainTextEdit*>("logMessages")
+                ->toPlainText()
+                .contains(
+                    "Removed remotely deleted local item 'Root document "
+                    "(version 2).pdf'."
+                ) &&
             !window.findChild<QProgressBar*>("syncProgress")->isVisible(),
         "blocked round was mistaken for terminal Monitor completion"
     );
@@ -401,6 +413,15 @@ void test_owned_window() {
         wait_until([&] { return rounds == 2; }) && ordinary_syncs == 0,
         "GUI trigger started another sync engine instead of requesting its "
         "Monitor"
+    );
+    require(
+        window.findChild<QPlainTextEdit*>("logMessages")
+            ->toPlainText()
+            .contains(
+                "Removed remotely deleted local item 'Root document (version "
+                "2).pdf'."
+            ),
+        "starting another Monitor round erased the prior deletion log"
     );
     button(window, "stopSyncButton")->click();
     require(
@@ -1105,6 +1126,68 @@ void test_polling_reuses_selected_directory_without_config_logs() {
     );
 }
 
+void test_readable_monitor_results() {
+    Fixture fixture;
+    const auto lock = app::detail::acquire_runtime_lock(
+        fixture.config.state_directory, "monitor"
+    );
+    monitor::ControlServer server{
+        fixture.config.state_directory, fixture.config.sync_data_directory
+    };
+    gui::Localization localization{gui::Language::english};
+    gui::MainWindow window{
+        gui::load_app_state_view_model(fixture.file), {}, &localization
+    };
+    require(
+        wait_until([&] {
+            return text(window, "monitorStatus").contains("last result: None.");
+        }),
+        "a Monitor without completed rounds invented a result"
+    );
+    struct Expected {
+        int code;
+        const char* english;
+        const char* chinese;
+    };
+    for (const auto& result : {
+             Expected{exit_code::success, "Succeeded", "成功"},
+             Expected{
+                 exit_code::blocked,
+                 "Incomplete: blocked items",
+                 "未完成：存在阻止项"
+             },
+             Expected{exit_code::failure, "Failed", "失败"},
+             Expected{exit_code::cancelled, "Cancelled", "已取消"},
+             Expected{
+                 17, "Unknown result (exit code 17)", "未知结果（退出码 17）"
+             },
+         }) {
+        server.finish_round(result.code);
+        require(
+            wait_until([&] {
+                return text(window, "monitorStatus")
+                    .contains(QString{"last result: %1."}.arg(result.english));
+            }),
+            "Monitor result was displayed as an unexplained exit code"
+        );
+        localization.set_language(gui::Language::simplified_chinese);
+        require(
+            wait_until([&] {
+                return text(window, "monitorStatus")
+                    .contains(QString::fromUtf8(result.chinese));
+            }),
+            "Monitor result did not retranslate into a readable Chinese label"
+        );
+        localization.set_language(gui::Language::english);
+        require(
+            wait_until([&] {
+                return text(window, "monitorStatus").contains(result.english);
+            }),
+            "Monitor result did not switch back to English"
+        );
+    }
+}
+
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -1123,6 +1206,7 @@ int main(int argc, char* argv[]) {
         test_controller_missing_target_and_stale_endpoint();
         test_readonly_owner_errors();
         test_external_replacement_during_confirmation();
+        test_readable_monitor_results();
         test_polling_reuses_selected_directory_without_config_logs();
     } catch (const std::exception& error) {
         return test::fail(error.what());

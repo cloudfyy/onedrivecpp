@@ -66,6 +66,21 @@ QString number(std::uint64_t value) {
     return QString::number(static_cast<qulonglong>(value));
 }
 
+QString sync_result_text(int result) {
+    switch (result) {
+    case exit_code::success:
+        return MainWindow::tr("Succeeded");
+    case exit_code::failure:
+        return MainWindow::tr("Failed");
+    case exit_code::blocked:
+        return MainWindow::tr("Incomplete: blocked items");
+    case exit_code::cancelled:
+        return MainWindow::tr("Cancelled");
+    default:
+        return MainWindow::tr("Unknown result (exit code %1)").arg(result);
+    }
+}
+
 QString data_size(std::uint64_t bytes, const QLocale& locale) {
     const auto size = util::scale_bytes(bytes);
     const auto amount = size.unit == "B"
@@ -1432,7 +1447,7 @@ void MainWindow::render_sync() {
                         static_cast<qulonglong>(reply.completed_rounds)
                     ),
                     reply.pending ? tr("Yes") : tr("No"),
-                    reply.last_result ? QString::number(*reply.last_result)
+                    reply.last_result ? sync_result_text(*reply.last_result)
                                       : tr("None")
                 );
         if (external) {
@@ -1501,9 +1516,10 @@ void MainWindow::render_sync() {
                 *monitor_.status()->last_result == exit_code::blocked
                     ? " " +
                           tr("Last round incomplete: some items were blocked.")
-                    : " " + tr("Last round failed or was cancelled (exit code "
-                               "%1). Monitoring continues.")
-                                .arg(*monitor_.status()->last_result);
+                    : " " + tr("Last round: %1. Monitoring continues.")
+                                .arg(sync_result_text(
+                                    *monitor_.status()->last_result
+                                ));
         }
         break;
     case SyncPhase::monitor_unavailable:
