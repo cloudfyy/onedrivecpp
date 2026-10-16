@@ -411,30 +411,60 @@ LocalCommittedRemoteDelete execute_pending_delete(
     storage::ItemStore& items,
     std::stop_token stop_token
 ) {
-    const auto& deletion = transaction.deletion;
-    if (!local_path_is_missing(deletion.local_path)) {
-        save_upload_blocked(
-            items,
-            deletion.drive_id,
-            deletion.remote_path,
-            deletion.directory,
-            "delete_conflict",
-            "local item reappeared during remote deletion: " +
+    auto& deletion = transaction.deletion;
+    const auto require_missing_source = [&] {
+        if (!local_path_is_missing(deletion.local_path)) {
+            save_upload_blocked(
+                items,
+                deletion.drive_id,
+                deletion.remote_path,
+                deletion.directory,
+                "delete_conflict",
+                "local item reappeared during remote deletion: " +
+                    deletion.local_path.string()
+            );
+            items.remove_pending_delete(deletion.drive_id, deletion.remote_id);
+            throw LocalModificationConflictError(
+                "local item reappeared during remote deletion: " +
                 deletion.local_path.string()
-        );
-        items.remove_pending_delete(
-            deletion.drive_id,
-            deletion.remote_id
-        );
-        throw LocalModificationConflictError(
-            "local item reappeared during remote deletion: " +
-            deletion.local_path.string()
-        );
-    }
+            );
+        }
+    };
+    require_missing_source();
     try {
-        graph.delete_item(
-            deletion.remote_id, deletion.expected_etag, stop_token
-        );
+        try {
+            graph.delete_item(
+                deletion.remote_id, deletion.expected_etag, stop_token
+            );
+        } catch (const graph::UploadConflictError&) {
+            const auto previous =
+                items.find(deletion.drive_id, deletion.remote_id);
+            if (!previous || previous->directory || previous->ctag.empty()) {
+                throw;
+            }
+            const auto current =
+                graph.item_by_path(deletion.remote_path, stop_token);
+            if (current.id != deletion.remote_id || current.directory ||
+                current.deleted || current.malware ||
+                !current.unsupported_format.empty() ||
+                current.remote_path != deletion.remote_path ||
+                current.etag.empty() ||
+                current.etag == deletion.expected_etag ||
+                current.ctag != previous->ctag) {
+                throw;
+            }
+            require_missing_source();
+            deletion.expected_etag = current.etag;
+            items.save_pending_delete(deletion);
+            spdlog::info(
+                "Retrying remote deletion of '{}' after a metadata-only "
+                "version change",
+                deletion.remote_path
+            );
+            graph.delete_item(
+                deletion.remote_id, deletion.expected_etag, stop_token
+            );
+        }
     } catch (const graph::UploadConflictError&) {
         save_upload_blocked(
             items,

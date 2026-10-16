@@ -69,9 +69,8 @@ LocalMoveDiscovery discover_local_moves(
                 std::error_code error;
                 size = entry.file_size(error);
                 if (error) {
-                    throw std::runtime_error(
-                        "cannot read local move candidate size '" +
-                        path.string() + "': " + error.message()
+                    throw std::filesystem::filesystem_error(
+                        "cannot read local move candidate size", path, error
                     );
                 }
             }

@@ -434,6 +434,22 @@ journalctl --user -u onedrive-cpp.service -f
 ```
 
 The user service runs the long-lived monitor. It performs an initial sync,
-watches the local Drive tree with inotify, polls Graph every configured
-interval, and restarts after unexpected failures. `systemctl --user stop`
-delivers `SIGTERM` for a clean shutdown.
+watches the local Drive tree with inotify, and uses WebSocket notifications to
+trigger Graph Delta queries, with polling at the configured interval as fallback.
+The service restarts after unexpected failures. `systemctl --user stop` delivers
+`SIGTERM` for a clean shutdown.
+
+If a local entry disappears during an upload scan, that round is explicitly
+deferred without terminating Monitor; queued local events or fallback polling
+trigger another round. User-file create/delete events are retained even when
+both arrive while synchronization is busy; only transient internal files are
+ignored. Upload completion remains recorded if the source disappears before
+local commit, so a subsequent round can propagate its deletion.
+
+In bidirectional mode, an unchanged remote file echoed by Delta does not restore
+a locally deleted copy. Matching cTags identify unchanged content even when the
+eTag changes. If a conditional remote deletion encounters a metadata-only version
+change, the client checks the same item ID and cTag, rechecks that the local
+source remains absent, and retries once using the new eTag. Changed content,
+replacement items, and repeated conflicts remain blocked rather than forcing
+deletion. Download-only mode continues to restore missing local files.

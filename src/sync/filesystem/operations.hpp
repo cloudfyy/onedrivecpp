@@ -26,6 +26,22 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+class LocalScanChangedError final : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
+[[nodiscard]] inline bool
+reserved_local_name(const std::filesystem::path& path) {
+    const auto name = path.filename().string();
+    return name.starts_with(".onedrive-cpp-xattr-probe-") ||
+           name.starts_with(".onedrive-preflight-") ||
+           name.contains(".safeBackup-") ||
+           name.contains(".onedrive-partial-") ||
+           name.contains(".onedrive-upload-") ||
+           name.contains(".onedrive-move-");
+}
+
 struct LocalFileBaseline {
     bool existed{false};
     std::int64_t size{0};

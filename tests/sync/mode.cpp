@@ -13,20 +13,27 @@ int test_missing_file_delta_echo() {
     TemporaryDirectory temporary;
     const onedrive::cli::Console console;
     for (const bool download_only : {false, true}) {
-        for (const bool remote_changed : {false, true}) {
+        for (const int version : {0, 1, 2, 3}) {
+            const bool remote_changed = version == 1 || version == 3;
             const auto root =
-                temporary.path() / (std::to_string(download_only) +
-                                    std::to_string(remote_changed));
+                temporary.path() /
+                (std::to_string(download_only) + std::to_string(version));
             std::filesystem::create_directories(root);
             std::ofstream{root / "file.txt"} << "data";
             FakeItemStore items;
             items.saved_delta_link = "saved";
             items.items.emplace("file", tracked_item(root, "file", "file.txt"));
+            if (version >= 2) {
+                items.items.at("file").ctag = "content-v1";
+            }
             std::filesystem::remove(root / "file.txt");
             FakeGraphClient graph;
             auto remote = file("file", "file.txt", 4);
-            if (remote_changed) {
+            if (version != 0) {
                 remote.etag = "new-etag";
+            }
+            if (version >= 2) {
+                remote.ctag = remote_changed ? "content-v2" : "content-v1";
             }
             graph.changes = {remote};
             graph.contents["file"] = "data";

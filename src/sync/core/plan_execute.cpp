@@ -20,6 +20,7 @@
 
 #include <filesystem>
 #include <string>
+#include <system_error>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -144,10 +145,12 @@ ExecutionSummary execute_plan(
         auto& state = plan.state_for(item.id);
         const auto destination = state.local_path;
         const auto previous = items.find(drive_id, item.id);
-        if (capabilities.uploads() && previous &&
-            previous->local_path == destination &&
-            previous->etag == item.etag &&
-            detail::local_path_is_missing(destination)) {
+        const bool unchanged_remote = capabilities.uploads() && previous &&
+                                      previous->local_path == destination &&
+                                      detail::remote_content_version_matches(
+                                          *previous, item.etag, item.ctag
+                                      );
+        const auto retain_local_deletion = [&] {
             state.local_size = previous->local_size;
             state.local_modified_ticks = previous->local_modified_ticks;
             state.local_device = previous->local_device;
@@ -156,6 +159,9 @@ ExecutionSummary execute_plan(
                 "Retaining local deletion of unchanged remote file '{}'",
                 item.remote_path
             );
+        };
+        if (unchanged_remote && detail::local_path_is_missing(destination)) {
+            retain_local_deletion();
             continue;
         }
         try {
@@ -190,103 +196,111 @@ ExecutionSummary execute_plan(
             continue;
         }
 
-        if (move_summary.reusable_files.contains(item.id)) {
-            ++reused_count;
-            reused_bytes += static_cast<std::uint64_t>(item.size);
-            continue;
-        }
-        const auto target_status =
-            detail::inspect_download_target(previous, item, destination);
-        bool preserve_local = target_status.preserve_local;
-        if (preserve_local &&
-            local_conflict == config::LocalConflictPolicy::block) {
-            spdlog::warn(
-                "Refusing to overwrite locally modified file '{}'",
-                destination.string()
-            );
-            plan.block(
-                item,
-                "local_modification",
-                "local modification conflict: " + destination.string()
-            );
-            engine_detail::report_blocked(
-                plan.blocked(plan.blocked_count() - 1), observer
-            );
-            continue;
-        }
-
-        if (target_status.current_remote_file) {
-            spdlog::debug(
-                "Reusing completed download for '{}'",
-                item.remote_path
-            );
-            state.local_path = destination;
-            state.local_size = detail::persisted_file_size(
-                std::filesystem::file_size(destination)
-            );
-            state.local_modified_ticks = detail::modified_ticks(destination);
-            const auto identity =
-                safe_root.identity(
-                    destination,
-                    detail::FilesystemItemKind::file
-                );
-            state.local_device = identity.device;
-            state.local_inode = identity.inode;
-            ++reused_count;
-            reused_bytes += static_cast<std::uint64_t>(item.size);
-        } else {
-            detail::LocalFileBaseline baseline;
-            try {
-                baseline =
-                    detail::capture_local_file_baseline(destination);
-            } catch (const detail::LocalModificationConflictError& error) {
-                plan.block(item, "local_modification", error.what());
-                engine_detail::report_blocked(
-                    plan.blocked(plan.blocked_count() - 1), observer
-                );
+        try {
+            if (move_summary.reusable_files.contains(item.id)) {
+                ++reused_count;
+                reused_bytes += static_cast<std::uint64_t>(item.size);
                 continue;
-            } catch (const detail::LocalPathConflictError& error) {
-                plan.block(item, "local_path_conflict", error.what());
+            }
+            const auto target_status =
+                detail::inspect_download_target(previous, item, destination);
+            bool preserve_local = target_status.preserve_local;
+            if (preserve_local &&
+                local_conflict == config::LocalConflictPolicy::block) {
+                spdlog::warn(
+                    "Refusing to overwrite locally modified file '{}'",
+                    destination.string()
+                );
+                plan.block(
+                    item,
+                    "local_modification",
+                    "local modification conflict: " + destination.string()
+                );
                 engine_detail::report_blocked(
                     plan.blocked(plan.blocked_count() - 1), observer
                 );
                 continue;
             }
-            if (baseline.existed &&
-                (!previous ||
-                 baseline.size != previous->local_size ||
-                 baseline.modified_ticks !=
-                     previous->local_modified_ticks)) {
-                if (local_conflict ==
-                    config::LocalConflictPolicy::backup) {
-                    preserve_local = true;
-                    spdlog::info(
-                        "Preparing safeBackup for local conflict '{}'",
-                        destination.string()
+
+            if (target_status.current_remote_file) {
+                spdlog::debug(
+                    "Reusing completed download for '{}'", item.remote_path
+                );
+                state.local_path = destination;
+                state.local_size = detail::persisted_file_size(
+                    std::filesystem::file_size(destination)
+                );
+                state.local_modified_ticks =
+                    detail::modified_ticks(destination);
+                const auto identity = safe_root.identity(
+                    destination, detail::FilesystemItemKind::file
+                );
+                state.local_device = identity.device;
+                state.local_inode = identity.inode;
+                ++reused_count;
+                reused_bytes += static_cast<std::uint64_t>(item.size);
+            } else {
+                detail::LocalFileBaseline baseline;
+                try {
+                    baseline = detail::capture_local_file_baseline(destination);
+                } catch (const detail::LocalModificationConflictError& error) {
+                    plan.block(item, "local_modification", error.what());
+                    engine_detail::report_blocked(
+                        plan.blocked(plan.blocked_count() - 1), observer
                     );
-                } else {
-                    const std::string reason =
-                        "local file changed before downloading: " +
-                        destination.string();
-                    plan.block(item, "local_modification", reason);
+                    continue;
+                } catch (const detail::LocalPathConflictError& error) {
+                    plan.block(item, "local_path_conflict", error.what());
                     engine_detail::report_blocked(
                         plan.blocked(plan.blocked_count() - 1), observer
                     );
                     continue;
                 }
+                if (unchanged_remote && !baseline.existed) {
+                    retain_local_deletion();
+                    continue;
+                }
+                if (baseline.existed &&
+                    (!previous || baseline.size != previous->local_size ||
+                     baseline.modified_ticks !=
+                         previous->local_modified_ticks)) {
+                    if (local_conflict == config::LocalConflictPolicy::backup) {
+                        preserve_local = true;
+                        spdlog::info(
+                            "Preparing safeBackup for local conflict '{}'",
+                            destination.string()
+                        );
+                    } else {
+                        const std::string reason =
+                            "local file changed before downloading: " +
+                            destination.string();
+                        plan.block(item, "local_modification", reason);
+                        engine_detail::report_blocked(
+                            plan.blocked(plan.blocked_count() - 1), observer
+                        );
+                        continue;
+                    }
+                }
+                spdlog::trace(
+                    "Queued '{}' for download ({} bytes)",
+                    item.remote_path,
+                    item.size
+                );
+                download_tasks.push_back({
+                    .item = item,
+                    .state = state,
+                    .destination = destination,
+                    .destination_baseline = std::move(baseline),
+                    .preserve_local = preserve_local,
+                });
             }
-            spdlog::trace(
-                "Queued '{}' for download ({} bytes)",
-                item.remote_path,
-                item.size
-            );
-            download_tasks.push_back({
-                .item = item,
-                .state = state,
-                .destination = destination,
-                .destination_baseline = std::move(baseline),
-                .preserve_local = preserve_local,
-            });
+        } catch (const std::system_error& error) {
+            if (!unchanged_remote ||
+                error.code() != std::errc::no_such_file_or_directory ||
+                !detail::local_path_is_missing(destination)) {
+                throw;
+            }
+            retain_local_deletion();
         }
     }
     detail::order_transfers(

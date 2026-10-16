@@ -1,5 +1,7 @@
 #pragma once
 
+#include "sync/filesystem/operations.hpp"
+
 #include <filesystem>
 #include <functional>
 #include <stdexcept>
@@ -38,18 +40,37 @@ void walk_directory_tree(
     while (iterator != end) {
         const auto status = iterator->symlink_status(error);
         if (error) {
+            if (error == std::errc::no_such_file_or_directory) {
+                throw LocalScanChangedError(
+                    std::string{errors.inspect} + " '" +
+                    iterator->path().string() + "': " + error.message()
+                );
+            }
             throw std::runtime_error(
                 std::string{errors.inspect} + " '" + iterator->path().string() +
                 "': " + error.message()
             );
         }
-        const auto action = std::invoke(visitor, *iterator, status);
+        TreeWalkAction action;
+        try {
+            action = std::invoke(visitor, *iterator, status);
+        } catch (const std::filesystem::filesystem_error& failure) {
+            if (failure.code() != std::errc::no_such_file_or_directory) {
+                throw;
+            }
+            throw LocalScanChangedError(failure.what());
+        }
         if (action == TreeWalkAction::skip_subtree &&
             std::filesystem::is_directory(status)) {
             iterator.disable_recursion_pending();
         }
         iterator.increment(error);
         if (error) {
+            if (error == std::errc::no_such_file_or_directory) {
+                throw LocalScanChangedError(
+                    std::string{errors.advance} + ": " + error.message()
+                );
+            }
             throw std::runtime_error(
                 std::string{errors.advance} + ": " + error.message()
             );

@@ -10,6 +10,7 @@
 #include "onedrive/util/system_error.hpp"
 #include "onedrive/util/path_security.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"
+#include "sync/filesystem/operations.hpp"
 
 #include <array>
 #include <cerrno>
@@ -218,9 +219,10 @@ public:
                      (event->mask & IN_ISDIR) != 0U)) {
                     changed.insert(path);
                 }
-                // Transient sync probes leave no local work, unlike edits or
-                // deletions of files that existed before this event batch.
-                if ((event->mask & IN_DELETE) != 0U && created.contains(path)) {
+                // User files may already have been uploaded while these
+                // events queued; only transient internal files are ignorable.
+                if ((event->mask & IN_DELETE) != 0U && created.contains(path) &&
+                    sync::detail::reserved_local_name(path)) {
                     changed.erase(path);
                 }
             }

@@ -386,8 +386,8 @@ bool commit_uploaded_file(
     std::error_code error;
     const auto status =
         std::filesystem::symlink_status(upload.local_path, error);
-    const bool missing = error == std::errc::no_such_file_or_directory ||
-                         (!error && !std::filesystem::exists(status));
+    bool missing = error == std::errc::no_such_file_or_directory ||
+                   (!error && !std::filesystem::exists(status));
     if (error && !missing) {
         throw std::runtime_error(
             "cannot inspect local upload source '" +
@@ -395,15 +395,30 @@ bool commit_uploaded_file(
         );
     }
     if (!missing) {
-        const auto identity =
-            sync_root.identity(upload.local_path, FilesystemItemKind::file);
-        state.local_device = identity.device;
-        state.local_inode = identity.inode;
+        try {
+            const auto identity =
+                sync_root.identity(upload.local_path, FilesystemItemKind::file);
+            state.local_device = identity.device;
+            state.local_inode = identity.inode;
+        } catch (const std::filesystem::filesystem_error& failure) {
+            if (failure.code() != std::errc::no_such_file_or_directory) {
+                throw;
+            }
+            missing = true;
+        }
     }
     items.commit_upload(upload, std::move(state));
     if (!missing) {
-        metadata.write_remote_identity(remote, upload.local_path);
-    } else {
+        try {
+            metadata.write_remote_identity(remote, upload.local_path);
+        } catch (const std::system_error& failure) {
+            if (failure.code() != std::errc::no_such_file_or_directory) {
+                throw;
+            }
+            missing = true;
+        }
+    }
+    if (missing) {
         spdlog::warn(
             "Committed upload '{}' after its local source disappeared; "
             "continuing local change reconciliation",

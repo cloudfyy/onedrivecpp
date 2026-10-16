@@ -102,10 +102,18 @@ std::vector<UploadCandidate> discover_uploads(
                      std::filesystem::is_directory(status) :
                      std::filesystem::is_regular_file(status));
             if (expected_type) {
-                const auto identity = sync_root.identity(
-                    item.local_path,
-                    filesystem_item_kind(item.directory)
-                );
+                FilesystemIdentity identity;
+                try {
+                    identity = sync_root.identity(
+                        item.local_path, filesystem_item_kind(item.directory)
+                    );
+                } catch (const std::filesystem::filesystem_error& failure) {
+                    if (failure.code() !=
+                        std::errc::no_such_file_or_directory) {
+                        throw;
+                    }
+                    throw LocalScanChangedError(failure.what());
+                }
                 if (item.local_device != identity.device ||
                     item.local_inode != identity.inode) {
                     item.local_device = identity.device;
@@ -262,9 +270,8 @@ std::vector<UploadCandidate> discover_uploads(
                 std::error_code error;
                 file_size = entry.file_size(error);
                 if (error) {
-                    throw std::runtime_error(
-                        "cannot read local upload candidate size '" +
-                        path.string() + "': " + error.message()
+                    throw std::filesystem::filesystem_error(
+                        "cannot read local upload candidate size", path, error
                     );
                 }
             }

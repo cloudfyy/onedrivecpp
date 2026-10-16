@@ -582,7 +582,7 @@ foreach(PREFLIGHT_TEST IN ITEMS state sync invalid)
         LIBRARIES onedrive_app
     )
 endforeach()
-foreach(SYNC_TEST IN ITEMS base delete move move_recovery download upload mode preview persistent_delta unsupported)
+foreach(SYNC_TEST IN ITEMS base delete move move_recovery download upload mode preview persistent_delta unsupported watch_race)
     add_onedrive_test(
         sync_${SYNC_TEST}_tests
         SOURCES tests/sync/${SYNC_TEST}.cpp
@@ -590,6 +590,9 @@ foreach(SYNC_TEST IN ITEMS base delete move move_recovery download upload mode p
         LIBRARIES onedrive_cli
     )
 endforeach()
+target_link_options(sync_watch_race_tests PRIVATE -Wl,--wrap=fstatat)
+target_link_libraries(sync_watch_race_tests PRIVATE spdlog::spdlog)
+set_tests_properties(sync_watch_race_tests PROPERTIES TIMEOUT 30)
 add_onedrive_test(
     local_filesystem_tests
     SOURCES tests/fs/local.cpp

@@ -1057,6 +1057,20 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
             "Synchronization cancelled."
         );
         return exit_code::cancelled;
+    } catch (const detail::LocalScanChangedError& error) {
+        record_result(metrics::SyncRunOutcome::failed);
+        spdlog::warn(
+            "Local filesystem changed during scanning; synchronization "
+            "deferred: {}",
+            error.what()
+        );
+        observer.message(
+            events::MessageKind::warning,
+            "local_scan_changed",
+            "Local filesystem changed during scanning; synchronization "
+            "deferred: " + std::string{error.what()}
+        );
+        return exit_code::failure;
     } catch (const onedrive::util::SyncMountUnavailableError& error) {
         record_result(metrics::SyncRunOutcome::failed);
         const auto elapsed = std::chrono::steady_clock::now() - started_at;
@@ -1071,6 +1085,16 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
             events::MessageKind::error, "sync_mount_unavailable", error.what()
         );
         return exit_code::failure;
+    } catch (const std::exception& error) {
+        record_result(metrics::SyncRunOutcome::failed);
+        const auto elapsed = std::chrono::steady_clock::now() - started_at;
+        spdlog::warn(
+            "Synchronization failed after {} milliseconds: {}",
+            std::chrono::duration_cast<std::chrono::milliseconds>(elapsed)
+                .count(),
+            error.what()
+        );
+        throw;
     } catch (...) {
         record_result(metrics::SyncRunOutcome::failed);
         const auto elapsed = std::chrono::steady_clock::now() - started_at;

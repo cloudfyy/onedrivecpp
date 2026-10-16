@@ -2,6 +2,7 @@
 
 #include "onedrive/storage/item_store.hpp"
 #include "onedrive/sync/capabilities.hpp"
+#include "sync/filesystem/operations.hpp"
 
 #include <filesystem>
 #include <optional>
@@ -50,19 +51,7 @@ struct LocalMoveDiscovery {
     std::unordered_set<std::string> protected_local_paths;
 };
 
-[[nodiscard]] inline bool reserved_local_name(
-    const std::filesystem::path& path
-) {
-    const auto name = path.filename().string();
-    return name.contains(".safeBackup-") ||
-           name.contains(".onedrive-partial-") ||
-           name.contains(".onedrive-upload-") ||
-           name.contains(".onedrive-move-");
-}
-
-[[nodiscard]] bool local_path_is_missing(
-    const std::filesystem::path& path
-);
+[[nodiscard]] bool local_path_is_missing(const std::filesystem::path& path);
 [[nodiscard]] DeletionPlan discover_deletions(
     const std::string& drive_id,
     storage::ItemStore& items,

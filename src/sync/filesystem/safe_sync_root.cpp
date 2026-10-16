@@ -268,6 +268,13 @@ FilesystemIdentity SafeSyncRoot::identity(
         0
     )};
     if (parent.get() == -1) {
+        if (errno == ENOENT) {
+            throw std::filesystem::filesystem_error(
+                "synchronization item parent disappeared",
+                path,
+                std::error_code{ENOENT, std::generic_category()}
+            );
+        }
         throw SafePathConflictError(
             "cannot safely open synchronization item parent '" +
             path.parent_path().string() + "': " + onedrive::util::system_error_message(errno)
@@ -280,9 +287,10 @@ FilesystemIdentity SafeSyncRoot::identity(
             &status,
             AT_SYMLINK_NOFOLLOW
         ) == -1) {
-        throw std::runtime_error(
-            "cannot inspect synchronization item identity '" +
-            path.string() + "': " + onedrive::util::system_error_message(errno)
+        throw std::filesystem::filesystem_error(
+            "cannot inspect synchronization item identity",
+            path,
+            std::error_code{errno, std::generic_category()}
         );
     }
     const bool directory = kind == FilesystemItemKind::directory;
