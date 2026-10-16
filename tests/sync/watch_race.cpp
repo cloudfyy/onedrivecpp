@@ -6,6 +6,7 @@
 
 #include <cerrno>
 #include <cstring>
+#include <spdlog/sinks/base_sink.h>
 #include <spdlog/sinks/ostream_sink.h>
 #include <spdlog/spdlog.h>
 #include <sys/stat.h>
@@ -18,6 +19,159 @@ using namespace std::chrono_literals;
 
 std::atomic_bool remove_during_identity{false};
 std::atomic_int identities_before_removal{0};
+
+class ReuseMutationSink final : public spdlog::sinks::base_sink<std::mutex> {
+public:
+    std::function<void()> before_reuse;
+
+private:
+    void sink_it_(const spdlog::details::log_msg& message) override {
+        const std::string_view text{
+            message.payload.data(), message.payload.size()
+        };
+        if (before_reuse &&
+            text.starts_with("Reusing completed download for")) {
+            auto callback = std::move(before_reuse);
+            before_reuse = {};
+            callback();
+        }
+    }
+    void flush_() override {
+    }
+};
+
+struct DefaultLoggerGuard {
+    std::shared_ptr<spdlog::logger> previous{spdlog::default_logger()};
+
+    ~DefaultLoggerGuard() {
+        spdlog::set_default_logger(previous);
+    }
+};
+
+enum class ReuseMutation { size, modified_time, atomic_save, none };
+
+int test_edit_during_delta_reuse(
+    bool download_only, bool metadata_echo, ReuseMutation mutation
+) {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path();
+    const auto destination = root / "file.txt";
+    onedrive::test::write_file(destination, "data");
+    const auto original_time = std::filesystem::last_write_time(destination);
+    auto previous = tracked_item(root, "file", "file.txt");
+    previous.ctag = metadata_echo ? "content-v1" : "";
+    FakeItemStore items;
+    items.saved_delta_link = "saved";
+    items.items.emplace("file", previous);
+    FakeGraphClient graph;
+    auto remote = file("file", "file.txt", 4);
+    remote.ctag = previous.ctag;
+    if (metadata_echo) {
+        remote.etag = "metadata-v2";
+    }
+    graph.changes = {remote};
+    graph.contents["file"] = "data";
+    FakeMetrics metrics;
+    auto config = config_for(root, false);
+    config.sync_mode = download_only ? onedrive::sync::SyncMode::download_only
+                                     : onedrive::sync::SyncMode::bidirectional;
+    const onedrive::cli::Console console{{.quiet = true}};
+    const auto synchronize = [&] {
+        return onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &console
+        }
+            .synchronize();
+    };
+    const DefaultLoggerGuard logger_guard;
+    const auto sink = std::make_shared<ReuseMutationSink>();
+    auto logger = std::make_shared<spdlog::logger>("reuse-race", sink);
+    logger->set_level(spdlog::level::debug);
+    spdlog::set_default_logger(std::move(logger));
+    unsigned injected = 0;
+    const std::string expected = mutation == ReuseMutation::size   ? "local-new"
+                                 : mutation == ReuseMutation::none ? "data"
+                                                                   : "EDIT";
+    sink->before_reuse = [&] {
+        ++injected;
+        if (mutation == ReuseMutation::none) {
+            return;
+        }
+        if (mutation == ReuseMutation::atomic_save) {
+            const auto edited = root / ".atomic-save";
+            onedrive::test::write_file(edited, expected);
+            std::filesystem::last_write_time(edited, original_time + 1s);
+            std::filesystem::rename(edited, destination);
+        } else {
+            onedrive::test::write_file(destination, expected);
+            std::filesystem::last_write_time(
+                destination,
+                mutation == ReuseMutation::size ? original_time
+                                                : original_time + 1s
+            );
+        }
+    };
+    std::string uploaded;
+    graph.during_upload = [&] {
+        if (items.pending_uploads_by_path.size() != 1) {
+            throw std::runtime_error{"expected one journaled upload snapshot"};
+        }
+        uploaded = onedrive::test::read_file(
+            items.pending_uploads_by_path.begin()->second.snapshot_path
+        );
+    };
+    const bool should_upload =
+        !download_only && mutation != ReuseMutation::none;
+    const auto result = synchronize();
+    const auto saved = std::ranges::find(
+        items.applied_delta.upserts,
+        "file",
+        &onedrive::storage::ItemState::remote_id
+    );
+    if (result != onedrive::exit_code::success || injected != 1 ||
+        saved == items.applied_delta.upserts.end() ||
+        saved->local_size != previous.local_size ||
+        saved->local_modified_ticks != previous.local_modified_ticks ||
+        saved->etag != remote.etag || saved->ctag != remote.ctag ||
+        saved->local_device == 0 || saved->local_inode == 0 ||
+        graph.download_count != 0 ||
+        graph.upload_count != (should_upload ? 1 : 0) ||
+        (should_upload && uploaded != expected) ||
+        onedrive::test::read_file(destination) != expected ||
+        !items.blocked.empty() || !items.pending_uploads_by_path.empty()) {
+        return fail(
+            "download reuse absorbed a later edit into the synchronized "
+            "baseline "
+            "(download-only " +
+            std::to_string(download_only) + ", metadata echo " +
+            std::to_string(metadata_echo) + ", mutation " +
+            std::to_string(static_cast<unsigned>(mutation)) + ")"
+        );
+    }
+    graph.changes.clear();
+    const auto expected_size = should_upload
+                                   ? static_cast<std::int64_t>(expected.size())
+                                   : previous.local_size;
+    const auto expected_ticks =
+        should_upload ? onedrive::sync::detail::modified_ticks(destination)
+                      : previous.local_modified_ticks;
+    if (synchronize() != onedrive::exit_code::success ||
+        graph.upload_count != (should_upload ? 1 : 0) ||
+        graph.download_count != 0 ||
+        onedrive::test::read_file(destination) != expected ||
+        !items.blocked.empty()) {
+        return fail(
+            "a subsequent round repeated or discarded the reused-file edit"
+        );
+    }
+    const auto current = items.find("me", "file");
+    if (!current || current->local_size != expected_size ||
+        current->local_modified_ticks != expected_ticks) {
+        return fail(
+            "the persisted snapshot no longer matches its trusted baseline"
+        );
+    }
+    return EXIT_SUCCESS;
+}
 
 int test_delete_during_watch_scan(int identities) {
     TemporaryDirectory temporary;
@@ -349,6 +503,22 @@ int __wrap_fstatat(
 }
 
 int main() {
+    for (const bool download_only : {false, true}) {
+        for (const bool metadata_echo : {false, true}) {
+            for (const auto mutation :
+                 {ReuseMutation::size,
+                  ReuseMutation::modified_time,
+                  ReuseMutation::atomic_save,
+                  ReuseMutation::none}) {
+                if (const auto result = test_edit_during_delta_reuse(
+                        download_only, metadata_echo, mutation
+                    );
+                    result != EXIT_SUCCESS) {
+                    return result;
+                }
+            }
+        }
+    }
     for (const int identities : {0, 1}) {
         if (const auto result = test_delete_during_watch_scan(identities);
             result != EXIT_SUCCESS) {

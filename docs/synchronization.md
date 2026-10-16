@@ -181,6 +181,13 @@ drives remain concurrent. Upload, deletion, and remote-move paths acquire the
 same lease so their network, filesystem, and state transitions cannot overlap
 for one item.
 
+When reusing an already downloaded file, the client retains the saved local size
+and modification time that passed the existing snapshot check. It does not
+resample them afterward and accidentally record a later local save as already
+synchronized. Bidirectional synchronization uses its normal upload scan to
+detect and upload that change; download-only mode retains the validated baseline
+without uploading the local edit.
+
 The client refuses to overwrite a local file that it cannot prove is
 unchanged. Before downloading, it captures the destination's existence, size,
 modification time, and SHA-256 fingerprint, then checks that baseline before

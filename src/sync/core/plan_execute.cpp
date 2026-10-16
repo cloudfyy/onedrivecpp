@@ -227,11 +227,9 @@ ExecutionSummary execute_plan(
                     "Reusing completed download for '{}'", item.remote_path
                 );
                 state.local_path = destination;
-                state.local_size = detail::persisted_file_size(
-                    std::filesystem::file_size(destination)
-                );
-                state.local_modified_ticks =
-                    detail::modified_ticks(destination);
+                // Keep the validated baseline so later edits remain uploadable.
+                state.local_size = previous->local_size;
+                state.local_modified_ticks = previous->local_modified_ticks;
                 const auto identity = safe_root.identity(
                     destination, detail::FilesystemItemKind::file
                 );
