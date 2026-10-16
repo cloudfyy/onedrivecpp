@@ -75,7 +75,7 @@ onedrive-cpp monitor stop --config ~/.config/onedrive-cpp/config.toml
 不要删除活跃端点。状态目录路径超过 Unix socket 长度限制时明确报错。
 升级后须重启旧 v1 Monitor；协议不兼容会明确报错。
 
-### GUI 监控与外部任务所有权
+### 文件操作历史
 
 GUI **文件**页显示本次应用启动以来完成的操作：本地完成时间、下载／上传／本地或
 远端移动／删除、路径、移动前的原路径，以及驱动器 ID；悬停路径可查看本地目标。
@@ -89,11 +89,14 @@ CLI 文本和 JSON 随完成逐条输出，安静模式不输出这些记录。J
 `file_operation`，提供 UTC `completed_at`、`completed_at_unix_milliseconds`、
 `action`、`path`、`previous_path`、`drive_id`、`local_path`、`directory`、
 `recovered`、`history_retained` 和 `history_omitted`。TUI 实时显示最近操作，
-任务完成或 Monitor 正常停止后，退出全屏并输出完整的保留列表。CLI 时间为 UTC。
+任务完成或 Monitor 正常停止后，退出全屏并输出完整的保留列表。若命令在部分操作
+完成后失败，仍先导出已保留的完成记录再报告错误。CLI 时间为 UTC。
 两端共用 `history.maximum_entries`（默认 **10000**，必须为正整数）；超限时省略
 最旧记录并显示省略数量。已经输出到终端或 JSON 流的内容不会被撤回。此上限独立于
-GUI 诊断日志的上限，也不影响同步累计统计。GUI 可在“设置／诊断”中修改；
+GUI 诊断日志的上限，也不影响同步累计统计。GUI 可在“设置／高级与日志”中修改；
 外部修改配置后须重新加载。
+
+### GUI 监控与外部任务所有权
 
 **启动监控**按已保存配置运行共享 Monitor 服务，包括 `sync.dry_run`。GUI 自有任务
 复用原同步 worker、取消和上传／下载事件；等待时保留上轮计数与完成时间，

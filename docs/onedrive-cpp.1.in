@@ -1,4 +1,4 @@
-.TH ONEDRIVE-CPP 1 "12 October 2026" "onedrive-cpp @ONEDRIVE_PACKAGE_VERSION@" "User Commands"
+.TH ONEDRIVE-CPP 1 "16 October 2026" "onedrive-cpp @ONEDRIVE_PACKAGE_VERSION@" "User Commands"
 .SH NAME
 onedrive-cpp \- modern C++ OneDrive synchronization client
 .SH SYNOPSIS
@@ -29,6 +29,9 @@ onedrive-cpp \- modern C++ OneDrive synchronization client
 .RI [ options ]
 .PP
 .B onedrive-cpp inspect status
+.RI [ options ]
+.PP
+.B onedrive-cpp inspect blocked
 .RI [ options ]
 .PP
 .B onedrive-cpp inspect storage
@@ -68,6 +71,15 @@ onedrive-cpp \- modern C++ OneDrive synchronization client
 .RI [ options ]
 .PP
 .B onedrive-cpp transfer watch
+.RI [ options ]
+.PP
+.B onedrive-cpp monitor status
+.RI [ options ]
+.PP
+.B onedrive-cpp monitor trigger
+.RI [ options ]
+.PP
+.B onedrive-cpp monitor stop
 .RI [ options ]
 .SH DESCRIPTION
 .B onedrive-cpp
@@ -112,7 +124,7 @@ credential errors remain visible and recoverable through Settings.
 Saved credentials are not proof of an online-valid login.
 Changing the state directory does not migrate tokens or databases.
 .PP
-The main tabs are Overview, Synchronization, Logs, and Settings.
+The main tabs are Overview, Sync, Logs, Settings, and Files.
 Overview shows account/directories and the current or latest task result.
 Synchronization provides Preview changes, Sync now, Stop, and View logs.
 Tasks use saved settings,
@@ -150,12 +162,51 @@ history and filters. Account logs do not include authorization URLs or tokens.
 This tab does not read the configured log file or create an additional one.
 Start monitoring runs the shared Monitor with saved settings. Sync now requests
 the existing Monitor while waiting, without starting another engine.
+GUI-owned monitoring shows session and last-round download/upload/move/delete
+totals; session counts accumulate reported round summaries, while blocked items
+use only the latest round's count. Starting a new Monitor task resets session
+totals, but not file-operation history.
 The GUI discovers external Monitors in the same state directory asynchronously.
 Stopping an external Monitor requires confirmation pinned to PID and instance;
 closing the window leaves it running. Closing cancels and waits only for GUI-owned tasks.
-External snapshots do not provide live transfer progress, direction or round timestamps.
+External snapshots do not provide live transfer progress, direction, round
+timestamps or session/round operation totals.
 A missing endpoint does not release resources: existing state locks remain authoritative.
 Uncertain ownership blocks new tasks. Systemd unit start/restart controls remain unimplemented.
+.SH FILE OPERATION HISTORY
+CLI and GUI record completed downloads, uploads, local/remote moves and
+local/remote deletions performed by the current process since startup.
+Moves include the previous path. Folder moves/deletions are marked and count
+as one operation rather than one entry per descendant; recovered completions
+are marked separately. Internal move staging is not recorded.
+Previews, already-current file reuse, blocked attempts, unfinished work and
+external Monitor activity are excluded. Completed entries remain available
+if a later operation fails or is cancelled.
+.PP
+The GUI Files tab displays local completion times with milliseconds, actions,
+paths, previous paths and Drive IDs. Search matches all columns; hovering over
+a path shows its local target. Monitor restarts, clearing logs and language
+switches preserve the list; exiting the application clears it.
+.PP
+Text and JSON CLI modes stream completions as they occur, unless
+.B \-\-quiet
+is set. TUI shows recent entries and, after leaving full-screen mode, exports
+the complete retained list at completion, graceful shutdown or a later command
+failure. CLI timestamps are UTC.
+.PP
+JSON records use event
+.BR file_operation ,
+with completed_at, completed_at_unix_milliseconds, action, path, previous_path,
+drive_id, local_path, directory, recovered, history_retained and history_omitted.
+Action values are downloaded, uploaded, moved_locally, moved_remotely,
+deleted_locally and deleted_remotely.
+.PP
+.B history.maximum_entries
+defaults to 10000 and must be a positive integer. Oldest records are discarded
+when full and the omitted count is displayed. This limit is independent of the
+500-entry GUI Logs limit and synchronization totals. History is not persisted;
+already streamed text/JSON output cannot be retracted.
+The GUI setting is Settings / Advanced and logs / File history limit.
 .SH COMMANDS
 .TP
 .B account login
@@ -296,7 +347,7 @@ links, non-regular files, and files that do not match the destination partial
 pattern are never deleted.
 Configured sync.dry_run also prevents deletion, including with --yes.
 Only the current Drive is scanned. Names must match
-.<filename>.onedrive-partial-<PID>-<sequence> with positive decimal numbers
+\&.<filename>.onedrive-partial-<PID>-<sequence> with positive decimal numbers
 without leading zeros. Saved items and unfinished operation references are protected.
 Unsafe, multiply linked, foreign-owned, or ambiguously referenced files and their
 records are retained and reported as skipped. Incomplete scans abort before deletion.
@@ -443,9 +494,12 @@ state.
 .TP
 .B transfer watch
 Run an initial synchronization, then monitor the local Drive tree recursively
-with inotify and poll Microsoft Graph periodically. Local event bursts are
-coalesced before synchronization. SIGINT and SIGTERM stop the monitor cleanly
-after the active synchronization finishes.
+with inotify and acquire Microsoft Graph WebSocket notifications.
+Notifications wake authoritative Delta queries; reconnection also triggers
+catch-up synchronization. Graph polling every 300 seconds by default is a
+fallback, not the normal notification delay.
+Local event bursts are coalesced for 1000 milliseconds by default.
+SIGINT and SIGTERM stop the monitor cleanly after active synchronization cleanup.
 .TP
 .B monitor status
 Query the running Monitor in the configured state directory without
@@ -625,6 +679,12 @@ components are rejected. Normal synchronization verifies create, write,
 flush, and removal behavior with a temporary probe. Download capacity retains
 a safety reserve of 256 MiB or five percent of planned transfer bytes,
 whichever is larger.
+.TP
+.B history.maximum_entries
+Maximum completed-operation records retained since process startup.
+Default 10000; zero, negative and noninteger values are rejected.
+Oldest entries are evicted with explicit omission counts; application exit
+clears the history. See FILE OPERATION HISTORY.
 .TP
 .B sync.data_directory
 Root directory for synchronized data. Actual content is stored under
@@ -934,6 +994,12 @@ Maximum quiet interval between Microsoft Graph delta checks. The default is
 Time used to coalesce a burst of local inotify events before synchronizing.
 The default is 1000 milliseconds and the maximum is 60000. Zero triggers
 immediately after a completed actionable event.
+.TP
+.B monitor.websocket_enabled
+Enable Graph Socket.IO/WebSocket remote-change notifications; default true.
+Disabling notifications keeps local inotify monitoring and Graph fallback
+polling active. The startup message describes configuration, not connection
+success; handshake completion and received notifications have separate logs.
 .TP
 .B transfer.http_version
 HTTP version preference for file transfers:

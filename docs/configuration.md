@@ -134,6 +134,21 @@ poll_interval_seconds = 300
 settle_delay_milliseconds = 1000
 ```
 
+## File-operation history retention
+
+`history.maximum_entries` is a positive integer, default **10000**, shared by
+CLI and GUI. It bounds completed-operation records for the current process,
+not log entries or synchronization totals. The oldest records are discarded
+when full, with the omitted count retained and displayed. Applying a lower GUI
+limit evicts older entries immediately; increasing it cannot restore discarded entries.
+History is not written to disk and is cleared when the application exits.
+GUI Monitor restarts and clearing the Logs tab do not reset it.
+
+The GUI field is **Settings / Advanced and logs / File history limit**.
+Reload after changing TOML externally. Previously streamed CLI text/JSON output
+cannot be retracted. See [file-operation history](usage.md#file-operation-history)
+for actions, timestamps, recovery labels and exclusions.
+
 ## Storage and mount safety
 
 Set `sync.data_mount_point` when `sync.data_directory` resides on removable

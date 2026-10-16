@@ -2,6 +2,10 @@
 
 [文档中心](README.zh-CN.md)
 
+本文保留阶段性设计与实施记录，不是 1.0.0 的当前功能清单。现有 GUI 已支持
+共享 Monitor、外部任务控制和文件操作历史；使用方式以
+[使用说明](usage.zh-CN.md)和[项目 README](../README.zh-CN.md)为准。
+
 ## 目标
 
 为 `onedrive-cpp` 增加 Ubuntu 26 桌面 GUI，同时保持现有 CLI、JSON 输出、FTXUI

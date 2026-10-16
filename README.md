@@ -7,6 +7,10 @@ Ubuntu 24.04 LTS and later. Its separation of responsibilities is inspired by
 [abraunegg/onedrive](https://github.com/abraunegg/onedrive), but it does not
 copy the reference project's D implementation.
 
+The current version is **1.0.0**. CLI, TUI, GUI, user-agent and CPack versions
+are generated from `version-semver` in `vcpkg.json`; Debian source packaging
+records its distribution-specific version separately in `debian/changelog`.
+
 ## Features
 
 - OAuth 2.0 device-code authentication with secure per-account token and
@@ -24,8 +28,12 @@ copy the reference project's D implementation.
   large-deletion protection.
 - SQLite-backed crash recovery for downloads, uploads, local and remote moves,
   remote deletions, and directory creation.
-- Long-running inotify monitoring with Graph polling, event coalescing,
-  overflow recovery, and clean signal handling.
+- Long-running inotify monitoring with Graph WebSocket notifications, polling
+  fallback, event coalescing, overflow recovery, and clean signal handling.
+- Optional English/Simplified Chinese Qt GUI with shared Monitor ownership and
+  controls, persistent blocked-item inspection, and session/round statistics.
+- Completed file-operation history in CLI and GUI with timestamps, actions,
+  old/new paths, configurable retention, and explicit omission counts.
 - Dry-run and structured JSON output, rotating logs, proxy support, shell
   completion, a manual page, a hardened systemd user service, and Debian
   packaging.
@@ -199,9 +207,9 @@ when needed, and report authentication or connectivity errors.
 Sync-path validation does not prevent login when authentication/state settings
 are usable; synchronization requires valid sync settings and saved credentials.
 
-The main tabs are **Overview / Synchronization status / Logs / Settings**. Overview
+The main tabs are **Overview / Sync / Logs / Settings / Files**. Overview
 shows account and directory information plus the current/latest sync result.
-Overview has no synchronization buttons; task controls are on the Synchronization tab.
+Overview has no synchronization buttons; task controls are on the Sync tab.
 
 In **Synchronization status**, use **Preview changes** to inspect the plan
 without changing synchronized files, then **Sync now** to apply it. Both use
@@ -277,7 +285,27 @@ enable logs below the configured logging threshold. Raw backend details remain
 unchanged; authorization URLs and tokens
 are not added to account logs. This tab does not read the configured log file
 or persist an additional log.
-GUI monitoring and systemd service control remain deferred.
+**Start monitoring** uses the shared Monitor worker with saved settings. While
+monitoring, **Sync now** requests that Monitor rather than launching a second
+engine. The GUI also discovers and can trigger/stop an external CLI or service
+Monitor; stopping it requires confirmation. Closing the GUI stops only its own
+task, not an external Monitor. Direct systemd unit start/restart controls are not
+provided. See [Monitor ownership and controls](docs/usage.md#gui-monitoring-and-external-ownership).
+
+GUI-owned monitoring shows both session and last-round totals. Reported
+download/upload/move/delete round counts accumulate; blocked items use
+the latest round's count. Starting a new Monitor task resets session totals.
+External Monitor snapshots do not expose transfer progress or these totals.
+
+**Files** lists completed operations since application startup, with local
+completion times, actions, paths, previous paths and Drive IDs. Search filters
+the list. Clearing logs or restarting Monitor does not clear it; application
+exit does. The shared `history.maximum_entries` setting defaults to **10000**,
+retains the latest entries and displays the omitted count. Configure it under
+**Settings / Advanced and logs**. Only current-process completions are listed,
+not external Monitor history, previews, blocked attempts or already-current
+reuse. CLI text/JSON streams completions; TUI shows recent entries and exports
+the retained list when it ends. See [file-operation history](docs/usage.md#file-operation-history).
 
 Hover over any setting, its label or browse/override control for a concise tip,
 including advanced fields. Tips also provide accessibility descriptions and
@@ -302,7 +330,8 @@ retain TOML's full nonnegative signed 64-bit range.
 
 Phase two adds proxy URL/bypass overrides, username and password/CA file
 references, transport timeouts and HTTP/IP modes, Graph throttling, monitor
-poll/settle/WebSocket settings, log level/file, file permissions and metadata.
+poll/settle/WebSocket settings, file-history retention, log level/file, file
+permissions and metadata.
 Unchecked proxy overrides inherit the environment independently; an explicitly
 empty URL forces direct connections and an empty bypass list overrides `NO_PROXY`.
 Passwords are never entered inline; referenced files are checked by runtime
@@ -310,7 +339,6 @@ security tools, not opened by the editor. Advanced account settings include
 trusted HTTPS auth/Graph endpoints, scopes (changes require signing in again),
 and a required mount point. No files, credentials or state are migrated.
 Persistent dry-run/force-delete flags and CLI themes are not GUI settings.
-GUI monitor workers and service integration remain deferred.
 
 CLI/TUI text, JSON output, configuration keys, and logs are unchanged.
 `ONEDRIVE_BUILD_GUI` defaults to `OFF`; headless builds need neither Qt nor
@@ -432,7 +460,7 @@ tests. The generated `.deb` is placed in the parent directory of the project,
 for example:
 
 ```text
-../onedrive-cpp_0.8.7-1~ubuntu24.04_amd64.deb
+../onedrive-cpp_1.0.0-1~ubuntu24.04_amd64.deb
 ```
 
 The Debian changelog carries the native build distribution suffix. When

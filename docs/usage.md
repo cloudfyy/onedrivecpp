@@ -360,7 +360,7 @@ socket after obtaining its normal runtime lock; do not delete a live endpoint.
 Long state-directory paths exceeding the Unix socket limit fail explicitly.
 Restart older v1 Monitors after updating; incompatible protocols fail explicitly.
 
-### GUI monitoring and external ownership
+### File-operation history
 
 The GUI **Files** tab lists completed operations since this application started:
 local completion time, download/upload/local or remote move/deletion, path,
@@ -379,12 +379,16 @@ mode suppresses them). JSON uses `event: "file_operation"`, UTC `completed_at`,
 `local_path`, `directory`, `recovered`, `history_retained` and `history_omitted`.
 The TUI shows recent operations live and prints the complete retained list after
 leaving its full-screen view at completion or graceful Monitor shutdown.
+If a command fails after completing earlier operations, it still exports those
+retained completions before reporting the error.
 CLI timestamps use UTC. Both frontends retain at most
 `history.maximum_entries` (default **10000**, positive integer), discard oldest
 entries when full and display the omitted count. Already streamed terminal/JSON
 output cannot be retracted. This limit is separate from the GUI's diagnostic log
 limit and does not affect synchronization totals. The GUI setting is under
-Settings / Diagnostics; use Reload after external configuration edits.
+Settings / Advanced and logs; use Reload after external configuration edits.
+
+### GUI monitoring and external ownership
 
 **Start monitoring** runs the shared Monitor service with saved settings, including
 `sync.dry_run`. The GUI-owned task uses the existing synchronization worker,

@@ -1,4 +1,4 @@
-.TH ONEDRIVE-CPP 1 "2026年10月12日" "onedrive-cpp @ONEDRIVE_PACKAGE_VERSION@" "用户命令"
+.TH ONEDRIVE-CPP 1 "2026年10月16日" "onedrive-cpp @ONEDRIVE_PACKAGE_VERSION@" "用户命令"
 .SH 名称
 onedrive-cpp \- 现代 C++ OneDrive 同步客户端
 .SH 用法
@@ -29,6 +29,9 @@ onedrive-cpp \- 现代 C++ OneDrive 同步客户端
 .RI [ 选项 ]
 .PP
 .B onedrive-cpp inspect status
+.RI [ 选项 ]
+.PP
+.B onedrive-cpp inspect blocked
 .RI [ 选项 ]
 .PP
 .B onedrive-cpp inspect storage
@@ -69,6 +72,15 @@ onedrive-cpp \- 现代 C++ OneDrive 同步客户端
 .PP
 .B onedrive-cpp transfer watch
 .RI [ 选项 ]
+.PP
+.B onedrive-cpp monitor status
+.RI [ 选项 ]
+.PP
+.B onedrive-cpp monitor trigger
+.RI [ 选项 ]
+.PP
+.B onedrive-cpp monitor stop
+.RI [ 选项 ]
 .SH 描述
 .B onedrive-cpp
 是一个独立的开源客户端，用于通过 Microsoft Graph 认证并同步 OneDrive 文件。
@@ -101,7 +113,7 @@ GUI 使用浏览器授权码与 PKCE 登录；CLI 仍使用设备代码流程。
 无效配置和凭据错误明确显示，可通过设置修复。
 已保存凭据不代表远端登录仍然有效。更改状态目录不会迁移 Token 或数据库。
 .PP
-主界面包含概览、同步、日志和设置四页。概览显示账号／目录及当前或最近一次任务结果。
+主界面包含概览、同步、日志、设置、文件五页。概览显示账号／目录及当前或最近一次任务结果。
 同步页提供预览变更、立即同步、停止和查看日志。任务使用已保存的设置，不使用未保存的草稿，
 并与 CLI 共用状态目录运行锁。预览不修改同步文件。已保存的
 .B sync.dry_run = true
@@ -125,11 +137,43 @@ CLI 和 GUI 的实际同步在执行前独立持久化已获取的原始远端 d
 清空或切换页面不会停止任务；语言切换保留历史与筛选。账号日志不加入授权链接或令牌，
 此页不读取配置的日志文件，也不额外写入日志文件。
 启动监控按已保存配置运行共享 Monitor。等待时立即同步请求现有 Monitor，
-不启动另一套引擎。GUI 异步发现同一状态目录内的外部 Monitor。
+不启动另一套引擎。GUI 自有监控显示会话累计及最近一轮的下载／上传／移动／删除
+数量；会话按已报告轮次摘要累加，阻止项只取最近一轮数量。新建 Monitor 任务重置会话统计，
+不重置文件历史。GUI 异步发现同一状态目录内的外部 Monitor。
 停止外部任务须确认并固定 PID／实例身份；关闭窗口不会停止它，
-只取消 GUI 自有任务并等待清理。外部快照不提供实时传输进度、方向或本轮完成时间。
+只取消 GUI 自有任务并等待清理。外部快照不提供实时传输进度、方向、本轮完成时间
+或会话／本轮操作统计。
 端点消失不等于资源释放，已有状态锁仍是占用依据；所有权不确定时禁止新任务。
 systemd unit 启动／重启控制仍未提供。
+.SH 文件操作历史
+CLI 与 GUI 记录当前进程启动以来完成的下载、上传、本地／远端移动及本地／远端
+删除；移动包含原路径。文件夹移动／删除有单独标记，一次操作只记一条，不展开
+全部后代；恢复完成也有标记。内部 staging 不记为用户操作。
+不记录预览、已是最新的文件复用、阻止项、未完成操作或外部 Monitor 活动。
+后续其他操作失败或取消，不会丢失已完成记录。
+.PP
+GUI 文件页显示带毫秒的本地完成时间、动作、路径、原路径和 Drive ID；搜索匹配
+全部列，悬停路径显示本地目标。重启 Monitor、清空日志或切换语言保留文件历史，
+退出应用后清空。
+.PP
+CLI 文本和 JSON 实时输出完成记录，
+.B \-\-quiet
+会抑制输出。TUI 实时显示最近记录，在任务完成、正常停止或后续命令失败时，
+退出全屏再输出完整保留列表。CLI 时间为 UTC。
+.PP
+JSON 记录的 event 为
+.BR file_operation ，
+字段为 completed_at、completed_at_unix_milliseconds、
+action、path、previous_path、drive_id、local_path、directory、
+recovered、history_retained、history_omitted。
+action 值为 downloaded、uploaded、moved_locally、moved_remotely、
+deleted_locally、deleted_remotely。
+.PP
+.B history.maximum_entries
+默认 10000，必须是正整数。超限移除最旧记录并显示省略数量；
+该上限独立于 GUI 日志的 500 条上限，也不影响同步累计统计。
+历史不写入磁盘，已经输出的文本／JSON 无法撤回。
+GUI 配置项位于设置／高级与日志／文件历史记录上限。
 .SH 命令
 .TP
 .B account login
@@ -343,9 +387,11 @@ blocked item，不执行跨挂载点复制后删除。
 只显示同步计划，不创建文件、不修改远端，也不更新同步状态。
 .TP
 .B transfer watch
-执行一次初始同步，然后通过 inotify 递归监控本地 Drive 树，并定期轮询
-Microsoft Graph。本地事件突发会先合并再同步。SIGINT 和 SIGTERM 会唤醒等待，
-并在活动同步完成后干净退出。
+执行一次初始同步，然后通过 inotify 递归监控本地 Drive 树，并获取 Microsoft
+Graph WebSocket 通知。通知唤醒权威 Delta 查询，重连也会触发追赶同步。
+Graph 默认每 300 秒轮询仅作兜底，不是正常通知延迟。
+本地事件突发默认等待 1000 毫秒稳定后合并同步。SIGINT 和 SIGTERM 会唤醒等待，
+并在活动同步清理完成后退出。
 .TP
 .B monitor status
 查询当前配置状态目录内已运行的 Monitor，无需认证、不访问 Graph、不创建数据库，
@@ -498,6 +544,11 @@ Token、SQLite 及 WAL/SHM 必须是当前用户拥有的普通单硬链接文�
 同步目录和状态目录不能互相包含，不能使用文件系统根目录，且现有路径组件不能是
 符号链接。正常同步在访问 Graph 前验证创建、写入、刷盘和删除能力。下载容量保留
 256 MiB 或计划传输字节数 5% 中的较大值。
+.TP
+.B history.maximum_entries
+当前进程启动以来保留的已完成操作数量上限，默认 10000；
+零、负数和非整数均会被拒绝。超限淘汰最旧记录并显示省略数量，
+退出应用后清空。参见文件操作历史。
 .TP
 .B sync.data_directory
 同步数据根目录。实际内容存放于
@@ -737,6 +788,11 @@ session。该值设置分片大小；默认 10 MiB，必须是 320 KiB 的正整
 .B monitor.settle_delay_milliseconds
 同步前合并本地 inotify 事件突发的时间；默认 1000 毫秒，最大 60000。0 表示在
 完整可操作事件后立即触发。
+.TP
+.B monitor.websocket_enabled
+启用 Graph Socket.IO/WebSocket 远端变更通知，默认为 true。
+禁用后仍保留本地 inotify 监控和 Graph 兜底轮询。启动消息描述配置状态，
+不代表连接成功；握手完成及收到通知有各自的日志。
 .TP
 .B transfer.http_version
 文件传输的 HTTP 版本偏好：

@@ -232,12 +232,23 @@ coalescing. Window regressions cover translated progress/history, blocked and
 failed results, settings/account interlocks, unsaved drafts, bounded history
 with explicit omissions, and cancel-and-join on close. Graph/application tests
 also cancel token refresh and drive identity lookup before storage creation.
-Tab/log regressions check the Overview/Synchronization/Logs/Settings split,
+Tab/log regressions check the Overview/Sync/Logs/Settings/Files split,
 navigation and overview summaries, cross-task history and exact overflow counts,
 timestamps, every level filter, copying displayed text, clear-during-sync,
 auto-scroll on/off, raw multiline details, and bilingual history/filter/draft
 preservation. Account tests ensure browser authorization parameters do not enter
 the session log.
+File-history regressions cover the exact 10000-entry boundary, limit changes,
+omission accounting, repeated paths, and UTC fractional-second boundaries.
+Real synchronization cases check file/folder move and deletion events, preview
+exclusion, durable recovery metadata, and no duplicate recovery records.
+Name-exchange cases distinguish new staging journals from recovered journals
+and ensure private staging paths never become user-visible operations.
+GUI cases cover all six actions, folder/recovery labels, millisecond timestamps,
+Unicode/Drive/previous-path searches and live bilingual retranslation.
+Pseudo-terminal tests verify that a CLI failure after a completed download
+exports history after leaving full-screen mode and restores terminal state.
+TUI regressions also check unknown totals and clearing stale progress per round.
 Logging regressions retain all six shared backend severities, exercise every
 configured GUI threshold including `off`, and verify diagnostic delivery before
 failure completion, logger restoration and restart. TUI tests check low-severity
