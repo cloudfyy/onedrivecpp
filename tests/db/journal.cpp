@@ -23,9 +23,90 @@ using namespace onedrive::test::db;
 using onedrive::test::fail;
 using onedrive::test::TemporaryDirectory;
 
+int test_replacement_migration() {
+    TemporaryDirectory temporary;
+    const auto path = temporary.path() / "items.sqlite3";
+    constexpr auto fingerprint =
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    {
+        onedrive::storage::ItemDatabase database{temporary.path(), identity()};
+        database.open();
+        database.save_pending_download({
+            .item =
+                {
+                    .drive_id = "me",
+                    .remote_id = "migration",
+                    .name = "migration.txt",
+                    .etag = "etag",
+                    .local_path = temporary.path() / "migration.txt",
+                    .size = 4,
+                },
+            .temporary_path = temporary.path() / "migration.tmp",
+            .content_fingerprint = fingerprint,
+            .backup_path = temporary.path() / "migration.safeBackup.txt",
+            .backup_fingerprint = fingerprint,
+        });
+        database.apply_delta({.drive_id = "me", .delta_link = "saved-cursor"});
+    }
+    if (!execute_schema(
+            path,
+            "ALTER TABLE pending_download DROP COLUMN replacement_fingerprint;"
+            "PRAGMA user_version = 28;"
+        )) {
+        return fail("cannot create schema 28 download-journal fixture");
+    }
+    try {
+        onedrive::storage::ItemDatabase database{temporary.path(), identity()};
+        database.open_read_only();
+        return fail("read-only journal access upgraded schema 28");
+    } catch (const std::runtime_error&) {
+    }
+    if (!schema_version_is(path, 28)) {
+        return fail("read-only journal access changed schema 28");
+    }
+    {
+        onedrive::storage::ItemDatabase database{temporary.path(), identity()};
+        database.open();
+        auto pending = database.pending_downloads("me");
+        if (pending.size() != 1 ||
+            !pending[0].replacement_fingerprint.empty() ||
+            pending[0].content_fingerprint != fingerprint ||
+            pending[0].backup_fingerprint != fingerprint ||
+            pending[0].backup_path !=
+                temporary.path() / "migration.safeBackup.txt" ||
+            database.delta_link("me") != "saved-cursor" ||
+            !schema_version_is(path, 29)) {
+            return fail("schema 28 migration changed the existing journal");
+        }
+        pending[0].replacement_fingerprint = fingerprint;
+        database.save_pending_download(pending[0]);
+        pending[0].replacement_fingerprint.clear();
+        database.save_pending_download(pending[0]);
+        if (!database.pending_downloads("me")[0]
+                 .replacement_fingerprint.empty()) {
+            return fail("journal upsert did not clear the exchange marker");
+        }
+        pending[0].replacement_fingerprint = fingerprint;
+        database.save_pending_download(pending[0]);
+    }
+    {
+        onedrive::storage::ItemDatabase database{temporary.path(), identity()};
+        database.open_read_only();
+        const auto pending = database.pending_downloads("me");
+        if (pending.size() != 1 ||
+            pending[0].replacement_fingerprint != fingerprint) {
+            return fail("exchange fingerprint did not survive database reopen");
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
 } // namespace
 
 int main() {
+    if (test_replacement_migration() != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
     TemporaryDirectory temporary_directory;
     {
         onedrive::storage::ItemDatabase database{
@@ -138,6 +219,7 @@ int main() {
             .backup_path = temporary_directory.path() /
                            "pending-me.safeBackup-20261004T051000Z-0001.txt",
             .backup_fingerprint = "backup-fingerprint-me",
+            .replacement_fingerprint = "replacement-fingerprint-me",
         });
         database.save_pending_download({
             .item =
@@ -237,6 +319,8 @@ int main() {
                 temporary_directory.path() /
                     "pending-me.safeBackup-20261004T051000Z-0001.txt" ||
             pending_me[0].backup_fingerprint != "backup-fingerprint-me" ||
+            pending_me[0].replacement_fingerprint !=
+                "replacement-fingerprint-me" ||
             !partial_me || partial_me->item.ctag != "partial-ctag" ||
             !database.partial_download("other-drive", "partial-other") ||
             database.pending_moves("me").size() != 1 ||

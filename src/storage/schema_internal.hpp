@@ -7,7 +7,7 @@
 
 namespace onedrive::storage::item_database_detail {
 
-inline constexpr int current_schema_version = 28;
+inline constexpr int current_schema_version = 29;
 void create_pending_delta_schema(sqlite3* database);
 void create_pending_delta_v27_schema(sqlite3* database);
 

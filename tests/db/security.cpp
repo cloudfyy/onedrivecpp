@@ -220,11 +220,11 @@ int main() {
     if (!create_current_database(future_version_directory) ||
         !execute_schema(
             future_version_directory / "items.sqlite3",
-            "PRAGMA user_version = 29;"
+            "PRAGMA user_version = 30;"
         ) ||
         assert_rejected(
             future_version_directory,
-            "unsupported state database schema version 29",
+            "unsupported state database schema version 30",
             "database with a future schema version"
         ) != EXIT_SUCCESS) {
         return EXIT_FAILURE;

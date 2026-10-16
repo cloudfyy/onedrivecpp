@@ -250,7 +250,8 @@ int download_single_file(
             config.drive_id,
             metadata,
             config.sync_permissions,
-            &observer
+            &observer,
+            config.local_conflict
         );
         const auto previous = items.find(config.drive_id, item.id);
         const auto target_status =

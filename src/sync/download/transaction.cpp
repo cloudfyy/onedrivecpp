@@ -1,6 +1,7 @@
 #include "sync/download/transaction.hpp"
 
 #include "sync/download/integrity.hpp"
+#include "sync/download/installation.hpp"
 #include "sync/filesystem/operations.hpp"
 #include "sync/filesystem/safe_backup.hpp"
 
@@ -502,13 +503,16 @@ storage::ItemState commit_download(
                 );
             }
 
-            items.save_pending_download({
+            storage::PendingDownload pending{
                 .item = prepared.state,
                 .temporary_path = prepared.temporary_path,
                 .content_fingerprint = prepared.content_fingerprint,
                 .backup_path = backup ? backup->path : std::filesystem::path{},
                 .backup_fingerprint = backup ? backup->fingerprint : "",
-            });
+                .replacement_fingerprint =
+                    baseline.existed && !identical ? baseline.fingerprint : "",
+            };
+            items.save_pending_download(pending);
             auto journaled = journal_download(std::move(prepared));
             active.emplace<JournaledDownload>(std::move(journaled));
             auto& installing = std::get<JournaledDownload>(active);
@@ -551,10 +555,17 @@ storage::ItemState commit_download(
                     installing.item.remote_path
                 );
             } else {
-                sync_root.rename(
-                    installing.temporary_path, installing.destination
+                install_pending_download(
+                    items,
+                    sync_root,
+                    pending,
+                    options.local_conflict,
+                    [&](const std::filesystem::path& backup_path) {
+                        if (options.backup_created) {
+                            options.backup_created(backup_path);
+                        }
+                    }
                 );
-                sync_root.fsync_directory(installing.destination.parent_path());
                 spdlog::debug(
                     "Atomically installed '{}' ({} bytes)",
                     installing.item.remote_path,

@@ -69,6 +69,10 @@ public:
         const std::filesystem::path& source,
         const std::filesystem::path& destination
     ) const;
+    void exchange(
+        const std::filesystem::path& source,
+        const std::filesystem::path& destination
+    ) const;
     [[nodiscard]] FilesystemIdentity identity(
         const std::filesystem::path& path,
         FilesystemItemKind kind

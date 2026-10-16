@@ -1,4 +1,5 @@
 #include "sync/download/recovery.hpp"
+#include "sync/download/installation.hpp"
 #include "onedrive/sync/blocked_policy.hpp"
 
 #include "sync/filesystem/operations.hpp"
@@ -69,7 +70,7 @@ void validate_pending_download(
             destination.string()
         );
     }
-    if (outside_root(temporary_relative) ||
+    if (outside_root(temporary_relative) || temporary == destination ||
         !paths_share_parent(temporary, destination)) {
         throw std::runtime_error(
             "pending download temporary path is outside the destination "
@@ -91,7 +92,9 @@ void validate_pending_download(
     }
     if (download.item.directory || download.item.size < 0 ||
         download.item.last_modified.empty() ||
-        !valid_fingerprint(download.content_fingerprint)) {
+        !valid_fingerprint(download.content_fingerprint) ||
+        (!download.replacement_fingerprint.empty() &&
+         !valid_fingerprint(download.replacement_fingerprint))) {
         throw std::runtime_error(
             "pending download journal contains invalid metadata for '" +
             download.item.remote_path + "'"
@@ -110,7 +113,8 @@ void recover_pending_downloads(
     const std::string& drive_id,
     const FilesystemMetadata& metadata,
     config::SyncPermissionsMode permissions,
-    const events::Observer* observer
+    const events::Observer* observer,
+    config::LocalConflictPolicy local_conflict
 ) {
     const auto& sync_root = safe_root.path();
     const auto pending = items.pending_downloads(drive_id);
@@ -148,9 +152,10 @@ void recover_pending_downloads(
         if (std::filesystem::is_symlink(
                 std::filesystem::symlink_status(destination)
             ) ||
-            std::filesystem::is_symlink(
-                std::filesystem::symlink_status(download.temporary_path)
-            )) {
+            (download.replacement_fingerprint.empty() &&
+             std::filesystem::is_symlink(
+                 std::filesystem::symlink_status(download.temporary_path)
+             ))) {
             throw std::runtime_error(
                 "pending download path contains a symbolic link"
             );
@@ -159,39 +164,10 @@ void recover_pending_downloads(
         const bool temporary_exists =
             std::filesystem::exists(download.temporary_path);
         const bool destination_exists = std::filesystem::exists(destination);
-        if (destination_exists &&
-            recovery_file_matches(destination, download)) {
-            if (temporary_exists) {
-                if (!recovery_file_matches(download.temporary_path, download)) {
-                    throw std::runtime_error(
-                        "cannot remove recovery temporary file because it does "
-                        "not match the journal: " +
-                        download.temporary_path.string()
-                    );
-                }
-                remove_no_symlinks(
-                    download.temporary_path,
-                    MissingPathPolicy::report
-                );
-                spdlog::debug(
-                    "Removed obsolete recovery temporary file '{}'",
-                    download.temporary_path.string()
-                );
-            }
-            spdlog::debug(
-                "Accepted already installed recovery destination '{}'",
-                destination.string()
-            );
-        } else if (!destination_exists && temporary_exists &&
-                   recovery_file_matches(download.temporary_path, download)) {
-            safe_root.rename(download.temporary_path, destination);
-            safe_root.fsync_directory(destination.parent_path());
-            spdlog::debug(
-                "Promoted recovery temporary file to '{}'",
-                destination.string()
-            );
-        } else if (destination_exists && temporary_exists &&
-                   recovery_file_matches(download.temporary_path, download)) {
+        if (download.replacement_fingerprint.empty() && destination_exists &&
+            !recovery_file_matches(destination, download) && temporary_exists &&
+            recovery_file_matches(download.temporary_path, download)) {
+            const auto baseline = capture_local_file_baseline(destination);
             bool replacement_is_safe = false;
             if (!download.backup_path.empty()) {
                 const auto backup_status =
@@ -200,12 +176,14 @@ void recover_pending_downloads(
                     std::filesystem::is_regular_file(backup_status) &&
                     content_fingerprint(download.backup_path) ==
                         download.backup_fingerprint &&
-                    content_fingerprint(destination) ==
-                        download.backup_fingerprint;
+                    baseline.existed &&
+                    baseline.fingerprint == download.backup_fingerprint;
             } else if (const auto previous =
                            items.find(drive_id, download.item.remote_id);
                        previous.has_value()) {
                 replacement_is_safe =
+                    baseline.existed && baseline.size == previous->local_size &&
+                    baseline.modified_ticks == previous->local_modified_ticks &&
                     local_snapshot_matches(*previous, destination);
             }
             if (!replacement_is_safe) {
@@ -214,19 +192,24 @@ void recover_pending_downloads(
                     "for '" + download.item.remote_path + "'"
                 );
             }
-            safe_root.rename(download.temporary_path, destination);
-            safe_root.fsync_directory(destination.parent_path());
-            spdlog::debug(
-                "Promoted recovery temporary file over safely preserved '{}'",
-                destination.string()
-            );
-        } else {
-            throw std::runtime_error(
-                "cannot safely recover pending download '" +
-                download.item.remote_path +
-                "': neither destination nor temporary file matches the journal"
-            );
+            download.replacement_fingerprint = baseline.fingerprint;
+            items.save_pending_download(download);
         }
+        install_pending_download(
+            items,
+            safe_root,
+            download,
+            local_conflict,
+            [&](const std::filesystem::path& backup) {
+                if (observer) {
+                    observer->message(
+                        events::MessageKind::warning,
+                        "local_conflict_backed_up",
+                        "Preserved local conflict as '" + backup.string() + "'."
+                    );
+                }
+            }
+        );
 
         graph::RemoteItem item{};
         item.id = download.item.remote_id;
@@ -271,11 +254,18 @@ void recover_pending_downloads(
     const std::string& drive_id,
     const FilesystemMetadata& metadata,
     config::SyncPermissionsMode permissions,
-    const events::Observer* observer
+    const events::Observer* observer,
+    config::LocalConflictPolicy local_conflict
 ) {
     const SafeSyncRoot safe_root{sync_root};
     recover_pending_downloads(
-        items, safe_root, drive_id, metadata, permissions, observer
+        items,
+        safe_root,
+        drive_id,
+        metadata,
+        permissions,
+        observer,
+        local_conflict
     );
 }
 

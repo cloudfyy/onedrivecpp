@@ -18,5 +18,10 @@ struct SafeBackup {
     const std::filesystem::path& source,
     const LocalFileBaseline& baseline
 );
+[[nodiscard]] SafeBackup preserve_displaced_backup(
+    const SafeSyncRoot& sync_root,
+    const std::filesystem::path& source,
+    const std::filesystem::path& destination
+);
 
 }  // namespace onedrive::sync::detail

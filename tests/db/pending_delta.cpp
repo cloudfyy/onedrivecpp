@@ -239,6 +239,7 @@ void test_version_26_upgrade() {
         execute_schema(
             temporary.path() / "items.sqlite3",
             "DROP TABLE pending_delta_change; DROP TABLE pending_delta;"
+            "ALTER TABLE pending_download DROP COLUMN replacement_fingerprint;"
             "PRAGMA user_version = 26;"
         ),
         "cannot create version 26 fixture"
@@ -248,7 +249,7 @@ void test_version_26_upgrade() {
     require(
         database.delta_link("me") == "old-cursor" &&
             !database.pending_delta("me") &&
-            schema_version_is(temporary.path() / "items.sqlite3", 28),
+            schema_version_is(temporary.path() / "items.sqlite3", 29),
         "version 26 upgrade lost the applied cursor"
     );
     database.save_pending_delta(sample());
@@ -267,6 +268,7 @@ void test_version_27_upgrade() {
         execute_schema(
             temporary.path() / "items.sqlite3",
             "ALTER TABLE pending_delta_change DROP COLUMN unsupported_format;"
+            "ALTER TABLE pending_download DROP COLUMN replacement_fingerprint;"
             "PRAGMA user_version = 27;"
         ),
         "cannot create version 27 fixture"
@@ -281,7 +283,7 @@ void test_version_27_upgrade() {
         loaded &&
             loaded->delta.changes.size() == expected.delta.changes.size() &&
             database.delta_link("me") == "applied" &&
-            schema_version_is(temporary.path() / "items.sqlite3", 28),
+            schema_version_is(temporary.path() / "items.sqlite3", 29),
         "version 27 migration lost pending or applied metadata"
     );
     for (std::size_t index = 0; index < expected.delta.changes.size();

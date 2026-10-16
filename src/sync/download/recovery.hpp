@@ -21,7 +21,9 @@ void recover_pending_downloads(
     const FilesystemMetadata& metadata,
     config::SyncPermissionsMode permissions =
         config::SyncPermissionsMode::private_access,
-    const events::Observer* observer = nullptr
+    const events::Observer* observer = nullptr,
+    config::LocalConflictPolicy local_conflict =
+        config::LocalConflictPolicy::block
 );
 void recover_pending_downloads(
     storage::ItemStore& items,
@@ -30,7 +32,9 @@ void recover_pending_downloads(
     const FilesystemMetadata& metadata,
     config::SyncPermissionsMode permissions =
         config::SyncPermissionsMode::private_access,
-    const events::Observer* observer = nullptr
+    const events::Observer* observer = nullptr,
+    config::LocalConflictPolicy local_conflict =
+        config::LocalConflictPolicy::block
 );
 
 template <typename StoreImplementation>
@@ -41,11 +45,19 @@ void recover_pending_downloads(
     const FilesystemMetadata& metadata,
     config::SyncPermissionsMode permissions =
         config::SyncPermissionsMode::private_access,
-    const events::Observer* observer = nullptr
+    const events::Observer* observer = nullptr,
+    config::LocalConflictPolicy local_conflict =
+        config::LocalConflictPolicy::block
 ) {
     storage::ItemStore store_proxy{onedrive::util::borrowed_proxy, items};
     recover_pending_downloads(
-        store_proxy, sync_root, drive_id, metadata, permissions, observer
+        store_proxy,
+        sync_root,
+        drive_id,
+        metadata,
+        permissions,
+        observer,
+        local_conflict
     );
 }
 
@@ -57,11 +69,19 @@ void recover_pending_downloads(
     const FilesystemMetadata& metadata,
     config::SyncPermissionsMode permissions =
         config::SyncPermissionsMode::private_access,
-    const events::Observer* observer = nullptr
+    const events::Observer* observer = nullptr,
+    config::LocalConflictPolicy local_conflict =
+        config::LocalConflictPolicy::block
 ) {
     storage::ItemStore store_proxy{onedrive::util::borrowed_proxy, items};
     recover_pending_downloads(
-        store_proxy, sync_root, drive_id, metadata, permissions, observer
+        store_proxy,
+        sync_root,
+        drive_id,
+        metadata,
+        permissions,
+        observer,
+        local_conflict
     );
 }
 

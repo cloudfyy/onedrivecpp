@@ -197,4 +197,33 @@ SafeBackup preserve_safe_backup(
     );
 }
 
+SafeBackup preserve_displaced_backup(
+    const SafeSyncRoot& sync_root,
+    const std::filesystem::path& source,
+    const std::filesystem::path& destination
+) {
+    const auto time = timestamp();
+    for (unsigned sequence = 1; sequence <= maximum_backup_sequence;
+         ++sequence) {
+        const auto backup = destination.parent_path() /
+                            backup_filename(destination, time, sequence);
+        if (!sync_root.rename_no_replace(source, backup)) {
+            continue;
+        }
+        sync_root.fsync_directory(backup.parent_path());
+        const auto baseline = capture_local_file_baseline(backup);
+        if (!baseline.existed) {
+            throw LocalModificationConflictError(
+                "displaced safeBackup disappeared: " + backup.string()
+            );
+        }
+        fsync_file(backup);
+        return {.path = backup, .fingerprint = baseline.fingerprint};
+    }
+    throw std::runtime_error(
+        "cannot allocate a unique displaced safeBackup name for: " +
+        destination.string()
+    );
+}
+
 }  // namespace onedrive::sync::detail

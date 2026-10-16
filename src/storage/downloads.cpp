@@ -88,9 +88,10 @@ void ItemDatabase::save_pending_download_on_worker(
         "INSERT INTO pending_download ("
         "drive_id, remote_id, parent_id, name, etag, ctag, remote_path, "
         "local_path, last_modified, size, directory, temporary_path, "
-        "content_fingerprint, backup_path, backup_fingerprint"
+        "content_fingerprint, backup_path, backup_fingerprint, "
+        "replacement_fingerprint"
         ") VALUES ("
-        "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15"
+        "?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16"
         ") "
         "ON CONFLICT(drive_id, remote_id) DO UPDATE SET "
         "parent_id = excluded.parent_id, name = excluded.name, "
@@ -102,7 +103,8 @@ void ItemDatabase::save_pending_download_on_worker(
         "excluded.temporary_path, "
         "content_fingerprint = excluded.content_fingerprint, "
         "backup_path = excluded.backup_path, "
-        "backup_fingerprint = excluded.backup_fingerprint;"
+        "backup_fingerprint = excluded.backup_fingerprint, "
+        "replacement_fingerprint = excluded.replacement_fingerprint;"
     };
     bind_text(database, statement.get(), 1, download.item.drive_id);
     bind_text(database, statement.get(), 2, download.item.remote_id);
@@ -121,6 +123,7 @@ void ItemDatabase::save_pending_download_on_worker(
     bind_text(database, statement.get(), 13, download.content_fingerprint);
     bind_text(database, statement.get(), 14, download.backup_path.string());
     bind_text(database, statement.get(), 15, download.backup_fingerprint);
+    bind_text(database, statement.get(), 16, download.replacement_fingerprint);
     statement.execute("cannot save pending download");
     spdlog::debug(
         "Saved pending download journal for '{}'", download.item.remote_path
@@ -173,7 +176,8 @@ ItemDatabase::pending_downloads_on_worker(const std::string& drive_id) const {
         database,
         "SELECT drive_id, remote_id, parent_id, name, etag, ctag, remote_path, "
         "local_path, last_modified, size, directory, temporary_path, "
-        "content_fingerprint, backup_path, backup_fingerprint "
+        "content_fingerprint, backup_path, backup_fingerprint, "
+        "replacement_fingerprint "
         "FROM pending_download WHERE drive_id = ?1 "
         "ORDER BY remote_path;"
     };
@@ -202,6 +206,7 @@ ItemDatabase::pending_downloads_on_worker(const std::string& drive_id) const {
             .content_fingerprint = column_text(statement.get(), 12),
             .backup_path = column_text(statement.get(), 13),
             .backup_fingerprint = column_text(statement.get(), 14),
+            .replacement_fingerprint = column_text(statement.get(), 15),
         });
     }
     return downloads;

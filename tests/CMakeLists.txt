@@ -650,7 +650,9 @@ add_onedrive_test(
     SOURCES tests/download/progress.cpp
     INCLUDE_DIRS src tests
 )
-foreach(DOWNLOAD_TEST IN ITEMS single safe txn relaxed resume recover)
+foreach(
+    DOWNLOAD_TEST IN ITEMS single safe txn relaxed resume recover install_race
+)
     add_onedrive_test(
         download_${DOWNLOAD_TEST}_tests
         SOURCES tests/download/${DOWNLOAD_TEST}.cpp
@@ -659,6 +661,9 @@ foreach(DOWNLOAD_TEST IN ITEMS single safe txn relaxed resume recover)
 endforeach()
 target_link_libraries(download_single_tests PRIVATE onedrive_cli)
 target_link_libraries(download_resume_tests PRIVATE spdlog::spdlog)
+target_link_options(
+    download_install_race_tests PRIVATE -Wl,--wrap=renameat -Wl,--wrap=renameat2
+)
 add_onedrive_test(
     download_integrity_tests
     SOURCES tests/download/integrity.cpp

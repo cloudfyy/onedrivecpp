@@ -122,6 +122,7 @@ void create_pending_download_schema(sqlite3* database) {
         "content_fingerprint TEXT NOT NULL,"
         "backup_path TEXT NOT NULL DEFAULT '',"
         "backup_fingerprint TEXT NOT NULL DEFAULT '',"
+        "replacement_fingerprint TEXT NOT NULL DEFAULT '',"
         "PRIMARY KEY (drive_id, remote_id)"
         ");"
     );

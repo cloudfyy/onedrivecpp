@@ -512,7 +512,8 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
                     config_.drive_id,
                     *metadata,
                     config_.sync_permissions,
-                    &observer
+                    &observer,
+                    config_.local_conflict
                 );
             }
             if (capabilities.uploads()) {

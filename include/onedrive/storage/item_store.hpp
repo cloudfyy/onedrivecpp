@@ -102,6 +102,8 @@ struct PendingDownload {
     std::string content_fingerprint;
     std::filesystem::path backup_path;
     std::string backup_fingerprint;
+    // Original destination SHA-256; temporary_path may hold it after exchange.
+    std::string replacement_fingerprint;
 };
 
 struct PartialDownload {

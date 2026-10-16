@@ -256,6 +256,54 @@ bool SafeSyncRoot::rename_no_replace(
     );
 }
 
+void SafeSyncRoot::exchange(
+    const std::filesystem::path& source,
+    const std::filesystem::path& destination
+) const {
+    const auto source_relative = relative_path(source);
+    const auto destination_relative = relative_path(destination);
+    Descriptor source_parent{open_beneath(
+        descriptor_.get(),
+        source_relative.parent_path(),
+        O_RDONLY | O_DIRECTORY | O_CLOEXEC,
+        0
+    )};
+    if (source_parent.get() == -1) {
+        throw SafePathConflictError(
+            "cannot safely open synchronization source directory for "
+            "exchange: " +
+            onedrive::util::system_error_message(errno)
+        );
+    }
+    Descriptor destination_parent{open_beneath(
+        descriptor_.get(),
+        destination_relative.parent_path(),
+        O_RDONLY | O_DIRECTORY | O_CLOEXEC,
+        0
+    )};
+    if (destination_parent.get() == -1) {
+        throw SafePathConflictError(
+            "cannot safely open synchronization destination directory for "
+            "exchange: " +
+            onedrive::util::system_error_message(errno)
+        );
+    }
+    if (::renameat2(
+            source_parent.get(),
+            source_relative.filename().c_str(),
+            destination_parent.get(),
+            destination_relative.filename().c_str(),
+            RENAME_EXCHANGE
+        ) == -1) {
+        throw std::filesystem::filesystem_error(
+            "cannot atomically exchange synchronization files",
+            source,
+            destination,
+            std::error_code{errno, std::generic_category()}
+        );
+    }
+}
+
 FilesystemIdentity SafeSyncRoot::identity(
     const std::filesystem::path& path,
     FilesystemItemKind kind

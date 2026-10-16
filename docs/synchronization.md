@@ -184,8 +184,16 @@ for one item.
 The client refuses to overwrite a local file that it cannot prove is
 unchanged. Before downloading, it captures the destination's existence, size,
 modification time, and SHA-256 fingerprint, then checks that baseline before
-journaling and immediately before the atomic replacement. A file created or
-modified during transfer is retained and persisted as a `local_modification`
+journaling and immediately before installation. Existing files are installed
+with an atomic exchange: the displaced local file is checked before it can be
+discarded. A last-moment edit is restored under the default `block` policy, or
+moved intact to a `.safeBackup-*` file under `backup`. Rollback also exchanges
+files rather than overwriting them, retaining any second edit in the journaled
+temporary file. A missing destination uses a no-replace rename, so a newly
+created local file cannot be overwritten. Unsupported atomic operations fail
+explicitly; there is no overwriting-rename fallback.
+A file created or modified during transfer is retained and, under `block`,
+persisted as a `local_modification`
 blocked item. Invalid remote paths, symbolic links, local path-type conflicts,
 files marked with the Microsoft Graph `malware` facet, and descendants of
 blocked directories are also persisted as blocked items. Malware-marked files
@@ -349,14 +357,19 @@ After a download completes, the client writes the temporary path, destination,
 remote metadata, size, and SHA-256 content fingerprint to a SQLite
 `pending_download` journal before the atomic replacement. Startup recovery
 processes this journal first, making SQLite authoritative rather than relying
-on target-file-system extended attributes.
+on target-file-system extended attributes. Schema version 29 also records the
+original destination's SHA-256 fingerprint for exchanges. Recovery distinguishes
+the downloaded temporary from a displaced original, uses the same guarded
+installation, and retains unknown contents instead of deleting them.
 
 When `sync.local_conflict = "backup"` preserves local content, the durable
 backup path and SHA-256 fingerprint are included in the pending-install
-journal. Recovery replaces an existing destination only after verifying both
-the backup and the still-current destination against that fingerprint. A
-missing, changed, or symbolic-link backup stops recovery rather than risking
-local data.
+journal. Recovery checks the original or displaced local file and validates
+any recorded backup before discarding that local version. Concurrent edits
+follow the configured conflict policy; a missing, changed, or symbolic-link
+backup stops recovery and restores the displaced original rather than risking
+local data. Legacy journals are validated against a recorded backup or tracked
+local snapshot before entering the guarded installation.
 
 Large downloads also persist a separate SQLite `partial_download` checkpoint
 after each successful, flushed Range chunk. The checkpoint records the remote

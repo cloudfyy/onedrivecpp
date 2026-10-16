@@ -95,6 +95,7 @@ add_library(onedrive_core
     src/sync/download/integrity.cpp
     src/sync/download/progress.cpp
     src/sync/download/recovery.cpp
+    src/sync/download/installation.cpp
     src/sync/download/space.cpp
     src/sync/download/target.cpp
     src/sync/download/transaction.cpp

@@ -102,6 +102,14 @@ void add_pending_delta_unsupported_format(sqlite3* database) {
     );
 }
 
+void add_pending_download_replacement(sqlite3* database) {
+    execute_sql(
+        database,
+        "ALTER TABLE pending_download ADD COLUMN replacement_fingerprint "
+        "TEXT NOT NULL DEFAULT '';"
+    );
+}
+
 void migrate_v1_to_v4(sqlite3* database) {
     execute_sql(
         database,
@@ -229,6 +237,7 @@ constexpr std::array schema_migrations{
     SchemaMigration{25, 26, create_item_remote_path_index},
     SchemaMigration{26, 27, create_pending_delta_v27_schema},
     SchemaMigration{27, 28, add_pending_delta_unsupported_format},
+    SchemaMigration{28, 29, add_pending_download_replacement},
 };
 
 consteval bool schema_migration_chain_is_complete() {
