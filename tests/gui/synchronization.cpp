@@ -496,6 +496,322 @@ void test_default_controller_without_usable_credentials() {
     );
 }
 
+void test_controller_file_history() {
+    Fixture fixture;
+    test::write_file(
+        fixture.file,
+        test::read_file(fixture.file) + "\n[history]\nmaximum_entries = 3\n"
+    );
+    std::atomic_bool emitted{false};
+    int run = 0;
+    gui::SyncController controller{[&](config::Config,
+                                       const events::Observer& observer,
+                                       std::stop_token) {
+        const int first = run++ * 25;
+        for (int index = first; index < first + 25; ++index) {
+            observer.file_operation({.path = std::to_string(index)});
+        }
+        for (int index = 0; index < 600; ++index) {
+            observer.message(events::MessageKind::debug, "test", "diagnostic");
+        }
+        emitted = true;
+        return exit_code::success;
+    }};
+    bool finished = false;
+    std::vector<events::FileOperationEvent> received;
+    std::size_t retained = 0;
+    std::size_t omitted = 0;
+    const auto ui_thread = std::this_thread::get_id();
+    QObject::connect(
+        &controller,
+        &gui::SyncController::file_operations_ready,
+        [&](const auto& operations,
+            std::size_t count,
+            std::size_t skipped,
+            std::size_t limit) {
+            require(
+                std::this_thread::get_id() == ui_thread &&
+                    (limit == 3 || limit == 1),
+                "file history was delivered off-thread or lost its limit"
+            );
+            received.insert(
+                received.end(), operations.begin(), operations.end()
+            );
+            retained = count;
+            omitted = skipped;
+        }
+    );
+    QObject::connect(
+        &controller,
+        &gui::SyncController::finished,
+        [&](int, const QString&, bool) { finished = true; }
+    );
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        emitted = false;
+        finished = false;
+        received.clear();
+        controller.start(fixture.file, false);
+        QElapsedTimer timer;
+        timer.start();
+        while (!emitted && timer.elapsed() < 5000) {
+            QThread::msleep(1);
+        }
+        require(
+            emitted && wait_until([&] { return finished; }) && retained == 3 &&
+                omitted == static_cast<std::size_t>((attempt + 1) * 25 - 3) &&
+                received.size() == 3 &&
+                received.front().path == std::to_string(attempt * 25 + 22) &&
+                received.back().path == std::to_string(attempt * 25 + 24),
+            "log overflow lost file history or a new task reset session "
+            "retention"
+        );
+    }
+    controller.set_file_history_limit(1);
+    require(
+        wait_until([&] { return retained == 1 && omitted == 49; }),
+        "shrinking file history did not report evicted records"
+    );
+    controller.set_file_history_limit(3);
+    QCoreApplication::processEvents();
+    require(
+        retained == 1 && omitted == 49,
+        "increasing the limit resurrected discarded history"
+    );
+}
+
+void test_window_file_history() {
+    Fixture fixture;
+    test::write_file(
+        fixture.file,
+        test::read_file(fixture.file) + "\n[history]\nmaximum_entries = 2\n"
+    );
+    gui::Localization localization{gui::Language::english};
+    int runs = 0;
+    gui::MainWindow window{
+        gui::load_app_state_view_model(fixture.file),
+        {},
+        &localization,
+        [&](config::Config config,
+            const events::Observer& observer,
+            std::stop_token) {
+            ++runs;
+            if (config.dry_run) {
+                return exit_code::success;
+            }
+            if (runs == 1) {
+                for (const auto& operation : {
+                         events::FileOperationEvent{
+                             .action = events::FileAction::downloaded,
+                             .path = "first.txt"
+                         },
+                         events::FileOperationEvent{
+                             .action = events::FileAction::uploaded,
+                             .path = "Ä-file.txt",
+                             .drive_id = "drive",
+                             .local_path = "/local/Ä-file.txt"
+                         },
+                         events::FileOperationEvent{
+                             .action = events::FileAction::moved_remotely,
+                             .path = "照片/after.txt",
+                             .previous_path = "before.txt",
+                             .drive_id = "drive"
+                         },
+                     }) {
+                    observer.file_operation(operation);
+                }
+                return exit_code::success;
+            }
+            observer.file_operation(
+                {.action = events::FileAction::deleted_locally,
+                 .path = "deleted.txt",
+                 .drive_id = "drive"}
+            );
+            return exit_code::failure;
+        }
+    };
+    window.show();
+    auto* table = window.findChild<QTreeWidget*>("fileHistoryTable");
+    auto* filter = window.findChild<QLineEdit*>("fileHistoryFilter");
+    auto* status = window.findChild<QLabel*>("fileHistoryStatus");
+    require(
+        table && filter && status && table->topLevelItemCount() == 0,
+        "file history did not start empty"
+    );
+    auto* start = button(window, "startSyncButton");
+    start->click();
+    require(
+        wait_until([&] {
+            return start->isEnabled() && table->topLevelItemCount() == 2;
+        }) &&
+            table->topLevelItem(0)->text(2) == "Ä-file.txt" &&
+            table->topLevelItem(0)->toolTip(2) == "/local/Ä-file.txt" &&
+            table->topLevelItem(1)->text(1) == "Moved remotely" &&
+            table->topLevelItem(1)->text(3) == "before.txt" &&
+            !table->topLevelItem(1)->text(0).isEmpty() &&
+            status->text().contains("1 older operations omitted"),
+        "file history lost completion time, action, paths or retained-limit "
+        "status"
+    );
+    filter->setText("ä-FILE");
+    require(
+        !table->topLevelItem(0)->isHidden() &&
+            table->topLevelItem(1)->isHidden(),
+        "file history search was not Unicode case-insensitive"
+    );
+    filter->setText("照片");
+    require(
+        table->topLevelItem(0)->isHidden() &&
+            !table->topLevelItem(1)->isHidden(),
+        "file history search lost Unicode paths"
+    );
+    filter->clear();
+    button(window, "clearLogsButton")->click();
+    require(
+        table->topLevelItemCount() == 2, "clearing logs erased file history"
+    );
+    localization.set_language(gui::Language::simplified_chinese);
+    require(
+        wait_until([&] {
+            return table->headerItem()->text(1) == "动作" &&
+                   table->topLevelItem(1)->text(1) == "远端移动";
+        }),
+        "file history did not retranslate retained actions"
+    );
+    localization.set_language(gui::Language::english);
+    require(
+        wait_until([&] {
+            return table->topLevelItem(1)->text(1) == "Moved remotely";
+        }),
+        "file history could not switch back to English"
+    );
+    start->click();
+    require(
+        wait_until([&] {
+            return runs == 2 && start->isEnabled() &&
+                   table->topLevelItem(1)->text(1) == "Deleted locally";
+        }) &&
+            table->topLevelItemCount() == 2 &&
+            table->topLevelItem(0)->text(2) == "照片/after.txt" &&
+            status->text().contains("2 older operations omitted"),
+        "a later task or failing round discarded already completed operations"
+    );
+    auto* preview = button(window, "previewSyncButton");
+    preview->click();
+    require(
+        wait_until([&] { return runs == 3 && preview->isEnabled(); }) &&
+            table->topLevelItemCount() == 2 &&
+            status->text().contains("2 older operations omitted"),
+        "preview reset or invented completed-file history"
+    );
+}
+
+void test_window_all_file_actions() {
+    Fixture fixture;
+    gui::Localization localization{gui::Language::english};
+    const std::vector<events::FileAction> actions{
+        events::FileAction::downloaded,
+        events::FileAction::uploaded,
+        events::FileAction::moved_locally,
+        events::FileAction::moved_remotely,
+        events::FileAction::deleted_locally,
+        events::FileAction::deleted_remotely,
+    };
+    gui::MainWindow window{
+        gui::load_app_state_view_model(fixture.file),
+        {},
+        &localization,
+        [&](config::Config, const events::Observer& observer, std::stop_token) {
+            for (std::size_t index = 0; index < actions.size(); ++index) {
+                observer.file_operation({
+                    .completed_at =
+                        std::chrono::system_clock::time_point{
+                            std::chrono::milliseconds{123}
+                        },
+                    .action = actions[index],
+                    .path = "文件-" + std::to_string(index),
+                    .previous_path = index == 2 || index == 3
+                                         ? "before-" + std::to_string(index)
+                                         : "",
+                    .drive_id = "drive-" + std::to_string(index),
+                    .directory = index >= 2,
+                    .recovered = index == 3 || index == 5,
+                });
+            }
+            return exit_code::success;
+        }
+    };
+    window.show();
+    auto* table = window.findChild<QTreeWidget*>("fileHistoryTable");
+    auto* filter = window.findChild<QLineEdit*>("fileHistoryFilter");
+    auto* start = button(window, "startSyncButton");
+    start->click();
+    require(
+        wait_until([&] {
+            return start->isEnabled() && table->topLevelItemCount() == 6;
+        }),
+        "not every file action reached the GUI"
+    );
+    const QStringList english{
+        "Downloaded",
+        "Uploaded",
+        "Moved locally (folder)",
+        "Moved remotely (folder) (recovered)",
+        "Deleted locally (folder)",
+        "Deleted remotely (folder) (recovered)",
+    };
+    const QStringList chinese{
+        "已下载",
+        "已上传",
+        "本地移动（文件夹）",
+        "远端移动（文件夹）（恢复完成）",
+        "本地删除（文件夹）",
+        "远端删除（文件夹）（恢复完成）",
+    };
+    const auto labels_match = [&](const QStringList& expected) {
+        if (table->topLevelItemCount() != expected.size()) {
+            return false;
+        }
+        for (int index = 0; index < table->topLevelItemCount(); ++index) {
+            const auto* row = table->topLevelItem(index);
+            if (row->text(1) != expected[index] ||
+                row->data(0, Qt::UserRole).toLongLong() != 123 ||
+                !row->text(0).endsWith(".123")) {
+                return false;
+            }
+        }
+        return true;
+    };
+    require(
+        labels_match(english),
+        "file action labels or millisecond timestamps were lost"
+    );
+    for (const auto& query :
+         {QString{"drive-4"}, QString{"  before-2  "}, QString{"recovered"}}) {
+        filter->setText(query);
+        for (int index = 0; index < table->topLevelItemCount(); ++index) {
+            const bool expected = query == "drive-4" ? index == 4
+                                  : query.trimmed() == "before-2"
+                                      ? index == 2
+                                      : index == 3 || index == 5;
+            require(
+                table->topLevelItem(index)->isHidden() != expected,
+                "file history filter missed a drive, previous path or action"
+            );
+        }
+    }
+    filter->clear();
+    localization.set_language(gui::Language::simplified_chinese);
+    require(
+        wait_until([&] { return labels_match(chinese); }),
+        "folder/recovery markers or actions did not translate into Chinese"
+    );
+    localization.set_language(gui::Language::english);
+    require(
+        wait_until([&] { return labels_match(english); }),
+        "switching language changed retained action metadata"
+    );
+}
+
 void test_controller_logging() {
     Fixture fixture;
     const auto log_file = fixture.config.state_directory / "sync.log";
@@ -1023,9 +1339,9 @@ void test_session_logs_and_tabs() {
     auto* copy = button(window, "copyLogsButton");
     auto* clear = button(window, "clearLogsButton");
     require(
-        tabs && tabs->count() == 4 && tabs->tabText(0) == "Overview" &&
-            tabs->tabText(1) == "Sync" &&
-            tabs->tabText(2) == "Logs" && tabs->tabText(3) == "Settings" &&
+        tabs && tabs->count() == 5 && tabs->tabText(0) == "Overview" &&
+            tabs->tabText(1) == "Sync" && tabs->tabText(2) == "Logs" &&
+            tabs->tabText(3) == "Settings" &&
             tabs->currentWidget() == overview &&
             sync_page->isAncestorOf(sync) && !overview->isAncestorOf(sync) &&
             logs_page->isAncestorOf(messages) && messages->isReadOnly() &&
@@ -2700,6 +3016,9 @@ int main(int argc, char* argv[]) {
     gui::Localization localization{gui::Language::english};
     try {
         test_controller();
+        test_controller_file_history();
+        test_window_file_history();
+        test_window_all_file_actions();
         test_persistent_blocked_viewer();
         test_blocked_policy_descriptions();
         test_blocked_query_discards_stale_results();

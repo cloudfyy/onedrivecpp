@@ -30,6 +30,7 @@ AppStateViewModel load_app_state_view_model(
     state.sync_directory = config.sync_data_directory;
     state.state_directory = config.state_directory;
     state.sync_mode = config.sync_mode;
+    state.file_history_limit = config.file_history_limit;
     try {
         app::detail::validate_authentication_config(config);
     } catch (const std::runtime_error& error) {

@@ -199,6 +199,13 @@ std::size_t execute_removals(
                         detail::filesystem_item_kind(previous.directory)
                     )) {
                     ++removed;
+                    observer.file_operation({
+                        .action = events::FileAction::deleted_locally,
+                        .path = previous.remote_path,
+                        .drive_id = drive_id,
+                        .local_path = local_path.string(),
+                        .directory = previous.directory,
+                    });
                     observer.message(
                         events::MessageKind::information,
                         "local_item_removed",

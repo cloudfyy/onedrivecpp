@@ -8,6 +8,11 @@ ui = "auto"
 # TUI colors: "hacker", "ocean", "amber", or "synthwave".
 theme = "hacker"
 
+[history]
+# Completed operations retained in memory by CLI/GUI for this process.
+# Positive integer; oldest entries are omitted when full, with a visible count.
+maximum_entries = 10000
+
 [logging]
 # Supported values: "trace", "debug", "info", "warn", "error", "critical",
 # and "off".

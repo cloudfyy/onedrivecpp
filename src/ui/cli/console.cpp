@@ -85,6 +85,11 @@ void Console::finish() const {
     backend_->finish();
 }
 
+void Console::finish_file_history() const {
+    const auto guard = lock();
+    backend_->finish_file_history();
+}
+
 void Console::on_event(const events::Event& event) const {
     backend_->emit(event);
 }

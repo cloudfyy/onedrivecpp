@@ -238,6 +238,7 @@ void SyncController::start_task(
                     if (monitoring) {
                         preview_cache_.clear();
                     }
+                    set_file_history_limit(config.file_history_limit);
                     Q_EMIT started(effective_preview);
                     const ForwardingObserver observer{
                         [this](const events::Event& event) {
@@ -304,7 +305,13 @@ void SyncController::start_task(
 
 void SyncController::queue_event(const events::Event& event) {
     const std::scoped_lock lock{events_mutex_};
-    if (const auto* summary = std::get_if<events::SyncSummaryEvent>(&event)) {
+    if (const auto* operation =
+            std::get_if<events::FileOperationEvent>(&event)) {
+        file_history_.add(*operation);
+        pending_file_operations_.add(*operation);
+        file_history_changed_ = true;
+    } else if (const auto* summary =
+                   std::get_if<events::SyncSummaryEvent>(&event)) {
         // Round statistics must survive overflow of the diagnostic event queue.
         task_totals_ = events::accumulate_sync_summary(task_totals_, *summary);
         pending_summary_ = *summary;
@@ -318,6 +325,21 @@ void SyncController::queue_event(const events::Event& event) {
         }
         pending_events_.push_back(event);
     }
+    schedule_delivery();
+}
+
+void SyncController::set_file_history_limit(std::size_t limit) {
+    const std::scoped_lock lock{events_mutex_};
+    if (file_history_.limit() == limit) {
+        return;
+    }
+    file_history_.set_limit(limit);
+    pending_file_operations_.set_limit(limit);
+    file_history_changed_ = true;
+    schedule_delivery();
+}
+
+void SyncController::schedule_delivery() {
     if (!delivery_pending_) {
         delivery_pending_ = true;
         QMetaObject::invokeMethod(
@@ -330,6 +352,11 @@ void SyncController::drain_events() {
     std::vector<events::Event> batch;
     std::optional<events::SyncSummaryEvent> summary;
     events::SyncSummaryEvent totals;
+    std::vector<events::FileOperationEvent> operations;
+    std::size_t history_retained = 0;
+    std::size_t history_omitted = 0;
+    std::size_t history_limit = 0;
+    bool history_changed = false;
     std::size_t omitted = 0;
     {
         const std::scoped_lock lock{events_mutex_};
@@ -340,6 +367,15 @@ void SyncController::drain_events() {
         pending_events_.clear();
         summary = std::exchange(pending_summary_, std::nullopt);
         totals = task_totals_;
+        history_changed = std::exchange(file_history_changed_, false);
+        operations.assign(
+            pending_file_operations_.entries().begin(),
+            pending_file_operations_.entries().end()
+        );
+        pending_file_operations_.clear();
+        history_retained = file_history_.entries().size();
+        history_omitted = file_history_.omitted();
+        history_limit = file_history_.limit();
         omitted = std::exchange(omitted_events_, 0);
         delivery_pending_ = false;
     }
@@ -348,6 +384,11 @@ void SyncController::drain_events() {
     }
     if (summary) {
         Q_EMIT summary_ready(*summary, totals);
+    }
+    if (history_changed) {
+        Q_EMIT file_operations_ready(
+            operations, history_retained, history_omitted, history_limit
+        );
     }
 }
 

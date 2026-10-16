@@ -2,6 +2,7 @@
 #include "ui/cli/message.hpp"
 
 #include "onedrive/ui/cli/console.hpp"
+#include "onedrive/ui/common/file_history.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -14,13 +15,13 @@ namespace {
 class JsonConsoleBackend final : public ConsoleBackend {
 public:
     JsonConsoleBackend(
-        ConsoleOptions options,
-        std::ostream& output,
-        std::ostream& error
+        ConsoleOptions options, std::ostream& output, std::ostream& error
     )
         : options_{options},
           output_{output},
-          error_{error} {}
+          error_{error},
+          file_history_{options.file_history_limit} {
+    }
 
     void emit(const ConsoleEvent& event) override {
         std::visit(
@@ -45,6 +46,29 @@ public:
     }
 
 private:
+    void render(const events::FileOperationEvent& event) {
+        file_history_.add(event);
+        if (options_.quiet) {
+            return;
+        }
+        output_ << nlohmann::json{
+            {"event", "file_operation"},
+            {"completed_at", events::format_file_operation_time(event.completed_at)},
+            {"completed_at_unix_milliseconds",
+             std::chrono::duration_cast<std::chrono::milliseconds>(
+                 event.completed_at.time_since_epoch()
+             ).count()},
+            {"action", events::file_action_name(event.action)},
+            {"path", event.path},
+            {"previous_path", event.previous_path},
+            {"drive_id", event.drive_id},
+            {"local_path", event.local_path},
+            {"directory", event.directory},
+            {"recovered", event.recovered},
+            {"history_retained", file_history_.entries().size()},
+            {"history_omitted", file_history_.omitted()},
+        }.dump() << '\n' << std::flush;
+    }
     void render(const MessageEvent& event) {
         if (message_suppressed(options_, event.kind)) {
             return;
@@ -208,6 +232,7 @@ private:
     ConsoleOptions options_;
     std::ostream& output_;
     std::ostream& error_;
+    events::FileHistory file_history_;
 };
 
 }  // namespace

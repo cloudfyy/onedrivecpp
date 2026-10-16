@@ -603,6 +603,15 @@ void recover_pending_remote_moves(
             "pending_remote_move_recovered",
             "Recovered remote move to '" + move.destination_remote_path + "'."
         );
+        observer.file_operation({
+            .action = events::FileAction::moved_remotely,
+            .path = move.destination_remote_path,
+            .previous_path = move.source_remote_path,
+            .drive_id = drive_id,
+            .local_path = move.destination_local_path.string(),
+            .directory = move.directory,
+            .recovered = true,
+        });
     }
 }
 

@@ -92,6 +92,18 @@ The Qt-independent `events::accumulate_sync_summary` owns session-counter rules:
 operation counts accumulate, while the blocked count is replaced by the latest
 round. Frontends remain responsible for reset boundaries and snapshot delivery.
 
+Completed item mutations publish `FileOperationEvent` at the operation's success
+boundary, not by parsing messages or waiting for a round summary. It owns its
+completion timestamp, action, paths, Drive ID and directory/recovery flags.
+The Qt-independent `FileHistory` keeps the latest `history.maximum_entries`
+operations and an explicit eviction count; repeated actions on one path remain
+separate records. GUI history lives for the controller/window lifetime, rather
+than a task. Its reliable, separately bounded operation queue survives diagnostic
+overflow and posts incremental rows plus authoritative retention counts to Qt.
+CLI renderers share the same retention model; text/JSON stream completions,
+while the TUI exports its retained list after restoring the terminal, including
+when a later command operation throws.
+
 `cli::Console` adapts this interface to the text, JSON, and FTXUI
 `ConsoleBackend` implementations. Confirmation and terminal completion remain
 CLI operations and share the same lock. Existing `cli` event names remain

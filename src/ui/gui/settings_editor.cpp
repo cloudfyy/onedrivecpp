@@ -911,6 +911,17 @@ SettingsEditor::SettingsEditor(QWidget* parent)
 
     auto* diagnostics = page();
     add(diagnostics,
+        "history",
+        "maximum_entries",
+        QT_TR_NOOP("File history limit"),
+        QT_TR_NOOP(
+            "Completed operations retained since startup (default: 10000; "
+            "greater than 0). Oldest entries are omitted when full. Shared by "
+            "CLI and GUI; history is not saved after exit."
+        ),
+        Kind::number,
+        [](const auto& c) { return QString::number(c.file_history_limit); });
+    add(diagnostics,
         "logging",
         "level",
         QT_TR_NOOP("Logging level"),

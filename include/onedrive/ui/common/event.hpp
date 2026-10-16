@@ -5,6 +5,7 @@
 #include "onedrive/sync/capabilities.hpp"
 
 #include <cstddef>
+#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -119,6 +120,32 @@ struct SyncSummaryEvent {
     std::size_t blocked{0};
 };
 
+enum class FileAction {
+    downloaded,
+    uploaded,
+    moved_locally,
+    moved_remotely,
+    deleted_locally,
+    deleted_remotely,
+};
+
+struct FileOperationEvent {
+    std::chrono::system_clock::time_point completed_at{
+        std::chrono::system_clock::now()
+    };
+    FileAction action{FileAction::downloaded};
+    std::string path{};
+    std::string previous_path{};
+    std::string drive_id{};
+    std::string local_path{};
+    bool directory{false};
+    bool recovered{false};
+};
+
+[[nodiscard]] std::string_view file_action_name(FileAction action);
+[[nodiscard]] std::string
+format_file_operation_time(std::chrono::system_clock::time_point timestamp);
+
 // Operation counts accumulate; blockers describe only the latest round.
 [[nodiscard]] SyncSummaryEvent accumulate_sync_summary(
     SyncSummaryEvent totals, const SyncSummaryEvent& round
@@ -158,7 +185,8 @@ using Event = std::variant<
     EndUploadProgressEvent,
     SyncPhaseEvent,
     SyncSummaryEvent,
-    SyncContextEvent>;
+    SyncContextEvent,
+    FileOperationEvent>;
 
 [[nodiscard]] unsigned download_progress_percentage(
     std::size_t completed_files,

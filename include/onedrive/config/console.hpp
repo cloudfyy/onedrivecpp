@@ -1,8 +1,12 @@
 #pragma once
 
+#include <cstddef>
+
 #include <string_view>
 
 namespace onedrive::config {
+
+inline constexpr std::size_t default_file_history_limit = 10'000;
 
 enum class ColorMode {
     automatic,

@@ -10,6 +10,8 @@ public:
 
     virtual void emit(const ConsoleEvent& event) = 0;
     virtual void finish() {}
+    virtual void finish_file_history() {
+    }
     [[nodiscard]] virtual bool confirm(
         const ConfirmationRequest& request
     ) = 0;

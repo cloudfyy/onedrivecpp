@@ -780,6 +780,13 @@ std::size_t recover_pending_uploads(
             const bool source_present = commit_uploaded_file(
                 upload, std::move(state), remote, sync_root, items, metadata
             );
+            observer.file_operation({
+                .action = events::FileAction::uploaded,
+                .path = upload.remote_path,
+                .drive_id = drive_id,
+                .local_path = upload.local_path.string(),
+                .recovered = true,
+            });
             items.remove_blocked_item(
                 drive_id, upload_blocked_id(upload.remote_path)
             );

@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <cmath>
 #include <format>
+#include <ctime>
+#include <iomanip>
+#include <sstream>
 #include <string>
 #include <stdexcept>
 
@@ -13,6 +16,46 @@ constexpr unsigned completed_percentage = 100;
 constexpr unsigned maximum_incomplete_percentage = 99;
 
 } // namespace
+
+std::string_view file_action_name(FileAction action) {
+    switch (action) {
+    case FileAction::downloaded:
+        return "downloaded";
+    case FileAction::uploaded:
+        return "uploaded";
+    case FileAction::moved_locally:
+        return "moved_locally";
+    case FileAction::moved_remotely:
+        return "moved_remotely";
+    case FileAction::deleted_locally:
+        return "deleted_locally";
+    case FileAction::deleted_remotely:
+        return "deleted_remotely";
+    }
+    throw std::logic_error{"unknown file operation action"};
+}
+
+std::string
+format_file_operation_time(std::chrono::system_clock::time_point timestamp) {
+    const auto seconds = std::chrono::system_clock::to_time_t(
+        std::chrono::floor<std::chrono::seconds>(timestamp)
+    );
+    std::tm value{};
+    if (::gmtime_r(&seconds, &value) == nullptr) {
+        throw std::runtime_error{"cannot format file operation time"};
+    }
+    std::ostringstream output;
+    output << std::put_time(&value, "%Y-%m-%dT%H:%M:%SZ");
+    if (!output) {
+        throw std::runtime_error{"cannot format file operation time"};
+    }
+    return output.str();
+}
+
+void Observer::file_operation(const FileOperationEvent& operation) const {
+    const std::scoped_lock lock{mutex_};
+    on_event(operation);
+}
 
 SyncSummaryEvent accumulate_sync_summary(
     SyncSummaryEvent totals, const SyncSummaryEvent& round

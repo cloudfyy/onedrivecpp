@@ -25,6 +25,7 @@ public:
     explicit Console(std::unique_ptr<ConsoleBackend> backend);
     ~Console() override;
     void finish() const;
+    void finish_file_history() const;
 
     Console(const Console&) = delete;
     Console& operator=(const Console&) = delete;

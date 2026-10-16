@@ -512,6 +512,14 @@ UploadSummary upload_local_changes(
         );
         moves.moved_remote_ids.erase(move.remote_id);
         ++summary.moved;
+        observer.file_operation({
+            .action = events::FileAction::moved_remotely,
+            .path = move.destination_remote_path,
+            .previous_path = move.source_remote_path,
+            .drive_id = drive_id,
+            .local_path = move.destination_local_path.string(),
+            .directory = move.directory,
+        });
         observer.message(
             events::MessageKind::information,
             "local_move_uploaded",
@@ -565,6 +573,13 @@ UploadSummary upload_local_changes(
         throw_if_cancelled(stop_token);
         execute_new_remote_delete(deletion, graph, items, stop_token);
         ++summary.deleted;
+        observer.file_operation({
+            .action = events::FileAction::deleted_remotely,
+            .path = deletion.remote_path,
+            .drive_id = drive_id,
+            .local_path = deletion.local_path.string(),
+            .directory = deletion.directory,
+        });
         observer.message(
             events::MessageKind::information,
             "local_item_deleted",
@@ -639,6 +654,12 @@ UploadSummary upload_local_changes(
             progress.skip(index - first_file);
             return;
         case FileUploadStatus::uploaded:
+            observer.file_operation({
+                .action = events::FileAction::uploaded,
+                .path = upload.remote_path,
+                .drive_id = drive_id,
+                .local_path = upload.path.string(),
+            });
             items.remove_blocked_item(
                 drive_id, upload_blocked_id(upload.remote_path)
             );

@@ -135,5 +135,45 @@ int test_schema() {
 } // namespace
 
 int main() {
+    const auto path = std::filesystem::path{"/tmp/file-history-config.toml"};
+    if (onedrive::config::Config::load_from_string(path, "config_version = 2\n")
+                .file_history_limit != 10'000 ||
+        onedrive::config::Config::load_from_string(
+            path, "config_version = 2\n[history]\nmaximum_entries = 3\n"
+        )
+                .file_history_limit != 3) {
+        return onedrive::test::fail(
+            "file history default or custom limit was not loaded"
+        );
+    }
+    for (const auto* invalid : {"0", "-1", "\"10000\"", "true", "1.5", "1.0"}) {
+        if (!onedrive::test::throws_with<std::runtime_error>(
+                [&] {
+                    static_cast<
+                        void>(onedrive::config::Config::load_from_string(
+                        path,
+                        std::string{
+                            "config_version = 2\n[history]\nmaximum_entries = "
+                        } + invalid
+                    ));
+                },
+                "history.maximum_entries"
+            )) {
+            return onedrive::test::fail(
+                std::string{"invalid file history limit was accepted: "} +
+                invalid
+            );
+        }
+    }
+    if (!onedrive::test::throws_with<std::runtime_error>(
+            [&] {
+                static_cast<void>(onedrive::config::Config::load_from_string(
+                    path, "config_version = 2\n[history]\nunknown = 1\n"
+                ));
+            },
+            "history.unknown"
+        )) {
+        return onedrive::test::fail("unknown history setting was accepted");
+    }
     return test_schema();
 }

@@ -255,6 +255,12 @@ DownloadBatch download_files(
                         }
                     )
                 );
+                observer.file_operation({
+                    .action = events::FileAction::downloaded,
+                    .path = task.item.remote_path,
+                    .drive_id = task.state.drive_id,
+                    .local_path = task.destination.string(),
+                });
                 report_progress(
                     index,
                     expected_size,

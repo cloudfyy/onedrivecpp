@@ -4,6 +4,7 @@
 #include <nlohmann/json.hpp>
 
 #include <cstdlib>
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -47,6 +48,75 @@ public:
 int main() {
     using namespace onedrive::cli;
     using onedrive::util::ProgressState;
+
+    for (const auto mode : {OutputMode::text, OutputMode::json}) {
+        for (const bool quiet : {false, true}) {
+            std::ostringstream output;
+            std::ostringstream error;
+            const Console console{
+                {.output = mode, .quiet = quiet, .file_history_limit = 2},
+                output,
+                error
+            };
+            for (int index = 0; index < 3; ++index) {
+                console.file_operation({
+                    .completed_at =
+                        std::chrono::system_clock::time_point{
+                            std::chrono::milliseconds{index}
+                        },
+                    .action = onedrive::events::FileAction::moved_remotely,
+                    .path = "file-" + std::to_string(index),
+                    .previous_path = "old\nname.txt",
+                    .drive_id = "drive",
+                });
+            }
+            console.sync_summary({});
+            console.finish();
+            if (!error.str().empty() || (quiet && !output.str().empty())) {
+                return fail(
+                    "file history bypassed quiet mode or wrote to stderr"
+                );
+            }
+            if (quiet) {
+                continue;
+            }
+            if (mode == OutputMode::text) {
+                if (!output.str().contains("1970-01-01T00:00:00Z") ||
+                    !output.str().contains("moved_remotely") ||
+                    !output.str().contains("old\\nname.txt") ||
+                    !output.str().contains(
+                        "2 retained (limit 2); 1 older operations omitted."
+                    )) {
+                    return fail(
+                        "text file history lost time, action, paths or "
+                        "omissions"
+                    );
+                }
+            } else {
+                std::istringstream lines{output.str()};
+                std::string line;
+                int count = 0;
+                while (std::getline(lines, line)) {
+                    const auto event = nlohmann::json::parse(line);
+                    if (event["event"] != "file_operation" ||
+                        event["action"] != "moved_remotely" ||
+                        event["previous_path"] != "old\nname.txt" ||
+                        event["completed_at_unix_milliseconds"] != count ||
+                        event["history_retained"] != std::min(count + 1, 2) ||
+                        event["history_omitted"] != std::max(count - 1, 0)) {
+                        return fail(
+                            "JSON file operation fields or retention "
+                            "accounting changed"
+                        );
+                    }
+                    ++count;
+                }
+                if (count != 3) {
+                    return fail("file operation JSON was duplicated or lost");
+                }
+            }
+        }
+    }
 
     {
         std::ostringstream output;

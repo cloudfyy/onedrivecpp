@@ -128,7 +128,8 @@ public:
         }
     }
 
-    void expect_exit(bool interrupted = false) {
+    void
+    expect_exit(bool interrupted = false, int expected_code = EXIT_SUCCESS) {
         int status = 0;
         if (!wait_until(
                 [&] {
@@ -150,8 +151,9 @@ public:
         drain();
         termios restored{};
         const bool expected_status =
-            interrupted ? WIFSIGNALED(status) && WTERMSIG(status) == SIGINT
-                        : WIFEXITED(status) && WEXITSTATUS(status) == 0;
+            interrupted
+                ? WIFSIGNALED(status) && WTERMSIG(status) == SIGINT
+                : WIFEXITED(status) && WEXITSTATUS(status) == expected_code;
         if (!expected_status ||
             (!output_redirected_ && !output_.contains("\033[?1049l")) ||
             ::tcgetattr(slave_.get(), &restored) == -1 ||
@@ -159,7 +161,10 @@ public:
             restored.c_iflag != original_.c_iflag ||
             restored.c_oflag != original_.c_oflag) {
             throw std::runtime_error(
-                "paging did not restore terminal state\n" + output_
+                "paging did not restore terminal state (child status: " +
+                std::to_string(status) + ", alternate-screen exit captured: " +
+                std::to_string(output_.contains("\033[?1049l")) + ")\n" +
+                output_
             );
         }
     }
@@ -259,23 +264,35 @@ private:
     }
 
     void drain() {
-        pollfd descriptor{.fd = master_.get(), .events = POLLIN, .revents = 0};
-        const int ready = ::poll(&descriptor, 1, 10);
-        if (ready == -1) {
-            if (errno == EINTR) {
+        // A fast child can exit with several PTY reads still buffered.
+        for (;;) {
+            pollfd descriptor{
+                .fd = master_.get(), .events = POLLIN, .revents = 0
+            };
+            const int ready = ::poll(&descriptor, 1, 10);
+            if (ready == -1) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                throw_errno_error("cannot poll paging output");
+            }
+            if (ready == 0) {
                 return;
             }
-            throw_errno_error("cannot poll paging output");
+            std::array<char, 32768> buffer{};
+            const auto size =
+                ::read(master_.get(), buffer.data(), buffer.size());
+            if (size == -1) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                throw_errno_error("cannot read paging output");
+            }
+            if (size == 0) {
+                return;
+            }
+            output_.append(buffer.data(), static_cast<std::size_t>(size));
         }
-        if (ready == 0) {
-            return;
-        }
-        std::array<char, 32768> buffer{};
-        const auto size = ::read(master_.get(), buffer.data(), buffer.size());
-        if (size == -1) {
-            throw_errno_error("cannot read paging output");
-        }
-        output_.append(buffer.data(), static_cast<std::size_t>(size));
     }
 
     UniqueFD master_;
@@ -291,6 +308,71 @@ private:
 int main() {
     try {
         using onedrive::cli::TuiView;
+        {
+            onedrive::test::app::CliFixture fixture;
+            std::filesystem::create_directories(fixture.sync_path);
+            if (fixture.authenticate().exit_code !=
+                onedrive::exit_code::success) {
+                return onedrive::test::fail(
+                    "could not authenticate history failure fixture"
+                );
+            }
+            fixture.runtime_factory.monitor_override =
+                [](const auto&,
+                   auto synchronize,
+                   auto&) -> std::unique_ptr<onedrive::monitor::FileMonitor> {
+                if (synchronize({}) != onedrive::exit_code::success) {
+                    throw std::runtime_error{
+                        "history fixture synchronization failed"
+                    };
+                }
+                throw std::runtime_error{"simulated monitor startup failure"};
+            };
+            TerminalPager terminal{
+                0, 30, -1, TuiView::watch, [&] {
+                    std::vector<std::string> arguments{
+                        "onedrive-cpp",
+                        "transfer",
+                        "watch",
+                        "--config",
+                        fixture.config_path.string(),
+                        "--color",
+                        "never",
+                        "--ui",
+                        "tui"
+                    };
+                    std::vector<char*> pointers;
+                    for (auto& argument : arguments) {
+                        pointers.push_back(argument.data());
+                    }
+                    onedrive::app::RuntimeFactory factory{
+                        onedrive::util::borrowed_proxy, fixture.runtime_factory
+                    };
+                    onedrive::app::Application application{&factory};
+                    return application.run(
+                        static_cast<int>(pointers.size()), pointers.data()
+                    );
+                }
+            };
+            terminal.expect_exit(false, onedrive::exit_code::failure);
+            const auto& output = terminal.output();
+            const auto heading =
+                output.find("Completed file operations (this process):");
+            if (!output.contains("simulated monitor startup failure") ||
+                !output.contains("notes.txt") || heading == std::string::npos ||
+                heading !=
+                    output.rfind("Completed file operations (this process):") ||
+                !output.contains(
+                    "1 retained (limit 10000); 0 older operations omitted."
+                ) ||
+                heading < output.rfind("\033[?1049l")) {
+                return onedrive::test::fail(
+                    "CLI failure lost completed history, duplicated it, or "
+                    "exported before leaving fullscreen\n" +
+                    output
+                );
+            }
+        }
         {
             onedrive::test::app::CliFixture fixture;
             bool logged = false;

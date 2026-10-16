@@ -56,6 +56,7 @@ public:
     void sync_phase(SyncPhase phase) const;
     void sync_context(sync::SyncMode direction, bool preview) const;
     void sync_summary(const SyncSummaryEvent& summary) const;
+    void file_operation(const FileOperationEvent& operation) const;
     void operation_state(
         OperationKind operation, OperationState state
     ) const;

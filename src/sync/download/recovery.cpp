@@ -4,6 +4,7 @@
 #include "sync/filesystem/operations.hpp"
 #include "onedrive/util/remote_time.hpp"
 #include "onedrive/util/sha256.hpp"
+#include "onedrive/ui/common/observer.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -108,7 +109,8 @@ void recover_pending_downloads(
     const SafeSyncRoot& safe_root,
     const std::string& drive_id,
     const FilesystemMetadata& metadata,
-    config::SyncPermissionsMode permissions
+    config::SyncPermissionsMode permissions,
+    const events::Observer* observer
 ) {
     const auto& sync_root = safe_root.path();
     const auto pending = items.pending_downloads(drive_id);
@@ -247,6 +249,15 @@ void recover_pending_downloads(
         items.upsert(download.item);
         items.remove_pending_download(drive_id, download.item.remote_id);
         items.remove_partial_download(drive_id, download.item.remote_id);
+        if (observer) {
+            observer->file_operation({
+                .action = events::FileAction::downloaded,
+                .path = download.item.remote_path,
+                .drive_id = drive_id,
+                .local_path = destination.string(),
+                .recovered = true,
+            });
+        }
         spdlog::info(
             "Recovered pending download '{}'",
             download.item.remote_path
@@ -259,15 +270,12 @@ void recover_pending_downloads(
     const std::filesystem::path& sync_root,
     const std::string& drive_id,
     const FilesystemMetadata& metadata,
-    config::SyncPermissionsMode permissions
+    config::SyncPermissionsMode permissions,
+    const events::Observer* observer
 ) {
     const SafeSyncRoot safe_root{sync_root};
     recover_pending_downloads(
-        items,
-        safe_root,
-        drive_id,
-        metadata,
-        permissions
+        items, safe_root, drive_id, metadata, permissions, observer
     );
 }
 

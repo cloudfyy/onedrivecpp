@@ -1394,6 +1394,11 @@ int show_config(
                 .value = color_mode_name(config.console_color),
             },
             {
+                .label = "file history limit:",
+                .key = "file_history_limit",
+                .value = std::to_string(config.file_history_limit),
+            },
+            {
                 .label = "log level:",
                 .key = "log_level",
                 .value = config.logging.level,

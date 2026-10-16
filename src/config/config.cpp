@@ -33,6 +33,7 @@ load_document(const std::filesystem::path& path, const toml::table& root) {
             "config_version",
             "console",
             "logging",
+            "history",
             "sync",
             "proxy",
             "transfer",

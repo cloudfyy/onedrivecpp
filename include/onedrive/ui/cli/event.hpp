@@ -51,6 +51,7 @@ struct ConsoleOptions {
     TuiTheme theme{TuiTheme::hacker};
     TuiView view{TuiView::sync};
     bool quiet{false};
+    std::size_t file_history_limit{config::default_file_history_limit};
 };
 
 using events::BlockedItemEvent;

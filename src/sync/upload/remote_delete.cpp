@@ -541,6 +541,14 @@ void recover_pending_deletes(
             "pending_delete_recovered",
             "Recovered remote deletion '" + deletion.remote_path + "'."
         );
+        observer.file_operation({
+            .action = events::FileAction::deleted_remotely,
+            .path = deletion.remote_path,
+            .drive_id = drive_id,
+            .local_path = deletion.local_path.string(),
+            .directory = deletion.directory,
+            .recovered = true,
+        });
     }
 }
 

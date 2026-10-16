@@ -8,6 +8,10 @@
 #include <filesystem>
 #include <string>
 
+namespace onedrive::events {
+class Observer;
+}
+
 namespace onedrive::sync::detail {
 
 void recover_pending_downloads(
@@ -16,7 +20,8 @@ void recover_pending_downloads(
     const std::string& drive_id,
     const FilesystemMetadata& metadata,
     config::SyncPermissionsMode permissions =
-        config::SyncPermissionsMode::private_access
+        config::SyncPermissionsMode::private_access,
+    const events::Observer* observer = nullptr
 );
 void recover_pending_downloads(
     storage::ItemStore& items,
@@ -24,7 +29,8 @@ void recover_pending_downloads(
     const std::string& drive_id,
     const FilesystemMetadata& metadata,
     config::SyncPermissionsMode permissions =
-        config::SyncPermissionsMode::private_access
+        config::SyncPermissionsMode::private_access,
+    const events::Observer* observer = nullptr
 );
 
 template <typename StoreImplementation>
@@ -34,15 +40,12 @@ void recover_pending_downloads(
     const std::string& drive_id,
     const FilesystemMetadata& metadata,
     config::SyncPermissionsMode permissions =
-        config::SyncPermissionsMode::private_access
+        config::SyncPermissionsMode::private_access,
+    const events::Observer* observer = nullptr
 ) {
     storage::ItemStore store_proxy{onedrive::util::borrowed_proxy, items};
     recover_pending_downloads(
-        store_proxy,
-        sync_root,
-        drive_id,
-        metadata,
-        permissions
+        store_proxy, sync_root, drive_id, metadata, permissions, observer
     );
 }
 
@@ -53,15 +56,12 @@ void recover_pending_downloads(
     const std::string& drive_id,
     const FilesystemMetadata& metadata,
     config::SyncPermissionsMode permissions =
-        config::SyncPermissionsMode::private_access
+        config::SyncPermissionsMode::private_access,
+    const events::Observer* observer = nullptr
 ) {
     storage::ItemStore store_proxy{onedrive::util::borrowed_proxy, items};
     recover_pending_downloads(
-        store_proxy,
-        sync_root,
-        drive_id,
-        metadata,
-        permissions
+        store_proxy, sync_root, drive_id, metadata, permissions, observer
     );
 }
 

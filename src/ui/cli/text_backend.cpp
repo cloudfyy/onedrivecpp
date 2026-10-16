@@ -41,9 +41,7 @@ Style style_for(MessageKind kind) {
 class TextConsoleBackend final : public ConsoleBackend {
 public:
     TextConsoleBackend(
-        ConsoleOptions options,
-        std::ostream& output,
-        std::ostream& error
+        ConsoleOptions options, std::ostream& output, std::ostream& error
     )
         : options_{options},
           output_{output},
@@ -54,10 +52,16 @@ public:
                (::isatty(STDOUT_FILENO) != 0 &&
                 std::getenv("NO_COLOR") == nullptr))
           },
-          interactive_{
-              &output == &std::cout &&
-              ::isatty(STDOUT_FILENO) != 0
-          } {}
+          interactive_{&output == &std::cout && ::isatty(STDOUT_FILENO) != 0},
+          file_history_{options.file_history_limit} {
+    }
+
+    void finish() override {
+        finish_file_history();
+    }
+    void finish_file_history() override {
+        render_history_status();
+    }
 
     void emit(const ConsoleEvent& event) override {
         std::visit(
@@ -275,6 +279,28 @@ private:
         }
     }
     void render(const SyncSummaryEvent&) {
+        render_history_status();
+    }
+    void render(const events::FileOperationEvent& event) {
+        file_history_.add(event);
+        history_changed_ = true;
+        if (options_.quiet) {
+            return;
+        }
+        render(EndDownloadProgressEvent{});
+        if (!history_heading_printed_) {
+            output_ << "Completed file operations (this process):\n"
+                    << "Time (UTC)            Action             Path\n";
+            history_heading_printed_ = true;
+        }
+        output_ << format_file_operation(event) << '\n' << std::flush;
+    }
+    void render_history_status() {
+        if (history_changed_ && !options_.quiet) {
+            render(EndDownloadProgressEvent{});
+            output_ << format_file_history_status(file_history_) << '\n';
+        }
+        history_changed_ = false;
     }
     void render(const events::SyncContextEvent& event) {
         if (!options_.quiet) {
@@ -295,6 +321,9 @@ private:
     std::size_t delta_progress_pages_{0};
     bool delta_progress_active_{false};
     bool download_progress_active_{false};
+    events::FileHistory file_history_;
+    bool history_heading_printed_{false};
+    bool history_changed_{false};
 };
 
 }  // namespace

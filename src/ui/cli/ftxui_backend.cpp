@@ -188,7 +188,8 @@ public:
               options.color != ColorMode::never &&
               (options.color == ColorMode::always ||
                std::getenv("NO_COLOR") == nullptr)
-          } {
+          },
+          file_history_{options.file_history_limit} {
         enter_fullscreen();
         try {
             render();
@@ -203,6 +204,11 @@ public:
     }
 
     void finish() override {
+        if (view_ == TuiView::sync || view_ == TuiView::watch ||
+            view_ == TuiView::download) {
+            finish_file_history();
+            return;
+        }
         switch (view_) {
             case TuiView::health:
             case TuiView::status:
@@ -251,6 +257,21 @@ public:
             event
         );
         render();
+    }
+
+    void finish_file_history() override {
+        if (history_printed_ || file_history_.entries().empty()) {
+            return;
+        }
+        leave_fullscreen();
+        output_ << "\nCompleted file operations (this process):\n"
+                << "Time (UTC)            Action             Path\n";
+        for (const auto& operation : file_history_.entries()) {
+            output_ << format_file_operation(operation) << '\n';
+        }
+        output_ << format_file_history_status(file_history_) << '\n'
+                << std::flush;
+        history_printed_ = true;
     }
 
     bool confirm(const ConfirmationRequest& request) override {
@@ -414,6 +435,9 @@ private:
         if (monitoring_) {
             phase_ = events::SyncPhase::waiting;
         }
+    }
+    void update(const events::FileOperationEvent& event) {
+        file_history_.add(event);
     }
     void update(const OperationStateEvent& event) {
         if (event.operation == OperationKind::monitoring) {
@@ -678,6 +702,29 @@ private:
             round_incomplete_) {
             content.push_back(text("Last synchronization round incomplete."));
         }
+        if (!file_history_.entries().empty()) {
+            Elements files{
+                emphasized(text(
+                    fmt::format(
+                        "FILES // {} retained // {} older omitted",
+                        file_history_.entries().size(),
+                        file_history_.omitted()
+                    )
+                )),
+            };
+            const auto visible = std::min(
+                file_history_.entries().size(),
+                static_cast<std::size_t>(std::max(1, rows_available / 5))
+            );
+            for (auto index = file_history_.entries().size() - visible;
+                 index < file_history_.entries().size();
+                 ++index) {
+                files.push_back(
+                    text(format_file_operation(file_history_.entries()[index]))
+                );
+            }
+            content.push_back(vbox(std::move(files)) | border);
+        }
         const bool paged_list =
             (view_ == TuiView::drives || view_ == TuiView::blocked) &&
             !result_pages_.empty();
@@ -734,7 +781,13 @@ private:
                 palette_.primary
             ));
             content.push_back(separator());
-            for (const auto& message : messages_) {
+            const auto first =
+                file_history_.entries().empty()
+                    ? std::size_t{0}
+                    : messages_.size() -
+                          std::min(messages_.size(), std::size_t{2});
+            for (auto index = first; index < messages_.size(); ++index) {
+                const auto& message = messages_[index];
                 content.push_back(with_color(
                     paragraph(message.text), color_for(message.kind)
                 ));
@@ -817,6 +870,8 @@ private:
     bool monitoring_{false};
     bool round_incomplete_{false};
     std::optional<events::SyncContextEvent> context_;
+    events::FileHistory file_history_;
+    bool history_printed_{false};
 };
 
 }  // namespace

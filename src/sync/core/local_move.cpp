@@ -16,6 +16,7 @@
 #include <stdexcept>
 #include <type_traits>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -240,6 +241,7 @@ struct MoveExecutionContext {
     const MoveSchedule& schedule;
     MoveSummary& summary;
     MovePathRemapper& paths;
+    const std::unordered_set<std::string>& recovered_moves;
 
     void block(
         const LocalMoveCandidate& move,
@@ -969,6 +971,15 @@ void execute_install_action(
                 );
             }
             ++context.summary.moved;
+            context.observer.file_operation({
+                .action = events::FileAction::moved_locally,
+                .path = move.item.remote_path,
+                .previous_path = move.previous.remote_path,
+                .drive_id = context.drive_id,
+                .local_path = destination.string(),
+                .directory = move.previous.directory,
+                .recovered = context.recovered_moves.contains(move.item.id),
+            });
             context.observer.message(
                 events::MessageKind::information,
                 "local_item_moved",
@@ -1034,7 +1045,9 @@ MoveSummary execute_moves(
         }
     }
     std::unordered_map<std::string, storage::PendingMove> pending_moves;
+    std::unordered_set<std::string> recovered_moves;
     for (auto pending : items.pending_moves(drive_id)) {
+        recovered_moves.insert(pending.remote_id);
         pending_moves.emplace(pending.remote_id, std::move(pending));
     }
 
@@ -1054,6 +1067,7 @@ MoveSummary execute_moves(
         .schedule = schedule,
         .summary = summary,
         .paths = paths,
+        .recovered_moves = recovered_moves,
     };
     for (const auto& action : schedule.actions) {
         const auto& move = moves[action.move_index];

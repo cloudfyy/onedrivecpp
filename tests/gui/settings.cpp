@@ -130,7 +130,7 @@ void test_tooltips_and_language_switching() {
             remember(input->parentWidget(), tip);
         }
     }
-    require(inputs == 57, "not all 57 settings inputs have tips");
+    require(inputs == 58, "not all 58 settings inputs have tips");
     std::size_t controls = 0;
     for (auto* widget : editor->findChildren<QWidget*>()) {
         if (widget->objectName().contains('.') &&
@@ -142,7 +142,7 @@ void test_tooltips_and_language_switching() {
             require(!widget->toolTip().isEmpty(), "uncovered settings control");
         }
     }
-    require(controls == 59, "settings inputs or override controls missed");
+    require(controls == 60, "settings inputs or override controls missed");
     const auto explains = [&](const char* name, const QStringList& fragments) {
         const auto* widget = editor->findChild<QWidget*>(name);
         require(widget != nullptr, "representative setting missing");
@@ -165,6 +165,10 @@ void test_tooltips_and_language_switching() {
     explains("download.chunk_threshold_bytes", {"8388608 bytes", "relaxed"});
     explains("upload.concurrency", {"files", "default: 1", "sequential"});
     explains("download.concurrency", {"default: 4", "serialized"});
+    explains(
+        "history.maximum_entries",
+        {"10000", "greater than 0", "Oldest", "not saved after exit"}
+    );
     explains(
         "upload.maximum_rate_bytes_per_second",
         {"Each", "not the combined", "0 (unlimited)"}
@@ -306,7 +310,7 @@ void test_tooltips_initial_locale_and_reload() {
                 continue;
             }
             const auto tip = input->toolTip();
-            if (english_tips.size() < 57 && !chinese) {
+            if (english_tips.size() < 58 && !chinese) {
                 english_tips.emplace_back(input->objectName(), tip);
             }
             const auto original = std::find_if(
@@ -330,7 +334,7 @@ void test_tooltips_initial_locale_and_reload() {
             );
         }
         require(
-            english_tips.size() == 57, "initial tooltip inventory incomplete"
+            english_tips.size() == 58, "initial tooltip inventory incomplete"
         );
         for (const auto* name : {"proxy.url", "proxy.no_proxy"}) {
             auto* input = editor.findChild<QWidget*>(name);
@@ -1410,10 +1414,11 @@ void test_phase_two_round_trip() {
     text(window, "monitor.websocket_maximum_backoff_seconds", "86400");
     choice(window, "logging.level", "trace");
     text(window, "logging.file", "logs/中文.log");
+    text(window, "history.maximum_entries", "7");
     choice(window, "sync.permissions", "umask");
     choice(window, "filesystem.metadata", "database");
     const auto draft = editor->patches();
-    require(draft.size() == 31, "phase two does not patch every new field");
+    require(draft.size() == 32, "phase two does not patch every new field");
     auto* tabs = window.findChild<QTabWidget*>("settingsTabs");
     for (int tab = 0; tab < 6; ++tab) {
         tabs->setCurrentIndex(tab);
@@ -1470,6 +1475,7 @@ void test_phase_two_round_trip() {
             c.monitor_websocket_maximum_backoff.count() == 86400 &&
             c.logging.level == "trace" &&
             c.logging.file == fixture.path() / "logs/中文.log" &&
+            c.file_history_limit == 7 &&
             c.sync_permissions == config::SyncPermissionsMode::umask &&
             c.filesystem_metadata == config::FilesystemMetadataMode::database &&
             editor->patches().empty(),

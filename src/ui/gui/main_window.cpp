@@ -390,6 +390,90 @@ MainWindow::MainWindow(
     settings_status_->setObjectName("settingsStatus");
     settings_layout->addRow(settings_status_);
     tabs->addTab(settings, tr("Settings"));
+    files_page_ = new QWidget{tabs};
+    files_page_->setObjectName("filesPage");
+    auto* files_layout = new QVBoxLayout{files_page_};
+    files_hint_ = make_value_label({});
+    files_layout->addWidget(files_hint_);
+    files_filter_ = new QLineEdit{files_page_};
+    files_filter_->setObjectName("fileHistoryFilter");
+    files_layout->addWidget(files_filter_);
+    files_status_ = make_value_label({});
+    files_status_->setObjectName("fileHistoryStatus");
+    files_layout->addWidget(files_status_);
+    files_table_ = new QTreeWidget{files_page_};
+    files_table_->setObjectName("fileHistoryTable");
+    files_table_->setColumnCount(5);
+    files_table_->setRootIsDecorated(false);
+    files_table_->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    for (const int column : {0, 1, 4}) {
+        files_table_->header()->setSectionResizeMode(
+            column, QHeaderView::ResizeToContents
+        );
+    }
+    files_table_->header()->setSectionResizeMode(2, QHeaderView::Stretch);
+    files_table_->header()->setSectionResizeMode(3, QHeaderView::Interactive);
+    files_layout->addWidget(files_table_, 1);
+    tabs->addTab(files_page_, tr("Files"));
+    connect(
+        files_filter_,
+        &QLineEdit::textChanged,
+        this,
+        &MainWindow::filter_file_history
+    );
+    connect(
+        &synchronization_,
+        &SyncController::file_operations_ready,
+        this,
+        [this](
+            const std::vector<events::FileOperationEvent>& operations,
+            std::size_t retained,
+            std::size_t omitted,
+            std::size_t limit
+        ) {
+            auto* scroll = files_table_->verticalScrollBar();
+            const bool at_bottom = scroll->value() == scroll->maximum();
+            files_table_->setUpdatesEnabled(false);
+            for (const auto& operation : operations) {
+                auto* row = new QTreeWidgetItem{files_table_};
+                row->setData(
+                    0,
+                    Qt::UserRole,
+                    static_cast<qint64>(
+                        std::chrono::duration_cast<std::chrono::milliseconds>(
+                            operation.completed_at.time_since_epoch()
+                        )
+                            .count()
+                    )
+                );
+                row->setData(
+                    1, Qt::UserRole, static_cast<int>(operation.action)
+                );
+                row->setData(1, Qt::UserRole + 1, operation.directory);
+                row->setData(1, Qt::UserRole + 2, operation.recovered);
+                row->setText(2, QString::fromStdString(operation.path));
+                row->setText(
+                    3, QString::fromStdString(operation.previous_path)
+                );
+                row->setText(4, QString::fromStdString(operation.drive_id));
+                row->setToolTip(
+                    2, QString::fromStdString(operation.local_path)
+                );
+                render_file_history_row(row);
+            }
+            while (static_cast<std::size_t>(files_table_->topLevelItemCount()) >
+                   retained) {
+                delete files_table_->takeTopLevelItem(0);
+            }
+            files_omitted_ = omitted;
+            files_limit_ = limit;
+            render_file_history_status();
+            files_table_->setUpdatesEnabled(true);
+            if (at_bottom && !operations.empty()) {
+                files_table_->scrollToBottom();
+            }
+        }
+    );
 
     setCentralWidget(tabs);
     if (localization_) {
@@ -731,6 +815,74 @@ MainWindow::MainWindow(
     }
 }
 
+QString MainWindow::file_action_text(
+    events::FileAction action, bool directory, bool recovered
+) const {
+    const auto name = [&]() -> QString {
+        switch (action) {
+        case events::FileAction::downloaded:
+            return tr("Downloaded");
+        case events::FileAction::uploaded:
+            return tr("Uploaded");
+        case events::FileAction::moved_locally:
+            return tr("Moved locally");
+        case events::FileAction::moved_remotely:
+            return tr("Moved remotely");
+        case events::FileAction::deleted_locally:
+            return tr("Deleted locally");
+        case events::FileAction::deleted_remotely:
+            return tr("Deleted remotely");
+        }
+        throw std::logic_error{"unknown file operation action"};
+    }();
+    auto result = directory ? tr("%1 (folder)").arg(name) : name;
+    return recovered ? tr("%1 (recovered)").arg(result) : result;
+}
+
+void MainWindow::render_file_history_row(QTreeWidgetItem* row) {
+    row->setText(
+        0,
+        QDateTime::fromMSecsSinceEpoch(row->data(0, Qt::UserRole).toLongLong())
+            .toString("yyyy-MM-dd HH:mm:ss.zzz")
+    );
+    row->setText(
+        1,
+        file_action_text(
+            static_cast<events::FileAction>(row->data(1, Qt::UserRole).toInt()),
+            row->data(1, Qt::UserRole + 1).toBool(),
+            row->data(1, Qt::UserRole + 2).toBool()
+        )
+    );
+    const auto query = files_filter_->text().trimmed();
+    bool matches = query.isEmpty();
+    for (int column = 0; column < files_table_->columnCount() && !matches;
+         ++column) {
+        matches = row->text(column).contains(query, Qt::CaseInsensitive);
+    }
+    row->setHidden(!matches);
+}
+
+void MainWindow::render_file_history_status() {
+    files_status_->setText(tr("%1 completed operations retained; %2 older "
+                              "operations omitted (limit %3).")
+                               .arg(files_table_->topLevelItemCount())
+                               .arg(files_omitted_)
+                               .arg(files_limit_));
+}
+
+void MainWindow::filter_file_history() {
+    files_table_->setUpdatesEnabled(false);
+    for (int index = 0; index < files_table_->topLevelItemCount(); ++index) {
+        render_file_history_row(files_table_->topLevelItem(index));
+    }
+    files_table_->setUpdatesEnabled(true);
+}
+
+void MainWindow::render_file_history() {
+    filter_file_history();
+    render_file_history_status();
+}
+
 void MainWindow::changeEvent(QEvent* event) {
     QMainWindow::changeEvent(event);
     if (event->type() == QEvent::LanguageChange && tabs_) {
@@ -747,6 +899,18 @@ void MainWindow::retranslate_ui() {
     tabs_->setTabText(1, tr("Sync"));
     tabs_->setTabText(2, tr("Logs"));
     tabs_->setTabText(3, tr("Settings"));
+    tabs_->setTabText(tabs_->indexOf(files_page_), tr("Files"));
+    files_hint_->setText(tr(
+        "Completed operations since this application started. Times are local. "
+        "Preview and external Monitor operations are not included."
+    ));
+    files_filter_->setPlaceholderText(
+        tr("Search file paths, actions and drives")
+    );
+    files_table_->setHeaderLabels(
+        {tr("Time"), tr("Action"), tr("Path"), tr("Previous path"), tr("Drive")}
+    );
+    render_file_history();
     blocked_filter_->setPlaceholderText(tr("Search paths and reasons"));
     blocked_refresh_->setText(tr("Refresh"));
     blocked_table_->setHeaderLabels({tr("Path"), tr("Reason")});
@@ -2176,6 +2340,7 @@ void MainWindow::closeEvent(QCloseEvent* event) {
 }
 
 void MainWindow::refresh_settings(bool preserve_edits) {
+    synchronization_.set_file_history_limit(state_.file_history_limit);
     monitor_.set_state_directory(
         state_.configuration_status == ConfigurationStatus::valid &&
                 !state_.state_directory.empty()

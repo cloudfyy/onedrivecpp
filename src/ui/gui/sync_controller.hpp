@@ -2,6 +2,7 @@
 
 #include "onedrive/config/config.hpp"
 #include "onedrive/ui/common/observer.hpp"
+#include "onedrive/ui/common/file_history.hpp"
 #include "onedrive/sync/core/engine.hpp"
 
 #include <QObject>
@@ -41,6 +42,7 @@ public:
     void start_monitoring(const std::filesystem::path& config_file);
     void cancel();
     void invalidate_preview();
+    void set_file_history_limit(std::size_t limit);
     void refresh_blocked_items(const std::filesystem::path& config_file);
     [[nodiscard]] bool running() const noexcept;
 
@@ -51,6 +53,12 @@ Q_SIGNALS:
     void summary_ready(
         const events::SyncSummaryEvent& summary,
         const events::SyncSummaryEvent& totals
+    );
+    void file_operations_ready(
+        const std::vector<events::FileOperationEvent>& operations,
+        std::size_t retained,
+        std::size_t omitted,
+        std::size_t limit
     );
     void finished(int result, QString error, bool preview);
     void blocked_items_ready(
@@ -63,6 +71,7 @@ private:
     );
     void queue_event(const events::Event& event);
     void drain_events();
+    void schedule_delivery();
 
     CachedSynchronizationFunction synchronize_;
     MonitoringFunction monitor_;
@@ -77,6 +86,11 @@ private:
     events::SyncSummaryEvent task_totals_;
     std::size_t omitted_events_{};
     bool delivery_pending_{};
+    events::FileHistory file_history_{config::default_file_history_limit};
+    events::FileHistory pending_file_operations_{
+        config::default_file_history_limit
+    };
+    bool file_history_changed_{};
     std::jthread blocked_worker_;
     bool blocked_refreshing_{};
     std::optional<std::filesystem::path> blocked_refresh_pending_;

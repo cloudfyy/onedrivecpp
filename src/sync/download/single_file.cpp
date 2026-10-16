@@ -245,7 +245,12 @@ int download_single_file(
             config.filesystem_metadata, sync_root
         );
         detail::recover_pending_downloads(
-            items, safe_root, config.drive_id, metadata, config.sync_permissions
+            items,
+            safe_root,
+            config.drive_id,
+            metadata,
+            config.sync_permissions,
+            &observer
         );
         const auto previous = items.find(config.drive_id, item.id);
         const auto target_status =
@@ -327,6 +332,12 @@ int download_single_file(
                 },
             }
         );
+        observer.file_operation({
+            .action = events::FileAction::downloaded,
+            .path = item.remote_path,
+            .drive_id = config.drive_id,
+            .local_path = installed.local_path.string(),
+        });
         const auto installed_bytes =
             static_cast<std::uint64_t>(installed.local_size);
         observer.download_progress(

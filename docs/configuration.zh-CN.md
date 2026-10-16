@@ -51,6 +51,11 @@ theme = "hacker"
 # "auto"、"always" 或 "never"
 color = "auto"
 
+[history]
+# CLI/GUI 本次启动以来的已完成操作，必须大于 0，默认 10000。
+# 达到上限后省略最旧记录，并显示已省略数量。
+maximum_entries = 10000
+
 [sync]
 # 当前账号的默认 OneDrive
 data_directory = "/home/USER/OneDrive"

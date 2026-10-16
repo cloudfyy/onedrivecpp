@@ -57,6 +57,11 @@ theme = "hacker"
 # "auto", "always", or "never"
 color = "auto"
 
+[history]
+# CLI/GUI completed operations since startup; positive, default 10000.
+# Oldest entries are omitted when full; the omission count remains visible.
+maximum_entries = 10000
+
 [sync]
 # Default OneDrive of the signed-in user
 data_directory = "/home/USER/OneDrive"

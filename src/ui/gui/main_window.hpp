@@ -26,6 +26,7 @@ class QPlainTextEdit;
 class QComboBox;
 class QCheckBox;
 class QTreeWidget;
+class QTreeWidgetItem;
 class QTimer;
 
 namespace onedrive::gui {
@@ -97,6 +98,13 @@ private:
     void log_sync_result();
     void log_startup_errors();
     void render_logs();
+    void render_file_history();
+    void render_file_history_status();
+    void render_file_history_row(QTreeWidgetItem* row);
+    void filter_file_history();
+    QString file_action_text(
+        events::FileAction action, bool directory, bool recovered
+    ) const;
     void refresh_blocked_items();
     void render_blocked_items();
     void render_blocked_details();
@@ -115,6 +123,13 @@ private:
     QTabWidget* tabs_{};
     QWidget* sync_page_{};
     QWidget* logs_page_{};
+    QWidget* files_page_{};
+    QTreeWidget* files_table_{};
+    QLineEdit* files_filter_{};
+    QLabel* files_status_{};
+    QLabel* files_hint_{};
+    std::size_t files_omitted_{};
+    std::size_t files_limit_{config::default_file_history_limit};
     QFormLayout* overview_layout_{};
     QFormLayout* settings_layout_{};
     SettingsEditor* settings_editor_{};

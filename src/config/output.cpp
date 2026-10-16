@@ -13,6 +13,25 @@ void load_output_options(
     const toml::table& root,
     const std::filesystem::path& config_path
 ) {
+    if (const auto* history = optional_table(root, "history", "history")) {
+        validate_keys(*history, {"maximum_entries"}, "history");
+        if (history->contains("maximum_entries")) {
+            if (!history->get("maximum_entries")->is_integer()) {
+                throw std::runtime_error{
+                    "history.maximum_entries must be a positive integer"
+                };
+            }
+            config.file_history_limit = size_value(
+                *history, "maximum_entries", "history.maximum_entries"
+            );
+            if (config.file_history_limit == 0) {
+                throw std::runtime_error{
+                    "history.maximum_entries must be greater than 0"
+                };
+            }
+        }
+    }
+
     if (const auto* console = optional_table(root, "console", "console")) {
         validate_keys(*console, {"color", "ui", "theme"}, "console");
         if (const auto value = optional_value<std::string>(

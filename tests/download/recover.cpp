@@ -1,8 +1,22 @@
 #include "support.hpp"
+#include "onedrive/ui/common/observer.hpp"
 
 namespace {
 
 using namespace onedrive::test::download;
+
+class RecordingObserver final : public onedrive::events::Observer {
+public:
+    mutable std::vector<onedrive::events::FileOperationEvent> operations;
+
+private:
+    void on_event(const onedrive::events::Event& event) const override {
+        if (const auto* operation =
+                std::get_if<onedrive::events::FileOperationEvent>(&event)) {
+            operations.push_back(*operation);
+        }
+    }
+};
 
 int test_recover() {
     namespace detail = onedrive::sync::detail;
@@ -14,6 +28,7 @@ int test_recover() {
     auto& space = fixture.space;
     auto& graph = fixture.graph;
     auto& items = fixture.items;
+    RecordingObserver observer;
 
     const auto duplicate_destination = root / "duplicate.txt";
     const auto duplicate_temporary = root / ".duplicate.partial";
@@ -40,9 +55,19 @@ int test_recover() {
                                    "261a9a923d3bb23adc8b7",
         }
     );
-    detail::recover_pending_downloads(items, root, "me", metadata);
+    detail::recover_pending_downloads(
+        items,
+        root,
+        "me",
+        metadata,
+        onedrive::config::SyncPermissionsMode::private_access,
+        &observer
+    );
     if (std::filesystem::exists(duplicate_temporary) ||
-        items.pending.contains("duplicate")) {
+        items.pending.contains("duplicate") ||
+        observer.operations.size() != 1 ||
+        !observer.operations.back().recovered ||
+        observer.operations.back().path != "duplicate.txt") {
         return fail("duplicate recovery temporary file was not cleaned");
     }
 
@@ -92,13 +117,23 @@ int test_recover() {
                 detail::content_fingerprint(replacing_temporary),
         }
     );
-    detail::recover_pending_downloads(items, root, "me", metadata);
+    detail::recover_pending_downloads(
+        items,
+        safe_root,
+        "me",
+        metadata,
+        onedrive::config::SyncPermissionsMode::private_access,
+        &observer
+    );
     std::ifstream replaced_input{replacing_destination, std::ios::binary};
     const std::string replaced_contents{
         std::istreambuf_iterator<char>{replaced_input},
         std::istreambuf_iterator<char>{}
     };
-    if (replaced_contents != "data" || items.pending.contains("replace-old")) {
+    if (replaced_contents != "data" || items.pending.contains("replace-old") ||
+        observer.operations.size() != 2 ||
+        observer.operations.back().path != "replace-old.txt" ||
+        !observer.operations.back().recovered) {
         return fail(
             "journal recovery did not replace a trusted previous snapshot"
         );

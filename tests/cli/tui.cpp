@@ -19,6 +19,54 @@ namespace {
 
 using onedrive::test::fail;
 
+int test_file_history() {
+    using namespace onedrive::cli;
+    for (const auto view : {TuiView::sync, TuiView::watch, TuiView::download}) {
+        std::ostringstream output;
+        std::ostringstream error;
+        const Console console{detail::make_ftxui_console_backend(
+            {.ui = UiMode::tui, .view = view, .file_history_limit = 2},
+            output,
+            error,
+            140,
+            30
+        )};
+        for (int index = 0; index < 4; ++index) {
+            console.file_operation({
+                .completed_at = std::chrono::system_clock::time_point{},
+                .action = onedrive::events::FileAction::downloaded,
+                .path = "completed-" + std::to_string(index) + ".txt",
+            });
+        }
+        if (!output.str().contains("FILES // 2 retained // 2 older omitted")) {
+            return fail("live TUI did not display retained file history");
+        }
+        const auto before_finish = output.str().size();
+        if (view == TuiView::watch) {
+            console.finish_file_history();
+        } else {
+            console.finish();
+        }
+        const auto final_list = output.str().substr(before_finish);
+        if (!final_list.contains("\033[?1049l") ||
+            !final_list.contains("1970-01-01T00:00:00Z") ||
+            !final_list.contains("downloaded") ||
+            !final_list.contains("completed-2.txt") ||
+            !final_list.contains("completed-3.txt") ||
+            final_list.contains("completed-0.txt") ||
+            final_list.contains("completed-1.txt") ||
+            !final_list.contains("2 older operations omitted")) {
+            return fail("TUI exit did not preserve the bounded file list");
+        }
+        const auto after_finish = output.str().size();
+        console.finish();
+        if (output.str().size() != after_finish) {
+            return fail("TUI file history was printed twice on completion");
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_inspection_completion() {
     using namespace onedrive::cli;
     constexpr std::array inspection_views{
@@ -937,6 +985,30 @@ int main() {
                 "after a round"
             );
         }
+        console.sync_phase(onedrive::events::SyncPhase::preparing);
+        console.download_progress(
+            0, 0, 0, 0, onedrive::util::ProgressState::ongoing
+        );
+        console.upload_progress({});
+        console.end_upload_progress();
+        const auto unknown = output.str().substr(output.str().rfind("\033[H"));
+        const std::string unavailable{
+            "Totals unknown; percentage unavailable."
+        };
+        const auto first = unknown.find(unavailable);
+        if (!unknown.contains("DOWNLOADS") || !unknown.contains("UPLOADS") ||
+            first == std::string::npos ||
+            unknown.find(unavailable, first + unavailable.size()) ==
+                std::string::npos ||
+            unknown.contains("100%")) {
+            return fail("TUI invented completion for unknown transfer totals");
+        }
+        console.sync_phase(onedrive::events::SyncPhase::preparing);
+        const auto next = output.str().substr(output.str().rfind("\033[H"));
+        if (next.contains("UPLOADS") || next.contains("DOWNLOADS") ||
+            next.contains(unavailable)) {
+            return fail("a new TUI round retained stale transfer progress");
+        }
     }
     if (const auto result = test_message_levels(); result != EXIT_SUCCESS) {
         return result;
@@ -953,6 +1025,9 @@ int main() {
     }
     if (const auto result = test_inspection_completion();
         result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const auto result = test_file_history(); result != EXIT_SUCCESS) {
         return result;
     }
     for (const auto rows : {12U, 24U, 30U}) {

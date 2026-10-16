@@ -70,20 +70,18 @@ int Application::run(int argc, char* argv[]) {
     const auto& arguments = parsed.arguments;
     try {
         auto config = config::Config::load(arguments.config_path);
-        const cli::Console console{
-            {
-                .color = arguments.color_mode.value_or(config.console_color),
-                .output = arguments.output_mode,
-                .ui = detail::operation_capabilities(arguments.operation)
-                              .supports_tui ?
-                    arguments.ui_mode.value_or(config.console_ui) :
-                    cli::UiMode::console,
-                .theme =
-                    arguments.tui_theme.value_or(config.console_theme),
-                .view = tui_view(arguments.operation),
-                .quiet = arguments.quiet,
-            }
-        };
+        const cli::Console console{{
+            .color = arguments.color_mode.value_or(config.console_color),
+            .output = arguments.output_mode,
+            .ui =
+                detail::operation_capabilities(arguments.operation).supports_tui
+                    ? arguments.ui_mode.value_or(config.console_ui)
+                    : cli::UiMode::console,
+            .theme = arguments.tui_theme.value_or(config.console_theme),
+            .view = tui_view(arguments.operation),
+            .quiet = arguments.quiet,
+            .file_history_limit = config.file_history_limit,
+        }};
         const logging::Session logging_session{
             {
                 .level = arguments.log_level.value_or(config.logging.level),
@@ -117,9 +115,15 @@ int Application::run(int argc, char* argv[]) {
             arguments.operation != detail::Operation::logout) {
             runtime_preflight.emplace(config, arguments.operation, &console);
         }
-        const auto result = detail::execute_command(
-            arguments, std::move(config), *runtime_factory_, console
-        );
+        int result = exit_code::failure;
+        try {
+            result = detail::execute_command(
+                arguments, std::move(config), *runtime_factory_, console
+            );
+        } catch (const std::exception&) {
+            console.finish_file_history();
+            throw;
+        }
         console.finish();
         return result;
     } catch (const std::exception& error) {

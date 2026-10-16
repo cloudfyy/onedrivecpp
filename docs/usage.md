@@ -362,6 +362,30 @@ Restart older v1 Monitors after updating; incompatible protocols fail explicitly
 
 ### GUI monitoring and external ownership
 
+The GUI **Files** tab lists completed operations since this application started:
+local completion time, download/upload/local or remote move/deletion, path,
+previous path for moves, and Drive ID. Hover over the path for the local target.
+Search matches paths, actions and drives. History survives subsequent syncs,
+Monitor restarts, clearing logs and language changes; application exit clears it.
+Only operations performed by this process are included, not external Monitor
+activity, previews, already-current reuse, blocked attempts or unfinished work.
+Completed work remains listed even if another operation later fails or cancels.
+Recovery completions and folder moves/deletions are labelled; a folder operation
+is one entry, not an expansion of every descendant.
+
+CLI text and JSON output stream completed-operation rows as they occur (quiet
+mode suppresses them). JSON uses `event: "file_operation"`, UTC `completed_at`,
+`completed_at_unix_milliseconds`, `action`, `path`, `previous_path`, `drive_id`,
+`local_path`, `directory`, `recovered`, `history_retained` and `history_omitted`.
+The TUI shows recent operations live and prints the complete retained list after
+leaving its full-screen view at completion or graceful Monitor shutdown.
+CLI timestamps use UTC. Both frontends retain at most
+`history.maximum_entries` (default **10000**, positive integer), discard oldest
+entries when full and display the omitted count. Already streamed terminal/JSON
+output cannot be retracted. This limit is separate from the GUI's diagnostic log
+limit and does not affect synchronization totals. The GUI setting is under
+Settings / Diagnostics; use Reload after external configuration edits.
+
 **Start monitoring** runs the shared Monitor service with saved settings, including
 `sync.dry_run`. The GUI-owned task uses the existing synchronization worker,
 cancellation and upload/download events. Waiting retains the last round's totals
