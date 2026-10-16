@@ -635,6 +635,11 @@ FileUploadResult execute_file_upload(
         );
         return {FileUploadStatus::blocked, error.what()};
     } catch (const LocalModificationConflictError& error) {
+        // Only an unjournaled snapshot can be discarded and retried by
+        // scanning.
+        if (pending.snapshot_path.empty()) {
+            return {FileUploadStatus::skipped, error.what()};
+        }
         save_upload_blocked(
             items,
             drive_id,

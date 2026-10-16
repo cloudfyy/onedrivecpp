@@ -590,7 +590,10 @@ foreach(SYNC_TEST IN ITEMS base delete move move_recovery download upload mode p
         LIBRARIES onedrive_cli
     )
 endforeach()
-target_link_options(sync_watch_race_tests PRIVATE -Wl,--wrap=fstatat)
+target_link_options(sync_watch_race_tests PRIVATE
+    -Wl,--wrap=fstatat
+    -Wl,--wrap=read
+)
 target_link_libraries(sync_watch_race_tests PRIVATE spdlog::spdlog)
 set_tests_properties(sync_watch_race_tests PROPERTIES TIMEOUT 30)
 add_onedrive_test(

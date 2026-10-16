@@ -4,6 +4,7 @@
 #include "sync/filesystem/operations.hpp"
 #include "sync/upload/remote_delete.hpp"
 
+#include <array>
 #include <cerrno>
 #include <cstring>
 #include <spdlog/sinks/base_sink.h>
@@ -19,6 +20,344 @@ using namespace std::chrono_literals;
 
 std::atomic_bool remove_during_identity{false};
 std::atomic_int identities_before_removal{0};
+
+std::filesystem::path snapshot_source;
+std::function<void()> mutate_snapshot_source;
+std::atomic_bool intercept_snapshot_read{false};
+std::atomic_int reads_before_mutation{0};
+bool snapshot_read_failure{false};
+
+struct SnapshotReadGuard {
+    ~SnapshotReadGuard() {
+        intercept_snapshot_read = false;
+        mutate_snapshot_source = {};
+    }
+};
+
+class UploadRaceObserver final : public onedrive::events::Observer {
+public:
+    mutable std::vector<onedrive::events::Event> events;
+
+private:
+    void on_event(const onedrive::events::Event& event) const override {
+        events.push_back(event);
+    }
+};
+
+enum class SnapshotMutation {
+    size,
+    content,
+    replacement,
+    deletion,
+    read_failure
+};
+
+int test_edit_during_snapshot(
+    bool tracked, bool upload_only, SnapshotMutation mutation
+) {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path();
+    const auto source = root / "changing.txt";
+    onedrive::test::write_file(source, "data");
+    FakeItemStore items;
+    items.saved_delta_link = "saved";
+    const auto previous = tracked_item(root, "file", "changing.txt");
+    if (tracked) {
+        items.items.emplace("file", previous);
+    }
+    const std::string initial = mutation == SnapshotMutation::size
+                                    ? std::string(131089, 'A')
+                                    : "initial";
+    onedrive::test::write_file(source, initial);
+    const auto initial_time = std::filesystem::last_write_time(source);
+    onedrive::test::write_file(root / "ready.txt", "ready");
+    FakeGraphClient graph;
+    FakeMetrics metrics;
+    auto config = config_for(root, false);
+    config.sync_mode = upload_only ? onedrive::sync::SyncMode::upload_only
+                                   : onedrive::sync::SyncMode::bidirectional;
+    config.upload_concurrency = 2;
+    UploadRaceObserver observer;
+    const auto synchronize = [&] {
+        return onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &observer
+        }
+            .synchronize();
+    };
+    const SnapshotReadGuard read_guard;
+    snapshot_source = source;
+    reads_before_mutation = mutation == SnapshotMutation::size ? 1 : 0;
+    snapshot_read_failure = mutation == SnapshotMutation::read_failure;
+    const std::string edited =
+        mutation == SnapshotMutation::size ? "local-new-content" : "CHANGED";
+    mutate_snapshot_source = [&] {
+        if (mutation == SnapshotMutation::deletion) {
+            std::filesystem::remove(source);
+        } else if (mutation == SnapshotMutation::replacement) {
+            const auto replacement = root / ".atomic-save";
+            onedrive::test::write_file(replacement, edited);
+            std::filesystem::last_write_time(replacement, initial_time);
+            std::filesystem::rename(replacement, source);
+        } else {
+            onedrive::test::write_file(source, edited);
+            std::filesystem::last_write_time(source, initial_time);
+        }
+    };
+    intercept_snapshot_read = true;
+    int result = -1;
+    try {
+        result = synchronize();
+    } catch (const std::exception& error) {
+        return fail(
+            "snapshot preparation interrupted synchronization: " +
+            std::string{error.what()}
+        );
+    }
+    const bool read_failure = mutation == SnapshotMutation::read_failure;
+    const bool deleted = mutation == SnapshotMutation::deletion;
+    const auto warning_code = read_failure ? "local_upload_resource_blocked"
+                                           : "local_upload_source_changed";
+    if (intercept_snapshot_read.exchange(false) ||
+        result != (read_failure ? onedrive::exit_code::blocked
+                                : onedrive::exit_code::success) ||
+        graph.upload_count != 1 ||
+        graph.uploaded_paths != std::vector<std::string>{"ready.txt"} ||
+        !graph.deleted_items.empty() ||
+        items.blocked.size() != (read_failure ? 1U : 0U) ||
+        items.pending_uploads_by_path.size() != (read_failure ? 1U : 0U) ||
+        std::ranges::none_of(
+            observer.events,
+            [&](const auto& event) {
+                const auto* message =
+                    std::get_if<onedrive::events::MessageEvent>(&event);
+                return message && message->event == warning_code &&
+                       message->kind ==
+                           onedrive::events::MessageKind::warning &&
+                       message->text.contains("changing.txt");
+            }
+        ) ||
+        std::ranges::none_of(
+            observer.events,
+            [&](const auto& event) {
+                const auto* summary =
+                    std::get_if<onedrive::events::SyncSummaryEvent>(&event);
+                return summary && summary->uploaded == 1 &&
+                       summary->blocked == (read_failure ? 1U : 0U);
+            }
+        ) ||
+        (!read_failure &&
+         std::ranges::none_of(
+             observer.events,
+             [](const auto& event) {
+                 const auto* progress =
+                     std::get_if<onedrive::events::UploadProgressEvent>(&event);
+                 return progress &&
+                        progress->state ==
+                            onedrive::util::ProgressState::completed &&
+                        progress->completed_files == 1 &&
+                        progress->file_count == 1 && progress->uploaded == 5 &&
+                        progress->total == 5;
+             }
+         )) ||
+        std::ranges::any_of(
+            observer.events,
+            [](const auto& event) {
+                const auto* operation =
+                    std::get_if<onedrive::events::FileOperationEvent>(&event);
+                return operation && operation->path == "changing.txt";
+            }
+        ) ||
+        std::ranges::any_of(
+            std::filesystem::directory_iterator{root}, [](const auto& entry) {
+                return entry.path().filename().string().contains(
+                    ".onedrive-upload-"
+                );
+            }
+        )) {
+        return fail(
+            "unstable snapshot was uploaded, hidden, or retained as a journal"
+        );
+    }
+    const auto retained = items.find("me", "file");
+    if (tracked &&
+        (!retained || retained->local_size != previous.local_size ||
+         retained->local_modified_ticks != previous.local_modified_ticks)) {
+        return fail(
+            "unstable snapshot replaced the trusted synchronized baseline"
+        );
+    }
+    if (read_failure) {
+        const auto& pending = items.pending_uploads_by_path.begin()->second;
+        if (!pending.snapshot_path.empty() ||
+            pending.failure_code != "local_read" ||
+            items.blocked.front().reason_code != "upload_local_read") {
+            return fail(
+                "genuine snapshot read failure lost its resource diagnostic"
+            );
+        }
+    }
+    if (deleted) {
+        if (std::filesystem::exists(source)) {
+            return fail("snapshot preparation restored a deleted source");
+        }
+    } else if (onedrive::test::read_file(source) !=
+               (read_failure ? initial : edited)) {
+        return fail("snapshot preparation discarded the latest local content");
+    }
+    observer.events.clear();
+    std::string uploaded;
+    graph.during_upload = [&] {
+        const auto pending = items.pending_uploads("me");
+        if (pending.size() != 1) {
+            throw std::runtime_error{"expected one stable upload snapshot"};
+        }
+        uploaded = onedrive::test::read_file(pending.front().snapshot_path);
+    };
+    if (synchronize() != onedrive::exit_code::success ||
+        graph.upload_count != (deleted ? 1 : 2) ||
+        graph.deleted_items.size() != (deleted && tracked ? 1U : 0U) ||
+        !items.blocked.empty() || !items.pending_uploads_by_path.empty() ||
+        (!deleted && uploaded != (read_failure ? initial : edited))) {
+        return fail(
+            "a stable follow-up round did not reconcile the deferred source"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_watch_retries_unstable_snapshot() {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path();
+    const auto source = root / "changing.txt";
+    onedrive::test::write_file(source, "initial");
+    FakeItemStore items;
+    items.saved_delta_link = "saved";
+    FakeGraphClient graph;
+    FakeMetrics metrics;
+    auto config = config_for(root, false);
+    config.sync_mode = onedrive::sync::SyncMode::bidirectional;
+    UploadRaceObserver observer;
+    const SnapshotReadGuard read_guard;
+    snapshot_source = source;
+    reads_before_mutation = 0;
+    snapshot_read_failure = false;
+    mutate_snapshot_source = [&] {
+        onedrive::test::write_file(source, "local-new-content");
+    };
+    intercept_snapshot_read = true;
+    std::atomic_int rounds{0};
+    bool deferred = false;
+    std::atomic_bool reconciled{false};
+    onedrive::monitor::Monitor monitor{
+        root,
+        [&](const std::stop_token& stop) {
+            const auto result =
+                onedrive::sync::SyncEngine{
+                    config, graph, items, metrics, &observer
+                }
+                    .synchronize(stop);
+            if (++rounds == 1) {
+                deferred =
+                    result == onedrive::exit_code::success &&
+                    graph.upload_count == 0 &&
+                    std::ranges::any_of(observer.events, [](const auto& event) {
+                        const auto* message =
+                            std::get_if<onedrive::events::MessageEvent>(&event);
+                        return message &&
+                               message->event == "local_upload_source_changed";
+                    });
+            } else {
+                reconciled = result == onedrive::exit_code::success &&
+                             graph.upload_count == 1;
+            }
+            return result;
+        },
+        1h,
+        5ms,
+    };
+    int result = -1;
+    std::exception_ptr error;
+    std::jthread worker{[&](std::stop_token stop) {
+        try {
+            result = monitor.run(stop);
+        } catch (...) {
+            error = std::current_exception();
+        }
+    }};
+    const bool uploaded =
+        onedrive::test::wait_until([&] { return reconciled.load(); }, 3s, 5ms);
+    worker.request_stop();
+    worker.join();
+    if (error) {
+        try {
+            std::rethrow_exception(error);
+        } catch (const std::exception& failure) {
+            return fail(
+                "watch exited during snapshot creation: " +
+                std::string{failure.what()}
+            );
+        }
+    }
+    const auto current = items.find("me", "uploaded-1");
+    if (!uploaded || !deferred || rounds < 2 ||
+        result != onedrive::exit_code::success || graph.upload_count != 1 ||
+        !current || current->local_size != 17 ||
+        onedrive::test::read_file(source) != "local-new-content" ||
+        !items.blocked.empty() || !items.pending_uploads_by_path.empty()) {
+        return fail("watch did not automatically retry the stable local edit");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_journaled_modification_is_not_skipped() {
+    TemporaryDirectory temporary;
+    const auto root = temporary.path();
+    onedrive::test::write_file(root / "file.txt", "data");
+    FakeItemStore items;
+    items.saved_delta_link = "saved";
+    FakeGraphClient graph;
+    graph.during_upload = [] {
+        throw onedrive::sync::detail::LocalModificationConflictError{
+            "simulated journaled upload conflict"
+        };
+    };
+    FakeMetrics metrics;
+    auto config = config_for(root, false);
+    config.sync_mode = onedrive::sync::SyncMode::bidirectional;
+    UploadRaceObserver observer;
+    const auto synchronize = [&] {
+        return onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &observer
+        }
+            .synchronize();
+    };
+    bool failed = false;
+    try {
+        static_cast<void>(synchronize());
+    } catch (const onedrive::sync::detail::LocalModificationConflictError&) {
+        failed = true;
+    }
+    if (!failed || graph.upload_count != 1 ||
+        items.pending_uploads_by_path.size() != 1 ||
+        items.blocked.size() != 1 ||
+        items.blocked.front().reason_code != "upload_local_modification" ||
+        onedrive::test::read_file(
+            items.pending_uploads_by_path.begin()->second.snapshot_path
+        ) != "data" ||
+        metrics.last_success) {
+        return fail(
+            "journaled upload conflict was incorrectly treated as a skip"
+        );
+    }
+    if (synchronize() != onedrive::exit_code::success ||
+        graph.upload_count != 2 || !items.pending_uploads_by_path.empty() ||
+        !items.blocked.empty() || !items.find("me", "uploaded-2")) {
+        return fail(
+            "journaled upload conflict lost its existing recovery path"
+        );
+    }
+    return EXIT_SUCCESS;
+}
 
 class ReuseMutationSink final : public spdlog::sinks::base_sink<std::mutex> {
 public:
@@ -486,6 +825,30 @@ int test_failure_log_includes_exception() {
 
 extern "C" {
 int __real_fstatat(int, const char*, struct stat*, int);
+ssize_t __real_read(int, void*, size_t);
+
+ssize_t __wrap_read(int descriptor, void* buffer, size_t size) {
+    if (intercept_snapshot_read.load()) {
+        std::array<char, 4096> path{};
+        const auto count = ::readlink(
+            ("/proc/self/fd/" + std::to_string(descriptor)).c_str(),
+            path.data(),
+            path.size()
+        );
+        if (count > 0 &&
+            std::string_view{path.data(), static_cast<std::size_t>(count)} ==
+                snapshot_source.native() &&
+            reads_before_mutation.fetch_sub(1) == 0 &&
+            intercept_snapshot_read.exchange(false)) {
+            if (snapshot_read_failure) {
+                errno = EIO;
+                return -1;
+            }
+            mutate_snapshot_source();
+        }
+    }
+    return __real_read(descriptor, buffer, size);
+}
 
 int __wrap_fstatat(
     int directory, const char* path, struct stat* status, int flags
@@ -503,6 +866,32 @@ int __wrap_fstatat(
 }
 
 int main() {
+    for (const bool tracked : {false, true}) {
+        for (const bool upload_only : {false, true}) {
+            for (const auto mutation :
+                 {SnapshotMutation::size,
+                  SnapshotMutation::content,
+                  SnapshotMutation::replacement,
+                  SnapshotMutation::deletion,
+                  SnapshotMutation::read_failure}) {
+                if (const auto result = test_edit_during_snapshot(
+                        tracked, upload_only, mutation
+                    );
+                    result != EXIT_SUCCESS) {
+                    return result;
+                }
+                if (const auto result = test_watch_retries_unstable_snapshot();
+                    result != EXIT_SUCCESS) {
+                    return result;
+                }
+                if (const auto result =
+                        test_journaled_modification_is_not_skipped();
+                    result != EXIT_SUCCESS) {
+                    return result;
+                }
+            }
+        }
+    }
     for (const bool download_only : {false, true}) {
         for (const bool metadata_echo : {false, true}) {
             for (const auto mutation :

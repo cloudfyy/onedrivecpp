@@ -358,6 +358,17 @@ timestamp are rejected before download. New download files are created with
 permissions derived from `0666` and the process `umask` (normally `0644` with
 `umask 0022`); executable bits are never added.
 
+If a local file changes while its baseline or upload snapshot is being prepared,
+before the upload journal is written, that file is skipped for the current
+round with a warning. The existing temporary-file cleanup removes the unstable
+copy; other uploads continue, and the next local scan retries the latest
+content. The skipped file is not counted as uploaded, does not change the
+trusted synchronized snapshot, and does not create a persistent blocker.
+Watch continues and processes the source's filesystem change normally.
+Real I/O, permission, and storage failures keep their existing resource
+diagnostics; failures after journaling still retain the existing recovery and
+error-handling behavior.
+
 A completed upload can commit its trusted snapshot even if the original local
 file was deleted or renamed during transfer or before journal recovery. The
 client reports the missing source, skips its inode and xattr updates, and clears

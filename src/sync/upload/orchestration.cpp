@@ -659,6 +659,14 @@ UploadSummary upload_local_changes(
         switch (result.status) {
         case FileUploadStatus::skipped:
             progress.skip(index - first_file);
+            if (!result.message.empty()) {
+                observer.message(
+                    events::MessageKind::warning,
+                    "local_upload_source_changed",
+                    "Deferred upload '" + upload.remote_path +
+                        "': " + result.message
+                );
+            }
             return;
         case FileUploadStatus::uploaded:
             observer.file_operation({
