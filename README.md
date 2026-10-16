@@ -463,6 +463,15 @@ package includes Qt runtime dependencies and platform plugins; the Ubuntu
 24.04 package has no GUI or Qt requirement. arm64 release validation is
 not included in this scope.
 
+The system configuration is registered as a Debian conffile (by default,
+`/etc/onedrive-cpp/onedrive-cpp.toml`). Package upgrades preserve local changes
+or ask how to resolve a changed packaged default; ordinary removal keeps the
+configuration, while `apt purge onedrive-cpp` removes it. For unattended
+upgrades that must keep local configuration, explicitly select dpkg's
+`--force-confold` policy, including when upgrading from an older CPack package
+that did not register this conffile. Direct `cmake --install` does not provide
+dpkg's configuration protection.
+
 ### Official Debian package
 
 Install the packaging dependencies:

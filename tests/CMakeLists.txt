@@ -17,6 +17,22 @@ add_test(
 )
 set_tests_properties(packaging_install_tests PROPERTIES TIMEOUT 60)
 
+find_program(DPKG_DEB_EXECUTABLE dpkg-deb REQUIRED)
+add_test(
+    NAME packaging_conffiles_tests
+    COMMAND ${CMAKE_COMMAND}
+        -DPROJECT_BUILD_DIR=${PROJECT_BINARY_DIR}
+        -DSYSTEM_CONFIG_DIR=${ONEDRIVE_SYSTEM_CONFIG_DIR}
+        -DCPACK_EXECUTABLE=${CMAKE_CPACK_COMMAND}
+        -DDPKG_DEB_EXECUTABLE=${DPKG_DEB_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/packaging/conffiles.cmake
+)
+set_tests_properties(packaging_conffiles_tests PROPERTIES TIMEOUT 120)
+set_tests_properties(
+    packaging_install_tests packaging_conffiles_tests
+    PROPERTIES RESOURCE_LOCK packaging
+)
+
 add_onedrive_test(
     monitor_control_tests
     SOURCES tests/monitor/control.cpp

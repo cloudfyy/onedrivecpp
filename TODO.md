@@ -15,15 +15,24 @@
     两种 CPack DEB 内容及程序启动参数，并验证 Debian 依赖元数据生成。
   - Ubuntu 24.04 目标环境构建及 dpkg-buildpackage 端到端验证仍属于发布门禁；
     当前宿主机缺少 debhelper 和部分 Qt 构建工具，未完成原生打包验证。
-- [ ] P1 保护 CPack 系统配置升级
+- [x] P1 保护 CPack 系统配置升级
   - 为系统配置声明 conffiles，验证升级保留用户修改。
   - 核对 Debian 原生包的配置文件处理。
-  - 隔离安装测试已复现：升级覆盖本地配置修改，普通 remove 删除修改后的
-    系统配置。两项失败均对应当前 CPack 包缺少 conffiles 元数据。
+  - 已为 CLI 和 GUI CPack 包生成 conffiles 元数据，匹配实际配置安装路径，
+    包括自定义绝对路径和相对路径配合自定义打包前缀。
+  - 原先“升级覆盖修改”和“remove 删除修改后的配置”两项失败均已修复。
+    remove 现在保留系统配置，purge 才删除。
+  - 旧版未登记 conffile 的包迁移采用显式 --force-confold 策略，
+    已受保护包之间的升级使用默认策略；两种隔离生命周期回归各 20 项通过。
+  - 新增实际 DEB conffiles 内容和对应安装路径的 CTest 检查。
+    使用原生 dh_installdeb 核对了 /etc 下配置的自动登记，无需修改 Debian 规则。
+  - 回归脚本与结果保存在当前会话 files/conffiles-lifecycle/ 和
+    files/package-lifecycle/，宿主机对应安装文件未改变。
 - [x] P1 执行当前安装包的隔离生命周期检查
   - Ubuntu 26.04 上使用非特权 Bubblewrap、临时写时复制目录及独立 dpkg
     数据库执行真实安装、包修订版升级、remove 和 purge。
-  - 共 19 项检查，17 项通过、2 项配置保留检查失败，待配置保护项修复。
+  - 初始 19 项检查中 17 项通过、2 项配置保留检查失败；
+    两项失败现已在配置保护项中修复并完成回归。
   - 已验证 CLI-only 包升级到 GUI 合包、安装后程序启动参数、桌面入口
     offscreen 启动、GUI 文件和 Qt 依赖、用户服务离线校验及 enable/disable。
   - 升级测试使用相同上游应用版本的包修订版 -1 到测试修订版 -2，

@@ -385,6 +385,13 @@ Ubuntu 26.04 包仍必须在 Ubuntu 26.04 环境中构建和测试；仅修改�
 运行依赖和平台插件；Ubuntu 24.04 包不包含 GUI，也不要求 Qt。
 arm64 不在本轮发布验证范围内。
 
+系统配置会登记为 Debian conffile，默认路径为
+`/etc/onedrive-cpp/onedrive-cpp.toml`。安装包升级会保留本地修改，
+或在随包默认配置变化时询问处理方式；普通卸载保留配置，
+`apt purge onedrive-cpp` 才删除配置。无人值守升级若要求保留本地配置，
+应显式选择 dpkg 的 `--force-confold` 策略，包括从未登记 conffile 的
+旧 CPack 包升级。直接使用 `cmake --install` 不具备 dpkg 的配置保护。
+
 ### 构建正式 Debian 包
 
 安装打包依赖：
