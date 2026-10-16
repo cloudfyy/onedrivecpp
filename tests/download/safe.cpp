@@ -1,5 +1,7 @@
 #include "support.hpp"
 
+#include <iterator>
+
 namespace {
 
 using namespace onedrive::test::download;
@@ -88,6 +90,51 @@ int test_safe() {
             (S_IRUSR | S_IWUSR | S_IRGRP)) {
         return fail("safeBackup copy did not preserve content and permissions");
     }
+    const auto long_extension_source = root / ("a." + std::string(245, 'x'));
+    onedrive::test::write_file(long_extension_source, "long extension");
+    const auto extension_backup = detail::preserve_displaced_backup(
+        safe_root, long_extension_source, long_extension_source
+    );
+    if (std::filesystem::exists(long_extension_source) ||
+        !extension_backup.path.extension().string().starts_with(
+            ".safeBackup-"
+        ) ||
+        extension_backup.path.filename().string().size() > 240 ||
+        onedrive::test::read_file(extension_backup.path) != "long extension") {
+        return fail(
+            "displaced backup did not safely shorten an oversized extension"
+        );
+    }
+    const auto same_stat_source = root / "same-stat.txt";
+    onedrive::test::write_file(same_stat_source, "old");
+    const auto same_stat_time =
+        std::filesystem::last_write_time(same_stat_source);
+    const auto same_stat_baseline =
+        detail::capture_local_file_baseline(same_stat_source);
+    onedrive::test::write_file(same_stat_source, "new");
+    std::filesystem::last_write_time(same_stat_source, same_stat_time);
+    const auto before_same_stat = std::distance(
+        std::filesystem::directory_iterator{root},
+        std::filesystem::directory_iterator{}
+    );
+    if (!onedrive::test::throws_with<detail::LocalModificationConflictError>(
+            [&] {
+                static_cast<void>(detail::preserve_safe_backup(
+                    safe_root, same_stat_source, same_stat_baseline
+                ));
+            },
+            "changed while creating safeBackup"
+        ) ||
+        onedrive::test::read_file(same_stat_source) != "new" ||
+        before_same_stat != std::distance(
+                                std::filesystem::directory_iterator{root},
+                                std::filesystem::directory_iterator{}
+                            )) {
+        return fail(
+            "safeBackup accepted changed content with unchanged size/time"
+        );
+    }
+
     const auto stale_source = root / "stale.txt";
     {
         std::ofstream output{stale_source, std::ios::binary};

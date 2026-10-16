@@ -280,6 +280,13 @@ ctest --test-dir build/debug -R '^(atomic_file_failure|filesystem_metadata_failu
 
 这些测试无需 Graph 凭据、浏览器或资源耗尽。
 
+`download_install_race_tests` 还通过包装 rename 和 fsync，覆盖回滚目标消失、
+回滚期间再次保存、回滚／目录刷盘失败、备份名称碰撞与耗尽、被交换文件消失，
+以及安装中断后的恢复。断言同时检查文件版本与保留的 journal，而非只检查异常。
+恢复警告、可选备份回调和异常旧版 journal 也有离线覆盖。
+`download_safe_tests` 检查大小／时间不变时的内容修改，以及超长备份扩展名；
+`local_filesystem_tests` 检查交换保留 inode 身份，并拒绝两侧父目录中的符号链接。
+
 授权与线协议回归还在编译期检查 PKCE 的全部 64 个状态转换组合，
 验证仅可移动的秘密清理（包括短字符串和异常展开），并用确定性的事件测试
 浏览器/Socket.IO 归约器。`auth_code_failure_tests` 通过测试程序专属的

@@ -321,6 +321,52 @@ int main() {
         return fail("safe no-replace rename overwrote an existing file");
     }
 
+    const auto exchange_source = root / "exchange-source.txt";
+    const auto exchange_destination = root / "exchange-destination.txt";
+    onedrive::test::write_file(exchange_source, "source");
+    onedrive::test::write_file(exchange_destination, "destination");
+    const auto source_identity = assigned_root.identity(
+        exchange_source, detail::FilesystemItemKind::file
+    );
+    const auto destination_identity = assigned_root.identity(
+        exchange_destination, detail::FilesystemItemKind::file
+    );
+    assigned_root.exchange(exchange_source, exchange_destination);
+    if (onedrive::test::read_file(exchange_source) != "destination" ||
+        onedrive::test::read_file(exchange_destination) != "source" ||
+        assigned_root
+                .identity(exchange_source, detail::FilesystemItemKind::file)
+                .inode != destination_identity.inode ||
+        assigned_root
+                .identity(
+                    exchange_destination, detail::FilesystemItemKind::file
+                )
+                .inode != source_identity.inode) {
+        return fail(
+            "atomic exchange did not preserve both contents and identities"
+        );
+    }
+    for (const bool unsafe_source : {false, true}) {
+        try {
+            assigned_root.exchange(
+                unsafe_source ? redirected / "outside.txt" : exchange_source,
+                unsafe_source ? exchange_destination
+                              : redirected / "outside.txt"
+            );
+            return fail(
+                "atomic exchange followed a symlinked parent directory"
+            );
+        } catch (const detail::SafePathConflictError&) {
+        }
+        if (onedrive::test::read_file(exchange_source) != "destination" ||
+            onedrive::test::read_file(exchange_destination) != "source" ||
+            std::filesystem::exists(attack_outside / "outside.txt")) {
+            return fail(
+                "rejected exchange modified an original or an outside path"
+            );
+        }
+    }
+
     const auto identity = assigned_root.identity(
         no_replace_source, detail::FilesystemItemKind::file
     );

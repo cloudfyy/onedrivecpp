@@ -662,7 +662,8 @@ endforeach()
 target_link_libraries(download_single_tests PRIVATE onedrive_cli)
 target_link_libraries(download_resume_tests PRIVATE spdlog::spdlog)
 target_link_options(
-    download_install_race_tests PRIVATE -Wl,--wrap=renameat -Wl,--wrap=renameat2
+    download_install_race_tests PRIVATE
+    -Wl,--wrap=renameat -Wl,--wrap=renameat2 -Wl,--wrap=fsync
 )
 add_onedrive_test(
     download_integrity_tests

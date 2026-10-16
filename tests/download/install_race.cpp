@@ -1,5 +1,8 @@
 #include "support.hpp"
+#include "sync/download/installation.hpp"
+#include "onedrive/ui/common/observer.hpp"
 
+#include <algorithm>
 #include <cerrno>
 #include <fcntl.h>
 #include <linux/fs.h>
@@ -12,8 +15,11 @@ namespace detail = onedrive::sync::detail;
 using Policy = onedrive::config::LocalConflictPolicy;
 
 std::function<void(unsigned)> before_rename;
+std::function<void()> before_sync;
+std::function<int(std::string_view)> backup_rename;
 int rename_error = 0;
 unsigned rejected_renames = 0;
+unsigned failing_sync = 0;
 
 void require(bool condition, const char* message) {
     if (!condition) {
@@ -60,11 +66,18 @@ struct RaceFixture {
 
     ~RaceFixture() {
         before_rename = {};
+        before_sync = {};
+        backup_rename = {};
         rename_error = 0;
         rejected_renames = 0;
+        failing_sync = 0;
     }
 
-    void commit(Policy policy) {
+    void commit(
+        Policy policy,
+        std::move_only_function<void(const std::filesystem::path&)>
+            backup_created = {}
+    ) {
         static_cast<void>(detail::commit_download(
             items,
             fixture.safe_root,
@@ -80,7 +93,10 @@ struct RaceFixture {
                 fixture.space,
                 {}
             ),
-            {.local_conflict = policy}
+            {
+                .local_conflict = policy,
+                .backup_created = std::move(backup_created),
+            }
         ));
     }
 
@@ -487,6 +503,384 @@ void test_wrong_journal_size(bool exchanged) {
     );
 }
 
+void test_installation_guards(bool same_path) {
+    RaceFixture test;
+    auto pending = test.journal(true);
+    const auto temporary = pending.temporary_path;
+    if (same_path) {
+        pending.temporary_path = test.destination;
+        require(
+            onedrive::test::throws_with<std::invalid_argument>(
+                [&] {
+                    detail::install_pending_download(
+                        test.items,
+                        test.fixture.safe_root,
+                        pending,
+                        Policy::block
+                    );
+                },
+                "must be distinct"
+            ),
+            "installation accepted overlapping source and destination"
+        );
+    } else {
+        pending.item.local_path = test.destination / "child.txt";
+        bool refused = false;
+        try {
+            detail::install_pending_download(
+                test.items, test.fixture.safe_root, pending, Policy::block
+            );
+        } catch (const std::filesystem::filesystem_error& error) {
+            refused = error.code() == std::errc::not_a_directory;
+        }
+        require(refused, "installation hid a destination inspection failure");
+    }
+    require(
+        onedrive::test::read_file(test.destination) == "old" &&
+            onedrive::test::read_file(temporary) == "data",
+        "invalid installation paths modified file contents"
+    );
+}
+
+void test_deleted_destination_recovery(Policy policy) {
+    RaceFixture test;
+    const auto pending = test.journal(true);
+    std::filesystem::remove(test.destination);
+    require(
+        onedrive::test::throws_with<detail::LocalModificationConflictError>(
+            [&] { test.recover(policy); }, "local file changed"
+        ) && !std::filesystem::exists(test.destination) &&
+            onedrive::test::read_file(pending.temporary_path) == "data" &&
+            test.fixture.items.pending.contains("race"),
+        "recovery recreated a deleted original or discarded its journal"
+    );
+}
+
+void test_rollback_boundary(bool new_file, bool io_error) {
+    RaceFixture test;
+    onedrive::test::write_file(test.destination, "old");
+    unsigned exchanges = 0;
+    before_rename = [&](unsigned flags) {
+        if (flags == RENAME_EXCHANGE && ++exchanges == 1) {
+            onedrive::test::write_file(test.destination, "USER-EDIT");
+        } else if (flags == RENAME_EXCHANGE && exchanges == 2) {
+            if (io_error) {
+                rename_error = EIO;
+            } else {
+                std::filesystem::remove(test.destination);
+            }
+        } else if (flags == RENAME_NOREPLACE && new_file) {
+            onedrive::test::write_file(test.destination, "SECOND-EDIT");
+        }
+    };
+    require(
+        onedrive::test::throws_with<std::runtime_error>(
+            [&] { test.commit(Policy::block); },
+            io_error ? "cannot atomically exchange" : "local file changed"
+        ),
+        "rollback failure did not propagate the expected error"
+    );
+    const auto pending = test.fixture.items.pending.at("race");
+    require(
+        onedrive::test::read_file(test.destination) ==
+                (io_error ? "data" : "USER-EDIT") &&
+            (io_error || new_file
+                 ? onedrive::test::read_file(pending.temporary_path) ==
+                       (io_error ? "USER-EDIT" : "SECOND-EDIT")
+                 : !std::filesystem::exists(pending.temporary_path)),
+        "rollback lost a local version at the missing-destination boundary"
+    );
+    before_rename = {};
+    rename_error = 0;
+    if (io_error) {
+        require(
+            onedrive::test::throws_with<detail::LocalModificationConflictError>(
+                [&] { test.recover(Policy::block); }, "local file changed"
+            ) && onedrive::test::read_file(test.destination) == "USER-EDIT",
+            "recovery failed to restore the edit after a failed rollback"
+        );
+    }
+}
+
+void test_interrupted_exchange(unsigned sync_number, bool remove_displaced) {
+    RaceFixture test;
+    onedrive::test::write_file(test.destination, "old");
+    before_rename = [&](unsigned flags) {
+        if (flags == RENAME_EXCHANGE) {
+            if (remove_displaced) {
+                before_sync = [&] {
+                    if (std::filesystem::exists(
+                            test.fixture.items.pending.at("race").temporary_path
+                        )) {
+                        std::filesystem::remove(
+                            test.fixture.items.pending.at("race").temporary_path
+                        );
+                    }
+                };
+            } else {
+                failing_sync = sync_number;
+            }
+        }
+    };
+    require(
+        onedrive::test::throws_with<std::runtime_error>(
+            [&] { test.commit(Policy::block); },
+            remove_displaced ? "local file changed" : "cannot flush"
+        ),
+        "interrupted exchange was reported as committed"
+    );
+    const auto pending = test.fixture.items.pending.at("race");
+    require(
+        onedrive::test::read_file(test.destination) == "data" &&
+            (remove_displaced || sync_number == 2
+                 ? !std::filesystem::exists(pending.temporary_path)
+                 : onedrive::test::read_file(pending.temporary_path) == "old"),
+        "interrupted exchange left unexpected filesystem state"
+    );
+    before_rename = {};
+    before_sync = {};
+    failing_sync = 0;
+    test.recover(Policy::block);
+    require(
+        test.fixture.items.pending.empty() &&
+            onedrive::test::read_file(test.destination) == "data",
+        "exchange interruption could not recover from its retained journal"
+    );
+}
+
+void test_displaced_backup_collision(bool exhausted) {
+    RaceFixture test;
+    onedrive::test::write_file(test.destination, "old");
+    bool edited = false;
+    before_rename = [&](unsigned flags) {
+        if (flags == RENAME_EXCHANGE && !std::exchange(edited, true)) {
+            onedrive::test::write_file(test.destination, "USER-EDIT");
+        }
+    };
+    unsigned attempts = 0;
+    std::filesystem::path collision;
+    backup_rename = [&](std::string_view name) {
+        ++attempts;
+        if (exhausted) {
+            return EEXIST;
+        }
+        if (attempts == 1) {
+            collision = test.fixture.root / name;
+            onedrive::test::write_file(collision, "EXISTING-BACKUP");
+        }
+        return 0;
+    };
+    if (exhausted) {
+        require(
+            onedrive::test::throws_with<std::runtime_error>(
+                [&] { test.commit(Policy::backup); },
+                "cannot allocate a unique displaced safeBackup"
+            ) && attempts == 9999 &&
+                onedrive::test::read_file(test.destination) == "USER-EDIT" &&
+                onedrive::test::read_file(
+                    test.fixture.items.pending.at("race").temporary_path
+                ) == "data" &&
+                backups(test.fixture).empty(),
+            "backup-name exhaustion lost data or skipped the retry limit"
+        );
+    } else {
+        std::filesystem::path published;
+        test.commit(Policy::backup, [&](const auto& path) {
+            published = path;
+        });
+        require(
+            attempts == 2 && !published.empty() && published != collision &&
+                onedrive::test::read_file(published) == "USER-EDIT" &&
+                onedrive::test::read_file(collision) == "EXISTING-BACKUP" &&
+                onedrive::test::read_file(test.destination) == "data",
+            "backup-name collision overwrote an existing backup or hid "
+            "notification"
+        );
+    }
+}
+
+void test_displaced_backup_disappears() {
+    RaceFixture test;
+    onedrive::test::write_file(test.destination, "old");
+    bool edited = false;
+    before_rename = [&](unsigned flags) {
+        if (flags == RENAME_EXCHANGE && !std::exchange(edited, true)) {
+            onedrive::test::write_file(test.destination, "USER-EDIT");
+        }
+    };
+    std::filesystem::path published;
+    backup_rename = [&](std::string_view name) {
+        published = test.fixture.root / name;
+        before_sync = [&] {
+            if (std::filesystem::exists(published)) {
+                std::filesystem::remove(published);
+            }
+        };
+        return 0;
+    };
+    require(
+        onedrive::test::throws_with<detail::LocalModificationConflictError>(
+            [&] { test.commit(Policy::backup); },
+            "displaced safeBackup disappeared"
+        ) && !published.empty() &&
+            !std::filesystem::exists(published) &&
+            onedrive::test::read_file(test.destination) == "data" &&
+            test.fixture.items.pending.contains("race"),
+        "vanished displaced backup was silently accepted"
+    );
+}
+
+void test_backup_flush_failure() {
+    RaceFixture test;
+    const auto pending = test.journal(true);
+    onedrive::test::write_file(test.destination, "USER-EDIT");
+    failing_sync = 1;
+    require(
+        onedrive::test::throws_with<std::runtime_error>(
+            [&] { test.recover(Policy::backup); }, "cannot flush safeBackup"
+        ) && onedrive::test::read_file(test.destination) == "USER-EDIT" &&
+            onedrive::test::read_file(pending.temporary_path) == "data" &&
+            test.fixture.items.pending.contains("race") &&
+            backups(test.fixture).empty(),
+        "failed backup flush discarded local data or left partial backup files"
+    );
+    failing_sync = 0;
+    test.recover(Policy::backup);
+    check_edit_result(test, Policy::backup, false);
+}
+
+void test_backup_without_callback() {
+    RaceFixture test;
+    auto pending = test.journal(true);
+    test.fixture.safe_root.exchange(pending.temporary_path, test.destination);
+    onedrive::test::write_file(pending.temporary_path, "USER-EDIT");
+    detail::install_pending_download(
+        test.items, test.fixture.safe_root, pending, Policy::backup
+    );
+    require(
+        onedrive::test::read_file(pending.backup_path) == "USER-EDIT" &&
+            !std::filesystem::exists(pending.temporary_path) &&
+            test.fixture.items.pending.at("race").backup_path ==
+                pending.backup_path,
+        "installation without a callback failed to journal its local backup"
+    );
+    test.recover(Policy::backup);
+    check_edit_result(test, Policy::backup, false);
+}
+
+class RecoveryObserver final : public onedrive::events::Observer {
+public:
+    mutable std::vector<onedrive::events::MessageEvent> messages;
+    mutable std::vector<onedrive::events::FileOperationEvent> operations;
+
+private:
+    void on_event(const onedrive::events::Event& event) const override {
+        if (const auto* message =
+                std::get_if<onedrive::events::MessageEvent>(&event)) {
+            messages.push_back(*message);
+        }
+        if (const auto* operation =
+                std::get_if<onedrive::events::FileOperationEvent>(&event)) {
+            operations.push_back(*operation);
+        }
+    }
+};
+
+void test_recovery_backup_notification() {
+    RaceFixture test;
+    const auto pending = test.journal(true);
+    test.fixture.safe_root.exchange(pending.temporary_path, test.destination);
+    onedrive::test::write_file(pending.temporary_path, "USER-EDIT");
+    RecoveryObserver observer;
+    detail::recover_pending_downloads(
+        test.items,
+        test.fixture.safe_root,
+        "me",
+        test.fixture.metadata,
+        onedrive::config::SyncPermissionsMode::private_access,
+        &observer,
+        Policy::backup
+    );
+    const auto saved = backups(test.fixture);
+    require(
+        saved.size() == 1 &&
+            std::ranges::any_of(
+                observer.messages,
+                [&](const auto& message) {
+                    return message.kind ==
+                               onedrive::events::MessageKind::warning &&
+                           message.event == "local_conflict_backed_up" &&
+                           message.text.contains(saved.front().string());
+                }
+            ) &&
+            observer.operations.size() == 1 &&
+            observer.operations[0].recovered &&
+            observer.operations[0].action ==
+                onedrive::events::FileAction::downloaded,
+        "recovery did not publish the backup warning and recovered operation"
+    );
+    check_edit_result(test, Policy::backup, false);
+}
+
+void test_invalid_backup_journals() {
+    RaceFixture test;
+    auto pending = test.journal(true);
+    const auto backup = test.fixture.root / "race.safeBackup.txt";
+    const auto fingerprint = pending.replacement_fingerprint;
+    const std::vector<std::pair<std::filesystem::path, std::string>> invalid{
+        {{}, fingerprint},
+        {backup, {}},
+        {backup, std::string(64, 'g')},
+        {backup, std::string(64, 'G')},
+        {backup, std::string(64, '/')},
+        {test.fixture.temporary.path() / "outside.txt", fingerprint},
+        {test.destination, fingerprint},
+        {pending.temporary_path, fingerprint},
+    };
+    for (const auto& [path, hash] : invalid) {
+        pending.backup_path = path;
+        pending.backup_fingerprint = hash;
+        test.fixture.items.save_pending_download(pending);
+        require(
+            onedrive::test::throws_with<std::runtime_error>(
+                [&] { test.recover(Policy::backup); },
+                "invalid safeBackup metadata"
+            ) && onedrive::test::read_file(test.destination) == "old" &&
+                onedrive::test::read_file(pending.temporary_path) == "data" &&
+                test.fixture.items.pending.contains("race"),
+            "invalid backup journal modified or discarded local state"
+        );
+    }
+}
+
+void test_legacy_path_types(bool temporary_link, bool directory) {
+    RaceFixture test;
+    const auto pending = test.journal(true, true);
+    const auto changed =
+        temporary_link ? pending.temporary_path : test.destination;
+    std::filesystem::remove(changed);
+    const auto outside = test.fixture.temporary.path() / "outside.txt";
+    onedrive::test::write_file(outside, "OUTSIDE");
+    if (directory) {
+        std::filesystem::create_directory(changed);
+        onedrive::test::write_file(changed / "child", "CHILD");
+    } else {
+        std::filesystem::create_symlink(outside, changed);
+    }
+    require(
+        onedrive::test::throws_with<std::runtime_error>(
+            [&] { test.recover(Policy::backup); },
+            directory ? "not a regular file" : "symbolic link"
+        ) && onedrive::test::read_file(outside) == "OUTSIDE" &&
+            (directory ? onedrive::test::read_file(changed / "child") == "CHILD"
+                       : std::filesystem::is_symlink(
+                             std::filesystem::symlink_status(changed)
+                         )) &&
+            test.fixture.items.pending.contains("race"),
+        "legacy recovery followed or removed an unsupported local path"
+    );
+}
+
 } // namespace
 
 extern "C" int __real_renameat(int, const char*, int, const char*);
@@ -514,12 +908,32 @@ extern "C" int __wrap_renameat2(
     unsigned flags
 ) {
     inject(destination, flags);
+    if (backup_rename &&
+        std::string_view{destination}.contains(".safeBackup-")) {
+        const int error = backup_rename(destination);
+        if (error != 0) {
+            errno = error;
+            return -1;
+        }
+    }
     if (reject_rename(destination)) {
         return -1;
     }
     return __real_renameat2(
         source_directory, source, destination_directory, destination, flags
     );
+}
+
+extern "C" int __real_fsync(int);
+extern "C" int __wrap_fsync(int descriptor) {
+    if (before_sync) {
+        before_sync();
+    }
+    if (failing_sync != 0 && --failing_sync == 0) {
+        errno = EIO;
+        return -1;
+    }
+    return __real_fsync(descriptor);
 }
 
 int main() {
@@ -538,6 +952,7 @@ int main() {
             test_path_type_change(policy, false);
             test_path_type_change(policy, true);
             test_late_deletion(policy);
+            test_deleted_destination_recovery(policy);
         }
         test_second_edit_during_rollback();
         test_missing_backup_recovery();
@@ -548,7 +963,24 @@ int main() {
         for (const bool state : {false, true}) {
             test_invalid_exchange_journal(state);
             test_wrong_journal_size(state);
+            test_installation_guards(state);
         }
+        test_rollback_boundary(false, false);
+        test_rollback_boundary(true, false);
+        test_rollback_boundary(false, true);
+        test_interrupted_exchange(1, false);
+        test_interrupted_exchange(2, false);
+        test_interrupted_exchange(0, true);
+        test_displaced_backup_collision(false);
+        test_displaced_backup_collision(true);
+        test_displaced_backup_disappears();
+        test_backup_flush_failure();
+        test_backup_without_callback();
+        test_recovery_backup_notification();
+        test_invalid_backup_journals();
+        test_legacy_path_types(false, false);
+        test_legacy_path_types(true, false);
+        test_legacy_path_types(false, true);
         return EXIT_SUCCESS;
     } catch (const std::exception& error) {
         return fail(error.what());

@@ -490,6 +490,16 @@ ctest --test-dir build/debug -R '^(atomic_file_failure|filesystem_metadata_failu
 
 These tests do not require Graph credentials, a browser, or resource exhaustion.
 
+`download_install_race_tests` also wraps rename and fsync calls to cover missing
+rollback targets, a second save during rollback, failed rollback/directory flush,
+backup-name collisions and exhaustion, disappearing displaced files, and
+interrupted-install recovery. Assertions check both file versions and retained
+journals, not only exceptions. Recovery warnings, optional backup callbacks, and
+malformed legacy journals are covered offline. `download_safe_tests` checks
+same-size/same-time content changes and oversized backup extensions;
+`local_filesystem_tests` verifies exchange preserves inode identity and rejects
+symlinked parents on both sides.
+
 The authorization/wire-protocol regressions additionally check all 64 PKCE
 transition pairs at compile time, move-only secret cleanup (including small
 strings and exception unwinding), and deterministic browser/Socket.IO reducer
