@@ -7,7 +7,7 @@ Ubuntu 24.04 LTS and later. Its separation of responsibilities is inspired by
 [abraunegg/onedrive](https://github.com/abraunegg/onedrive), but it does not
 copy the reference project's D implementation.
 
-The current version is **1.0.0**. CLI, TUI, GUI, user-agent and CPack versions
+The current version is **1.0.1**. CLI, TUI, GUI, user-agent and CPack versions
 are generated from `version-semver` in `vcpkg.json`; Debian source packaging
 records its distribution-specific version separately in `debian/changelog`.
 
@@ -460,7 +460,7 @@ tests. The generated `.deb` is placed in the parent directory of the project,
 for example:
 
 ```text
-../onedrive-cpp_1.0.0-1~ubuntu24.04_amd64.deb
+../onedrive-cpp_1.0.1-1~ubuntu24.04_amd64.deb
 ```
 
 The Debian changelog carries the native build distribution suffix. When

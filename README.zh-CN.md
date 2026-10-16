@@ -7,7 +7,7 @@
 [abraunegg/onedrive](https://github.com/abraunegg/onedrive) 的职责划分，但未
 复制其 D 语言实现。
 
-当前版本为 **1.0.0**。CLI、TUI、GUI、User-Agent 和 CPack 版本统一从
+当前版本为 **1.0.1**。CLI、TUI、GUI、User-Agent 和 CPack 版本统一从
 `vcpkg.json` 的 `version-semver` 生成；Debian 源码打包的发行版版本另记于
 `debian/changelog`。
 
@@ -383,7 +383,7 @@ dpkg-buildpackage --build=binary --no-sign
 目录的上一级，例如：
 
 ```text
-../onedrive-cpp_1.0.0-1~ubuntu24.04_amd64.deb
+../onedrive-cpp_1.0.1-1~ubuntu24.04_amd64.deb
 ```
 
 Debian changelog 保留原生构建的发行版后缀。将来增加 Ubuntu 26.04 支持时，应
