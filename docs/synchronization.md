@@ -188,6 +188,15 @@ synchronized. Bidirectional synchronization uses its normal upload scan to
 detect and upload that change; download-only mode retains the validated baseline
 without uploading the local edit.
 
+In bidirectional mode, a same-path Delta echo with an unchanged ETag or matching
+nonempty cTag does not turn an edited local regular file into a download
+conflict. The client updates remote metadata but retains the trusted local
+snapshot so the normal upload scan can upload the edit, without blocking or
+creating a safeBackup. Existing automatic blocked-item retries can also clear
+conflicts caused by earlier unchanged echoes. Changed remote content and
+download-only mode keep their configured conflict policy; path and file-type
+protection still applies.
+
 The client refuses to overwrite a local file that it cannot prove is
 unchanged. Before downloading, it captures the destination's existence, size,
 modification time, and SHA-256 fingerprint, then checks that baseline before

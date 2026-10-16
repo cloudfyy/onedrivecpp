@@ -1243,6 +1243,7 @@ int test_pending_upload_recovery_conflict() {
     const auto prepare_graph = [](FakeGraphClient& graph) {
         graph.upload_conflict = true;
         graph.lookup_item = file("remote-conflict", "conflict.txt", 7);
+        graph.lookup_item->etag = "remote-updated-etag";
         graph.changes = {graph.lookup_item.value()};
         graph.contents.emplace("remote-conflict", "changed");
     };
@@ -1337,6 +1338,7 @@ int test_pending_upload_recovery_conflict() {
     FakeGraphClient size_graph;
     size_graph.upload_conflict = true;
     size_graph.lookup_item = file("remote-conflict", "conflict.txt", 8);
+    size_graph.lookup_item->etag = "remote-updated-etag";
     size_graph.changes = {size_graph.lookup_item.value()};
     size_graph.contents.emplace("remote-conflict", "remote!!");
     FakeMetrics size_metrics;
@@ -1352,6 +1354,50 @@ int test_pending_upload_recovery_conflict() {
         size_items.applied_delta.blocked_upserts.size() != 1 ||
         !size_metrics.last_success) {
         return fail("different-size upload conflict was not reconciled safely");
+    }
+
+    const auto unchanged_root =
+        temporary.path() / "pending-upload-unchanged-echo";
+    FakeItemStore unchanged_items;
+    const auto unchanged_snapshot =
+        prepare_conflict(unchanged_root, unchanged_items);
+    FakeGraphClient unchanged_graph;
+    unchanged_graph.upload_conflict = true;
+    unchanged_graph.lookup_item = file("remote-conflict", "conflict.txt", 4);
+    unchanged_graph.delta_override = [&](const auto&) {
+        unchanged_graph.upload_conflict = false;
+        return onedrive::graph::DeltaResult{
+            .changes = {unchanged_graph.lookup_item.value()},
+            .delta_link = "next",
+        };
+    };
+    FakeMetrics unchanged_metrics;
+    auto unchanged_config = config_for(unchanged_root, false);
+    unchanged_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
+    if (onedrive::sync::SyncEngine{
+            unchanged_config,
+            unchanged_graph,
+            unchanged_items,
+            unchanged_metrics,
+            &default_console
+        }
+                .synchronize() != exit_code::success ||
+        !unchanged_items.pending_uploads_by_path.empty() ||
+        !unchanged_items.blocked.empty() ||
+        std::filesystem::exists(unchanged_snapshot) ||
+        unchanged_graph.download_count != 0 ||
+        unchanged_graph.upload_count != 2 ||
+        onedrive::test::read_file(unchanged_root / "conflict.txt") !=
+            "payload" ||
+        !unchanged_metrics.last_success) {
+        return fail("unchanged recovery Delta echo blocked the local upload");
+    }
+    const auto updated = unchanged_items.find("me", "remote-conflict");
+    if (!updated || updated->local_size != 7 ||
+        updated->etag != "uploaded-etag-2") {
+        return fail(
+            "reconciled local upload did not replace its trusted snapshot"
+        );
     }
     return EXIT_SUCCESS;
 }

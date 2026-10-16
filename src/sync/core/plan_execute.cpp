@@ -20,6 +20,7 @@
 
 #include <filesystem>
 #include <string>
+#include <string_view>
 #include <system_error>
 #include <unordered_set>
 #include <utility>
@@ -150,18 +151,19 @@ ExecutionSummary execute_plan(
                                       detail::remote_content_version_matches(
                                           *previous, item.etag, item.ctag
                                       );
-        const auto retain_local_deletion = [&] {
+        const auto retain_local_change = [&](std::string_view change) {
             state.local_size = previous->local_size;
             state.local_modified_ticks = previous->local_modified_ticks;
             state.local_device = previous->local_device;
             state.local_inode = previous->local_inode;
             spdlog::info(
-                "Retaining local deletion of unchanged remote file '{}'",
+                "Retaining local {} of unchanged remote file '{}'",
+                change,
                 item.remote_path
             );
         };
         if (unchanged_remote && detail::local_path_is_missing(destination)) {
-            retain_local_deletion();
+            retain_local_change("deletion");
             continue;
         }
         try {
@@ -205,6 +207,13 @@ ExecutionSummary execute_plan(
             const auto target_status =
                 detail::inspect_download_target(previous, item, destination);
             bool preserve_local = target_status.preserve_local;
+            if (unchanged_remote && preserve_local &&
+                std::filesystem::is_regular_file(
+                    std::filesystem::symlink_status(destination)
+                )) {
+                retain_local_change("modification");
+                continue;
+            }
             if (preserve_local &&
                 local_conflict == config::LocalConflictPolicy::block) {
                 spdlog::warn(
@@ -254,8 +263,10 @@ ExecutionSummary execute_plan(
                     );
                     continue;
                 }
-                if (unchanged_remote && !baseline.existed) {
-                    retain_local_deletion();
+                if (unchanged_remote) {
+                    retain_local_change(
+                        baseline.existed ? "modification" : "deletion"
+                    );
                     continue;
                 }
                 if (baseline.existed &&
@@ -298,7 +309,7 @@ ExecutionSummary execute_plan(
                 !detail::local_path_is_missing(destination)) {
                 throw;
             }
-            retain_local_deletion();
+            retain_local_change("deletion");
         }
     }
     detail::order_transfers(

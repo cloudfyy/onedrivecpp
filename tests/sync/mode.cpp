@@ -60,6 +60,233 @@ int test_missing_file_delta_echo() {
     return EXIT_SUCCESS;
 }
 
+int test_modified_file_delta_echo(bool retry_blocked) {
+    TemporaryDirectory temporary;
+    const onedrive::cli::Console console{{.quiet = true}};
+    for (const bool download_only : {false, true}) {
+        for (const bool backup : {false, true}) {
+            for (const int version : {0, 1, 2, 3}) {
+                for (const bool same_size : {false, true}) {
+                    const bool remote_changed = version == 1 || version == 3;
+                    const auto label =
+                        std::to_string(download_only) + std::to_string(backup) +
+                        std::to_string(version) + std::to_string(same_size);
+                    const auto root = temporary.path() / label;
+                    std::filesystem::create_directories(root);
+                    const auto destination = root / "file.txt";
+                    onedrive::test::write_file(destination, "data");
+                    auto previous = tracked_item(root, "file", "file.txt");
+                    if (version >= 2) {
+                        previous.ctag = "content-v1";
+                    }
+                    FakeItemStore items;
+                    items.saved_delta_link = "saved";
+                    items.items.emplace("file", previous);
+                    const std::string edited =
+                        same_size ? "EDIT" : "local-edit";
+                    const auto edited_time =
+                        std::filesystem::last_write_time(destination) +
+                        std::chrono::seconds{1};
+                    onedrive::test::write_file(destination, edited);
+                    std::filesystem::last_write_time(destination, edited_time);
+                    auto remote = file("file", "file.txt", 4);
+                    if (version != 0) {
+                        remote.etag = "new-etag";
+                    }
+                    if (version >= 2) {
+                        remote.ctag =
+                            remote_changed ? "content-v2" : "content-v1";
+                    }
+                    FakeGraphClient graph;
+                    if (retry_blocked) {
+                        items.blocked.push_back({
+                            .drive_id = "me",
+                            .remote_id = remote.id,
+                            .parent_id = remote.parent_id,
+                            .name = remote.name,
+                            .etag = remote.etag,
+                            .ctag = remote.ctag,
+                            .remote_path = remote.remote_path,
+                            .last_modified = remote.last_modified,
+                            .size = remote.size,
+                            .reason_code = "local_modification",
+                            .reason_message = "previous conflict",
+                            .attempt_count = 1,
+                        });
+                    } else {
+                        graph.changes = {remote};
+                    }
+                    const std::string remote_contents =
+                        remote_changed ? "next" : "data";
+                    graph.contents["file"] = remote_contents;
+                    std::string uploaded;
+                    graph.during_upload = [&] {
+                        if (items.pending_uploads_by_path.size() != 1) {
+                            throw std::runtime_error{
+                                "expected one journaled upload snapshot"
+                            };
+                        }
+                        uploaded = onedrive::test::read_file(
+                            items.pending_uploads_by_path.begin()
+                                ->second.snapshot_path
+                        );
+                    };
+                    FakeMetrics metrics;
+                    auto config = config_for(root, false);
+                    config.sync_mode =
+                        download_only ? onedrive::sync::SyncMode::download_only
+                                      : onedrive::sync::SyncMode::bidirectional;
+                    config.local_conflict =
+                        backup ? onedrive::config::LocalConflictPolicy::backup
+                               : onedrive::config::LocalConflictPolicy::block;
+                    const auto synchronize = [&] {
+                        return onedrive::sync::SyncEngine{
+                            config, graph, items, metrics, &console
+                        }
+                            .synchronize();
+                    };
+                    const bool local_update = !download_only && !remote_changed;
+                    const bool downloads = !local_update && backup;
+                    const bool blocked = !local_update && !backup;
+                    const auto result = synchronize();
+                    std::filesystem::path preserved;
+                    unsigned backups = 0;
+                    for (const auto& entry :
+                         std::filesystem::directory_iterator{root}) {
+                        if (entry.path().filename().string().starts_with(
+                                "file.safeBackup-"
+                            )) {
+                            preserved = entry.path();
+                            ++backups;
+                        }
+                    }
+                    if (result != (blocked ? exit_code::blocked
+                                           : exit_code::success) ||
+                        graph.download_count != (downloads ? 1 : 0) ||
+                        graph.upload_count != (local_update ? 1 : 0) ||
+                        !graph.deleted_items.empty() ||
+                        items.blocked.size() != (blocked ? 1U : 0U) ||
+                        (blocked && items.blocked.front().reason_code !=
+                                        "local_modification") ||
+                        backups != (downloads ? 1U : 0U) ||
+                        (downloads &&
+                         onedrive::test::read_file(preserved) != edited) ||
+                        (local_update && uploaded != edited) ||
+                        onedrive::test::read_file(destination) !=
+                            (downloads ? remote_contents : edited) ||
+                        !items.pending.empty() ||
+                        !items.pending_uploads_by_path.empty()) {
+                        return fail(
+                            "modified-file Delta echo changed upload or "
+                            "conflict semantics: " +
+                            label + ", retry " + std::to_string(retry_blocked)
+                        );
+                    }
+                    if (!local_update) {
+                        continue;
+                    }
+                    const auto saved = std::ranges::find(
+                        items.applied_delta.upserts,
+                        "file",
+                        &onedrive::storage::ItemState::remote_id
+                    );
+                    if (saved == items.applied_delta.upserts.end() ||
+                        saved->local_size != previous.local_size ||
+                        saved->local_modified_ticks !=
+                            previous.local_modified_ticks ||
+                        saved->etag != remote.etag ||
+                        saved->ctag != remote.ctag ||
+                        graph.uploaded_paths !=
+                            std::vector<std::string>{"file.txt"}) {
+                        return fail(
+                            "unchanged Delta echo lost the trusted local "
+                            "baseline or current remote metadata"
+                        );
+                    }
+                    graph.changes.clear();
+                    const auto updated = items.find("me", "file");
+                    if (!updated || updated->etag != "uploaded-etag-1" ||
+                        updated->local_size !=
+                            static_cast<std::int64_t>(edited.size()) ||
+                        updated->local_modified_ticks !=
+                            std::chrono::duration_cast<
+                                std::chrono::nanoseconds>(
+                                edited_time.time_since_epoch()
+                            )
+                                .count()) {
+                        return fail(
+                            "local upload did not commit its edited snapshot"
+                        );
+                    }
+                    if (synchronize() != exit_code::success ||
+                        graph.upload_count != 1 || graph.download_count != 0 ||
+                        !items.blocked.empty() ||
+                        onedrive::test::read_file(destination) != edited) {
+                        return fail(
+                            "unchanged Delta echo repeated or lost a local "
+                            "upload"
+                        );
+                    }
+                }
+            }
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_unchanged_echo_preserves_path_conflicts() {
+    const onedrive::cli::Console console{{.quiet = true}};
+    for (const bool symbolic_link : {false, true}) {
+        for (const bool backup : {false, true}) {
+            TemporaryDirectory temporary;
+            const auto root = temporary.path() / "sync";
+            std::filesystem::create_directory(root);
+            const auto destination = root / "file.txt";
+            const auto outside = temporary.path() / "outside.txt";
+            onedrive::test::write_file(destination, "data");
+            onedrive::test::write_file(outside, "outside");
+            FakeItemStore items;
+            items.saved_delta_link = "saved";
+            items.items.emplace("file", tracked_item(root, "file", "file.txt"));
+            std::filesystem::remove(destination);
+            if (symbolic_link) {
+                std::filesystem::create_symlink(outside, destination);
+            } else {
+                std::filesystem::create_directory(destination);
+            }
+            FakeGraphClient graph;
+            graph.changes = {file("file", "file.txt", 4)};
+            graph.contents["file"] = "data";
+            FakeMetrics metrics;
+            auto config = config_for(root, false);
+            config.sync_mode = onedrive::sync::SyncMode::bidirectional;
+            config.local_conflict =
+                backup ? onedrive::config::LocalConflictPolicy::backup
+                       : onedrive::config::LocalConflictPolicy::block;
+            if (onedrive::sync::SyncEngine{
+                    config, graph, items, metrics, &console
+                }
+                        .synchronize() != exit_code::blocked ||
+                graph.download_count != 0 || graph.upload_count != 0 ||
+                !graph.deleted_items.empty() ||
+                onedrive::test::read_file(outside) != "outside" ||
+                (symbolic_link ? !std::filesystem::is_symlink(destination)
+                               : !std::filesystem::is_directory(destination)) ||
+                std::ranges::none_of(items.blocked, [&](const auto& item) {
+                    return item.remote_id == "file" &&
+                           item.reason_code == (!symbolic_link && !backup
+                                                    ? "local_modification"
+                                                    : "local_path_conflict");
+                })) {
+                return fail(
+                    "unchanged Delta echo bypassed local path protection"
+                );
+            }
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_upload_only() {
     TemporaryDirectory temporary;
     const auto root = temporary.path() / "upload-only";
@@ -280,6 +507,16 @@ int test_download_only_preserves_and_untracks_local_items() {
 
 int main() {
     if (const auto result = test_missing_file_delta_echo();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    for (const bool retry_blocked : {false, true}) {
+        if (const auto result = test_modified_file_delta_echo(retry_blocked);
+            result != EXIT_SUCCESS) {
+            return result;
+        }
+    }
+    if (const auto result = test_unchanged_echo_preserves_path_conflicts();
         result != EXIT_SUCCESS) {
         return result;
     }
