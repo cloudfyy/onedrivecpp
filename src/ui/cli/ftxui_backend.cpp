@@ -514,16 +514,18 @@ private:
         );
     }
 
-    Element download_status() const {
-        return transfer_status(*download_, download_->downloaded, "DOWNLOADS");
-    }
-
     template <typename Progress>
     Element transfer_status(
-        const Progress& transfer, std::uint64_t bytes, std::string_view title
+        const Progress& transfer,
+        std::uint64_t bytes,
+        std::string_view title,
+        bool compact = false
     ) const {
         if (transfer.total == 0 && transfer.file_count == 0 &&
             transfer.state == util::ProgressState::ongoing) {
+            if (compact) {
+                return text(std::string{title} + " // totals unknown");
+            }
             return vbox({
                        emphasized(text(std::string{title})),
                        text("Totals unknown; percentage unavailable."),
@@ -567,15 +569,19 @@ private:
                     : "calculating..."
             );
         }
+        const auto heading = fmt::format(
+            "{}  {}/{} files",
+            title,
+            transfer.completed_files,
+            transfer.file_count
+        );
+        if (compact) {
+            return with_color(
+                text(heading + " // " + details), palette_.primary
+            );
+        }
         return vbox({
-                   emphasized(text(
-                       fmt::format(
-                           "{}  {}/{} files",
-                           title,
-                           transfer.completed_files,
-                           transfer.file_count
-                       )
-                   )),
+                   emphasized(text(heading)),
                    hbox({
                        text("["),
                        std::move(progress) | flex,
@@ -649,23 +655,77 @@ private:
     }
 
     Element dashboard(int rows_available) const {
+        const bool live = view_ == TuiView::sync || view_ == TuiView::watch ||
+                          view_ == TuiView::download;
+        const bool waiting = live && phase_ == events::SyncPhase::waiting;
+        const bool show_download =
+            download_.has_value() && !waiting &&
+            !(live && monitoring_ &&
+              download_->state == util::ProgressState::completed);
+        const bool show_upload =
+            upload_.has_value() && !waiting &&
+            !(live && monitoring_ &&
+              upload_->state == util::ProgressState::completed);
+        // Reserve status, controls and a small activity area before panels.
+        int spare_rows =
+            rows_available - 4 - phase_.has_value() - (blocked_items_ != 0) -
+            (view_ == TuiView::watch ? 2 : 0) - show_download - show_upload;
+        const auto reserve_line = [&](bool present) {
+            if (present && (!live || spare_rows > 0)) {
+                --spare_rows;
+                return true;
+            }
+            return false;
+        };
+        const bool show_context = reserve_line(context_.has_value());
+        const bool show_summary = reserve_line(summary_.has_value());
+        const bool show_cloud = reserve_line(delta_items_ != 0);
+        const bool show_incomplete = reserve_line(
+            monitoring_ && phase_ == events::SyncPhase::waiting &&
+            round_incomplete_ && (!live || rows_available >= 18)
+        );
+        const int activity_rows =
+            messages_.empty() ? 0 : std::clamp(spare_rows, 0, 2);
+        spare_rows -= activity_rows;
+        const auto compact_transfer = [&](bool unknown) {
+            const int extra = unknown ? 3 : 4;
+            if (live && spare_rows < extra) {
+                return true;
+            }
+            spare_rows -= extra;
+            return false;
+        };
         Elements content{
             header(),
             separator(),
         };
 
-        if (delta_items_ != 0) {
+        if (show_cloud) {
             content.push_back(cloud_status());
         }
-        if (download_) {
-            content.push_back(download_status());
+        if (show_download) {
+            content.push_back(transfer_status(
+                *download_,
+                download_->downloaded,
+                "DOWNLOADS",
+                compact_transfer(
+                    download_->total == 0 && download_->file_count == 0 &&
+                    download_->state == util::ProgressState::ongoing
+                )
+            ));
         }
-        if (upload_) {
-            content.push_back(
-                transfer_status(*upload_, upload_->uploaded, "UPLOADS")
-            );
+        if (show_upload) {
+            content.push_back(transfer_status(
+                *upload_,
+                upload_->uploaded,
+                "UPLOADS",
+                compact_transfer(
+                    upload_->total == 0 && upload_->file_count == 0 &&
+                    upload_->state == util::ProgressState::ongoing
+                )
+            ));
         }
-        if (context_) {
+        if (show_context) {
             content.push_back(text(
                 fmt::format(
                     "Direction: {} // {}{}",
@@ -684,7 +744,7 @@ private:
                 )
             ));
         }
-        if (summary_) {
+        if (show_summary) {
             content.push_back(text(
                 fmt::format(
                     "Last round: {} downloaded, {} uploaded, {} moved, {} "
@@ -698,11 +758,10 @@ private:
                 )
             ));
         }
-        if (monitoring_ && phase_ == events::SyncPhase::waiting &&
-            round_incomplete_) {
+        if (show_incomplete) {
             content.push_back(text("Last synchronization round incomplete."));
         }
-        if (!file_history_.entries().empty()) {
+        if (!file_history_.entries().empty() && (!live || spare_rows >= 2)) {
             Elements files{
                 emphasized(text(
                     fmt::format(
@@ -714,7 +773,12 @@ private:
             };
             const auto visible = std::min(
                 file_history_.entries().size(),
-                static_cast<std::size_t>(std::max(1, rows_available / 5))
+                static_cast<std::size_t>(
+                    live ? std::min(
+                               spare_rows - 1, std::max(1, rows_available / 5)
+                           )
+                         : std::max(1, rows_available / 5)
+                )
             );
             for (auto index = file_history_.entries().size() - visible;
                  index < file_history_.entries().size();
@@ -723,7 +787,11 @@ private:
                     text(format_file_operation(file_history_.entries()[index]))
                 );
             }
-            content.push_back(vbox(std::move(files)) | border);
+            auto history = vbox(std::move(files));
+            content.push_back(
+                live ? std::move(history) : std::move(history) | border
+            );
+            spare_rows -= static_cast<int>(visible) + 1;
         }
         const bool paged_list =
             (view_ == TuiView::drives || view_ == TuiView::blocked) &&
@@ -740,7 +808,11 @@ private:
             view_ == TuiView::partials && !result_pages_.empty() && finished_;
         if (partial_list) {
             content.push_back(partial_results(rows_available) | flex);
-        } else if (!section.title.empty()) {
+        } else if (!section.title.empty() &&
+                   (!live ||
+                    (!section.fields.empty() &&
+                     spare_rows >=
+                         static_cast<int>(section.fields.size()) + 1))) {
             Elements fields{
                 emphasized(text(
                     !paged_list
@@ -759,7 +831,12 @@ private:
                     field.label + " " + field.value
                 ));
             }
-            content.push_back(vbox(std::move(fields)) | border | yflex_shrink);
+            auto details = vbox(std::move(fields));
+            content.push_back(
+                live ? std::move(details)
+                     : std::move(details) | border | yflex_shrink
+            );
+            spare_rows -= static_cast<int>(section.fields.size()) + 1;
         }
         if (blocked_items_ != 0) {
             content.push_back(with_color(
@@ -775,21 +852,31 @@ private:
         if (!partial_list) {
             content.push_back(filler());
         }
-        if (!messages_.empty()) {
-            content.push_back(with_color(
-                emphasized(text("ACTIVITY")),
-                palette_.primary
-            ));
-            content.push_back(separator());
+        if (!messages_.empty() && (!live || activity_rows > 0)) {
+            if (!live || activity_rows >= 2) {
+                content.push_back(
+                    with_color(emphasized(text("ACTIVITY")), palette_.primary)
+                );
+                if (!live) {
+                    content.push_back(separator());
+                }
+            }
+            const auto message_limit =
+                live ? static_cast<std::size_t>(std::max(1, spare_rows + 1))
+                     : messages_.size();
             const auto first =
                 file_history_.entries().empty()
-                    ? std::size_t{0}
+                    ? messages_.size() -
+                          std::min(messages_.size(), message_limit)
                     : messages_.size() -
-                          std::min(messages_.size(), std::size_t{2});
+                          std::min(
+                              {messages_.size(), std::size_t{2}, message_limit}
+                          );
             for (auto index = first; index < messages_.size(); ++index) {
                 const auto& message = messages_[index];
                 content.push_back(with_color(
-                    paragraph(message.text), color_for(message.kind)
+                    live ? text(message.text) : paragraph(message.text),
+                    color_for(message.kind)
                 ));
             }
         }

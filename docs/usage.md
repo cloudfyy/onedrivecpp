@@ -14,6 +14,12 @@ Console output adds `UL` / `Upload done` progress; the TUI retains separate
 upload/download panels and the current scan/transfer/apply/wait phase. In Monitor
 mode, a finished round returns to waiting without marking the monitor stopped;
 an incomplete round remains indicated while waiting.
+The live synchronization layout prioritizes status, active transfers, warnings,
+and exit controls. Short terminals use single-line transfer summaries and hide
+details that cannot fit instead of leaving empty frames. File history and recent
+activity use the remaining rows without inner borders. Monitor waiting hides
+transfer panels, and completed monitor transfers remain in file history rather
+than occupying a progress panel. Inspection result paging is unchanged.
 
 JSON retains the existing `download_progress` and `execution_summary` formats.
 Additional `upload_progress` records contain `completed_files`, `file_count`,

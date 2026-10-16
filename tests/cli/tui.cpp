@@ -19,6 +19,129 @@ namespace {
 
 using onedrive::test::fail;
 
+int test_adaptive_sync_layout() {
+    using namespace onedrive::cli;
+    using onedrive::events::SyncPhase;
+    for (const auto rows : {12U, 18U, 24U, 40U}) {
+        std::ostringstream output;
+        std::ostringstream error;
+        const Console console{detail::make_ftxui_console_backend(
+            {.color = ColorMode::never,
+             .ui = UiMode::tui,
+             .view = TuiView::watch},
+            output,
+            error,
+            120,
+            rows
+        )};
+        const auto frame = [&] {
+            const auto rendered = output.str();
+            return rendered.substr(rendered.rfind("\033[H"));
+        };
+        console.operation_state(
+            OperationKind::monitoring, OperationState::watching
+        );
+        console.sync_context(onedrive::sync::SyncMode::bidirectional, false);
+        console.sync_phase(SyncPhase::uploading);
+        console.section("execution_summary", "Empty summary", {});
+        console.message(
+            MessageKind::information, "activity", "Recent activity"
+        );
+        console.blocked_item("blocked.one", "unsupported", "Unsupported file");
+        console.upload_progress(
+            {.completed_files = 0,
+             .file_count = 1,
+             .uploaded = 1024,
+             .total = 1024}
+        );
+        const auto active = frame();
+        if (!active.contains("UPLOADS  0/1 files") ||
+            !active.contains("MONITORING: uploading") ||
+            !active.contains("NEEDS ATTENTION") ||
+            !active.contains("q / Esc") ||
+            !active.contains("Recent activity") ||
+            active.contains("Empty summary") ||
+            (rows == 12 && !active.contains("// 99%"))) {
+            return fail(
+                "adaptive TUI lost priority content or retained an empty panel "
+                "at " +
+                std::to_string(rows) + " rows:\n" + active
+            );
+        }
+        console.file_operation({
+            .action = onedrive::events::FileAction::uploaded,
+            .path = "finished.txt",
+        });
+        console.sync_summary({.uploaded = 1, .blocked = 1});
+        console.sync_phase(SyncPhase::waiting);
+        const auto waiting = frame();
+        if (waiting.contains("UPLOADS") || waiting.contains("DOWNLOADS") ||
+            waiting.contains("Empty summary") ||
+            !waiting.contains("MONITORING: waiting") ||
+            !waiting.contains("NEEDS ATTENTION") ||
+            !waiting.contains("q / Esc") ||
+            (rows >= 18 && !waiting.contains("finished.txt"))) {
+            return fail(
+                "waiting TUI retained transfer panels or lost available history"
+            );
+        }
+        // Only the outer frame remains when there is no active transfer.
+        const auto corner = waiting.find("╭");
+        if (corner == std::string::npos ||
+            waiting.find("╭", corner + std::string{"╭"}.size()) !=
+                std::string::npos) {
+            return fail(
+                "waiting TUI rendered an empty or unnecessary inner frame"
+            );
+        }
+        console.sync_phase(SyncPhase::uploading);
+        console.section(
+            "details",
+            "Oversized details",
+            {
+                {.label = "First:", .key = "first", .value = "one"},
+                {.label = "Second:", .key = "second", .value = "two"},
+                {.label = "Third:", .key = "third", .value = "three"},
+            }
+        );
+        const auto details = frame();
+        if (rows == 12 && details.contains("Oversized details")) {
+            return fail("short TUI did not hide details that cannot fit");
+        }
+        if (rows == 40 && (!details.contains("Oversized details") ||
+                           !details.contains("Third: three"))) {
+            return fail("tall TUI hid details despite sufficient space");
+        }
+        console.delta_progress(1, 10, onedrive::util::ProgressState::ongoing);
+        console.download_progress(
+            0, 1, 512, 1024, onedrive::util::ProgressState::ongoing
+        );
+        const auto simultaneous = frame();
+        if (!simultaneous.contains("UPLOADS") ||
+            !simultaneous.contains("DOWNLOADS") ||
+            !simultaneous.contains("MONITORING: uploading") ||
+            !simultaneous.contains("NEEDS ATTENTION") ||
+            !simultaneous.contains("q / Esc")) {
+            return fail(
+                "simultaneous transfers displaced essential TUI controls"
+            );
+        }
+        console.upload_progress(
+            {.completed_files = 1,
+             .file_count = 1,
+             .uploaded = 1024,
+             .total = 1024,
+             .state = onedrive::util::ProgressState::completed}
+        );
+        if (frame().contains("UPLOADS") || !frame().contains("DOWNLOADS")) {
+            return fail(
+                "completed monitor transfer displaced an active transfer"
+            );
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_file_history() {
     using namespace onedrive::cli;
     for (const auto view : {TuiView::sync, TuiView::watch, TuiView::download}) {
@@ -976,14 +1099,18 @@ int main() {
         console.sync_phase(onedrive::events::SyncPhase::waiting);
         const auto rendered = output.str();
         const auto frame = rendered.substr(rendered.rfind("\033[H"));
-        if (!frame.contains("DOWNLOADS") || !frame.contains("UPLOADS") ||
+        if (frame.contains("DOWNLOADS") || frame.contains("UPLOADS") ||
             !frame.contains("automatic monitoring") ||
             !frame.contains("MONITORING: waiting") ||
             !frame.contains("Last synchronization round incomplete.")) {
             return fail(
-                "TUI lost separate transfer progress or stopped monitoring "
+                "TUI retained transfer panels or stopped monitoring "
                 "after a round"
             );
+        }
+        if (const auto result = test_adaptive_sync_layout();
+            result != EXIT_SUCCESS) {
+            return result;
         }
         console.sync_phase(onedrive::events::SyncPhase::preparing);
         console.download_progress(
