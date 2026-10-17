@@ -13,7 +13,8 @@ static_assert(exit_code::success == 0);
 static_assert(exit_code::failure == 1);
 static_assert(exit_code::usage_error == 2);
 static_assert(exit_code::cancelled == 130);
-static_assert(exit_code::blocked == 2);
+static_assert(exit_code::blocked == 3);
+static_assert(exit_code::blocked != exit_code::usage_error);
 
 using namespace onedrive::test::app;
 

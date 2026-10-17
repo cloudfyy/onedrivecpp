@@ -423,7 +423,7 @@ overwritten. Invalid names, local path conflicts, files marked with the
 Microsoft Graph malware facet, and descendants of blocked directories are also
 isolated while independent files continue. Malware-marked files are not
 downloaded or allowed to replace local data. A partial completion exits with
-status 2, and blocked items are retried on later syncs. Installed files use the
+status 3, and blocked items are retried on later syncs. Installed files use the
 authoritative fileSystemInfo.lastModifiedDateTime value; files without a valid
 value are rejected before download. Permissions are derived from mode 0666 and
 the process umask.
@@ -1232,8 +1232,16 @@ A runtime, configuration, authentication, storage, or synchronization error
 occurred.
 .TP
 .B 2
-The command line was invalid, or synchronization safely completed with one or
-more blocked items.
+The command line was invalid.
+.TP
+.B 3
+Synchronization safely completed with one or more blocked items.
+.TP
+.B 130
+The operation was cancelled.
+.PP
+Blocked synchronization previously returned 2; scripts must now check for 3.
+Graceful Monitor shutdown returns 0 even if the active round was cancelled.
 .SH EXAMPLES
 Authorize a Microsoft account:
 .PP

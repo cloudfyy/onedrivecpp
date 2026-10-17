@@ -231,7 +231,7 @@ def run_boundary(
                         remote_path,
                     )
                     if (
-                        failed.returncode != 2
+                        failed.returncode != 3
                         or pending is None
                         or pending[0] != "local_storage"
                         or fixture.item_exists(remote_path)
@@ -273,7 +273,7 @@ def run_boundary(
                         remote_path,
                     )
                     if (
-                        failed.returncode != 2
+                        failed.returncode != 3
                         or pending is None
                         or pending[0] != "local_permission"
                         or fixture.item_exists(remote_path)

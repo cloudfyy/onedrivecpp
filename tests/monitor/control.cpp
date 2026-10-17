@@ -829,6 +829,7 @@ void test_sync_result_names() {
              std::pair{exit_code::failure, std::string_view{"failed"}},
              std::pair{exit_code::blocked, std::string_view{"blocked"}},
              std::pair{exit_code::cancelled, std::string_view{"cancelled"}},
+             std::pair{exit_code::usage_error, std::string_view{"unknown"}},
              std::pair{17, std::string_view{"unknown"}},
          }) {
         if (exit_code::sync_result_name(code) != name) {

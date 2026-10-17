@@ -149,10 +149,9 @@ GUI worker and window lifetimes are still the frontend's responsibility.
 
 Application, CLI, GUI, and synchronization integer result APIs use the
 UI-neutral constants in `onedrive/exit_code.hpp`: `success` (0), `failure` (1),
-`usage_error` (2), and `cancelled` (130). Synchronization also returns `blocked`
-(2) when items are blocked; this existing status shares a numeric value with CLI
-usage errors but has a different meaning. These published values remain
-compatible with existing callers and scripts. Graceful Monitor shutdown still
+`usage_error` (2), `blocked` (3), and `cancelled` (130). Blocked synchronization
+results are distinct from CLI usage errors. Scripts that previously treated 2 as
+a blocked result must now check for 3. Graceful Monitor shutdown still
 returns `success`, including when its active synchronization was cancelled.
 
 `SyncEngine::synchronize` and Monitor callbacks accept a stop token. A cancelled

@@ -7,7 +7,7 @@ Ubuntu 24.04 LTS and later. Its separation of responsibilities is inspired by
 [abraunegg/onedrive](https://github.com/abraunegg/onedrive), but it does not
 copy the reference project's D implementation.
 
-The current version is **1.0.1**. CLI, TUI, GUI, user-agent and CPack versions
+The current version is **1.0.2**. CLI, TUI, GUI, user-agent and CPack versions
 are generated from `version-semver` in `vcpkg.json`; Debian source packaging
 records its distribution-specific version separately in `debian/changelog`.
 
@@ -40,7 +40,7 @@ records its distribution-specific version separately in `debian/changelog`.
 
 OneNote files and packages recognized from Graph metadata are not supported.
 They are explicitly reported and skipped while other files continue; existing
-local copies are preserved and the sync exits with status 2.
+local copies are preserved and the sync exits with status 3.
 See [unsupported formats](docs/synchronization.md#unsupported-formats).
 
 ## Documentation
@@ -476,7 +476,7 @@ The package revision defaults to the latest `debian/changelog` entry, without
 its distribution suffix. To increment a CPack-only revision explicitly:
 
 ```bash
-cmake --preset release -DONEDRIVE_PACKAGE_REVISION=3
+cmake --preset release -DONEDRIVE_PACKAGE_REVISION=2
 ```
 
 Set it back to an empty string to follow the changelog again. Application
@@ -505,8 +505,8 @@ From a Git checkout, prepare the release source archive while online:
 
 ```bash
 python3 tools/prepare_source.py
-tar -xf build/source/onedrive-cpp-1.0.1.tar.xz -C build/source
-cd build/source/onedrive-cpp-1.0.1
+tar -xf build/source/onedrive-cpp-1.0.2.tar.xz -C build/source
+cd build/source/onedrive-cpp-1.0.2
 ```
 
 The archive contains the working-tree contents of Git-tracked files and the
@@ -566,7 +566,7 @@ tests. The generated `.deb` is placed in the parent directory of the project,
 for example:
 
 ```text
-../onedrive-cpp_1.0.1-2~ubuntu24.04_amd64.deb
+../onedrive-cpp_1.0.2-1~ubuntu24.04_amd64.deb
 ```
 
 Debian rules enable `ONEDRIVE_DEBIAN_PACKAGE_BUILD=ON`. Before dependency setup
@@ -577,7 +577,7 @@ does not change the version. The checked-in changelog targets Ubuntu 24.04
 (`noble`); before building on Ubuntu 26.04 (`resolute`), update its entry, for example:
 
 ```bash
-dch --newversion 1.0.1-2~ubuntu26.04 --distribution resolute
+dch --newversion 1.0.2-1~ubuntu26.04 --distribution resolute
 ```
 
 Use `noble` and the `ubuntu24.04` suffix for Ubuntu 24.04. Increment the Debian

@@ -1,3 +1,13 @@
+onedrive-cpp (1.0.2-1~ubuntu24.04) noble; urgency=medium
+
+  * Release version 1.0.2.
+  * Set the GUI desktop identity before constructing QApplication so Qt can
+    register with the desktop portal before appearance settings are queried.
+  * Return exit status 3 for blocked synchronization, reserving status 2 for
+    invalid command-line arguments; update documentation and regression checks.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sat, 17 Oct 2026 01:35:42 +0000
+
 onedrive-cpp (1.0.1-2~ubuntu24.04) noble; urgency=medium
 
   * Complete optional GUI packaging and retain the nogui build profile.

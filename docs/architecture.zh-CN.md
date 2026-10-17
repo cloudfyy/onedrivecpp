@@ -126,6 +126,11 @@ SQLite 或工厂对象，其生命周期与创建它的请求独立。
 取消检查，进入持久化阶段后不再中途打断账号文件写入。CLI 保持原有授权消息和退出码，
 GUI 线程与窗口生命周期管理仍须由未来前端实现。
 
+应用层、CLI、GUI 和同步的整数结果共用 `onedrive/exit_code.hpp` 中的常量：
+`success`（0）、`failure`（1）、`usage_error`（2）、`blocked`（3）和
+`cancelled`（130）。同步受阻不再与命令行参数错误共用退出码；原先用 2 判断同步
+受阻的脚本须改为检查 3。Monitor 正常停止仍返回 0，即使其活动同步轮次被取消。
+
 `SyncEngine::synchronize` 和 `Monitor` 回调接受 stop token。同步取消会作为退出码
 130 返回，并以 `cancelled` 记录运行指标，不会把取消报告为成功或普通失败。Graph
 Delta 会将 token 传给 OAuth 刷新、分页 HTTP 请求和重试等待；下载与上传 worker 会将

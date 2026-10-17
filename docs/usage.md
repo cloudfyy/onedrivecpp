@@ -3,6 +3,20 @@
 English | [简体中文](usage.zh-CN.md) |
 [Documentation index](README.md)
 
+## Exit codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success, including help/version output and graceful Monitor shutdown |
+| 1 | Runtime, configuration, authentication, storage, or synchronization failure |
+| 2 | Invalid command-line arguments |
+| 3 | Synchronization incomplete because items were blocked |
+| 130 | Operation cancelled |
+
+Blocked results previously used 2; automation must now check for 3. Monitor
+reports each round's result in `last_result`; this is separate from the
+Monitor process's exit code.
+
 ## Output, logging, and automation
 
 Running without arguments or using `--help` (including subcommand help) shows

@@ -15,10 +15,11 @@
 #include <stdexcept>
 
 int main(int argc, char* argv[]) {
+    // Qt must register the desktop ID before any portal settings requests.
+    QGuiApplication::setDesktopFileName("onedrive-cpp-gui");
     QApplication application{argc, argv};
     QCoreApplication::setApplicationName("onedrive-cpp-gui");
     QCoreApplication::setApplicationVersion(onedrive::build_info::version);
-    QGuiApplication::setDesktopFileName("onedrive-cpp-gui");
     QApplication::setWindowIcon(QIcon::fromTheme("onedrive-cpp"));
     QCommandLineParser parser;
     onedrive::gui::Language language;

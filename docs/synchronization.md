@@ -101,7 +101,7 @@ local-modification protection, and atomic installation. Directories and files
 marked with the Graph `malware` facet are rejected. The downloaded item
 snapshot is updated, but the Drive `deltaLink` is not advanced.
 Unsupported-format targets, including recognized OneNote files/packages, are
-reported as blocked with exit status 2 without downloading or changing local
+reported as blocked with exit status 3 without downloading or changing local
 files. This also applies to single-file previews and relaxed validation.
 
 Use `download --dry-run` to display the resolved remote path, local destination,
@@ -214,7 +214,7 @@ blocked item. Invalid remote paths, symbolic links, local path-type conflicts,
 files marked with the Microsoft Graph `malware` facet, and descendants of
 blocked directories are also persisted as blocked items. Malware-marked files
 are never downloaded or allowed to replace existing local data. Independent
-files continue, and `transfer sync` exits with status 2 after safely advancing the
+files continue, and `transfer sync` exits with status 3 after safely advancing the
 cursor. Blocked items are retried on every later incremental sync; a successful
 retry or remote deletion clears the record.
 Authentication, Graph, database, root-permission, disk-capacity, and download
@@ -251,7 +251,7 @@ These items are durably reported as `unsupported_onenote`, not as successful
 downloads. Other files continue synchronizing with unchanged integrity checks.
 The plan and execution summary expose `unsupported_items`, a subset of blocked
 items; the GUI displays the reason and count and reports an incomplete sync.
-The final exit status is 2 when unsupported items remain.
+The final exit status is 3 when unsupported items remain.
 
 Existing local files and tracked snapshots are preserved, including when a
 known unsupported item is deleted remotely or omitted from a full refresh.

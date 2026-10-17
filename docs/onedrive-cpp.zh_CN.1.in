@@ -347,7 +347,7 @@ eTag 前置条件、HTTPS 重定向、Range 传输、持久 checkpoint、完整�
 下载使用同目录临时文件、大小及哈希校验、刷盘和原子替换。无法证明未被修改的
 本地文件不会被覆盖，而会记录为 blocked item。非法名称、本地路径冲突、malware
 文件及 blocked 目录的后代会被隔离，其他独立文件继续处理。存在 blocked item
-时安全推进游标并以状态 2 结束；后续同步会重试。安装后的文件采用 Graph 权威的
+时安全推进游标并以状态 3 结束；后续同步会重试。安装后的文件采用 Graph 权威的
 修改时间。SQLite pending-download 和 SHA-256 指纹提供不依赖扩展属性的崩溃
 恢复。
 .PP
@@ -978,7 +978,16 @@ OAuth token、设备代码、Authorization header 和密码不得写入日志。
 发生运行时、配置、认证、存储或同步错误。
 .TP
 .B 2
-命令行无效，或同步已安全完成但仍有一个或多个 blocked item。
+命令行参数错误。
+.TP
+.B 3
+同步已安全完成，但仍有一个或多个 blocked item。
+.TP
+.B 130
+操作已取消。
+.PP
+同步受阻原先返回 2；脚本须改为检查 3。
+Monitor 正常停止返回 0，即使其活动同步轮次被取消。
 .SH 示例
 授权 Microsoft 账号：
 .PP
