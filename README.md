@@ -218,7 +218,7 @@ when needed, and report authentication or connectivity errors.
 Sync-path validation does not prevent login when authentication/state settings
 are usable; synchronization requires valid sync settings and saved credentials.
 
-The main tabs are **Overview / Sync / Logs / Settings / Files**. Overview
+The main tabs are **Overview / Sync / Logs / Files / Settings**. Overview
 shows account and directory information plus the current/latest sync result.
 Overview has no synchronization buttons; task controls are on the Sync tab.
 

@@ -388,7 +388,6 @@ MainWindow::MainWindow(
     settings_status_ = make_value_label({});
     settings_status_->setObjectName("settingsStatus");
     settings_layout->addRow(settings_status_);
-    tabs->addTab(settings, tr("Settings"));
     files_page_ = new QWidget{tabs};
     files_page_->setObjectName("filesPage");
     auto* files_layout = new QVBoxLayout{files_page_};
@@ -414,6 +413,7 @@ MainWindow::MainWindow(
     files_table_->header()->setSectionResizeMode(3, QHeaderView::Interactive);
     files_layout->addWidget(files_table_, 1);
     tabs->addTab(files_page_, tr("Files"));
+    tabs->addTab(settings, tr("Settings"));
     connect(
         files_filter_,
         &QLineEdit::textChanged,
@@ -907,7 +907,7 @@ void MainWindow::retranslate_ui() {
     tabs_->setTabText(0, tr("Overview"));
     tabs_->setTabText(1, tr("Sync"));
     tabs_->setTabText(2, tr("Logs"));
-    tabs_->setTabText(3, tr("Settings"));
+    tabs_->setTabText(tabs_->indexOf(settings_), tr("Settings"));
     tabs_->setTabText(tabs_->indexOf(files_page_), tr("Files"));
     files_hint_->setText(tr(
         "Completed operations since this application started. Times are local. "

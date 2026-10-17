@@ -220,8 +220,8 @@ void test_window_and_settings(bool chinese) {
             tabs->count() == 5 &&
             tabs->tabText(1) == expected(chinese, "Sync", "同步") &&
             tabs->tabText(2) == expected(chinese, "Logs", "日志") &&
-            tabs->tabText(3) == expected(chinese, "Settings", "设置") &&
-            tabs->tabText(4) == expected(chinese, "Files", "文件"),
+            tabs->tabText(3) == expected(chinese, "Files", "文件") &&
+            tabs->tabText(4) == expected(chinese, "Settings", "设置"),
         "tab labels were not translated"
     );
     for (const auto& pair : {
@@ -641,7 +641,8 @@ void test_runtime_language(bool system_chinese) {
                 tabs->tabText(1) ==
                     expected(chinese, "Sync", "同步") &&
                 tabs->tabText(2) == expected(chinese, "Logs", "日志") &&
-                tabs->tabText(3) == expected(chinese, "Settings", "设置") &&
+                tabs->tabText(3) == expected(chinese, "Files", "文件") &&
+                tabs->tabText(4) == expected(chinese, "Settings", "设置") &&
                 sign_in->text() == expected(chinese, "Sign in", "登录账号") &&
                 has_label(window, expected(chinese, "Account", "账号")) &&
                 has_label(window, expected(chinese, "Appearance", "外观")) &&

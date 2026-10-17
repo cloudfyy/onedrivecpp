@@ -1341,7 +1341,7 @@ void test_session_logs_and_tabs() {
     require(
         tabs && tabs->count() == 5 && tabs->tabText(0) == "Overview" &&
             tabs->tabText(1) == "Sync" && tabs->tabText(2) == "Logs" &&
-            tabs->tabText(3) == "Settings" &&
+            tabs->tabText(3) == "Files" && tabs->tabText(4) == "Settings" &&
             tabs->currentWidget() == overview &&
             sync_page->isAncestorOf(sync) && !overview->isAncestorOf(sync) &&
             logs_page->isAncestorOf(messages) && messages->isReadOnly() &&
@@ -1359,10 +1359,12 @@ void test_session_logs_and_tabs() {
     );
     tabs->setCurrentWidget(sync_page);
     sync->click();
-    tabs->setCurrentIndex(3);
+    auto* settings_page = window.findChild<QWidget*>("settingsPage");
+    tabs->setCurrentWidget(settings_page);
     require(
         wait_until([&] { return sync->isEnabled(); }) &&
-            tabs->currentIndex() == 3 && draft->text() == "keep draft" &&
+            tabs->currentWidget() == settings_page &&
+            draft->text() == "keep draft" &&
             window.findChild<QLabel*>("overviewSyncStatus")->text() ==
                 "Synchronization completed.",
         "tab switching reset the task, draft or overview summary"
