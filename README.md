@@ -13,8 +13,10 @@ records its distribution-specific version separately in `debian/changelog`.
 
 ## Features
 
-- OAuth 2.0 device-code authentication with secure per-account token and
-  profile state.
+- [OAuth 2.0 authentication](docs/authentication.md): CLI/TUI device-code login
+  and GUI system-browser Authorization Code + PKCE (S256) login with a loopback
+  callback; shared per-account credentials, automatic access-token refresh,
+  and owner-only refresh-token storage.
 - Incremental Microsoft Graph Delta synchronization with multiple account and
   Drive isolation, selective-sync rules, and explicit single-file downloads.
 - Concurrent, resumable, integrity-checked downloads with atomic installation,
@@ -30,13 +32,14 @@ records its distribution-specific version separately in `debian/changelog`.
   remote deletions, and directory creation.
 - Long-running inotify monitoring with Graph WebSocket notifications, polling
   fallback, event coalescing, overflow recovery, and clean signal handling.
-- Optional English/Simplified Chinese Qt GUI with shared Monitor ownership and
-  controls, persistent blocked-item inspection, and session/round statistics.
+- Optional English/Simplified Chinese Qt GUI with live language switching,
+  validated settings editing/import, shared Monitor ownership and controls,
+  persistent blocked-item inspection, and session/round statistics.
 - Completed file-operation history in CLI and GUI with timestamps, actions,
   old/new paths, configurable retention, and explicit omission counts.
-- Dry-run and structured JSON output, rotating logs, proxy support, shell
-  completion, a manual page, a hardened systemd user service, and Debian
-  packaging.
+- Console and interactive FTXUI terminal interfaces, dry-run and structured JSON
+  output, rotating logs, proxy support, shell completion, a manual page,
+  a hardened systemd user service, and Debian packaging.
 
 OneNote files and packages recognized from Graph metadata are not supported.
 They are explicitly reported and skipped while other files continue; existing

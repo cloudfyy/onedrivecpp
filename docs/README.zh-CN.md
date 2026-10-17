@@ -9,6 +9,7 @@
 
 1. [项目介绍、编译与安装](../README.zh-CN.md)
 2. [Microsoft 认证](authentication.zh-CN.md)
+   包含 CLI/TUI 设备代码登录、GUI 浏览器 PKCE 登录及共享凭据说明。
 3. [配置](configuration.zh-CN.md)
 4. [使用与命令输出](usage.zh-CN.md)
 
