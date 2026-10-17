@@ -1,6 +1,6 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: onedrive-cpp
-Source: https://github.com/abraunegg/onedrive
+Source: https://github.com/cloudfyy/onedrivecpp
 
 Files: *
 Copyright: 2026 onedrive-cpp contributors

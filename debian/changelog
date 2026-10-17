@@ -6,6 +6,7 @@ onedrive-cpp (1.0.1-2~ubuntu24.04) noble; urgency=medium
     source, and require offline dependency use for Debian builds.
   * Generate the user service for the actual installation prefix.
   * Validate application and package versions, revisions and build targets.
+  * Correct project metadata and include the full GPLv3 license text.
 
  -- cloudfyy <cloudfyy@hotmail.com>  Sat, 17 Oct 2026 00:20:27 +0000
 

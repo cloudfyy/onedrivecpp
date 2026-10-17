@@ -15,6 +15,7 @@ include(CTest)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${PROJECT_SOURCE_DIR}/vcpkg.json"
     "${PROJECT_SOURCE_DIR}/debian/changelog"
+    "${PROJECT_SOURCE_DIR}/debian/control"
 )
 include(cmake/PackageVersion.cmake)
 

@@ -1,7 +1,10 @@
 Source: onedrive-cpp
 Section: net
 Priority: optional
-Maintainer: onedrive-cpp maintainers <maintainers@example.invalid>
+Maintainer: cloudfyy <cloudfyy@hotmail.com>
+Homepage: https://github.com/cloudfyy/onedrivecpp
+Vcs-Git: https://github.com/cloudfyy/onedrivecpp.git
+Vcs-Browser: https://github.com/cloudfyy/onedrivecpp
 Build-Depends:
  debhelper-compat (= 13),
  cmake (>= 3.28),
@@ -29,6 +32,8 @@ Package: onedrive-cpp
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, ${onedrive:GUI-Depends}
 Suggests: bash-completion, zsh
-Description: modern C++ OneDrive synchronization client scaffold
- A modular C++26 client scaffold with configuration, Microsoft Graph,
- local-state, synchronization, monitoring, and systemd integration layers.
+Description: OneDrive synchronization client with terminal and optional desktop interfaces
+ Synchronize files with Microsoft OneDrive using Microsoft Graph.
+ Provides command-line and terminal interfaces, selective synchronization,
+ filesystem monitoring, persistent local state, and a systemd user service.
+ An optional Qt desktop interface can be included at build time.

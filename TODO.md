@@ -91,9 +91,19 @@
     合法复杂修订号、旧配置、错误版本、发行版和 suite 不匹配。
     已生成 1.0.1-2~ubuntu26.04 的 GUI 合包，并验证修订号 3 的 CLI 包。
   - 完整 dpkg-buildpackage 和 Ubuntu 24.04 环境验证仍留待发布门禁。
-- [ ] P2 修正发行包元数据
+- [x] P2 修正发行包元数据
   - 修正项目来源、维护者占位信息和过时描述。
   - 为 CPack 包补齐许可证及版权文件。
+  - 将版权来源和 Homepage/VCS 指向 cloudfyy/onedrivecpp，
+    当前维护者采用已有 changelog 中的实际联系信息，不改写历史签名。
+  - 移除 scaffold 描述，说明现有同步、CLI/TUI、用户服务及可选 Qt GUI。
+    CPack 从 debian/control 读取维护者、主页和完整描述，避免两套元数据漂移。
+  - LICENSE 补入 GPLv3 完整文本，保留 GPL-3.0-or-later 声明；
+    CMake 安装和 DEB 均包含 LICENSE 与机器可读 copyright。
+  - 在现有真实 DEB 回归中增加独立元数据解析和许可证文件逐字节断言，
+    GUI/CLI 两种包均通过；dpkg-gencontrol 也已核对原生控制文件生成。
+  - 同步中英文项目文档；未执行完整原生打包或 Lintian，
+    这些检查仍属于发布门禁。
 - [ ] P2 建立隔离构建与发布门禁
   - 以 Debian 原生打包为正式主线，CPack 为快速试用入口。
   - 按目标平台建立容器或 chroot 干净构建。

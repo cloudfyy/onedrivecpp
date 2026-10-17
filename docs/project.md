@@ -9,6 +9,20 @@ GPL-3.0-or-later. The reference project also uses GPLv3, which makes this
 license suitable for future reuse or adaptation of its design in compliance
 with the license terms.
 
+The full GPLv3 text and the project's "or any later version" notice are in
+[LICENSE](../LICENSE). CMake installations and DEB packages include `LICENSE`
+and the machine-readable `copyright` file in the documentation directory,
+normally `<prefix>/share/doc/onedrive-cpp` (`/usr/share/doc/onedrive-cpp` for
+standard DEB packages). When FTXUI/Proxy sources are bundled, their original
+licenses are also installed in the `licenses` subdirectory.
+
+## Project and package metadata
+
+The project source is [cloudfyy/onedrivecpp](https://github.com/cloudfyy/onedrivecpp).
+`debian/control` defines the package maintainer, homepage and description;
+CPack reads the same fields rather than maintaining separate copies.
+The reference project mentioned above is not the source of this C++ implementation.
+
 ## Legal and Branding
 
 - [Terms of Service](../TERMS.md)

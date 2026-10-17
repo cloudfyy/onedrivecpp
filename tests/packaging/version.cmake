@@ -22,6 +22,9 @@ function(configure_case NAME VERSION SUITE EXPECTED_ERROR)
     set(SOURCE "${STAGING_DIR}/${NAME}/source")
     set(BUILD "${STAGING_DIR}/${NAME}/build")
     file(MAKE_DIRECTORY "${SOURCE}/docs" "${SOURCE}/debian")
+    foreach(METADATA IN ITEMS LICENSE debian/control)
+        configure_file("${SOURCE_ROOT}/${METADATA}" "${SOURCE}/${METADATA}" COPYONLY)
+    endforeach()
     file(WRITE "${SOURCE}/vcpkg.json" "{\"version-semver\":\"1.0.1\"}\n")
     file(WRITE "${SOURCE}/debian/changelog"
         "onedrive-cpp (${VERSION}) ${SUITE}; urgency=medium\n"

@@ -24,7 +24,7 @@ configure_file(
     @ONLY
 )
 install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/generated/install-service.cmake")
-install(FILES README.md README.zh-CN.md TERMS.md PRIVACY.md
+install(FILES LICENSE debian/copyright README.md README.zh-CN.md TERMS.md PRIVACY.md
     DESTINATION ${CMAKE_INSTALL_DOCDIR}
 )
 install(
