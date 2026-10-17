@@ -577,6 +577,11 @@ for example:
 ../onedrive-cpp_1.0.3-1~ubuntu24.04_amd64.deb
 ```
 
+Debian rules override debhelper's `FETCHCONTENT_FULLY_DISCONNECTED` setting so
+CMake can extract bundled dependencies. `ONEDRIVE_OFFLINE_BUILD=ON` still
+requires local archives with matching SHA256 hashes and never falls back to
+network downloads.
+
 Debian rules enable `ONEDRIVE_DEBIAN_PACKAGE_BUILD=ON`. Before dependency setup
 or compilation, CMake requires the complete changelog version to match the
 application, revision and actual build distribution, and the changelog suite

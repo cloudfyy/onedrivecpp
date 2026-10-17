@@ -10,7 +10,7 @@ Build-Depends:
  cmake (>= 3.28),
  ninja-build,
  python3:native (>= 3.11),
- git:native,
+ git,
  clang-20,
  libcli11-dev,
  libcurl4-openssl-dev,

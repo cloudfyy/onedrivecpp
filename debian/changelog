@@ -5,6 +5,10 @@ onedrive-cpp (1.0.3-1~ubuntu24.04) noble; urgency=medium
     tab header, keeping both available during active tasks.
   * Place Settings after Files as the rightmost GUI tab.
   * Update bilingual GUI documentation and layout/localization regressions.
+  * Remove the native qualifier from the Multi-Arch foreign Git build
+    dependency so Ubuntu 24.04 dependency checks accept the installed package.
+  * Allow FetchContent to extract verified bundled archives during offline
+    Debian builds instead of requiring pre-populated dependency source trees.
 
  -- cloudfyy <cloudfyy@hotmail.com>  Sat, 17 Oct 2026 03:37:28 +0000
 

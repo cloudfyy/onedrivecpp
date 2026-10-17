@@ -488,6 +488,10 @@ dpkg-buildpackage --build=binary --no-sign
 ../onedrive-cpp_1.0.3-1~ubuntu24.04_amd64.deb
 ```
 
+Debian 规则覆盖 debhelper 的 `FETCHCONTENT_FULLY_DISCONNECTED` 设置，
+允许 CMake 解压随包依赖。`ONEDRIVE_OFFLINE_BUILD=ON` 仍要求本地归档存在且
+通过 SHA256 校验，不会回退到联网下载。
+
 Debian 规则启用 `ONEDRIVE_DEBIAN_PACKAGE_BUILD=ON`。在依赖准备或编译之前，
 CMake 要求 changelog 的完整版本与应用版本、修订号及实际构建发行版匹配，
 且 suite 与 `/etc/os-release` 的 `VERSION_CODENAME` 一致。
