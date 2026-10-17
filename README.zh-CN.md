@@ -380,7 +380,7 @@ cpack --config build/release/CPackConfig.cmake -G DEB
 `VERSION_ID`，因此 Ubuntu 24.04 amd64 构建命名为：
 
 ```text
-onedrive-cpp_<version>-1~ubuntu24.04_amd64.deb
+onedrive-cpp_<version>-<revision>~ubuntu24.04_amd64.deb
 ```
 
 在跨发行版构建环境中，可在配置时显式覆盖检测结果：
@@ -392,6 +392,18 @@ cmake --preset release \
 
 Ubuntu 26.04 包仍必须在 Ubuntu 26.04 环境中构建和测试；仅修改后缀不会改变
 二进制 ABI。
+
+包修订号默认取 `debian/changelog` 最新条目中的修订号，不含发行版后缀。
+仅为 CPack 显式递增修订号时可配置：
+
+```bash
+cmake --preset release -DONEDRIVE_PACKAGE_REVISION=3
+```
+
+将该选项设回空字符串即可重新跟随 changelog。CMake、`vcpkg.json` 和
+changelog 的应用版本必须一致。CPack 在打包前再次核对源码版本，拒绝过期的
+默认修订号或不一致的版本覆盖；修改发布元数据后应重新配置并编译。
+版本格式为 `<应用版本>-<修订号>~<发行版>`，不使用 epoch。
 
 本轮正式发布范围为两个发行版的 amd64。Ubuntu 26.04 包包含 Qt
 运行依赖和平台插件；Ubuntu 24.04 包不包含 GUI，也不要求 Qt。
@@ -468,11 +480,22 @@ dpkg-buildpackage --build=binary --no-sign
 目录的上一级，例如：
 
 ```text
-../onedrive-cpp_1.0.1-1~ubuntu24.04_amd64.deb
+../onedrive-cpp_1.0.1-2~ubuntu24.04_amd64.deb
 ```
 
-Debian changelog 保留原生构建的发行版后缀。在对应目标环境中使用
-`-1~ubuntu24.04` 或 `-1~ubuntu26.04` 版本；选择构建 profile 不会自动修改版本。
+Debian 规则启用 `ONEDRIVE_DEBIAN_PACKAGE_BUILD=ON`。在依赖准备或编译之前，
+CMake 要求 changelog 的完整版本与应用版本、修订号及实际构建发行版匹配，
+且 suite 与 `/etc/os-release` 的 `VERSION_CODENAME` 一致。
+选择构建 profile 不会自动修改版本。仓库内 changelog 面向 Ubuntu 24.04
+（`noble`）；在 Ubuntu 26.04（`resolute`）构建前应更新对应条目，例如：
+
+```bash
+dch --newversion 1.0.1-2~ubuntu26.04 --distribution resolute
+```
+
+Ubuntu 24.04 使用 `noble` 和 `ubuntu24.04` 后缀。仅修改打包流程时，
+递增 Debian 修订号，不改变应用版本。普通开发和快速 CPack 构建允许
+changelog 面向其他目标发行版，但仍要求上游应用版本一致。
 
 安装并检查：
 

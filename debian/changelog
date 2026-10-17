@@ -1,3 +1,14 @@
+onedrive-cpp (1.0.1-2~ubuntu24.04) noble; urgency=medium
+
+  * Complete optional GUI packaging and retain the nogui build profile.
+  * Preserve modified system configuration during upgrades and removal.
+  * Supply verified dependency archives and third-party licenses in release
+    source, and require offline dependency use for Debian builds.
+  * Generate the user service for the actual installation prefix.
+  * Validate application and package versions, revisions and build targets.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sat, 17 Oct 2026 00:20:27 +0000
+
 onedrive-cpp (1.0.1-1~ubuntu24.04) noble; urgency=medium
 
   * Release version 1.0.1.

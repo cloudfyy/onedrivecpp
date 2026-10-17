@@ -74,9 +74,23 @@
     禁网并隐藏宿主机 HOME 和 /run 的隔离环境回归通过。
   - 中英文说明补充自定义前缀下的用户服务链接方法。
     本项不启动实际同步服务，在线账户同步仍属于发布门禁。
-- [ ] P2 校验应用和发行版包版本
+- [x] P2 校验应用和发行版包版本
   - 检查 vcpkg.json、Debian changelog、CPack 版本及目标发行版的一致性。
   - 支持合法 Debian revision，不一致时显式失败。
+  - CMake 在依赖准备前核对应用版本与 changelog 上游版本；两份元数据变动会
+    触发重新配置。CPack 打包前再次核对源码与已配置版本，拒绝过期默认修订号
+    和不一致的版本覆盖，不能靠覆盖包版本绕过过期配置。
+  - 修订号默认跟随 changelog，支持 ONEDRIVE_PACKAGE_REVISION 显式覆盖及
+    Debian 合法的字母、数字、点、加号和波浪号，不再固定为 1。
+  - Debian 规则启用 ONEDRIVE_DEBIAN_PACKAGE_BUILD，要求完整包版本与
+    实际构建发行版匹配，suite 与 VERSION_CODENAME 一致。
+    普通开发和快速 CPack 仍允许 changelog 面向另一发行版。
+  - 应用版本保持 1.0.1；本轮打包改进的修订号升至 2，仓库 changelog
+    继续以 Ubuntu 24.04/noble 为基准，26.04 构建须更新对应条目。
+  - 新增独立版本矩阵回归及真实 DEB Version 字段断言，覆盖修订号覆盖、
+    合法复杂修订号、旧配置、错误版本、发行版和 suite 不匹配。
+    已生成 1.0.1-2~ubuntu26.04 的 GUI 合包，并验证修订号 3 的 CLI 包。
+  - 完整 dpkg-buildpackage 和 Ubuntu 24.04 环境验证仍留待发布门禁。
 - [ ] P2 修正发行包元数据
   - 修正项目来源、维护者占位信息和过时描述。
   - 为 CPack 包补齐许可证及版权文件。

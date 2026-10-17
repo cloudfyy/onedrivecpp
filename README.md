@@ -458,7 +458,7 @@ The generated package is placed in the current directory. CMake reads
 is named:
 
 ```text
-onedrive-cpp_<version>-1~ubuntu24.04_amd64.deb
+onedrive-cpp_<version>-<revision>~ubuntu24.04_amd64.deb
 ```
 
 For a cross-distribution build environment, override the detected suffix
@@ -471,6 +471,19 @@ cmake --preset release \
 
 Packages for Ubuntu 26.04 must still be built and tested in an Ubuntu 26.04
 environment; changing the suffix does not change the binary ABI.
+
+The package revision defaults to the latest `debian/changelog` entry, without
+its distribution suffix. To increment a CPack-only revision explicitly:
+
+```bash
+cmake --preset release -DONEDRIVE_PACKAGE_REVISION=3
+```
+
+Set it back to an empty string to follow the changelog again. Application
+versions in CMake, `vcpkg.json`, and the changelog must agree. CPack rechecks
+the source versions before packaging and rejects stale default revisions or
+inconsistent version overrides; reconfigure and rebuild after changing release metadata.
+The version scheme is `<application>-<revision>~<distribution>`, without epochs.
 
 The initial release targets amd64 on both distributions. The Ubuntu 26.04
 package includes Qt runtime dependencies and platform plugins; the Ubuntu
@@ -553,12 +566,24 @@ tests. The generated `.deb` is placed in the parent directory of the project,
 for example:
 
 ```text
-../onedrive-cpp_1.0.1-1~ubuntu24.04_amd64.deb
+../onedrive-cpp_1.0.1-2~ubuntu24.04_amd64.deb
 ```
 
-The Debian changelog carries the native build distribution suffix. Use the
-matching `-1~ubuntu24.04` or `-1~ubuntu26.04` changelog version in each target
-environment; selecting a build profile does not change that version.
+Debian rules enable `ONEDRIVE_DEBIAN_PACKAGE_BUILD=ON`. Before dependency setup
+or compilation, CMake requires the complete changelog version to match the
+application, revision and actual build distribution, and the changelog suite
+to match `/etc/os-release`'s `VERSION_CODENAME`. Selecting a build profile
+does not change the version. The checked-in changelog targets Ubuntu 24.04
+(`noble`); before building on Ubuntu 26.04 (`resolute`), update its entry, for example:
+
+```bash
+dch --newversion 1.0.1-2~ubuntu26.04 --distribution resolute
+```
+
+Use `noble` and the `ubuntu24.04` suffix for Ubuntu 24.04. Increment the Debian
+revision for packaging-only changes; keep the application version unchanged.
+Normal development and quick CPack builds allow a different changelog target
+distribution, but still require the upstream application versions to agree.
 
 Install and verify the package:
 

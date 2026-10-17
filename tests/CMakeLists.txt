@@ -7,6 +7,7 @@ add_onedrive_test(
 )
 
 find_program(BASH_EXECUTABLE bash REQUIRED)
+find_program(DPKG_DEB_EXECUTABLE dpkg-deb REQUIRED)
 find_package(Python3 3.11 COMPONENTS Interpreter REQUIRED)
 add_test(
     NAME prepare_source_tests
@@ -21,6 +22,15 @@ add_test(
         -P ${CMAKE_CURRENT_SOURCE_DIR}/packaging/offline.cmake
 )
 set_tests_properties(packaging_offline_input_tests PROPERTIES TIMEOUT 60)
+add_test(
+    NAME packaging_version_tests
+    COMMAND ${CMAKE_COMMAND}
+        -DPROJECT_BUILD_DIR=${PROJECT_BINARY_DIR}
+        -DCPACK_EXECUTABLE=${CMAKE_CPACK_COMMAND}
+        -DDPKG_DEB_EXECUTABLE=${DPKG_DEB_EXECUTABLE}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/packaging/version.cmake
+)
+set_tests_properties(packaging_version_tests PROPERTIES TIMEOUT 60)
 
 add_test(
     NAME packaging_install_tests
@@ -32,13 +42,13 @@ add_test(
 )
 set_tests_properties(packaging_install_tests PROPERTIES TIMEOUT 60)
 
-find_program(DPKG_DEB_EXECUTABLE dpkg-deb REQUIRED)
 add_test(
     NAME packaging_conffiles_tests
     COMMAND ${CMAKE_COMMAND}
         -DPROJECT_BUILD_DIR=${PROJECT_BINARY_DIR}
         -DSYSTEM_CONFIG_DIR=${ONEDRIVE_SYSTEM_CONFIG_DIR}
         "-DINSTALL_BINDIR=${CMAKE_INSTALL_BINDIR}"
+        "-DPACKAGE_VERSION=${ONEDRIVE_PACKAGE_VERSION}"
         -DCPACK_EXECUTABLE=${CMAKE_CPACK_COMMAND}
         -DDPKG_DEB_EXECUTABLE=${DPKG_DEB_EXECUTABLE}
         -P ${CMAKE_CURRENT_SOURCE_DIR}/packaging/conffiles.cmake

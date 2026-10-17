@@ -12,6 +12,11 @@ project(
 
 include(GNUInstallDirs)
 include(CTest)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${PROJECT_SOURCE_DIR}/vcpkg.json"
+    "${PROJECT_SOURCE_DIR}/debian/changelog"
+)
+include(cmake/PackageVersion.cmake)
 
 include(cmake/Dependencies.cmake)
 include(cmake/CompilerChecks.cmake)
