@@ -11,7 +11,6 @@
 #include "onedrive/exit_code.hpp"
 #include "onedrive/util/byte_size.hpp"
 
-#include <QActionGroup>
 #include <QApplication>
 #include <QFileDialog>
 #include <QCloseEvent>
@@ -22,7 +21,6 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
-#include <QMenuBar>
 #include <QPushButton>
 #include <QTabWidget>
 #include <QWidget>
@@ -140,6 +138,7 @@ MainWindow::MainWindow(
     auto* tabs = new QTabWidget{this};
     tabs_ = tabs;
     tabs_->setObjectName("mainTabs");
+    tabs_->setUsesScrollButtons(true);
     auto* overview = new QWidget{tabs};
     overview->setObjectName("overviewPage");
     auto* overview_layout = new QFormLayout{overview};
@@ -476,30 +475,41 @@ MainWindow::MainWindow(
     );
 
     setCentralWidget(tabs);
+    auto* header_controls = new QWidget{tabs};
+    header_controls->setObjectName("headerControls");
+    auto* header_layout = new QHBoxLayout{header_controls};
+    header_layout->setContentsMargins(8, 0, 0, 0);
     if (localization_) {
-        language_menu_ = menuBar()->addMenu(tr("Language"));
-        language_menu_->setObjectName("languageMenu");
-        language_actions_ = new QActionGroup{this};
-        language_actions_->setExclusive(true);
+        language_label_ = new QLabel{tr("Language"), header_controls};
+        language_selector_ = new QComboBox{header_controls};
+        language_selector_->setObjectName("languageSelector");
+        language_selector_->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+        language_label_->setBuddy(language_selector_);
         for (const auto language :
              {Language::automatic,
               Language::english,
               Language::simplified_chinese}) {
-            auto* action = language_menu_->addAction(QString{});
-            action->setCheckable(true);
-            action->setData(static_cast<int>(language));
-            language_actions_->addAction(action);
-            connect(action, &QAction::triggered, this, [this, language] {
-                localization_->set_language(language);
-                retranslate_ui();
-            });
+            language_selector_->addItem(QString{}, static_cast<int>(language));
         }
+        header_layout->addWidget(language_label_);
+        header_layout->addWidget(language_selector_);
+        connect(
+            language_selector_,
+            &QComboBox::currentIndexChanged,
+            this,
+            [this](int index) {
+                localization_->set_language(static_cast<Language>(
+                    language_selector_->itemData(index).toInt()
+                ));
+                retranslate_ui();
+            }
+        );
     }
-    help_menu_ = menuBar()->addMenu(tr("Help"));
-    help_menu_->setObjectName("helpMenu");
-    about_action_ = help_menu_->addAction(tr("About"));
-    about_action_->setObjectName("aboutAction");
-    connect(about_action_, &QAction::triggered, this, &MainWindow::show_about);
+    about_button_ = new QPushButton{tr("About"), header_controls};
+    about_button_->setObjectName("aboutButton");
+    header_layout->addWidget(about_button_);
+    tabs_->setCornerWidget(header_controls, Qt::TopRightCorner);
+    connect(about_button_, &QPushButton::clicked, this, &MainWindow::show_about);
     config_path->setText(QString::fromStdString(state_.config_file.string()));
     connect(import_button, &QPushButton::clicked, this, [this] {
         import_settings();
@@ -892,8 +902,7 @@ void MainWindow::changeEvent(QEvent* event) {
 
 void MainWindow::retranslate_ui() {
     setWindowTitle(tr("onedrive client"));
-    help_menu_->setTitle(tr("Help"));
-    about_action_->setText(tr("About"));
+    about_button_->setText(tr("About"));
     QApplication::setApplicationDisplayName(windowTitle());
     tabs_->setTabText(0, tr("Overview"));
     tabs_->setTabText(1, tr("Sync"));
@@ -999,22 +1008,28 @@ void MainWindow::retranslate_ui() {
             tr("Complete authorization in your system browser.")
         );
     }
-    if (language_menu_) {
-        language_menu_->setTitle(tr("Language"));
-        for (auto* action : language_actions_->actions()) {
-            const auto language = static_cast<Language>(action->data().toInt());
+    if (language_selector_) {
+        const QSignalBlocker blocker{language_selector_};
+        language_label_->setText(tr("Language"));
+        language_selector_->setAccessibleName(tr("Language"));
+        for (int index = 0; index < language_selector_->count(); ++index) {
+            const auto language = static_cast<Language>(
+                language_selector_->itemData(index).toInt()
+            );
             switch (language) {
             case Language::automatic:
-                action->setText(tr("System language"));
+                language_selector_->setItemText(index, tr("System language"));
                 break;
             case Language::english:
-                action->setText(tr("English"));
+                language_selector_->setItemText(index, tr("English"));
                 break;
             case Language::simplified_chinese:
-                action->setText(tr("Simplified Chinese"));
+                language_selector_->setItemText(index, tr("Simplified Chinese"));
                 break;
             }
-            action->setChecked(localization_->language() == language);
+            if (localization_->language() == language) {
+                language_selector_->setCurrentIndex(index);
+            }
         }
     }
 }

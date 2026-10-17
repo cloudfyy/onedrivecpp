@@ -106,9 +106,12 @@ Use
 .B \-\-language en
 for English, or
 .B \-\-language zh_CN
-for Simplified Chinese. The Language menu changes the running interface without
+for Simplified Chinese. The Language dropdown at the right of the page tabs
+changes the running interface without
 discarding settings edits or restarting login or synchronization. The selection applies only to
-the current process. CLI output remains English.
+the current process. The adjacent About button shows the build version, license,
+and project link. Both controls remain available during login, synchronization,
+and monitoring. There is no menu bar. CLI output remains English.
 .PP
 Settings contain Account and directories, Sync rules, Transfers, Network,
 Monitor, and Advanced and logs pages. Hover over a field for a brief explanation.

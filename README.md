@@ -163,7 +163,8 @@ below assume the project root is the current working directory.
 
 ### Optional desktop GUI
 
-**Help → About** shows the build version, license, and GitHub project link.
+The **About** button at the right of the page tabs shows the build version,
+license, and GitHub project link. There is no separate menu bar.
 
 The GUI requires Qt 6.8 or later, including Linguist tools and Qt's Simplified
 Chinese translation catalog. On Ubuntu 26.04:
@@ -190,11 +191,15 @@ The exact accepted `--language` values are `auto`, `en`, and `zh_CN`; unsupporte
 values or unknown options exit with an error. `--help` and `--version` print
 information without opening a window.
 
-Use the **Language** menu to switch between **System language**, **English**, and
+Use the **Language** dropdown at the right of the page tabs to switch between
+**System language**, **English**, and
 **Simplified Chinese** immediately. Existing labels, status messages, settings,
 and the window title update without losing unsaved settings drafts or restarting
-an active login or synchronization task. The checked menu item shows the selection. Both command-line
-and menu selections apply only to the current session and are not saved.
+an active login or synchronization task. The dropdown shows the current selection.
+Both command-line and dropdown selections apply only to the current session and
+are not saved.
+Language selection and **About** remain available during login, synchronization,
+and monitoring, even when Settings is disabled.
 Restart after changing the system language. Native dialogs and the external
 browser may follow their own system settings.
 

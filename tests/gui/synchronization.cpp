@@ -2768,7 +2768,16 @@ void test_progress_and_stop() {
             !QApplication::activeModalWidget(),
         "disabled account or configuration actions changed an active task"
     );
-    localization.set_language(gui::Language::simplified_chinese);
+    auto* language_selector =
+        window.findChild<QComboBox*>("languageSelector");
+    require(
+        language_selector && language_selector->isEnabled() &&
+            button(window, "aboutButton")->isEnabled(),
+        "header controls were disabled during synchronization"
+    );
+    language_selector->setCurrentIndex(language_selector->findData(
+        static_cast<int>(gui::Language::simplified_chinese)
+    ));
     QCoreApplication::processEvents();
     require(
         sync->text() == "立即同步" && stop->text() == "停止" &&
@@ -2790,7 +2799,8 @@ void test_progress_and_stop() {
                 "端状态…"
             ) &&
             messages->toPlainText().contains("阻塞：blocked.txt [conflict]") &&
-            draft->text() == "unsaved draft",
+            draft->text() == "unsaved draft" && calls == 1 &&
+            !sync->isEnabled() && stop->isEnabled(),
         "language switching reset progress, events or settings drafts"
     );
     button(window, "clearLogsButton")->click();

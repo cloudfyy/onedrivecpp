@@ -5,7 +5,7 @@
 #include "support/common.hpp"
 
 #include <QApplication>
-#include <QAction>
+#include <QComboBox>
 #include <QDesktopServices>
 #include <QElapsedTimer>
 #include <QFile>
@@ -14,10 +14,11 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
-#include <QMenu>
+#include <QMenuBar>
 #include <QPushButton>
 #include <QSettings>
 #include <QTabWidget>
+#include <QTabBar>
 #include <QTcpSocket>
 #include <QThread>
 #include <QTimer>
@@ -616,11 +617,20 @@ void test_runtime_language(bool system_chinese) {
     state_field->setText("/unsaved/状态-%2");
     sync_field->setCursorPosition(5);
     sync_field->setModified(true);
-    auto* menu = window.findChild<QMenu*>("languageMenu");
+    auto* language_selector =
+        window.findChild<QComboBox*>("languageSelector");
     auto* tabs = window.findChild<QTabWidget*>();
     auto* sign_in = window.findChild<QPushButton*>("signInButton");
+    auto* about = window.findChild<QPushButton*>("aboutButton");
     auto* status = window.findChild<QLabel*>("loginStatus");
-    require(menu && menu->actions().size() == 3, "language menu was missing");
+    auto* header = tabs->cornerWidget(Qt::TopRightCorner);
+    require(
+        language_selector && language_selector->count() == 3 && about && header &&
+            header->isAncestorOf(language_selector) &&
+            header->isAncestorOf(about) &&
+            window.findChildren<QMenuBar*>().isEmpty(),
+        "header controls were missing or a menu bar remained"
+    );
     const auto check_ui = [&](bool chinese, gui::Language language) {
         require(
             window.windowTitle() ==
@@ -661,25 +671,42 @@ void test_runtime_language(bool system_chinese) {
             "language switching rebuilt fields or discarded unsaved edits"
         );
         require(
-            menu->title() == expected(chinese, "Language", "语言") &&
-                menu->actions()[0]->text() ==
+            language_selector->accessibleName() ==
+                    expected(chinese, "Language", "语言") &&
+                has_label(window, expected(chinese, "Language", "语言")) &&
+                language_selector->itemText(0) ==
                     expected(chinese, "System language", "系统语言") &&
-                menu->actions()[1]->text() ==
+                language_selector->itemText(1) ==
                     expected(chinese, "English", "英语") &&
-                menu->actions()[2]->text() ==
+                language_selector->itemText(2) ==
                     expected(chinese, "Simplified Chinese", "简体中文"),
-            "language menu did not retranslate"
+            "language selector did not retranslate"
         );
-        for (auto* action : menu->actions()) {
+        require(
+            language_selector->currentData().toInt() ==
+                static_cast<int>(language),
+            "language selector showed the wrong selection"
+        );
+        for (const int width : {860, 600}) {
+            window.resize(width, 520);
+            QCoreApplication::processEvents();
             require(
-                action->isChecked() ==
-                    (action->data().toInt() == static_cast<int>(language)),
-                "language menu checked the wrong selection"
+                window.width() == width &&
+                    header->isVisible() && language_selector->isVisible() &&
+                    about->isVisible() &&
+                    tabs->rect().contains(header->geometry()) &&
+                    !tabs->tabBar()->geometry().intersects(header->geometry()) &&
+                    header->rect().contains(language_selector->geometry()) &&
+                    header->rect().contains(about->geometry()) &&
+                    tabs->usesScrollButtons(),
+                "narrow header hid controls or overlapped tabs"
             );
         }
     };
     const auto select = [&](gui::Language language, bool chinese) {
-        menu->actions()[static_cast<int>(language)]->trigger();
+        language_selector->setCurrentIndex(
+            language_selector->findData(static_cast<int>(language))
+        );
         QCoreApplication::processEvents();
         check_ui(chinese, language);
     };
@@ -706,8 +733,23 @@ void test_runtime_language(bool system_chinese) {
     require(
         status->text() == "正在启动浏览器登录…" && !sign_in->isEnabled() &&
             !window.findChild<QWidget*>("settingsPage")->isEnabled() &&
+            language_selector->isEnabled() && about->isEnabled() &&
             login_calls == 1,
         "language switching reset the in-progress login or its status"
+    );
+    bool about_opened = false;
+    QTimer::singleShot(0, [&] {
+        auto* dialog =
+            qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+        if (dialog) {
+            about_opened = dialog->objectName() == "aboutDialog";
+            dialog->accept();
+        }
+    });
+    about->click();
+    require(
+        about_opened && login_calls == 1 && !sign_in->isEnabled(),
+        "header About button interrupted login or failed to open"
     );
     window.findChild<QPushButton*>("accountActionButton")->click();
     select(gui::Language::english, false);
@@ -1003,7 +1045,7 @@ void test_login_refresh_language() {
 
 } // namespace
 
-void test_about_menu() {
+void test_about_button() {
     test::TemporaryDirectory fixture;
     gui::Localization localization{gui::Language::english};
     gui::MainWindow window{
@@ -1016,15 +1058,13 @@ void test_about_menu() {
             chinese ? gui::Language::simplified_chinese : gui::Language::english
         );
         QCoreApplication::processEvents();
-        auto* menu = window.findChild<QMenu*>("helpMenu");
-        auto* action = window.findChild<QAction*>("aboutAction");
+        auto* about = window.findChild<QPushButton*>("aboutButton");
         require(
-            menu && action &&
-                menu->title() == expected(chinese, "Help", "帮助") &&
-                action->text() == expected(chinese, "About", "关于") &&
+            about &&
+                about->text() == expected(chinese, "About", "关于") &&
                 window.windowTitle() ==
                     expected(chinese, "onedrive client", "OneDrive 客户端"),
-            "about menu did not translate or altered the window title"
+            "about button did not translate or altered the window title"
         );
         bool valid = false;
         QTimer::singleShot(0, [&] {
@@ -1049,7 +1089,7 @@ void test_about_menu() {
                 dialog->accept();
             }
         });
-        action->trigger();
+        about->click();
         require(valid, "about dialog omitted translated project information");
     }
 }
@@ -1108,7 +1148,7 @@ int main(int argc, char* argv[]) {
         );
         test_browser_language();
         test_login_refresh_language();
-        test_about_menu();
+        test_about_button();
     } catch (const std::exception& error) {
         return test::fail(error.what());
     }

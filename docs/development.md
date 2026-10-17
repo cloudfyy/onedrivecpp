@@ -147,10 +147,13 @@ for the application's lifetime. Simplified Chinese system locales use the
 The GUI-only `QCommandLineParser` accepts `--language auto|en|zh_CN` before
 installing translators or creating the window. `--help`/`--version` exit early;
 invalid values/options fail explicitly. There is no startup selection dialog.
-The session-only Language menu calls the application-owned `Localization`
+The session-only Language dropdown in the tab header calls the application-owned `Localization`
 controller; `LanguageChange` retranslates existing widgets and retained login
 and synchronization messages without reconstructing the window, resetting form
-values, or touching active workers. The CLI/TUI parser is unchanged.
+values, or touching active workers. The header also contains the About button;
+both controls remain enabled when the Settings page is disabled during a task.
+The tab bar scrolls when space is limited; there is no menu bar.
+The CLI/TUI parser is unchanged.
 Backend error details are intentionally preserved rather than translated.
 The localization regressions also switch languages during browser authorization
 and after successful or failed account refresh. A Qt URL handler captures valid
