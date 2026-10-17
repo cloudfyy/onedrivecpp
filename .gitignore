@@ -1,5 +1,7 @@
 /build/
 /vcpkg_installed/
+/third_party/
+__pycache__/
 /.cache/
 /compile_commands.json
 /*.deb

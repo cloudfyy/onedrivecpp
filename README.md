@@ -111,8 +111,8 @@ ninja --version
   library headers and build tools.
 - Allow HTTPS access to GitHub during the first CMake configuration so
   FetchContent can download the pinned FTXUI 7.0.3 and Proxy 4.1.0 dependencies.
-  Do not add Ubuntu 26.04's `libftxui-dev` 5.0 package to this setup: CMake would
-  prefer that older system package over the pinned download.
+  Ubuntu 26.04's `libftxui-dev` 5.0 package is too old; CMake rejects it and
+  uses the pinned source instead.
 
 After installation, use the Debug or Release build and CTest commands below.
 Installing packages alone does not verify that the project builds or its tests
@@ -145,10 +145,13 @@ may differ from Clang 20.
 The compiled libraries are resolved from the operating system and linked
 dynamically. This lets Debian security updates replace libcurl, OpenSSL,
 SQLite, spdlog, and fmt without rebuilding `onedrive-cpp`.
-FTXUI and Proxy 4 can be supplied as installed CMake packages. When they are
-unavailable, CMake downloads the pinned FTXUI 7.0.3 and ngcpp/proxy 4.1.0
-releases. Proxy 4 is header-only. The vcpkg manifest resolves these dependencies
-through the `ftxui` and `proxy` ports.
+Development builds accept FTXUI 7.0.3 or later in the 7.x series and Proxy
+4.1 or later in the 4.x series as installed CMake packages. Otherwise CMake
+uses the fixed source archives recorded in `packaging/dependencies.json`,
+downloading them when necessary. Proxy 4 is header-only. Release builds use
+the verified bundled archives instead of system copies of these two dependencies.
+Bundled-source licenses are installed under `share/doc/onedrive-cpp/licenses`.
+The vcpkg manifest resolves these dependencies through the `ftxui` and `proxy` ports.
 
 ## Build
 
@@ -472,12 +475,38 @@ upgrades that must keep local configuration, explicitly select dpkg's
 that did not register this conffile. Direct `cmake --install` does not provide
 dpkg's configuration protection.
 
+### Prepare release source for offline builds
+
+From a Git checkout, prepare the release source archive while online:
+
+```bash
+python3 tools/prepare_source.py
+tar -xf build/source/onedrive-cpp-1.0.1.tar.xz -C build/source
+cd build/source/onedrive-cpp-1.0.1
+```
+
+The archive contains the working-tree contents of Git-tracked files and the
+SHA256-verified FTXUI/Proxy source archives under `third_party/`. Untracked
+files and build caches are excluded; publish from a clean, committed checkout.
+Third-party sources are not committed to Git. Archives are cached under
+`build/dependency-archives`; `--archives-dir PATH --offline` prepares source
+without network access and fails if a cached archive is missing or corrupt.
+Archive timestamps use `SOURCE_DATE_EPOCH`, or the latest Git commit time.
+
+Install the target distribution's OS build dependencies before disconnecting.
+Debian rules always enable `ONEDRIVE_OFFLINE_BUILD=ON`: missing/corrupt bundled
+archives fail explicitly, with no network or installed FTXUI/Proxy fallback.
+For manual CMake/CPack builds from prepared source, pass
+`-DONEDRIVE_OFFLINE_BUILD=ON` at configuration time as well. The source archive
+does not contain an OS toolchain or Qt; matching target environments are still
+required, and this alone does not guarantee bit-identical binary packages.
+
 ### Official Debian package
 
 Install the packaging dependencies:
 
 ```bash
-sudo apt install -y build-essential devscripts debhelper cmake ninja-build \
+sudo apt install -y build-essential devscripts debhelper cmake ninja-build python3 git \
   clang-20 libcli11-dev libcurl4-openssl-dev libfmt-dev libspdlog-dev \
   libmsgsl-dev libsqlite3-dev libssl-dev libtomlplusplus-dev \
   nlohmann-json3-dev
@@ -490,7 +519,7 @@ sudo apt install -y qt6-base-dev qt6-tools-dev qt6-tools-dev-tools \
   qt6-translations-l10n
 ```
 
-From the project root, build the Ubuntu 24.04 CLI/TUI package with the
+From the prepared source directory above, build the Ubuntu 24.04 CLI/TUI package with the
 `nogui` build profile. This omits Qt build and runtime dependencies:
 
 ```bash

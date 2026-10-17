@@ -7,6 +7,20 @@ add_onedrive_test(
 )
 
 find_program(BASH_EXECUTABLE bash REQUIRED)
+find_package(Python3 3.11 COMPONENTS Interpreter REQUIRED)
+add_test(
+    NAME prepare_source_tests
+    COMMAND ${Python3_EXECUTABLE} ${PROJECT_SOURCE_DIR}/tools/test_prepare_source.py
+)
+set_tests_properties(prepare_source_tests PROPERTIES TIMEOUT 30)
+add_test(
+    NAME packaging_offline_input_tests
+    COMMAND ${CMAKE_COMMAND}
+        -DPROJECT_BUILD_DIR=${PROJECT_BINARY_DIR}
+        -DCXX_COMPILER=${CMAKE_CXX_COMPILER}
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/packaging/offline.cmake
+)
+set_tests_properties(packaging_offline_input_tests PROPERTIES TIMEOUT 60)
 
 add_test(
     NAME packaging_install_tests
@@ -700,7 +714,6 @@ add_onedrive_test(
 )
 
 if(ONEDRIVE_ENABLE_GRAPH_E2E)
-    find_package(Python3 COMPONENTS Interpreter REQUIRED)
     find_program(STDBUF_EXECUTABLE stdbuf REQUIRED)
     add_test(
         NAME graph_sync_e2e_self_test
@@ -761,7 +774,6 @@ if(ONEDRIVE_ENABLE_GRAPH_E2E)
 endif()
 
 if(ONEDRIVE_ENABLE_COVERAGE)
-    find_package(Python3 COMPONENTS Interpreter REQUIRED)
     add_test(
         NAME coverage_report_tests
         COMMAND ${Python3_EXECUTABLE} -B ${PROJECT_SOURCE_DIR}/tools/test_coverage_report.py

@@ -1,0 +1,14 @@
+{
+  "ftxui": {
+    "version": "7.0.3",
+    "archive": "ftxui-7.0.3.tar.gz",
+    "url": "https://github.com/ArthurSonzogni/FTXUI/archive/refs/tags/v7.0.3.tar.gz",
+    "sha256": "e7c62ffe19009759821b4f0f8df7f2a6fb83784c3a9f1477d81f56d3ee723c88"
+  },
+  "msft_proxy4": {
+    "version": "4.1.0",
+    "archive": "proxy-4.1.0.tar.gz",
+    "url": "https://github.com/ngcpp/proxy/archive/refs/tags/4.1.0.tar.gz",
+    "sha256": "f46fd0fbcaf461f4904f35416edf94abc62d5582b66d6e769e676fd7bd478311"
+  }
+}

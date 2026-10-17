@@ -97,9 +97,8 @@ ninja --version
 - 安装 Clang 时仍需保留 `build-essential`，以提供系统 C++ 标准库头文件
   和构建工具。
 - 首次配置 CMake 时需要通过 HTTPS 访问 GitHub，供 FetchContent 下载固定
-  版本的 FTXUI 7.0.3 和 Proxy 4.1.0。不要在这套环境中额外安装 Ubuntu 26.04
-  提供的 `libftxui-dev` 5.0 软件包，否则 CMake 会优先使用较旧的系统版本，
-  而非下载固定版本。
+  版本的 FTXUI 7.0.3 和 Proxy 4.1.0。Ubuntu 26.04 提供的 `libftxui-dev`
+  5.0 版本过旧，CMake 会拒绝该版本，改用固定源码。
 
 安装完成后，使用下文的 Debug 或 Release 构建与 CTest 命令验证。
 仅完成软件包安装，并不代表项目已在本机通过编译和测试。
@@ -126,9 +125,12 @@ git add path/to/modified.cpp path/to/modified.hpp
 
 构建系统从操作系统解析依赖库，并采用动态链接。因此，Debian 可以通过安全更新
 替换 libcurl、OpenSSL、SQLite、spdlog 和 fmt，无需重新构建 `onedrive-cpp`。
-FTXUI 和 Proxy 4 可以由已安装的 CMake 包提供；如果找不到，CMake 会分别下载
-固定版本的 FTXUI 7.0.3 和 ngcpp/proxy 4.1.0。Proxy 4 是纯头文件库
-（header-only）。vcpkg manifest 通过 `ftxui` 和 `proxy` port 解析这些依赖。
+开发构建可使用已安装的 FTXUI 7.x（至少 7.0.3）和 Proxy 4.x（至少 4.1）
+CMake 包；否则使用 `packaging/dependencies.json` 中记录的固定源码归档，
+必要时联网下载。Proxy 4 是纯头文件库（header-only）。
+正式发布构建使用校验后的随包归档，不选择这两个依赖的系统副本；
+随包源码的原始许可证安装到 `share/doc/onedrive-cpp/licenses`。
+vcpkg manifest 通过 `ftxui` 和 `proxy` port 解析这些依赖。
 
 ## 编译
 
@@ -392,12 +394,36 @@ arm64 不在本轮发布验证范围内。
 应显式选择 dpkg 的 `--force-confold` 策略，包括从未登记 conffile 的
 旧 CPack 包升级。直接使用 `cmake --install` 不具备 dpkg 的配置保护。
 
+### 准备离线构建用的发布源码包
+
+在 Git 工作区中，联网准备发布源码包：
+
+```bash
+python3 tools/prepare_source.py
+tar -xf build/source/onedrive-cpp-1.0.1.tar.xz -C build/source
+cd build/source/onedrive-cpp-1.0.1
+```
+
+归档包含 Git 已跟踪文件的当前工作区内容，以及 `third_party/` 下经过
+SHA256 校验的 FTXUI/Proxy 源码归档；不包含未跟踪文件或构建缓存。
+正式发布应使用干净、已提交的工作区，第三方源码不提交到 Git。
+下载缓存位于 `build/dependency-archives`；传入 `--archives-dir PATH --offline`
+可完全离线准备源码，缓存缺失或损坏会明确失败。
+归档时间戳取 `SOURCE_DATE_EPOCH`，未设置时取最近一次 Git 提交时间。
+
+断网前先安装目标发行版的系统构建依赖。Debian 规则始终启用
+`ONEDRIVE_OFFLINE_BUILD=ON`，随包归档缺失或损坏时直接报错，
+不回退联网或选择已安装的 FTXUI/Proxy。使用准备好的源码手动构建
+CMake/CPack 包时，也要在配置阶段传入 `-DONEDRIVE_OFFLINE_BUILD=ON`。
+源码包不包含操作系统工具链或 Qt，仍需匹配的目标环境；仅此一步不保证
+二进制安装包逐字节可复现。
+
 ### 构建正式 Debian 包
 
 安装打包依赖：
 
 ```bash
-sudo apt install -y build-essential devscripts debhelper cmake ninja-build \
+sudo apt install -y build-essential devscripts debhelper cmake ninja-build python3 git \
   clang-20 libcli11-dev libcurl4-openssl-dev libfmt-dev libspdlog-dev \
   libmsgsl-dev libsqlite3-dev libssl-dev libtomlplusplus-dev \
   nlohmann-json3-dev
@@ -410,7 +436,7 @@ sudo apt install -y qt6-base-dev qt6-tools-dev qt6-tools-dev-tools \
   qt6-translations-l10n
 ```
 
-在项目根目录，使用 `nogui` 构建 profile 制作 Ubuntu 24.04 CLI/TUI 包，
+在上文准备并解压的源码目录，使用 `nogui` 构建 profile 制作 Ubuntu 24.04 CLI/TUI 包，
 不引入 Qt 构建或运行依赖：
 
 ```bash

@@ -42,10 +42,25 @@
   - 未覆盖真实 X11/Wayland 显示、systemd 实际启动和账户同步、
     Ubuntu 24.04 环境及 Debian 原生构建。宿主机对应安装文件未改变。
   - 可重跑脚本、结果 JSON 和日志保存在当前会话 files/package-lifecycle/。
-- [ ] P1 完善干净离线构建依赖
+- [x] P1 完善干净离线构建依赖
   - 约束 FTXUI 兼容版本，明确 FTXUI 和 Proxy 的来源及离线供应方式。
   - 完善 Debian 构建依赖和第三方版权声明。
   - 在干净目标环境验证构建不依赖宿主机缓存。
+  - 采用方案 1：联网准备发布源码归档，固定依赖版本、来源和 SHA256 统一记录于
+    packaging/dependencies.json；third_party 源码归档随发布源码提供，不提交到 Git。
+  - tools/prepare_source.py 打包 Git 已跟踪文件和校验后的依赖；可复用缓存离线准备，
+    归一化元数据后重复输出逐字节一致。
+  - Debian 始终启用 ONEDRIVE_OFFLINE_BUILD，缺失或损坏归档明确失败；
+    不选择已安装的 FTXUI/Proxy，也拒绝 FetchContent 源码目录覆盖。
+  - 开发模式拒绝旧版 FTXUI 5；系统包兼容范围为 FTXUI 7.x（至少 7.0.3）
+    和 Proxy 4.x（至少 4.1）。Proxy 改用带 LICENSE 的完整源码归档，
+    原有 13 个头文件逐字节一致。
+  - 补齐 Python/Git 构建依赖、第三方版权声明和二进制包许可证安装。
+  - 已在 Ubuntu 26.04 的全新源码/构建目录中，通过 Bubblewrap 禁网并隐藏
+    宿主机 HOME，完成 GUI 与 CLI 构建及 DEB 生成；相关 CTest 分别 10/10、
+    8/8 通过，另有源码准备工具 8 项单测和 6 项依赖选择/校验检查通过。
+  - 本次使用宿主机已准备好的系统库及独立提供的 Qt 工具；全新系统镜像、
+    Ubuntu 24.04 和完整 Debian 原生打包仍留待发布门禁，不承诺二进制逐字节一致。
 - [ ] P2 统一安装前缀和服务路径
   - 根据安装前缀生成 systemd 用户服务的 ExecStart。
   - 验证 /usr、/usr/local 和自定义前缀。
