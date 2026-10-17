@@ -7,7 +7,7 @@
 [abraunegg/onedrive](https://github.com/abraunegg/onedrive) 的职责划分，但未
 复制其 D 语言实现。
 
-当前版本为 **1.0.2**。CLI、TUI、GUI、User-Agent 和 CPack 版本统一从
+当前版本为 **1.0.3**。CLI、TUI、GUI、User-Agent 和 CPack 版本统一从
 `vcpkg.json` 的 `version-semver` 生成；Debian 源码打包的发行版版本另记于
 `debian/changelog`。
 
@@ -427,8 +427,8 @@ arm64 不在本轮发布验证范围内。
 
 ```bash
 python3 tools/prepare_source.py
-tar -xf build/source/onedrive-cpp-1.0.2.tar.xz -C build/source
-cd build/source/onedrive-cpp-1.0.2
+tar -xf build/source/onedrive-cpp-1.0.3.tar.xz -C build/source
+cd build/source/onedrive-cpp-1.0.3
 ```
 
 归档包含 Git 已跟踪文件的当前工作区内容，以及 `third_party/` 下经过
@@ -485,7 +485,7 @@ dpkg-buildpackage --build=binary --no-sign
 目录的上一级，例如：
 
 ```text
-../onedrive-cpp_1.0.2-1~ubuntu24.04_amd64.deb
+../onedrive-cpp_1.0.3-1~ubuntu24.04_amd64.deb
 ```
 
 Debian 规则启用 `ONEDRIVE_DEBIAN_PACKAGE_BUILD=ON`。在依赖准备或编译之前，
@@ -495,7 +495,7 @@ CMake 要求 changelog 的完整版本与应用版本、修订号及实际构建
 （`noble`）；在 Ubuntu 26.04（`resolute`）构建前应更新对应条目，例如：
 
 ```bash
-dch --newversion 1.0.2-1~ubuntu26.04 --distribution resolute
+dch --newversion 1.0.3-1~ubuntu26.04 --distribution resolute
 ```
 
 Ubuntu 24.04 使用 `noble` 和 `ubuntu24.04` 后缀。仅修改打包流程时，
