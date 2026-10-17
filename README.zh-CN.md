@@ -337,6 +337,16 @@ sudo cmake --install build/release
 Shell 自动补全都会安装到 `/usr/local`。如需更改前缀，请在配置阶段设置
 `CMAKE_INSTALL_PREFIX`。
 
+用户服务在安装阶段生成，`ExecStart` 会匹配实际安装前缀，也支持
+`cmake --install ... --prefix` 覆盖和 CPack 默认的 `/usr` 前缀，
+不会写入 `DESTDIR` 暂存目录。自定义前缀不在 systemd 用户服务搜索路径内时，
+以普通用户身份链接已安装的服务，再重新加载用户管理器：
+
+```bash
+systemctl --user link /opt/onedrive-cpp/lib/systemd/user/onedrive-cpp.service
+systemctl --user daemon-reload
+```
+
 启用 `ONEDRIVE_BUILD_GUI=ON` 时，还会安装 `onedrive-cpp-gui`、
 桌面应用入口和 hicolor 应用图标。CLI 和 GUI 一起安装，不生成独立 GUI 包。
 

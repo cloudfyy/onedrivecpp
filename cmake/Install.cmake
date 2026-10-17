@@ -18,9 +18,12 @@ endif()
 install(FILES config/onedrive-cpp.toml
     DESTINATION ${ONEDRIVE_SYSTEM_CONFIG_DIR}
 )
-install(FILES packaging/systemd/onedrive-cpp.service
-    DESTINATION lib/systemd/user
+configure_file(
+    "${CMAKE_CURRENT_LIST_DIR}/install-service.cmake.in"
+    generated/install-service.cmake
+    @ONLY
 )
+install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/generated/install-service.cmake")
 install(FILES README.md README.zh-CN.md TERMS.md PRIVACY.md
     DESTINATION ${CMAKE_INSTALL_DOCDIR}
 )

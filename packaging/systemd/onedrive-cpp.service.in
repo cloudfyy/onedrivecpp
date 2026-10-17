@@ -1,0 +1,14 @@
+[Unit]
+Description=OneDrive C++ synchronization client
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart="@ONEDRIVE_SERVICE_EXECUTABLE@" transfer watch
+Restart=on-failure
+RestartSec=30
+UMask=0077
+
+[Install]
+WantedBy=default.target

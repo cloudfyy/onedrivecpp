@@ -411,6 +411,17 @@ user service, English and Simplified Chinese manual pages, and shell completion
 files under `/usr/local`. Set `CMAKE_INSTALL_PREFIX` while configuring when a
 different prefix is required.
 
+The user service is generated at installation time, so its `ExecStart` follows
+the actual prefix, including `cmake --install ... --prefix` overrides and CPack's
+default `/usr` prefix. A `DESTDIR` staging directory is not embedded in the service.
+For a custom prefix outside systemd's user unit search path, link the installed
+unit as your regular user, then reload the user manager:
+
+```bash
+systemctl --user link /opt/onedrive-cpp/lib/systemd/user/onedrive-cpp.service
+systemctl --user daemon-reload
+```
+
 When `ONEDRIVE_BUILD_GUI=ON`, installation also includes `onedrive-cpp-gui`,
 a desktop application entry, and hicolor application icons. The CLI and GUI
 are installed together; no separate GUI package is produced.

@@ -1,8 +1,12 @@
-if(NOT IS_DIRECTORY "${PROJECT_BUILD_DIR}" OR NOT DEFINED SYSTEM_CONFIG_DIR)
-    message(FATAL_ERROR "PROJECT_BUILD_DIR and SYSTEM_CONFIG_DIR are required")
+if(
+    NOT IS_DIRECTORY "${PROJECT_BUILD_DIR}" OR
+    NOT DEFINED SYSTEM_CONFIG_DIR OR NOT DEFINED INSTALL_BINDIR
+)
+    message(FATAL_ERROR "PROJECT_BUILD_DIR, SYSTEM_CONFIG_DIR and INSTALL_BINDIR are required")
 endif()
 
 include("${PROJECT_BUILD_DIR}/CPackConfig.cmake")
+include("${CMAKE_CURRENT_LIST_DIR}/service.cmake")
 cmake_path(
     ABSOLUTE_PATH SYSTEM_CONFIG_DIR
     BASE_DIRECTORY "${CPACK_PACKAGING_INSTALL_PREFIX}"
@@ -44,4 +48,21 @@ string(FIND "${CONTENTS}" " .${EXPECTED_CONFIG_FILE}\n" CONFIG_POSITION)
 if(CONFIG_POSITION EQUAL -1)
     message(FATAL_ERROR "Declared conffile is not present in the DEB")
 endif()
+set(EXPECTED_BINDIR "${INSTALL_BINDIR}")
+cmake_path(
+    ABSOLUTE_PATH EXPECTED_BINDIR
+    BASE_DIRECTORY "${CPACK_PACKAGING_INSTALL_PREFIX}"
+    NORMALIZE
+)
+string(FIND "${CONTENTS}" " .${EXPECTED_BINDIR}/onedrive-cpp\n" EXECUTABLE_POSITION)
+if(EXECUTABLE_POSITION EQUAL -1)
+    message(FATAL_ERROR "Service executable is not present in the DEB")
+endif()
+execute_process(
+    COMMAND "${DPKG_DEB_EXECUTABLE}" --fsys-tarfile "${PACKAGE}"
+    COMMAND tar -xOf - ".${CPACK_PACKAGING_INSTALL_PREFIX}/lib/systemd/user/onedrive-cpp.service"
+    OUTPUT_FILE "${STAGING_DIR}/onedrive-cpp.service"
+    COMMAND_ERROR_IS_FATAL ANY
+)
+check_service("${STAGING_DIR}/onedrive-cpp.service" "${EXPECTED_BINDIR}/onedrive-cpp")
 file(REMOVE_RECURSE "${STAGING_DIR}")
