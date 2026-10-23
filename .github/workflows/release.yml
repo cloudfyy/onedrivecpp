@@ -171,13 +171,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir assets
+          assets=$(mktemp -d "$RUNNER_TEMP/release-assets.XXXXXX")
           find incoming -type f \( -name '*.deb' -o -name '*.ddeb' \
             -o -name '*.changes' -o -name '*.buildinfo' -o -name '*.tar.xz' \) \
-            -exec cp -t assets -- {} +
-          test "$(find assets -maxdepth 1 -name 'onedrive-cpp_*.deb' | wc -l)" -eq 2
-          (cd assets && sha256sum -- * > SHA256SUMS && sha256sum -c SHA256SUMS)
-          gh release create "$GITHUB_REF_NAME" assets/* --verify-tag --draft \
+            -exec cp -t "$assets" -- {} +
+          test "$(find "$assets" -maxdepth 1 -name 'onedrive-cpp_*.deb' | wc -l)" -eq 2
+          (cd "$assets" && sha256sum -- * > SHA256SUMS && sha256sum -c SHA256SUMS)
+          gh release create "$GITHUB_REF_NAME" "$assets"/* --verify-tag --draft \
             --title "onedrive-cpp $GITHUB_REF_NAME" --generate-notes \
             --notes "Ubuntu 24.04 amd64: CLI/TUI. Ubuntu 26.04 amd64: CLI/TUI/GUI.
           Use the attached prepared source archive for bundled offline dependencies.

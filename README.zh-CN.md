@@ -485,7 +485,7 @@ dpkg-buildpackage --build=binary --no-sign
 目录的上一级，例如：
 
 ```text
-../onedrive-cpp_1.0.4-1~ubuntu24.04_amd64.deb
+../onedrive-cpp_1.0.4-2~ubuntu24.04_amd64.deb
 ```
 
 Debian 规则覆盖 debhelper 的 `FETCHCONTENT_FULLY_DISCONNECTED` 设置，
@@ -503,7 +503,7 @@ CMake 要求 changelog 的完整版本与应用版本、修订号及实际构建
 （`noble`）；在 Ubuntu 26.04（`resolute`）构建前应更新对应条目，例如：
 
 ```bash
-dch --newversion 1.0.4-1~ubuntu26.04 --distribution resolute
+dch --newversion 1.0.4-2~ubuntu26.04 --distribution resolute
 ```
 
 Ubuntu 24.04 使用 `noble` 和 `ubuntu24.04` 后缀。仅修改打包流程时，
@@ -563,13 +563,13 @@ Actions artifacts 保留。只有成功的**标签推送**才会创建 GitHub Re
 构建任务只读仓库。
 
 Debian revision 为 1 时，标签使用 `v<应用版本>`；后续打包修订使用
-`v<应用版本>-<修订号>`。当前 `1.0.4-1~ubuntu24.04` 使用 **`v1.0.4`**，
+`v<应用版本>-<修订号>`。当前 `1.0.4-2~ubuntu24.04` 使用 **`v1.0.4-2`**，
 不移动已有的发布标签。标签与 `vcpkg.json` 或 changelog 不一致时，
 流水线会失败。提交并推送发行改动后，执行：
 
 ```bash
-git tag -a v1.0.4 -m "onedrive-cpp 1.0.4"
-git push origin v1.0.4
+git tag -a v1.0.4-2 -m "onedrive-cpp 1.0.4, Debian revision 2"
+git push origin v1.0.4-2
 ```
 
 仓库需启用 GitHub Actions，并允许工作流创建 Release；无需个人访问令牌，
