@@ -1,3 +1,13 @@
+onedrive-cpp (1.0.4-1~ubuntu24.04) noble; urgency=medium
+
+  * Release version 1.0.4 with validated native Ubuntu 24.04 and 26.04 builds.
+  * Keep Clang 20 and security hardening while disabling incompatible distro LTO.
+  * Fix test interception of fortified read and poll calls.
+  * Add isolated package lifecycle gates and automated draft releases.
+  * Cache compiler results and dependency images for incremental CI builds.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Fri, 23 Oct 2026 09:30:00 +0000
+
 onedrive-cpp (1.0.3-2~ubuntu24.04) noble; urgency=medium
 
   * Rebuild with the Ubuntu 24.04 native dependency and offline archive fixes.
