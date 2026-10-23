@@ -1,7 +1,12 @@
 #!/usr/bin/make -f
 
+ifeq ($(TARGET_UBUNTU),26.04)
+export CC := gcc
+export CXX := g++
+else
 export CC := clang-20
 export CXX := clang++-20
+endif
 export DEB_BUILD_MAINT_OPTIONS := hardening=+all
 
 ifneq (,$(filter nogui,$(DEB_BUILD_PROFILES)))
