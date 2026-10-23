@@ -484,7 +484,7 @@ The package revision defaults to the latest `debian/changelog` entry, without
 its distribution suffix. To increment a CPack-only revision explicitly:
 
 ```bash
-cmake --preset release -DONEDRIVE_PACKAGE_REVISION=2
+cmake --preset release -DONEDRIVE_PACKAGE_REVISION=3
 ```
 
 Set it back to an empty string to follow the changelog again. Application
@@ -574,7 +574,7 @@ tests. The generated `.deb` is placed in the parent directory of the project,
 for example:
 
 ```text
-../onedrive-cpp_1.0.3-1~ubuntu24.04_amd64.deb
+../onedrive-cpp_1.0.3-2~ubuntu24.04_amd64.deb
 ```
 
 Debian rules override debhelper's `FETCHCONTENT_FULLY_DISCONNECTED` setting so
@@ -590,7 +590,7 @@ does not change the version. The checked-in changelog targets Ubuntu 24.04
 (`noble`); before building on Ubuntu 26.04 (`resolute`), update its entry, for example:
 
 ```bash
-dch --newversion 1.0.3-1~ubuntu26.04 --distribution resolute
+dch --newversion 1.0.3-2~ubuntu26.04 --distribution resolute
 ```
 
 Use `noble` and the `ubuntu24.04` suffix for Ubuntu 24.04. Increment the Debian
@@ -617,3 +617,52 @@ To check for Debian policy issues:
 sudo apt install -y lintian
 lintian "../onedrive-cpp_${version}_${architecture}.changes"
 ```
+
+### Package validation and release drafts
+
+`.github/workflows/release.yml` builds native Debian packages on pull requests,
+pushes to `main`, manual runs, and `v*` tags. It prepares one source archive with
+verified dependencies, provisions separate Ubuntu 24.04 and 26.04 Docker images,
+then builds and tests with networking disabled. Ubuntu 24.04 uses `nogui`;
+Ubuntu 26.04 includes the GUI. No OneDrive credentials are required.
+The test images restore manual-page installation and the real `man` executable
+where the minimal base image disables them.
+
+The gates check application/package versions, run the CTest suite through
+`dpkg-buildpackage`, and run Lintian (errors fail the job; warnings remain in
+the uploaded report). Disposable target containers check package metadata,
+licenses, CLI/GUI startup arguments, manual pages, desktop entry and service
+syntax, configuration-preserving upgrades, removal, and purge.
+The upgrade check uses a synthetic previous-package fixture with a changed
+default configuration; it does not establish compatibility with every
+previously published package. Real desktop interaction, systemd session startup,
+and live account synchronization remain separate release checks.
+
+Build logs, Lintian output, lifecycle logs, binary packages, and Debian build
+metadata are retained as workflow artifacts. Only successful **tag pushes**
+create a **draft** GitHub Release, with both distributions' packages, prepared
+source, and `SHA256SUMS`. Publication remains a manual review step. A rerun will
+not overwrite an existing release. The draft job alone receives `contents: write`;
+build jobs use read-only repository permissions.
+
+Use `v<application-version>` for Debian revision 1, and
+`v<application-version>-<revision>` for subsequent packaging releases.
+For example, `1.0.3-2~ubuntu24.04` uses tag **`v1.0.3-2`**; the existing
+`v1.0.3` tag remains unchanged. The workflow rejects a tag that disagrees with
+`vcpkg.json` or the changelog. After committing and pushing the release changes:
+
+```bash
+git tag -a v1.0.3-2 -m "onedrive-cpp 1.0.3, Debian revision 2"
+git push origin v1.0.3-2
+```
+
+Enable GitHub Actions in the repository and allow workflows to create releases.
+No personal access token is needed: the draft job uses the repository's
+`GITHUB_TOKEN`. After both build jobs pass, review the artifacts and draft notes
+before publishing. Use the attached prepared source archive for offline
+dependency builds; GitHub's automatic source archives omit bundled dependencies.
+
+For local reproduction, build the appropriate `.github/packaging.Dockerfile`
+image and use the same `docker run --network none` commands as the workflow.
+`tests/packaging/lifecycle.sh` installs and removes packages and requires root
+plus `ONEDRIVE_DISPOSABLE_PACKAGE_TEST=1`; **never run it on your workstation**.

@@ -1,0 +1,160 @@
+name: Debian packages
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      revision: ${{ steps.version.outputs.revision }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate release identity
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(python3 -c 'import json; print(json.load(open("vcpkg.json"))["version-semver"])')
+          package_version=$(dpkg-parsechangelog -S Version)
+          [[ "$package_version" == "$version"-*~ubuntu24.04 ]]
+          [[ "$(dpkg-parsechangelog -S Distribution)" == noble ]]
+          revision=${package_version#"$version"-}
+          revision=${revision%~ubuntu24.04}
+          [[ "$revision" =~ ^[A-Za-z0-9.+~]+$ ]]
+          tag="v$version"
+          if [[ "$revision" != 1 ]]; then tag="$tag-$revision"; fi
+          if [[ "$GITHUB_REF_TYPE" == tag && "$GITHUB_REF_NAME" != "$tag" ]]; then
+            echo "Tag must match release metadata: expected $tag, got $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+      - name: Prepare verified release source
+        run: python3 tools/prepare_source.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-source
+          path: build/source/*.tar.xz
+          if-no-files-found: error
+
+  package:
+    needs: source
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - ubuntu: '24.04'
+            suite: noble
+            profile: nogui
+          - ubuntu: '26.04'
+            suite: resolute
+            profile: ''
+    env:
+      VERSION: ${{ needs.source.outputs.version }}
+      REVISION: ${{ needs.source.outputs.revision }}
+      TARGET_UBUNTU: ${{ matrix.ubuntu }}
+      TARGET_SUITE: ${{ matrix.suite }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-source
+          path: build/source
+      - name: Prepare target build image
+        run: |
+          docker build -f .github/packaging.Dockerfile -t onedrive-package-build \
+            --build-arg UBUNTU_VERSION="$TARGET_UBUNTU" \
+            --build-arg BUILD_PROFILE="${{ matrix.profile }}" .
+      - name: Build native packages without network access
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build/package-work
+          tar -xf "build/source/onedrive-cpp-$VERSION.tar.xz" -C build/package-work
+          docker run --rm --network none \
+            --user "$(id -u):$(id -g)" --env HOME=/tmp/build-home \
+            --env VERSION --env REVISION --env TARGET_UBUNTU --env TARGET_SUITE \
+            --env SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" \
+            --env DEB_BUILD_OPTIONS=parallel=2 \
+            --env DEBFULLNAME="onedrive-cpp release automation" \
+            --env DEBEMAIL=noreply@github.com \
+            --volume "$PWD/build/package-work:/work" \
+            --workdir "/work/onedrive-cpp-$VERSION" \
+            onedrive-package-build bash -euo pipefail -c '
+              mkdir -p "$HOME"
+              if [[ "$TARGET_UBUNTU" != 24.04 ]]; then
+                dch --newversion "$VERSION-$REVISION~ubuntu$TARGET_UBUNTU" \
+                  --distribution "$TARGET_SUITE" "Build for Ubuntu $TARGET_UBUNTU."
+              fi
+              dpkg-buildpackage --build=binary --no-sign
+              lintian --fail-on error ../*.changes 2>&1 | tee ../lintian.txt
+            ' 2>&1 | tee "build/package-work/build-$TARGET_UBUNTU.log"
+      - name: Check package lifecycle in a disposable target container
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none \
+            --env ONEDRIVE_DISPOSABLE_PACKAGE_TEST=1 \
+            --volume "$PWD/build/package-work:/work:ro" \
+            onedrive-package-build bash \
+            "/work/onedrive-cpp-$VERSION/tests/packaging/lifecycle.sh" \
+            "/work/onedrive-cpp-$VERSION" \
+            "/work/onedrive-cpp_$VERSION-$REVISION~ubuntu${TARGET_UBUNTU}_amd64.deb" \
+            2>&1 | tee "build/package-work/lifecycle-$TARGET_UBUNTU.log"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: debian-ubuntu${{ matrix.ubuntu }}-amd64
+          path: |
+            build/package-work/*.deb
+            build/package-work/*.ddeb
+            build/package-work/*.changes
+            build/package-work/*.buildinfo
+            build/package-work/*.log
+            build/package-work/lintian.txt
+          if-no-files-found: error
+
+  draft-release:
+    needs: [source, package]
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: incoming
+      - name: Create draft with verified assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir assets
+          find incoming -type f \( -name '*.deb' -o -name '*.ddeb' \
+            -o -name '*.changes' -o -name '*.buildinfo' -o -name '*.tar.xz' \) \
+            -exec cp -t assets -- {} +
+          test "$(find assets -maxdepth 1 -name 'onedrive-cpp_*.deb' | wc -l)" -eq 2
+          (cd assets && sha256sum -- * > SHA256SUMS && sha256sum -c SHA256SUMS)
+          gh release create "$GITHUB_REF_NAME" assets/* --verify-tag --draft \
+            --title "onedrive-cpp $GITHUB_REF_NAME" --generate-notes \
+            --notes "Ubuntu 24.04 amd64: CLI/TUI. Ubuntu 26.04 amd64: CLI/TUI/GUI.
+          Use the attached prepared source archive for bundled offline dependencies.
+          Review the build and lifecycle logs before publishing this draft.
+          Lifecycle checks use a synthetic prior-package fixture; they do not replace
+          real desktop, live account, or previously published package upgrade checks."

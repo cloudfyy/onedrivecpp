@@ -1,4 +1,5 @@
 import argparse
+import gzip
 from email.parser import Parser
 from email.utils import parseaddr
 from pathlib import Path, PurePosixPath
@@ -40,10 +41,16 @@ def check_metadata(source, package, doc_dir, dpkg_deb):
         with tarfile.open(fileobj=process.stdout, mode="r|") as archive:
             for member in archive:
                 path = PurePosixPath(member.name)
+                compressed = path.suffix == ".gz"
+                if compressed:
+                    path = path.with_suffix("")
                 if path in expected_files:
                     assert member.isfile(), f"Not a regular file: {path}"
                     with archive.extractfile(member) as installed:
-                        assert installed.read() == expected_files[path], f"Incorrect installed {path}"
+                        contents = installed.read()
+                        if compressed:
+                            contents = gzip.decompress(contents)
+                        assert contents == expected_files[path], f"Incorrect installed {path}"
                     found.add(path)
         result = process.wait()
         if result:

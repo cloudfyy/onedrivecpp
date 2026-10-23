@@ -402,7 +402,7 @@ Ubuntu 26.04 包仍必须在 Ubuntu 26.04 环境中构建和测试；仅修改�
 仅为 CPack 显式递增修订号时可配置：
 
 ```bash
-cmake --preset release -DONEDRIVE_PACKAGE_REVISION=2
+cmake --preset release -DONEDRIVE_PACKAGE_REVISION=3
 ```
 
 将该选项设回空字符串即可重新跟随 changelog。CMake、`vcpkg.json` 和
@@ -485,7 +485,7 @@ dpkg-buildpackage --build=binary --no-sign
 目录的上一级，例如：
 
 ```text
-../onedrive-cpp_1.0.3-1~ubuntu24.04_amd64.deb
+../onedrive-cpp_1.0.3-2~ubuntu24.04_amd64.deb
 ```
 
 Debian 规则覆盖 debhelper 的 `FETCHCONTENT_FULLY_DISCONNECTED` 设置，
@@ -499,7 +499,7 @@ CMake 要求 changelog 的完整版本与应用版本、修订号及实际构建
 （`noble`）；在 Ubuntu 26.04（`resolute`）构建前应更新对应条目，例如：
 
 ```bash
-dch --newversion 1.0.3-1~ubuntu26.04 --distribution resolute
+dch --newversion 1.0.3-2~ubuntu26.04 --distribution resolute
 ```
 
 Ubuntu 24.04 使用 `noble` 和 `ubuntu24.04` 后缀。仅修改打包流程时，
@@ -525,3 +525,42 @@ Ubuntu 26.04 的应用菜单还会提供 **OneDrive 客户端** 入口。
 sudo apt install -y lintian
 lintian "../onedrive-cpp_${version}_${architecture}.changes"
 ```
+
+### 安装包门禁与 Release 草稿
+
+`.github/workflows/release.yml` 在 Pull Request、推送 `main`、手动运行及推送
+`v*` 标签时构建原生 Debian 包。先准备带校验依赖的统一源码包，再分别准备
+Ubuntu 24.04、26.04 Docker 镜像，随后禁网构建与测试。24.04 使用 `nogui`，
+26.04 包含 GUI；无需 OneDrive 账号凭据。
+测试镜像会恢复最小系统中被禁用的手册安装及真实 `man` 程序。
+
+门禁核对应用／包版本，通过 `dpkg-buildpackage` 运行 CTest，并执行 Lintian：
+错误阻断流水线，警告保留在上传报告中。独立目标容器检查包元数据、许可证、
+CLI／GUI 启动参数、man 手册、桌面入口和服务语法，以及升级保留配置、remove
+和 purge。升级检查使用修改了默认配置的模拟旧包，不代表已经验证所有历史发布包
+的升级兼容性；真实桌面交互、systemd 登录会话启动和账号同步仍需单独验证。
+
+构建日志、Lintian 报告、生命周期日志、二进制包及 Debian 构建元数据作为
+Actions artifacts 保留。只有成功的**标签推送**才会创建 GitHub Release **草稿**，
+附带两种发行版的包、准备好的源码及 `SHA256SUMS`，发布仍须人工审核。
+重新运行不会覆盖已有 Release。仅草稿创建任务具有 `contents: write` 权限，
+构建任务只读仓库。
+
+Debian revision 为 1 时，标签使用 `v<应用版本>`；后续打包修订使用
+`v<应用版本>-<修订号>`。例如 `1.0.3-2~ubuntu24.04` 使用 **`v1.0.3-2`**，
+不移动已有的 `v1.0.3` 标签。标签与 `vcpkg.json` 或 changelog 不一致时，
+流水线会失败。提交并推送发行改动后，执行：
+
+```bash
+git tag -a v1.0.3-2 -m "onedrive-cpp 1.0.3, Debian revision 2"
+git push origin v1.0.3-2
+```
+
+仓库需启用 GitHub Actions，并允许工作流创建 Release；无需个人访问令牌，
+草稿任务使用仓库的 `GITHUB_TOKEN`。两个构建任务通过后，检查附件及草稿说明再发布。
+离线依赖构建应使用附件中的准备好源码包，而非不含依赖归档的 GitHub 自动源码包。
+
+本地复现时，构建对应的 `.github/packaging.Dockerfile` 镜像，并使用工作流中
+相同的 `docker run --network none` 命令。`tests/packaging/lifecycle.sh` 会安装及
+卸载包，要求 root 和 `ONEDRIVE_DISPOSABLE_PACKAGE_TEST=1`；
+**只能在一次性容器内运行，不要在日常工作系统执行**。
