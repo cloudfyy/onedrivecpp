@@ -27,6 +27,29 @@ std::atomic_bool intercept_snapshot_read{false};
 std::atomic_int reads_before_mutation{0};
 bool snapshot_read_failure{false};
 
+bool prepare_snapshot_read(int descriptor) {
+    if (intercept_snapshot_read.load()) {
+        std::array<char, 4096> path{};
+        const auto count = ::readlink(
+            ("/proc/self/fd/" + std::to_string(descriptor)).c_str(),
+            path.data(),
+            path.size()
+        );
+        if (count > 0 &&
+            std::string_view{path.data(), static_cast<std::size_t>(count)} ==
+                snapshot_source.native() &&
+            reads_before_mutation.fetch_sub(1) == 0 &&
+            intercept_snapshot_read.exchange(false)) {
+            if (snapshot_read_failure) {
+                errno = EIO;
+                return false;
+            }
+            mutate_snapshot_source();
+        }
+    }
+    return true;
+}
+
 struct SnapshotReadGuard {
     ~SnapshotReadGuard() {
         intercept_snapshot_read = false;
@@ -826,28 +849,22 @@ int test_failure_log_includes_exception() {
 extern "C" {
 int __real_fstatat(int, const char*, struct stat*, int);
 ssize_t __real_read(int, void*, size_t);
+ssize_t __real___read_chk(int, void*, size_t, size_t);
 
 ssize_t __wrap_read(int descriptor, void* buffer, size_t size) {
-    if (intercept_snapshot_read.load()) {
-        std::array<char, 4096> path{};
-        const auto count = ::readlink(
-            ("/proc/self/fd/" + std::to_string(descriptor)).c_str(),
-            path.data(),
-            path.size()
-        );
-        if (count > 0 &&
-            std::string_view{path.data(), static_cast<std::size_t>(count)} ==
-                snapshot_source.native() &&
-            reads_before_mutation.fetch_sub(1) == 0 &&
-            intercept_snapshot_read.exchange(false)) {
-            if (snapshot_read_failure) {
-                errno = EIO;
-                return -1;
-            }
-            mutate_snapshot_source();
-        }
+    if (!prepare_snapshot_read(descriptor)) {
+        return -1;
     }
     return __real_read(descriptor, buffer, size);
+}
+
+ssize_t __wrap___read_chk(
+    int descriptor, void* buffer, size_t size, size_t buffer_size
+) {
+    if (size <= buffer_size && !prepare_snapshot_read(descriptor)) {
+        return -1;
+    }
+    return __real___read_chk(descriptor, buffer, size, buffer_size);
 }
 
 int __wrap_fstatat(

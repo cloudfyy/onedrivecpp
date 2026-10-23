@@ -45,6 +45,19 @@ struct Script {
 std::atomic<Script*> active{nullptr};
 constexpr int fake_descriptor = 987654;
 
+int poll_script(pollfd* descriptors) {
+    auto* script = active.load();
+    {
+        const std::scoped_lock lock{script->mutex};
+        if (script->kernel_readable && !script->receives.empty()) {
+            descriptors[0].revents = POLLIN;
+            return 1;
+        }
+    }
+    std::this_thread::sleep_for(1ms);
+    return 0;
+}
+
 void require(bool condition, const char* message) {
     if (!condition)
         throw std::runtime_error{message};
@@ -260,19 +273,21 @@ extern "C" CURLcode __wrap_curl_easy_getinfo(CURL* curl, int info, ...) {
 }
 
 extern "C" int __real_poll(pollfd*, nfds_t, int);
+extern "C" int __real___poll_chk(pollfd*, nfds_t, int, std::size_t);
 extern "C" int __wrap_poll(pollfd* descriptors, nfds_t count, int timeout) {
     if (count != 1 || descriptors[0].fd != fake_descriptor)
         return __real_poll(descriptors, count, timeout);
-    auto* script = active.load();
-    {
-        const std::scoped_lock lock{script->mutex};
-        if (script->kernel_readable && !script->receives.empty()) {
-            descriptors[0].revents = POLLIN;
-            return 1;
-        }
+    return poll_script(descriptors);
+}
+
+extern "C" int __wrap___poll_chk(
+    pollfd* descriptors, nfds_t count, int timeout, std::size_t buffer_size
+) {
+    if (count == 1 && buffer_size >= sizeof(pollfd) &&
+        descriptors[0].fd == fake_descriptor) {
+        return poll_script(descriptors);
     }
-    std::this_thread::sleep_for(1ms);
-    return 0;
+    return __real___poll_chk(descriptors, count, timeout, buffer_size);
 }
 
 extern "C" CURLcode __wrap_curl_ws_recv(

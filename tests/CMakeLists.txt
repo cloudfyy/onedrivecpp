@@ -619,13 +619,17 @@ add_onedrive_test(
     INCLUDE_DIRS src tests
     LIBRARIES CURL::libcurl spdlog::spdlog
 )
-target_link_options(monitor_input_tests PRIVATE -Wl,--wrap=read)
+target_link_options(monitor_input_tests PRIVATE
+    -Wl,--wrap=read
+    -Wl,--wrap=__read_chk
+)
 target_link_options(monitor_socket_transport_tests PRIVATE
     -Wl,--wrap=curl_easy_perform
     -Wl,--wrap=curl_easy_getinfo
     -Wl,--wrap=curl_ws_recv
     -Wl,--wrap=curl_ws_send
     -Wl,--wrap=poll
+    -Wl,--wrap=__poll_chk
 )
 foreach(PREFLIGHT_TEST IN ITEMS state sync invalid)
     add_onedrive_test(
@@ -646,6 +650,7 @@ endforeach()
 target_link_options(sync_watch_race_tests PRIVATE
     -Wl,--wrap=fstatat
     -Wl,--wrap=read
+    -Wl,--wrap=__read_chk
 )
 target_link_libraries(sync_watch_race_tests PRIVATE spdlog::spdlog)
 set_tests_properties(sync_watch_race_tests PROPERTIES TIMEOUT 30)

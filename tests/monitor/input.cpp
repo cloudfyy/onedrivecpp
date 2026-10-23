@@ -23,6 +23,16 @@ using onedrive::test::fail;
 int interrupted_descriptor = -1;
 unsigned interruptions = 0;
 
+bool interrupt_read(int descriptor) {
+    if (descriptor == interrupted_descriptor && descriptor >= 0) {
+        interrupted_descriptor = -1;
+        ++interruptions;
+        errno = EINTR;
+        return true;
+    }
+    return false;
+}
+
 bool exits_for(std::string_view keys, bool interrupt = false) {
     std::array<int, 2> pipe_descriptors{};
     if (::pipe(pipe_descriptors.data()) == -1) {
@@ -261,14 +271,21 @@ int test_keyboard_exit_during_initial_sync() {
 }  // namespace
 
 extern "C" ssize_t __real_read(int, void*, std::size_t);
+extern "C" ssize_t __real___read_chk(int, void*, std::size_t, std::size_t);
 extern "C" ssize_t __wrap_read(int descriptor, void* buffer, std::size_t size) {
-    if (descriptor == interrupted_descriptor && descriptor >= 0) {
-        interrupted_descriptor = -1;
-        ++interruptions;
-        errno = EINTR;
+    if (interrupt_read(descriptor)) {
         return -1;
     }
     return __real_read(descriptor, buffer, size);
+}
+
+extern "C" ssize_t __wrap___read_chk(
+    int descriptor, void* buffer, std::size_t size, std::size_t buffer_size
+) {
+    if (size <= buffer_size && interrupt_read(descriptor)) {
+        return -1;
+    }
+    return __real___read_chk(descriptor, buffer, size, buffer_size);
 }
 
 int main() {
