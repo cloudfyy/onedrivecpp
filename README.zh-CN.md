@@ -492,6 +492,10 @@ Debian 规则覆盖 debhelper 的 `FETCHCONTENT_FULLY_DISCONNECTED` 设置，
 允许 CMake 解压随包依赖。`ONEDRIVE_OFFLINE_BUILD=ON` 仍要求本地归档存在且
 通过 SHA256 校验，不会回退到联网下载。
 
+两个目标的原生包均使用 Clang 20。Debian 规则禁用发行版自动添加的
+LTO／fat-LTO 参数，避开存在问题的 Clang 与 GNU 归档／链接工具组合；
+仍保留 Release 优化和 `hardening=+all`。
+
 Debian 规则启用 `ONEDRIVE_DEBIAN_PACKAGE_BUILD=ON`。在依赖准备或编译之前，
 CMake 要求 changelog 的完整版本与应用版本、修订号及实际构建发行版匹配，
 且 suite 与 `/etc/os-release` 的 `VERSION_CODENAME` 一致。

@@ -2,7 +2,8 @@
 
 export CC := clang-20
 export CXX := clang++-20
-export DEB_BUILD_MAINT_OPTIONS := hardening=+all
+# Avoid the distro fat-LTO path with Clang and GNU archive/link tools.
+export DEB_BUILD_MAINT_OPTIONS := hardening=+all optimize=-lto
 
 ifneq (,$(filter nogui,$(DEB_BUILD_PROFILES)))
 GUI_ENABLED := OFF

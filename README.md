@@ -582,6 +582,10 @@ CMake can extract bundled dependencies. `ONEDRIVE_OFFLINE_BUILD=ON` still
 requires local archives with matching SHA256 hashes and never falls back to
 network downloads.
 
+Native packages use Clang 20 on both targets. Debian rules disable the
+distribution's automatic LTO/fat-LTO flags to avoid the problematic Clang/GNU
+archive and linker path; Release optimization and `hardening=+all` remain enabled.
+
 Debian rules enable `ONEDRIVE_DEBIAN_PACKAGE_BUILD=ON`. Before dependency setup
 or compilation, CMake requires the complete changelog version to match the
 application, revision and actual build distribution, and the changelog suite

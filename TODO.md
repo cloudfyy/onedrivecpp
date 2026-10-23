@@ -122,7 +122,8 @@
     构建依赖，以非 root 身份禁网完成 dpkg-buildpackage，121 项测试全部通过；
     原生 DEB 和调试包已生成，Lintian 无错误。
   - 启用真实 man 后，Lintian 的 groff 检查报告渲染子进程崩溃警告；
-    同环境直接渲染包内中英文手册成功，警告仍保留在报告中，发布前须复核。
+    同环境直接渲染包内中英文手册成功。首次 Actions 的 Ubuntu 24.04 构建
+    和生命周期检查已通过，日志未出现该 groff 警告；本地警告仍保留在报告中。
   - 已在该隔离系统中验证本地安装、模拟旧包升级、修改配置保留、CLI 启动参数、
     中英文压缩 man 手册、服务语法及离线 enable/disable、remove 和 purge；
     man-db 触发器正常执行，无 Qt 运行依赖，未改变宿主机安装。
@@ -131,9 +132,20 @@
     附带准备好的源码、二进制包、构建元数据和 SHA256SUMS，正式发布仍需人工审核。
   - 最小镜像恢复真实 man 程序及手册安装，测试明确核对中文路径，避免占位程序
     或英文回退掩盖缺失；本地包由 APT 安装，网络由容器隔离层禁用。
-  - 工作流已通过 actionlint；本机无 Docker，Ubuntu 24.04 使用 Bubblewrap
-    隔离 rootfs 验证。Ubuntu 26.04 原生 Docker 链路和双平台完整 Actions
-    仍待提交推送后的首次运行，本项暂不勾选完成。
+  - 首次 Actions（39884659346）中 Ubuntu 24.04 原生构建和生命周期检查通过；
+    Ubuntu 26.04 在 Clang 链接 console_tests 时出现未解析的模板和内联符号。
+    切换 GCC 的 PR #1 又在数据库迁移测试中编译失败，不采用该编译器切换方案。
+  - 已在 Ubuntu 26.04 禁网隔离环境用相同源码对照确认：启用发行版的
+    LTO／fat-LTO 可复现链接失败，关闭后 console_tests 和 db_migrate_tests
+    均可构建。Debian 规则改为 hardening=+all optimize=-lto，继续使用
+    Clang 20，保留 Release 优化及安全加固。
+  - 本机 Docker 服务不可用，Ubuntu 26.04 对照使用宿主系统库和独立源码／
+    构建目录，不等同全新发行版镜像。修复后的双平台原生 Actions 仍待重新运行，
+    本项暂不勾选完成。
+  - 关闭 LTO 后，Ubuntu 26.04 在同一禁网隔离环境完成全量 GUI 构建，
+    140 项测试通过，并生成 1.0.3-2~ubuntu26.04 的 CPack GUI 合包；
+    Ubuntu 24.04／26.04 均已核对 Debian 子进程不再继承 LTO 参数，
+    同时保留安全加固。此结果不替代修复后双平台 dpkg-buildpackage 门禁。
   - 模拟旧包不替代所有历史发布包升级验证；真实桌面交互、systemd 登录会话启动
     和在线账号同步仍须发布前单独检查。未创建新远端标签或 Release。
 - [x] P2 更新中英文安装包制作文档
