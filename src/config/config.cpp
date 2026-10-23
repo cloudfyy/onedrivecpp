@@ -131,6 +131,17 @@ std::string array_comments(std::string_view contents, const toml::node& node) {
 
 } // namespace
 
+std::vector<std::string> Config::configured_drive_ids() const {
+    return drive_ids.empty() ? std::vector<std::string>{drive_id} : drive_ids;
+}
+
+Config Config::for_drive(std::string id) const {
+    auto result = *this;
+    result.drive_ids.clear();
+    result.drive_id = std::move(id);
+    return result;
+}
+
 Config Config::defaults() {
     const char* home = std::getenv("HOME");
     if (home == nullptr) {
@@ -152,6 +163,7 @@ Config Config::defaults() {
         .dotfiles = DotfilePolicy::include,
         .maximum_file_size_bytes = 0,
         .drive_id = "me",
+        .drive_ids = {},
         .application_id = {},
         .azure_tenant_id = "common",
         .auth_endpoint = "https://login.microsoftonline.com",

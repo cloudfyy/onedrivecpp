@@ -217,6 +217,37 @@ int execute_command(
     const cli::Console& console
 ) {
     const auto operation = arguments.operation;
+    if (config.drive_ids.size() > 1 &&
+        (operation == Operation::quota || operation == Operation::status ||
+         operation == Operation::blocked || operation == Operation::storage ||
+         operation == Operation::partials || operation == Operation::files)) {
+        int aggregate = exit_code::success;
+        for (const auto& id : config.drive_ids) {
+            console.section(
+                "drive_target",
+                "Configured Drive:",
+                {{.label = "drive:", .key = "drive_reference", .value = id}}
+            );
+            try {
+                const int result = execute_command(
+                    arguments, config.for_drive(id), runtime_factory, console
+                );
+                if (result != exit_code::success) {
+                    aggregate = result;
+                }
+            } catch (const graph::AccountAuthenticationError&) {
+                throw;
+            } catch (const std::runtime_error& error) {
+                console.report_message(
+                    cli::MessageKind::error,
+                    "drive_inspection_failed",
+                    "Drive '" + id + "': " + error.what()
+                );
+                aggregate = exit_code::failure;
+            }
+        }
+        return aggregate;
+    }
     if (operation == Operation::monitor_status ||
         operation == Operation::monitor_trigger ||
         operation == Operation::monitor_stop) {

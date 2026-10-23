@@ -1047,6 +1047,18 @@ int test_hashes_and_drive_items() {
 } // namespace
 
 int main() {
+    if (!throws_with<onedrive::graph::AccountAuthenticationError>(
+            [] {
+                detail::require_successful_graph_response(
+                    Json{{"error", {{"message", "account token rejected"}}}},
+                    401,
+                    "delta"
+                );
+            },
+            "account token rejected"
+        )) {
+        return fail("Graph authentication failure lost its account-wide type");
+    }
     if (test_unsupported_formats() != EXIT_SUCCESS ||
         test_unsupported_ancestry() != EXIT_SUCCESS ||
         test_ancestor_metadata_validation() != EXIT_SUCCESS ||

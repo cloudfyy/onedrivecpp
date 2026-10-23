@@ -7,6 +7,69 @@ namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::monitor;
 
+int test_multiple_channels_and_local_roots() {
+    MonitorFixture fixture;
+    const auto first = fixture.root / "first";
+    const auto second = fixture.root / "second";
+    std::filesystem::create_directory(first);
+    std::filesystem::create_directory(second);
+    std::atomic_int rounds{0};
+    std::atomic_int first_requests{0};
+    std::atomic_int second_requests{0};
+    const auto callbacks = [](std::atomic_int& requests) {
+        return onedrive::monitor::NotificationCallbacks{
+            .acquire_channel =
+                [&requests]() -> onedrive::monitor::NotificationChannelResult {
+                ++requests;
+                return std::unexpected{false};
+            },
+            .refresh_token = [] { return true; },
+            .proxy = {},
+            .initial_backoff = 10ms,
+            .maximum_backoff = 20ms,
+        };
+    };
+    onedrive::monitor::Monitor monitor{
+        fixture.root,
+        [&](const std::stop_token&) {
+            ++rounds;
+            return exit_code::success;
+        },
+        5s,
+        10ms,
+        callbacks(first_requests),
+        {},
+        {callbacks(second_requests)}
+    };
+    std::atomic_int result{-1};
+    std::jthread worker{[&](std::stop_token token) {
+        result = monitor.run(token);
+    }};
+    bool ready = wait_until(
+        [&] {
+            return rounds >= 1 && first_requests >= 2 && second_requests >= 2;
+        },
+        2s,
+        5ms
+    );
+    if (ready) {
+        onedrive::test::write_file(first / "file.txt", "first");
+        ready = wait_until([&] { return rounds >= 2; }, 2s, 5ms);
+    }
+    if (ready) {
+        onedrive::test::write_file(second / "file.txt", "second");
+        ready = wait_until([&] { return rounds >= 3; }, 2s, 5ms);
+    }
+    worker.request_stop();
+    worker.join();
+    return ready && result == exit_code::success
+               ? EXIT_SUCCESS
+               : fail(
+                     "notification retries or local changes omitted one "
+                     "configured Drive"
+                 );
+}
+
 int test_notification_authentication_and_connection() {
     MonitorFixture fixture;
     std::atomic_int sync_runs{0};
@@ -130,6 +193,9 @@ int test_notification_retry_after_transient_failures() {
 } // namespace
 
 int main() {
+    if (test_multiple_channels_and_local_roots() != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
     if (const int result = test_notification_authentication_and_connection();
         result != EXIT_SUCCESS) {
         return result;

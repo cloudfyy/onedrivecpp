@@ -5,6 +5,12 @@
 首阶段面向组织用户自己的 OneDrive；SharePoint／Teams 文档库、共享快捷方式和
 跨租户资源后续单独扩展。版本已提升至 1.1.0，尚未发布。
 
+- [x] P1 支持同一账号配置多个 Drive
+  - 新增 sync.drive_ids，与旧 sync.drive_id 互斥并保留单盘兼容。
+  - 逐盘同步、独立状态及预览缓存，单盘失败继续，账号级错误停止整轮。
+  - 监控所有目标，本地监听和远端通知共用整轮调度；GUI 支持列表读写。
+  - 配置和调度支持不代表 SharePoint／Business 已完成真实租户验收。
+
 - [x] P1 补齐身份和 Drive 类型识别
   - 登录及身份查询读取 Graph driveType，区分 personal、business、
     documentLibrary；旧记录缺失类型时明确显示未知，不推断为个人账号。

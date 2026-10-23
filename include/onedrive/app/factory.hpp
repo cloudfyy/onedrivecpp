@@ -13,6 +13,7 @@
 
 #include <functional>
 #include <memory>
+#include <span>
 #include <proxy/proxy.h>
 #include <utility>
 
@@ -96,8 +97,8 @@ struct RuntimeFactoryFacade : pro::facade_builder
         std::unique_ptr<monitor::FileMonitor>(
             const config::Config&,
             monitor::SyncCallback,
-            graph::GraphClient&
-        ) const
+            std::span<graph::GraphClient* const>
+                                  ) const
     >
     ::add_convention<
         FactoryMetricsDispatch,
@@ -156,10 +157,18 @@ public:
         monitor::SyncCallback synchronize,
         graph::GraphClient& graph
     ) const {
+        graph::GraphClient* client = &graph;
+        return create_monitor(config, std::move(synchronize), {&client, 1});
+    }
+    [[nodiscard]] std::unique_ptr<monitor::FileMonitor> create_monitor(
+        const config::Config& config,
+        monitor::SyncCallback synchronize,
+        std::span<graph::GraphClient* const> graphs
+    ) const {
         return implementation()->create_monitor(
             config,
             std::move(synchronize),
-            graph
+            graphs
         );
     }
 
@@ -196,6 +205,11 @@ public:
         const config::Config& config,
         monitor::SyncCallback synchronize,
         graph::GraphClient& graph
+    ) const;
+    [[nodiscard]] std::unique_ptr<monitor::FileMonitor> create_monitor(
+        const config::Config& config,
+        monitor::SyncCallback synchronize,
+        std::span<graph::GraphClient* const> graphs
     ) const;
     [[nodiscard]] std::unique_ptr<metrics::Metrics> create_metrics(
         const config::Config& config,

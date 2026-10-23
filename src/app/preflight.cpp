@@ -20,6 +20,17 @@ RuntimePreflight::RuntimePreflight(
     if (capabilities.requires_drive_id && config.drive_id.empty()) {
         throw std::runtime_error("sync.drive_id must not be empty");
     }
+    if (config.drive_ids.size() > 1 &&
+        (operation == Operation::download ||
+         operation == Operation::reset_cursor ||
+         operation == Operation::clear_state ||
+         operation == Operation::cleanup_state ||
+         operation == Operation::verify || operation == Operation::shared)) {
+        throw std::runtime_error(
+            "this operation requires one Drive; use a configuration with "
+            "a single sync.drive_id or one entry in sync.drive_ids"
+        );
+    }
     if (operation == Operation::sites &&
         !config::has_auth_scope(config.auth_scope, "Sites.Read.All") &&
         !config::has_auth_scope(config.auth_scope, "Sites.ReadWrite.All")) {

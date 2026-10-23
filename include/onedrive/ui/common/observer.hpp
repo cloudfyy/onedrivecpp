@@ -15,6 +15,7 @@ public:
     Observer(Observer&&) = delete;
     Observer& operator=(Observer&&) = delete;
 
+    void publish(const Event& event) const;
     void message(
         MessageKind kind, std::string_view event, std::string_view text
     ) const;

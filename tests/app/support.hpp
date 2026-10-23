@@ -211,7 +211,8 @@ public:
 
     [[nodiscard]] onedrive::graph::DriveInfo drive_info() const {
         return {
-            .id = "drive-id",
+            .id = configured_drive_id_ == "me" ? "drive-id"
+                                               : configured_drive_id_,
             .name = "Test Drive",
             .type = "business",
             .web_url = "https://example.test/drive",
@@ -779,8 +780,11 @@ public:
     }
 
     [[nodiscard]] std::unique_ptr<onedrive::graph::GraphClient>
-    create_graph_client(const onedrive::config::Config&) const {
+    create_graph_client(const onedrive::config::Config& config) const {
         ++graph_client_count;
+        if (graph_client_override) {
+            return graph_client_override(config);
+        }
         return std::make_unique<onedrive::graph::GraphClient>(
             std::in_place_type<FakeGraphClient>,
             configured_drive_id,
@@ -793,8 +797,11 @@ public:
     }
 
     [[nodiscard]] std::unique_ptr<onedrive::graph::GraphInfoClient>
-    create_graph_info_client(const onedrive::config::Config&) const {
+    create_graph_info_client(const onedrive::config::Config& config) const {
         ++graph_info_client_count;
+        if (graph_info_override) {
+            return graph_info_override(config);
+        }
         return std::make_unique<onedrive::graph::GraphInfoClient>(
             std::in_place_type<FakeGraphClient>,
             configured_drive_id,
@@ -810,6 +817,7 @@ public:
         const onedrive::account::DriveIdentity& identity
     ) const {
         ++item_store_count;
+        item_store_sync_directories.push_back(config.sync_data_directory);
         last_item_store_sync_directory = config.sync_data_directory;
         if (use_real_item_store) {
             return std::make_unique<onedrive::storage::ItemStore>(
@@ -840,9 +848,10 @@ public:
     create_monitor(
         const onedrive::config::Config& config,
         onedrive::monitor::SyncCallback synchronize,
-        onedrive::graph::GraphClient& graph
+        std::span<onedrive::graph::GraphClient* const> graphs
     ) const {
         ++monitor_count;
+        monitor_graph_count = graphs.size();
         auto counted_synchronize = [this,
                                     synchronize = std::move(synchronize)](
                                        const std::stop_token& stop_token
@@ -852,7 +861,7 @@ public:
         };
         if (monitor_override) {
             return monitor_override(
-                config, std::move(counted_synchronize), graph
+                config, std::move(counted_synchronize), *graphs.front()
             );
         }
         return std::make_unique<onedrive::monitor::FileMonitor>(
@@ -874,6 +883,16 @@ public:
     }
 
     std::string configured_drive_id{"me"};
+    std::function<std::unique_ptr<onedrive::graph::GraphClient>(
+        const onedrive::config::Config&
+    )>
+        graph_client_override;
+    std::function<std::unique_ptr<onedrive::graph::GraphInfoClient>(
+        const onedrive::config::Config&
+    )>
+        graph_info_override;
+    mutable std::vector<std::filesystem::path> item_store_sync_directories;
+    mutable std::size_t monitor_graph_count{0};
     FakeGraphClient::IdentityOverride identity_override;
     FakeGraphClient::DeltaOverride delta_override;
     std::function<std::unique_ptr<onedrive::monitor::FileMonitor>(

@@ -1411,8 +1411,8 @@ Relative file references will be resolved from the active configuration director
     </message>
     <message>
         <location filename="../settings_editor.cpp" line="126"/>
-        <source>Drive ID</source>
-        <translation>驱动器 ID</translation>
+        <source>Drive IDs (one per line)</source>
+        <translation>驱动器 ID（每行一个）</translation>
     </message>
     <message>
         <location filename="../settings_editor.cpp" line="135"/>
@@ -1981,8 +1981,8 @@ Relative file references will be resolved from the active configuration director
     </message>
     <message>
         <location filename="../settings_editor.cpp" line="127"/>
-        <source>me (default) selects your OneDrive; an actual Drive ID selects another accessible drive or SharePoint library.</source>
-        <translation>me（默认）选择自己的 OneDrive；实际云盘 ID 可选择有权访问的其他云盘或 SharePoint 库。</translation>
+        <source>Use me for your default OneDrive or actual Drive IDs for libraries. All entries use the same account and synchronize sequentially.</source>
+        <translation>使用 me 选择默认 OneDrive，或填写文档库的实际驱动器 ID。所有条目使用同一账号，逐盘同步。</translation>
     </message>
     <message>
         <location filename="../settings_editor.cpp" line="147"/>

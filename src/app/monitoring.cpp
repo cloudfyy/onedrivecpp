@@ -10,6 +10,7 @@
 #include "onedrive/ui/common/observer.hpp"
 #include "operation_state.hpp"
 #include "lock.hpp"
+#include "drive_set.hpp"
 
 #include <format>
 #include <utility>
@@ -28,6 +29,38 @@ int monitor_account(
     };
     state.transition(events::OperationState::watching);
     try {
+        if (config.drive_ids.size() > 1) {
+            detail::DriveSet drives{
+                config, runtime_factory, observer, detail::Operation::monitor
+            };
+            const auto clients = drives.graph_clients();
+            observer.message(
+                events::MessageKind::information,
+                "monitor_ready",
+                "Monitoring all configured Drives under: " +
+                    config.sync_data_directory.string()
+            );
+            auto monitor = runtime_factory.create_monitor(
+                config,
+                [&drives, &observer](const std::stop_token& token) {
+                    const int result = drives.synchronize(token);
+                    if (!token.stop_requested()) {
+                        observer.sync_phase(events::SyncPhase::waiting);
+                    }
+                    return result;
+                },
+                clients
+            );
+            const int result = monitor->run(keyboard_exit, stop_token);
+            if (result == exit_code::success || stop_token.stop_requested()) {
+                state.transition(events::OperationState::stopping);
+            }
+            state.transition(
+                result == exit_code::success ? events::OperationState::ready
+                                             : events::OperationState::failed
+            );
+            return result;
+        }
         auto graph = runtime_factory.create_graph_client(config);
         const auto identity = graph->drive_identity();
         config.drive_id = identity.drive_id;

@@ -38,6 +38,35 @@ sed -i "s|/home/USER|$HOME|g" ~/.config/onedrive-cpp/config.toml
 OneDrive 或 SharePoint 文档库，请将其设置为实际的 Drive ID；程序将改用
 `/drives/<drive_id>/root/children`。
 
+### 同一账号下的多个 Drive
+
+将 `sync.drive_id` 替换为非空 `sync.drive_ids` 数组，即可使用同一个登录账号
+逐盘同步多个 Drive：
+
+```toml
+[sync]
+data_directory = "/home/USER/OneDrive"
+drive_ids = ["me", "b!FIRST_LIBRARY_DRIVE_ID", "b!SECOND_LIBRARY_DRIVE_ID"]
+```
+
+两个配置项不能同时出现。条目必须是唯一、非空的 Drive ID，而不是 Site ID
+或网址；原有单 Drive 配置和 `config_version = 2` 保持兼容。如果 `me` 和某个
+实际 ID 指向同一个 Drive，重复目标会明确报错，不会重复执行同步。这不代表
+一份配置可以登录多个账号。
+
+同步按列表顺序执行，各目标独立保存账号／Drive 目录、数据库、Delta 游标和
+预览缓存。单盘失败会报告并继续其他目标；认证错误或取消停止整轮。最终结果
+优先为失败，其次为 blocked，全部成功才返回成功。Monitor 在后续轮次重试，
+监听共同的数据根目录，并在启用通知时为每个目标维护独立通知通道。本地变化、
+任一远端通知、手动触发或兜底轮询都会启动覆盖所有目标的顺序同步，不并行执行。
+
+只读 quota/status/blocked/storage/partials/files 检查逐盘输出。`inspect drives`
+包含并标记所有配置目标，即使它们不在账号默认返回的 Drive 列表中。单文件下载、
+共享项发现、校验、清理及 Drive 级 reset/clear 要求单目标配置，避免隐式选择。
+GUI 设置中每行填写一个 Drive ID；修改列表时替换旧配置项，仅修改其他设置
+则保留旧配置项。Business Delta 兼容和真实组织账号验收仍是独立待办；
+配置多个文档库本身不会授予访问权限。
+
 ## 配置参考示例
 
 以下示例展示全部主要配置组：

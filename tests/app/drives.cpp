@@ -188,6 +188,28 @@ int test_drive_statistics() {
         explicit_id.at("shared-drive-id").contains("reference")) {
         return fail("an explicit Drive reference was falsely labelled me");
     }
+    auto multi_config = config;
+    multi_config.replace(
+        multi_config.find("drive_id = \"drive-id\""),
+        std::string{"drive_id = \"drive-id\""}.size(),
+        "drive_ids = [\"me\", \"shared-drive-id\", \"site-drive-id\"]"
+    );
+    write_file(fixture.config_path, multi_config);
+    fixture.runtime_factory.graph_info_override = [](const auto& selected) {
+        return std::make_unique<onedrive::graph::GraphInfoClient>(
+            std::in_place_type<FakeGraphClient>, selected.drive_id
+        );
+    };
+    const auto multiple = drive_results(run());
+    if (multiple.at("drive-id").at("reference") != "me" ||
+        multiple.at("shared-drive-id").at("reference") != "shared-drive-id" ||
+        multiple.at("shared-drive-id").at("configured") != "true" ||
+        multiple.at("site-drive-id").at("configured") != "true" ||
+        multiple.at("site-drive-id").at("reference") != "site-drive-id") {
+        return fail("drive listing omitted or mislabelled configured targets");
+    }
+    fixture.runtime_factory.graph_info_override = {};
+    write_file(fixture.config_path, config);
     std::filesystem::remove(paths.drive_directory / "items.sqlite3");
     std::filesystem::create_symlink(
         outside.local_path, paths.drive_directory / "items.sqlite3"

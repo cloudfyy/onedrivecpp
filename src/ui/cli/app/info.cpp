@@ -554,6 +554,27 @@ int show_drives(
     const auto configured = graph->drive_info();
     auto drives = graph->list_drives();
     const auto account_identity = graph->drive_identity();
+    const auto references = config.configured_drive_ids();
+    std::map<std::string, std::string> configured_references{
+        {configured.id, references.front()}
+    };
+    for (std::size_t index = 1; index < references.size(); ++index) {
+        const auto& reference = references[index];
+        const auto drive =
+            runtime_factory
+                .create_graph_info_client(config.for_drive(reference))
+                ->drive_info();
+        if (!configured_references.emplace(drive.id, reference).second) {
+            throw std::runtime_error{
+                "multiple configured references resolve to the same Drive"
+            };
+        }
+        if (std::ranges::none_of(drives, [&](const auto& listed) {
+                return listed.id == drive.id;
+            })) {
+            drives.push_back(drive);
+        }
+    }
     if (std::ranges::none_of(
             drives,
             [&configured](const graph::DriveInfo& drive) {
@@ -563,13 +584,14 @@ int show_drives(
         drives.push_back(configured);
     }
     for (const auto& drive : drives) {
-        const bool is_configured = drive.id == configured.id;
+        const auto reference = configured_references.find(drive.id);
+        const bool is_configured = reference != configured_references.end();
         auto identity = account_identity;
         identity.drive_id = drive.id;
         identity.drive_name = drive.name;
         identity.drive_type = drive.type;
         identity.configured_drive_id =
-            is_configured ? config.drive_id : drive.id;
+            is_configured ? reference->second : drive.id;
         const auto inspection =
             open_inspection_store(config, runtime_factory, std::move(identity));
         auto fields = drive_fields(drive, is_configured);
@@ -579,7 +601,7 @@ int show_drives(
                 {
                     .label = "reference:",
                     .key = "reference",
-                    .value = config.drive_id,
+                    .value = reference->second,
                 }
             );
         }
@@ -1292,7 +1314,8 @@ int show_config(
             {
                 .label = "configured drive:",
                 .key = "drive_id",
-                .value = config.drive_id,
+                .value =
+                    config.drive_ids.size() > 1 ? "multiple" : config.drive_id,
             },
             {
                 .label = "sync list:",
@@ -1316,6 +1339,15 @@ int show_config(
             },
         }
     );
+    if (config.drive_ids.size() > 1) {
+        for (const auto& id : config.drive_ids) {
+            console.section(
+                "configured_drive",
+                "Configured synchronization Drive:",
+                {{.label = "drive:", .key = "drive_id", .value = id}}
+            );
+        }
+    }
     console.section(
         "effective_transfer_config",
         "Effective transfer configuration:",

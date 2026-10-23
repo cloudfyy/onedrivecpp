@@ -135,6 +135,76 @@ int test_schema() {
 } // namespace
 
 int main() {
+    const auto config_path =
+        std::filesystem::path{"/tmp/multi-drive-config.toml"};
+    const auto multi = onedrive::config::Config::load_from_string(
+        config_path,
+        "config_version = 2\n[sync]\ndrive_ids = ['me', 'b!library']\n"
+    );
+    if (multi.configured_drive_ids() !=
+            std::vector<std::string>{"me", "b!library"} ||
+        multi.for_drive("b!library").drive_id != "b!library" ||
+        !multi.for_drive("b!library").drive_ids.empty()) {
+        return onedrive::test::fail(
+            "multi-drive configuration lost its targets"
+        );
+    }
+    for (const auto* selection :
+         {"",
+          "drive_id = 'me'",
+          "drive_id = 'b!library'",
+          "drive_ids = ['b!library']"}) {
+        const auto single = onedrive::config::Config::load_from_string(
+            config_path, std::string{"config_version = 2\n[sync]\n"} + selection
+        );
+        const auto expected =
+            std::string{selection}.contains("library") ? "b!library" : "me";
+        if (single.drive_id != expected ||
+            single.configured_drive_ids() !=
+                std::vector<std::string>{expected}) {
+            return onedrive::test::fail(
+                "legacy/default/single-entry Drive selection changed"
+            );
+        }
+    }
+    const auto selected = multi.for_drive("b!library");
+    if (multi.drive_ids.size() != 2 ||
+        selected.configured_drive_ids() !=
+            std::vector<std::string>{"b!library"} ||
+        selected.sync_data_directory != multi.sync_data_directory ||
+        selected.state_directory != multi.state_directory ||
+        selected.auth_scope != multi.auth_scope) {
+        return onedrive::test::fail(
+            "selecting a Drive mutated or discarded shared configuration"
+        );
+    }
+    for (const auto* invalid :
+         {"drive_ids = []",
+          "drive_ids = 'me'",
+          "drive_ids = [42]",
+          "drive_ids = ['']",
+          "drive_ids = ['me', 'me']",
+          "drive_ids = ['a b']",
+          "drive_ids = [\"a\\tb\"]",
+          "drive_ids = [\"a\\nb\"]",
+          "drive_ids = [\"a\\rb\"]",
+          "drive_ids = [\"a\\u0000b\"]",
+          "drive_id = 'me'\ndrive_ids = ['other']"}) {
+        if (!onedrive::test::throws_with<std::runtime_error>(
+                [&] {
+                    static_cast<void>(
+                        onedrive::config::Config::load_from_string(
+                            config_path,
+                            std::string{"config_version = 2\n[sync]\n"} +
+                                invalid
+                        )
+                    );
+                },
+                "sync.drive_ids"
+            )) {
+            return onedrive::test::fail("invalid Drive selection was accepted");
+        }
+    }
     const auto path = std::filesystem::path{"/tmp/file-history-config.toml"};
     if (onedrive::config::Config::load_from_string(path, "config_version = 2\n")
                 .file_history_limit != 10'000 ||

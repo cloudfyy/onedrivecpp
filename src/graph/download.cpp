@@ -320,13 +320,15 @@ void MicrosoftGraphClient::download_file(
             );
         }
         if (!http::status::is_redirect(redirect->status_code)) {
-            throw std::runtime_error(
-                std::format(
-                    "Microsoft Graph download did not return a redirect "
-                    "(HTTP {})",
-                    redirect->status_code
-                )
+            const auto message = std::format(
+                "Microsoft Graph download did not return a redirect "
+                "(HTTP {})",
+                redirect->status_code
             );
+            if (redirect->status_code == http::status::unauthorized) {
+                throw AccountAuthenticationError{message};
+            }
+            throw std::runtime_error{message};
         }
         const auto location = header_value(*redirect, "Location");
         if (!location || !location->starts_with("https://")) {

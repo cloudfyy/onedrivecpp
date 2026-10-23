@@ -12,6 +12,7 @@
 #include <stop_token>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace onedrive::monitor {
 
@@ -81,7 +82,8 @@ public:
         std::chrono::milliseconds poll_interval,
         std::chrono::milliseconds settle_delay,
         NotificationCallbacks notifications = {},
-        std::filesystem::path control_directory = {}
+        std::filesystem::path control_directory = {},
+        std::vector<NotificationCallbacks> additional_notifications = {}
     );
     [[nodiscard]] int run() const;
     [[nodiscard]] int run(bool keyboard_exit) const;
@@ -103,6 +105,7 @@ private:
     std::chrono::milliseconds settle_delay_;
     NotificationCallbacks notifications_;
     std::filesystem::path control_directory_;
+    std::vector<NotificationCallbacks> additional_notifications_;
 };
 
 }  // namespace onedrive::monitor

@@ -59,12 +59,19 @@ AppStateViewModel load_app_state_view_model(
             }
             state.account_status = token ? AccountStatus::credentials_available
                                          : AccountStatus::no_credentials;
-            if (const auto saved =
-                    account::AccountState::saved_drive(
-                        config.state_directory, config.drive_id
-                    )) {
-                state.drive_type = saved->identity.drive_type;
+            std::optional<std::string> drive_type;
+            for (const auto& id : config.configured_drive_ids()) {
+                const auto saved = account::AccountState::saved_drive(
+                    config.state_directory, id
+                );
+                const auto type = saved ? saved->identity.drive_type : "";
+                if (!drive_type) {
+                    drive_type = type;
+                } else if (*drive_type != type) {
+                    drive_type = "";
+                }
             }
+            state.drive_type = drive_type.value_or("");
         }
     } catch (const std::runtime_error& error) {
         state.account_status = AccountStatus::invalid;

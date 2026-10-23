@@ -44,6 +44,43 @@ sequentially without allowing concurrent downloads to overcommit the disk.
 the Microsoft Graph path `/me/drive/root/children`. To access another OneDrive
 or a SharePoint document library available to the account, set the actual
 Drive ID instead; the client then uses `/drives/<drive_id>/root/children`.
+
+### Multiple Drives under one account
+
+Replace `sync.drive_id` with a non-empty `sync.drive_ids` array to synchronize
+several Drives using the same signed-in account:
+
+```toml
+[sync]
+data_directory = "/home/USER/OneDrive"
+drive_ids = ["me", "b!FIRST_LIBRARY_DRIVE_ID", "b!SECOND_LIBRARY_DRIVE_ID"]
+```
+
+The keys are mutually exclusive. Entries must be unique, non-empty Drive IDs,
+not Site IDs or URLs. Existing single-Drive configurations and `config_version = 2`
+remain valid. If two references resolve to the same Drive (for example `me` and
+its actual ID), the duplicate is reported as a failure and is not synchronized
+twice. This is not a multi-account configuration.
+
+Sync processes targets in order, with separate account/Drive directories,
+databases, Delta cursors, and preview caches. A target failure is reported while
+remaining targets continue; authentication errors and cancellation stop the
+round. The final result is failure if any Drive failed, otherwise blocked if any
+Drive was blocked, otherwise success. Monitor retries targets on subsequent
+rounds, watches the common data root, and maintains a notification channel for
+each target when enabled. Any local event, remote notification, manual trigger,
+or fallback poll starts a sequential round over all targets, not parallel sync.
+
+Read-only quota/status/blocked/storage/partials/files inspection visits each
+target. `inspect drives` includes and marks every configured target, even when
+it is absent from the account's default Drive listing.
+Single-file download, shared-item discovery, verification, cleanup, and
+Drive-specific reset/clear require a single-target configuration to avoid
+ambiguous selection. GUI settings expose one Drive ID per line; editing the list
+replaces the legacy key, while changing unrelated settings preserves it.
+Business Delta compatibility and real organizational account acceptance remain
+separate work; configuring several libraries does not grant access to them.
+
 ## Reference configuration
 
 The following example shows every major configuration group:

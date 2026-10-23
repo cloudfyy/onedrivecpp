@@ -3,6 +3,7 @@
 #include "onedrive/util/sha256.hpp"
 
 #include <fmt/format.h>
+#include <nlohmann/json.hpp>
 
 #include <chrono>
 #include <string_view>
@@ -13,6 +14,130 @@ namespace {
 namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::app;
+
+int test_multiple_drive_inspection() {
+    using Json = nlohmann::json;
+    for (const std::string command :
+         {"quota",
+          "status",
+          "storage",
+          "partials",
+          "files",
+          "blocked",
+          "config"}) {
+        for (const std::string scenario :
+             {"success", "failure", "authentication"}) {
+            if (command != "quota" && scenario != "success") {
+                continue;
+            }
+            CliFixture fixture;
+            if (fixture.authenticate().exit_code != exit_code::success) {
+                return fail(
+                    "cannot authenticate multi-drive inspection fixture"
+                );
+            }
+            auto config = onedrive::test::read_file(fixture.config_path);
+            config.insert(
+                config.find("[sync]\n") + 7,
+                "drive_ids = ['first', 'second', 'third']\n"
+            );
+            onedrive::test::write_file(fixture.config_path, config);
+            for (const auto* id : {"first", "second", "third"}) {
+                std::filesystem::create_directories(
+                    onedrive::account::AccountState::drive_data_directory(
+                        fixture.sync_path,
+                        onedrive::test::test_drive_identity(id, id)
+                    )
+                );
+            }
+            fixture.runtime_factory.graph_info_override =
+                [&](const auto& selected) {
+                    const auto id = selected.drive_id;
+                    if (id == "first" && scenario == "failure") {
+                        throw std::runtime_error{
+                            "configured Drive unavailable"
+                        };
+                    }
+                    if (id == "first" && scenario == "authentication") {
+                        throw onedrive::graph::AccountAuthenticationError{
+                            "account authentication expired"
+                        };
+                    }
+                    return std::make_unique<onedrive::graph::GraphInfoClient>(
+                        std::in_place_type<FakeGraphClient>,
+                        id,
+                        false,
+                        false,
+                        false,
+                        [id](std::stop_token) {
+                            return onedrive::test::test_drive_identity(id, id);
+                        }
+                    );
+                };
+            const auto result = run_application(
+                fixture.runtime_factory,
+                {"onedrive-cpp",
+                 "inspect",
+                 command,
+                 "--config",
+                 fixture.config_path.string(),
+                 "--output",
+                 "json"}
+            );
+            std::vector<std::string> targets;
+            std::vector<std::string> quotas;
+            std::size_t errors = 0;
+            std::istringstream input{
+                result.standard_output +
+                (scenario == "authentication" ? "" : result.standard_error)
+            };
+            for (std::string line; std::getline(input, line);) {
+                const auto event = Json::parse(line);
+                const auto name = event.at("event").get<std::string>();
+                if (name == "drive_target" || name == "configured_drive") {
+                    targets.push_back(event.at("values")
+                                          .at(name == "configured_drive"
+                                                  ? "drive_id"
+                                                  : "drive_reference")
+                                          .get<std::string>());
+                } else if (name == "quota") {
+                    quotas.push_back(
+                        event.at("values").at("drive_id").get<std::string>()
+                    );
+                } else if (name == "drive_inspection_failed") {
+                    ++errors;
+                }
+            }
+            const bool authentication = scenario == "authentication";
+            if (result.exit_code != (scenario == "success"
+                                         ? exit_code::success
+                                         : exit_code::failure) ||
+                targets !=
+                    (authentication
+                         ? std::vector<std::string>{"first"}
+                         : std::vector<
+                               std::string>{"first", "second", "third"}) ||
+                errors != (scenario == "failure" ? 1U : 0U) ||
+                (authentication && !result.standard_error.contains(
+                                       "account authentication expired"
+                                   )) ||
+                (command == "quota" &&
+                 quotas != (authentication ? std::vector<std::string>{}
+                            : scenario == "failure"
+                                ? std::vector<std::string>{"second", "third"}
+                                : std::vector<std::string>{
+                                      "first", "second", "third"
+                                  }))) {
+                return fail(
+                    "multi-drive inspection lost targets or failure scope: " +
+                    command + "/" + scenario + "\n" + result.standard_output +
+                    result.standard_error
+                );
+            }
+        }
+    }
+    return EXIT_SUCCESS;
+}
 
 std::int64_t modified_ticks(const std::filesystem::path& path) {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -599,6 +724,9 @@ int test_inspection() {
 
 int main() {
     try {
+        if (test_multiple_drive_inspection() != EXIT_SUCCESS) {
+            return EXIT_FAILURE;
+        }
         return test_inspection();
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

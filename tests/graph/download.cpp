@@ -51,6 +51,34 @@ int test_invalid_download_transport_options() {
     }
     return EXIT_SUCCESS;
 }
+int test_download_account_authentication_failure() {
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(
+            std::make_unique<FakeTransport>(
+                std::deque<onedrive::http::HttpResult>{
+                    token_response(),
+                    onedrive::http::HttpResponse{.status_code = 401},
+                }
+            )
+        ),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(std::string{"existing-refresh"})
+        ),
+        auth_options(),
+        {},
+    };
+    try {
+        client.download_file(
+            "item", "\"etag\"", 8, test_directory() / "unauthorized"
+        );
+        return fail("unauthorized Graph download was accepted");
+    } catch (const onedrive::graph::AccountAuthenticationError&) {
+        return EXIT_SUCCESS;
+    } catch (const std::runtime_error&) {
+        return fail("download authentication failure lost its account scope");
+    }
+}
+
 int test_file_download_redirect() {
     auto transport =
         std::make_unique<FakeTransport>(std::deque<onedrive::http::HttpResult>{
@@ -1070,6 +1098,10 @@ int test_invalid_chunk_responses_are_rejected() {
 } // namespace
 
 int main() {
+    if (const int result = test_download_account_authentication_failure();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
     if (const int result = test_invalid_download_transport_options();
         result != EXIT_SUCCESS) {
         return result;

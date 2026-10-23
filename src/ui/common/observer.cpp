@@ -57,6 +57,11 @@ void Observer::file_operation(const FileOperationEvent& operation) const {
     on_event(operation);
 }
 
+void Observer::publish(const Event& event) const {
+    const std::scoped_lock lock{mutex_};
+    on_event(event);
+}
+
 SyncSummaryEvent accumulate_sync_summary(
     SyncSummaryEvent totals, const SyncSummaryEvent& round
 ) noexcept {

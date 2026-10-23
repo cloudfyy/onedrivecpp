@@ -19,7 +19,8 @@ inline auth::DeviceAuthOptions device_auth_options(
 
 inline graph::GraphOptions graph_options(const config::Config& config) {
     return {
-        .drive_id = config.drive_id,
+        .drive_id = config.drive_ids.empty() ? config.drive_id
+                                           : config.drive_ids.front(),
         .endpoint = config.graph_endpoint,
         .maximum_throttle_retries =
             config.graph_maximum_throttle_retries,

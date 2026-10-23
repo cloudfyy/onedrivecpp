@@ -10,6 +10,7 @@
 #include "operation_state.hpp"
 #include "lock.hpp"
 #include "checks.hpp"
+#include "drive_set.hpp"
 #include "onedrive/graph/graph_client.hpp"
 
 #include <utility>
@@ -47,6 +48,18 @@ int synchronize_account(
     try {
         if (stop_token.stop_requested()) {
             return finish_cancelled();
+        }
+        if (config.drive_ids.size() > 1) {
+            detail::DriveSet drives{config, runtime_factory, observer};
+            const int result = drives.synchronize(stop_token, preview_cache);
+            if (result == exit_code::cancelled) {
+                return finish_cancelled();
+            }
+            state.transition(
+                result == exit_code::success ? events::OperationState::ready
+                                             : events::OperationState::failed
+            );
+            return result;
         }
         auto graph = runtime_factory.create_graph_client(config);
         const auto identity = graph->drive_identity(stop_token);

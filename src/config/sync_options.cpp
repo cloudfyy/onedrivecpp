@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 
 namespace onedrive::config::detail {
 
@@ -17,6 +18,7 @@ void load_sync_options(Config& config, const toml::table& root, const std::files
             {
                 "data_directory",
                 "drive_id",
+                "drive_ids",
                 "dry_run",
                 "permissions",
                 "sync_list",
@@ -68,6 +70,33 @@ void load_sync_options(Config& config, const toml::table& root, const std::files
                 );
             }
             config.sync_data_mount_point = *value;
+        }
+        if (sync->contains("drive_id") && sync->contains("drive_ids")) {
+            throw std::runtime_error(
+                "sync.drive_id and sync.drive_ids must not both be configured"
+            );
+        }
+        if (sync->contains("drive_ids")) {
+            config.drive_ids =
+                string_array_values(*sync, "drive_ids", "sync.drive_ids");
+            if (config.drive_ids.empty()) {
+                throw std::runtime_error(
+                    "sync.drive_ids must be a non-empty array of unique Drive "
+                    "IDs"
+                );
+            }
+            std::unordered_set<std::string> seen;
+            for (const auto& id : config.drive_ids) {
+                if (id.find_first_of(" \t\r\n") != std::string::npos ||
+                    id.find('\0') != std::string::npos ||
+                    !seen.insert(id).second) {
+                    throw std::runtime_error(
+                        "sync.drive_ids requires non-empty, unique string "
+                        "Drive IDs without whitespace"
+                    );
+                }
+            }
+            config.drive_id = config.drive_ids.front();
         }
         if (const auto value = optional_value<std::string>(
                 *sync,

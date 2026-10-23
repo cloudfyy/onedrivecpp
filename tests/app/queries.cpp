@@ -83,6 +83,39 @@ int test_blocked_query_absence_and_selection() {
     return EXIT_SUCCESS;
 }
 
+int test_multiple_drive_blockers() {
+    BlockedFixture fixture;
+    fixture.save_blocker();
+    auto second = fixture.identity;
+    second.configured_drive_id = "second";
+    second.drive_id = "second-drive";
+    const auto paths = onedrive::account::AccountState::prepare(
+        fixture.config.state_directory, second
+    );
+    {
+        onedrive::storage::ItemDatabase database{paths.drive_directory, second};
+        database.open();
+        onedrive::storage::BlockedItem item;
+        item.drive_id = second.drive_id;
+        item.remote_id = "other-notes";
+        item.remote_path = "Documents/other.one";
+        item.reason_code = "unsupported_onenote";
+        item.reason_message = "Unsupported OneNote file";
+        database.save_blocked_item(item);
+    }
+    fixture.config.drive_ids = {"me", "second"};
+    const auto blocked = onedrive::app::load_blocked_items(fixture.config);
+    if (blocked.size() != 2 ||
+        blocked[0].drive_id != fixture.identity.drive_id ||
+        blocked[1].drive_id != second.drive_id ||
+        blocked[0].remote_id == blocked[1].remote_id) {
+        return fail(
+            "multi-drive blocker query lost Drive isolation or ordering"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_blocked_query_metadata_errors() {
     for (const bool account : {false, true}) {
         BlockedFixture fixture;
@@ -323,6 +356,9 @@ int test_status_snapshot() {
 } // namespace
 
 int main() {
+    if (test_multiple_drive_blockers() != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
     if (test_blocked_item_matching() != EXIT_SUCCESS ||
         test_blocked_query_absence_and_selection() != EXIT_SUCCESS ||
         test_blocked_query_metadata_errors() != EXIT_SUCCESS ||

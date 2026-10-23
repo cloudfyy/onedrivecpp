@@ -81,6 +81,13 @@ Presenter alongside the existing Drive/quota presenters. GUI translation remains
 in Qt, rather than making the domain model depend on localized labels. Missing
 Drive types remain unknown, and unrecognized Graph values are preserved.
 
+Multi-Drive orchestration uses a private `DriveSet` shared by sync and Monitor.
+Each target owns its Graph client, item store, metrics, directory lease, and
+preview cache scope. One sequential round aggregates target failures while
+typed account authentication errors escape immediately. Monitor keeps one
+control endpoint and scheduler, with independent notification state machines
+for all configured Drives.
+
 ## Presentation boundary
 
 Synchronization, upload, and Delta publish typed `events::Event` values through
@@ -88,7 +95,9 @@ the core `events::Observer` interface. It serializes callbacks from workers
 without depending on a terminal or GUI toolkit. An event reference is valid only
 during its callback: asynchronous frontends must copy it before posting it to
 their main thread, and callbacks must not re-enter the same observer. Exceptions
-propagate to the publishing caller.
+propagate to the publishing caller. `Observer::publish` forwards an existing
+event under the same lock; the multi-Drive decorator preserves frontend
+exceptions rather than treating them as recoverable Drive failures.
 
 Business messages that also need logging use `Observer::report_message` or
 `report_blocked_item`, rather than separately publishing an event and a diagnostic.

@@ -121,6 +121,12 @@ void require_successful_graph_response(
         return;
     }
     const auto message = graph_error_message(response, status_code);
+    if (status_code == http::status::unauthorized) {
+        throw AccountAuthenticationError{
+            description.empty() ? message
+                                : std::string{description} + ": " + message
+        };
+    }
     throw std::runtime_error(
         description.empty() ?
             message :

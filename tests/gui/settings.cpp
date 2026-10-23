@@ -478,6 +478,7 @@ void test_round_trip() {
         "# 中文 comment before\nconfig_version = 2\n"
         "[auth] # auth header\napplication_id = 'old-client' # retain auth\n"
         "[sync] # rules header\nmode = 'bidirectional' # retain mode\n"
+        "drive_id = 'legacy-drive' # retain drive comment\n"
         "sync_list = 'old-rules' # retain rules\n"
         "[console]\ntheme = 'hacker' # CLI only\n"
         "[monitor]\npoll_interval_seconds = 432\n"
@@ -490,13 +491,17 @@ void test_round_trip() {
         gui::load_app_state_view_model(file), {}, &localization
     };
     window.show();
+    require(
+        window.findChild<gui::SettingsEditor*>()->patches().empty(),
+        "loading a legacy Drive ID created a migration edit"
+    );
     auto* tabs = window.findChild<QTabWidget*>("settingsTabs");
     require(tabs && tabs->count() == 6, "six settings tabs are missing");
     text(window, "sync.data_directory", QString::fromStdString(sync.string()));
     text(window, "state.directory", QString::fromStdString(state.string()));
     text(window, "auth.application_id", "client-中文\"\\");
     text(window, "auth.tenant_id", "organizations");
-    text(window, "sync.drive_id", "drive-中文");
+    list(window, "sync.drive_ids", "drive-中文\nsecond-drive");
     choice(window, "sync.mode", "download_only");
     choice(window, "sync.delete_policy", "preserve");
     choice(window, "sync.local_conflict", "backup");
@@ -520,8 +525,8 @@ void test_round_trip() {
     choice(window, "download.validation", "relaxed");
     const auto drafts = window.findChild<gui::SettingsEditor*>()->patches();
     require(
-        drafts.size() == 28,
-        "all 26 fields and the two sync-mode compatibility patches expected"
+        drafts.size() == 29,
+        "all fields and sync-mode/Drive compatibility patches expected"
     );
     for (int tab = 0; tab < 6; ++tab) {
         tabs->setCurrentIndex(tab);
@@ -560,7 +565,8 @@ void test_round_trip() {
         config.sync_data_directory == sync && config.state_directory == state &&
             config.application_id == "client-中文\"\\" &&
             config.azure_tenant_id == "organizations" &&
-            config.drive_id == "drive-中文" &&
+            config.drive_ids ==
+                std::vector<std::string>{"drive-中文", "second-drive"} &&
             config.sync_mode == sync::SyncMode::download_only &&
             config.delete_policy == sync::DeletePolicy::preserve &&
             config.local_conflict == config::LocalConflictPolicy::backup &&
@@ -593,6 +599,7 @@ void test_round_trip() {
             saved.contains("# retain auth") &&
             saved.contains("# retain mode") &&
             saved.contains("# retain rules") &&
+            saved.contains("# retain drive comment") &&
             saved.contains("# retain concurrency") &&
             saved.contains("[console]\ntheme = 'hacker' # CLI only\n") &&
             saved.contains("[monitor]\npoll_interval_seconds = 432\n") &&
@@ -602,6 +609,15 @@ void test_round_trip() {
         "save changed comments or unrelated configuration"
     );
     require(backups(fixture.path()) == 1, "save did not create one backup");
+    for (const auto* invalid : {"", "first\nfirst", "first\n"}) {
+        list(window, "sync.drive_ids", invalid);
+        require(
+            !save(window).startsWith("Settings saved.") &&
+                test::read_file(file) == saved && backups(fixture.path()) == 1,
+            "invalid Drive list changed configuration or created a backup"
+        );
+    }
+    list(window, "sync.drive_ids", "drive-中文\nsecond-drive");
     for (const auto& entry :
          std::filesystem::directory_iterator(fixture.path())) {
         if (entry.path().filename().string().contains(".backup.")) {

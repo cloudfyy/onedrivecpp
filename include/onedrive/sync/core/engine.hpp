@@ -8,6 +8,8 @@
 #include <gsl/pointers>
 
 #include <stop_token>
+#include <algorithm>
+#include <map>
 #include <utility>
 
 namespace onedrive::events {
@@ -22,9 +24,23 @@ class PreviewCache {
 public:
     void clear() noexcept {
         snapshot_.reset();
+        drives_.clear();
     }
     [[nodiscard]] bool available() const noexcept {
-        return snapshot_.has_value();
+        return snapshot_.has_value() ||
+               std::ranges::any_of(drives_, [](const auto& entry) {
+                   return entry.second.available();
+               });
+    }
+    [[nodiscard]] PreviewCache& for_drive(const std::string& id) {
+        return drives_[id];
+    }
+    void select_drives(const std::vector<std::string>& references) {
+        snapshot_.reset();
+        std::erase_if(drives_, [&](const auto& entry) {
+            return std::ranges::find(references, entry.first) ==
+                   references.end();
+        });
     }
 
 private:
@@ -64,6 +80,7 @@ private:
     [[nodiscard]] static std::optional<State>
     capture_state(const storage::ItemStore& items, const std::string& drive);
     std::optional<Snapshot> snapshot_;
+    std::map<std::string, PreviewCache> drives_;
 };
 
 class SyncEngine {

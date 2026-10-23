@@ -4,11 +4,24 @@
 #include "onedrive/config/config.hpp"
 #include "onedrive/storage/item_database.hpp"
 #include "onedrive/util/path_security.hpp"
+#include <iterator>
 
 namespace onedrive::app {
 
 std::vector<storage::BlockedItem>
 load_blocked_items(const config::Config& config) {
+    if (config.drive_ids.size() > 1) {
+        std::vector<storage::BlockedItem> result;
+        for (const auto& id : config.drive_ids) {
+            auto items = load_blocked_items(config.for_drive(id));
+            result.insert(
+                result.end(),
+                std::make_move_iterator(items.begin()),
+                std::make_move_iterator(items.end())
+            );
+        }
+        return result;
+    }
     const auto saved = account::AccountState::saved_drive(
         config.state_directory, config.drive_id
     );

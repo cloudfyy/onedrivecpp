@@ -332,7 +332,7 @@ MicrosoftGraphClient::access_token(const std::stop_token& stop_token) const {
     spdlog::debug("Loading saved Microsoft authentication");
     const auto refresh_token = token_store_->load_refresh_token();
     if (!refresh_token) {
-        throw std::runtime_error(
+        throw AccountAuthenticationError(
             "no saved Microsoft authentication is available; run "
             "'onedrive-cpp account login'"
         );
@@ -348,7 +348,7 @@ MicrosoftGraphClient::access_token(const std::stop_token& stop_token) const {
                 "Microsoft access token refresh cancelled"
             };
         }
-        throw std::runtime_error(
+        throw AccountAuthenticationError(
             "cannot refresh Microsoft access token: " + tokens.error().message
         );
     }

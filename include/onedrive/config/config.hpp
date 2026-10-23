@@ -66,6 +66,7 @@ struct Config {
     DotfilePolicy dotfiles{DotfilePolicy::include};
     std::uint64_t maximum_file_size_bytes{0};
     std::string drive_id{"me"};
+    std::vector<std::string> drive_ids;
     std::string application_id;
     std::string azure_tenant_id{"common"};
     std::string auth_endpoint{"https://login.microsoftonline.com"};
@@ -112,6 +113,8 @@ struct Config {
     bool force_large_delete{false};
 
     [[nodiscard]] static Config defaults();
+    [[nodiscard]] std::vector<std::string> configured_drive_ids() const;
+    [[nodiscard]] Config for_drive(std::string id) const;
     [[nodiscard]] static Config load(const std::filesystem::path& path);
     [[nodiscard]] static Config load_from_string(
         const std::filesystem::path& path, std::string_view contents

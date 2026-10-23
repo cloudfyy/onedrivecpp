@@ -150,6 +150,11 @@ public:
     using std::runtime_error::runtime_error;
 };
 
+class AccountAuthenticationError final : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
 class RequestCancelledError final : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;

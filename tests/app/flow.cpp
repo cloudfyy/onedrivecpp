@@ -12,6 +12,34 @@ namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::app;
 
+int test_multiple_drive_preflight() {
+    using Operation = onedrive::app::detail::Operation;
+    CliFixture fixture;
+    auto config = onedrive::config::Config::load(fixture.config_path);
+    config.drive_ids = {"first", "second"};
+    for (const auto operation :
+         {Operation::download,
+          Operation::reset_cursor,
+          Operation::clear_state,
+          Operation::cleanup_state,
+          Operation::verify,
+          Operation::shared}) {
+        if (!onedrive::test::throws_with<std::runtime_error>(
+                [&] {
+                    const onedrive::app::detail::RuntimePreflight preflight{
+                        config, operation
+                    };
+                },
+                "this operation requires one Drive"
+            )) {
+            return fail(
+                "an ambiguous operation accepted multiple Drive targets"
+            );
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_logout_without_credentials() {
     CliFixture fixture;
     const auto config = onedrive::config::Config::load(fixture.config_path);
@@ -793,6 +821,10 @@ int test_flow() {
 } // namespace
 
 int main() {
+    if (const auto result = test_multiple_drive_preflight();
+        result != EXIT_SUCCESS) {
+        return result;
+    }
     if (const auto result = test_logout_without_credentials();
         result != EXIT_SUCCESS) {
         return result;

@@ -98,6 +98,11 @@ data_directory = "/home/USER/OneDrive"
 # "me" selects the signed-in user's default OneDrive for either account type.
 # For another Drive/document library, use its Drive ID, not a Site ID or URL.
 drive_id = "me"
+# For multiple libraries under the same signed-in account, replace drive_id with:
+# drive_ids = ["me", "b!FIRST_LIBRARY_DRIVE_ID", "b!SECOND_LIBRARY_DRIVE_ID"]
+# Do not configure both keys. Targets synchronize sequentially with isolated
+# state; one Drive failure does not skip the others, but account errors stop
+# the round. Monitor watches the data root and subscribes to every target Drive.
 # Optional selective-sync rules. Relative paths resolve from this TOML file.
 # sync_list = "sync_list"
 # Include ordinary files located directly in the Drive root when sync_list is set.

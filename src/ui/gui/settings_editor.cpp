@@ -122,14 +122,21 @@ SettingsEditor::SettingsEditor(QWidget* parent)
     );
     add(account,
         "sync",
-        "drive_id",
-        QT_TR_NOOP("Drive ID"),
+        "drive_ids",
+        QT_TR_NOOP("Drive IDs (one per line)"),
         QT_TR_NOOP(
-            "me (default) selects your OneDrive; an actual Drive ID selects "
-            "another accessible drive or SharePoint library."
+            "Use me for your default OneDrive or actual Drive IDs for "
+            "libraries. "
+            "All entries use the same account and synchronize sequentially."
         ),
-        Kind::text,
-        [](const auto& c) { return QString::fromStdString(c.drive_id); });
+        Kind::list,
+        [](const auto& c) {
+            QStringList ids;
+            for (const auto& id : c.configured_drive_ids()) {
+                ids.push_back(QString::fromStdString(id));
+            }
+            return ids.join('\n');
+        });
     note(
         account,
         QT_TR_NOOP(
@@ -1259,6 +1266,9 @@ std::vector<config::SettingPatch> SettingsEditor::patches() const {
             patches.push_back(
                 {"sync", "delete_policy", value(*policy).toStdString()}
             );
+        }
+        if (field.table == "sync" && field.key == "drive_ids") {
+            patches.push_back({"sync", "drive_id", std::monostate{}});
         }
         patches.push_back({field.table, field.key, std::move(setting)});
     }
