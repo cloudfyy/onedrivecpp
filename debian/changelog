@@ -1,3 +1,12 @@
+onedrive-cpp (1.1.0-1~ubuntu24.04) noble; urgency=medium
+
+  * Start the 1.1.0 development cycle for OneDrive for Business support.
+  * Persist Graph Drive types and display them in CLI and GUI account views.
+  * Preserve existing account paths and read legacy metadata without guessing
+    the Drive type.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Fri, 23 Oct 2026 10:53:03 +0000
+
 onedrive-cpp (1.0.4-2~ubuntu24.04) noble; urgency=medium
 
   * Stage release attachments in a unique temporary directory instead of the

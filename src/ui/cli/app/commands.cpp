@@ -193,6 +193,23 @@ int authenticate(
         return exit_code::failure;
     }
     spdlog::info("Microsoft authentication succeeded");
+    console.section(
+        "account",
+        "Microsoft account:",
+        {
+            {.label = "account:",
+             .key = "account",
+             .value = result->identity.user_display_name},
+            {.label = "drive:",
+             .key = "drive",
+             .value = result->identity.drive_name},
+            {.label = "type:",
+             .key = "drive_type",
+             .value = result->identity.drive_type.empty()
+                          ? "unknown"
+                          : result->identity.drive_type},
+        }
+    );
     console.message(
         cli::MessageKind::information,
         "authentication_succeeded",

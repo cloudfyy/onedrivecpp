@@ -59,6 +59,12 @@ AppStateViewModel load_app_state_view_model(
             }
             state.account_status = token ? AccountStatus::credentials_available
                                          : AccountStatus::no_credentials;
+            if (const auto saved =
+                    account::AccountState::saved_drive(
+                        config.state_directory, config.drive_id
+                    )) {
+                state.drive_type = saved->identity.drive_type;
+            }
         }
     } catch (const std::runtime_error& error) {
         state.account_status = AccountStatus::invalid;

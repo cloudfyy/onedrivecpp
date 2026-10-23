@@ -837,7 +837,7 @@ int test_drive_identity_and_profile_photo() {
         },
         onedrive::http::HttpResponse{
             .status_code = 200,
-            .body = R"({"id":"canonical-drive-id","name":"Alice Drive"})",
+            .body = R"({"id":"canonical-drive-id","name":"Alice Drive","driveType":"personal"})",
         },
         onedrive::http::HttpResponse{
             .status_code = 200,
@@ -863,7 +863,8 @@ int test_drive_identity_and_profile_photo() {
         identity.user_display_name != "Alice Example" ||
         identity.configured_drive_id != "me" ||
         identity.drive_id != "canonical-drive-id" ||
-        identity.drive_name != "Alice Drive" || !identity.photo ||
+        identity.drive_name != "Alice Drive" ||
+        identity.drive_type != "personal" || !identity.photo ||
         identity.photo->content_type != "image/png" ||
         std::string{
             identity.photo->bytes.begin(), identity.photo->bytes.end()
@@ -872,7 +873,7 @@ int test_drive_identity_and_profile_photo() {
         transport.queued.requests[0].url !=
             "https://graph.example.test/v1.0/me?$select=id,displayName" ||
         transport.queued.requests[1].url !=
-            "https://graph.example.test/v1.0/me/drive?$select=id,name" ||
+            "https://graph.example.test/v1.0/me/drive?$select=id,name,driveType" ||
         transport.queued.requests[2].url !=
             "https://graph.example.test/v1.0/me/photo/$value" ||
         !has_header(transport.queued.requests[2], "Authorization: ******")) {
@@ -952,6 +953,61 @@ int test_drive_identity_and_profile_photo() {
                 "Microsoft Graph user identity query failed: denied"
             )) {
             return fail("Graph identity error lost its request context");
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_drive_identity_types() {
+    using Json = nlohmann::json;
+    for (const std::string type :
+         {"personal", "business", "documentLibrary", "futureType", ""}) {
+        Json drive{{"id", "canonical-drive"}, {"name", "Drive"}};
+        if (!type.empty()) {
+            drive["driveType"] = type;
+        }
+        FakeTransport transport{std::deque<onedrive::http::HttpResult>{
+            json_response(200, R"({"id":"user","displayName":"User"})"),
+            json_response(200, drive.dump()),
+            json_response(404, ""),
+        }};
+        onedrive::http::HttpTransport proxy{
+            onedrive::util::borrowed_proxy, transport
+        };
+        const auto identity = onedrive::graph::fetch_drive_identity(
+            proxy, "access", {.drive_id = "selected drive",
+                             .endpoint = "https://graph.example.test/v1.0"}
+        );
+        if (identity.drive_type != type ||
+            identity.drive_id != "canonical-drive" ||
+            identity.configured_drive_id != "selected drive" ||
+            transport.queued.requests[1].url !=
+                "https://graph.example.test/v1.0/drives/selected%20drive"
+                "?$select=id,name,driveType") {
+            return fail("Graph Drive type was guessed or queried on another Drive");
+        }
+    }
+    for (const auto& type : {Json(42), Json(nullptr)}) {
+        FakeTransport transport{std::deque<onedrive::http::HttpResult>{
+            json_response(200, R"({"id":"user","displayName":"User"})"),
+            json_response(
+                200,
+                Json{{"id", "drive"}, {"name", "Drive"}, {"driveType", type}}.dump()
+            ),
+        }};
+        onedrive::http::HttpTransport proxy{
+            onedrive::util::borrowed_proxy, transport
+        };
+        if (!onedrive::test::throws_with<std::runtime_error>(
+                [&] {
+                    static_cast<void>(onedrive::graph::fetch_drive_identity(
+                        proxy, "access",
+                        {.endpoint = "https://graph.example.test/v1.0"}
+                    ));
+                },
+                "identity response is missing required data"
+            )) {
+            return fail("malformed Graph Drive type appeared as unknown");
         }
     }
     return EXIT_SUCCESS;
@@ -1123,6 +1179,9 @@ int main() {
     if (const int result = test_drive_identity_and_profile_photo();
         result != EXIT_SUCCESS) {
         return result;
+    }
+    if (test_drive_identity_types() != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
     }
     if (const int result = test_drive_identity_cancellation();
         result != EXIT_SUCCESS) {

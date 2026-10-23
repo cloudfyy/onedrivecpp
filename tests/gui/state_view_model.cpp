@@ -61,6 +61,7 @@ int test_view_model_with_saved_credentials() {
             .configured_drive_id = "me",
             .drive_id = "drive-id",
             .drive_name = "Test Drive",
+            .drive_type = "business",
         },
         "refresh-token"
     );
@@ -74,7 +75,8 @@ int test_view_model_with_saved_credentials() {
 
     const auto state = onedrive::gui::load_app_state_view_model(config_file);
     if (state.account_status !=
-        onedrive::gui::AccountStatus::credentials_available) {
+            onedrive::gui::AccountStatus::credentials_available ||
+        state.drive_type != "business") {
         return onedrive::test::fail(
             "GUI view model did not detect saved account credentials"
         );

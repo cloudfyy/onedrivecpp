@@ -79,6 +79,7 @@ int test_auth_code_authentication() {
         }
     );
     if (!result || !exchanged || result->identity.drive_id != "drive-id" ||
+        result->identity.drive_type != "business" ||
         onedrive::test::read_file(result->token_directory / "refresh_token") !=
             "refresh-token" ||
         observer.operation_states() !=

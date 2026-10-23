@@ -111,6 +111,26 @@
 <context>
     <name>onedrive::gui::MainWindow</name>
     <message>
+        <source>Drive type</source>
+        <translation>云盘类型</translation>
+    </message>
+    <message>
+        <source>OneDrive Personal</source>
+        <translation>OneDrive 个人版</translation>
+    </message>
+    <message>
+        <source>OneDrive for Business</source>
+        <translation>OneDrive 商业版</translation>
+    </message>
+    <message>
+        <source>SharePoint document library</source>
+        <translation>SharePoint 文档库</translation>
+    </message>
+    <message>
+        <source>Unknown drive type</source>
+        <translation>未知云盘类型</translation>
+    </message>
+    <message>
         <location filename="../main_window.cpp" line="1476"/>
         <source>Policy: %1</source>
         <translation>处理策略：%1</translation>

@@ -64,6 +64,19 @@ QString number(std::uint64_t value) {
     return QString::number(static_cast<qulonglong>(value));
 }
 
+QString drive_type_text(const std::string& type) {
+    if (type == "personal") {
+        return MainWindow::tr("OneDrive Personal");
+    }
+    if (type == "business") {
+        return MainWindow::tr("OneDrive for Business");
+    }
+    if (type == "documentLibrary") {
+        return MainWindow::tr("SharePoint document library");
+    }
+    return MainWindow::tr("Unknown drive type");
+}
+
 QString sync_result_text(int result) {
     switch (result) {
     case exit_code::success:
@@ -172,6 +185,9 @@ MainWindow::MainWindow(
     overview_sync_status_ = make_value_label({});
     overview_sync_status_->setObjectName("overviewSyncStatus");
     overview_layout->addRow(tr("Synchronization"), overview_sync_status_);
+    drive_type_value_ = make_value_label({});
+    drive_type_value_->setObjectName("driveType");
+    overview_layout->addRow(tr("Drive type"), drive_type_value_);
     tabs->addTab(overview, tr("Overview"));
 
     sync_page_ = new QWidget{tabs};
@@ -941,6 +957,7 @@ void MainWindow::retranslate_ui() {
     set_label(overview_layout_, 4, tr("Login"));
     set_label(overview_layout_, 5, tr("Browser login"));
     set_label(overview_layout_, 8, tr("Synchronization"));
+    set_label(overview_layout_, 9, tr("Drive type"));
     set_label(settings_layout_, 0, tr("Configuration file"));
     set_label(settings_layout_, 2, tr("Appearance"));
     settings_editor_->retranslate();
@@ -996,6 +1013,7 @@ void MainWindow::retranslate_ui() {
         browse->setText(tr("Browse…"));
     }
     account_status_value_->setText(account_status_text(state_.account_status));
+    drive_type_value_->setText(drive_type_text(state_.drive_type));
     refresh_startup_status();
     set_login_status(
         login_status_source_,
@@ -2371,6 +2389,7 @@ void MainWindow::refresh_settings(bool preserve_edits) {
         QString::fromStdString(state_.config_file.string())
     );
     account_status_value_->setText(account_status_text(state_.account_status));
+    drive_type_value_->setText(drive_type_text(state_.drive_type));
     sync_directory_value_->setText(
         QString::fromStdString(state_.sync_directory.string())
     );

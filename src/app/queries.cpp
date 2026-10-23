@@ -4,99 +4,25 @@
 #include "onedrive/config/config.hpp"
 #include "onedrive/storage/item_database.hpp"
 #include "onedrive/util/path_security.hpp"
-#include "util/private_file.hpp"
-
-#include <nlohmann/json.hpp>
-#include <unistd.h>
 
 namespace onedrive::app {
-namespace {
-
-nlohmann::json read_account_metadata(const std::filesystem::path& path) {
-    try {
-        return nlohmann::json::parse(
-            util::read_private_file(
-                path,
-                "account metadata",
-                {.required_owner = ::geteuid(),
-                 .exact_permissions = 0600,
-                 .permission_requirement =
-                     "must be readable and writable only by the current user",
-                 .require_single_link = true}
-            )
-        );
-    } catch (const nlohmann::json::exception& error) {
-        throw std::runtime_error{
-            "invalid account metadata '" + path.string() + "': " + error.what()
-        };
-    }
-}
-
-} // namespace
 
 std::vector<storage::BlockedItem>
 load_blocked_items(const config::Config& config) {
-    const auto active = account::AccountState::find_active_token_directory(
-        config.state_directory
+    const auto saved = account::AccountState::saved_drive(
+        config.state_directory, config.drive_id
     );
-    if (!active) {
+    if (!saved) {
         return {};
     }
-    try {
-        const auto user = read_account_metadata(*active / "account.json");
-        const auto drives = *active / "drives";
-        util::reject_symlink_components(drives, "account drive directory");
-        std::optional<account::DriveIdentity> selected;
-        std::filesystem::path selected_directory;
-        for (const auto& entry : std::filesystem::directory_iterator(drives)) {
-            if (entry.is_symlink()) {
-                throw std::runtime_error{
-                    "account drive directory is a symbolic link: " +
-                    entry.path().string()
-                };
-            }
-            if (!entry.is_directory()) {
-                continue;
-            }
-            const auto drive =
-                read_account_metadata(entry.path() / "drive.json");
-            if (drive.at("configured_drive_id").get<std::string>() !=
-                    config.drive_id &&
-                drive.at("drive_id").get<std::string>() != config.drive_id) {
-                continue;
-            }
-            if (selected) {
-                throw std::runtime_error{
-                    "multiple saved drives match the configured drive"
-                };
-            }
-            selected = account::DriveIdentity{
-                .user_id = user.at("user_id").get<std::string>(),
-                .user_display_name = user.at("display_name").get<std::string>(),
-                .configured_drive_id =
-                    drive.at("configured_drive_id").get<std::string>(),
-                .drive_id = drive.at("drive_id").get<std::string>(),
-                .drive_name = drive.at("name").get<std::string>(),
-                .photo = {},
-            };
-            selected_directory = entry.path();
-        }
-        if (!selected) {
-            return {};
-        }
-        const auto database_path = selected_directory / "items.sqlite3";
-        util::reject_symlink_components(database_path, "state database");
-        if (!std::filesystem::exists(database_path)) {
-            return {};
-        }
-        storage::ItemDatabase database{selected_directory, *selected};
-        database.open_read_only();
-        return database.blocked_items(selected->drive_id);
-    } catch (const nlohmann::json::exception& error) {
-        throw std::runtime_error{
-            "invalid saved account/drive metadata: " + std::string{error.what()}
-        };
+    const auto database_path = saved->directory / "items.sqlite3";
+    util::reject_symlink_components(database_path, "state database");
+    if (!std::filesystem::exists(database_path)) {
+        return {};
     }
+    storage::ItemDatabase database{saved->directory, saved->identity};
+    database.open_read_only();
+    return database.blocked_items(saved->identity.drive_id);
 }
 
 QuotaSnapshot load_quota_snapshot(

@@ -25,6 +25,7 @@ struct AppStateViewModel {
     std::string authentication_error;
     std::string account_error;
     std::string sync_error;
+    std::string drive_type;
 
     [[nodiscard]] bool can_sign_in() const {
         return configuration_status != ConfigurationStatus::invalid &&

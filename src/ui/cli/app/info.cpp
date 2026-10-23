@@ -567,6 +567,7 @@ int show_drives(
         auto identity = account_identity;
         identity.drive_id = drive.id;
         identity.drive_name = drive.name;
+        identity.drive_type = drive.type;
         identity.configured_drive_id =
             is_configured ? config.drive_id : drive.id;
         const auto inspection =
@@ -625,6 +626,12 @@ int show_status(
                 .value = identity.user_display_name,
             },
             {.label = "drive:", .key = "drive", .value = identity.drive_name},
+            {
+                .label = "type:",
+                .key = "drive_type",
+                .value =
+                    identity.drive_type.empty() ? "unknown" : identity.drive_type,
+            },
             {
                 .label = "drive id:",
                 .key = "drive_id",

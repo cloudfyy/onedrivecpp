@@ -291,6 +291,7 @@ int test_status_snapshot() {
     if (initial.identity.user_display_name != "Test User" ||
         initial.identity.drive_id != "drive-id" ||
         initial.identity.drive_name != "Test Drive" ||
+        initial.identity.drive_type != "business" ||
         initial.sync_mode != onedrive::sync::SyncMode::upload_only ||
         initial.delete_policy != onedrive::sync::DeletePolicy::preserve ||
         initial.last_run || initial.state.database_present ||

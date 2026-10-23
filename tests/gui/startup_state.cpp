@@ -70,7 +70,13 @@ void check_window(
     const auto* status = window.findChild<QLabel*>("startupStatus");
     const auto* login_status = window.findChild<QLabel*>("loginStatus");
     const auto* logs = window.findChild<QPlainTextEdit*>("logMessages");
+    const auto* drive_type = window.findChild<QLabel*>("driveType");
     require(sign_in && status && login_status, "startup controls are missing");
+    require(drive_type &&
+                drive_type->text() ==
+                    (state.drive_type == "business" ? "OneDrive for Business"
+                                                    : "Unknown drive type"),
+            "saved Drive type was guessed or not displayed");
     require(
         logs &&
             logs->toPlainText().contains(
@@ -133,6 +139,10 @@ void check_window(
     const auto english = status->text();
     localization.set_language(gui::Language::simplified_chinese);
     QCoreApplication::processEvents();
+    require(drive_type->text() ==
+                (state.drive_type == "business" ? "OneDrive 商业版"
+                                                : "未知云盘类型"),
+            "Drive type did not retranslate");
     require(window.findChild<QPushButton*>("reloadSettingsButton")->text() ==
                 "重新加载配置",
             "recovery control did not retranslate");
@@ -222,7 +232,7 @@ void test_account_startup(StartupBrowserCapture& browser) {
         state_directory,
         {.user_id = "user", .user_display_name = "User",
          .configured_drive_id = "me", .drive_id = "drive",
-         .drive_name = "Drive"},
+         .drive_name = "Drive", .drive_type = "business"},
         "saved-token"
     );
     auto state = gui::load_app_state_view_model(file);

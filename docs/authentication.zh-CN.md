@@ -156,6 +156,14 @@ onedrive-cpp account login
 然后将 refresh token 与头像原子写入易于识别的账号状态目录。目录权限仅允许
 文件所有者访问。
 
+身份查询同时读取 Graph 的 `driveType`：`personal` 表示 OneDrive 个人版，
+`business` 表示组织用户自己的 OneDrive，`documentLibrary` 表示 SharePoint
+文档库。类型写入 `drive.json`，在 CLI 登录／状态及 GUI 概览中显示。
+读取本地元数据不会连接微软。旧元数据没有类型时显示未知，成功重新登录或同步
+写入新身份信息后补齐；保留已有用户／Drive ID 目录、令牌和数据库，不把显示名或
+Drive 类型当作身份键。`common`／`consumers` 只是认证入口，不代表实际租户 ID。
+识别类型不等于已经完成组织版同步支持，1.1 后续工作记录在 `TODO.md`。
+
 如果 Microsoft 提示账号类型不受支持，请检查应用注册中的
 **Supported account types**：仅个人账号注册应使用 `consumers`，同时支持个人
 和组织账号的注册应使用 `common`。

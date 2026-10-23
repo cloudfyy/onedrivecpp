@@ -175,6 +175,18 @@ permissions. On success, the client retrieves the stable user and Drive
 identities plus the profile photo. The refresh token and photo are atomically
 saved under the friendly account state directory with owner-only permissions.
 
+Drive identity queries also read Graph's `driveType`: `personal` identifies
+OneDrive Personal, `business` an organizational user's OneDrive, and
+`documentLibrary` a SharePoint document library. The type is saved in
+`drive.json` and shown by CLI login/status and the GUI Overview page.
+Reading saved metadata does not contact Microsoft. Older metadata without a
+type is shown as unknown until a successful login or synchronization writes
+the refreshed identity. Existing user/Drive ID directories, tokens and
+databases are preserved; display names and Drive types are not identity keys.
+`common` and `consumers` are authentication selectors, not actual tenant IDs.
+Type recognition alone does not establish full organizational synchronization
+support; that work is tracked for 1.1 in `TODO.md`.
+
 If Microsoft reports that the account is unsupported, verify the selected
 **Supported account types** and use `consumers` for personal-only
 registrations or `common` for combined personal and organizational

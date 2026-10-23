@@ -5,6 +5,8 @@
 #include "onedrive/auth/token_store.hpp"
 #include "onedrive/util/sha256.hpp"
 #include "onedrive/util/system_error.hpp"
+#include "onedrive/util/path_security.hpp"
+#include "util/private_file.hpp"
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -207,6 +209,26 @@ void write_private_file(
     );
 }
 
+nlohmann::json read_account_metadata(const std::filesystem::path& path) {
+    try {
+        return nlohmann::json::parse(
+            util::read_private_file(
+                path,
+                "account metadata",
+                {.required_owner = ::geteuid(),
+                 .exact_permissions = 0600,
+                 .permission_requirement =
+                     "must be readable and writable only by the current user",
+                 .require_single_link = true}
+            )
+        );
+    } catch (const nlohmann::json::exception& error) {
+        throw std::runtime_error{
+            "invalid account metadata '" + path.string() + "': " + error.what()
+        };
+    }
+}
+
 std::string avatar_filename(std::string_view content_type) {
     if (content_type.starts_with("image/png")) {
         return "avatar.png";
@@ -276,6 +298,7 @@ void write_metadata(
             {"configured_drive_id", identity.configured_drive_id},
             {"drive_id", identity.drive_id},
             {"name", identity.drive_name},
+            {"drive_type", identity.drive_type},
         }.dump(2) + "\n"
     );
     if (paths.avatar_path && identity.photo) {
@@ -426,6 +449,64 @@ std::filesystem::path AccountState::active_token_path(
     const std::filesystem::path& state_directory
 ) {
     return active_token_directory(state_directory) / "refresh_token";
+}
+
+std::optional<SavedDrive> AccountState::saved_drive(
+    const std::filesystem::path& state_directory,
+    std::string_view configured_drive_id
+) {
+    const auto active = find_active_token_directory(state_directory);
+    if (!active) {
+        return std::nullopt;
+    }
+    try {
+        const auto user = read_account_metadata(*active / "account.json");
+        const auto drives = *active / "drives";
+        util::reject_symlink_components(drives, "account drive directory");
+        std::optional<SavedDrive> selected;
+        for (const auto& entry : std::filesystem::directory_iterator(drives)) {
+            if (entry.is_symlink()) {
+                throw std::runtime_error{
+                    "account drive directory is a symbolic link: " +
+                    entry.path().string()
+                };
+            }
+            if (!entry.is_directory()) {
+                continue;
+            }
+            const auto drive =
+                read_account_metadata(entry.path() / "drive.json");
+            if (drive.at("configured_drive_id").get<std::string>() !=
+                    configured_drive_id &&
+                drive.at("drive_id").get<std::string>() != configured_drive_id) {
+                continue;
+            }
+            if (selected) {
+                throw std::runtime_error{
+                    "multiple saved drives match the configured drive"
+                };
+            }
+            selected = SavedDrive{
+                .identity = DriveIdentity{
+                    .user_id = user.at("user_id").get<std::string>(),
+                    .user_display_name =
+                        user.at("display_name").get<std::string>(),
+                    .configured_drive_id =
+                        drive.at("configured_drive_id").get<std::string>(),
+                    .drive_id = drive.at("drive_id").get<std::string>(),
+                    .drive_name = drive.at("name").get<std::string>(),
+                    .photo = {},
+                    .drive_type = drive.value("drive_type", std::string{}),
+                },
+                .directory = entry.path(),
+            };
+        }
+        return selected;
+    } catch (const nlohmann::json::exception& error) {
+        throw std::runtime_error{
+            "invalid saved account/drive metadata: " + std::string{error.what()}
+        };
+    }
 }
 
 std::filesystem::path AccountState::drive_data_directory(

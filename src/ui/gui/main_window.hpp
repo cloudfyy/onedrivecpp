@@ -141,6 +141,7 @@ private:
     QPushButton* about_button_{};
     QLabel* config_file_value_{};
     QLabel* account_status_value_{};
+    QLabel* drive_type_value_{};
     QLabel* sync_directory_value_{};
     QLabel* state_directory_value_{};
     QLineEdit* sync_directory_edit_{};

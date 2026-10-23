@@ -1,6 +1,8 @@
 #include "onedrive/account/account_state.hpp"
 #include "support/common.hpp"
 
+#include <nlohmann/json.hpp>
+
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
@@ -15,6 +17,77 @@ using onedrive::test::fail;
 using onedrive::test::TemporaryDirectory;
 
 using onedrive::test::throws_with;
+
+int test_saved_drive_types_and_legacy_state() {
+    using onedrive::account::AccountState;
+    TemporaryDirectory temporary;
+    onedrive::account::DriveIdentity identity{
+        .user_id = "saved-user",
+        .user_display_name = "Same Name",
+        .configured_drive_id = "me",
+        .drive_id = "saved-drive",
+        .drive_name = "Same Drive",
+    };
+    const auto paths =
+        AccountState::activate(temporary.path(), identity, "original-token");
+    onedrive::test::write_file(paths.drive_directory / "items.sqlite3", "keep");
+    for (const std::string type :
+         {"personal", "business", "documentLibrary", "futureType"}) {
+        identity.drive_type = type;
+        const auto updated = AccountState::prepare(temporary.path(), identity);
+        const auto saved = AccountState::saved_drive(temporary.path(), "me");
+        const auto canonical =
+            AccountState::saved_drive(temporary.path(), identity.drive_id);
+        if (!saved || !canonical || saved->identity.drive_type != type ||
+            canonical->identity.drive_type != type ||
+            saved->directory != paths.drive_directory ||
+            updated.drive_directory != paths.drive_directory ||
+            updated.token_directory != paths.token_directory ||
+            onedrive::test::read_file(
+                paths.token_directory / "refresh_token"
+            ) != "original-token" ||
+            onedrive::test::read_file(
+                paths.drive_directory / "items.sqlite3"
+            ) != "keep" ||
+            AccountState::saved_drive(temporary.path(), "unrelated")) {
+            return fail("Drive type metadata changed identity or selected another Drive");
+        }
+    }
+    const auto metadata_path = paths.drive_directory / "drive.json";
+    auto metadata = nlohmann::json::parse(
+        onedrive::test::read_file(metadata_path)
+    );
+    metadata.erase("drive_type");
+    onedrive::test::write_file(metadata_path, metadata.dump());
+    const auto legacy = onedrive::test::read_file(metadata_path);
+    const auto modified = std::filesystem::last_write_time(metadata_path);
+    const auto saved = AccountState::saved_drive(temporary.path(), "me");
+    if (!saved || !saved->identity.drive_type.empty() ||
+        saved->directory != paths.drive_directory ||
+        onedrive::test::read_file(metadata_path) != legacy ||
+        std::filesystem::last_write_time(metadata_path) != modified) {
+        return fail("legacy Drive metadata was guessed or changed while reading");
+    }
+    identity.drive_type = "personal";
+    static_cast<void>(AccountState::prepare(temporary.path(), identity));
+    const auto enriched = AccountState::saved_drive(temporary.path(), "me");
+    if (!enriched || enriched->identity.drive_type != "personal") {
+        return fail("legacy Drive metadata was not enriched in place");
+    }
+    metadata["drive_type"] = 42;
+    onedrive::test::write_file(metadata_path, metadata.dump());
+    if (!throws_with(
+            [&] {
+                static_cast<void>(
+                    AccountState::saved_drive(temporary.path(), "me")
+                );
+            },
+            "invalid saved account/drive metadata"
+        )) {
+        return fail("malformed Drive type appeared as unknown");
+    }
+    return EXIT_SUCCESS;
+}
 
 bool rejected_active_marker(
     const std::filesystem::path& root,
@@ -38,6 +111,9 @@ bool rejected_active_marker(
 } // namespace
 
 int main() {
+    if (test_saved_drive_types_and_legacy_state() != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
     TemporaryDirectory temporary;
     const onedrive::account::DriveIdentity identity{
         .user_id = "stable-user-id",

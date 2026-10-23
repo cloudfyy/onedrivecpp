@@ -115,10 +115,10 @@ public:
                 .body = R"({"id":"user-id","displayName":"Test User"})",
             };
         }
-        if (request.url.ends_with("/me/drive?$select=id,name")) {
+        if (request.url.ends_with("/me/drive?$select=id,name,driveType")) {
             return onedrive::http::HttpResponse{
                 .status_code = 200,
-                .body = R"({"id":"drive-id","name":"Test Drive"})",
+                .body = R"({"id":"drive-id","name":"Test Drive","driveType":"business"})",
             };
         }
         if (request.url.ends_with("/me/photo/$value")) {
@@ -186,7 +186,10 @@ public:
         if (identity_override_) {
             return identity_override_(token);
         }
-        return onedrive::test::test_drive_identity(configured_drive_id_);
+        auto identity =
+            onedrive::test::test_drive_identity(configured_drive_id_);
+        identity.drive_type = "business";
+        return identity;
     }
 
     [[nodiscard]] std::vector<onedrive::graph::DriveInfo> list_drives() const {

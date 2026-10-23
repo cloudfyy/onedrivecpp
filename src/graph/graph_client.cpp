@@ -239,7 +239,7 @@ account::DriveIdentity fetch_drive_identity(
         "user identity"
     );
     const auto drive_url =
-        graph_drive_prefix(options) + "?$select=id,name";
+        graph_drive_prefix(options) + "?$select=id,name,driveType";
     const auto drive = request_json(drive_url, "drive identity");
 
     account::DriveIdentity identity;
@@ -250,6 +250,7 @@ account::DriveIdentity fetch_drive_identity(
             user.at("displayName").get<std::string>();
         identity.drive_id = drive.at("id").get<std::string>();
         identity.drive_name = drive.value("name", std::string{"OneDrive"});
+        identity.drive_type = drive.value("driveType", std::string{});
     } catch (const Json::exception& error) {
         throw std::runtime_error(
             "Microsoft Graph identity response is missing required data: " +
