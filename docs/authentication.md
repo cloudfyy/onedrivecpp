@@ -59,7 +59,8 @@ Microsoft's corresponding documentation is:
 Open **API permissions > Add a permission > Microsoft Graph > Delegated
 permissions**.
 
-For a personal OneDrive account, configure these delegated permissions:
+For either a personal account or a work/school account accessing its own
+OneDrive, configure these delegated permissions:
 
 ```text
 User.Read
@@ -68,8 +69,9 @@ Files.ReadWrite
 
 `User.Read` allows the client to identify the signed-in account and download
 its profile photo. The client also requests `offline_access` so Microsoft can
-issue a refresh token. For organizational OneDrive, shared libraries, and SharePoint
-scenarios, add the broader delegated permissions only when required:
+issue a refresh token. A work/school account does not require broader permissions
+merely because its Drive type is `business`. For shared resources and SharePoint
+features, request additional permissions only when the actual API requires them:
 
 ```text
 Files.ReadWrite.All
@@ -78,8 +80,25 @@ Sites.ReadWrite.All
 ```
 
 `Sites.Read.All` is sufficient for the read-only `inspect sites QUERY` discovery
-command. Use `Sites.ReadWrite.All` only when synchronization must modify a
-SharePoint document library.
+command. Writing document-library files does not universally require
+`Sites.ReadWrite.All`: some file APIs also accept `Files.ReadWrite.All`. Select
+the least privileged permission documented for each operation rather than
+requesting every permission above.
+
+For organizations that restrict access to selected sites, `Sites.Selected`
+supports delegated access but requires both Entra consent and an explicit
+application permission assignment on each target site. The signed-in user's own
+permissions still apply. It is not a drop-in replacement for tenant-wide site
+search; the client's site discovery currently requires `Sites.Read.All` or
+`Sites.ReadWrite.All`. A selected-site workflow remains future work.
+
+The client currently uses one configured `auth.scopes` list for both CLI and
+GUI; it does not automatically request extra permissions when a SharePoint
+feature is selected. After changing that list, stop any running Monitor and
+sign in again to obtain any required consent. In the GUI, log out first to
+enable sign-in. An existing refresh token is not a substitute for consent to
+new permissions. Feature-triggered incremental authorization is planned, not
+implemented.
 
 Organizational tenant policies may require an administrator to grant consent.
 Personal Microsoft accounts normally grant consent during device sign-in.
@@ -119,7 +138,9 @@ scopes = ["User.Read", "Files.ReadWrite", "offline_access"]
 ```
 
 For a single-tenant organizational application, replace `common` with the
-tenant's Directory (tenant) ID. Add `Files.ReadWrite.All`, `Sites.Read.All`, or
+tenant's Directory (tenant) ID. For an organizational-only multitenant sign-in,
+use `organizations`; `consumers` does not accept work/school accounts.
+Add `Files.ReadWrite.All`, `Sites.Read.All`, or
 `Sites.ReadWrite.All` only for organizational scenarios that require them;
 SharePoint site scopes are not supported for personal Microsoft accounts. The
 default scopes are `User.Read Files.ReadWrite offline_access`; authentication

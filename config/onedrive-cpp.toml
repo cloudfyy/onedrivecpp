@@ -24,12 +24,17 @@ level = "info"
 
 [auth]
 application_id = ""
+# "common" accepts personal and organizational accounts when the app supports both.
+# Use "organizations" for work/school accounts only, or a tenant ID for one tenant.
+# "consumers" accepts personal accounts only.
 tenant_id = "common"
 endpoint = "https://login.microsoftonline.com"
+# Shared by CLI and GUI; additional scopes are not requested automatically.
+# After adding scopes, sign in again to obtain any required user/admin consent.
 scopes = [
   # Identify the signed-in user and read basic profile information.
   "User.Read",
-  # Read and write files in the signed-in user's OneDrive.
+  # Read and write the signed-in user's own OneDrive, personal or organizational.
   "Files.ReadWrite",
   # Optional for organizational accounts: access every file the user can access,
   # including shared files and document libraries.
@@ -37,7 +42,8 @@ scopes = [
   # Optional for organizational SharePoint sites; personal accounts do not
   # support this scope.
   # "Sites.Read.All",
-  # Required instead when SharePoint document libraries will be synchronized.
+  # Optional site-level write access. Not required for every document-library
+  # file operation; choose the least privilege supported by the actual API.
   # "Sites.ReadWrite.All",
   # Request a refresh token so the client can stay signed in.
   "offline_access",
@@ -89,6 +95,8 @@ data_directory = "/home/USER/OneDrive"
 # Monitor checks it at startup and before every synchronization; a runtime
 # mount loss blocks that round while Monitor remains available to retry later.
 # data_mount_point = "/mnt/data"
+# "me" selects the signed-in user's default OneDrive for either account type.
+# For another Drive/document library, use its Drive ID, not a Site ID or URL.
 drive_id = "me"
 # Optional selective-sync rules. Relative paths resolve from this TOML file.
 # sync_list = "sync_list"

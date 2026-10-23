@@ -53,7 +53,7 @@ CLI 设备代码流不需要 Redirect URI。也不要为公共客户端添加 Cl
 打开 **API 权限（API permissions）> 添加权限（Add a permission）>
 Microsoft Graph > 委托的权限（Delegated permissions）**。
 
-个人 OneDrive 账号应配置以下委托权限：
+个人账号或工作／学校账号访问自己的 OneDrive 时，均使用以下基础委托权限：
 
 ```text
 User.Read
@@ -61,8 +61,9 @@ Files.ReadWrite
 ```
 
 `User.Read` 用于识别当前登录账号并下载头像。客户端还会请求
-`offline_access`，以便 Microsoft 返回 refresh token。只有组织版 OneDrive、
-共享文档库或 SharePoint 场景确有需要时，才应添加范围更广的委托权限：
+`offline_access`，以便 Microsoft 返回 refresh token。不能仅因为 Drive 类型为
+`business` 就扩大权限；共享资源和 SharePoint 功能应按实际 API 的要求申请
+额外权限：
 
 ```text
 Files.ReadWrite.All
@@ -70,8 +71,19 @@ Sites.Read.All
 Sites.ReadWrite.All
 ```
 
-只读 `inspect sites QUERY` 发现命令使用 `Sites.Read.All` 即可。只有同步过程需要修改
-SharePoint 文档库时才应使用 `Sites.ReadWrite.All`。
+只读 `inspect sites QUERY` 发现命令使用 `Sites.Read.All` 即可。修改文档库文件
+不一定需要 `Sites.ReadWrite.All`，部分文件 API 也接受 `Files.ReadWrite.All`。
+应逐项核对接口支持的最小权限，而不是把上述权限全部申请。
+
+对于只允许访问指定站点的组织，`Sites.Selected` 支持委托访问，但既需要 Entra
+同意，还需要为应用显式授予各目标站点的访问权限；登录用户自身的权限也仍然生效。
+它不能直接替代全租户站点搜索，客户端现有站点发现仍要求 `Sites.Read.All` 或
+`Sites.ReadWrite.All`。指定站点工作流尚待实现。
+
+目前 CLI 和 GUI 共用配置中的一份 `auth.scopes`，不会在用户选择 SharePoint
+功能时自动申请额外权限。修改列表后，应先停止运行中的 Monitor，再重新登录，
+完成必要的用户／管理员同意；GUI 需要先退出登录才能再次登录。已有 refresh
+token 不能代替新增权限所需的同意。按功能触发的增量授权属于后续计划，尚未实现。
 
 组织租户的策略可能要求管理员批准权限。个人 Microsoft 账号通常在设备登录时
 由用户自行同意。最新权限定义请参阅
@@ -110,7 +122,8 @@ endpoint = "https://login.microsoftonline.com"
 scopes = ["User.Read", "Files.ReadWrite", "offline_access"]
 ```
 
-单租户组织应用应将 `common` 替换为 Directory (tenant) ID。只有组织场景确实
+单租户组织应用应将 `common` 替换为 Directory (tenant) ID；只允许组织账号的
+多租户登录可使用 `organizations`，`consumers` 不接受工作／学校账号。只有组织场景确实
 需要时才添加 `Files.ReadWrite.All`、`Sites.Read.All` 或
 `Sites.ReadWrite.All`；SharePoint 站点 scope 不支持个人 Microsoft 账号。
 默认 scope 为 `User.Read Files.ReadWrite offline_access`；配置任一更广泛的
