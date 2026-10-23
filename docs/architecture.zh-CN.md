@@ -65,12 +65,21 @@ SQLite ItemStore 使用专用数据库线程。下载、监控和上传工作线
 管理，错误则返回调用方。SQLite 是状态的权威来源，适配器不再重复维护可变的
 条目缓存。
 
+`src/storage/item_mapping.hpp` 中的私有 Data Mapper 让单条写入和事务内的 Delta
+写入共用条目 upsert SQL、快照绑定及行读取。待提交下载和分片下载只共用相同的
+journal 字段；本地快照元数据与 journal 特有的列布局保持分离。数据库线程归属、
+Statement 复用、事务边界和错误处理仍由调用方负责，数据库 schema 不变。
+
 协议与策略上限在各自所属作用域中命名。HTTP、认证和 Graph 共用
 `src/http/status.hpp` 中的状态码与状态码类别判断；Graph JSON 请求共用
 `src/graph/support.hpp` 中的响应大小上限。SHA-256 摘要与十六进制长度定义在
 `onedrive/util/sha256.hpp` 中。浏览器传输复用 `BrowserRequest::request_limit`，
 文件系统缓冲区、名称分配尝试次数和 SQLite 连接上限则保留为局部常量。
 这些命名不改变协议数值、持久化格式或重试行为。
+
+Graph 写操作通过私有请求装饰函数复用上传传输的超时、HTTP／IP 版本及 JSON
+响应上限映射。认证头、限速策略、进度回调、取消及重试／错误处理仍由各操作
+负责。预认证的上传分片不会附加 Graph 认证头，总限速与单文件传输限速也不合并。
 
 `AccountState` 是账号激活、稳定路径和只读 Drive 查询的 Facade（门面）。
 私有 Data Mapper 函数负责 `DriveIdentity` 与账号／Drive JSON 的转换，
@@ -89,8 +98,9 @@ Graph 客户端、状态库、指标、目录租约和预览缓存作用域；�
 同步、上传和 Delta 通过核心层的 `events::Observer` 发布强类型 `events::Event`。
 观察者将不同 worker 线程的回调串行化，不依赖终端或任何 GUI 框架。回调接收到的
 事件引用只在调用期间有效；异步前端必须复制事件后再投递到主线程，且不得在回调
-内重入同一个观察者。异常会返回发布事件的调用方。`Observer::publish` 在相同
-串行化边界转发已有事件；多盘装饰器保留前端异常，不将其当作可继续的单盘错误。
+内重入同一个观察者。异常会返回发布事件的调用方。强类型发布方法和已有事件的
+转发共用 `Observer::publish` 这一加锁入口；多盘装饰器保留前端异常，不将其当作
+可继续的单盘错误。
 
 需要同时写日志的业务消息使用 `Observer::report_message` 或
 `report_blocked_item`，不再分别发布事件和诊断。这些公共方法保留配置的日志级别、

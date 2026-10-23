@@ -1,5 +1,6 @@
 #include "support.hpp"
 
+#include <ranges>
 #include <stop_token>
 
 namespace {
@@ -602,13 +603,24 @@ int test_directory_creation() {
             .drive_id = "drive/id",
             .endpoint = "https://graph.example.test/v1.0",
             .upload_transport = {
+                .transfer =
+                    {
+                        .connect_timeout = std::chrono::seconds{12},
+                        .operation_timeout = std::chrono::seconds{600},
+                        .low_speed_timeout = std::chrono::seconds{15},
+                        .low_speed_limit_bytes_per_second = 128,
+                        .http_version = onedrive::http::HttpVersion::http_2,
+                        .ip_version = onedrive::http::IpVersion::ipv4,
+                    },
                 .maximum_send_speed_bytes_per_second = 900,
                 .maximum_total_send_speed_bytes_per_second = 700,
             },
         },
     };
-    const auto root = client.create_directory("New #");
-    const auto nested = client.create_directory("New #/Child");
+    std::stop_source stop;
+    const auto root = client.create_directory("New #", stop.get_token());
+    const auto nested =
+        client.create_directory("New #/Child", stop.get_token());
     const auto& requests = transport_pointer->queued.requests;
     if (!root.directory || root.remote_path != "New #" || !nested.directory ||
         nested.remote_path != "New #/Child" || requests.size() != 3 ||
@@ -625,6 +637,17 @@ int test_directory_creation() {
         ) ||
         requests[1].maximum_send_speed_bytes_per_second != 700) {
         return fail("Graph directory creation request was invalid");
+    }
+    for (const auto& request : requests | std::views::drop(1)) {
+        if (request.connect_timeout != std::chrono::seconds{12} ||
+            request.operation_timeout != std::chrono::seconds{600} ||
+            request.low_speed_timeout != std::chrono::seconds{15} ||
+            request.low_speed_limit_bytes_per_second != 128 ||
+            request.http_version != onedrive::http::HttpVersion::http_2 ||
+            request.ip_version != onedrive::http::IpVersion::ipv4 ||
+            request.stop_token != stop.get_token()) {
+            return fail("directory creation lost configured transfer options");
+        }
     }
 
     auto conflict_transport = std::make_unique<

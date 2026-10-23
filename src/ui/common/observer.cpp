@@ -53,8 +53,7 @@ format_file_operation_time(std::chrono::system_clock::time_point timestamp) {
 }
 
 void Observer::file_operation(const FileOperationEvent& operation) const {
-    const std::scoped_lock lock{mutex_};
-    on_event(operation);
+    publish(operation);
 }
 
 void Observer::publish(const Event& event) const {
@@ -155,8 +154,7 @@ unsigned download_progress_percentage(
 void Observer::message(
     MessageKind kind, std::string_view event, std::string_view text
 ) const {
-    const std::scoped_lock lock{mutex_};
-    on_event(
+    publish(
         MessageEvent{
             .kind = kind,
             .event = std::string{event},
@@ -170,8 +168,7 @@ void Observer::section(
     std::string_view title,
     const std::vector<Field>& fields
 ) const {
-    const std::scoped_lock lock{mutex_};
-    on_event(
+    publish(
         SectionEvent{
             .event = std::string{event},
             .title = std::string{title},
@@ -183,8 +180,7 @@ void Observer::section(
 void Observer::delta_progress(
     std::size_t pages, std::size_t items, util::ProgressState state
 ) const {
-    const std::scoped_lock lock{mutex_};
-    on_event(
+    publish(
         DeltaProgressEvent{
             .pages = pages,
             .items = items,
@@ -194,8 +190,7 @@ void Observer::delta_progress(
 }
 
 void Observer::delta_summary(const DeltaSummary& summary) const {
-    const std::scoped_lock lock{mutex_};
-    on_event(DeltaSummaryEvent{.summary = summary});
+    publish(DeltaSummaryEvent{.summary = summary});
 }
 
 void Observer::blocked_item(
@@ -203,8 +198,7 @@ void Observer::blocked_item(
     std::string_view reason_code,
     std::string_view reason_message
 ) const {
-    const std::scoped_lock lock{mutex_};
-    on_event(
+    publish(
         BlockedItemEvent{
             .path = std::string{path},
             .reason_code = std::string{reason_code},
@@ -221,8 +215,7 @@ void Observer::download_progress(
     util::ProgressState state,
     const DownloadProgressMetrics& metrics
 ) const {
-    const std::scoped_lock lock{mutex_};
-    on_event(
+    publish(
         DownloadProgressEvent{
             .completed_files = completed_files,
             .file_count = file_count,
@@ -235,40 +228,33 @@ void Observer::download_progress(
 }
 
 void Observer::end_download_progress() const {
-    const std::scoped_lock lock{mutex_};
-    on_event(EndDownloadProgressEvent{});
+    publish(EndDownloadProgressEvent{});
 }
 
 void Observer::upload_progress(const UploadProgressEvent& progress) const {
-    const std::scoped_lock lock{mutex_};
-    on_event(progress);
+    publish(progress);
 }
 
 void Observer::end_upload_progress() const {
-    const std::scoped_lock lock{mutex_};
-    on_event(EndUploadProgressEvent{});
+    publish(EndUploadProgressEvent{});
 }
 
 void Observer::sync_phase(SyncPhase phase) const {
-    const std::scoped_lock lock{mutex_};
-    on_event(SyncPhaseEvent{phase});
+    publish(SyncPhaseEvent{phase});
 }
 
 void Observer::sync_context(sync::SyncMode direction, bool preview) const {
-    const std::scoped_lock lock{mutex_};
-    on_event(SyncContextEvent{direction, preview});
+    publish(SyncContextEvent{direction, preview});
 }
 
 void Observer::sync_summary(const SyncSummaryEvent& summary) const {
-    const std::scoped_lock lock{mutex_};
-    on_event(summary);
+    publish(summary);
 }
 
 void Observer::operation_state(
     OperationKind operation, OperationState state
 ) const {
-    const std::scoped_lock lock{mutex_};
-    on_event(OperationStateEvent{.operation = operation, .state = state});
+    publish(OperationStateEvent{.operation = operation, .state = state});
 }
 
 } // namespace onedrive::events

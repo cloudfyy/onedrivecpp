@@ -148,6 +148,21 @@ std::uint64_t effective_upload_rate(
     return std::min(per_file, total);
 }
 
+http::HttpRequest with_upload_transfer_options(
+    http::HttpRequest request, const http::UploadTransportOptions& options
+) {
+    const auto& transfer = options.transfer;
+    request.connect_timeout = transfer.connect_timeout;
+    request.operation_timeout = transfer.operation_timeout;
+    request.low_speed_timeout = transfer.low_speed_timeout;
+    request.low_speed_limit_bytes_per_second =
+        transfer.low_speed_limit_bytes_per_second;
+    request.http_version = transfer.http_version;
+    request.ip_version = transfer.ip_version;
+    request.maximum_response_size = maximum_json_response_bytes;
+    return request;
+}
+
 Json parse_graph_json(
     const http::HttpResponse& response,
     std::string_view description

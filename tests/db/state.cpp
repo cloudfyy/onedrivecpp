@@ -33,6 +33,7 @@ int test_hash_algorithm_round_trip() {
         util::FileHashAlgorithm::sha256,
         util::FileHashAlgorithm::sha1,
     };
+    std::vector<storage::ItemState> snapshots;
     {
         storage::ItemDatabase database{temporary.path(), identity()};
         database.open();
@@ -41,14 +42,26 @@ int test_hash_algorithm_round_trip() {
             const storage::ItemState state{
                 .drive_id = "me",
                 .remote_id = id,
+                .parent_id = "parent-" + id,
                 .name = id + ".bin",
                 .etag = "etag",
+                .ctag = "ctag-" + id,
                 .remote_path = id + ".bin",
                 .local_path = temporary.path() / (id + ".bin"),
+                .last_modified = "2026-10-21T09:00:00Z",
                 .size = 4,
+                .local_size = 9,
+                .local_modified_ticks = 123,
+                .local_device = 456,
+                .local_inode = 789,
                 .content_hash = util::FileHash{algorithm, "saved-hash"},
+                .directory = algorithm == util::FileHashAlgorithm::sha1,
             };
             database.upsert(state);
+            if (database.find("me", id) != state) {
+                return fail("item upsert changed snapshot metadata");
+            }
+            snapshots.push_back(state);
             database.save_partial_download({
                 .item = state,
                 .temporary_path = temporary.path() / (id + ".partial"),
@@ -59,8 +72,11 @@ int test_hash_algorithm_round_trip() {
                 .temporary_path = temporary.path() / (id + ".pending"),
                 .content_fingerprint = std::string(64, 'a'),
             });
+            auto delta_state = state;
+            delta_state.drive_id = "overridden-by-delta";
             database.apply_delta({
                 .drive_id = "me",
+                .upserts = {delta_state},
                 .blocked_upserts = {{
                     .remote_id = id,
                     .reason_code = "local_modification",
@@ -75,24 +91,32 @@ int test_hash_algorithm_round_trip() {
     reopened.open();
     const auto pending = reopened.pending_downloads("me");
     const auto blocked = reopened.blocked_items("me");
-    if (pending.size() != 3 || blocked.size() != 3) {
-        return fail("content hash journals lost records during restart");
+    if (pending.size() != 3 || blocked.size() != 3 ||
+        !std::ranges::is_permutation(snapshots, reopened.drive_items("me"))) {
+        return fail("snapshot or journal metadata changed during restart");
     }
-    for (const auto algorithm : algorithms) {
-        const std::string id{util::file_hash_algorithm_name(algorithm)};
+    for (const auto& expected : snapshots) {
+        const auto& id = expected.remote_id;
+        const auto algorithm = expected.content_hash->algorithm;
         const auto state = reopened.find("me", id);
         const auto partial = reopened.partial_download("me", id);
+        auto journal_item = expected;
+        journal_item.local_size = 0;
+        journal_item.local_modified_ticks = 0;
+        journal_item.local_device = 0;
+        journal_item.local_inode = 0;
+        journal_item.content_hash.reset();
         const auto matches = [&](const auto& record) {
             return record.content_hash &&
                    record.content_hash->algorithm == algorithm &&
                    record.content_hash->value == "saved-hash";
         };
-        if (!state || !matches(*state) || !partial ||
-            partial->completed_bytes != 2 || partial->item.etag != "etag" ||
+        if (state != expected || !partial || partial->completed_bytes != 2 ||
+            partial->item != journal_item ||
             !std::ranges::any_of(
                 pending,
                 [&](const auto& record) {
-                    return record.item.remote_id == id &&
+                    return record.item == journal_item &&
                            record.content_fingerprint == std::string(64, 'a');
                 }
             ) ||

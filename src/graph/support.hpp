@@ -40,6 +40,9 @@ void require_successful_graph_response(
 [[nodiscard]] std::uint64_t effective_upload_rate(
     const http::UploadTransportOptions& options
 );
+[[nodiscard]] http::HttpRequest with_upload_transfer_options(
+    http::HttpRequest request, const http::UploadTransportOptions& options
+);
 [[nodiscard]] Json parse_graph_json(
     const http::HttpResponse& response,
     std::string_view description = {}

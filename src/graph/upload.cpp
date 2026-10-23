@@ -478,30 +478,23 @@ RemoteItem MicrosoftGraphClient::upload_file(
         const auto response = perform_with_retries(
             [&] {
                 attempt_uploaded = 0;
-                return transport_->perform(
+                return transport_->perform(with_upload_transfer_options(
                     http::HttpRequest{
                         .method = http::HttpMethod::put,
                         .url = url,
                         .headers = headers,
                         .body = body,
-                        .connect_timeout = transfer.connect_timeout,
-                        .operation_timeout = transfer.operation_timeout,
-                        .low_speed_timeout = transfer.low_speed_timeout,
-                        .low_speed_limit_bytes_per_second =
-                            transfer.low_speed_limit_bytes_per_second,
                         .maximum_send_speed_bytes_per_second =
                             maximum_send_speed,
-                        .http_version = transfer.http_version,
-                        .ip_version = transfer.ip_version,
-                        .maximum_response_size = maximum_json_response_bytes,
                         .upload_throttle = upload_throttle,
                         .upload_progress =
                             [&](std::uint64_t bytes, std::uint64_t) {
                                 report_progress(0, bytes);
                             },
                         .stop_token = stop_token,
-                    }
-                );
+                    },
+                    options_.upload_transport
+                ));
             },
             options_,
             options_.maximum_throttle_retries,
@@ -591,23 +584,18 @@ RemoteItem MicrosoftGraphClient::upload_file(
         }.dump();
         const auto response = perform_with_retries(
             [&] {
-                return transport_->perform(http::HttpRequest{
-                    .method = http::HttpMethod::post,
-                    .url = session_url,
-                    .headers = session_headers,
-                    .body = session_body,
-                    .connect_timeout = transfer.connect_timeout,
-                    .operation_timeout = transfer.operation_timeout,
-                    .low_speed_timeout = transfer.low_speed_timeout,
-                    .low_speed_limit_bytes_per_second =
-                        transfer.low_speed_limit_bytes_per_second,
-                    .maximum_send_speed_bytes_per_second =
-                        maximum_send_speed,
-                    .http_version = transfer.http_version,
-                    .ip_version = transfer.ip_version,
-                    .maximum_response_size = maximum_json_response_bytes,
-                    .stop_token = stop_token,
-                });
+                return transport_->perform(with_upload_transfer_options(
+                    http::HttpRequest{
+                        .method = http::HttpMethod::post,
+                        .url = session_url,
+                        .headers = session_headers,
+                        .body = session_body,
+                        .maximum_send_speed_bytes_per_second =
+                            maximum_send_speed,
+                        .stop_token = stop_token,
+                    },
+                    options_.upload_transport
+                ));
             },
             options_,
             options_.maximum_throttle_retries,
@@ -802,30 +790,23 @@ RemoteItem MicrosoftGraphClient::upload_file(
         const auto chunk_response = perform_with_retries(
             [&] {
                 attempt_uploaded = 0;
-                return transport_->perform(
+                return transport_->perform(with_upload_transfer_options(
                     http::HttpRequest{
                         .method = http::HttpMethod::put,
                         .url = active_session.session.upload_url,
                         .headers = chunk_headers,
                         .body = body,
-                        .connect_timeout = transfer.connect_timeout,
-                        .operation_timeout = transfer.operation_timeout,
-                        .low_speed_timeout = transfer.low_speed_timeout,
-                        .low_speed_limit_bytes_per_second =
-                            transfer.low_speed_limit_bytes_per_second,
                         .maximum_send_speed_bytes_per_second =
                             maximum_send_speed,
-                        .http_version = transfer.http_version,
-                        .ip_version = transfer.ip_version,
-                        .maximum_response_size = maximum_json_response_bytes,
                         .upload_throttle = upload_throttle,
                         .upload_progress =
                             [&](std::uint64_t sent, std::uint64_t) {
                                 report_progress(offset, std::min(sent, bytes));
                             },
                         .stop_token = stop_token,
-                    }
-                );
+                    },
+                    options_.upload_transport
+                ));
             },
             options_,
             options_.maximum_throttle_retries,

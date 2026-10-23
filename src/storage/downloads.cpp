@@ -1,4 +1,5 @@
 #include "onedrive/storage/item_database.hpp"
+#include "storage/item_mapping.hpp"
 #include "storage/sqlite.hpp"
 #include "storage/worker.hpp"
 
@@ -15,9 +16,11 @@
 
 namespace onedrive::storage {
 
+using item_database_detail::bind_download_item;
 using item_database_detail::bind_integer;
 using item_database_detail::bind_text;
 using item_database_detail::column_text;
+using item_database_detail::read_download_item;
 using item_database_detail::Statement;
 using item_database_detail::Transaction;
 
@@ -31,23 +34,7 @@ PartialDownload partial_download_from_row(sqlite3_stmt* statement) {
         );
     }
     return {
-        .item =
-            {
-                .drive_id = column_text(statement, 0),
-                .remote_id = column_text(statement, 1),
-                .parent_id = column_text(statement, 2),
-                .name = column_text(statement, 3),
-                .etag = column_text(statement, 4),
-                .ctag = column_text(statement, 5),
-                .remote_path = column_text(statement, 6),
-                .local_path = column_text(statement, 7),
-                .last_modified = column_text(statement, 8),
-                .size = sqlite3_column_int64(statement, 9),
-                .local_size = 0,
-                .local_modified_ticks = 0,
-                .content_hash = std::nullopt,
-                .directory = sqlite3_column_int(statement, 10) != 0,
-            },
+        .item = read_download_item(statement),
         .temporary_path = column_text(statement, 11),
         .completed_bytes = static_cast<std::uint64_t>(completed),
     };
@@ -106,19 +93,7 @@ void ItemDatabase::save_pending_download_on_worker(
         "backup_fingerprint = excluded.backup_fingerprint, "
         "replacement_fingerprint = excluded.replacement_fingerprint;"
     };
-    bind_text(database, statement.get(), 1, download.item.drive_id);
-    bind_text(database, statement.get(), 2, download.item.remote_id);
-    bind_text(database, statement.get(), 3, download.item.parent_id);
-    bind_text(database, statement.get(), 4, download.item.name);
-    bind_text(database, statement.get(), 5, download.item.etag);
-    bind_text(database, statement.get(), 6, download.item.ctag);
-    bind_text(database, statement.get(), 7, download.item.remote_path);
-    bind_text(database, statement.get(), 8, download.item.local_path.string());
-    bind_text(database, statement.get(), 9, download.item.last_modified);
-    bind_integer(database, statement.get(), 10, download.item.size);
-    bind_integer(
-        database, statement.get(), 11, download.item.directory ? 1 : 0
-    );
+    bind_download_item(database, statement.get(), download.item);
     bind_text(database, statement.get(), 12, download.temporary_path.string());
     bind_text(database, statement.get(), 13, download.content_fingerprint);
     bind_text(database, statement.get(), 14, download.backup_path.string());
@@ -185,23 +160,7 @@ ItemDatabase::pending_downloads_on_worker(const std::string& drive_id) const {
     std::vector<PendingDownload> downloads;
     while (statement.next_row("cannot read pending downloads")) {
         downloads.push_back({
-            .item =
-                {
-                    .drive_id = column_text(statement.get(), 0),
-                    .remote_id = column_text(statement.get(), 1),
-                    .parent_id = column_text(statement.get(), 2),
-                    .name = column_text(statement.get(), 3),
-                    .etag = column_text(statement.get(), 4),
-                    .ctag = column_text(statement.get(), 5),
-                    .remote_path = column_text(statement.get(), 6),
-                    .local_path = column_text(statement.get(), 7),
-                    .last_modified = column_text(statement.get(), 8),
-                    .size = sqlite3_column_int64(statement.get(), 9),
-                    .local_size = 0,
-                    .local_modified_ticks = 0,
-                    .content_hash = std::nullopt,
-                    .directory = sqlite3_column_int(statement.get(), 10) != 0,
-                },
+            .item = read_download_item(statement.get()),
             .temporary_path = column_text(statement.get(), 11),
             .content_fingerprint = column_text(statement.get(), 12),
             .backup_path = column_text(statement.get(), 13),
@@ -256,19 +215,7 @@ void ItemDatabase::save_partial_download_on_worker(
         "completed_bytes = excluded.completed_bytes, "
         "updated_at = unixepoch();"
     };
-    bind_text(database, statement.get(), 1, download.item.drive_id);
-    bind_text(database, statement.get(), 2, download.item.remote_id);
-    bind_text(database, statement.get(), 3, download.item.parent_id);
-    bind_text(database, statement.get(), 4, download.item.name);
-    bind_text(database, statement.get(), 5, download.item.etag);
-    bind_text(database, statement.get(), 6, download.item.ctag);
-    bind_text(database, statement.get(), 7, download.item.remote_path);
-    bind_text(database, statement.get(), 8, download.item.local_path.string());
-    bind_text(database, statement.get(), 9, download.item.last_modified);
-    bind_integer(database, statement.get(), 10, download.item.size);
-    bind_integer(
-        database, statement.get(), 11, download.item.directory ? 1 : 0
-    );
+    bind_download_item(database, statement.get(), download.item);
     bind_text(database, statement.get(), 12, download.temporary_path.string());
     bind_integer(
         database,

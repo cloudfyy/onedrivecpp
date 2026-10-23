@@ -1,5 +1,6 @@
 #include "support.hpp"
 #include <array>
+#include <ranges>
 
 namespace {
 
@@ -343,6 +344,15 @@ int test_upload_sessions() {
             .upload_chunk_size_bytes = chunk_size,
             .upload_transport =
                 {
+                    .transfer =
+                        {
+                            .connect_timeout = std::chrono::seconds{12},
+                            .operation_timeout = std::chrono::seconds{600},
+                            .low_speed_timeout = std::chrono::seconds{15},
+                            .low_speed_limit_bytes_per_second = 128,
+                            .http_version = onedrive::http::HttpVersion::http_2,
+                            .ip_version = onedrive::http::IpVersion::ipv4,
+                        },
                     .maximum_send_speed_bytes_per_second = 900,
                     .maximum_total_send_speed_bytes_per_second = 700,
                 },
@@ -402,6 +412,16 @@ int test_upload_sessions() {
         upload_checkpoints[1].completed_bytes != chunk_size ||
         upload_checkpoints[1].expiration != "2026-10-05T09:00:00Z") {
         return fail("Graph upload session did not send contiguous fragments");
+    }
+    for (const auto& request : requests | std::views::drop(1)) {
+        if (request.connect_timeout != std::chrono::seconds{12} ||
+            request.operation_timeout != std::chrono::seconds{600} ||
+            request.low_speed_timeout != std::chrono::seconds{15} ||
+            request.low_speed_limit_bytes_per_second != 128 ||
+            request.http_version != onedrive::http::HttpVersion::http_2 ||
+            request.ip_version != onedrive::http::IpVersion::ipv4) {
+            return fail("upload session lost configured transfer options");
+        }
     }
 
     const auto update_source =

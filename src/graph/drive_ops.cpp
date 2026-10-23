@@ -368,35 +368,32 @@ RemoteItem MicrosoftGraphClient::create_directory(
         drive_prefix + "/root/children" :
         drive_prefix + "/root:/" +
             percent_encode_remote_path(parent) + ":/children";
-    const auto body = Json{
-        {"name", name},
-        {"folder", Json::object()},
-        {"@microsoft.graph.conflictBehavior", "fail"},
-    }.dump();
-    const auto& transfer = options_.upload_transport.transfer;
+    const auto body =
+        Json{
+            {"name", name},
+            {"folder", Json::object()},
+            {"@microsoft.graph.conflictBehavior", "fail"},
+        }
+            .dump();
     const auto response = perform_with_retries(
         [&] {
-            return transport_->perform(http::HttpRequest{
-                .method = http::HttpMethod::post,
-                .url = url,
-                .headers = {
-                    "Accept: application/json",
-                    "Authorization: Bearer " + access_token(),
-                    "Content-Type: application/json",
+            return transport_->perform(with_upload_transfer_options(
+                http::HttpRequest{
+                    .method = http::HttpMethod::post,
+                    .url = url,
+                    .headers =
+                        {
+                            "Accept: application/json",
+                            "Authorization: Bearer " + access_token(),
+                            "Content-Type: application/json",
+                        },
+                    .body = body,
+                    .maximum_send_speed_bytes_per_second =
+                        effective_upload_rate(options_.upload_transport),
+                    .stop_token = stop_token,
                 },
-                .body = body,
-                .connect_timeout = transfer.connect_timeout,
-                .operation_timeout = transfer.operation_timeout,
-                .low_speed_timeout = transfer.low_speed_timeout,
-                .low_speed_limit_bytes_per_second =
-                    transfer.low_speed_limit_bytes_per_second,
-                .maximum_send_speed_bytes_per_second =
-                    effective_upload_rate(options_.upload_transport),
-                .http_version = transfer.http_version,
-                .ip_version = transfer.ip_version,
-                .maximum_response_size = maximum_json_response_bytes,
-                .stop_token = stop_token,
-            });
+                options_.upload_transport
+            ));
         },
         options_,
         options_.maximum_throttle_retries,
@@ -461,31 +458,26 @@ void MicrosoftGraphClient::delete_item(
         );
     }
     const auto drive_prefix = graph_drive_prefix(options_);
-    const auto& transfer = options_.upload_transport.transfer;
     const auto response = perform_with_retries(
         [&] {
-            return transport_->perform(http::HttpRequest{
-                .method = http::HttpMethod::delete_,
-                .url = drive_prefix + "/items/" +
-                    percent_encode_uri_component(remote_id),
-                .headers = {
-                    "Accept: application/json",
-                    "Authorization: Bearer " + access_token(),
-                    "If-Match: " + expected_etag,
+            return transport_->perform(with_upload_transfer_options(
+                http::HttpRequest{
+                    .method = http::HttpMethod::delete_,
+                    .url = drive_prefix + "/items/" +
+                           percent_encode_uri_component(remote_id),
+                    .headers =
+                        {
+                            "Accept: application/json",
+                            "Authorization: Bearer " + access_token(),
+                            "If-Match: " + expected_etag,
+                        },
+                    .body = {},
+                    .maximum_send_speed_bytes_per_second =
+                        effective_upload_rate(options_.upload_transport),
+                    .stop_token = stop_token,
                 },
-                .body = {},
-                .connect_timeout = transfer.connect_timeout,
-                .operation_timeout = transfer.operation_timeout,
-                .low_speed_timeout = transfer.low_speed_timeout,
-                .low_speed_limit_bytes_per_second =
-                    transfer.low_speed_limit_bytes_per_second,
-                .maximum_send_speed_bytes_per_second =
-                    effective_upload_rate(options_.upload_transport),
-                .http_version = transfer.http_version,
-                .ip_version = transfer.ip_version,
-                .maximum_response_size = maximum_json_response_bytes,
-                .stop_token = stop_token,
-            });
+                options_.upload_transport
+            ));
         },
         options_,
         options_.maximum_throttle_retries,
@@ -549,40 +541,37 @@ RemoteItem MicrosoftGraphClient::move_item(
         std::string{} :
         destination_path.substr(0, separator);
     const auto drive_prefix = graph_drive_prefix(options_);
-    const auto body = Json{
-        {"name", name},
-        {"parentReference", {
-            {"path", parent.empty() ?
-                "/drive/root:" :
-                "/drive/root:/" + parent},
-        }},
-    }.dump();
-    const auto& transfer = options_.upload_transport.transfer;
+    const auto body =
+        Json{
+            {"name", name},
+            {"parentReference",
+             {
+                 {"path",
+                  parent.empty() ? "/drive/root:" : "/drive/root:/" + parent},
+             }},
+        }
+            .dump();
     const auto response = perform_with_retries(
         [&] {
-            return transport_->perform(http::HttpRequest{
-                .method = http::HttpMethod::patch,
-                .url = drive_prefix + "/items/" +
-                    percent_encode_uri_component(remote_id),
-                .headers = {
-                    "Accept: application/json",
-                    "Authorization: Bearer " + access_token(),
-                    "Content-Type: application/json",
-                    "If-Match: " + expected_etag,
+            return transport_->perform(with_upload_transfer_options(
+                http::HttpRequest{
+                    .method = http::HttpMethod::patch,
+                    .url = drive_prefix + "/items/" +
+                           percent_encode_uri_component(remote_id),
+                    .headers =
+                        {
+                            "Accept: application/json",
+                            "Authorization: Bearer " + access_token(),
+                            "Content-Type: application/json",
+                            "If-Match: " + expected_etag,
+                        },
+                    .body = body,
+                    .maximum_send_speed_bytes_per_second =
+                        effective_upload_rate(options_.upload_transport),
+                    .stop_token = stop_token,
                 },
-                .body = body,
-                .connect_timeout = transfer.connect_timeout,
-                .operation_timeout = transfer.operation_timeout,
-                .low_speed_timeout = transfer.low_speed_timeout,
-                .low_speed_limit_bytes_per_second =
-                    transfer.low_speed_limit_bytes_per_second,
-                .maximum_send_speed_bytes_per_second =
-                    effective_upload_rate(options_.upload_transport),
-                .http_version = transfer.http_version,
-                .ip_version = transfer.ip_version,
-                .maximum_response_size = maximum_json_response_bytes,
-                .stop_token = stop_token,
-            });
+                options_.upload_transport
+            ));
         },
         options_,
         options_.maximum_throttle_retries,

@@ -1,5 +1,6 @@
 #include "onedrive/storage/item_database.hpp"
 #include "storage/file_hash.hpp"
+#include "storage/item_mapping.hpp"
 #include "storage/query.hpp"
 #include "storage/sqlite.hpp"
 #include "storage/worker.hpp"
@@ -15,8 +16,10 @@
 namespace onedrive::storage {
 
 using item_database_detail::bind_integer;
+using item_database_detail::bind_item;
 using item_database_detail::bind_text;
 using item_database_detail::column_text;
+using item_database_detail::item_upsert_sql;
 using item_database_detail::query_count;
 using item_database_detail::serialize_file_hash;
 using item_database_detail::Statement;
@@ -56,29 +59,7 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
             upsert_on_worker(item);
         }
     }
-    Statement upsert_statement{
-        database,
-        "INSERT INTO item ("
-        "drive_id, remote_id, parent_id, name, etag, ctag, remote_path, "
-        "local_path, last_modified, size, local_size, local_modified_ticks, "
-        "local_device, local_inode, content_hash_algorithm, "
-        "content_hash_value, directory"
-        ") VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, "
-        "?13, ?14, ?15, ?16, ?17) "
-        "ON CONFLICT(drive_id, remote_id) DO UPDATE SET "
-        "parent_id = excluded.parent_id, name = excluded.name, "
-        "etag = excluded.etag, ctag = excluded.ctag, "
-        "remote_path = excluded.remote_path, "
-        "local_path = excluded.local_path, "
-        "last_modified = excluded.last_modified, size = excluded.size, "
-        "local_size = excluded.local_size, "
-        "local_modified_ticks = excluded.local_modified_ticks, "
-        "local_device = excluded.local_device, "
-        "local_inode = excluded.local_inode, "
-        "content_hash_algorithm = excluded.content_hash_algorithm, "
-        "content_hash_value = excluded.content_hash_value, "
-        "directory = excluded.directory;"
-    };
+    Statement upsert_statement{database, item_upsert_sql};
     for (auto& item : delta.upserts) {
         if (item.remote_id.empty()) {
             throw std::invalid_argument(
@@ -86,40 +67,7 @@ void ItemDatabase::apply_delta_on_worker(ItemDelta delta) {
             );
         }
         item.drive_id = delta.drive_id;
-        const std::string local_path = item.local_path.string();
-        bind_text(database, upsert_statement.get(), 1, item.drive_id);
-        bind_text(database, upsert_statement.get(), 2, item.remote_id);
-        bind_text(database, upsert_statement.get(), 3, item.parent_id);
-        bind_text(database, upsert_statement.get(), 4, item.name);
-        bind_text(database, upsert_statement.get(), 5, item.etag);
-        bind_text(database, upsert_statement.get(), 6, item.ctag);
-        bind_text(database, upsert_statement.get(), 7, item.remote_path);
-        bind_text(database, upsert_statement.get(), 8, local_path);
-        bind_text(database, upsert_statement.get(), 9, item.last_modified);
-        bind_integer(database, upsert_statement.get(), 10, item.size);
-        bind_integer(database, upsert_statement.get(), 11, item.local_size);
-        bind_integer(
-            database, upsert_statement.get(), 12, item.local_modified_ticks
-        );
-        bind_integer(
-            database,
-            upsert_statement.get(),
-            13,
-            static_cast<std::int64_t>(item.local_device)
-        );
-        bind_integer(
-            database,
-            upsert_statement.get(),
-            14,
-            static_cast<std::int64_t>(item.local_inode)
-        );
-        const auto [hash_algorithm, hash_value] =
-            serialize_file_hash(item.content_hash);
-        bind_text(database, upsert_statement.get(), 15, hash_algorithm);
-        bind_text(database, upsert_statement.get(), 16, hash_value);
-        bind_integer(
-            database, upsert_statement.get(), 17, item.directory ? 1 : 0
-        );
+        bind_item(database, upsert_statement.get(), item);
         upsert_statement.execute("cannot apply delta item");
         upsert_statement.reset();
     }

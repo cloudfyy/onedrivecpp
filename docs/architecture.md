@@ -65,6 +65,13 @@ one thread owns the SQLite connection and transaction order while errors are
 returned to the caller. SQLite is the authoritative state source; the adapter
 does not maintain duplicate mutable item caches.
 
+Private Data Mappers in `src/storage/item_mapping.hpp` share item upsert SQL,
+snapshot binding and row decoding across single-item and transactional Delta
+writes. Pending and partial downloads share only their common journal fields;
+local snapshot metadata and the journal-specific column layout stay separate.
+Worker ownership, statement reuse, transaction boundaries, and errors remain at
+the call sites; the database schema is unchanged.
+
 Protocol and policy limits are named at their owning scope. HTTP, authentication,
 and Graph share status codes and status-family predicates in `src/http/status.hpp`;
 Graph JSON requests share their response-size cap in `src/graph/support.hpp`.
@@ -72,6 +79,13 @@ SHA-256 digest and hexadecimal lengths live in `onedrive/util/sha256.hpp`.
 The browser transport reuses `BrowserRequest::request_limit`; filesystem buffers,
 name-allocation attempts, and SQLite connection limits remain local constants.
 These names do not change wire values, persisted formats, or retry behavior.
+
+Graph write operations share a private upload-transfer request decorator for
+timeouts, HTTP/IP versions, and the JSON response limit. Authorization, rate
+policy, progress callbacks, cancellation, and retry/error handling stay with
+each operation. In particular, preauthenticated upload fragments do not acquire
+Graph authorization headers, and aggregate throttling stays distinct from the
+per-file transport rate.
 
 `AccountState` is the facade for account activation, stable paths, and read-only
 saved Drive lookup. Private Data Mapper functions convert between `DriveIdentity`
@@ -95,9 +109,10 @@ the core `events::Observer` interface. It serializes callbacks from workers
 without depending on a terminal or GUI toolkit. An event reference is valid only
 during its callback: asynchronous frontends must copy it before posting it to
 their main thread, and callbacks must not re-enter the same observer. Exceptions
-propagate to the publishing caller. `Observer::publish` forwards an existing
-event under the same lock; the multi-Drive decorator preserves frontend
-exceptions rather than treating them as recoverable Drive failures.
+propagate to the publishing caller. Typed publication methods and forwarding
+of existing events share `Observer::publish` as their single locking boundary;
+the multi-Drive decorator preserves frontend exceptions rather than treating
+them as recoverable Drive failures.
 
 Business messages that also need logging use `Observer::report_message` or
 `report_blocked_item`, rather than separately publishing an event and a diagnostic.
