@@ -632,6 +632,24 @@ Ubuntu 26.04 includes the GUI. No OneDrive credentials are required.
 The test images restore manual-page installation and the real `man` executable
 where the minimal base image disables them.
 
+Buildx stores the dependency-image layers in GitHub Actions cache, separately
+for each Ubuntu target and runner architecture, and checks for a newer base
+image on each run. Compilation uses a separate persistent ccache (up to 1 GB
+per target cache snapshot), keyed by target, architecture, build configuration
+and commit, with compatible earlier snapshots restored for incremental reuse.
+The compiler executable is checked by content; ordinary source and header
+validation remains enabled. Native ccache builds disable precompiled headers
+rather than relax ccache's macro/time checks; non-cached builds keep them.
+A fixed `/work/source` path avoids changing the build directory with the
+application version.
+
+Only compiler results and dependency-image layers are reused: every run still
+configures, links, tests and packages the current source, with the native build
+and lifecycle containers offline. The first run is a cold build; later gains
+depend on cache hits and the size of the change. `ccache.txt` is uploaded with
+the build logs, including on native-build failure. Delete the relevant Actions
+caches to force a cold rebuild or refresh cached dependency installation layers.
+
 The gates check application/package versions, run the CTest suite through
 `dpkg-buildpackage`, and run Lintian (errors fail the job; warnings remain in
 the uploaded report). Disposable target containers check package metadata,

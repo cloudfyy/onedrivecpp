@@ -3,6 +3,7 @@ onedrive-cpp (1.0.3-2~ubuntu24.04) noble; urgency=medium
   * Rebuild with the Ubuntu 24.04 native dependency and offline archive fixes.
   * Add isolated Debian package validation and draft release automation.
   * Keep Clang 20 and disable distro LTO flags for native package builds.
+  * Cache CI compiler results and dependency images; disable PCH with ccache.
 
  -- cloudfyy <cloudfyy@hotmail.com>  Sun, 18 Oct 2026 01:14:30 +0000
 

@@ -16,10 +16,12 @@ endif
 %:
 	dh $@ --buildsystem=cmake+ninja
 
+# Keep strict ccache macro/time checks by avoiding PCH in cached builds.
 override_dh_auto_configure:
 	dh_auto_configure -- \
 		-DCMAKE_BUILD_TYPE=Release \
 		-DBUILD_TESTING=ON \
+		-DCMAKE_DISABLE_PRECOMPILE_HEADERS=$(if $(filter ccache,$(CMAKE_CXX_COMPILER_LAUNCHER)),ON,OFF) \
 		-DONEDRIVE_OFFLINE_BUILD=ON \
 		-DFETCHCONTENT_FULLY_DISCONNECTED=OFF \
 		-DONEDRIVE_DEBIAN_PACKAGE_BUILD=ON \

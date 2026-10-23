@@ -74,28 +74,53 @@ jobs:
         with:
           name: release-source
           path: build/source
+      - uses: docker/setup-buildx-action@v4
       - name: Prepare target build image
-        run: |
-          docker build -f .github/packaging.Dockerfile -t onedrive-package-build \
-            --build-arg UBUNTU_VERSION="$TARGET_UBUNTU" \
-            --build-arg BUILD_PROFILE="${{ matrix.profile }}" .
+        uses: docker/build-push-action@v7
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: 'false'
+        with:
+          context: .
+          file: .github/packaging.Dockerfile
+          tags: onedrive-package-build
+          load: true
+          pull: true
+          build-args: |
+            UBUNTU_VERSION=${{ matrix.ubuntu }}
+            BUILD_PROFILE=${{ matrix.profile }}
+          cache-from: type=gha,scope=package-image-ubuntu${{ matrix.ubuntu }}-${{ runner.arch }}
+          cache-to: type=gha,mode=max,scope=package-image-ubuntu${{ matrix.ubuntu }}-${{ runner.arch }}
+      - name: Restore compiler cache
+        uses: actions/cache@v5
+        with:
+          path: build/ccache
+          key: ccache-v1-ubuntu${{ matrix.ubuntu }}-${{ runner.arch }}-${{ hashFiles('.github/packaging.Dockerfile', 'debian/control', 'debian/rules', 'cmake/CompilerChecks.cmake', 'packaging/dependencies.json') }}-${{ github.sha }}
+          restore-keys: |
+            ccache-v1-ubuntu${{ matrix.ubuntu }}-${{ runner.arch }}-${{ hashFiles('.github/packaging.Dockerfile', 'debian/control', 'debian/rules', 'cmake/CompilerChecks.cmake', 'packaging/dependencies.json') }}-
       - name: Build native packages without network access
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p build/package-work
-          tar -xf "build/source/onedrive-cpp-$VERSION.tar.xz" -C build/package-work
+          mkdir -p build/package-work/source build/ccache
+          tar -xf "build/source/onedrive-cpp-$VERSION.tar.xz" \
+            --strip-components=1 -C build/package-work/source
           docker run --rm --network none \
             --user "$(id -u):$(id -g)" --env HOME=/tmp/build-home \
             --env VERSION --env REVISION --env TARGET_UBUNTU --env TARGET_SUITE \
             --env SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)" \
+            --env CMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            --env CCACHE_DIR=/ccache --env CCACHE_BASEDIR=/work/source \
+            --env CCACHE_COMPILERCHECK=content --env CCACHE_MAXSIZE=1G \
             --env DEB_BUILD_OPTIONS=parallel=2 \
             --env DEBFULLNAME="onedrive-cpp release automation" \
             --env DEBEMAIL=noreply@github.com \
             --volume "$PWD/build/package-work:/work" \
-            --workdir "/work/onedrive-cpp-$VERSION" \
+            --volume "$PWD/build/ccache:/ccache" \
+            --workdir /work/source \
             onedrive-package-build bash -euo pipefail -c '
               mkdir -p "$HOME"
+              ccache --zero-stats
+              trap "ccache --show-stats | tee /work/ccache.txt" EXIT
               if [[ "$TARGET_UBUNTU" != 24.04 ]]; then
                 dch --newversion "$VERSION-$REVISION~ubuntu$TARGET_UBUNTU" \
                   --distribution "$TARGET_SUITE" "Build for Ubuntu $TARGET_UBUNTU."
@@ -111,8 +136,8 @@ jobs:
             --env ONEDRIVE_DISPOSABLE_PACKAGE_TEST=1 \
             --volume "$PWD/build/package-work:/work:ro" \
             onedrive-package-build bash \
-            "/work/onedrive-cpp-$VERSION/tests/packaging/lifecycle.sh" \
-            "/work/onedrive-cpp-$VERSION" \
+            /work/source/tests/packaging/lifecycle.sh \
+            /work/source \
             "/work/onedrive-cpp_$VERSION-$REVISION~ubuntu${TARGET_UBUNTU}_amd64.deb" \
             2>&1 | tee "build/package-work/lifecycle-$TARGET_UBUNTU.log"
       - uses: actions/upload-artifact@v4
@@ -126,6 +151,7 @@ jobs:
             build/package-work/*.buildinfo
             build/package-work/*.log
             build/package-work/lintian.txt
+            build/package-work/ccache.txt
           if-no-files-found: error
 
   draft-release:

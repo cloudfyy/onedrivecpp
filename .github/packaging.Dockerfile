@@ -13,7 +13,7 @@ RUN printf 'path-include=/usr/share/man/*\npath-include=/usr/share/doc/*\n' \
     fi \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
-        build-essential ca-certificates devscripts git lintian python3 \
+        build-essential ca-certificates ccache devscripts git lintian python3 \
         dbus desktop-file-utils man-db systemd \
     && apt-get build-dep -y --no-install-recommends /tmp/package \
     && if [ -z "$DEB_BUILD_PROFILES" ]; then \
