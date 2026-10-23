@@ -62,6 +62,14 @@ remain valid. If two references resolve to the same Drive (for example `me` and
 its actual ID), the duplicate is reported as a failure and is not synchronized
 twice. This is not a multi-account configuration.
 
+Both `drive_id` and `drive_ids` reject empty values, ASCII spaces, Unicode
+control characters (C0, DEL, and C1), and obvious URLs (a `://` separator,
+a `//` prefix, or an HTTP/HTTPS scheme). Values are not trimmed or case-folded.
+Drive IDs remain opaque: no fixed prefix or length is required. These checks
+do not prove that an ID exists, distinguish every Site ID from a Drive ID, or
+grant access; Microsoft Graph verifies the resource and permissions at runtime.
+`drive_ids` is available from application version 1.1.0.
+
 Sync processes targets in order, with separate account/Drive directories,
 databases, Delta cursors, and preview caches. A target failure is reported while
 remaining targets continue; authentication errors and cancellation stop the

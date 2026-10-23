@@ -1,15 +1,50 @@
 #include "config/parse.hpp"
+#include "util/ascii.hpp"
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 
 namespace onedrive::config::detail {
+namespace {
+
+void validate_drive_id(std::string_view id, std::string_view setting) {
+    if (id.empty()) {
+        throw std::runtime_error(std::string{setting} + " must not be empty");
+    }
+    const bool ascii_control_or_space = std::ranges::any_of(
+        id, [](unsigned char byte) { return byte <= 0x20 || byte == 0x7f; }
+    );
+    // C1 controls (U+0080 through U+009F) are two-byte UTF-8 sequences.
+    const bool c1_control =
+        std::ranges::adjacent_find(
+            id, [](unsigned char first, unsigned char second) {
+                return first == 0xc2 && second >= 0x80 && second <= 0x9f;
+            }
+        ) != id.end();
+    if (ascii_control_or_space || c1_control) {
+        throw std::runtime_error(
+            std::string{setting} +
+            " must not contain spaces or control characters"
+        );
+    }
+    if (id.contains("://") || id.starts_with("//") ||
+        util::ascii_iequals(id.substr(0, 5), "http:") ||
+        util::ascii_iequals(id.substr(0, 6), "https:")) {
+        throw std::runtime_error(
+            std::string{setting} + " requires a Drive ID or 'me', not a URL"
+        );
+    }
+}
+
+} // namespace
 
 void load_sync_options(Config& config, const toml::table& root, const std::filesystem::path& config_path) {
     if (const auto* sync = optional_table(root, "sync", "sync")) {
@@ -87,12 +122,10 @@ void load_sync_options(Config& config, const toml::table& root, const std::files
             }
             std::unordered_set<std::string> seen;
             for (const auto& id : config.drive_ids) {
-                if (id.find_first_of(" \t\r\n") != std::string::npos ||
-                    id.find('\0') != std::string::npos ||
-                    !seen.insert(id).second) {
+                validate_drive_id(id, "sync.drive_ids");
+                if (!seen.insert(id).second) {
                     throw std::runtime_error(
-                        "sync.drive_ids requires non-empty, unique string "
-                        "Drive IDs without whitespace"
+                        "sync.drive_ids must contain unique Drive IDs"
                     );
                 }
             }
@@ -104,6 +137,7 @@ void load_sync_options(Config& config, const toml::table& root, const std::files
                 "sync.drive_id",
                 "a string"
             )) {
+            validate_drive_id(*value, "sync.drive_id");
             config.drive_id = *value;
         }
         const auto mode = optional_value<std::string>(

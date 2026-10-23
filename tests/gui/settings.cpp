@@ -609,7 +609,13 @@ void test_round_trip() {
         "save changed comments or unrelated configuration"
     );
     require(backups(fixture.path()) == 1, "save did not create one backup");
-    for (const auto* invalid : {"", "first\nfirst", "first\n"}) {
+    for (const auto* invalid :
+         {"",
+          "first\nfirst",
+          "first\n",
+          "first\nsecond drive",
+          "first\nhttps://contoso.sharepoint.com/sites/team",
+          "first\n//contoso.sharepoint.com/sites/team"}) {
         list(window, "sync.drive_ids", invalid);
         require(
             !save(window).startsWith("Settings saved.") &&
@@ -680,7 +686,7 @@ void test_source_editing() {
             "config.toml",
             source,
             {
-                {"sync", "drive_id", std::string{"新 drive"}},
+                {"sync", "drive_id", std::string{"新-drive"}},
                 {"sync", "maximum_file_size_bytes", std::int64_t{4294967297}},
                 {"sync", "sync_list", std::monostate{}},
                 {"upload", "concurrency", std::int64_t{2}},
@@ -690,7 +696,7 @@ void test_source_editing() {
         const auto loaded =
             config::Config::load_from_string("config.toml", updated);
         require(
-            loaded.drive_id == "新 drive" &&
+            loaded.drive_id == "新-drive" &&
                 loaded.maximum_file_size_bytes == 4294967297ULL &&
                 !loaded.sync_list && loaded.upload_concurrency == 2 &&
                 loaded.upload_maximum_rate_bytes_per_second == 42,

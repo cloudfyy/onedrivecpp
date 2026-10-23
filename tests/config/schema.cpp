@@ -1,8 +1,82 @@
 #include "support.hpp"
 
+#include <format>
+#include <utility>
+
 namespace {
 
 using namespace onedrive::test::config;
+
+int test_drive_id_validation() {
+    const auto path = std::filesystem::path{"/tmp/drive-id-validation.toml"};
+    const auto load = [&](std::string_view key, const std::string& literal) {
+        return onedrive::config::Config::load_from_string(
+            path,
+            "config_version = 2\n[sync]\n" + std::string{key} + " = " +
+                (key == "drive_ids" ? "['me', " + literal + "]" : literal)
+        );
+    };
+    for (const auto* key : {"drive_id", "drive_ids"}) {
+        for (const auto* id :
+             {"0123456789ABCDEF", "b!AbC-123_+=z", "opaque:future-id", "a"}) {
+            const auto config = load(key, "'" + std::string{id} + "'");
+            const auto ids = config.configured_drive_ids();
+            if (ids.back() != id ||
+                ids.size() !=
+                    (std::string_view{key} == "drive_ids" ? 2U : 1U)) {
+                return onedrive::test::fail(
+                    "opaque Drive IDs were rejected or normalized"
+                );
+            }
+        }
+        for (const auto& [literal, expected] :
+             {std::pair{R"("drive-\u00e9")", "drive-\xc3\xa9"},
+              std::pair{R"("drive-\u00a1")", "drive-\xc2\xa1"}}) {
+            if (load(key, literal).configured_drive_ids().back() != expected) {
+                return onedrive::test::fail(
+                    "non-control UTF-8 Drive ID was changed"
+                );
+            }
+        }
+        std::vector<std::string> invalid{
+            "''",
+            "' '",
+            "' leading'",
+            "'trailing '",
+            "'two words'",
+            "'https://contoso.sharepoint.com/sites/team'",
+            "'HTTP://example.test/drive'",
+            "'HtTpS:example.test/drive'",
+            "'ftp://example.test/drive'",
+            "'//contoso.sharepoint.com/sites/team'",
+        };
+        for (unsigned code = 0; code <= 0x9f; ++code) {
+            if (code <= 0x1f || code >= 0x7f) {
+                invalid.push_back(std::format(R"("a\u{:04x}b")", code));
+            }
+        }
+        for (const auto& literal : invalid) {
+            if (!onedrive::test::throws_with<std::runtime_error>(
+                    [&] { static_cast<void>(load(key, literal)); },
+                    "sync." + std::string{key}
+                )) {
+                return onedrive::test::fail(
+                    std::string{key} +
+                    " accepted an invalid Drive ID: " + literal
+                );
+            }
+        }
+    }
+    const auto distinct = onedrive::config::Config::load_from_string(
+        path, "config_version = 2\n[sync]\ndrive_ids = ['AbC', 'abc']\n"
+    );
+    if (distinct.drive_ids != std::vector<std::string>{"AbC", "abc"}) {
+        return onedrive::test::fail(
+            "Drive ID comparison changed opaque casing"
+        );
+    }
+    return EXIT_SUCCESS;
+}
 
 int test_schema() {
     ConfigFixture fixture;
@@ -184,11 +258,6 @@ int main() {
           "drive_ids = [42]",
           "drive_ids = ['']",
           "drive_ids = ['me', 'me']",
-          "drive_ids = ['a b']",
-          "drive_ids = [\"a\\tb\"]",
-          "drive_ids = [\"a\\nb\"]",
-          "drive_ids = [\"a\\rb\"]",
-          "drive_ids = [\"a\\u0000b\"]",
           "drive_id = 'me'\ndrive_ids = ['other']"}) {
         if (!onedrive::test::throws_with<std::runtime_error>(
                 [&] {
@@ -244,6 +313,9 @@ int main() {
             "history.unknown"
         )) {
         return onedrive::test::fail("unknown history setting was accepted");
+    }
+    if (test_drive_id_validation() != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
     }
     return test_schema();
 }

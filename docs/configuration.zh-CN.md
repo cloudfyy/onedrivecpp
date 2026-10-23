@@ -54,6 +54,12 @@ drive_ids = ["me", "b!FIRST_LIBRARY_DRIVE_ID", "b!SECOND_LIBRARY_DRIVE_ID"]
 实际 ID 指向同一个 Drive，重复目标会明确报错，不会重复执行同步。这不代表
 一份配置可以登录多个账号。
 
+`drive_id` 和 `drive_ids` 共用校验规则：拒绝空值、ASCII 空格、Unicode 控制
+字符（C0、DEL 和 C1），以及明显的网址（含 `://`、以 `//` 开头或带 HTTP/HTTPS
+协议前缀）。不会自动去除空格或转换大小写。Drive ID 仍作为不透明标识处理，
+不限定前缀或长度。这些检查不能证明资源存在、识别所有 Site ID，或授予访问权限；
+实际资源及权限由 Microsoft Graph 在运行时验证。`drive_ids` 从程序 1.1.0 起支持。
+
 同步按列表顺序执行，各目标独立保存账号／Drive 目录、数据库、Delta 游标和
 预览缓存。单盘失败会报告并继续其他目标；认证错误或取消停止整轮。最终结果
 优先为失败，其次为 blocked，全部成功才返回成功。Monitor 在后续轮次重试，
