@@ -1,5 +1,6 @@
 #pragma once
 
+#include "onedrive/account/account_state.hpp"
 #include "onedrive/ui/cli/event.hpp"
 #include "onedrive/graph/graph_client.hpp"
 
@@ -8,6 +9,8 @@
 #include <vector>
 
 namespace onedrive::app::detail {
+
+std::vector<cli::Field> account_fields(const account::DriveIdentity& identity);
 
 std::string format_bytes(std::uint64_t bytes);
 

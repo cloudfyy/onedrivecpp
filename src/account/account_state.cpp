@@ -269,7 +269,7 @@ AccountPaths paths_for(
     };
 }
 
-void write_metadata(
+nlohmann::json account_metadata(
     const AccountPaths& paths,
     const DriveIdentity& identity
 ) {
@@ -288,18 +288,45 @@ void write_metadata(
                     "image/webp" :
                     "image/jpeg";
     }
+    return account;
+}
+
+nlohmann::json drive_metadata(const DriveIdentity& identity) {
+    return {
+        {"configured_drive_id", identity.configured_drive_id},
+        {"drive_id", identity.drive_id},
+        {"name", identity.drive_name},
+        {"drive_type", identity.drive_type},
+    };
+}
+
+DriveIdentity identity_from_metadata(
+    const nlohmann::json& account,
+    const nlohmann::json& drive
+) {
+    return {
+        .user_id = account.at("user_id").get<std::string>(),
+        .user_display_name = account.at("display_name").get<std::string>(),
+        .configured_drive_id =
+            drive.at("configured_drive_id").get<std::string>(),
+        .drive_id = drive.at("drive_id").get<std::string>(),
+        .drive_name = drive.at("name").get<std::string>(),
+        .photo = {},
+        .drive_type = drive.value("drive_type", std::string{}),
+    };
+}
+
+void write_metadata(
+    const AccountPaths& paths,
+    const DriveIdentity& identity
+) {
     write_private_file(
         paths.account_directory / "account.json",
-        account.dump(2) + "\n"
+        account_metadata(paths, identity).dump(2) + "\n"
     );
     write_private_file(
         paths.drive_directory / "drive.json",
-        nlohmann::json{
-            {"configured_drive_id", identity.configured_drive_id},
-            {"drive_id", identity.drive_id},
-            {"name", identity.drive_name},
-            {"drive_type", identity.drive_type},
-        }.dump(2) + "\n"
+        drive_metadata(identity).dump(2) + "\n"
     );
     if (paths.avatar_path && identity.photo) {
         const auto& bytes = identity.photo->bytes;
@@ -487,17 +514,7 @@ std::optional<SavedDrive> AccountState::saved_drive(
                 };
             }
             selected = SavedDrive{
-                .identity = DriveIdentity{
-                    .user_id = user.at("user_id").get<std::string>(),
-                    .user_display_name =
-                        user.at("display_name").get<std::string>(),
-                    .configured_drive_id =
-                        drive.at("configured_drive_id").get<std::string>(),
-                    .drive_id = drive.at("drive_id").get<std::string>(),
-                    .drive_name = drive.at("name").get<std::string>(),
-                    .photo = {},
-                    .drive_type = drive.value("drive_type", std::string{}),
-                },
+                .identity = identity_from_metadata(user, drive),
                 .directory = entry.path(),
             };
         }

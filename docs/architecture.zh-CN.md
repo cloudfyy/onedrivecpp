@@ -72,6 +72,13 @@ SQLite ItemStore 使用专用数据库线程。下载、监控和上传工作线
 文件系统缓冲区、名称分配尝试次数和 SQLite 连接上限则保留为局部常量。
 这些命名不改变协议数值、持久化格式或重试行为。
 
+`AccountState` 是账号激活、稳定路径和只读 Drive 查询的 Facade（门面）。
+私有 Data Mapper 函数负责 `DriveIdentity` 与账号／Drive JSON 的转换，
+文件权限、Drive 选择和原子写入不混入转换逻辑。CLI 登录和状态复用
+`account_fields` Presenter，与既有 Drive／配额字段展示方式一致。
+GUI 翻译仍由 Qt 负责，不让领域模型依赖本地化标签；缺失类型保持未知，
+Graph 返回的未来类型原值保留。
+
 ## 界面输出边界
 
 同步、上传和 Delta 通过核心层的 `events::Observer` 发布强类型 `events::Event`。

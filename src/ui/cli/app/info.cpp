@@ -616,22 +616,10 @@ int show_status(
     const auto& identity = snapshot.identity;
     const auto& state = snapshot.state;
     const auto& last_run = snapshot.last_run;
-    console.section(
-        "status",
-        "Synchronization status:",
+    auto fields = account_fields(identity);
+    fields.insert(
+        fields.end(),
         {
-            {
-                .label = "account:",
-                .key = "account",
-                .value = identity.user_display_name,
-            },
-            {.label = "drive:", .key = "drive", .value = identity.drive_name},
-            {
-                .label = "type:",
-                .key = "drive_type",
-                .value =
-                    identity.drive_type.empty() ? "unknown" : identity.drive_type,
-            },
             {
                 .label = "drive id:",
                 .key = "drive_id",
@@ -740,6 +728,7 @@ int show_status(
             },
         }
     );
+    console.section("status", "Synchronization status:", std::move(fields));
     return exit_code::success;
 }
 

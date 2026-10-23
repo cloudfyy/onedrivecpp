@@ -8,6 +8,18 @@
 
 namespace onedrive::app::detail {
 
+std::vector<cli::Field> account_fields(const account::DriveIdentity& identity) {
+    return {
+        {.label = "account:",
+         .key = "account",
+         .value = identity.user_display_name},
+        {.label = "drive:", .key = "drive", .value = identity.drive_name},
+        {.label = "type:",
+         .key = "drive_type",
+         .value = identity.drive_type.empty() ? "unknown" : identity.drive_type},
+    };
+}
+
 std::string format_bytes(std::uint64_t bytes) {
     const auto size = util::scale_bytes(bytes, util::ByteUnit::tebibytes);
     return size.unit == "B" ? std::format("{} {}", bytes, size.unit)

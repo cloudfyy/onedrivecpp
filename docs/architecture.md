@@ -73,6 +73,14 @@ The browser transport reuses `BrowserRequest::request_limit`; filesystem buffers
 name-allocation attempts, and SQLite connection limits remain local constants.
 These names do not change wire values, persisted formats, or retry behavior.
 
+`AccountState` is the facade for account activation, stable paths, and read-only
+saved Drive lookup. Private Data Mapper functions convert between `DriveIdentity`
+and account/Drive JSON; file permissions, selection, and atomic writes remain
+outside those conversions. CLI login and status reuse the `account_fields`
+Presenter alongside the existing Drive/quota presenters. GUI translation remains
+in Qt, rather than making the domain model depend on localized labels. Missing
+Drive types remain unknown, and unrecognized Graph values are preserved.
+
 ## Presentation boundary
 
 Synchronization, upload, and Delta publish typed `events::Event` values through

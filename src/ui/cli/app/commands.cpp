@@ -1,6 +1,7 @@
 #include "commands.hpp"
 #include "discover.hpp"
 #include "info.hpp"
+#include "drive_fields.hpp"
 #include "app/lock.hpp"
 #include "onedrive/monitor/control.hpp"
 
@@ -196,19 +197,7 @@ int authenticate(
     console.section(
         "account",
         "Microsoft account:",
-        {
-            {.label = "account:",
-             .key = "account",
-             .value = result->identity.user_display_name},
-            {.label = "drive:",
-             .key = "drive",
-             .value = result->identity.drive_name},
-            {.label = "type:",
-             .key = "drive_type",
-             .value = result->identity.drive_type.empty()
-                          ? "unknown"
-                          : result->identity.drive_type},
-        }
+        account_fields(result->identity)
     );
     console.message(
         cli::MessageKind::information,
