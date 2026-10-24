@@ -1,3 +1,13 @@
+onedrive-cpp (1.1.2-1~ubuntu24.04) noble; urgency=medium
+
+  * Prepare version 1.1.2.
+  * Add independent OneDrive for Business live E2E verification runner.
+  * Harden local deletion checks, logging lifetime, and runtime deadlines.
+  * Fix transfer resume, storage schema/integrity checks, sync reuse baselines,
+    monitor notification coalescing, watch rebuilds, and CLI/TUI inspection.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 25 Oct 2026 07:45:00 +0800
+
 onedrive-cpp (1.1.1-1~ubuntu24.04) noble; urgency=medium
 
   * Prepare version 1.1.1.
