@@ -399,6 +399,9 @@ mode suppresses them). JSON uses `event: "file_operation"`, UTC `completed_at`,
 `local_path`, `directory`, `recovered`, `history_retained` and `history_omitted`.
 The TUI shows recent operations live and prints the complete retained list after
 leaving its full-screen view at completion or graceful Monitor shutdown.
+Text and TUI rows place paths before the Drive ID so long organizational Drive
+IDs do not displace file names on narrow terminals. The complete Drive ID remains
+in the text export and JSON output.
 If a command fails after completing earlier operations, it still exports those
 retained completions before reporting the error.
 CLI timestamps use UTC. Both frontends retain at most

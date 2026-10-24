@@ -106,8 +106,10 @@ CLI 文本和 JSON 随完成逐条输出，安静模式不输出这些记录。J
 `file_operation`，提供 UTC `completed_at`、`completed_at_unix_milliseconds`、
 `action`、`path`、`previous_path`、`drive_id`、`local_path`、`directory`、
 `recovered`、`history_retained` 和 `history_omitted`。TUI 实时显示最近操作，
-任务完成或 Monitor 正常停止后，退出全屏并输出完整的保留列表。若命令在部分操作
-完成后失败，仍先导出已保留的完成记录再报告错误。CLI 时间为 UTC。
+任务完成或 Monitor 正常停止后，退出全屏并输出完整的保留列表。
+文本和 TUI 记录将路径放在驱动器 ID 前，避免组织版长 ID 在窄终端中挤掉文件名；
+退出全屏后的文本列表和 JSON 仍保留完整驱动器 ID。
+若命令在部分操作完成后失败，仍先导出已保留的完成记录再报告错误。CLI 时间为 UTC。
 两端共用 `history.maximum_entries`（默认 **10000**，必须为正整数）；超限时省略
 最旧记录并显示省略数量。已经输出到终端或 JSON 流的内容不会被撤回。此上限独立于
 GUI 诊断日志的上限，也不影响同步累计统计。GUI 可在“设置／高级与日志”中修改；

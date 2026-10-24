@@ -22,6 +22,7 @@ using onedrive::test::fail;
 
 int test_file_history() {
     using namespace onedrive::cli;
+    const auto drive_id = "b!" + std::string(100, 'D');
     for (const auto view : {TuiView::sync, TuiView::watch, TuiView::download}) {
         std::ostringstream output;
         std::ostringstream error;
@@ -29,7 +30,7 @@ int test_file_history() {
             {.ui = UiMode::tui, .view = view, .file_history_limit = 2},
             output,
             error,
-            140,
+            80,
             30
         )};
         for (int index = 0; index < 4; ++index) {
@@ -37,10 +38,17 @@ int test_file_history() {
                 .completed_at = std::chrono::system_clock::time_point{},
                 .action = onedrive::events::FileAction::downloaded,
                 .path = "completed-" + std::to_string(index) + ".txt",
+                .drive_id = drive_id,
             });
         }
         if (!output.str().contains("FILES // 2 retained // 2 older omitted")) {
             return fail("live TUI did not display retained file history");
+        }
+        const auto rendered = output.str();
+        const auto frame = rendered.substr(rendered.rfind("\033[H"));
+        if (!frame.contains("completed-2.txt") ||
+            !frame.contains("completed-3.txt")) {
+            return fail("long Drive ID displaced file paths in a narrow TUI");
         }
         const auto before_finish = output.str().size();
         if (view == TuiView::watch) {
@@ -54,6 +62,7 @@ int test_file_history() {
             !final_list.contains("downloaded") ||
             !final_list.contains("completed-2.txt") ||
             !final_list.contains("completed-3.txt") ||
+            !final_list.contains("[" + drive_id + "]") ||
             final_list.contains("completed-0.txt") ||
             final_list.contains("completed-1.txt") ||
             !final_list.contains("2 older operations omitted")) {

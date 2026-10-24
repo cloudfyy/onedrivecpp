@@ -88,6 +88,9 @@ int test_console_events_and_output() {
                     !output.str().contains("moved_remotely") ||
                     !output.str().contains("old\\nname.txt") ||
                     !output.str().contains(
+                        "\"old\\nname.txt\" -> \"file-0\" [drive]"
+                    ) ||
+                    !output.str().contains(
                         "2 retained (limit 2); 1 older operations omitted."
                     )) {
                     return fail(
@@ -104,6 +107,7 @@ int test_console_events_and_output() {
                     if (event["event"] != "file_operation" ||
                         event["action"] != "moved_remotely" ||
                         event["previous_path"] != "old\nname.txt" ||
+                        event["drive_id"] != "drive" ||
                         event["completed_at_unix_milliseconds"] != count ||
                         event["history_retained"] != std::min(count + 1, 2) ||
                         event["history_omitted"] != std::max(count - 1, 0)) {

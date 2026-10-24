@@ -14,11 +14,11 @@ std::string format_file_operation(const events::FileOperationEvent& operation) {
         "{}  {:<18} {}{}{}{}{}",
         events::format_file_operation_time(operation.completed_at),
         events::file_action_name(operation.action),
-        operation.drive_id.empty() ? ""
-                                   : fmt::format("[{}] ", operation.drive_id),
         path,
         operation.directory ? " (folder)" : "",
         operation.recovered ? " (recovered)" : "",
+        operation.drive_id.empty() ? ""
+                                   : fmt::format(" [{}]", operation.drive_id),
         operation.local_path.empty()
             ? ""
             : fmt::format(" [local: {:?}]", operation.local_path)
