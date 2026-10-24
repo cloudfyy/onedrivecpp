@@ -3,6 +3,8 @@
 
 #include <fmt/format.h>
 
+#include <set>
+
 namespace onedrive::cli::detail {
 
 std::string format_file_operation(const events::FileOperationEvent& operation) {
@@ -11,27 +13,40 @@ std::string format_file_operation(const events::FileOperationEvent& operation) {
         path = fmt::format("{:?} -> {}", operation.previous_path, path);
     }
     return fmt::format(
-        "{}  {:<18} {}{}{}{}{}",
-        events::format_file_operation_time(operation.completed_at),
-        events::file_action_name(operation.action),
+        "{}  {}{}{}{}  {}",
         path,
+        events::file_action_name(operation.action),
         operation.directory ? " (folder)" : "",
         operation.recovered ? " (recovered)" : "",
-        operation.drive_id.empty() ? ""
-                                   : fmt::format(" [{}]", operation.drive_id),
         operation.local_path.empty()
             ? ""
-            : fmt::format(" [local: {:?}]", operation.local_path)
+            : fmt::format(" [local: {:?}]", operation.local_path),
+        events::format_file_operation_time(operation.completed_at)
     );
 }
 
 std::string format_file_history_status(const events::FileHistory& history) {
-    return fmt::format(
+    auto status = fmt::format(
         "File history: {} retained (limit {}); {} older operations omitted.",
         history.entries().size(),
         history.limit(),
         history.omitted()
     );
+    std::set<std::string> drives;
+    for (const auto& operation : history.entries()) {
+        if (!operation.drive_id.empty()) {
+            drives.insert(operation.drive_id);
+        }
+    }
+    if (!drives.empty()) {
+        status += "\nDrives (retained history): ";
+        bool first = true;
+        for (const auto& drive : drives) {
+            status += fmt::format("{}{:?}", first ? "" : ", ", drive);
+            first = false;
+        }
+    }
+    return status;
 }
 
 std::string format_bytes(std::uint64_t bytes) {

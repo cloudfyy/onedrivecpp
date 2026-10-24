@@ -265,7 +265,7 @@ public:
         }
         leave_fullscreen();
         output_ << "\nCompleted file operations (this process):\n"
-                << "Time (UTC)            Action             Path\n";
+                << "Path  Action / details  Time (UTC)\n";
         for (const auto& operation : file_history_.entries()) {
             output_ << format_file_operation(operation) << '\n';
         }

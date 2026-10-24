@@ -88,7 +88,12 @@ int test_console_events_and_output() {
                     !output.str().contains("moved_remotely") ||
                     !output.str().contains("old\\nname.txt") ||
                     !output.str().contains(
-                        "\"old\\nname.txt\" -> \"file-0\" [drive]"
+                        "\n\"old\\nname.txt\" -> \"file-0\"  moved_remotely "
+                        " 1970-01-01T00:00:00Z\n"
+                    ) ||
+                    output.str().contains("[drive]") ||
+                    !output.str().contains(
+                        "Drives (retained history): \"drive\"\n"
                     ) ||
                     !output.str().contains(
                         "2 retained (limit 2); 1 older operations omitted."

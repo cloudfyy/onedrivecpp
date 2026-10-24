@@ -290,7 +290,7 @@ private:
         render(EndDownloadProgressEvent{});
         if (!history_heading_printed_) {
             output_ << "Completed file operations (this process):\n"
-                    << "Time (UTC)            Action             Path\n";
+                    << "Path  Action / details  Time (UTC)\n";
             history_heading_printed_ = true;
         }
         output_ << format_file_operation(event) << '\n' << std::flush;

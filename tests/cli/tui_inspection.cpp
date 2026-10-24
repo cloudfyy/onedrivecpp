@@ -47,8 +47,9 @@ int test_file_history() {
         const auto rendered = output.str();
         const auto frame = rendered.substr(rendered.rfind("\033[H"));
         if (!frame.contains("completed-2.txt") ||
-            !frame.contains("completed-3.txt")) {
-            return fail("long Drive ID displaced file paths in a narrow TUI");
+            !frame.contains("completed-3.txt") ||
+            frame.contains("b!")) {
+            return fail("live file rows lost paths or displayed Drive IDs");
         }
         const auto before_finish = output.str().size();
         if (view == TuiView::watch) {
@@ -62,7 +63,12 @@ int test_file_history() {
             !final_list.contains("downloaded") ||
             !final_list.contains("completed-2.txt") ||
             !final_list.contains("completed-3.txt") ||
-            !final_list.contains("[" + drive_id + "]") ||
+            !final_list.contains(
+                "\nDrives (retained history): \"" + drive_id + "\"\n"
+            ) ||
+            !final_list.contains(
+                "\n\"completed-3.txt\"  downloaded  1970-01-01T00:00:00Z\n"
+            ) ||
             final_list.contains("completed-0.txt") ||
             final_list.contains("completed-1.txt") ||
             !final_list.contains("2 older operations omitted")) {
@@ -73,6 +79,21 @@ int test_file_history() {
         if (output.str().size() != after_finish) {
             return fail("TUI file history was printed twice on completion");
         }
+    }
+    onedrive::events::FileHistory history{3};
+    for (const auto* drive : {"evicted", "drive-b", "drive-a", "drive-b"}) {
+        history.add({.drive_id = drive});
+    }
+    const auto status = detail::format_file_history_status(history);
+    if (!status.ends_with(
+            "\nDrives (retained history): \"drive-a\", \"drive-b\""
+        ) || status.contains("evicted")) {
+        return fail("Drive summary did not deduplicate retained history");
+    }
+    history.clear();
+    history.add({});
+    if (detail::format_file_history_status(history).contains("Drives")) {
+        return fail("history without Drive IDs displayed a Drive summary");
     }
     return EXIT_SUCCESS;
 }
