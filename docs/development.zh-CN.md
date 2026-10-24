@@ -15,6 +15,28 @@
 匹配和 CLI 已说明的 ASCII 匹配，不重复维护字段筛选或数据库访问逻辑。
 CLI 输出继续复用现有 Console 事件及文本／JSON／TUI 后端。
 
+## 测试场景进度
+
+最近拆分的同步 base／delete／upload、Graph drive／download／support、TUI，
+以及 GUI monitoring／localization 测试程序复用 `tests/support/progress.hpp`。
+`ScenarioProgress` 输出每个场景的序号、总数、名称、`RUNNING`／`PASS`／`FAIL`
+状态及毫秒耗时。进度写入 `std::clog`，在场景开始前及结果输出后立即刷新，
+使卡住或超时的程序保留当前场景信息，同时不污染测试捕获的应用 stdout／stderr 流。
+即使场景的业务进度未换行，场景结果也会从新的一行开始。
+
+CTest 默认隐藏通过测试的输出。使用详细模式查看场景进度；需要连续、无交错的
+输出时使用单任务执行：
+
+```bash
+ctest --test-dir build/release -V -j 1 -R '^sync_upload_tests$'
+```
+
+这不会将单个场景注册成 CTest 测试项，也不改变测试入口、执行顺序、原有退出码
+或异常传播。共享状态及 Qt 翻译器保留原有作用域，子进程控制模式不输出场景进度。
+TUI 参数化场景的名称包含行数和页数。增加场景时同步维护声明的总数，并在成功
+路径调用 `finish()`；执行数量不足或超出声明时明确报错，不伪造全部完成。
+其他测试程序暂时保留原有输出，后续再逐步接入。
+
 ## 共享传输进度
 
 上传与下载复用 `TransferProgressEstimator` 和既有的进度节流器；

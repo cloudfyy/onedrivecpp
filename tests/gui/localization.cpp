@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "localization_support.hpp"
 #include "localization_cases.hpp"
 
@@ -5,6 +6,7 @@ using namespace onedrive;
 using namespace onedrive::test::gui_localization;
 
 int main(int argc, char* argv[]) {
+    onedrive::test::ScenarioProgress progress{11};
     test::TemporaryDirectory settings;
     QSettings::setPath(
         QSettings::NativeFormat,
@@ -24,44 +26,59 @@ int main(int argc, char* argv[]) {
             gui::Localization localization{
                 gui::parse_startup_language(parser, arguments)
             };
-            require(
-                localization.chinese_loaded() == chinese,
-                "startup locale selected the wrong translation"
-            );
-            test_states_and_messages(chinese);
-            test_window_and_settings(chinese);
-            test_login(chinese);
-            test_browser_callback(chinese);
+            progress.run("startup_language", [&] {
+                require(
+                    localization.chinese_loaded() == chinese,
+                    "startup locale selected the wrong translation"
+                );
+            });
+            progress.run("states_and_messages", [&] {
+                return test_states_and_messages(chinese);
+            });
+            progress.run("window_and_settings", [&] {
+                return test_window_and_settings(chinese);
+            });
+            progress.run("login", [&] { return test_login(chinese); });
+            progress.run("browser_callback", [&] {
+                return test_browser_callback(chinese);
+            });
         }
-        require(
-            gui::MainWindow::tr("onedrive client") == "onedrive client",
-            "destroyed translator remained installed"
-        );
-        {
-            gui::Localization localization{QLocale{"zh_CN"}};
+        progress.run("translator_lifetime", [] {
             require(
-                localization.chinese_loaded() &&
-                    gui::MainWindow::tr("onedrive client") == "OneDrive 客户端",
-                "explicit Simplified Chinese translator did not load"
-            );
-        }
-        gui::Localization fallback{QLocale{"en_US"}};
-        require(
-            !fallback.chinese_loaded() &&
                 gui::MainWindow::tr("onedrive client") == "onedrive client",
-            "English fallback was not restored"
-        );
+                "destroyed translator remained installed"
+            );
+            {
+                gui::Localization localization{QLocale{"zh_CN"}};
+                require(
+                    localization.chinese_loaded() &&
+                        gui::MainWindow::tr("onedrive client") ==
+                            "OneDrive 客户端",
+                    "explicit Simplified Chinese translator did not load"
+                );
+            }
+        });
+        gui::Localization fallback{QLocale{"en_US"}};
+        progress.run("english_fallback", [&] {
+            require(
+                !fallback.chinese_loaded() &&
+                    gui::MainWindow::tr("onedrive client") == "onedrive client",
+                "English fallback was not restored"
+            );
+        });
         const auto system_locale = QLocale::system();
-        test_runtime_language(
-            system_locale.language() == QLocale::Chinese &&
-            system_locale.script() == QLocale::SimplifiedChineseScript
-        );
-        test_browser_language();
-        test_login_refresh_language();
-        test_about_button();
+        progress.run("runtime_language", [&] {
+            return test_runtime_language(
+                system_locale.language() == QLocale::Chinese &&
+                system_locale.script() == QLocale::SimplifiedChineseScript
+            );
+        });
+        progress.run("browser_language", test_browser_language);
+        progress.run("login_refresh_language", test_login_refresh_language);
+        progress.run("about_button", test_about_button);
     } catch (const std::exception& error) {
         return test::fail(error.what());
     }
 
-    return EXIT_SUCCESS;
+    return progress.finish();
 }

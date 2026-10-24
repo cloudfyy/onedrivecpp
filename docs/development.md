@@ -19,6 +19,33 @@ in the GUI and the CLI's documented ASCII matching without duplicating field
 selection or database access. CLI output continues through the existing
 Console events and text/JSON/TUI backends.
 
+## Test scenario progress
+
+The recently decomposed sync base/delete/upload, Graph drive/download/support,
+TUI, and GUI monitoring/localization test programs use
+`tests/support/progress.hpp`. `ScenarioProgress` prints each scenario's index,
+total, name, `RUNNING`/`PASS`/`FAIL` status and elapsed milliseconds. Output goes
+to `std::clog` and is flushed before the scenario starts and after its result,
+so a stalled or timed-out process leaves its active scenario visible without
+polluting captured application stdout/stderr streams. Results start on a new
+line even if a scenario leaves its console progress unterminated.
+
+CTest normally hides successful test output. Enable verbose output to see
+scenario progress, and use one job when you want an uninterrupted sequence:
+
+```bash
+ctest --test-dir build/release -V -j 1 -R '^sync_upload_tests$'
+```
+
+This does not register individual scenarios with CTest or change test entry
+points, execution order, existing exit codes or exception propagation. Shared
+state and Qt translator lifetimes remain in their original scopes; subprocess
+control modes do not emit scenario progress. Parameterized TUI cases include
+their row/page values in their names. Maintain the declared scenario count
+when adding cases and call `finish()` on the successful path; an incomplete or
+overfull plan is an error, not reported as full completion. Other test programs
+retain their existing output until they are explicitly migrated.
+
 ## Shared transfer progress
 
 Upload and download reporting reuse `TransferProgressEstimator` and the existing
