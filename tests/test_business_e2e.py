@@ -404,6 +404,65 @@ class BusinessRunnerTests(unittest.TestCase):
         self.assertTrue(e2e.parse_events(completed))
         self.assertFalse(list(client.state.glob("accounts/*/drives/*/items.sqlite3")))
 
+    def test_real_monitor_commands_reach_control_handler_without_authentication(self):
+        if CLIENT is None:
+            self.skipTest("Pass --client to exercise real CLI monitor commands")
+        self.source["console"] = {"ui": "tui", "theme": "hacker"}
+        client = self.client()
+        client.executable = CLIENT
+        client.config["auth"]["endpoint"] = "https://127.0.0.1:1"
+        client.config["graph"]["endpoint"] = "https://127.0.0.1:1/v1.0"
+        client.configure()
+        for operation in ("status", "trigger", "stop"):
+            with self.subTest(operation=operation):
+                completed = client.run("monitor", operation, expected=(1,))
+                self.assertIn("Monitor control endpoint is unavailable", completed.stderr)
+        self.assertEqual(self.source["console"]["ui"], "tui")
+        self.assertFalse(list(client.state.glob("accounts/*/drives/*/items.sqlite3")))
+
+    def test_watch_readiness_retries_until_own_successful_round(self):
+        runner = self.runner()
+        process = Mock(pid=42)
+        process.poll.return_value = None
+        runner.a.start = Mock(return_value=process)
+        runner.busy_restore = Mock(side_effect=e2e.E2EError("ready-boundary"))
+
+        def status(pid=42, rounds=1, result=0):
+            return subprocess.CompletedProcess(
+                [], 0, json.dumps({
+                    "event": "monitor_control",
+                    "values": {
+                        "pid": str(pid), "completed_rounds": str(rounds),
+                        "last_result": str(result),
+                    },
+                }), "",
+            )
+
+        replies = [
+            subprocess.CompletedProcess([], 1, "", "endpoint unavailable"),
+            status(rounds=0),
+            status(pid=43),
+            status(result=3),
+            status(),
+        ]
+        with patch.object(e2e.subprocess, "run", side_effect=replies) as run:
+            with patch.object(e2e.time, "sleep"):
+                with self.assertRaisesRegex(e2e.E2EError, "ready-boundary"):
+                    runner.watch(websocket=True)
+        self.assertEqual(run.call_count, len(replies))
+        runner.busy_restore.assert_called_once_with(process)
+
+    def test_watch_readiness_does_not_retry_cli_argument_errors(self):
+        runner = self.runner()
+        process = Mock()
+        process.poll.return_value = None
+        runner.a.start = Mock(return_value=process)
+        usage_error = subprocess.CompletedProcess([], 2, "", "unknown option")
+        with patch.object(e2e.subprocess, "run", return_value=usage_error) as run:
+            with self.assertRaisesRegex(e2e.E2EError, "monitor status exited 2"):
+                runner.watch(websocket=True)
+        run.assert_called_once()
+
     def test_busy_restore_assertion_matches_real_cli_before_authentication(self):
         if CLIENT is None:
             self.skipTest("Pass --client to exercise real CLI busy refusal")

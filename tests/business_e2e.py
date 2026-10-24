@@ -190,6 +190,7 @@ class Client:
         rules = self.home / "sync-list"
         private_write(rules, f"/{scope}/\n".encode())
         self.config = copy.deepcopy(source)
+        self.config.setdefault("console", {})["ui"] = "console"
         self.config["state"] = {"directory": str(self.state)}
         self.config["logging"] = {"level": "warn"}
         self.config["filesystem"] = {"metadata": "database"}
@@ -239,7 +240,7 @@ class Client:
     def command(self, *arguments):
         return [
             str(self.executable), *arguments,
-            "--config", str(self.config_path), "--ui", "console", "--output", "json",
+            "--config", str(self.config_path), "--output", "json",
         ]
 
     def run(self, *arguments, expected=(0,)):
