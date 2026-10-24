@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <stdexcept>
 #include <sys/stat.h>
 
@@ -79,7 +80,8 @@ public:
     ) const;
     [[nodiscard]] bool remove(
         const std::filesystem::path& path,
-        FilesystemItemKind kind
+        FilesystemItemKind kind,
+        std::optional<FilesystemIdentity> expected_identity = std::nullopt
     ) const;
     void fsync_directory(const std::filesystem::path& directory) const;
 

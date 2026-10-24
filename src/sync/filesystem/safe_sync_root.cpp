@@ -354,7 +354,8 @@ FilesystemIdentity SafeSyncRoot::identity(
 
 bool SafeSyncRoot::remove(
     const std::filesystem::path& path,
-    FilesystemItemKind kind
+    FilesystemItemKind kind,
+    std::optional<FilesystemIdentity> expected_identity
 ) const {
     const auto relative = relative_path(path);
     Descriptor parent{open_beneath(
@@ -390,6 +391,12 @@ bool SafeSyncRoot::remove(
         (directory ? !S_ISDIR(status.st_mode) : !S_ISREG(status.st_mode))) {
         throw SafePathConflictError(
             "local deletion target has an unexpected type: " + path.string()
+        );
+    }
+    if (expected_identity &&
+        util::filesystem_identity(status) != *expected_identity) {
+        throw SafePathConflictError(
+            "local deletion target changed identity: " + path.string()
         );
     }
     if (::unlinkat(

@@ -268,6 +268,13 @@ retry or remote deletion clears the record.
 Authentication, Graph, database, root-permission, disk-capacity, and download
 transport failures remain fatal.
 
+Remote deletions also verify the local file's recorded identity and content
+hash, not just its size and modification time. Metadata-preserving edits and
+replacement files are retained as `local_modification`. Older snapshots without
+a content hash are not sufficient proof for automatic deletion: review the file
+and explicitly remove it locally if the remote deletion is intended. Failure to
+inspect a deletion target is reported as an error, not treated as an absent file.
+
 ## Unsupported formats
 
 The built-in rules in `src/graph/unsupported_formats.hpp` currently identify

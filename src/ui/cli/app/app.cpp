@@ -8,8 +8,6 @@
 #include "app/lock.hpp"
 #include "app/preflight.hpp"
 
-#include <spdlog/spdlog.h>
-
 #include <exception>
 #include <filesystem>
 #include <iostream>
@@ -60,10 +58,10 @@ cli::TuiView tui_view(detail::Operation operation) noexcept {
 
 }  // namespace
 
-Application::Application(
-    gsl::not_null<const RuntimeFactory*> runtime_factory
-)
-    : runtime_factory_{runtime_factory} {}
+Application::Application(gsl::not_null<const RuntimeFactory*> runtime_factory)
+    : runtime_factory_{runtime_factory} {
+    logging::initialize();
+}
 
 int Application::run(int argc, char* argv[]) {
     auto parsed = detail::parse_arguments(argc, argv);
@@ -150,11 +148,7 @@ int Application::run(int argc, char* argv[]) {
             );
             return exit_code::failure;
         }
-        if (const auto logger = spdlog::default_logger()) {
-            logger->error("{}", error.what());
-        } else {
-            std::cerr << "onedrive-cpp: " << error.what() << '\n';
-        }
+        std::cerr << "onedrive-cpp: " << error.what() << '\n';
         return exit_code::failure;
     }
 }

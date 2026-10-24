@@ -9,6 +9,7 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
@@ -78,12 +79,19 @@ public:
     explicit MessageCallbackSink(MessageSink sink)
         : sink_{std::move(sink)} {}
 
+    void disconnect() {
+        const std::scoped_lock lock{mutex_};
+        sink_ = {};
+    }
+
 private:
     void sink_it_(const spdlog::details::log_msg& message) override {
-        sink_(
-            severity_for(message.level),
-            std::string_view{message.payload.data(), message.payload.size()}
-        );
+        if (sink_) {
+            sink_(
+                severity_for(message.level),
+                std::string_view{message.payload.data(), message.payload.size()}
+            );
+        }
     }
 
     void flush_() override {}
@@ -317,22 +325,119 @@ spdlog::level::level_enum parse_level(std::string_view level) {
     throw std::invalid_argument(std::format("invalid log level: {}", level));
 }
 
+struct SessionLoggers {
+    std::shared_ptr<spdlog::logger> diagnostic;
+    std::shared_ptr<spdlog::logger> event;
+    std::shared_ptr<MessageCallbackSink> callback;
+};
+
+class RoutingSink final : public spdlog::sinks::sink {
+public:
+    explicit RoutingSink(const std::shared_ptr<spdlog::logger>& logger)
+        : default_{logger},
+          fallback_{logger->clone(logger->name())} {
+    }
+
+    void attach(const std::shared_ptr<SessionLoggers>& session) {
+        const std::scoped_lock lock{mutex_};
+        if (sessions_.empty()) {
+            update_fallback_level();
+        }
+        sessions_.push_back(session);
+        update_level();
+    }
+
+    void detach(const std::shared_ptr<SessionLoggers>& session) {
+        const std::scoped_lock lock{mutex_};
+        std::erase(sessions_, session);
+        update_level();
+    }
+
+    [[nodiscard]] std::shared_ptr<spdlog::logger> current(bool event) {
+        const std::scoped_lock lock{mutex_};
+        if (sessions_.empty()) {
+            update_fallback_level();
+            return fallback_;
+        }
+        return event ? sessions_.back()->event : sessions_.back()->diagnostic;
+    }
+
+    void log(const spdlog::details::log_msg& message) override {
+        current(false)->log(
+            message.time, message.source, message.level, message.payload
+        );
+    }
+
+    void flush() override {
+        current(false)->flush();
+    }
+
+    void set_pattern(const std::string& pattern) override {
+        current(false)->set_pattern(pattern);
+    }
+
+    void set_formatter(std::unique_ptr<spdlog::formatter> formatter) override {
+        current(false)->set_formatter(std::move(formatter));
+    }
+
+private:
+    void update_fallback_level() {
+        if (const auto logger = default_.lock()) {
+            fallback_->set_level(logger->level());
+        }
+    }
+
+    void update_level() {
+        if (const auto logger = default_.lock()) {
+            logger->set_level(
+                sessions_.empty() ? fallback_->level()
+                                  : sessions_.back()->diagnostic->level()
+            );
+        }
+    }
+
+    std::mutex mutex_;
+    std::weak_ptr<spdlog::logger> default_;
+    std::shared_ptr<spdlog::logger> fallback_;
+    std::vector<std::shared_ptr<SessionLoggers>> sessions_;
+};
+
+const std::shared_ptr<RoutingSink>& routing_sink() {
+    static const auto sink = [] {
+        const auto logger = spdlog::default_logger();
+        if (!logger) {
+            throw std::logic_error("logging requires an active default logger");
+        }
+        auto routing = std::make_shared<RoutingSink>(logger);
+        logger->sinks() = {routing};
+        return routing;
+    }();
+    return sink;
+}
+
 }  // namespace
 
+struct Session::Implementation {
+    std::shared_ptr<SessionLoggers> loggers;
+    std::shared_ptr<RoutingSink> routing;
+};
+
+void initialize() {
+    static_cast<void>(routing_sink());
+}
+
 void write_event(Severity severity, std::string_view message) {
-    auto logger = spdlog::get(event_logger_name);
-    if (!logger) {
-        logger = spdlog::default_logger();
-    }
-    logger->log(level_for(severity), "{}", message);
+    routing_sink()->current(true)->log(level_for(severity), "{}", message);
 }
 
 Session::Session(const Options& options) {
+    const auto level = parse_level(options.level);
+    auto session = std::make_shared<SessionLoggers>();
     std::vector<spdlog::sink_ptr> sinks;
     if (options.message_sink) {
-        sinks.push_back(std::make_shared<MessageCallbackSink>(
-            options.message_sink
-        ));
+        session->callback =
+            std::make_shared<MessageCallbackSink>(options.message_sink);
+        sinks.push_back(session->callback);
     } else {
         sinks.push_back(
             std::make_shared<spdlog::sinks::stderr_color_sink_mt>()
@@ -353,18 +458,24 @@ Session::Session(const Options& options) {
         sinks.begin(),
         sinks.end()
     );
-    logger->set_level(parse_level(options.level));
+    logger->set_level(level);
     logger->set_pattern("[%Y-%m-%dT%H:%M:%S.%e%z] [%l] %v");
     logger->flush_on(spdlog::level::warn);
     auto event_logger = logger->clone(event_logger_name);
     event_logger->sinks() = std::move(event_sinks);
-    spdlog::drop(event_logger_name);
-    spdlog::register_logger(std::move(event_logger));
-    spdlog::set_default_logger(std::move(logger));
+    session->diagnostic = std::move(logger);
+    session->event = std::move(event_logger);
+    auto implementation =
+        std::make_unique<Implementation>(std::move(session), routing_sink());
+    implementation->routing->attach(implementation->loggers);
+    implementation_ = std::move(implementation);
 }
 
 Session::~Session() {
-    spdlog::shutdown();
+    implementation_->routing->detach(implementation_->loggers);
+    if (implementation_->loggers->callback) {
+        implementation_->loggers->callback->disconnect();
+    }
 }
 
 }  // namespace onedrive::logging

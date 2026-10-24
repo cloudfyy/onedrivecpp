@@ -12,6 +12,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <format>
+#include <optional>
 #include <string_view>
 #include <thread>
 #include <mutex>
@@ -46,6 +47,31 @@ AuthError cancelled_error() {
         .code = AuthErrorCode::cancelled,
         .message = "device authorization cancelled",
     };
+}
+
+AuthError invalid_lifetime_error() {
+    return {
+        .code = AuthErrorCode::invalid_response,
+        .message = "Microsoft authentication lifetime exceeds the supported "
+                   "clock range",
+    };
+}
+
+template <typename Clock>
+std::optional<typename Clock::time_point> expiration_deadline(
+    typename Clock::time_point now, std::chrono::seconds lifetime
+) {
+    using Duration = Clock::duration;
+    if (lifetime <= std::chrono::seconds::zero() ||
+        lifetime >
+            std::chrono::duration_cast<std::chrono::seconds>(Duration::max())) {
+        return std::nullopt;
+    }
+    const auto duration = std::chrono::duration_cast<Duration>(lifetime);
+    if (now.time_since_epoch() > Duration::max() - duration) {
+        return std::nullopt;
+    }
+    return now + duration;
 }
 
 AuthResult<Json> parse_json(const http::HttpResponse& response) {
@@ -117,13 +143,18 @@ AuthResult<OAuthTokens> parse_tokens(
                 .message = "Microsoft authentication did not return a refresh token",
             });
         }
+        const auto expires_at = expiration_deadline<std::chrono::system_clock>(
+            std::chrono::system_clock::now(), std::chrono::seconds{expires_in}
+        );
+        if (!expires_at) {
+            return std::unexpected(invalid_lifetime_error());
+        }
 
         return OAuthTokens{
             .access_token = access_token,
             .refresh_token = std::move(refresh_token),
             .token_type = response.value("token_type", "Bearer"),
-            .expires_at =
-                std::chrono::system_clock::now() + std::chrono::seconds{expires_in},
+            .expires_at = *expires_at,
         };
     } catch (const Json::exception& error) {
         return std::unexpected(AuthError{
@@ -200,6 +231,15 @@ DeviceAuthClient::request_device_code(const std::stop_token& stop_token) const {
                 .message = "device authorization response contains invalid values",
             });
         }
+        const auto now = now_();
+        if (!expiration_deadline<std::chrono::steady_clock>(
+                now, result.expires_in
+            ) ||
+            !expiration_deadline<std::chrono::steady_clock>(
+                now, result.polling_interval
+            )) {
+            return std::unexpected(invalid_lifetime_error());
+        }
         spdlog::debug(
             "Received Microsoft device authorization code with {} second expiry "
             "and {} second polling interval",
@@ -225,26 +265,40 @@ AuthResult<OAuthTokens> DeviceAuthClient::poll_for_token(
     if (!valid_options(options_)) {
         return std::unexpected(invalid_configuration_error());
     }
-    const auto deadline = now_() + code.expires_in;
-    auto interval = code.polling_interval;
+    const auto started_at = now_();
+    const auto deadline = expiration_deadline<std::chrono::steady_clock>(
+        started_at, code.expires_in
+    );
+    if (!deadline || !expiration_deadline<std::chrono::steady_clock>(
+                         started_at, code.polling_interval
+                     )) {
+        return std::unexpected(invalid_lifetime_error());
+    }
+    auto interval = std::min(code.polling_interval, code.expires_in);
     std::size_t poll_attempt = 0;
     spdlog::debug("Waiting for Microsoft device authorization");
 
-    while (now_() < deadline) {
+    for (auto now = now_(); now < *deadline; now = now_()) {
+        const auto delay = std::min(
+            std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+                interval
+            ),
+            *deadline - now
+        );
         if (sleep_) {
-            sleep_(interval);
+            sleep_(std::chrono::ceil<std::chrono::seconds>(delay));
         } else {
             std::mutex mutex;
             std::unique_lock lock{mutex};
             std::condition_variable_any condition;
-            condition.wait_for(lock, stop_token, interval, [] {
+            condition.wait_until(lock, stop_token, now + delay, [] {
                 return false;
             });
         }
         if (stop_token.stop_requested()) {
             return std::unexpected(cancelled_error());
         }
-        if (now_() >= deadline) {
+        if (now_() >= *deadline) {
             break;
         }
 
@@ -291,7 +345,9 @@ AuthResult<OAuthTokens> DeviceAuthClient::poll_for_token(
             continue;
         }
         if (error == "slow_down") {
-            interval += polling_slow_down_increment;
+            interval += std::min(
+                polling_slow_down_increment, code.expires_in - interval
+            );
             spdlog::warn(
                 "Microsoft device authorization requested slower polling; "
                 "interval is now {} seconds",

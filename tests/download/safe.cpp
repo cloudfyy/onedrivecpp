@@ -34,6 +34,22 @@ int test_safe() {
         std::filesystem::exists(removable_file)) {
         return fail("safe removal did not remove a regular file");
     }
+    onedrive::test::write_file(removable_file, "old");
+    const auto expected_identity =
+        safe_root.identity(removable_file, detail::FilesystemItemKind::file);
+    const auto replacement = root / "replacement";
+    onedrive::test::write_file(replacement, "new");
+    std::filesystem::rename(replacement, removable_file);
+    try {
+        static_cast<void>(safe_root.remove(
+            removable_file, detail::FilesystemItemKind::file, expected_identity
+        ));
+        return fail("safe removal deleted a replacement file");
+    } catch (const detail::SafePathConflictError&) {
+    }
+    if (onedrive::test::read_file(removable_file) != "new") {
+        return fail("safe removal damaged a replacement file");
+    }
     const auto removable_directory = root / "remove-directory";
     std::filesystem::create_directory(removable_directory);
     if (!safe_root.remove(

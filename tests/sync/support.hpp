@@ -10,6 +10,7 @@
 #include "onedrive/storage/item_store.hpp"
 #include "onedrive/sync/core/engine.hpp"
 #include "sync/filter/selective.hpp"
+#include "sync/filesystem/operations.hpp"
 #include "support/sync.hpp"
 #include "support/common.hpp"
 #include "sync/core/delta_plan.hpp"
@@ -102,6 +103,15 @@ inline onedrive::storage::ItemState tracked_item(
                                 .time_since_epoch()
                         )
                             .count(),
+        .content_hash =
+            (directory || !std::filesystem::is_regular_file(
+                              std::filesystem::symlink_status(local_path)
+                          ))
+                ? std::nullopt
+                : std::optional{onedrive::util::FileHash{
+                      onedrive::util::FileHashAlgorithm::sha256,
+                      onedrive::sync::detail::content_fingerprint(local_path)
+                  }},
         .directory = directory,
     };
 }

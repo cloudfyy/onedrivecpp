@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <chrono>
 #include <optional>
 #include <utility>
@@ -151,6 +152,15 @@ synchronization_reason(LocalChangeKind kind) noexcept {
                     .effect = MonitorEffect::synchronize,
                 };
             },
+            [](SettlingState, const RemoteChangeEvent&) -> MonitorTransition {
+                return {
+                    .state =
+                        SynchronizingState{
+                            SynchronizationReason::remote_notification,
+                        },
+                    .effect = MonitorEffect::synchronize,
+                };
+            },
             [](IdleState current,
                const DeadlineReachedEvent& deadline) -> MonitorTransition {
                 if (deadline.now < current.graph_deadline) {
@@ -187,14 +197,20 @@ synchronization_reason(LocalChangeKind kind) noexcept {
             },
             [](SettlingState current,
                const DeadlineReachedEvent& deadline) -> MonitorTransition {
-                if (deadline.now < current.local_deadline) {
+                if (deadline.now < current.local_deadline &&
+                    deadline.now < current.graph_deadline) {
                     return {
                         .state = current,
                         .effect = MonitorEffect::none,
                     };
                 }
                 return {
-                    .state = SynchronizingState{current.reason},
+                    .state =
+                        SynchronizingState{
+                            deadline.now >= current.local_deadline
+                                ? current.reason
+                                : SynchronizationReason::graph_poll
+                        },
                     .effect = MonitorEffect::synchronize,
                 };
             },
@@ -274,7 +290,7 @@ next_deadline(const MonitorState& state) noexcept {
         return idle->graph_deadline;
     }
     if (const auto* settling = std::get_if<SettlingState>(&state)) {
-        return settling->local_deadline;
+        return std::min(settling->local_deadline, settling->graph_deadline);
     }
     return std::nullopt;
 }

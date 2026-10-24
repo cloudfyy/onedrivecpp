@@ -2,6 +2,8 @@
 #include "onedrive/exit_code.hpp"
 #include "sync/upload/planning.hpp"
 #include "sync/upload/orchestration.hpp"
+#include "sync/download/integrity.hpp"
+#include "sync/filesystem/safe_sync_root.hpp"
 #include "delete_cases.hpp"
 
 namespace onedrive::test::sync::delete_cases {
@@ -173,6 +175,200 @@ int test_remote_delete_modified_retry() {
             std::vector<std::string>{"modified"} ||
         !retry_items.applied_delta.blocked_upserts.empty()) {
         return fail("blocked remote deletion was not retried successfully");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_remote_delete_preserved_metadata() {
+    namespace detail = onedrive::sync::detail;
+    const onedrive::cli::Console console;
+    for (const auto algorithm :
+         {onedrive::util::FileHashAlgorithm::sha256,
+          onedrive::util::FileHashAlgorithm::sha1,
+          onedrive::util::FileHashAlgorithm::quick_xor}) {
+        for (const bool replace : {false, true}) {
+            TemporaryDirectory temporary;
+            const auto root = temporary.path() / "sync";
+            std::filesystem::create_directory(root);
+            const auto path = root / "file.txt";
+            onedrive::test::write_file(path, "data");
+            const auto timestamp = std::filesystem::last_write_time(path);
+            auto previous = tracked_item(root, "file", "file.txt");
+            const detail::SafeSyncRoot safe_root{root};
+            const auto identity =
+                safe_root.identity(path, detail::FilesystemItemKind::file);
+            previous.local_device = identity.device;
+            previous.local_inode = identity.inode;
+            previous.content_hash = onedrive::util::FileHash{
+                algorithm, detail::file_content_hash(path, algorithm)
+            };
+            if (replace) {
+                const auto replacement = root / "replacement";
+                onedrive::test::write_file(replacement, "EDIT");
+                std::filesystem::rename(replacement, path);
+            } else {
+                onedrive::test::write_file(path, "EDIT");
+            }
+            std::filesystem::last_write_time(path, timestamp);
+            FakeItemStore items;
+            items.saved_delta_link = "saved";
+            items.items.emplace("file", previous);
+            FakeGraphClient graph;
+            graph.changes = {deleted_item("file")};
+            FakeMetrics metrics;
+            if (onedrive::sync::SyncEngine{
+                    config_for(root, false), graph, items, metrics, &console
+                }
+                        .synchronize() != exit_code::blocked ||
+                onedrive::test::read_file(path) != "EDIT" ||
+                !items.applied_delta.removals.empty() ||
+                items.applied_delta.blocked_upserts.size() != 1 ||
+                items.applied_delta.blocked_upserts[0].reason_code !=
+                    "local_modification") {
+                return fail(
+                    "remote deletion discarded a metadata-preserving edit"
+                );
+            }
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_remote_delete_unverified_snapshot() {
+    namespace detail = onedrive::sync::detail;
+    const onedrive::cli::Console console;
+    for (const bool missing_hash : {false, true}) {
+        TemporaryDirectory temporary;
+        const auto root = temporary.path() / "sync";
+        std::filesystem::create_directory(root);
+        const auto path = root / "file.txt";
+        onedrive::test::write_file(path, "data");
+        const auto timestamp = std::filesystem::last_write_time(path);
+        auto previous = tracked_item(root, "file", "file.txt");
+        const detail::SafeSyncRoot safe_root{root};
+        const auto identity =
+            safe_root.identity(path, detail::FilesystemItemKind::file);
+        previous.local_device = identity.device;
+        previous.local_inode = identity.inode;
+        if (missing_hash) {
+            previous.content_hash.reset();
+        } else {
+            const auto replacement = root / "replacement";
+            onedrive::test::write_file(replacement, "data");
+            std::filesystem::rename(replacement, path);
+            std::filesystem::last_write_time(path, timestamp);
+        }
+        FakeItemStore items;
+        items.saved_delta_link = "saved";
+        items.items.emplace("file", previous);
+        FakeGraphClient graph;
+        graph.changes = {deleted_item("file")};
+        FakeMetrics metrics;
+        if (onedrive::sync::SyncEngine{
+                config_for(root, false), graph, items, metrics, &console
+            }
+                    .synchronize() != exit_code::blocked ||
+            onedrive::test::read_file(path) != "data" ||
+            !items.applied_delta.removals.empty()) {
+            return fail(
+                "remote deletion accepted an unverified local snapshot"
+            );
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_remote_delete_transferred_snapshot() {
+    const onedrive::cli::Console console;
+    for (const bool uploaded : {false, true}) {
+        for (const bool modified : {false, true}) {
+            TemporaryDirectory temporary;
+            const auto root = temporary.path() / "sync";
+            std::filesystem::create_directory(root);
+            const auto path = root / "file.txt";
+            FakeItemStore items;
+            items.saved_delta_link = "saved";
+            FakeGraphClient initial;
+            auto config = config_for(root, false);
+            if (uploaded) {
+                onedrive::test::write_file(path, "data");
+                config.sync_mode = onedrive::sync::SyncMode::upload_only;
+            } else {
+                initial.changes = {file("file", "file.txt", 4)};
+                initial.contents["file"] = "data";
+            }
+            FakeMetrics metrics;
+            if (onedrive::sync::SyncEngine{
+                    config, initial, items, metrics, &console
+                }
+                        .synchronize() != exit_code::success ||
+                items.items.size() != 1) {
+                return fail("deletion transfer baseline could not be prepared");
+            }
+            const auto previous = items.items.begin()->second;
+            if (modified) {
+                const auto timestamp = std::filesystem::last_write_time(path);
+                onedrive::test::write_file(path, "EDIT");
+                std::filesystem::last_write_time(path, timestamp);
+            }
+            FakeGraphClient deletion;
+            deletion.changes = {deleted_item(previous.remote_id)};
+            config.sync_mode = onedrive::sync::SyncMode::download_only;
+            if (onedrive::sync::SyncEngine{
+                    config, deletion, items, metrics, &console
+                }
+                        .synchronize() !=
+                    (modified ? exit_code::blocked : exit_code::success) ||
+                std::filesystem::exists(path) != modified) {
+                return fail(
+                    "transfer did not retain a usable deletion content baseline"
+                );
+            }
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_remote_delete_inspection_failure() {
+    if (::geteuid() == 0) {
+        return EXIT_SUCCESS;
+    }
+    TemporaryDirectory temporary;
+    const auto root = temporary.path() / "sync";
+    const auto parent = root / "locked";
+    std::filesystem::create_directories(parent);
+    const auto path = parent / "file.txt";
+    onedrive::test::write_file(path, "data");
+    FakeItemStore items;
+    items.saved_delta_link = "saved";
+    items.items.emplace("file", tracked_item(root, "file", "locked/file.txt"));
+    FakeGraphClient graph;
+    graph.changes = {deleted_item("file")};
+    FakeMetrics metrics;
+    const onedrive::cli::Console console;
+    auto config = config_for(root, false);
+    config.nosync_enabled = false;
+    bool rejected = false;
+    std::filesystem::permissions(parent, std::filesystem::perms::none);
+    try {
+        static_cast<void>(
+            onedrive::sync::SyncEngine{config, graph, items, metrics, &console}
+                .synchronize()
+        );
+    } catch (const std::runtime_error& error) {
+        rejected = std::string_view{error.what()}.contains(
+            "cannot inspect local deletion target"
+        );
+    } catch (...) {
+        std::filesystem::permissions(parent, std::filesystem::perms::owner_all);
+        throw;
+    }
+    std::filesystem::permissions(parent, std::filesystem::perms::owner_all);
+    if (!rejected || !items.items.contains("file") || items.apply_count != 0 ||
+        onedrive::test::read_file(path) != "data" || metrics.last_success) {
+        return fail(
+            "failed deletion inspection advanced synchronization state"
+        );
     }
     return EXIT_SUCCESS;
 }

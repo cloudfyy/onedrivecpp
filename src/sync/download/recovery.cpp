@@ -229,6 +229,11 @@ void recover_pending_downloads(
         );
         download.item.local_device = identity.device;
         download.item.local_inode = identity.inode;
+        if (!download.item.content_hash) {
+            download.item.content_hash = util::FileHash{
+                util::FileHashAlgorithm::sha256, download.content_fingerprint
+            };
+        }
         items.upsert(download.item);
         items.remove_pending_download(drive_id, download.item.remote_id);
         items.remove_partial_download(drive_id, download.item.remote_id);

@@ -4,13 +4,17 @@
 #include "support/common.hpp"
 
 #include <spdlog/spdlog.h>
+#include <spdlog/sinks/null_sink.h>
 
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <utility>
@@ -20,6 +24,121 @@ namespace {
 
 using onedrive::test::fail;
 using onedrive::test::TemporaryDirectory;
+
+int test_session_lifetime() {
+    namespace logging = onedrive::logging;
+    logging::initialize();
+    const auto original = spdlog::default_logger();
+    const auto original_level = original->level();
+    original->set_level(spdlog::level::debug);
+    const auto unrelated = std::make_shared<spdlog::logger>(
+        "unrelated-lifetime-probe",
+        std::make_shared<spdlog::sinks::null_sink_mt>()
+    );
+    spdlog::register_logger(unrelated);
+    std::vector<std::string> outer_messages;
+    std::vector<std::string> inner_messages;
+    auto outer = std::make_unique<logging::Session>(logging::Options{
+        .message_sink = [&](logging::Severity, std::string_view message) {
+            outer_messages.emplace_back(message);
+        },
+    });
+    spdlog::info("outer");
+    {
+        const logging::Session inner{{
+            .level = "warn",
+            .message_sink = [&](logging::Severity, std::string_view message) {
+                inner_messages.emplace_back(message);
+            },
+        }};
+        spdlog::info("filtered");
+        spdlog::warn("inner");
+    }
+    if (spdlog::default_logger() != original ||
+        spdlog::get("unrelated-lifetime-probe") != unrelated) {
+        return fail("nested logging session changed global logger ownership");
+    }
+    spdlog::info("outer restored");
+    auto latest = std::make_unique<logging::Session>(logging::Options{
+        .message_sink = [&](logging::Severity, std::string_view message) {
+            inner_messages.emplace_back(message);
+        },
+    });
+    outer.reset();
+    spdlog::info("latest survives");
+    latest.reset();
+    if (spdlog::default_logger() != original ||
+        original->level() != spdlog::level::debug ||
+        spdlog::get("unrelated-lifetime-probe") != unrelated ||
+        outer_messages != std::vector<std::string>{"outer", "outer restored"} ||
+        inner_messages !=
+            std::vector<std::string>{"inner", "latest survives"}) {
+        return fail("logging session teardown lost another active route");
+    }
+    original->set_level(original_level);
+    spdlog::info("logging remains available after session teardown");
+    logging::write_event(
+        logging::Severity::information, "business logging remains available"
+    );
+    spdlog::drop("unrelated-lifetime-probe");
+    return EXIT_SUCCESS;
+}
+
+int test_concurrent_session_teardown() {
+    namespace logging = onedrive::logging;
+    logging::initialize();
+    const auto original = spdlog::default_logger();
+    struct CallbackState {
+        std::atomic_bool finished{false};
+        std::atomic_uint calls{0};
+        std::atomic_uint late_calls{0};
+    };
+    std::vector<std::shared_ptr<CallbackState>> states;
+    std::jthread worker{[](std::stop_token stop) {
+        while (!stop.stop_requested()) {
+            spdlog::debug("concurrent diagnostic");
+            logging::write_event(
+                logging::Severity::debug, "concurrent business event"
+            );
+            std::this_thread::yield();
+        }
+    }};
+    bool observed = true;
+    for (int round = 0; round < 24; ++round) {
+        auto state = std::make_shared<CallbackState>();
+        {
+            const logging::Session session{{
+                .level = "debug",
+                .message_sink = [state](logging::Severity, std::string_view) {
+                    if (state->finished.load()) {
+                        ++state->late_calls;
+                    }
+                    ++state->calls;
+                },
+            }};
+            const auto deadline =
+                std::chrono::steady_clock::now() + std::chrono::seconds{2};
+            while (state->calls.load() == 0 &&
+                   std::chrono::steady_clock::now() < deadline) {
+                std::this_thread::yield();
+            }
+            observed = observed && state->calls.load() != 0;
+        }
+        state->finished = true;
+        states.push_back(std::move(state));
+    }
+    worker.request_stop();
+    worker.join();
+    for (const auto& state : states) {
+        if (state->late_calls.load() != 0) {
+            return fail("logging callback outlived its session");
+        }
+    }
+    if (!observed || spdlog::default_logger() != original) {
+        return fail("concurrent session teardown changed the default logger");
+    }
+    return EXIT_SUCCESS;
+}
 
 [[nodiscard]] bool private_regular_file(
     const std::filesystem::path& path
@@ -314,7 +433,18 @@ int test_business_event_routing() {
 }  // namespace
 
 int main() {
-    onedrive::test::ScenarioProgress progress{6};
+    onedrive::test::ScenarioProgress progress{8};
+    if (const int result =
+            progress.run("session_lifetime", test_session_lifetime);
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "concurrent_session_teardown", test_concurrent_session_teardown
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
     if (const int result = progress.run("level_parsing", test_level_parsing);
         result != EXIT_SUCCESS) {
         return result;

@@ -8,6 +8,61 @@ namespace exit_code = onedrive::exit_code;
 
 using namespace onedrive::test::monitor;
 
+int test_settling_remote_deadlines() {
+    using namespace onedrive::monitor::detail;
+    const MonitorTimePoint origin{};
+    const MonitorTiming timing{100ms, 20ms};
+    MonitorState state = IdleState{origin + 100ms};
+    for (int elapsed = 90; elapsed <= 100; elapsed += 5) {
+        state = transition_monitor(
+                    state,
+                    LocalChangeEvent{
+                        LocalChangeKind::filesystem,
+                        origin + std::chrono::milliseconds{elapsed}
+                    },
+                    timing
+        )
+                    .state;
+        if (next_deadline(state) != origin + 100ms) {
+            return fail("local settling postponed the Graph poll deadline");
+        }
+    }
+    auto transition =
+        transition_monitor(state, DeadlineReachedEvent{origin + 99ms}, timing);
+    if (transition.effect != MonitorEffect::none) {
+        return fail("Graph polling bypassed its deadline while settling");
+    }
+    transition =
+        transition_monitor(state, DeadlineReachedEvent{origin + 100ms}, timing);
+    if (transition.effect != MonitorEffect::synchronize ||
+        std::get<SynchronizingState>(transition.state).reason !=
+            SynchronizationReason::graph_poll) {
+        return fail("continuous local changes starved Graph polling");
+    }
+    transition = transition_monitor(state, RemoteChangeEvent{}, timing);
+    if (transition.effect != MonitorEffect::synchronize ||
+        std::get<SynchronizingState>(transition.state).reason !=
+            SynchronizationReason::remote_notification) {
+        return fail("remote notification was ignored while settling");
+    }
+    transition = transition_monitor(
+        transition.state,
+        LocalChangeEvent{LocalChangeKind::filesystem, origin + 105ms},
+        timing
+    );
+    transition = transition_monitor(
+        transition.state,
+        SynchronizationCompletedEvent{exit_code::success, origin + 110ms},
+        timing
+    );
+    if (transition.effect != MonitorEffect::synchronize ||
+        std::get<SynchronizingState>(transition.state).reason !=
+            SynchronizationReason::local_changes) {
+        return fail("remote trigger lost local changes arriving during sync");
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_state_machine() {
     using namespace onedrive::monitor::detail;
 
@@ -315,6 +370,12 @@ int test_state_machine() {
 } // namespace
 
 int main() {
-    onedrive::test::ScenarioProgress progress{1};
+    onedrive::test::ScenarioProgress progress{2};
+    if (const int result = progress.run(
+            "settling_remote_deadlines", test_settling_remote_deadlines
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
     return progress.finish(progress.run("state_machine", test_state_machine));
 }

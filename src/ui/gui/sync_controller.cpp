@@ -9,8 +9,6 @@
 #include "onedrive/exit_code.hpp"
 #include "onedrive/logging/logging.hpp"
 
-#include <spdlog/spdlog.h>
-
 #include <memory>
 #include <iterator>
 #include <stdexcept>
@@ -35,23 +33,6 @@ private:
     }
 
     std::function<void(const events::Event&)> forward_;
-};
-
-class RestoreLogger {
-public:
-    RestoreLogger()
-        : previous_{spdlog::default_logger()} {
-    }
-    ~RestoreLogger() {
-        // CLI logging sessions shut down spdlog; the GUI continues after a
-        // task.
-        if (previous_) {
-            spdlog::set_default_logger(std::move(previous_));
-        }
-    }
-
-private:
-    std::shared_ptr<spdlog::logger> previous_;
 };
 
 bool is_progress(const events::Event& event) {
@@ -88,6 +69,7 @@ SyncController::SyncController(
 )
     : QObject{parent},
       synchronize_{std::move(synchronize)} {
+    logging::initialize();
     monitor_ = [](config::Config config,
                   const events::Observer& observer,
                   std::stop_token token) {
@@ -212,7 +194,6 @@ void SyncController::start_task(
         worker_ = std::jthread{[this, config_file, preview, monitoring](
                                    std::stop_token token
                                ) {
-            const RestoreLogger restore_logger;
             int result = exit_code::failure;
             QString error;
             bool effective_preview = preview;

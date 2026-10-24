@@ -174,6 +174,9 @@ void test_shared_root_busy() {
                 !std::filesystem::exists(root) &&
                 window.findChild<QLabel*>("syncStatus")
                     ->text()
+                    .contains("another onedrive-cpp process") &&
+                window.findChild<QPlainTextEdit*>("logMessages")
+                    ->toPlainText()
                     .contains("owner PID") &&
                 window.findChild<QPlainTextEdit*>("logMessages")
                     ->toPlainText()

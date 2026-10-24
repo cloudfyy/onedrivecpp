@@ -10,7 +10,30 @@ using namespace onedrive::test::sync;
 using namespace onedrive::test::sync::delete_cases;
 
 int main() {
-    onedrive::test::ScenarioProgress progress{26};
+    onedrive::test::ScenarioProgress progress{30};
+    for (const auto& [name, test] : {
+             std::pair{
+                 "remote_delete_preserved_metadata",
+                 test_remote_delete_preserved_metadata
+             },
+             std::pair{
+                 "remote_delete_unverified_snapshot",
+                 test_remote_delete_unverified_snapshot
+             },
+             std::pair{
+                 "remote_delete_inspection_failure",
+                 test_remote_delete_inspection_failure
+             },
+             std::pair{
+                 "remote_delete_transferred_snapshot",
+                 test_remote_delete_transferred_snapshot
+             },
+         }) {
+        if (const int result = progress.run(name, test);
+            result != EXIT_SUCCESS) {
+            return result;
+        }
+    }
     if (const int result = progress.run(
             "full_refresh_retains_blocked_deletion_snapshot",
             test_full_refresh_retains_blocked_deletion_snapshot

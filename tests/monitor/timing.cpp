@@ -57,7 +57,7 @@ int test_timing() {
             return exit_code::success;
         },
         80ms,
-        180ms
+        500ms
     };
     std::jthread settle_worker{[&](std::stop_token stop_token) {
         static_cast<void>(settle_monitor.run(stop_token));
@@ -78,8 +78,8 @@ int test_timing() {
     }
     settle_worker.request_stop();
     settle_worker.join();
-    if (settled_elapsed < 140) {
-        return fail("Graph polling interrupted the local settle delay");
+    if (settled_elapsed < 0 || settled_elapsed >= 400) {
+        return fail("local settling postponed the Graph polling deadline");
     }
     return EXIT_SUCCESS;
 }

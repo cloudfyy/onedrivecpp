@@ -8,6 +8,7 @@
 #include <openssl/evp.h>
 
 #include <array>
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
@@ -15,7 +16,9 @@
 #include <limits>
 #include <memory>
 #include <string_view>
+#include <system_error>
 #include <utility>
+#include <unistd.h>
 
 namespace onedrive::sync::detail {
 namespace {
@@ -223,6 +226,73 @@ std::string sha1_hash(const std::filesystem::path& path) {
     std::string result;
     result.reserve(digest.size() * 2U);
     for (const auto byte : digest) {
+        result.push_back(hex[byte >> 4U]);
+        result.push_back(hex[byte & 0x0FU]);
+    }
+    return result;
+}
+
+std::string
+file_content_hash(int descriptor, util::FileHashAlgorithm algorithm) {
+    const EVP_MD* digest = nullptr;
+    switch (algorithm) {
+    case util::FileHashAlgorithm::quick_xor:
+        break;
+    case util::FileHashAlgorithm::sha256:
+        digest = EVP_sha256();
+        break;
+    case util::FileHashAlgorithm::sha1:
+        digest = EVP_sha1();
+        break;
+    default:
+        throw std::invalid_argument("unknown file hash algorithm");
+    }
+    const std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> context{
+        digest ? EVP_MD_CTX_new() : nullptr, EVP_MD_CTX_free
+    };
+    if (digest &&
+        (!context || EVP_DigestInit_ex(context.get(), digest, nullptr) != 1)) {
+        throw std::runtime_error("cannot initialize deletion content hash");
+    }
+    QuickXorAccumulator quick_xor;
+    std::array<std::byte, std::size_t{64} * 1024U> buffer{};
+    while (true) {
+        const auto count = ::read(descriptor, buffer.data(), buffer.size());
+        if (count == -1 && errno == EINTR) {
+            continue;
+        }
+        if (count == -1) {
+            throw std::system_error(
+                errno, std::generic_category(), "cannot read deletion content"
+            );
+        }
+        if (count == 0) {
+            break;
+        }
+        const auto data =
+            std::span{buffer}.first(static_cast<std::size_t>(count));
+        if (digest) {
+            if (EVP_DigestUpdate(context.get(), data.data(), data.size()) !=
+                1) {
+                throw std::runtime_error("cannot update deletion content hash");
+            }
+        } else {
+            quick_xor.update(data);
+        }
+    }
+    if (!digest) {
+        return quick_xor.finish();
+    }
+    std::array<unsigned char, EVP_MAX_MD_SIZE> output{};
+    unsigned int size = 0;
+    if (EVP_DigestFinal_ex(context.get(), output.data(), &size) != 1 ||
+        size > output.size()) {
+        throw std::runtime_error("cannot finalize deletion content hash");
+    }
+    constexpr std::string_view hex{"0123456789abcdef"};
+    std::string result;
+    result.reserve(size * 2U);
+    for (const auto byte : std::span{output}.first(size)) {
         result.push_back(hex[byte >> 4U]);
         result.push_back(hex[byte & 0x0FU]);
     }

@@ -110,6 +110,24 @@ path. The path overload delegates to the same validation/reading code. Metadata
 writes must remain in-place: atomic replacement would change the inode and
 detach the path from its held OS lock.
 
+## Local deletion and logging lifetimes
+
+Remote deletion verifies a regular file through a safely opened descriptor,
+checking its recorded identity, size, timestamp and content hash before removal.
+New uploads and downloads without a remote hash retain their existing SHA-256
+transfer fingerprint as the content baseline. Older records without a content
+hash fail closed as `local_modification`; review and explicitly remove the local
+file if the remote deletion should be applied. Do not silently adopt the current
+contents as the old baseline. Inspection errors must not complete a deletion or
+advance its synchronization state.
+
+Call `logging::initialize()` before starting background workers. Logging sessions
+route through a stable default logger rather than replacing it or shutting down
+the global registry. Nested/overlapping sessions restore the latest remaining
+route, and teardown disconnects borrowed UI callbacks before their owners leave
+scope. Authentication lifetimes must fit both the destination clock duration and
+its remaining time-point range before any conversion or addition.
+
 ## Shared Monitor control
 
 `monitor::request_control` and `ControlServer` are UI-neutral local IPC shared by
@@ -131,6 +149,10 @@ from continually retriggering synchronization without filtering user filenames.
 Stop acknowledgement precedes callback cleanup and lock release; later triggers
 are rejected. Round failure/blocked results remain observable without stopping
 the existing monitor policy.
+
+Local settling never extends the Graph polling deadline. The scheduler waits for
+the earlier local/Graph deadline and accepts remote notifications while settling;
+new changes during synchronization still coalesce into a serial catch-up round.
 
 Exec'd subprocess regressions cover responsive status, request coalescing,
 local changes, cancellation, locks through cleanup, CLI offline text/JSON, crash
@@ -291,7 +313,7 @@ exports history after leaving full-screen mode and restores terminal state.
 TUI regressions also check unknown totals and clearing stale progress per round.
 Logging regressions retain all six shared backend severities, exercise every
 configured GUI threshold including `off`, and verify diagnostic delivery before
-failure completion, logger restoration and restart. TUI tests check low-severity
+failure completion, logging-route restoration and restart. TUI tests check low-severity
 backend suppression, all application-message levels and invalid severity
 rejection. A pseudo-terminal runs the real CLI application with the offline
 authentication adapter to verify backend forwarding to the TUI while all enabled

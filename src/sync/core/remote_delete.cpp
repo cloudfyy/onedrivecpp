@@ -4,18 +4,63 @@
 #include "sync/core/item_ops.hpp"
 #include "sync/core/reporting.hpp"
 #include "sync/core/plan.hpp"
+#include "sync/download/integrity.hpp"
 #include "sync/filesystem/operations.hpp"
 #include "sync/filesystem/safe_sync_root.hpp"
+#include "util/ascii.hpp"
 
 #include <algorithm>
+#include <cerrno>
+#include <fcntl.h>
 #include <filesystem>
 #include <optional>
 #include <stdexcept>
+#include <system_error>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 namespace onedrive::sync::engine_detail {
+namespace {
+
+bool deletion_snapshot_matches(
+    const storage::ItemState& previous, int descriptor
+) {
+    struct stat before{};
+    if (::fstat(descriptor, &before) == -1) {
+        throw std::system_error(
+            errno, std::generic_category(), "cannot inspect local deletion file"
+        );
+    }
+    const auto identity = util::filesystem_identity(before);
+    if (!S_ISREG(before.st_mode) || before.st_size != previous.local_size ||
+        detail::modified_ticks(descriptor) != previous.local_modified_ticks ||
+        (previous.local_inode != 0 &&
+         (identity.device != previous.local_device ||
+          identity.inode != previous.local_inode)) ||
+        !previous.content_hash || previous.content_hash->value.empty()) {
+        return false;
+    }
+    const auto& expected = *previous.content_hash;
+    const auto actual =
+        detail::file_content_hash(descriptor, expected.algorithm);
+    struct stat after{};
+    if (::fstat(descriptor, &after) == -1) {
+        throw std::system_error(
+            errno, std::generic_category(), "cannot recheck local deletion file"
+        );
+    }
+    return before.st_size == after.st_size &&
+           before.st_mtim.tv_sec == after.st_mtim.tv_sec &&
+           before.st_mtim.tv_nsec == after.st_mtim.tv_nsec &&
+           before.st_ctim.tv_sec == after.st_ctim.tv_sec &&
+           before.st_ctim.tv_nsec == after.st_ctim.tv_nsec &&
+           (expected.algorithm == util::FileHashAlgorithm::quick_xor
+                ? actual == expected.value
+                : util::ascii_iequals(actual, expected.value));
+}
+
+} // namespace
 
 std::size_t execute_removals(
     detail::SyncPlan& plan,
@@ -158,8 +203,7 @@ std::size_t execute_removals(
             std::error_code error;
             const auto status =
                 std::filesystem::symlink_status(local_path, error);
-            if (error == std::errc::no_such_file_or_directory ||
-                !std::filesystem::exists(status)) {
+            if (error == std::errc::no_such_file_or_directory) {
                 plan.complete_removal(previous.remote_id);
                 continue;
             }
@@ -168,6 +212,10 @@ std::size_t execute_removals(
                     "cannot inspect local deletion target '" +
                     local_path.string() + "': " + error.message()
                 );
+            }
+            if (!std::filesystem::exists(status)) {
+                plan.complete_removal(previous.remote_id);
+                continue;
             }
             if (std::filesystem::is_symlink(status) ||
                 (previous.directory &&
@@ -181,22 +229,36 @@ std::size_t execute_removals(
                 );
                 continue;
             }
-            if (!previous.directory &&
-                !detail::local_snapshot_matches(
-                    previous,
-                    local_path
-                )) {
-                block(
-                    "local_modification",
-                    "local file changed after the last synchronized snapshot: " +
-                        local_path.string()
+            std::optional<detail::FilesystemIdentity> deletion_identity;
+            util::UniqueFD deletion_file;
+            if (!previous.directory) {
+                deletion_file = safe_root.open(
+                    local_path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK
                 );
-                continue;
+                if (!deletion_snapshot_matches(previous, deletion_file.get())) {
+                    block(
+                        "local_modification",
+                        "local file changed or its synchronized content "
+                        "cannot be verified: " +
+                            local_path.string()
+                    );
+                    continue;
+                }
+                struct stat verified{};
+                if (::fstat(deletion_file.get(), &verified) == -1) {
+                    throw std::system_error(
+                        errno,
+                        std::generic_category(),
+                        "cannot inspect verified local deletion file"
+                    );
+                }
+                deletion_identity = util::filesystem_identity(verified);
             }
             try {
                 if (safe_root.remove(
                         local_path,
-                        detail::filesystem_item_kind(previous.directory)
+                        detail::filesystem_item_kind(previous.directory),
+                        deletion_identity
                     )) {
                     ++removed;
                     observer.file_operation({

@@ -369,7 +369,10 @@ storage::ItemState uploaded_state(
         .size = item.size,
         .local_size = baseline.size,
         .local_modified_ticks = baseline.modified_ticks,
-        .content_hash = std::nullopt,
+        .content_hash =
+            util::FileHash{
+                util::FileHashAlgorithm::sha256, baseline.fingerprint
+            },
         .directory = false,
     };
 }

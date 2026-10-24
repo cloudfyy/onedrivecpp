@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <future>
+#include <limits>
 #include <thread>
 
 #include <stdexcept>
@@ -578,6 +579,108 @@ int test_invalid_refresh_responses() {
     return EXIT_SUCCESS;
 }
 
+int test_lifetime_bounds() {
+    using namespace std::chrono;
+    using onedrive::auth::AuthErrorCode;
+    const auto maximum_token_seconds =
+        duration_cast<seconds>(system_clock::duration::max()).count();
+    for (const auto lifetime :
+         {std::numeric_limits<std::int64_t>::max(),
+          maximum_token_seconds + 1,
+          maximum_token_seconds}) {
+        FakeTransport transport{{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body = "{\"access_token\":\"access\",\"expires_in\":" +
+                        std::to_string(lifetime) + "}",
+            },
+        }};
+        onedrive::http::HttpTransport proxy{
+            onedrive::util::borrowed_proxy, transport
+        };
+        onedrive::auth::DeviceAuthClient client{&proxy, test_options()};
+        if (!has_error(
+                client.refresh_access_token("refresh"),
+                AuthErrorCode::invalid_response
+            )) {
+            return fail("unrepresentable OAuth expiry was accepted");
+        }
+    }
+    for (const bool overflow_interval : {false, true}) {
+        const std::string large =
+            std::to_string(std::numeric_limits<std::int64_t>::max());
+        FakeTransport transport{{
+            onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body = "{\"device_code\":\"device\",\"user_code\":\"user\","
+                        "\"verification_uri\":\"https://example.test\","
+                        "\"expires_in\":" +
+                        (overflow_interval ? "900" : large) + ",\"interval\":" +
+                        (overflow_interval ? large : "1") + "}",
+            },
+        }};
+        onedrive::http::HttpTransport proxy{
+            onedrive::util::borrowed_proxy, transport
+        };
+        onedrive::auth::DeviceAuthClient client{&proxy, test_options()};
+        if (!has_error(
+                client.request_device_code(), AuthErrorCode::invalid_response
+            )) {
+            return fail("unrepresentable device-code timing was accepted");
+        }
+    }
+    auto code = onedrive::auth::DeviceCode{
+        .device_code = "device",
+        .expires_in = seconds{1},
+        .polling_interval = seconds{1},
+    };
+    FakeTransport transport{{}};
+    onedrive::http::HttpTransport proxy{
+        onedrive::util::borrowed_proxy, transport
+    };
+    onedrive::auth::DeviceAuthClient near_limit{
+        &proxy, test_options(), {}, [] {
+            return steady_clock::time_point::max() - milliseconds{500};
+        }
+    };
+    if (!has_error(
+            near_limit.poll_for_token(code), AuthErrorCode::invalid_response
+        ) ||
+        !transport.requests.empty()) {
+        return fail("device deadline overflow reached HTTP or sleep");
+    }
+    const auto maximum_seconds =
+        duration_cast<seconds>(steady_clock::duration::max());
+    code.expires_in = maximum_seconds;
+    code.polling_interval = maximum_seconds - seconds{1};
+    FakeTransport slow_transport{{
+        onedrive::http::HttpResponse{
+            .status_code = 400,
+            .body = R"({"error":"slow_down"})",
+        },
+    }};
+    onedrive::http::HttpTransport slow_proxy{
+        onedrive::util::borrowed_proxy, slow_transport
+    };
+    steady_clock::time_point now{};
+    std::vector<seconds> sleeps;
+    onedrive::auth::DeviceAuthClient slow_client{
+        &slow_proxy,
+        test_options(),
+        [&](seconds delay) {
+            sleeps.push_back(delay);
+            now += delay;
+        },
+        [&] { return now; },
+    };
+    if (!has_error(slow_client.poll_for_token(code), AuthErrorCode::expired) ||
+        sleeps != std::vector{maximum_seconds - seconds{1}, seconds{1}} ||
+        slow_transport.requests.size() != 1) {
+        return fail("slow_down overflowed or waited beyond the device expiry");
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_cancellation() {
     FakeTransport transport{{}};
     onedrive::http::HttpTransport proxy{
@@ -668,7 +771,12 @@ int test_cancellation() {
 
 int main() {
     using namespace onedrive::test::auth::diagnostics_cases;
-    onedrive::test::ScenarioProgress progress{14};
+    onedrive::test::ScenarioProgress progress{15};
+    if (const int result =
+            progress.run("lifetime_bounds", test_lifetime_bounds);
+        result != EXIT_SUCCESS) {
+        return result;
+    }
     if (progress.run(
             "enterprise_error_diagnostics", test_enterprise_error_diagnostics
         ) != EXIT_SUCCESS ||

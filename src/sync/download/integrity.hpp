@@ -52,6 +52,8 @@ private:
 [[nodiscard]] std::string file_content_hash(
     const std::filesystem::path& path, util::FileHashAlgorithm algorithm
 );
+[[nodiscard]] std::string
+file_content_hash(int descriptor, util::FileHashAlgorithm algorithm);
 void verify_download_integrity(
     const graph::RemoteItem& item,
     const DownloadHashes& hashes

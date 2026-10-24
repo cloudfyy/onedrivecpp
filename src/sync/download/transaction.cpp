@@ -476,6 +476,12 @@ storage::ItemState commit_download(
             }
 
             prepared.state.local_path = prepared.destination;
+            if (!prepared.state.content_hash) {
+                prepared.state.content_hash = util::FileHash{
+                    util::FileHashAlgorithm::sha256,
+                    prepared.content_fingerprint
+                };
+            }
             const bool identical =
                 baseline.existed &&
                 baseline.fingerprint == prepared.content_fingerprint;
