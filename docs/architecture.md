@@ -131,6 +131,36 @@ is required. Simulated Business responses do not replace real-tenant acceptance.
 
 ## Presentation boundary
 
+The Qt window implementation is divided by responsibility: page composition,
+account actions, synchronization, saved settings, item history/blocked items,
+and session logs. The constructor only assembles these pieces; synchronization
+rendering separates monitor status, phase status, download/upload progress,
+and summaries. These remain private `MainWindow` methods so QObject ownership,
+translation contexts and controller lifetimes do not change. Settings page
+definitions are grouped into account/rules, transport/network, and
+monitor/diagnostics units, sharing the editor's field and patch machinery.
+The GUI executable, its window tests and Qt translation extraction use one
+CMake source list to avoid omitting a component from a frontend or language.
+
+CLI information commands keep their existing entry points. Private inspection
+helpers own read-only state opening and local file/partial classification;
+local inspection commands and state cleanup are separate consumers of those
+helpers. Cleanup retains its own lock, confirmation, protected-path checks and
+writable-store lifetime rather than sharing mutation policy with inspection.
+
+The synchronization coordinator delegates filesystem preparation/recovery and
+event reporting to private core modules. Preview cache identity/state capture is
+implemented separately. Local move dependency scheduling is independent of
+filesystem transaction execution; durable journal transitions and operation
+leases remain in the executor.
+
+Large GUI synchronization/settings, Graph Delta and synchronization move tests
+are split into scenario translation units while retaining their executable
+entry points and scenario order. GUI assertions/event-loop waiting and suite
+fixtures are shared instead of copied. Move scenarios own their temporary
+state; multi-step recovery and selective-sync scenarios remain together so
+their required state transitions are explicit.
+
 Synchronization, upload, and Delta publish typed `events::Event` values through
 the core `events::Observer` interface. It serializes callbacks from workers
 without depending on a terminal or GUI toolkit. An event reference is valid only

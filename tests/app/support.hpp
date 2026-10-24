@@ -931,7 +931,7 @@ public:
     mutable std::vector<onedrive::storage::BlockedItem> blocked_item_states;
 };
 
-RunResult run_application(
+inline RunResult run_application(
     FakeRuntimeFactory& runtime_factory,
     std::vector<std::string> arguments,
     std::string standard_input = {}

@@ -194,13 +194,15 @@ if(ONEDRIVE_BUILD_GUI)
         SOURCES
             src/ui/gui/login_controller.cpp
             src/ui/gui/login_controller.hpp
-            src/ui/gui/main_window.cpp
-            src/ui/gui/main_window.hpp
-            src/ui/gui/settings_editor.cpp
-            src/ui/gui/settings_editor.hpp
+            ${ONEDRIVE_GUI_WINDOW_SOURCES}
             src/ui/gui/configuration.cpp
             src/ui/gui/app_state_view_model.cpp
             tests/gui/settings.cpp
+            tests/gui/settings_localization.cpp
+            tests/gui/settings_persistence.cpp
+            tests/gui/settings_fields.cpp
+            tests/gui/settings_validation.cpp
+            tests/gui/settings_network.cpp
         INCLUDE_DIRS src src/ui/gui tests
         LIBRARIES onedrive_app Qt6::Widgets Qt6::Network onedrive_gui_localization
     )
@@ -213,13 +215,10 @@ if(ONEDRIVE_BUILD_GUI)
         SOURCES
             src/ui/gui/login_controller.cpp
             src/ui/gui/login_controller.hpp
-            src/ui/gui/main_window.cpp
-            src/ui/gui/main_window.hpp
+            ${ONEDRIVE_GUI_WINDOW_SOURCES}
             src/ui/gui/configuration.cpp
             src/ui/gui/app_state_view_model.cpp
             tests/gui/startup_state.cpp
-            src/ui/gui/settings_editor.cpp
-            src/ui/gui/settings_editor.hpp
         INCLUDE_DIRS src src/ui/gui tests
         LIBRARIES onedrive_app Qt6::Widgets Qt6::Network onedrive_gui_localization
     )
@@ -232,13 +231,10 @@ if(ONEDRIVE_BUILD_GUI)
         SOURCES
             src/ui/gui/login_controller.cpp
             src/ui/gui/login_controller.hpp
-            src/ui/gui/main_window.cpp
-            src/ui/gui/main_window.hpp
+            ${ONEDRIVE_GUI_WINDOW_SOURCES}
             src/ui/gui/configuration.cpp
             src/ui/gui/app_state_view_model.cpp
             tests/gui/login.cpp
-            src/ui/gui/settings_editor.cpp
-            src/ui/gui/settings_editor.hpp
         INCLUDE_DIRS src src/ui/gui tests
         LIBRARIES onedrive_app Qt6::Widgets Qt6::Network onedrive_gui_localization
     )
@@ -252,14 +248,17 @@ if(ONEDRIVE_BUILD_GUI)
         gui_synchronization_tests
         SOURCES
             tests/gui/synchronization.cpp
+            tests/gui/synchronization_items.cpp
+            tests/gui/synchronization_controller.cpp
+            tests/gui/synchronization_logs.cpp
+            tests/gui/synchronization_log_view.cpp
+            tests/gui/synchronization_progress.cpp
+            tests/gui/synchronization_window.cpp
             src/ui/gui/sync_controller.cpp
             src/ui/gui/sync_controller.hpp
             src/ui/gui/login_controller.cpp
             src/ui/gui/login_controller.hpp
-            src/ui/gui/main_window.cpp
-            src/ui/gui/main_window.hpp
-            src/ui/gui/settings_editor.cpp
-            src/ui/gui/settings_editor.hpp
+            ${ONEDRIVE_GUI_WINDOW_SOURCES}
             src/ui/gui/configuration.cpp
             src/ui/gui/app_state_view_model.cpp
         INCLUDE_DIRS src src/ui/gui tests ${PROJECT_BINARY_DIR}/generated
@@ -278,10 +277,7 @@ if(ONEDRIVE_BUILD_GUI)
             src/ui/gui/sync_controller.hpp
             src/ui/gui/login_controller.cpp
             src/ui/gui/login_controller.hpp
-            src/ui/gui/main_window.cpp
-            src/ui/gui/main_window.hpp
-            src/ui/gui/settings_editor.cpp
-            src/ui/gui/settings_editor.hpp
+            ${ONEDRIVE_GUI_WINDOW_SOURCES}
             src/ui/gui/configuration.cpp
             src/ui/gui/app_state_view_model.cpp
         INCLUDE_DIRS src src/ui/gui tests ${PROJECT_BINARY_DIR}/generated
@@ -308,13 +304,10 @@ if(ONEDRIVE_BUILD_GUI)
         SOURCES
             src/ui/gui/login_controller.cpp
             src/ui/gui/login_controller.hpp
-            src/ui/gui/main_window.cpp
-            src/ui/gui/main_window.hpp
+            ${ONEDRIVE_GUI_WINDOW_SOURCES}
             src/ui/gui/configuration.cpp
             src/ui/gui/app_state_view_model.cpp
             tests/gui/localization.cpp
-            src/ui/gui/settings_editor.cpp
-            src/ui/gui/settings_editor.hpp
         INCLUDE_DIRS src src/ui/gui tests
         LIBRARIES onedrive_app Qt6::Widgets Qt6::Network onedrive_gui_localization
     )
@@ -572,6 +565,11 @@ foreach(
     )
 endforeach()
 target_include_directories(graph_delta_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
+target_sources(graph_delta_tests PRIVATE
+    graph/delta_hierarchy.cpp
+    graph/delta_unsupported.cpp
+    graph/delta_transport.cpp
+)
 add_onedrive_test(
     graph_support_tests
     SOURCES tests/graph/helpers.cpp
@@ -647,6 +645,13 @@ foreach(SYNC_TEST IN ITEMS base delete move move_recovery download upload mode p
         LIBRARIES onedrive_cli
     )
 endforeach()
+target_sources(sync_move_tests PRIVATE
+    sync/move_files.cpp
+    sync/move_journals.cpp
+    sync/move_schedule.cpp
+    sync/move_conflicts.cpp
+    sync/move_uploads.cpp
+)
 target_link_options(sync_watch_race_tests PRIVATE
     -Wl,--wrap=fstatat
     -Wl,--wrap=read

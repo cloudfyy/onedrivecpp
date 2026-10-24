@@ -50,6 +50,15 @@ private:
         std::function<bool(const config::Config&)> present;
         bool baseline_present = false;
     };
+    QFormLayout* page();
+    void note(QFormLayout* form, const char* text);
+    QFormLayout* advanced(QFormLayout* form, const char* title);
+    void add_account_page();
+    void add_sync_page();
+    void add_transfer_page();
+    void add_network_page();
+    void add_monitor_page();
+    void add_diagnostics_page();
     void
     add(QFormLayout* form,
         const char* table,

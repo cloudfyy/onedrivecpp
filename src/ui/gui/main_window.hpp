@@ -11,6 +11,7 @@
 #include <optional>
 
 class QLabel;
+class QLocale;
 class QLineEdit;
 class QPushButton;
 class QCloseEvent;
@@ -44,6 +45,14 @@ public:
     );
 
 private:
+    void create_overview_page();
+    void create_sync_page();
+    void create_logs_page();
+    void create_files_page();
+    void create_settings_page();
+    void create_header_controls();
+    void connect_sync_controller();
+    void connect_login_controller();
     void closeEvent(QCloseEvent* event) override;
     void changeEvent(QEvent* event) override;
     void retranslate_ui();
@@ -71,6 +80,13 @@ private:
         const std::vector<events::Event>& batch, std::size_t omitted
     );
     void render_sync();
+    void render_monitor_status(const QLocale& locale);
+    void render_sync_status(const QLocale& locale);
+    int render_download_status(const QLocale& locale);
+    bool render_download_progress(int percentage);
+    bool render_upload_progress(const QLocale& locale);
+    void render_sync_summary(const QLocale& locale);
+    void render_progress_hint(bool show_progress, bool measurable_upload);
     QString log_event_text(const events::Event& event) const;
     enum class LogOperation {
         application,

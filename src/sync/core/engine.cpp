@@ -1,54 +1,37 @@
 #include "onedrive/sync/core/engine.hpp"
 #include "onedrive/exit_code.hpp"
 #include "graph/delta_changes.hpp"
-#include "graph/support.hpp"
 
 #include "onedrive/sync/cancellation.hpp"
 #include "onedrive/ui/common/observer.hpp"
 #include "onedrive/util/mount.hpp"
 #include "onedrive/util/path_security.hpp"
-#include "onedrive/util/sha256.hpp"
 #include "sync/core/delta_plan.hpp"
 #include "onedrive/sync/blocked_policy.hpp"
 #include "onedrive/sync/capabilities.hpp"
-#include "sync/core/downloads.hpp"
 #include "sync/core/plan_execute.hpp"
 #include "sync/core/plan_report.hpp"
-#include "sync/core/item_ops.hpp"
-#include "sync/core/local_move.hpp"
 #include "sync/core/reporting.hpp"
-#include "sync/core/remote_delete.hpp"
+#include "sync/core/preparation.hpp"
 #include "sync/core/plan.hpp"
-#include "sync/core/transfer_order.hpp"
-#include "sync/download/recovery.hpp"
-#include "sync/download/space.hpp"
-#include "sync/download/target.hpp"
 #include "sync/filesystem/operations.hpp"
-#include "sync/filesystem/metadata.hpp"
 #include "sync/filesystem/safe_sync_root.hpp"
 #include "sync/filter/remote_path.hpp"
 #include "sync/filter/selective.hpp"
 #include "sync/upload/orchestration.hpp"
 
 #include <spdlog/spdlog.h>
-#include <nlohmann/json.hpp>
 
 #include <algorithm>
-#include <cerrno>
 #include <chrono>
-#include <cstring>
 #include <exception>
 #include <filesystem>
-#include <format>
 #include <functional>
 #include <optional>
 #include <stdexcept>
 #include <string_view>
-#include <tuple>
-#include <unordered_map>
 #include <unordered_set>
 #include <vector>
-#include <sys/stat.h>
 
 namespace onedrive::sync {
 namespace {
@@ -124,323 +107,7 @@ void discard_orphaned_partial_files(
     }
 }
 
-void report_dry_run_configuration(
-    const config::Config& config,
-    storage::ItemStore& items,
-    const events::Observer& observer
-) {
-    observer.section(
-        "dry_run_configuration",
-        "Dry run configuration:",
-        {
-            {
-                .label = "sync directory:",
-                .key = "sync_data_directory",
-                .value = config.sync_data_directory.string(),
-            },
-            {
-                .label = "state directory:",
-                .key = "state_directory",
-                .value = config.state_directory.string(),
-            },
-            {
-                .label = "drive id:",
-                .key = "drive_id",
-                .value = config.drive_id,
-            },
-            {
-                .label = "throttle retries:",
-                .key = "throttle_retries",
-                .value = std::to_string(config.graph_maximum_throttle_retries),
-            },
-            {
-                .label = "throttle delay:",
-                .key = "throttle_delay",
-                .value = std::format(
-                    "{}-{} seconds",
-                    config.graph_initial_throttle_delay.count(),
-                    config.graph_maximum_throttle_delay.count()
-                ),
-            },
-            {
-                .label = "download concurrency:",
-                .key = "download_concurrency",
-                .value = std::to_string(config.download_concurrency),
-            },
-            {
-                .label = "per-download rate:",
-                .key = "download_rate_limit",
-                .value = std::to_string(
-                    config.download_maximum_rate_bytes_per_second
-                ),
-            },
-            {
-                .label = "total download rate:",
-                .key = "download_total_rate_limit",
-                .value = std::to_string(
-                    config.download_maximum_total_rate_bytes_per_second
-                ),
-            },
-            {
-                .label = "upload concurrency:",
-                .key = "upload_concurrency",
-                .value = std::to_string(config.upload_concurrency),
-            },
-            {
-                .label = "upload chunk size:",
-                .key = "upload_chunk_size",
-                .value = std::to_string(config.upload_chunk_size_bytes),
-            },
-            {
-                .label = "per-upload rate:",
-                .key = "upload_rate_limit",
-                .value =
-                    std::to_string(config.upload_maximum_rate_bytes_per_second),
-            },
-            {
-                .label = "total upload rate:",
-                .key = "upload_total_rate_limit",
-                .value = std::to_string(
-                    config.upload_maximum_total_rate_bytes_per_second
-                ),
-            },
-            {
-                .label = "tracked items:",
-                .key = "tracked_items",
-                .value = std::to_string(items.size()),
-            },
-        }
-    );
-}
-
-void report_upload_plan(
-    const config::Config& config,
-    const detail::UploadSummary& summary,
-    const events::Observer& observer
-) {
-    observer.section(
-        "upload_plan",
-        "Local upload plan:",
-        {
-            {
-                .label = "move remote items:",
-                .key = "move_remote_items",
-                .value = std::to_string(summary.planned_moves),
-            },
-            {
-                .label = "delete remote items:",
-                .key = "delete_remote_items",
-                .value = std::to_string(summary.planned_deletions),
-            },
-            {
-                .label = "affected tracked items:",
-                .key = "affected_remote_deletions",
-                .value = std::to_string(summary.affected_deletions),
-            },
-            {
-                .label = "large-delete limit:",
-                .key = "maximum_remote_deletions",
-                .value = std::to_string(config.maximum_remote_deletions),
-            },
-            {
-                .label = "large-delete blocked:",
-                .key = "large_delete_blocked",
-                .value = summary.large_delete_blocked ? "true" : "false",
-            },
-            {
-                .label = "create directories:",
-                .key = "create_directories",
-                .value = std::to_string(summary.planned_directories),
-            },
-            {
-                .label = "upload files:",
-                .key = "upload_files",
-                .value = std::to_string(summary.planned),
-            },
-            {
-                .label = "blocked:",
-                .key = "blocked",
-                .value = std::to_string(summary.blocked),
-            },
-        }
-    );
-}
-
-void report_execution_summary(
-    const engine_detail::ExecutionSummary& execution,
-    const detail::UploadSummary& upload,
-    std::size_t blocked,
-    std::size_t unsupported,
-    const events::Observer& observer
-) {
-    observer.sync_summary({
-        .downloaded = execution.downloaded,
-        .uploaded = upload.uploaded,
-        .moved = execution.moved + upload.moved,
-        .deleted = execution.removed + upload.deleted,
-        .blocked = blocked,
-    });
-    observer.section(
-        "execution_summary",
-        "Synchronization summary:",
-        {
-            {
-                .label = "downloaded:",
-                .key = "downloaded",
-                .value = std::to_string(execution.downloaded),
-            },
-            {
-                .label = "reused:",
-                .key = "reused",
-                .value = std::to_string(execution.reused),
-            },
-            {
-                .label = "directories prepared:",
-                .key = "directories_prepared",
-                .value = std::to_string(execution.directories),
-            },
-            {
-                .label = "local moves:",
-                .key = "local_moves",
-                .value = std::to_string(execution.moved),
-            },
-            {
-                .label = "local removals:",
-                .key = "local_removals",
-                .value = std::to_string(execution.removed),
-            },
-            {
-                .label = "remote moves:",
-                .key = "remote_moves",
-                .value = std::to_string(upload.moved),
-            },
-            {
-                .label = "remote removals:",
-                .key = "remote_removals",
-                .value = std::to_string(upload.deleted),
-            },
-            {
-                .label = "remote items affected:",
-                .key = "remote_deletion_affected_items",
-                .value = std::to_string(upload.affected_deletions),
-            },
-            {
-                .label = "remote directories created:",
-                .key = "remote_directories_created",
-                .value = std::to_string(upload.created_directories),
-            },
-            {
-                .label = "uploaded:",
-                .key = "uploaded",
-                .value = std::to_string(upload.uploaded),
-            },
-            {
-                .label = "blocked:",
-                .key = "blocked",
-                .value = std::to_string(blocked),
-            },
-            {
-                .label = "unsupported format items:",
-                .key = "unsupported_items",
-                .value = std::to_string(unsupported),
-            },
-        }
-    );
-}
-
-void report_completion(
-    std::size_t blocked,
-    bool preview,
-    std::chrono::steady_clock::time_point started_at,
-    const events::Observer& observer
-) {
-    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - started_at
-    );
-    if (blocked != 0) {
-        observer.report_message(
-            events::MessageKind::warning,
-            "sync_completed_with_issues",
-            std::format(
-                "Synchronization completed with {} blocked items in {} "
-                "milliseconds.",
-                blocked,
-                elapsed.count()
-            )
-        );
-        return;
-    }
-    const std::string_view message =
-        preview ? "Synchronization dry run completed"
-                : "Synchronization state update completed";
-    observer.report_message(
-        events::MessageKind::information,
-        "sync_completed",
-        std::format("{} in {} milliseconds", message, elapsed.count())
-    );
-}
-
 } // namespace
-
-PreviewCache::Scope PreviewCache::scope(const config::Config& config) {
-    return {
-        .sync_root = util::normalized_absolute(config.sync_data_directory),
-        .state_root = util::normalized_absolute(config.state_directory),
-        .drive_id = config.drive_id,
-        .graph_endpoint = config.graph_endpoint,
-        .application_id = config.application_id,
-        .tenant = config.azure_tenant_id,
-        .auth_endpoint = config.auth_endpoint,
-        .auth_scope = config.auth_scope,
-        .validation = config.download_validation,
-    };
-}
-
-std::optional<PreviewCache::State> PreviewCache::capture_state(
-    const storage::ItemStore& items, const std::string& drive
-) {
-    if (!items.pending_downloads(drive).empty() ||
-        !items.partial_downloads(drive).empty() ||
-        !items.pending_uploads(drive).empty() ||
-        !items.pending_deletes(drive).empty() ||
-        !items.pending_remote_moves(drive).empty() ||
-        !items.pending_moves(drive).empty()) {
-        return std::nullopt;
-    }
-    State state{
-        .cursor = items.delta_link(drive),
-        .filter = items.sync_filter_fingerprint(drive),
-        .items = items.drive_items(drive),
-        .blocked = items.blocked_items(drive),
-        .suppressions = items.upload_suppressions(drive),
-    };
-    std::ranges::sort(state.items, {}, &storage::ItemState::remote_id);
-    std::ranges::sort(state.blocked, {}, &storage::BlockedItem::remote_id);
-    std::ranges::sort(state.suppressions, {}, [](const auto& suppression) {
-        return std::tie(suppression.remote_id, suppression.local_path);
-    });
-    return state;
-}
-
-std::string PreviewCache::scope_fingerprint(const config::Config& config) {
-    const auto value = scope(config);
-    return util::sha256_hex(
-        nlohmann::json::array(
-            {value.sync_root.string(),
-             value.state_root.string(),
-             value.drive_id,
-             value.graph_endpoint,
-             value.application_id,
-             value.tenant,
-             value.auth_endpoint,
-             value.auth_scope,
-             static_cast<int>(value.validation),
-             "graph-quickxor-sha1-v1",
-             graph::client_detail::unsupported_format_policy()}
-        )
-            .dump()
-    );
-}
 
 int SyncEngine::synchronize(std::stop_token stop_token) {
     std::optional<PreviewCache::Snapshot> previous_preview;
@@ -475,82 +142,18 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
             preview_cache_ && (capabilities.previews() || previous_preview)
                 ? PreviewCache::capture_state(items_, config_.drive_id)
                 : std::nullopt;
-        std::optional<detail::SafeSyncRoot> safe_root;
-        std::optional<detail::FilesystemMetadata> metadata;
-        std::size_t recovered_uploads = 0;
-        if (capabilities.previews()) {
-            report_dry_run_configuration(config_, items_, observer);
-            const auto pending = items_.pending_downloads(config_.drive_id);
-            if (!pending.empty()) {
-                spdlog::info(
-                    "Dry run found {} pending downloads; recovery is deferred",
-                    pending.size()
-                );
-            }
-            if (std::filesystem::is_directory(sync_root)) {
-                safe_root.emplace(sync_root);
-                metadata.emplace(
-                    detail::FilesystemMetadata::from_detected_support(
-                        config_.filesystem_metadata, false
-                    )
-                );
-            }
-        } else {
-            sync_root =
-                detail::prepare_sync_root(sync_root, config_.sync_permissions);
-            safe_root.emplace(sync_root);
-            metadata.emplace(
-                detail::FilesystemMetadata::detect(
-                    config_.filesystem_metadata, sync_root
-                )
-            );
-            if (capabilities.downloads()) {
-                throw_if_cancelled(stop_token);
-                detail::recover_pending_downloads(
-                    items_,
-                    *safe_root,
-                    config_.drive_id,
-                    *metadata,
-                    config_.sync_permissions,
-                    &observer,
-                    config_.local_conflict
-                );
-            }
-            if (capabilities.uploads()) {
-                throw_if_cancelled(stop_token);
-                detail::recover_pending_remote_moves(
-                    *safe_root,
-                    config_.drive_id,
-                    graph_,
-                    items_,
-                    observer,
-                    stop_token
-                );
-                if (capabilities.removes_remote_items()) {
-                    detail::recover_pending_deletes(
-                        config_.drive_id,
-                        graph_,
-                        items_,
-                        observer,
-                        {
-                            .maximum_affected_items =
-                                config_.maximum_remote_deletions,
-                            .force = config_.force_large_delete,
-                        },
-                        stop_token
-                    );
-                }
-                recovered_uploads = detail::recover_pending_uploads(
-                    *safe_root,
-                    config_.drive_id,
-                    graph_,
-                    items_,
-                    *metadata,
-                    observer,
-                    stop_token
-                );
-            }
-        }
+        auto prepared = engine_detail::prepare_sync_filesystem(
+            config_,
+            sync_root,
+            capabilities,
+            graph_,
+            items_,
+            observer,
+            stop_token
+        );
+        auto& safe_root = prepared.safe_root;
+        auto& metadata = prepared.metadata;
+        const auto recovered_uploads = prepared.recovered_uploads;
 
         const auto sync_filter = detail::SyncList::configured({
             .rules_path = config_.sync_list,
@@ -935,7 +538,9 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
                     stop_token
                 );
                 blocked_count += upload_summary.blocked;
-                report_upload_plan(config_, upload_summary, observer);
+                engine_detail::report_upload_plan(
+                    config_, upload_summary, observer
+                );
             }
             spdlog::debug(
                 "Dry run preserved files, snapshots, and cursor; saved blocked "
@@ -996,7 +601,7 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
             }
             observer.sync_phase(events::SyncPhase::applying);
             upload_summary.uploaded += recovered_uploads;
-            report_execution_summary(
+            engine_detail::report_execution_summary(
                 summary,
                 upload_summary,
                 blocked_count,
@@ -1016,7 +621,7 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
             );
         }
         record_result(metrics::SyncRunOutcome::succeeded);
-        report_completion(
+        engine_detail::report_completion(
             blocked_count, capabilities.previews(), started_at, observer
         );
         if (preview_delta && !stop_token.stop_requested() &&

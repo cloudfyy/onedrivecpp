@@ -5,6 +5,9 @@ add_library(onedrive_cli
     src/ui/cli/app/discover.cpp
     src/ui/cli/app/drive_fields.cpp
     src/ui/cli/app/info.cpp
+    src/ui/cli/app/inspection.cpp
+    src/ui/cli/app/local_inspection.cpp
+    src/ui/cli/app/cleanup.cpp
     src/ui/cli/console.cpp
     src/ui/cli/format.cpp
     src/ui/cli/ftxui_backend.cpp
@@ -104,6 +107,7 @@ add_library(onedrive_core
     src/sync/core/item_ops.cpp
     src/sync/core/downloads.cpp
     src/sync/core/local_move.cpp
+    src/sync/core/move_schedule.cpp
     src/sync/core/reporting.cpp
     src/sync/core/remote_delete.cpp
     src/sync/filesystem/operations.cpp
@@ -120,6 +124,8 @@ add_library(onedrive_core
     src/sync/core/plan.cpp
     src/sync/core/delta_plan.cpp
     src/sync/core/engine.cpp
+    src/sync/core/preview_cache.cpp
+    src/sync/core/preparation.cpp
     src/sync/core/plan_execute.cpp
     src/sync/core/plan_report.cpp
 )
@@ -207,6 +213,23 @@ add_executable(onedrive-cpp src/main.cpp)
 target_link_libraries(onedrive-cpp PRIVATE onedrive_cli)
 
 if(ONEDRIVE_BUILD_GUI)
+    set(ONEDRIVE_GUI_WINDOW_SOURCES
+        ${PROJECT_SOURCE_DIR}/src/ui/gui/main_window.cpp
+        ${PROJECT_SOURCE_DIR}/src/ui/gui/main_window.hpp
+        ${PROJECT_SOURCE_DIR}/src/ui/gui/main_window_account.cpp
+        ${PROJECT_SOURCE_DIR}/src/ui/gui/main_window_helpers.cpp
+        ${PROJECT_SOURCE_DIR}/src/ui/gui/main_window_helpers.hpp
+        ${PROJECT_SOURCE_DIR}/src/ui/gui/main_window_items.cpp
+        ${PROJECT_SOURCE_DIR}/src/ui/gui/main_window_logs.cpp
+        ${PROJECT_SOURCE_DIR}/src/ui/gui/main_window_pages.cpp
+        ${PROJECT_SOURCE_DIR}/src/ui/gui/main_window_settings.cpp
+        ${PROJECT_SOURCE_DIR}/src/ui/gui/main_window_sync.cpp
+        ${PROJECT_SOURCE_DIR}/src/ui/gui/settings_editor.cpp
+        ${PROJECT_SOURCE_DIR}/src/ui/gui/settings_editor.hpp
+        ${PROJECT_SOURCE_DIR}/src/ui/gui/settings_account.cpp
+        ${PROJECT_SOURCE_DIR}/src/ui/gui/settings_transport.cpp
+        ${PROJECT_SOURCE_DIR}/src/ui/gui/settings_monitor.cpp
+    )
     find_package(Qt6 6.8 REQUIRED
         COMPONENTS Core DBus Gui Network Widgets LinguistTools
     )
@@ -226,10 +249,7 @@ if(ONEDRIVE_BUILD_GUI)
         LUPDATE_TARGET onedrive_gui_lupdate
         SOURCES
             ${PROJECT_SOURCE_DIR}/src/ui/gui/main.cpp
-            ${PROJECT_SOURCE_DIR}/src/ui/gui/main_window.cpp
-            ${PROJECT_SOURCE_DIR}/src/ui/gui/main_window.hpp
-            ${PROJECT_SOURCE_DIR}/src/ui/gui/settings_editor.cpp
-            ${PROJECT_SOURCE_DIR}/src/ui/gui/settings_editor.hpp
+            ${ONEDRIVE_GUI_WINDOW_SOURCES}
             ${PROJECT_SOURCE_DIR}/src/ui/gui/localization.cpp
             ${PROJECT_SOURCE_DIR}/src/ui/gui/login_controller.cpp
             ${PROJECT_SOURCE_DIR}/src/ui/gui/login_controller.hpp
@@ -264,10 +284,7 @@ if(ONEDRIVE_BUILD_GUI)
         src/ui/gui/configuration.cpp
         src/ui/gui/app_state_view_model.cpp
         src/ui/gui/main.cpp
-        src/ui/gui/main_window.cpp
-        src/ui/gui/main_window.hpp
-        src/ui/gui/settings_editor.cpp
-        src/ui/gui/settings_editor.hpp
+        ${ONEDRIVE_GUI_WINDOW_SOURCES}
         src/ui/gui/login_controller.cpp
         src/ui/gui/login_controller.hpp
         src/ui/gui/sync_controller.cpp
