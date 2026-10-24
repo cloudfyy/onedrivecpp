@@ -550,6 +550,17 @@ output cleanup. The GUI integration tests use only local loopback connections.
 verifying that the production adapter executes reducer commands and retains
 fragmented text across `CURLE_AGAIN`; no network or real browser is needed.
 
+Authentication diagnostic coverage lives in `device_auth_tests`: all four HTTP
+error entry points, advice categories and OAuth aliases, absent/empty descriptions,
+signed/unsigned numeric limits, malformed metadata and polling control independent
+of STS codes. `auth_code_tests` checks the callback error allowlist and rejects
+wrong-state errors without disclosing callback details. `app_authentication_tests`
+checks request and polling failures in both CLI output modes through the existing
+diagnostic log, while `gui_login_tests` checks shared formatting and UI-thread
+completion. `graph_retry_tests` checks typed refresh failures and credential
+preservation for both invalid grants and temporary service errors. These are
+offline regressions, not proof of organizational-tenant policy acceptance.
+
 ```bash
 cmake --build build/debug --target auth_code_tests auth_code_typestate_tests auth_code_failure_tests browser_request_tests gui_login_tests monitor_socket_tests monitor_socket_transport_tests monitor_notify_tests
 ctest --test-dir build/debug -R '^(auth_code_tests|auth_code_typestate_tests|auth_code_failure_tests|browser_request_tests|gui_login_tests|monitor_socket_tests|monitor_socket_transport_tests|monitor_notify_tests)$' --output-on-failure

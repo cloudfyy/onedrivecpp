@@ -189,7 +189,7 @@ int authenticate(
             "{}: {}",
             received_code ? "Microsoft device authorization failed"
                           : "Microsoft device authorization request failed",
-            result.error().message
+            auth::describe_error(result.error())
         );
         return exit_code::failure;
     }

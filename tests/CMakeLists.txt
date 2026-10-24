@@ -496,8 +496,8 @@ add_onedrive_test(
 )
 add_onedrive_test(
     device_auth_tests
-    SOURCES tests/auth/device.cpp
-    INCLUDE_DIRS tests
+    SOURCES tests/auth/device.cpp tests/auth/diagnostics.cpp
+    INCLUDE_DIRS src tests
 )
 add_onedrive_test(
     auth_code_tests

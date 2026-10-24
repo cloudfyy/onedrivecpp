@@ -5,10 +5,12 @@
 #include <gsl/pointers>
 
 #include <chrono>
+#include <cstdint>
 #include <expected>
 #include <functional>
 #include <string>
 #include <stop_token>
+#include <vector>
 
 namespace onedrive::auth {
 
@@ -50,7 +52,12 @@ enum class AuthErrorCode {
 struct AuthError {
     AuthErrorCode code;
     std::string message;
+    std::string oauth_error{};
+    std::vector<std::uint64_t> server_error_codes{};
+    std::string configured_tenant{};
 };
+
+[[nodiscard]] std::string describe_error(const AuthError& error);
 
 template <typename Value>
 using AuthResult = std::expected<Value, AuthError>;

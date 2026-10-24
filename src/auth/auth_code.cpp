@@ -454,13 +454,19 @@ AuthResult<void> AuthCodeSession::accept_callback(
         }
         if (errors == 1) {
             const bool declined = error == "access_denied";
+            const bool known_error =
+                declined || error == "interaction_required" ||
+                error == "login_required" || error == "consent_required" ||
+                error == "server_error" || error == "temporarily_unavailable";
             return std::unexpected(terminate(
                 AuthCodeState::failed,
                 {.code = declined ? AuthErrorCode::authorization_declined
                                   : AuthErrorCode::server,
                  .message = declined
                                 ? "browser authorization was declined"
-                                : "authorization server rejected browser login"}
+                                : "authorization server rejected browser login",
+                 .oauth_error = known_error ? error : std::string{},
+                 .configured_tenant = options_.tenant_id}
             ));
         }
         implementation_->transaction =

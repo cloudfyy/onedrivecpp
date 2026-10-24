@@ -349,7 +349,8 @@ MicrosoftGraphClient::access_token(const std::stop_token& stop_token) const {
             };
         }
         throw AccountAuthenticationError(
-            "cannot refresh Microsoft access token: " + tokens.error().message
+            "cannot refresh Microsoft access token: " +
+            auth::describe_error(tokens.error())
         );
     }
     if (stop_token.stop_requested()) {

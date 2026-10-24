@@ -177,6 +177,43 @@ onedrive-cpp account login
 Drive 类型当作身份键。`common`／`consumers` 只是认证入口，不代表实际租户 ID。
 识别类型不等于已经完成组织版同步支持，1.1 后续工作记录在 `TODO.md`。
 
+## 组织认证诊断
+
+CLI 登录、GUI 登录和 access token 刷新共用诊断建议。错误保留 Microsoft 返回的
+说明，并在响应提供时显示 OAuth 错误及数字 `AADSTS` 诊断码。目前 Core 建议使用
+英文，GUI 也直接显示；外围 GUI 控件仍按所选语言显示。
+CLI 在文本和 JSON 输出模式下均沿用现有日志路径报告诊断；
+`--log-level off` 会屏蔽这些日志，尚未新增独立的 JSON 认证失败事件。
+
+| 诊断 | 建议操作 |
+|---|---|
+| `AADSTS90094` | 请租户管理员批准应用当前配置的委托权限。 |
+| `AADSTS65001` 或 `consent_required` | 重新登录完成同意；只有组织策略要求时才必须由管理员批准。 |
+| `AADSTS65004` | 用户拒绝同意；确认所请求的权限后再授权。 |
+| `AADSTS50076`、`50079`、`50097`、`53000`–`53003` | 完成必要的认证／设备检查，并请管理员核查条件访问和受批准设备／应用要求。 |
+| `AADSTS530036` | 条件访问限制了此授权的认证流程，例如设备代码流或 authentication transfer。停止 Monitor，显式退出本地登录，仅在组织允许时改用 GUI 浏览器登录。 |
+| `interaction_required` 或 `login_required` | 停止 Monitor，重新交互登录；GUI 需要先退出本地登录。 |
+| `invalid_grant`，包括授权过期／撤销诊断 | 停止 Monitor，运行 `onedrive-cpp account login`，或先退出本地登录再从 GUI 登录。认证失败本身不会自动删除已保存的凭据。 |
+| `unauthorized_client` 或 `unsupported_grant_type` | 核对配置租户、支持的账号类型及 **Allow public client flows**，不要添加客户端密钥。 |
+| `temporarily_unavailable` 或 `server_error` | 稍后重试；不要仅因服务暂时不可用就扩大权限或删除凭据。 |
+
+浏览器登录不能绕过组织策略；尚未实现自动 claims challenge 处理或设备 broker／
+合规设备认证。未知诊断码不能作为某项组织策略失败的确证。设备轮询的控制依据
+仍然是 OAuth 错误标识，数字 STS 码只补充建议，不会自动切换授权流程或删除令牌，
+也不会为解决这些错误额外申请权限。
+
+显示的 **Configured tenant/selector (not a verified tenant ID)** 来自配置
+`auth.tenant_id`，不是已验证的实际租户。特别是 `common`、`organizations` 和
+`consumers` 只是选择入口，不代表本次登录实际使用的目录。客户端不会解码未验证的
+access token 来猜测目录；请管理员通过 Microsoft Entra 登录日志核对实际租户及
+策略判定。真实组织租户验收仍由单独的验收项负责。
+
+可参阅 Microsoft 的[认证错误参考](https://learn.microsoft.com/zh-cn/entra/identity-platform/reference-error-codes)
+和 [530036 诊断](https://login.microsoftonline.com/error?code=530036)。
+反馈认证问题时，不要提供授权码、令牌或完整回调 URL。
+
+## 常见问题
+
 如果 Microsoft 提示账号类型不受支持，请检查应用注册中的
 **Supported account types**：仅个人账号注册应使用 `consumers`，同时支持个人
 和组织账号的注册应使用 `common`。

@@ -1,4 +1,5 @@
 #include "support/progress.hpp"
+#include "diagnostics_cases.hpp"
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
 #include "onedrive/http/http_client.hpp"
@@ -666,7 +667,26 @@ int test_cancellation() {
 } // namespace
 
 int main() {
-    onedrive::test::ScenarioProgress progress{9};
+    using namespace onedrive::test::auth::diagnostics_cases;
+    onedrive::test::ScenarioProgress progress{14};
+    if (progress.run(
+            "enterprise_error_diagnostics", test_enterprise_error_diagnostics
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "error_response_fallbacks", test_error_response_fallbacks
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "signed_diagnostic_code", test_signed_diagnostic_code
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "malformed_error_diagnostics", test_malformed_error_diagnostics
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "diagnostic_codes_do_not_control_polling",
+            test_diagnostic_codes_do_not_control_polling
+        ) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
     if (progress.run(
             "authorization_code_exchange", test_authorization_code_exchange
         ) != EXIT_SUCCESS) {

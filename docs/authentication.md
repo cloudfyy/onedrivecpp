@@ -208,6 +208,49 @@ databases are preserved; display names and Drive types are not identity keys.
 Type recognition alone does not establish full organizational synchronization
 support; that work is tracked for 1.1 in `TODO.md`.
 
+## Organizational authentication diagnostics
+
+CLI login, GUI login and access-token refresh share diagnostic advice. Errors
+retain Microsoft's description and, when supplied, the OAuth error and numeric
+`AADSTS` codes. Core advice is currently English, including in the GUI; the
+surrounding GUI controls follow the selected language.
+CLI diagnostics use the existing logging path in both text and JSON output
+modes; `--log-level off` suppresses them. They are not a separate JSON
+authentication-failure event.
+
+| Diagnostic | Recommended action |
+|---|---|
+| `AADSTS90094` | Ask the tenant administrator to approve the application's configured delegated permissions. |
+| `AADSTS65001` or `consent_required` | Sign in again for consent; administrator approval is needed only if organizational policy requires it. |
+| `AADSTS65004` | Consent was declined; review the permissions before authorizing again. |
+| `AADSTS50076`, `50079`, `50097`, `53000`–`53003` | Complete required authentication/device checks and ask the administrator to review Conditional Access and approved-device/application requirements. |
+| `AADSTS530036` | Conditional Access restricts the grant's authentication flow, such as device code or authentication transfer. Stop Monitor, explicitly log out locally and use GUI browser sign-in only if the organization permits it. |
+| `interaction_required` or `login_required` | Stop Monitor and sign in interactively again; log out locally first in the GUI. |
+| `invalid_grant`, including expired/revoked grant diagnostics | Stop Monitor and run `onedrive-cpp account login`, or log out locally before GUI sign-in. Failed authentication does not automatically delete saved credentials. |
+| `unauthorized_client` or `unsupported_grant_type` | Check the configured tenant, supported account types and **Allow public client flows**. Do not add a client secret. |
+| `temporarily_unavailable` or `server_error` | Retry later; do not expand permissions or delete credentials merely because the service is temporarily unavailable. |
+
+Browser sign-in cannot bypass organizational policy. Automatic claims-challenge
+handling and device-broker/compliant-device authentication are not implemented.
+An unknown diagnostic is not treated as proof of a particular policy failure.
+OAuth error identifiers control device polling; numeric STS codes only refine
+diagnostic advice and never trigger automatic grant switching or token deletion.
+No extra permissions are requested to resolve these errors.
+
+The displayed **Configured tenant/selector (not a verified tenant ID)** comes
+from `auth.tenant_id`. In particular, `common`, `organizations` and `consumers`
+are selectors, not the actual directory used for sign-in. The client does not
+decode an unverified access token to infer that directory. Have the tenant
+administrator confirm the actual tenant and policy decision in Microsoft Entra
+sign-in logs. Real organizational-tenant acceptance remains a separate task.
+
+See Microsoft's [authentication error reference](https://learn.microsoft.com/en-us/entra/identity-platform/reference-error-codes)
+and the specific [530036 diagnostic](https://login.microsoftonline.com/error?code=530036).
+Do not share authorization codes, tokens or full callback URLs when reporting
+an authentication problem.
+
+## Troubleshooting
+
 If Microsoft reports that the account is unsupported, verify the selected
 **Supported account types** and use `consumers` for personal-only
 registrations or `common` for combined personal and organizational

@@ -327,6 +327,14 @@ GUI 集成测试只使用本地 loopback 连接。
 验证生产适配器确实执行归约器命令，并跨 `CURLE_AGAIN` 保留分片文本；
 无需网络或真实浏览器。
 
+认证诊断回归位于 `device_auth_tests`：覆盖四个 HTTP 错误入口、建议分类及 OAuth
+别名、缺失／空说明、有符号／无符号数值边界、畸形元数据，以及不依赖 STS 数字码
+的轮询控制。`auth_code_tests` 检查回调错误白名单，并验证错误 state 不泄露回调
+详情。`app_authentication_tests` 通过现有诊断日志核查 CLI 两种输出模式下的请求
+和轮询失败；`gui_login_tests` 核查共享格式化及 UI 线程完成信号。
+`graph_retry_tests` 验证授权失效和服务暂时不可用时的类型化刷新错误及凭据保留。
+这些均为离线回归，不能代替真实组织租户的策略验收。
+
 ```bash
 cmake --build build/debug --target auth_code_tests auth_code_typestate_tests auth_code_failure_tests browser_request_tests gui_login_tests monitor_socket_tests monitor_socket_transport_tests monitor_notify_tests
 ctest --test-dir build/debug -R '^(auth_code_tests|auth_code_typestate_tests|auth_code_failure_tests|browser_request_tests|gui_login_tests|monitor_socket_tests|monitor_socket_transport_tests|monitor_notify_tests)$' --output-on-failure

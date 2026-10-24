@@ -71,6 +71,9 @@ int test_success() {
              callback + "&error=a&error=b",
              std::string{"http://localhost:54321/callback?state="} +
                  wrong_state + "&code=a",
+             std::string{"http://localhost:54321/callback?state="} +
+                 wrong_state +
+                 "&error=consent_required&error_description=description-secret",
              callback + "&code=a#fragment",
              callback + "&code=" + std::string(8192, 'x'),
              std::string{"http://localhost:54321/wrong?state="} + state +
@@ -81,8 +84,12 @@ int test_success() {
                  "&code=a",
              std::string{"http://localhost:54321/callback?state=wrong&code=a"},
          }) {
-        if (session.accept_callback(invalid) ||
-            session.state() != auth::AuthCodeState::awaiting_callback) {
+        const auto rejected = session.accept_callback(invalid);
+        if (rejected ||
+            session.state() != auth::AuthCodeState::awaiting_callback ||
+            !rejected.error().oauth_error.empty() ||
+            auth::describe_error(rejected.error())
+                .contains("description-secret")) {
             return test::fail("invalid callback consumed the core session");
         }
     }
@@ -225,18 +232,31 @@ int test_terminal_states() {
             );
         }
     }
-    for (const std::string error : {"access_denied", "server_error"}) {
+    for (const std::string error :
+         {"access_denied",
+          "server_error",
+          "interaction_required",
+          "login_required",
+          "consent_required",
+          "temporarily_unavailable",
+          "callback-secret"}) {
         auth::AuthCodeSession session{options()};
         const auto url = session.begin("http://localhost:12345/");
         const auto denied = session.accept_callback(
             "http://localhost:12345/?state=" + parameter(*url, "state") +
-            "&error=" + error
+            "&error=" + error + "&error_description=description-secret"
         );
         if (denied || session.state() != auth::AuthCodeState::failed ||
             denied.error().code !=
                 (error == "access_denied"
                      ? auth::AuthErrorCode::authorization_declined
-                     : auth::AuthErrorCode::server)) {
+                     : auth::AuthErrorCode::server) ||
+            denied.error().configured_tenant != "common" ||
+            denied.error().oauth_error !=
+                (error == "callback-secret" ? std::string{} : error) ||
+            auth::describe_error(denied.error()).contains("callback-secret") ||
+            auth::describe_error(denied.error())
+                .contains("description-secret")) {
             return test::fail(
                 "core failed to terminate on authorization server rejection"
             );

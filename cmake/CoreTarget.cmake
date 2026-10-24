@@ -48,6 +48,7 @@ add_library(onedrive_core
     src/util/private_file.cpp
     src/account/account_state.cpp
     src/auth/device_auth.cpp
+    src/auth/error.cpp
     src/auth/auth_code.cpp
     src/auth/token_store.cpp
     src/ui/common/observer.cpp

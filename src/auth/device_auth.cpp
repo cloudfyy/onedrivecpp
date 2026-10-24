@@ -2,6 +2,7 @@
 
 #include "util/uri.hpp"
 #include "auth/options.hpp"
+#include "auth/error.hpp"
 #include "http/status.hpp"
 
 #include <nlohmann/json.hpp>
@@ -91,14 +92,6 @@ AuthResult<http::HttpResponse> post_form(
     return *std::move(response);
 }
 
-std::string error_description(const Json& response, std::string_view fallback) {
-    if (const auto iterator = response.find("error_description");
-        iterator != response.end() && iterator->is_string()) {
-        return iterator->get<std::string>();
-    }
-    return std::string{fallback};
-}
-
 AuthResult<OAuthTokens> parse_tokens(
     const Json& response,
     std::string fallback_refresh_token = {}
@@ -182,10 +175,9 @@ DeviceAuthClient::request_device_code(const std::stop_token& stop_token) const {
         return std::unexpected(json.error());
     }
     if (!http::status::is_success(response->status_code)) {
-        return std::unexpected(AuthError{
-            .code = AuthErrorCode::server,
-            .message = error_description(*json, "device authorization request failed"),
-        });
+        return std::unexpected(detail::server_error(
+            *json, "device authorization request failed", options_.tenant_id
+        ));
     }
 
     try {
@@ -287,7 +279,13 @@ AuthResult<OAuthTokens> DeviceAuthClient::poll_for_token(
             return parse_tokens(*json);
         }
 
-        const std::string error = json->value("error", "");
+        auto failure = detail::server_error(
+            *json, "token request failed", options_.tenant_id
+        );
+        if (failure.code == AuthErrorCode::invalid_response) {
+            return std::unexpected(std::move(failure));
+        }
+        const auto& error = failure.oauth_error;
         if (error == "authorization_pending") {
             spdlog::trace("Microsoft device authorization remains pending");
             continue;
@@ -302,21 +300,16 @@ AuthResult<OAuthTokens> DeviceAuthClient::poll_for_token(
             continue;
         }
         if (error == "authorization_declined") {
-            return std::unexpected(AuthError{
-                .code = AuthErrorCode::authorization_declined,
-                .message = "authorization was declined by the user",
-            });
+            failure.code = AuthErrorCode::authorization_declined;
+            failure.message = "authorization was declined by the user";
+            return std::unexpected(std::move(failure));
         }
         if (error == "expired_token") {
-            return std::unexpected(AuthError{
-                .code = AuthErrorCode::expired,
-                .message = "device authorization code expired",
-            });
+            failure.code = AuthErrorCode::expired;
+            failure.message = "device authorization code expired";
+            return std::unexpected(std::move(failure));
         }
-        return std::unexpected(AuthError{
-            .code = AuthErrorCode::server,
-            .message = error_description(*json, "token request failed"),
-        });
+        return std::unexpected(std::move(failure));
     }
 
     return std::unexpected(AuthError{
@@ -356,10 +349,9 @@ AuthResult<OAuthTokens> DeviceAuthClient::refresh_access_token(
         return std::unexpected(json.error());
     }
     if (!http::status::is_success(response->status_code)) {
-        return std::unexpected(AuthError{
-            .code = AuthErrorCode::server,
-            .message = error_description(*json, "refresh token request failed"),
-        });
+        return std::unexpected(detail::server_error(
+            *json, "refresh token request failed", options_.tenant_id
+        ));
     }
     return parse_tokens(*json, refresh_token);
 }
@@ -408,14 +400,9 @@ AuthResult<OAuthTokens> DeviceAuthClient::exchange_authorization_code(
         return std::unexpected(json.error());
     }
     if (!http::status::is_success(response->status_code)) {
-        return std::unexpected(
-            AuthError{
-                .code = AuthErrorCode::server,
-                .message = error_description(
-                    *json, "authorization code exchange failed"
-                ),
-            }
-        );
+        return std::unexpected(detail::server_error(
+            *json, "authorization code exchange failed", options_.tenant_id
+        ));
     }
     return parse_tokens(*json);
 }

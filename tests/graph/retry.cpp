@@ -33,40 +33,62 @@ int test_missing_authentication() {
 }
 
 int test_refresh_token_failure_is_reported_by_graph_client() {
-    auto transport = std::make_unique<FakeTransport>(
-        std::deque<onedrive::http::HttpResult>{
-            json_response(
-                400,
-                R"({"error":"invalid_grant","error_description":"refresh token has expired"})"
-            ),
-        }
-    );
-    auto* transport_pointer = transport.get();
-    auto token_store =
-        std::make_unique<FakeTokenStore>(std::string{"expired-refresh"});
-    auto* token_store_pointer = token_store.get();
-    onedrive::graph::MicrosoftGraphClient client{
-        wrap_transport(std::move(transport)),
-        wrap_token_store(std::move(token_store)),
-        auth_options(),
+    struct Case {
+        const char* body;
+        const char* description;
+        const char* diagnostic;
+        const char* advice;
     };
+    for (const auto& scenario :
+         {Case{
+              R"({"error":"invalid_grant","error_description":"refresh token has expired","error_codes":[700082]})",
+              "refresh token has expired",
+              "AADSTS700082",
+              "does not automatically remove"
+          },
+          Case{
+              R"({"error":"temporarily_unavailable","error_description":"temporary authentication outage","error_codes":[65001]})",
+              "temporary authentication outage",
+              "AADSTS65001",
+              "Try again later"
+          }}) {
+        auto transport = std::make_unique<FakeTransport>(
+            std::deque<onedrive::http::HttpResult>{
+                json_response(400, scenario.body),
+            }
+        );
+        auto* transport_pointer = transport.get();
+        auto token_store =
+            std::make_unique<FakeTokenStore>(std::string{"expired-refresh"});
+        auto* token_store_pointer = token_store.get();
+        onedrive::graph::MicrosoftGraphClient client{
+            wrap_transport(std::move(transport)),
+            wrap_token_store(std::move(token_store)),
+            auth_options(),
+        };
 
-    try {
-        static_cast<void>(client.list_root());
-        return fail("an expired Graph refresh token was accepted");
-    } catch (const std::runtime_error& error) {
-        if (!std::string{error.what()}.contains(
-                "cannot refresh Microsoft access token"
-            ) ||
-            !std::string{error.what()}.contains("refresh token has expired")) {
-            return fail("Graph refresh failure lost its actionable error");
+        try {
+            static_cast<void>(client.list_root());
+            return fail("an expired Graph refresh token was accepted");
+        } catch (const onedrive::graph::AccountAuthenticationError& error) {
+            if (!std::string{error.what()}.contains(
+                    "cannot refresh Microsoft access token"
+                ) ||
+                !std::string{error.what()}.contains(scenario.description) ||
+                !std::string{error.what()}.contains(scenario.diagnostic) ||
+                !std::string{error.what()}.contains(scenario.advice)) {
+                return fail("Graph refresh failure lost its actionable error");
+            }
         }
-    }
-    if (transport_pointer->queued.requests.size() != 1 ||
-        transport_pointer->queued.requests.front().method !=
-            onedrive::http::HttpMethod::post ||
-        token_store_pointer->saved_tokens.size() != 0) {
-        return fail("Graph refresh failure continued or changed saved tokens");
+        if (transport_pointer->queued.requests.size() != 1 ||
+            transport_pointer->queued.requests.front().method !=
+                onedrive::http::HttpMethod::post ||
+            token_store_pointer->saved_tokens.size() != 0 ||
+            token_store_pointer->load_refresh_token() != "expired-refresh") {
+            return fail(
+                "Graph refresh failure continued or changed saved tokens"
+            );
+        }
     }
     return EXIT_SUCCESS;
 }

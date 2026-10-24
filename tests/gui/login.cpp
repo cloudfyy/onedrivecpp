@@ -296,9 +296,16 @@ std::filesystem::path write_config(const std::filesystem::path& directory) {
 int test_controller() {
     test::TemporaryDirectory temporary;
     const auto file = write_config(temporary.path());
-    for (const int outcome : {0, 1, 2, 3}) {
+    const auth::AuthError diagnostic{
+        .code = auth::AuthErrorCode::server,
+        .message = "organization rejected sign-in",
+        .oauth_error = "invalid_grant",
+        .server_error_codes = {530036},
+        .configured_tenant = "organizations",
+    };
+    for (const int outcome : {0, 1, 2, 3, 4}) {
         gui::LoginController controller{
-            [outcome](
+            [outcome, diagnostic](
                 const config::Config&, const auto&, std::stop_token token
             ) -> auth::AuthResult<app::AuthenticationResult> {
                 if (outcome == 0) {
@@ -306,6 +313,9 @@ int test_controller() {
                 }
                 if (outcome == 1) {
                     throw std::runtime_error{"test login failure"};
+                }
+                if (outcome == 4) {
+                    return std::unexpected(diagnostic);
                 }
                 while (!token.stop_requested()) {
                     QThread::msleep(1);
@@ -319,6 +329,7 @@ int test_controller() {
             }
         };
         bool finished = false;
+        bool finished_on_ui_thread = false;
         QString error;
         bool cancelled = false;
         QObject::connect(
@@ -326,6 +337,8 @@ int test_controller() {
             &gui::LoginController::finished,
             [&](QString message, bool stopped) {
                 finished = true;
+                finished_on_ui_thread =
+                    QThread::currentThread() == controller.thread();
                 error = message;
                 cancelled = stopped;
             }
@@ -337,12 +350,17 @@ int test_controller() {
             )) {
             return test::fail("login controller accepted concurrent starts");
         }
-        if (outcome >= 2) {
+        if (outcome == 2 || outcome == 3) {
             controller.cancel();
         }
+        const auto expected_error =
+            outcome == 4
+                ? QString::fromStdString(auth::describe_error(diagnostic))
+            : outcome == 1 ? QString{"test login failure"}
+                           : QString{};
         if (!wait_until([&] { return finished; }) || controller.running() ||
-            cancelled != (outcome == 2) ||
-            (outcome == 1 ? error != "test login failure" : !error.isEmpty())) {
+            !finished_on_ui_thread || cancelled != (outcome == 2) ||
+            error != expected_error) {
             return test::fail(
                 "login controller did not complete on the UI thread with the "
                 "expected outcome"

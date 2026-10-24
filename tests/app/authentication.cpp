@@ -49,6 +49,79 @@ authorize_browser(onedrive::auth::AuthCodeSession& session) {
     );
 }
 
+int test_enterprise_authentication_diagnostics() {
+    for (const auto* output : {"text", "json"}) {
+        for (const std::string stage : {"devicecode", "token"}) {
+            CliFixture fixture;
+            if (fixture.authenticate().exit_code !=
+                onedrive::exit_code::success) {
+                return fail(
+                    "diagnostic test could not establish existing credentials"
+                );
+            }
+            const auto token_directory =
+                onedrive::account::AccountState::active_token_directory(
+                    fixture.state_path
+                );
+            unsigned int requests = 0;
+            fixture.runtime_factory.authentication_response_override =
+                [&](
+                    const onedrive::http::HttpRequest& request
+                ) -> std::optional<onedrive::http::HttpResult> {
+                ++requests;
+                if (request.url.ends_with("/" + stage)) {
+                    return onedrive::http::HttpResponse{
+                        .status_code = 400,
+                        .body =
+                            R"({"error":"invalid_grant","error_description":"organization consent needed","error_codes":[90094],"claims":"claims-secret"})",
+                    };
+                }
+                if (stage == "token" && request.url.ends_with("/devicecode")) {
+                    return std::nullopt;
+                }
+                throw std::logic_error{
+                    "failed sign-in continued with another request"
+                };
+            };
+            const auto result = run_application(
+                fixture.runtime_factory,
+                {"onedrive-cpp",
+                 "account",
+                 "login",
+                 "--config",
+                 fixture.config_path.string(),
+                 "--ui",
+                 "console",
+                 "--output",
+                 output}
+            );
+            const auto messages = onedrive::test::read_file(fixture.log_path);
+            if (result.exit_code == onedrive::exit_code::success ||
+                !messages.contains("AADSTS90094") ||
+                !messages.contains("Administrator consent is required") ||
+                !messages.contains("not a verified tenant ID") ||
+                !messages.contains(
+                    stage == "token"
+                        ? "Microsoft device authorization failed"
+                        : "Microsoft device authorization request failed"
+                ) ||
+                requests != (stage == "token" ? 2U : 1U) ||
+                messages.contains("claims-secret") ||
+                onedrive::account::AccountState::active_token_directory(
+                    fixture.state_path
+                ) != token_directory ||
+                onedrive::test::read_file(token_directory / "refresh_token") !=
+                    "refresh-token") {
+                return fail(
+                    "CLI lost enterprise advice or modified existing "
+                    "credentials"
+                );
+            }
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
 int test_auth_code_authentication() {
     CliFixture fixture;
     const auto config = onedrive::config::Config::load(fixture.config_path);
@@ -661,7 +734,7 @@ int test_identity_cancellation_and_failures() {
 } // namespace
 
 int main() {
-    onedrive::test::ScenarioProgress progress{5};
+    onedrive::test::ScenarioProgress progress{6};
     if (progress.run(
             "shared_credentials_and_runtime_lock",
             test_shared_credentials_and_runtime_lock
@@ -678,6 +751,10 @@ int main() {
         progress.run(
             "identity_cancellation_and_failures",
             test_identity_cancellation_and_failures
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "enterprise_authentication_diagnostics",
+            test_enterprise_authentication_diagnostics
         ) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }

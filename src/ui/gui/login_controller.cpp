@@ -290,7 +290,9 @@ void LoginController::start(const std::filesystem::path& config_file) {
                 if (!result) {
                     cancelled =
                         result.error().code == auth::AuthErrorCode::cancelled;
-                    error = QString::fromStdString(result.error().message);
+                    error = QString::fromStdString(
+                        auth::describe_error(result.error())
+                    );
                 }
             } catch (const std::exception& exception) {
                 error = QString::fromUtf8(exception.what());
