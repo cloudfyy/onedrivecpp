@@ -1,6 +1,7 @@
 #include "onedrive/graph/graph_client.hpp"
 #include "graph/support.hpp"
 #include "graph/delta_changes.hpp"
+#include "graph/delta_hierarchy.hpp"
 
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
@@ -24,6 +25,7 @@
 #include <limits>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string_view>
 #include <thread>
@@ -47,6 +49,9 @@ DeltaResult MicrosoftGraphClient::list_delta(
         throw RequestCancelledError{"Microsoft Graph delta request cancelled"};
     }
     const auto token = access_token(stop_token);
+    const auto validation = options_.relaxed_download_validation
+                                ? ContentValidation::relaxed
+                                : ContentValidation::strict;
 
     std::string next_url;
     if (delta_link) {
@@ -134,58 +139,11 @@ DeltaResult MicrosoftGraphClient::list_delta(
                         "Microsoft Graph delta request cancelled"
                     };
                 }
-                RemoteItem item{};
-                item.validate_content =
-                    !options_.relaxed_download_validation;
-                item.id = value.at("id").get<std::string>();
-                item.deleted = value.contains("deleted");
-                if (item.id.empty()) {
-                    throw std::runtime_error(
-                        "Microsoft Graph returned a delta item with an empty ID"
-                    );
-                }
+                auto item = parse_delta_item(value, validation);
                 hash_metadata.erase(item.id);
-                if (!item.deleted) {
-                    const auto unsupported = item_unsupported_format(value);
-                    if (unsupported) {
-                        item.unsupported_format = unsupported->format_id;
-                    }
-                    item.name = value.at("name").get<std::string>();
-                    if (const auto etag = value.find("eTag");
-                        etag != value.end()) {
-                        if (!etag->is_string()) {
-                            throw std::runtime_error(
-                                "Microsoft Graph returned a delta item with an "
-                                "invalid eTag"
-                            );
-                        }
-                        item.etag = etag->get<std::string>();
-                    }
-                    item.ctag = item_ctag(value);
-                    item.directory = value.contains("folder") ||
-                                     (unsupported && unsupported->package);
-                    item.root = value.contains("root");
-                    if (!item.root) {
-                        item.remote_path = item_remote_path(value, item.name);
-                    }
-                    if (const auto parent = value.find("parentReference");
-                        parent != value.end() && parent->is_object()) {
-                        if (const auto parent_id = parent->find("id");
-                            parent_id != parent->end() && parent_id->is_string()) {
-                            item.parent_id = parent_id->get<std::string>();
-                        }
-                    }
-                    if (auto modified = authoritative_last_modified(value);
-                        modified.has_value()) {
-                        item.last_modified = std::move(modified.value());
-                    }
-                    if (const auto size = value.find("size");
-                        size != value.end() && size->is_number_integer()) {
-                        item.size = size->get<std::int64_t>();
-                    }
+                if (!item.deleted && item.unsupported_format.empty()) {
                     if (const auto file = value.find("file");
-                        file != value.end() &&
-                        item.unsupported_format.empty()) {
+                        file != value.end()) {
                         hash_metadata.emplace(
                             item.id,
                             Json{
@@ -193,13 +151,6 @@ DeltaResult MicrosoftGraphClient::list_delta(
                                 {"name", item.name},
                                 {"file", *file}
                             }
-                        );
-                    }
-                    item.malware = item_is_malware(value);
-                    if (item.name.empty() ||
-                        (!item.root && item.remote_path.empty()) || item.size < 0) {
-                        throw std::runtime_error(
-                            "Microsoft Graph returned a delta item with invalid metadata"
                         );
                     }
                 }
@@ -258,13 +209,16 @@ DeltaResult MicrosoftGraphClient::list_delta(
         }
     }
 
-    result.changes = std::move(changes).release();
-    resolve_unsupported_ancestry(
-        result.changes,
-        known_directories,
-        [&](const std::string& id) { return ancestor_by_id(id, stop_token); },
-        stop_token
-    );
+    result.changes =
+        DeltaHierarchyResolver{
+            std::move(changes).release(),
+            known_directories,
+            [&](const std::string& id) {
+                return ancestor_by_id(id, stop_token);
+            },
+            stop_token
+        }
+            .resolve();
     for (auto& item : result.changes) {
         if (item.deleted || !item.unsupported_format.empty()) {
             continue;
@@ -277,12 +231,7 @@ DeltaResult MicrosoftGraphClient::list_delta(
         }
         if (const auto metadata = hash_metadata.find(item.id);
             metadata != hash_metadata.end()) {
-            item.content_hash = item_content_hash(
-                metadata->second,
-                options_.relaxed_download_validation
-                    ? ContentValidation::relaxed
-                    : ContentValidation::strict
-            );
+            item.content_hash = item_content_hash(metadata->second, validation);
         }
     }
     spdlog::info(

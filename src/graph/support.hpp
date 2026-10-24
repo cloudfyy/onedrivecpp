@@ -260,6 +260,8 @@ http::HttpResult perform_with_retries(
     const Json& value,
     const std::string& name
 );
+[[nodiscard]] std::optional<std::string>
+item_remote_path_hint(const Json& value, const std::string& name);
 [[nodiscard]] std::optional<std::string> file_system_last_modified(
     const Json& value,
     std::string_view description
@@ -297,6 +299,8 @@ enum class ContentValidation {
     relaxed,
 };
 
+[[nodiscard]] RemoteItem
+parse_delta_item(const Json& value, ContentValidation validation);
 [[nodiscard]] std::optional<util::FileHash> item_content_hash(
     const Json& value, ContentValidation validation = ContentValidation::strict
 );

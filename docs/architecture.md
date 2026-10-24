@@ -102,6 +102,33 @@ typed account authentication errors escape immediately. Monitor keeps one
 control endpoint and scheduler, with independent notification state machines
 for all configured Drives.
 
+## Delta hierarchy
+
+Personal and Business use the same private `DeltaHierarchyResolver`.
+The `parse_delta_item` Data Mapper normalizes both response shapes into
+`RemoteItem`, leaving absent cTags optional and deferring content-hash validation
+until ancestry is known. Present size fields must be integral; invalid types
+fail instead of silently becoming zero. The resolver composes metadata-driven
+root, parent-ID, and explicit-path strategies rather than selecting an account-specific engine
+or inferring capabilities from Drive type. Ancestor lookup is injected; network
+access, OAuth, pagination, and persistence remain outside the resolver.
+
+Delta collects all pages and keeps the last occurrence of each item ID before
+resolving paths. Current parent IDs take precedence over saved directory paths
+and optional path hints. The resolver reuses the saved directory tree and fetches
+missing ancestors by ID once per batch; it never treats a missing parent path as
+proof that an item is at the root. Explicit legacy paths remain anchors when
+parent metadata is unavailable. Cycles, invalid ancestors, and cancellation
+abort the batch without advancing its applied cursor.
+
+This follows the [Graph Delta contract](https://learn.microsoft.com/en-us/graph/api/driveitem-delta?view=graph-rest-1.0#remarks):
+parent paths can be omitted, Business responses omit cTag, and directory renames
+need not return descendants. Missing cTags stay empty. For unchanged tracked
+descendants, the most specific moved directory determines the new path, so
+nested renames do not depend on Delta order. Resolved batches use the existing
+SQLite pending-Delta recovery mechanism; no schema or configuration migration
+is required. Simulated Business responses do not replace real-tenant acceptance.
+
 ## Presentation boundary
 
 Synchronization, upload, and Delta publish typed `events::Event` values through

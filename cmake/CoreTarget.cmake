@@ -57,6 +57,7 @@ add_library(onedrive_core
     src/graph/graph_client.cpp
     src/graph/notification.cpp
     src/graph/delta.cpp
+    src/graph/delta_hierarchy.cpp
     src/graph/discovery.cpp
     src/graph/download.cpp
     src/graph/drive_ops.cpp

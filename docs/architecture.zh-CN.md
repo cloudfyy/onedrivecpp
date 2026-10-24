@@ -93,6 +93,27 @@ Graph 客户端、状态库、指标、目录租约和预览缓存作用域；�
 单盘错误，强类型的账号认证错误则立即传播。Monitor 保留单一控制端点和调度器，
 为所有配置的 Drive 分别维护通知状态机。
 
+## Delta 目录树
+
+Personal 和 Business 共用私有 `DeltaHierarchyResolver`。`parse_delta_item`
+Data Mapper 将两种响应规范化为 `RemoteItem`，缺失 cTag 保持可选，内容哈希验证
+延迟到祖先关系明确之后。已提供的 size 必须为整数；非法类型明确失败，不静默变成 0。
+解析器按元数据组合根目录、父 ID 和显式路径策略，
+不按账号类型建立独立引擎，也不从 Drive 类型猜测能力。祖先查询通过依赖注入提供；
+网络访问、OAuth、分页和持久化仍留在解析器之外。
+
+Delta 收齐所有分页并按 item ID 保留最后一次记录后，再解析路径。当前父目录 ID
+关系优先于已保存目录路径和可选路径提示；解析器复用已保存目录树，缺失祖先时按 ID
+查询，同一批次只查询一次。不再把缺少父路径当成条目位于根目录的证明；父目录元数据
+不完整时，显式的旧版路径仍可作为锚点。循环关系、非法祖先及取消会中止本批次，
+不推进已应用游标。
+
+这遵循 [Graph Delta 协议](https://learn.microsoft.com/en-us/graph/api/driveitem-delta?view=graph-rest-1.0#remarks)：
+父路径可能缺失，Business 响应省略 cTag，目录改名也不保证返回后代。缺失 cTag
+保持为空；未出现在 Delta 中的已跟踪后代，按最具体的已移动目录更新路径，避免嵌套
+改名受 Delta 顺序影响。解析后的批次沿用 SQLite pending-Delta 恢复机制，无需迁移
+数据库或配置。模拟 Business 响应不替代真实租户验收。
+
 ## 界面输出边界
 
 同步、上传和 Delta 通过核心层的 `events::Observer` 发布强类型 `events::Event`。

@@ -267,19 +267,24 @@ bool wait_for_retry(
 }
 
 std::string item_remote_path(const Json& value, const std::string& name) {
+    return item_remote_path_hint(value, name).value_or(name);
+}
+
+std::optional<std::string>
+item_remote_path_hint(const Json& value, const std::string& name) {
     const auto parent = value.find("parentReference");
     if (parent == value.end() || !parent->is_object()) {
-        return name;
+        return std::nullopt;
     }
     const auto path = parent->find("path");
     if (path == parent->end() || !path->is_string()) {
-        return name;
+        return std::nullopt;
     }
 
     const std::string parent_path = path->get<std::string>();
     const auto root_marker = parent_path.find("root:");
     if (root_marker == std::string::npos) {
-        return name;
+        return std::nullopt;
     }
     std::string relative_parent = parent_path.substr(root_marker + 5);
     while (relative_parent.starts_with('/')) {
@@ -562,6 +567,67 @@ void mark_unsupported_descendants(
     }
 }
 
+RemoteItem parse_delta_item(const Json& value, ContentValidation validation) {
+    RemoteItem item{};
+    item.validate_content = validation == ContentValidation::strict;
+    item.id = value.at("id").get<std::string>();
+    item.deleted = value.contains("deleted");
+    if (item.id.empty()) {
+        throw std::runtime_error{
+            "Microsoft Graph returned a delta item with an empty ID"
+        };
+    }
+    if (item.deleted) {
+        return item;
+    }
+    const auto unsupported = item_unsupported_format(value);
+    if (unsupported) {
+        item.unsupported_format = unsupported->format_id;
+    }
+    item.name = value.at("name").get<std::string>();
+    if (const auto etag = value.find("eTag"); etag != value.end()) {
+        if (!etag->is_string()) {
+            throw std::runtime_error{
+                "Microsoft Graph returned a delta item with an invalid eTag"
+            };
+        }
+        item.etag = etag->get<std::string>();
+    }
+    item.ctag = item_ctag(value);
+    item.root = value.contains("root");
+    item.directory = item.root || value.contains("folder") ||
+                     (unsupported && unsupported->package);
+    if (!item.root) {
+        item.remote_path =
+            item_remote_path_hint(value, item.name).value_or(std::string{});
+    }
+    if (const auto parent = value.find("parentReference");
+        parent != value.end() && parent->is_object()) {
+        if (const auto id = parent->find("id");
+            id != parent->end() && id->is_string()) {
+            item.parent_id = id->get<std::string>();
+        }
+    }
+    if (auto modified = authoritative_last_modified(value); modified) {
+        item.last_modified = std::move(*modified);
+    }
+    if (const auto size = value.find("size"); size != value.end()) {
+        if (!size->is_number_integer()) {
+            throw std::runtime_error{
+                "Microsoft Graph returned a delta item with an invalid size"
+            };
+        }
+        item.size = size->get<std::int64_t>();
+    }
+    item.malware = item_is_malware(value);
+    if (item.name.empty() || item.size < 0) {
+        throw std::runtime_error{
+            "Microsoft Graph returned a delta item with invalid metadata"
+        };
+    }
+    return item;
+}
+
 RemoteItem parse_item_ancestry(const Json& json) {
     try {
         const auto unsupported = item_unsupported_format(json);
@@ -587,7 +653,8 @@ RemoteItem parse_item_ancestry(const Json& json) {
             }
         }
         if (!item.root) {
-            item.remote_path = item_remote_path(json, item.name);
+            item.remote_path =
+                item_remote_path_hint(json, item.name).value_or(std::string{});
         }
         if (item.id.empty() || item.name.empty() || item.deleted) {
             throw std::runtime_error{

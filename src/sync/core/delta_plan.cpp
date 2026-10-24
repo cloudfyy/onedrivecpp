@@ -8,6 +8,7 @@
 #include <iterator>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -136,7 +137,11 @@ void add_moved_descendants(
         changed_ids.insert(item.id);
     }
 
-    std::vector<graph::RemoteItem> descendants;
+    struct DirectoryMove {
+        std::string_view old_path;
+        std::string_view new_path;
+    };
+    std::vector<DirectoryMove> moves;
     for (const auto& change : delta.changes) {
         if (change.deleted || !change.directory) {
             continue;
@@ -150,17 +155,27 @@ void add_moved_descendants(
             previous->remote_path == change.remote_path) {
             continue;
         }
-        for (const auto& item : tracked) {
-            if (changed_ids.contains(item.remote_id) ||
-                !detail::remote_path_is_descendant(
-                    item.remote_path,
-                    previous->remote_path
-                )) {
-                continue;
+        moves.push_back({previous->remote_path, change.remote_path});
+    }
+    std::vector<graph::RemoteItem> descendants;
+    for (const auto& item : tracked) {
+        if (changed_ids.contains(item.remote_id)) {
+            continue;
+        }
+        const DirectoryMove* nearest = nullptr;
+        for (const auto& move : moves) {
+            if (detail::remote_path_is_descendant(
+                    item.remote_path, move.old_path
+                ) &&
+                (!nearest || move.old_path.size() > nearest->old_path.size())) {
+                nearest = &move;
             }
+        }
+        if (nearest) {
+            // A nested rename overrides an enclosing directory's move.
             auto remote_path =
-                change.remote_path +
-                item.remote_path.substr(previous->remote_path.size());
+                std::string{nearest->new_path} +
+                item.remote_path.substr(nearest->old_path.size());
             descendants.push_back({
                 .id = item.remote_id,
                 .name = item.name,
@@ -173,7 +188,6 @@ void add_moved_descendants(
                 .directory = item.directory,
                 .content_hash = std::nullopt,
             });
-            changed_ids.insert(item.remote_id);
         }
     }
     delta.changes.insert(
