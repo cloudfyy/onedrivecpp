@@ -208,7 +208,7 @@ public:
                     if (util::path_contains(root, path)) {
                         add_tree(path);
                     } else {
-                        add_watch(path);
+                        add_watch(path, true);
                     }
                 }
                 if ((event->mask &
@@ -244,13 +244,25 @@ public:
     }
 
 private:
-    void add_watch(const std::filesystem::path& path) {
+    static bool is_missing_directory_error(
+        const std::error_code& error
+    ) noexcept {
+        return error == std::errc::no_such_file_or_directory ||
+               error == std::errc::not_a_directory;
+    }
+
+    bool add_watch(
+        const std::filesystem::path& path, bool allow_missing = false
+    ) {
         const int watch = ::inotify_add_watch(
             descriptor_.get(),
             path.c_str(),
             watch_mask
         );
         if (watch < 0) {
+            if (allow_missing && (errno == ENOENT || errno == ENOTDIR)) {
+                return false;
+            }
             std::string message =
                 "cannot monitor directory '" + path.string() + "'";
             if (errno == ENOSPC) {
@@ -265,57 +277,77 @@ private:
             };
         }
         paths_[watch] = path;
+        return true;
     }
 
     void add_tree(const std::filesystem::path& root) {
-        std::error_code error;
-        const auto status = std::filesystem::symlink_status(root, error);
-        if (error) {
-            if (error == std::errc::no_such_file_or_directory) {
-                return;
-            }
-            throw std::system_error{
-                error,
-                "cannot inspect monitor directory '" + root.string() + "'"
-            };
-        }
-        if (!std::filesystem::is_directory(status) ||
-            std::filesystem::is_symlink(status)) {
-            return;
-        }
-        add_watch(root);
+        std::vector<std::filesystem::path> pending{root};
+        while (!pending.empty()) {
+            const auto current = std::move(pending.back());
+            pending.pop_back();
 
-        std::filesystem::recursive_directory_iterator iterator{
-            root,
-            std::filesystem::directory_options::none,
-            error
-        };
-        if (error) {
-            throw std::system_error{
-                error,
-                "cannot enumerate monitor directory '" + root.string() + "'"
+            std::error_code error;
+            const auto status = std::filesystem::symlink_status(current, error);
+            if (error) {
+                if (is_missing_directory_error(error)) {
+                    continue;
+                }
+                throw std::system_error{
+                    error,
+                    "cannot inspect monitor directory '" + current.string() +
+                        "'"
+                };
+            }
+            if (!std::filesystem::is_directory(status) ||
+                std::filesystem::is_symlink(status)) {
+                continue;
+            }
+            if (!add_watch(current, true)) {
+                continue;
+            }
+
+            std::filesystem::directory_iterator iterator{
+                current,
+                std::filesystem::directory_options::none,
+                error
             };
-        }
-        const std::filesystem::recursive_directory_iterator end;
-        while (iterator != end) {
-            const auto entry_status = iterator->symlink_status(error);
             if (error) {
+                if (is_missing_directory_error(error)) {
+                    continue;
+                }
                 throw std::system_error{
                     error,
-                    "cannot inspect monitor path '" +
-                        iterator->path().string() + "'"
+                    "cannot enumerate monitor directory '" + current.string() +
+                        "'"
                 };
             }
-            if (!std::filesystem::is_symlink(entry_status) &&
-                std::filesystem::is_directory(entry_status)) {
-                add_watch(iterator->path());
-            }
-            iterator.increment(error);
-            if (error) {
-                throw std::system_error{
-                    error,
-                    "cannot continue monitor directory enumeration"
-                };
+            const std::filesystem::directory_iterator end;
+            while (iterator != end) {
+                const auto entry_path = iterator->path();
+                const auto entry_status = iterator->symlink_status(error);
+                if (error) {
+                    if (!is_missing_directory_error(error)) {
+                        throw std::system_error{
+                            error,
+                            "cannot inspect monitor path '" +
+                                entry_path.string() + "'"
+                        };
+                    }
+                    error.clear();
+                } else if (!std::filesystem::is_symlink(entry_status) &&
+                           std::filesystem::is_directory(entry_status)) {
+                    pending.push_back(entry_path);
+                }
+                iterator.increment(error);
+                if (error) {
+                    if (is_missing_directory_error(error)) {
+                        break;
+                    }
+                    throw std::system_error{
+                        error,
+                        "cannot continue monitor directory enumeration"
+                    };
+                }
             }
         }
     }
@@ -799,72 +831,78 @@ int Monitor::run_loop(
             }
         }
 
-        for (std::size_t index = 0; index < channels.size(); ++index) {
-            auto& channel = channels[index];
-            if ((descriptors[channel_descriptor_offset + index].revents &
-                 POLLIN) != 0) {
-                for (const auto event : channel.socket->drain()) {
-                    switch (event) {
-                    case detail::SocketEvent::connected:
-                        advance_notification(
-                            channel, detail::NotificationSocketConnectedEvent{}
-                        );
-                        break;
-                    case detail::SocketEvent::notification:
-                        spdlog::debug(
-                            "Graph notification received; requesting Delta "
-                            "synchronization"
-                        );
-                        advance_notification(
-                            channel, detail::RemoteNotificationReceivedEvent{}
-                        );
-                        break;
-                    case detail::SocketEvent::disconnected:
-                        spdlog::warn(
-                            "Notification WebSocket disconnected; using "
-                            "polling mode while retrying notification setup"
-                        );
-                        advance_notification(
-                            channel,
-                            detail::NotificationSocketDisconnectedEvent{
-                                std::chrono::steady_clock::now()
+        const auto drain_channels =
+            [&](const std::vector<pollfd>* polled_descriptors) {
+                for (std::size_t index = 0; index < channels.size(); ++index) {
+                    auto& channel = channels[index];
+                    if (polled_descriptors == nullptr ||
+                        ((*polled_descriptors)
+                             [channel_descriptor_offset + index]
+                                 .revents &
+                         POLLIN) != 0) {
+                        for (const auto event : channel.socket->drain()) {
+                            switch (event) {
+                            case detail::SocketEvent::connected:
+                                advance_notification(
+                                    channel,
+                                    detail::NotificationSocketConnectedEvent{}
+                                );
+                                break;
+                            case detail::SocketEvent::notification:
+                                spdlog::debug(
+                                    "Graph notification received; requesting "
+                                    "Delta synchronization"
+                                );
+                                advance_notification(
+                                    channel,
+                                    detail::RemoteNotificationReceivedEvent{}
+                                );
+                                break;
+                            case detail::SocketEvent::disconnected:
+                                spdlog::warn(
+                                    "Notification WebSocket disconnected; "
+                                    "using polling mode while retrying "
+                                    "notification setup"
+                                );
+                                advance_notification(
+                                    channel,
+                                    detail::NotificationSocketDisconnectedEvent{
+                                        std::chrono::steady_clock::now()
+                                    }
+                                );
+                                break;
                             }
-                        );
-                        break;
+                        }
                     }
-                }
-            }
-            const auto notification_now = std::chrono::steady_clock::now();
-            if (const auto* connecting =
-                    std::get_if<detail::NotificationConnectingState>(
-                        &channel.state
+                    const auto notification_now =
+                        std::chrono::steady_clock::now();
+                    if (const auto* connecting =
+                            std::get_if<detail::NotificationConnectingState>(
+                                &channel.state
+                            );
+                        connecting && notification_now >= connecting->deadline) {
+                        spdlog::warn(
+                            "Notification WebSocket handshake timed out; "
+                            "retrying while Graph polling remains active"
+                        );
+                    }
+                    advance_notification(
+                        channel,
+                        detail::NotificationDeadlineReachedEvent{
+                            notification_now
+                        }
                     );
-                connecting && notification_now >= connecting->deadline) {
-                spdlog::warn(
-                    "Notification WebSocket handshake timed out; retrying "
-                    "while Graph polling remains active"
-                );
-            }
-            advance_notification(
-                channel,
-                detail::NotificationDeadlineReachedEvent{notification_now}
-            );
-        }
-        if (control && control->take_trigger()) {
-            transition = detail::transition_monitor(
-                state, detail::ManualTriggerEvent{}, timing
-            );
-        } else if (notification_sync_requested) {
-            transition = detail::transition_monitor(
-                state, detail::RemoteChangeEvent{}, timing
-            );
-            notification_sync_requested = false;
-        } else {
-            const auto after_events = std::chrono::steady_clock::now();
-            transition = detail::transition_monitor(
-                state, detail::DeadlineReachedEvent{after_events}, timing
-            );
-        }
+                }
+            };
+
+        drain_channels(&descriptors);
+        transition = detail::resolve_poll_events(
+            std::move(state),
+            control && control->take_trigger(),
+            notification_sync_requested,
+            std::chrono::steady_clock::now(),
+            timing
+        );
         state = transition.state;
         if (transition.effect != detail::MonitorEffect::synchronize) {
             continue;
@@ -901,6 +939,14 @@ int Monitor::run_loop(
                             state, detail::ManualTriggerEvent{}, timing
                 )
                             .state;
+            }
+            drain_channels(nullptr);
+            if (notification_sync_requested) {
+                state = detail::transition_monitor(
+                            state, detail::RemoteChangeEvent{}, timing
+                )
+                            .state;
+                notification_sync_requested = false;
             }
             watches.rebuild(root_);
             transition = detail::transition_monitor(

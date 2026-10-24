@@ -3,6 +3,8 @@
 
 #include "onedrive/util/mount.hpp"
 
+#include <sys/stat.h>
+
 namespace {
 
 using namespace onedrive::test::preflight;
@@ -335,6 +337,23 @@ int test_invalid() {
             "symbolic link"
         )) {
         return fail("symbolic-link state directory was accepted");
+    }
+
+    const auto fifo_state = temporary.path() / "fifo-state";
+    std::filesystem::create_directory(fifo_state);
+    std::filesystem::permissions(fifo_state, std::filesystem::perms::owner_all);
+    const auto fifo_marker = fifo_state / "active_account";
+    if (::mkfifo(fifo_marker.c_str(), S_IRUSR | S_IWUSR) != 0) {
+        return fail("could not create FIFO active account marker");
+    }
+    config.state_directory = fifo_state;
+    if (!throws_with(
+            [&] {
+                const RuntimePreflight preflight{config, Operation::config};
+            },
+            "active account marker"
+        )) {
+        return fail("FIFO active account marker was not rejected without blocking");
     }
     return EXIT_SUCCESS;
 }

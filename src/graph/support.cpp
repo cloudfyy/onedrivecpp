@@ -250,6 +250,24 @@ http::HttpResult cancelled_http_result() {
     });
 }
 
+[[nodiscard]] std::chrono::steady_clock::duration
+bounded_steady_wait(std::chrono::seconds delay) noexcept {
+    if (delay <= std::chrono::seconds::zero()) {
+        return std::chrono::steady_clock::duration::zero();
+    }
+    const auto now = std::chrono::steady_clock::now();
+    const auto maximum_wait =
+        (std::chrono::steady_clock::time_point::max() - now) / 2;
+    const auto maximum_seconds =
+        std::chrono::duration_cast<std::chrono::seconds>(maximum_wait);
+    if (delay >= maximum_seconds) {
+        return maximum_wait;
+    }
+    return std::chrono::duration_cast<std::chrono::steady_clock::duration>(
+        delay
+    );
+}
+
 bool wait_for_retry(
     std::chrono::seconds delay,
     const MicrosoftGraphClient::SleepFunction& sleep,
@@ -262,7 +280,12 @@ bool wait_for_retry(
     std::mutex mutex;
     std::condition_variable_any condition;
     std::unique_lock lock{mutex};
-    condition.wait_for(lock, stop_token, delay, [] { return false; });
+    condition.wait_for(
+        lock,
+        stop_token,
+        bounded_steady_wait(delay),
+        [] { return false; }
+    );
     return stop_token.stop_requested();
 }
 

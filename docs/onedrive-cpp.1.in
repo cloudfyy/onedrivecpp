@@ -415,7 +415,8 @@ Microsoft Graph malware facet are rejected. The item snapshot is updated
 without advancing the Drive delta link. With
 .BR \-\-dry\-run ,
 display the resolved remote path, local destination, and expected size without
-creating the item database or changing downloaded files.
+downloading or changing local files (blocked-target diagnostics are still
+recorded in the state database).
 .TP
 .B transfer restore
 Restore missing local files and empty directories from the current cloud
@@ -667,8 +668,8 @@ for one run. Color-disabled output retains the layout without theme colors.
 .B \-\-dry\-run
 For
 .BR download ,
-resolve and display the single-file plan without creating the item database or
-changing downloaded files. For
+resolve and display the single-file plan without downloading or changing local
+files (blocked-target diagnostics are still recorded in the state database). For
 .BR "transfer restore" ,
 preview missing local files and pending cloud deletions to cancel, without
 changing files or sync state. For

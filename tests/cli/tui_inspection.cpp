@@ -216,6 +216,90 @@ int test_inspection_completion() {
             return fail("console or JSON completion was not a no-op");
         }
     }
+    {
+        std::ostringstream output;
+        std::ostringstream error;
+        const Console console{detail::make_ftxui_console_backend(
+            {.color = ColorMode::never,
+             .ui = UiMode::tui,
+             .view = TuiView::files},
+            output,
+            error,
+            100,
+            30
+        )};
+        console.section(
+            "downloaded_file",
+            "Downloaded file:",
+            {{.label = "remote path:",
+              .key = "remote_path",
+              .value = "alpha.txt"}}
+        );
+        console.section(
+            "downloaded_file",
+            "Downloaded file:",
+            {{.label = "remote path:",
+              .key = "remote_path",
+              .value = "beta.txt"}}
+        );
+        console.section(
+            "downloaded_file_summary",
+            "Downloaded file summary:",
+            {{.label = "inspected:", .key = "inspected", .value = "2"}}
+        );
+        std::istringstream input{"n\nq\n"};
+        auto* original = std::cin.rdbuf(input.rdbuf());
+        console.finish();
+        std::cin.rdbuf(original);
+        const auto rendered = output.str();
+        const auto frame = rendered.substr(rendered.rfind("\033[H"));
+        if (!rendered.contains("alpha.txt") ||
+            !frame.contains("[Item 2/2]") || !frame.contains("beta.txt") ||
+            !frame.contains("inspected: 2") ||
+            !frame.contains("Left/Right or n/p: previous/next item")) {
+            return fail(
+                "file inspection TUI overwrote file details with summary"
+            );
+        }
+    }
+    {
+        std::ostringstream output;
+        std::ostringstream error;
+        const Console console{detail::make_ftxui_console_backend(
+            {.color = ColorMode::never,
+             .ui = UiMode::tui,
+             .view = TuiView::config},
+            output,
+            error,
+            100,
+            30
+        )};
+        console.section(
+            "effective_config",
+            "Effective configuration:",
+            {{.label = "config file:",
+              .key = "config_file",
+              .value = "/tmp/config.toml"}}
+        );
+        console.section(
+            "effective_transfer_config",
+            "Effective transfer configuration:",
+            {{.label = "order:", .key = "order", .value = "default"}}
+        );
+        std::istringstream input{"\n"};
+        auto* original = std::cin.rdbuf(input.rdbuf());
+        console.finish();
+        std::cin.rdbuf(original);
+        const auto rendered = output.str();
+        const auto frame = rendered.substr(rendered.rfind("\033[H"));
+        if (!frame.contains("[Item 1/2]") ||
+            !frame.contains("/tmp/config.toml") ||
+            !frame.contains("Left/Right or n/p: previous/next item")) {
+            return fail(
+                "config TUI overwrote initial section before completion"
+            );
+        }
+    }
     return EXIT_SUCCESS;
 }
 

@@ -11,6 +11,7 @@
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
+#include <array>
 #include <cerrno>
 #include <cctype>
 #include <fcntl.h>
@@ -26,18 +27,23 @@ namespace {
 
 constexpr mode_t private_directory_mode = S_IRWXU;
 constexpr mode_t private_file_mode = S_IRUSR | S_IWUSR;
-constexpr std::size_t stable_suffix_hex_characters = 8;
-constexpr std::size_t maximum_friendly_name_bytes = 48;
+constexpr std::size_t legacy_suffix_hex_characters = 8;
+constexpr std::size_t stable_suffix_hex_characters = 16;
+constexpr std::size_t maximum_friendly_name_bytes = 40;
 constexpr std::size_t active_account_marker_buffer_bytes = 256;
 
-std::string stable_suffix(std::string_view value) {
-    return util::sha256_hex(value).substr(0, stable_suffix_hex_characters);
+std::string stable_suffix(
+    std::string_view value,
+    std::size_t hex_characters = stable_suffix_hex_characters
+) {
+    return util::sha256_hex(value).substr(0, hex_characters);
 }
 
 struct FriendlyComponentInput {
     std::string_view display_name;
     std::string_view stable_id;
     std::string_view fallback;
+    std::size_t suffix_hex_characters{stable_suffix_hex_characters};
 };
 
 void validate_identity(const DriveIdentity& identity) {
@@ -51,9 +57,10 @@ void validate_identity(const DriveIdentity& identity) {
 }
 
 std::string friendly_component(FriendlyComponentInput input) {
-    const auto [display_name, stable_id, fallback] = input;
+    const auto [display_name, stable_id, fallback, suffix_hex_characters] =
+        input;
     std::string result;
-    result.reserve(display_name.size() + 2 + stable_suffix_hex_characters);
+    result.reserve(display_name.size() + 2 + suffix_hex_characters);
     bool separator = false;
     for (std::size_t index = 0; index < display_name.size();) {
         const auto character =
@@ -111,24 +118,105 @@ std::string friendly_component(FriendlyComponentInput input) {
     if (result.empty()) {
         result = fallback;
     }
-    return result + "--" + stable_suffix(stable_id);
+    return result + "--" + stable_suffix(stable_id, suffix_hex_characters);
+}
+
+std::optional<std::string> existing_metadata_id(
+    const std::filesystem::path& directory,
+    std::string_view metadata_file,
+    std::string_view metadata_id_key
+) {
+    const auto path = directory / metadata_file;
+    std::error_code error;
+    const auto status = std::filesystem::symlink_status(path, error);
+    if (error || !std::filesystem::is_regular_file(status) ||
+        std::filesystem::is_symlink(status)) {
+        return std::nullopt;
+    }
+    try {
+        const auto metadata = nlohmann::json::parse(
+            util::read_private_file(
+                path,
+                "account metadata",
+                {.required_owner = ::geteuid(),
+                 .exact_permissions = 0600,
+                 .permission_requirement =
+                     "must be readable and writable only by the current user",
+                 .require_single_link = true}
+            )
+        );
+        if (const auto found = metadata.find(metadata_id_key);
+            found != metadata.end() && found->is_string()) {
+            return found->get<std::string>();
+        }
+    } catch (const std::exception&) {
+    }
+    return std::nullopt;
 }
 
 std::filesystem::path stable_directory(
     const std::filesystem::path& parent,
     std::string_view display_name,
     std::string_view stable_id,
-    std::string_view fallback
+    std::string_view fallback,
+    std::string_view metadata_file,
+    std::string_view metadata_id_key
 ) {
-    const std::string suffix = "--" + stable_suffix(stable_id);
+    constexpr std::array<std::size_t, 4> suffix_lengths{
+        stable_suffix_hex_characters,
+        legacy_suffix_hex_characters,
+        32,
+        64,
+    };
     std::error_code error;
     if (std::filesystem::is_directory(parent, error) && !error) {
+        std::optional<std::filesystem::path> unverified_suffix_match;
         for (const auto& entry : std::filesystem::directory_iterator(parent)) {
-            const auto name = entry.path().filename().string();
-            if (name.ends_with(suffix) && entry.is_directory() &&
-                !entry.is_symlink()) {
+            if (!entry.is_directory() || entry.is_symlink()) {
+                continue;
+            }
+            const auto recorded_id = existing_metadata_id(
+                entry.path(), metadata_file, metadata_id_key
+            );
+            if (recorded_id && *recorded_id == stable_id) {
                 return entry.path();
             }
+            if (recorded_id && *recorded_id != stable_id) {
+                continue;
+            }
+            const auto name = entry.path().filename().string();
+            for (const auto length : suffix_lengths) {
+                const auto suffix = "--" + stable_suffix(stable_id, length);
+                if (name.ends_with(suffix) && !unverified_suffix_match) {
+                    unverified_suffix_match = entry.path();
+                    break;
+                }
+            }
+        }
+        if (unverified_suffix_match) {
+            return *unverified_suffix_match;
+        }
+    }
+    for (const auto length : std::array<std::size_t, 3>{
+             stable_suffix_hex_characters, 32, 64
+         }) {
+        const auto candidate =
+            parent /
+            friendly_component({
+                .display_name = display_name,
+                .stable_id = stable_id,
+                .fallback = fallback,
+                .suffix_hex_characters = length,
+            });
+        std::error_code candidate_error;
+        if (!std::filesystem::exists(candidate, candidate_error)) {
+            return candidate;
+        }
+        const auto recorded_id = existing_metadata_id(
+            candidate, metadata_file, metadata_id_key
+        );
+        if (!recorded_id || *recorded_id == stable_id) {
+            return candidate;
         }
     }
     return parent /
@@ -136,6 +224,7 @@ std::filesystem::path stable_directory(
                .display_name = display_name,
                .stable_id = stable_id,
                .fallback = fallback,
+               .suffix_hex_characters = 64,
            });
 }
 
@@ -153,7 +242,9 @@ IdentityDirectories identity_directories(
         root / "accounts",
         identity.user_display_name,
         identity.user_id,
-        "account"
+        "account",
+        "account.json",
+        "user_id"
     );
     return {
         .account = account,
@@ -161,7 +252,9 @@ IdentityDirectories identity_directories(
             account / "drives",
             identity.drive_name,
             identity.drive_id,
-            "drive"
+            "drive",
+            "drive.json",
+            "drive_id"
         ),
     };
 }

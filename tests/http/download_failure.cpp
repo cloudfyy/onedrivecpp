@@ -245,6 +245,27 @@ int test_http_download_failures() {
         }
         std::filesystem::remove_all(destination);
     }
+
+    onedrive::test::write_file(destination, "prefix");
+    const auto preflight_result = client.download(
+        {
+            .url = "https://download.example.test/file",
+            .connect_timeout = std::chrono::seconds::zero(),
+            .download_offset = 6,
+        },
+        destination
+    );
+    if (preflight_result ||
+        !preflight_result.error().message.contains(
+            "invalid transport options"
+        ) ||
+        onedrive::test::read_file(destination) != "prefix") {
+        return fail(
+            "preflight download failure removed or altered an existing "
+            "resumed prefix"
+        );
+    }
+    std::filesystem::remove_all(destination);
     return EXIT_SUCCESS;
 }
 

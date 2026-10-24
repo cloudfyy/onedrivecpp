@@ -340,8 +340,8 @@ eTag 前置条件、HTTPS 重定向、Range 传输、持久 checkpoint、完整�
 空间预留、本地修改保护和原子安装。目录和带有 Microsoft Graph malware facet
 的文件会被拒绝。item 快照会更新，但不推进 Drive Delta 游标。指定
 .B \-\-dry\-run
-时只显示解析后的远端路径、本地目标和预期大小，不创建 item 数据库，也不修改
-下载文件。
+时只显示解析后的远端路径、本地目标和预期大小，不下载或修改本地文件（阻塞目标
+诊断仍会记录到状态数据库中）。
 .TP
 .B transfer restore
 从云端当前版本恢复本地缺失的文件和空目录。可选 Drive 相对路径指定文件或目录，
@@ -537,7 +537,7 @@ trace 会记录协商协议、新建连接数及 DNS、TCP、TLS、服务端等�
 .B \-\-dry\-run
 对于
 .B transfer download
-，只解析并显示单文件计划，不创建 item 数据库或修改本地文件。对于
+，只解析并显示单文件计划，不下载或修改本地文件（阻塞目标诊断仍会记录到状态数据库中）。对于
 .B transfer restore
 ，预览缺失文件和将取消的云端删除，不修改文件或同步状态。对于
 .B transfer sync

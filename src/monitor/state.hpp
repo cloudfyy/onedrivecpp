@@ -284,6 +284,34 @@ synchronization_reason(LocalChangeKind kind) noexcept {
     );
 }
 
+[[nodiscard]] inline MonitorTransition resolve_poll_events(
+    MonitorState state,
+    bool manual_triggered,
+    bool& notification_sync_requested,
+    MonitorTimePoint now,
+    MonitorTiming timing
+) {
+    if (manual_triggered) {
+        notification_sync_requested = false;
+        return transition_monitor(
+            std::move(state), ManualTriggerEvent{}, timing
+        );
+    }
+    if (notification_sync_requested) {
+        notification_sync_requested = false;
+        return transition_monitor(
+            std::move(state), RemoteChangeEvent{}, timing
+        );
+    }
+    auto transition = transition_monitor(
+        std::move(state), DeadlineReachedEvent{now}, timing
+    );
+    if (transition.effect == MonitorEffect::synchronize) {
+        notification_sync_requested = false;
+    }
+    return transition;
+}
+
 [[nodiscard]] inline std::optional<MonitorTimePoint>
 next_deadline(const MonitorState& state) noexcept {
     if (const auto* idle = std::get_if<IdleState>(&state)) {

@@ -188,6 +188,73 @@ int test_chunk_retry_resumes_from_durable_checkpoint() {
             "interrupted Graph chunk did not resume from its durable checkpoint"
         );
     }
+
+    {
+        auto failing_transport = std::make_unique<FakeTransport>(
+            std::deque<onedrive::http::HttpResult>{
+                token_response(),
+                redirect_response("https://download.example.test/content"),
+            }
+        );
+        failing_transport->partial_failure_bytes = 2;
+        failing_transport->download_responses.push_back(
+            std::unexpected(
+                onedrive::http::HttpError{
+                    .message = "simulated interrupted range",
+                }
+            )
+        );
+        auto* failing_pointer = failing_transport.get();
+        onedrive::graph::MicrosoftGraphClient failing_client{
+            wrap_transport(std::move(failing_transport)),
+            wrap_token_store(
+                std::make_unique<FakeTokenStore>(
+                    std::string{"existing-refresh"}
+                )
+            ),
+            auth_options(),
+            {
+                .drive_id = "me",
+                .endpoint = "https://graph.example.test/v1.0",
+                .download_maximum_retries = 2,
+                .download_chunk_threshold_bytes = 3,
+                .download_checkpoint_interval_bytes = 1,
+            },
+            [](std::chrono::seconds) {},
+        };
+        std::vector<std::uint64_t> attempted_checkpoints;
+        bool checkpoint_failure_propagated = false;
+        try {
+            failing_client.download_file(
+                "item-id",
+                "\"item-etag\"",
+                8,
+                destination,
+                0,
+                {},
+                {},
+                [&](std::uint64_t completed) {
+                    attempted_checkpoints.push_back(completed);
+                    if (completed == 2) {
+                        throw std::runtime_error("checkpoint persistence failed");
+                    }
+                }
+            );
+        } catch (const std::runtime_error& error) {
+            checkpoint_failure_propagated = std::string_view{
+                error.what()
+            }.contains("checkpoint persistence failed");
+        }
+        std::filesystem::remove(destination, ignored);
+        if (!checkpoint_failure_propagated ||
+            attempted_checkpoints != std::vector<std::uint64_t>{2} ||
+            failing_pointer->download_requests.size() != 1) {
+            return fail(
+                "failed Graph chunk checkpoint advanced durable offset or "
+                "retried as a transport failure"
+            );
+        }
+    }
     return EXIT_SUCCESS;
 }
 

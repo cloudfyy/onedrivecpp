@@ -274,6 +274,41 @@ table_check_constraints(sqlite3* database, const std::string& table) {
     return constraints;
 }
 
+struct ForeignKeyShape {
+    int sequence;
+    std::string target_table;
+    std::string from_column;
+    std::string to_column;
+    std::string on_update;
+    std::string on_delete;
+    std::string match;
+
+    auto operator<=>(const ForeignKeyShape&) const = default;
+};
+
+std::vector<ForeignKeyShape>
+table_foreign_keys(sqlite3* database, const std::string& table) {
+    const auto sql =
+        "PRAGMA foreign_key_list(" + quote_identifier(table) + ");";
+    Statement statement{database, sql.c_str()};
+    std::vector<ForeignKeyShape> foreign_keys;
+    const auto operation =
+        "cannot inspect foreign keys for state database table '" + table + "'";
+    while (statement.next_row(operation)) {
+        foreign_keys.push_back({
+            .sequence = sqlite3_column_int(statement.get(), 1),
+            .target_table = column_text(statement.get(), 2),
+            .from_column = column_text(statement.get(), 3),
+            .to_column = column_text(statement.get(), 4),
+            .on_update = column_text(statement.get(), 5),
+            .on_delete = column_text(statement.get(), 6),
+            .match = column_text(statement.get(), 7),
+        });
+    }
+    std::ranges::sort(foreign_keys);
+    return foreign_keys;
+}
+
 struct SchemaObjectShape {
     std::string type;
     std::string name;
@@ -303,11 +338,19 @@ std::vector<SchemaObjectShape> user_schema_objects(sqlite3* database) {
 void verify_database_integrity(sqlite3* database) {
     try {
         Statement statement{database, "PRAGMA quick_check;"};
-        if (statement.step() != SQLITE_ROW) {
-            throw DatabaseCorruption(
+        const int first_step = statement.step();
+        if (first_step != SQLITE_ROW) {
+            const auto message =
                 "SQLite quick_check could not inspect the state database: " +
-                std::string{sqlite3_errmsg(database)}
-            );
+                std::string{sqlite3_errmsg(database)};
+            const int code = first_step & 0xff;
+            const int db_code = sqlite3_errcode(database) & 0xff;
+            if (first_step == SQLITE_DONE || code == SQLITE_CORRUPT ||
+                code == SQLITE_NOTADB || db_code == SQLITE_CORRUPT ||
+                db_code == SQLITE_NOTADB) {
+                throw DatabaseCorruption(message);
+            }
+            throw std::runtime_error(message);
         }
         const auto result = column_text(statement.get(), 0);
         if (result != "ok") {
@@ -316,10 +359,24 @@ void verify_database_integrity(sqlite3* database) {
                 result
             );
         }
-        if (statement.step() != SQLITE_DONE) {
-            throw DatabaseCorruption(
-                "SQLite quick_check returned unexpected additional results"
-            );
+        const int second_step = statement.step();
+        if (second_step != SQLITE_DONE) {
+            if (second_step == SQLITE_ROW) {
+                throw DatabaseCorruption(
+                    "SQLite quick_check returned unexpected additional results"
+                );
+            }
+            const auto message =
+                "SQLite quick_check could not complete state database "
+                "inspection: " +
+                std::string{sqlite3_errmsg(database)};
+            const int code = second_step & 0xff;
+            const int db_code = sqlite3_errcode(database) & 0xff;
+            if (code == SQLITE_CORRUPT || code == SQLITE_NOTADB ||
+                db_code == SQLITE_CORRUPT || db_code == SQLITE_NOTADB) {
+                throw DatabaseCorruption(message);
+            }
+            throw std::runtime_error(message);
         }
     } catch (const DatabaseCorruption&) {
         throw;
@@ -515,6 +572,13 @@ void verify_current_schema(sqlite3* database) {
             throw std::runtime_error(
                 "state database table '" + table +
                 "' has incompatible CHECK constraints"
+            );
+        }
+        if (table_foreign_keys(database, table) !=
+            table_foreign_keys(reference.get(), table)) {
+            throw std::runtime_error(
+                "state database table '" + table +
+                "' has incompatible foreign key constraints"
             );
         }
     }

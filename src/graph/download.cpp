@@ -375,7 +375,53 @@ void MicrosoftGraphClient::download_file(
             return perform_with_retries(
                 [&] {
                     auto attempt = make_attempt();
-                    return transport_->download(
+                    bool callback_failed = false;
+                    const auto guarded_progress =
+                        chunk_progress ?
+                            DownloadProgress{
+                                [&](
+                                    std::uint64_t downloaded,
+                                    std::uint64_t total
+                                ) {
+                                    try {
+                                        chunk_progress(downloaded, total);
+                                    } catch (...) {
+                                        callback_failed = true;
+                                        throw;
+                                    }
+                                }
+                            } :
+                            DownloadProgress{};
+                    const auto guarded_data =
+                        data ?
+                            DownloadData{
+                                [&](
+                                    std::uint64_t offset,
+                                    std::span<const std::byte> bytes
+                                ) {
+                                    try {
+                                        data(offset, bytes);
+                                    } catch (...) {
+                                        callback_failed = true;
+                                        throw;
+                                    }
+                                }
+                            } :
+                            DownloadData{};
+                    const auto guarded_checkpoint =
+                        chunk_checkpoint ?
+                            DownloadCheckpoint{
+                                [&](std::uint64_t completed) {
+                                    try {
+                                        chunk_checkpoint(completed);
+                                    } catch (...) {
+                                        callback_failed = true;
+                                        throw;
+                                    }
+                                }
+                            } :
+                            DownloadCheckpoint{};
+                    auto result = transport_->download(
                         http::HttpRequest{
                             .method = http::HttpMethod::get,
                             .url = location,
@@ -409,11 +455,15 @@ void MicrosoftGraphClient::download_file(
                             .stop_token = stop_token,
                         },
                         destination,
-                        chunk_progress,
-                        data,
-                        chunk_checkpoint,
+                        guarded_progress,
+                        guarded_data,
+                        guarded_checkpoint,
                         response_gate
                     );
+                    if (!result && callback_failed) {
+                        throw_download_error(description, result.error());
+                    }
+                    return result;
                 },
                 options_,
                 options_.download_maximum_retries,
@@ -536,10 +586,10 @@ void MicrosoftGraphClient::download_file(
                         "requested byte range"
                     );
                 }
-                durable_offset = completed;
                 if (checkpoint) {
                     checkpoint(completed);
                 }
+                durable_offset = completed;
             },
             [&](
                 long status_code,

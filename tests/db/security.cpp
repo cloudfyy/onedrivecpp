@@ -165,6 +165,43 @@ int test_database_security_and_recovery() {
         return EXIT_FAILURE;
     }
 
+    const auto missing_foreign_key_directory =
+        temporary_directory.path() / "schema-missing-foreign-key";
+    if (!create_current_database(missing_foreign_key_directory) ||
+        !execute_schema(
+            missing_foreign_key_directory / "items.sqlite3",
+            "DROP TABLE pending_delta_change;"
+            "CREATE TABLE pending_delta_change ("
+            "drive_id TEXT NOT NULL,"
+            "remote_id TEXT NOT NULL,"
+            "position INTEGER NOT NULL CHECK(position >= 0),"
+            "name TEXT NOT NULL,"
+            "etag TEXT NOT NULL,"
+            "ctag TEXT NOT NULL,"
+            "parent_id TEXT NOT NULL,"
+            "remote_path TEXT NOT NULL,"
+            "last_modified TEXT NOT NULL,"
+            "size INTEGER NOT NULL CHECK(size >= 0),"
+            "directory INTEGER NOT NULL CHECK(directory IN (0,1)),"
+            "deleted INTEGER NOT NULL CHECK(deleted IN (0,1)),"
+            "root INTEGER NOT NULL CHECK(root IN (0,1)),"
+            "malware INTEGER NOT NULL CHECK(malware IN (0,1)),"
+            "content_hash_algorithm TEXT NOT NULL,"
+            "content_hash_value TEXT NOT NULL,"
+            "validate_content INTEGER NOT NULL CHECK(validate_content IN (0,1)),"
+            "unsupported_format TEXT NOT NULL DEFAULT '',"
+            "PRIMARY KEY(drive_id, remote_id),"
+            "UNIQUE(drive_id, position)"
+            ");"
+        ) ||
+        assert_rejected(
+            missing_foreign_key_directory,
+            "incompatible foreign key constraints",
+            "database with a missing foreign key constraint"
+        ) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+
     const auto unexpected_trigger_directory =
         temporary_directory.path() / "schema-unexpected-trigger";
     if (!create_current_database(unexpected_trigger_directory) ||

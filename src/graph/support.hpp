@@ -61,6 +61,9 @@ void require_successful_graph_response(
 [[nodiscard]] bool retryable_status(long status_code);
 [[nodiscard]] bool stale_download_url_status(long status_code);
 [[nodiscard]] http::HttpResult cancelled_http_result();
+[[nodiscard]] std::chrono::steady_clock::duration bounded_steady_wait(
+    std::chrono::seconds delay
+) noexcept;
 [[nodiscard]] bool wait_for_retry(
     std::chrono::seconds delay,
     const MicrosoftGraphClient::SleepFunction& sleep,

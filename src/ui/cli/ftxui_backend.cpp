@@ -379,7 +379,14 @@ private:
         }
         if ((view_ == TuiView::drives && event.event == "drive") ||
             (view_ == TuiView::blocked && event.event == "blocked_item") ||
-            (view_ == TuiView::partials && event.event == "partial_download")) {
+            (view_ == TuiView::partials && event.event == "partial_download") ||
+            (view_ == TuiView::files && event.event == "downloaded_file") ||
+            (view_ == TuiView::verify && event.event == "file_verification") ||
+            ((view_ == TuiView::health || view_ == TuiView::status ||
+              view_ == TuiView::shared || view_ == TuiView::sites ||
+              view_ == TuiView::quota || view_ == TuiView::storage ||
+              view_ == TuiView::config) &&
+             !section_.fields.empty())) {
             result_pages_.push_back(section_);
             result_index_ = result_pages_.size() - 1;
         }
@@ -793,13 +800,21 @@ private:
             );
             spare_rows -= static_cast<int>(visible) + 1;
         }
+        const bool summary_with_items =
+            (view_ == TuiView::blocked &&
+             section_.event == "blocked_item_summary") ||
+            (view_ == TuiView::files &&
+             section_.event == "downloaded_file_summary") ||
+            (view_ == TuiView::verify &&
+             section_.event == "file_verification_summary");
         const bool paged_list =
-            (view_ == TuiView::drives || view_ == TuiView::blocked) &&
-            !result_pages_.empty();
+            view_ != TuiView::partials && !result_pages_.empty() &&
+            (view_ == TuiView::drives || view_ == TuiView::blocked ||
+             view_ == TuiView::files || view_ == TuiView::verify ||
+             result_pages_.size() > 1);
         const auto& section =
             paged_list ? result_pages_[result_index_] : section_;
-        if (view_ == TuiView::blocked &&
-            section_.event == "blocked_item_summary" && paged_list) {
+        if (summary_with_items && paged_list) {
             for (const auto& field : section_.fields) {
                 content.push_back(text(field.label + " " + field.value));
             }
@@ -820,7 +835,7 @@ private:
                         : fmt::format(
                               "{}  [{} {}/{}]",
                               section.title,
-                              view_ == TuiView::blocked ? "Item" : "Drive",
+                              view_ == TuiView::drives ? "Drive" : "Item",
                               result_index_ + 1,
                               result_pages_.size()
                           )
@@ -893,9 +908,9 @@ private:
                 content.push_back(with_color(
                     text(
                         partial_list ? " Up/Down or k/j: select file "
-                        : view_ == TuiView::blocked
-                            ? " Left/Right or n/p: previous/next item "
-                            : " Left/Right or n/p: previous/next Drive "
+                        : view_ == TuiView::drives
+                            ? " Left/Right or n/p: previous/next Drive "
+                            : " Left/Right or n/p: previous/next item "
                     ),
                     palette_.accent
                 ));

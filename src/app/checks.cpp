@@ -102,7 +102,10 @@ void validate_private_file(
     }
 
     onedrive::util::UniqueFD descriptor{
-        ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW)
+        ::open(
+            path.c_str(),
+            O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK
+        )
     };
     if (!descriptor) {
         throw std::runtime_error(

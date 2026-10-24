@@ -398,6 +398,57 @@ int test_transient_service_retries() {
             "transient Graph service errors were not retried correctly"
         );
     }
+
+    {
+        auto max_delay_transport = std::make_unique<FakeTransport>(
+            std::deque<onedrive::http::HttpResult>{
+                onedrive::http::HttpResponse{
+                    .status_code = 200,
+                    .body =
+                        R"({"expires_in":3600,"access_token":"access-secret"})",
+                },
+                onedrive::http::HttpResponse{.status_code = 503},
+            }
+        );
+        onedrive::graph::MicrosoftGraphClient max_delay_client{
+            wrap_transport(std::move(max_delay_transport)),
+            wrap_token_store(
+                std::make_unique<FakeTokenStore>(
+                    std::string{"existing-refresh"}
+                )
+            ),
+            auth_options(),
+            {
+                .maximum_throttle_retries = 1,
+                .initial_throttle_delay = std::chrono::seconds::max(),
+                .maximum_throttle_delay = std::chrono::seconds::max(),
+            },
+        };
+        std::stop_source stop_source;
+        std::jthread canceller{[&] {
+            std::this_thread::sleep_for(std::chrono::milliseconds{10});
+            stop_source.request_stop();
+        }};
+        bool cancelled = false;
+        try {
+            static_cast<void>(
+                max_delay_client.list_delta(
+                    std::nullopt, {}, stop_source.get_token()
+                )
+            );
+        } catch (const onedrive::graph::RequestCancelledError&) {
+            cancelled = true;
+        } catch (const std::runtime_error& error) {
+            cancelled =
+                std::string_view{error.what()}.contains("cancelled");
+        }
+        if (!cancelled) {
+            return fail(
+                "stop-aware retry wait did not bound extreme retry delay "
+                "or honour cancellation"
+            );
+        }
+    }
     return EXIT_SUCCESS;
 }
 

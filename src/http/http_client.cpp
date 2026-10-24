@@ -83,7 +83,12 @@ HttpResult CurlHttpClient::download(
         return std::unexpected(HttpError{.message = error.what()});
     }
 
-    DownloadState download_state;
+    DownloadState download_state{
+        .durable_offset = request.download_offset,
+        .file_offset = request.download_offset,
+        .response_accepted = true,
+        .response_validated = false,
+    };
     auto response = perform_request(
         request,
         proxy_,

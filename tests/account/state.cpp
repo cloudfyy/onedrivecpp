@@ -472,6 +472,45 @@ int test_account_state_layout_and_markers() {
             missing_account / "accounts" / "account" / "refresh_token") {
         return fail("valid CRLF active account marker was not resolved");
     }
+
+    auto collision_first = identity;
+    collision_first.drive_id = "0000000000003999";
+    collision_first.configured_drive_id = collision_first.drive_id;
+    collision_first.drive_name = "Shared Name";
+    collision_first.photo.reset();
+    auto collision_second = collision_first;
+    collision_second.drive_id = "000000000000B998";
+    collision_second.configured_drive_id = collision_second.drive_id;
+    const auto first_collision_paths =
+        onedrive::account::AccountState::prepare(
+            temporary.path(), collision_first
+        );
+    const auto second_collision_paths =
+        onedrive::account::AccountState::prepare(
+            temporary.path(), collision_second
+        );
+    const auto first_saved = onedrive::account::AccountState::saved_drive(
+        temporary.path(), collision_first.drive_id
+    );
+    const auto second_saved = onedrive::account::AccountState::saved_drive(
+        temporary.path(), collision_second.drive_id
+    );
+    const auto first_sync_dir =
+        onedrive::account::AccountState::drive_data_directory(
+            data_root, collision_first
+        );
+    const auto second_sync_dir =
+        onedrive::account::AccountState::drive_data_directory(
+            data_root, collision_second
+        );
+    if (first_collision_paths.drive_directory ==
+            second_collision_paths.drive_directory ||
+        !first_saved || !second_saved ||
+        first_saved->identity.drive_id != collision_first.drive_id ||
+        second_saved->identity.drive_id != collision_second.drive_id ||
+        first_sync_dir == second_sync_dir) {
+        return fail("32-bit hash-prefix collision aliased distinct Drives");
+    }
     return EXIT_SUCCESS;
 }
 

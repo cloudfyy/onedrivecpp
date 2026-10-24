@@ -76,7 +76,7 @@ checkpoint 恢复、完整性校验、磁盘空间预留、本地修改保护和
 不会下载或修改本地文件。单文件预览和宽松校验模式也遵循这一规则。
 
 使用 `download --dry-run` 可以显示解析后的远端路径、本地目标和预期大小，不会
-创建 item 数据库或修改下载文件：
+下载或修改本地文件（阻塞目标诊断仍会记录到状态数据库中）：
 
 ```bash
 onedrive-cpp transfer download "Documents/report.pdf" --dry-run

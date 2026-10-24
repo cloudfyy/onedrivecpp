@@ -490,10 +490,53 @@ int test_duplicate_destination_downloads_are_serialized() {
     return EXIT_SUCCESS;
 }
 
+int test_reused_hashless_file_preserves_local_hash_baseline() {
+    const onedrive::cli::Console default_console;
+    TemporaryDirectory temporary;
+    const auto root = temporary.path() / "files";
+    auto item = file("hashless", "hashless.txt", 4);
+    item.content_hash.reset();
+
+    FakeGraphClient graph;
+    graph.changes = {item};
+    graph.contents["hashless"] = "data";
+    FakeItemStore items;
+    FakeMetrics metrics;
+    const auto config = config_for(root, false);
+
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != exit_code::success ||
+        graph.download_count != 1) {
+        return fail("initial hashless file download failed");
+    }
+    const auto initial_state = items.find("me", "hashless");
+    if (!initial_state || !initial_state->content_hash.has_value()) {
+        return fail("initial hashless file download did not record local SHA-256");
+    }
+
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != exit_code::success ||
+        graph.download_count != 1) {
+        return fail("unchanged hashless file was not reused");
+    }
+    const auto reused_state = items.find("me", "hashless");
+    if (!reused_state ||
+        reused_state->content_hash != initial_state->content_hash) {
+        return fail(
+            "reused hashless file discarded its saved local SHA-256 baseline"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
 } // namespace
 
 int main() {
-    onedrive::test::ScenarioProgress progress{10};
+    onedrive::test::ScenarioProgress progress{11};
     if (const int result = progress.run(
             "pending_download_recovery", test_pending_download_recovery
         );
@@ -553,6 +596,13 @@ int main() {
     if (const int result = progress.run(
             "duplicate_destination_downloads_are_serialized",
             test_duplicate_destination_downloads_are_serialized
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "reused_hashless_file_preserves_local_hash_baseline",
+            test_reused_hashless_file_preserves_local_hash_baseline
         );
         result != EXIT_SUCCESS) {
         return result;

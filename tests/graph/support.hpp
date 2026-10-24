@@ -214,10 +214,19 @@ public:
         }
         if (accepted && checkpoint && response.status_code >= 200 &&
             response.status_code < 300) {
-            checkpoint(
-                request.download_offset +
-                static_cast<std::uint64_t>(body.size())
-            );
+            try {
+                checkpoint(
+                    request.download_offset +
+                    static_cast<std::uint64_t>(body.size())
+                );
+            } catch (const std::exception& error) {
+                return std::unexpected(
+                    onedrive::http::HttpError{
+                        .code = onedrive::http::HttpErrorCode::transport,
+                        .message = error.what(),
+                    }
+                );
+            }
         }
         if (transfer_error.has_value()) {
             return std::unexpected(std::move(*transfer_error));

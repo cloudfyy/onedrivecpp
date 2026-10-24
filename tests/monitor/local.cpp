@@ -99,6 +99,29 @@ int test_local() {
         local_worker.request_stop();
         return fail("monitor followed a directory symlink");
     }
+
+    const int runs_before_churn = local_runs;
+    std::atomic_bool churn_active{true};
+    std::jthread churn_worker{[&] {
+        for (int index = 0;
+             index < 200 && churn_active.load(std::memory_order_relaxed);
+             ++index) {
+            const auto transient =
+                root / "churn" / ("dir-" + std::to_string(index % 8)) / "sub";
+            std::error_code error;
+            std::filesystem::create_directories(transient, error);
+            std::filesystem::remove_all(root / "churn", error);
+        }
+    }};
+    churn_worker.join();
+    churn_active.store(false, std::memory_order_relaxed);
+    if (!wait_until([&] { return local_runs > runs_before_churn; }, 2s, 5ms)) {
+        local_worker.request_stop();
+        return fail(
+            "transient directory churn stopped or failed monitor synchronization"
+        );
+    }
+
     local_worker.request_stop();
     local_worker.join();
     if (local_result != exit_code::success) {

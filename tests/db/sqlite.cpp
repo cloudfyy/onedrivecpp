@@ -1,6 +1,7 @@
 #include "support/progress.hpp"
 #include "storage/sqlite.hpp"
 #include "storage/schema.hpp"
+#include "storage/schema_internal.hpp"
 #include "support/common.hpp"
 
 #include <sqlite3.h>
@@ -157,10 +158,47 @@ int test_initial_schema_creation_rolls_back() {
     return EXIT_SUCCESS;
 }
 
+int interrupt_progress_handler(void*) {
+    return 1;
+}
+
+int test_quick_check_operational_error_is_not_corruption() {
+    using onedrive::storage::item_database_detail::DatabaseCorruption;
+    using onedrive::storage::item_database_detail::verify_database_integrity;
+
+    sqlite3* raw_database = nullptr;
+    if (sqlite3_open(":memory:", &raw_database) != SQLITE_OK) {
+        return fail("could not open quick_check SQLite database");
+    }
+    SqliteHandle database{raw_database};
+    migrate_schema(database.get());
+    sqlite3_progress_handler(
+        database.get(), 1, interrupt_progress_handler, nullptr
+    );
+
+    bool runtime_error_reported = false;
+    try {
+        verify_database_integrity(database.get());
+    } catch (const DatabaseCorruption&) {
+        sqlite3_progress_handler(database.get(), 0, nullptr, nullptr);
+        return fail(
+            "operational SQLite quick_check error was misclassified as "
+            "DatabaseCorruption"
+        );
+    } catch (const std::runtime_error&) {
+        runtime_error_reported = true;
+    }
+    sqlite3_progress_handler(database.get(), 0, nullptr, nullptr);
+    if (!runtime_error_reported) {
+        return fail("interrupted SQLite quick_check was not rejected");
+    }
+    return EXIT_SUCCESS;
+}
+
 }  // namespace
 
 int main() {
-    onedrive::test::ScenarioProgress progress{4};
+    onedrive::test::ScenarioProgress progress{5};
     if (const int result =
             progress.run("transaction_rolls_back", test_transaction_rolls_back);
         result != EXIT_SUCCESS) {
@@ -176,6 +214,13 @@ int main() {
     if (const int result = progress.run(
             "initial_schema_creation_rolls_back",
             test_initial_schema_creation_rolls_back
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "quick_check_operational_error_is_not_corruption",
+            test_quick_check_operational_error_is_not_corruption
         );
         result != EXIT_SUCCESS) {
         return result;

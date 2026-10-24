@@ -818,6 +818,9 @@ void execute_install_action(
             if (remote_file_content_unchanged(
                     move.item, move.previous, destination
                 )) {
+                if (!state.content_hash) {
+                    state.content_hash = move.previous.content_hash;
+                }
                 context.summary.reusable_files.insert(move.item.id);
             }
         }

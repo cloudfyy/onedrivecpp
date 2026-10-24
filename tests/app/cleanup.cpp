@@ -6,8 +6,45 @@
 #include "onedrive/logging/logging.hpp"
 #include "sync/filesystem/operations.hpp"
 
+#include <dlfcn.h>
+#include <fcntl.h>
 #include <functional>
+#include <sys/stat.h>
 #include <unistd.h>
+
+namespace {
+
+bool replace_on_delete_inspection = false;
+std::filesystem::path late_replacement_target;
+std::filesystem::path late_replacement_preserved;
+
+} // namespace
+
+extern "C" int fstatat(
+    int descriptor, const char* path, struct stat* status, int flags
+) noexcept {
+    static const auto real_fstatat = reinterpret_cast<
+        int (*)(int, const char*, struct stat*, int) noexcept>(
+        ::dlsym(RTLD_NEXT, "fstatat")
+    );
+    if (replace_on_delete_inspection && path != nullptr &&
+        !late_replacement_target.empty() &&
+        std::string_view{path} == late_replacement_target.filename().native() &&
+        flags == AT_SYMLINK_NOFOLLOW) {
+        replace_on_delete_inspection = false;
+        std::error_code error;
+        std::filesystem::rename(
+            late_replacement_target, late_replacement_preserved, error
+        );
+        try {
+            onedrive::test::write_file(
+                late_replacement_target, "late-replacement"
+            );
+        } catch (...) {
+        }
+    }
+    return real_fstatat(descriptor, path, status, flags);
+}
 
 namespace {
 
@@ -333,6 +370,23 @@ void test_changed_file() {
         require(
             fixture.has_record(partial) == failed,
             "cleanup removed the record after file deletion failed"
+        );
+    }
+    {
+        CleanupFixture fixture;
+        const auto partial = fixture.partial("late.bin", 8, 9, "short");
+        late_replacement_target = partial.temporary_path;
+        late_replacement_preserved = fixture.root / "late-preserved";
+        replace_on_delete_inspection = true;
+        const auto result = fixture.run({"--yes", "--output", "json"});
+        replace_on_delete_inspection = false;
+        late_replacement_target.clear();
+        require(
+            result.exit_code == exit_code::failure &&
+                fixture.has_record(partial) &&
+                std::filesystem::exists(partial.temporary_path) &&
+                read_file(partial.temporary_path) == "late-replacement",
+            "cleanup deleted a same-path replacement created after revalidation"
         );
     }
 }

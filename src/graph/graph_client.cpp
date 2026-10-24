@@ -66,7 +66,9 @@ MicrosoftGraphClient::MicrosoftGraphClient(
       sleep_{
           sleep ? std::move(sleep) :
                   SleepFunction{[](std::chrono::seconds duration) {
-                      std::this_thread::sleep_for(duration);
+                      std::this_thread::sleep_for(
+                          client_detail::bounded_steady_wait(duration)
+                      );
                   }}
       } {
     options_.endpoint = normalized_endpoint(std::move(options_.endpoint));

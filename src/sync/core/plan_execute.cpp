@@ -156,6 +156,9 @@ ExecutionSummary execute_plan(
             state.local_modified_ticks = previous->local_modified_ticks;
             state.local_device = previous->local_device;
             state.local_inode = previous->local_inode;
+            if (!state.content_hash) {
+                state.content_hash = previous->content_hash;
+            }
             spdlog::info(
                 "Retaining local {} of unchanged remote file '{}'",
                 change,
@@ -239,6 +242,9 @@ ExecutionSummary execute_plan(
                 // Keep the validated baseline so later edits remain uploadable.
                 state.local_size = previous->local_size;
                 state.local_modified_ticks = previous->local_modified_ticks;
+                if (!state.content_hash) {
+                    state.content_hash = previous->content_hash;
+                }
                 const auto identity = safe_root.identity(
                     destination, detail::FilesystemItemKind::file
                 );

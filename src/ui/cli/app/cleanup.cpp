@@ -392,7 +392,9 @@ int cleanup_state(
                     );
                 }
                 if (safe_root->remove(
-                        candidate.path, sync::detail::FilesystemItemKind::file
+                        candidate.path,
+                        sync::detail::FilesystemItemKind::file,
+                        util::filesystem_identity(*file)
                     )) {
                     ++removed_files;
                     removed_bytes = checked_add(

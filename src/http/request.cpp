@@ -202,6 +202,17 @@ HttpResult perform_request(
     DownloadState* download_state
 ) {
     spdlog::trace("Performing HTTP {} request", method_name(request.method));
+    DownloadState local_download_state{
+        .durable_offset = request.download_offset,
+        .file_offset = request.download_offset,
+        .response_accepted = true,
+        .response_validated = false,
+    };
+    if (download_state == nullptr) {
+        download_state = &local_download_state;
+    } else {
+        *download_state = local_download_state;
+    }
     const auto connect_timeout = request.connect_timeout.count();
     const auto operation_timeout = request.operation_timeout.count();
     const auto low_speed_timeout = request.low_speed_timeout.count();
@@ -245,17 +256,6 @@ HttpResult perform_request(
         return std::unexpected(HttpError{.message = "cannot create libcurl handle"});
     }
 
-    DownloadState local_download_state{
-        .durable_offset = request.download_offset,
-        .file_offset = request.download_offset,
-        .response_accepted = true,
-        .response_validated = false,
-    };
-    if (download_state == nullptr) {
-        download_state = &local_download_state;
-    } else {
-        *download_state = local_download_state;
-    }
     HeaderContext header_context;
     ReadContext read_context{
         .body = request.body,

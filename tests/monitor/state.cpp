@@ -319,6 +319,47 @@ int test_state_machine() {
         return fail("stopped monitor accepted a deadline event");
     }
 
+    bool notification_sync_requested = true;
+    auto coalesced = resolve_poll_events(
+        IdleState{origin + 100ms},
+        true,
+        notification_sync_requested,
+        origin + 10ms,
+        timing
+    );
+    if (coalesced.effect != MonitorEffect::synchronize ||
+        std::get<SynchronizingState>(coalesced.state).reason !=
+            SynchronizationReason::manual_request ||
+        notification_sync_requested) {
+        return fail(
+            "manual trigger did not clear same-cycle remote notification flag"
+        );
+    }
+    notification_sync_requested = true;
+    coalesced = resolve_poll_events(
+        IdleState{origin + 100ms},
+        false,
+        notification_sync_requested,
+        origin + 100ms,
+        timing
+    );
+    if (coalesced.effect != MonitorEffect::synchronize ||
+        std::get<SynchronizingState>(coalesced.state).reason !=
+            SynchronizationReason::remote_notification ||
+        notification_sync_requested) {
+        return fail("remote notification poll event was not consumed");
+    }
+    auto follow_up = resolve_poll_events(
+        IdleState{origin + 200ms},
+        false,
+        notification_sync_requested,
+        origin + 105ms,
+        timing
+    );
+    if (follow_up.effect != MonitorEffect::none) {
+        return fail("cleared notification flag triggered a redundant round");
+    }
+
     for (MonitorState stoppable : {
              MonitorState{StartingState{}},
              MonitorState{IdleState{origin}},

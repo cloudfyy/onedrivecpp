@@ -105,8 +105,8 @@ reported as blocked with exit status 3 without downloading or changing local
 files. This also applies to single-file previews and relaxed validation.
 
 Use `download --dry-run` to display the resolved remote path, local destination,
-and expected size without creating the item database or changing downloaded
-files:
+and expected size without downloading or changing local files (blocked-target
+diagnostics are still recorded in the state database):
 
 ```bash
 onedrive-cpp transfer download "Documents/report.pdf" --dry-run
