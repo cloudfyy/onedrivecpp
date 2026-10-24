@@ -145,7 +145,9 @@ it. In the watch dashboard, press `q`, `Q`, or `Esc` to stop cleanly.
 
 Inspection dashboards keep their final results visible with the prompt
 `Press Enter to exit (or q)`. Press Enter, `q`, or `Q` to exit immediately;
-`q` and `Q` do not require Enter. Other keys do not dismiss the results.
+`q` and `Q` do not require Enter. When an inspection command produces multiple
+sections, press Left/Right or `p`/`n` to switch sections before exiting. Other
+keys do not dismiss the results.
 This does not change controls for running synchronization, transfers, or login.
 The prompt stays visible even when a small terminal
 clips the details; enlarge the terminal or use console output to see all fields.

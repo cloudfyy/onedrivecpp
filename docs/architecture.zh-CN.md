@@ -11,7 +11,7 @@ flowchart TB
     app --> runtime["RuntimeFactory<br/>Proxy 4 端口"]
     runtime -. 由其实现 .-> adapters["生产适配器"]
 
-    app --> auth["认证 / 登出 / 诊断"]
+    app -->     auth["认证 / 登出 / 诊断 / 资源发现"]
     app --> monitor["Monitor 状态机"]
     app --> engine["SyncEngine"]
 
@@ -166,10 +166,10 @@ CLI 渲染器复用同一保留模型：文本／JSON 逐条输出；TUI 恢复�
 `cli` 事件类型名保留为别名，输出字段和格式不变。`SyncEngine` 要求调用方显式
 传入非空观察者，不再自行构造默认 Console；观察者必须比引擎及其同步任务活得更久。
 
-构建层面，`onedrive_core` 不再依赖 `onedrive_cli` 或 FTXUI。`onedrive_cli`
-链接核心事件实现，`onedrive_app` 暂时同时链接核心和 CLI，因为参数解析、确认和
-终端生命周期仍在应用编排中。下一阶段提取应用服务后，再将这些 CLI 入口职责移出。
-配置中的终端偏好类型和解析位于 `config`，加载 TOML 不会构造或链接终端后端。
+构建层面，`onedrive_core` 与 `onedrive_app` 均不依赖 `onedrive_cli`、CLI11 或
+FTXUI。`onedrive_cli` 与 `onedrive_gui` 分别链接 `onedrive_app`，各自管理入口
+生命周期、交互确认和渲染适配器。配置中的终端偏好类型和解析位于 `config`，加载
+TOML 不会构造或链接终端后端。
 
 只读应用查询返回拥有数据的快照，再由前端决定展示方式。
 `load_quota_snapshot` 返回 Drive 与原始配额数值；
@@ -190,7 +190,7 @@ SQLite 或工厂对象，其生命周期与创建它的请求独立。
 认证服务将 stop token 传入设备码请求、轮询和身份/头像 HTTP 请求。默认轮询等待
 可立即被停止请求唤醒；注入的测试等待函数仍由调用方负责返回。账号激活前做最后一次
 取消检查，进入持久化阶段后不再中途打断账号文件写入。CLI 保持原有授权消息和退出码，
-GUI 线程与窗口生命周期管理仍须由未来前端实现。
+GUI 线程与窗口生命周期管理仍由前端负责。
 
 应用层、CLI、GUI 和同步的整数结果共用 `onedrive/exit_code.hpp` 中的常量：
 `success`（0）、`failure`（1）、`usage_error`（2）、`blocked`（3）和
@@ -202,8 +202,8 @@ GUI 线程与窗口生命周期管理仍须由未来前端实现。
 Delta 会将 token 传给 OAuth 刷新、分页 HTTP 请求和重试等待；下载与上传 worker 会将
 外部停止请求桥接到现有 worker stop source，等待 worker 收尾后返回。同步计划在安全
 边界检查取消；未完成的上传继续保留持久化 journal，未完成 Delta 不推进本地游标。
-已经提交的单个下载或远端变化不会回滚。远端删除、移动及恢复阶段的单个 Graph 请求
-目前仍不可中断；Qt 前端应在 UI 中区分“正在停止”和“已停止”。
+已经提交的单个下载或远端变化不会回滚。远端删除、移动、建目录及恢复阶段的 Graph
+请求同样将 stop token 传入 HTTP 请求与重试等待；Qt 前端在 UI 中区分“正在停止”和“已停止”。
 
 这条边界在保留 JSON、重定向文本、quiet 模式和交互式终端行为的同时，让业务
 代码不再依赖具体渲染器。内置 Text、JSON 与 FTXUI backend 独立消费同一套事件。
@@ -304,7 +304,10 @@ ping/pong 控制帧，完整消息限制为一 MiB。
 Graph 未返回 `expirationDateTime` 时，不虚构有效期或续订 deadline。明确的接口／
 访问不可用使该 Drive 进入 unavailable 状态，本次 Monitor 会话不再重试；
 暂时失败和未授权仍分别保留退避及令牌恢复路径。其他 Drive、本地事件及定时
-Delta 轮询不受这个通知 channel 的 unavailable 状态影响。
+Delta 轮询不受这个通知 channel 的 unavailable 状态影响。适配器在轮询底层文件
+描述符前先排空 `curl_ws_recv`，仅在返回 `CURLE_AGAIN` 后进入等待：HTTP 升级与
+TLS 读取可能已将完整帧留在 libcurl 缓冲区中，而此时内核套接字不再可读。消费
+已缓冲的 Engine.IO 握手或通知不以内核可读事件为前提。
 
 ## 源码目录
 
@@ -313,12 +316,12 @@ Delta 轮询不受这个通知 channel 的 unavailable 状态影响。
 
 - `src/app`：结构化应用查询、运行时依赖工厂和预检。
 - `src/account`：稳定账号与 Drive 身份、元数据和路径。
-- `src/auth`：设备代码 OAuth、Token 刷新和安全持久化。
+- `src/auth`：设备代码与授权码 PKCE OAuth、Token 刷新和安全持久化。
 - `src/ui/common`：前端共用的事件报告实现，不依赖终端或 Qt。
 - `src/ui/cli`：文本、JSON、FTXUI 用户输出及终端能力探测。
-- `src/ui/cli/app`：CLI 参数解析、入口生命周期、命令编排和输出格式化；
-  其中尚未提取的业务用例仍会在后续迁入 `src/app`。
-- `src/ui/gui`：为 Qt 前端预留的目录，目前不包含实现或 Qt 依赖。
+- `src/ui/cli/app`：CLI 参数解析、入口生命周期、命令编排和输出格式化。
+- `src/ui/gui`：Qt 6 Widgets 桌面前端、设置编辑器、后台 worker 控制器与双语
+  本地化资源（在 `ONEDRIVE_BUILD_GUI=ON` 时构建）。
 - `include/onedrive/ui`：按 `common`、`cli`、`gui` 对应组织的公共头文件；
   文件归属调整不改变现有 `events`、`cli` 和 `app` 命名空间。
 - `src/config`：配置文件加载和校验。
@@ -328,6 +331,9 @@ Delta 轮询不受这个通知 channel 的 unavailable 状态影响。
 - `src/storage`：ItemStore 端口，以及使用 SQLite 持久化远端 ID、ETag 与本地路径的适配器。
 - `src/sync`：计划、下载、上传、文件系统、筛选和恢复操作族。
 - `src/monitor`：长驻监控状态机和 inotify 适配器。
+- `src/metrics`：指标端口及生产环境空实现适配器。
+- `packaging/systemd`：systemd 用户服务。
+- `debian`：Ubuntu/Debian 原生打包元数据。
 - `src/metrics`：Metrics 端口和无操作生产适配器。
 - `packaging/systemd`：systemd 用户服务。
 - `debian`：Ubuntu/Debian 原生包元数据。

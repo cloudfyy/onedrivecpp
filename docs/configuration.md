@@ -86,8 +86,9 @@ Single-file download, shared-item discovery, verification, cleanup, and
 Drive-specific reset/clear require a single-target configuration to avoid
 ambiguous selection. GUI settings expose one Drive ID per line; editing the list
 replaces the legacy key, while changing unrelated settings preserves it.
-Business Delta compatibility and real organizational account acceptance remain
-separate work; configuring several libraries does not grant access to them.
+Business Delta compatibility and live organizational OneDrive acceptance are
+in place, but configuring several libraries does not grant access to them or
+bypass tenant conditional-access policies.
 
 ## Reference configuration
 

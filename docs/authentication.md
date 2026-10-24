@@ -205,8 +205,9 @@ type is shown as unknown until a successful login or synchronization writes
 the refreshed identity. Existing user/Drive ID directories, tokens and
 databases are preserved; display names and Drive types are not identity keys.
 `common` and `consumers` are authentication selectors, not actual tenant IDs.
-Type recognition alone does not establish full organizational synchronization
-support; that work is tracked for 1.1 in `TODO.md`.
+Synchronization for the signed-in user's own organizational OneDrive and
+configured document libraries is supported in 1.1; broader SharePoint site and
+cross-tenant extensions are tracked in `TODO.md`.
 
 ## Organizational authentication diagnostics
 
@@ -242,7 +243,8 @@ from `auth.tenant_id`. In particular, `common`, `organizations` and `consumers`
 are selectors, not the actual directory used for sign-in. The client does not
 decode an unverified access token to infer that directory. Have the tenant
 administrator confirm the actual tenant and policy decision in Microsoft Entra
-sign-in logs. Real organizational-tenant acceptance remains a separate task.
+sign-in logs. Live organizational-tenant synchronization acceptance is covered
+by `tests/business_e2e.py`.
 
 See Microsoft's [authentication error reference](https://learn.microsoft.com/en-us/entra/identity-platform/reference-error-codes)
 and the specific [530036 diagnostic](https://login.microsoftonline.com/error?code=530036).

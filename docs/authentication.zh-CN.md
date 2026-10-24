@@ -175,7 +175,8 @@ onedrive-cpp account login
 读取本地元数据不会连接微软。旧元数据没有类型时显示未知，成功重新登录或同步
 写入新身份信息后补齐；保留已有用户／Drive ID 目录、令牌和数据库，不把显示名或
 Drive 类型当作身份键。`common`／`consumers` 只是认证入口，不代表实际租户 ID。
-识别类型不等于已经完成组织版同步支持，1.1 后续工作记录在 `TODO.md`。
+1.1 已支持组织用户自身 OneDrive 与已配置文档库的同步；更广泛的 SharePoint 站点
+与跨租户扩展记录在 `TODO.md`。
 
 ## 组织认证诊断
 
@@ -206,7 +207,7 @@ CLI 在文本和 JSON 输出模式下均沿用现有日志路径报告诊断；
 `auth.tenant_id`，不是已验证的实际租户。特别是 `common`、`organizations` 和
 `consumers` 只是选择入口，不代表本次登录实际使用的目录。客户端不会解码未验证的
 access token 来猜测目录；请管理员通过 Microsoft Entra 登录日志核对实际租户及
-策略判定。真实组织租户验收仍由单独的验收项负责。
+策略判定。真实组织租户同步验收由 `tests/business_e2e.py` 覆盖。
 
 可参阅 Microsoft 的[认证错误参考](https://learn.microsoft.com/zh-cn/entra/identity-platform/reference-error-codes)
 和 [530036 诊断](https://login.microsoftonline.com/error?code=530036)。

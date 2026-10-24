@@ -203,12 +203,11 @@ aliases, preserving output fields and formats. `SyncEngine` requires an explicit
 non-null observer instead of constructing a default Console. The observer must
 outlive the engine and its synchronization work.
 
-`onedrive_core` no longer links `onedrive_cli` or FTXUI. `onedrive_cli` links the
-core event implementation; `onedrive_app` temporarily links both core and CLI
-because argument parsing, confirmations, and terminal lifecycle still live in
-application orchestration. Extracting application services will move those CLI
-entry-point responsibilities out. Terminal preferences and their parsers live
-in `config`, so TOML loading does not construct or link a terminal backend.
+`onedrive_core` and `onedrive_app` do not link `onedrive_cli`, CLI11, or FTXUI.
+`onedrive_cli` and `onedrive_gui` each link `onedrive_app` and provide their
+own entry-point lifecycle, confirmations, and rendering adapters. Terminal
+preferences and their parsers live in `config`, so TOML loading does not
+construct or link a terminal backend.
 
 Read-only application queries return owning snapshots before a frontend chooses
 how to present them. `load_quota_snapshot` returns the Drive and raw quota
@@ -254,8 +253,9 @@ upload workers bridge external stop requests to their existing worker stop
 sources and join before returning. The sync plan checks cancellation at safe
 boundaries; incomplete uploads retain their durable journal, and an incomplete
 Delta does not advance the local cursor. Already committed individual downloads
-or remote operations are not rolled back. Single Graph requests in remote-move,
-remote-delete, and startup-recovery operations are not yet interruptible.
+or remote operations are not rolled back. Graph requests in remote-move,
+remote-delete, directory-creation, and startup-recovery operations also forward
+the stop token through HTTP execution and retry waits.
 
 This boundary preserves JSON, redirected text, quiet mode, and interactive
 terminal behavior without coupling business code to a specific renderer. The
@@ -384,16 +384,17 @@ The directories correspond to the responsibilities of
 - `src/app`: Structured application queries, runtime dependency factory, and
   preflight checks.
 - `src/account`: Stable account and Drive identity, metadata, and paths.
-- `src/auth`: Device-code OAuth, token refresh, and secure token persistence.
+- `src/auth`: Device-code and authorization-code PKCE OAuth, token refresh, and
+  secure token persistence.
 - `src/ui/common`: Shared event reporting implementation without terminal or Qt
   dependencies.
 - `src/ui/cli`: Text, JSON, and FTXUI user output plus terminal capability
   detection.
 - `src/ui/cli/app`: CLI argument parsing, entry-point lifecycle, command
-  orchestration, and formatting. Remaining embedded use cases will move into
-  `src/app` as application services are extracted.
-- `src/ui/gui`: Reserved for the Qt frontend; no implementation or Qt dependency
-  has been added yet.
+  orchestration, and formatting.
+- `src/ui/gui`: Qt 6 Widgets desktop frontend, settings editors, background
+  worker controllers, and bilingual translations (built when
+  `ONEDRIVE_BUILD_GUI=ON`).
 - `include/onedrive/ui`: Public headers grouped into `common`, `cli`, and `gui`.
   Directory changes preserve the existing `events`, `cli`, and `app` namespaces.
 - `src/config`: Configuration file loading and validation.

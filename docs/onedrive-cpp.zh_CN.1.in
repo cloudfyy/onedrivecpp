@@ -271,7 +271,7 @@ Enter、q 或 Q 退出；Console 和 JSON 仍完整输出每条记录。
 验证可选 Drive 相对
 .I 路径
 下的 tracked 文件。metadata 模式检查保存的大小和修改时间；content 模式还会计算
-状态中保存的 Graph SHA-256 或 QuickXorHash，并报告哈希不可用或不匹配。
+状态中保存的 QuickXorHash、SHA-1 或旧版 SHA-256，并报告哈希不可用或不匹配。
 .TP
 .B inspect config
 显示最终生效的非敏感配置路径、同步策略、传输限制、输出设置以及代理是否配置；
@@ -326,9 +326,9 @@ partial-download、pending-upload、pending-move、上传抑制和 blocked item�
 .PP
 每个 Drive 数据库在启动及迁移后必须通过 SQLite
 .B quick_check
-并精确匹配应用表、列、NOT NULL 约束和主键索引。非空未版本化数据库、版本高于
-客户端或结构不兼容的数据库会在读取 item 状态前停止。确认损坏的数据库及其
-WAL/SHM sidecar 会被隔离为
+并精确匹配应用表、列、NOT NULL 约束、主键索引和外键定义。发生 SQLite 操作错误、
+非空未版本化数据库、版本高于客户端或结构不兼容的数据库会在读取 item 状态前停止。
+确认损坏的数据库及其 WAL/SHM sidecar 会被隔离为
 .IR items.sqlite3.corrupt\-<时间戳> ，
 然后创建可重建的新数据库。本地文件不会被删除。
 .TP
@@ -374,7 +374,8 @@ eTag 前置条件、HTTPS 重定向、Range 传输、持久 checkpoint、完整�
 FTXUI 实时状态面板。终端不支持、重定向、管道、JSON 和 quiet 模式会自动保留
 普通 Console 输出。
 检查命令的面板会保留最终结果，统一显示 Press Enter to exit (or q)。
-按 Enter、q 或 Q 即时退出，q 和 Q 无需再按回车；其他按键不会关闭结果页。
+按 Enter、q 或 Q 即时退出，q 和 Q 无需再按回车；当检查命令生成多个结果节时，
+还可在退出前按 Left/Right 或 p/n 切换节；其他按键不会关闭结果页。
 运行中的同步、传输和登录流程的按键行为保持不变。
 小窗口裁剪详情时仍保留提示，可扩大终端或使用 Console 查看全部字段。
 Console 和 JSON 输出在完成后
@@ -387,7 +388,8 @@ Range 分片只有在 HTTP 状态、Content-Range、总大小和实际接收字�
 按照 Retry-After 或有界指数退避重试。预认证下载 URL 返回 401 或 403 时会向
 Graph 刷新一次。
 .PP
-远端删除只在本地普通文件的大小和修改时间仍匹配可信快照时删除文件。目录按子项
+远端删除只在本地普通文件的文件系统身份（device/inode）、大小、修改时间和内容
+哈希仍匹配可信快照时删除文件。目录按子项
 优先处理且仅在为空时删除。本地已修改文件、符号链接、意外类型和非空目录保留为
 可重试 blocked item。完整 Delta 刷新会将 Graph 清单与旧快照对账；仅因选择性
 同步被排除的文件会保留在本地，并通过 device/inode 身份抑制错误回传。
@@ -441,7 +443,10 @@ IPC 停止不禁用 systemd unit，也不修改其重启策略。
 .TP
 .B \-\-yes
 非交互确认
-.BR "state clear" 。
+.BR "state clear" 、
+.B "state cleanup"
+或
+.BR "state migrate" 。
 .TP
 .B \-\-force\-large\-delete
 与
@@ -506,9 +511,7 @@ trace 会记录协商协议、新建连接数及 DNS、TCP、TLS、服务端等�
 控制。
 .TP
 .BI \-\-ui " 模式"
-选择
-.B transfer sync
-界面，可用值为
+选择登录、查看和传输界面，可用值为
 .BR auto 、
 .BR console
 和
@@ -550,7 +553,7 @@ trace 会记录协商协议、新建连接数及 DNS、TCP、TLS、服务端等�
 key 移到
 .B transfer
 和
-.B transfer download
+.B download
 表。
 .PP
 命令运行前会把状态目录限制为 0700，并在其中持有独占

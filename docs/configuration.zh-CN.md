@@ -70,8 +70,8 @@ drive_ids = ["me", "b!FIRST_LIBRARY_DRIVE_ID", "b!SECOND_LIBRARY_DRIVE_ID"]
 包含并标记所有配置目标，即使它们不在账号默认返回的 Drive 列表中。单文件下载、
 共享项发现、校验、清理及 Drive 级 reset/clear 要求单目标配置，避免隐式选择。
 GUI 设置中每行填写一个 Drive ID；修改列表时替换旧配置项，仅修改其他设置
-则保留旧配置项。Business Delta 兼容和真实组织账号验收仍是独立待办；
-配置多个文档库本身不会授予访问权限。
+则保留旧配置项。Business Delta 兼容和真实组织账号自身 OneDrive 验收已完成，
+但配置多个文档库本身不会授予访问权限或绕过租户条件访问策略。
 
 ## 配置参考示例
 
