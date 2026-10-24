@@ -106,12 +106,22 @@ public:
 
     [[nodiscard]] onedrive::graph::DeltaResult list_delta(
         const std::optional<std::string>& cursor,
-        const onedrive::graph::DeltaProgress&,
+        const onedrive::graph::DeltaProgress& progress,
         std::stop_token,
         std::span<const onedrive::graph::RemoteItem> = {}
     ) const {
         ++delta_count;
         last_delta_cursor = cursor;
+        if (before_delta) {
+            before_delta();
+        }
+        if (progress) {
+            progress(
+                1,
+                delta_result.changes.size(),
+                onedrive::util::ProgressState::completed
+            );
+        }
         return delta_result;
     }
 
@@ -234,6 +244,7 @@ public:
 
     std::string contents{"data"};
     onedrive::graph::DeltaResult delta_result;
+    std::function<void()> before_delta;
     std::function<void()> before_download;
     mutable int delta_count{0};
     mutable std::optional<std::string> last_delta_cursor;

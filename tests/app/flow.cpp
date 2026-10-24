@@ -1,8 +1,10 @@
 #include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/exit_code.hpp"
+#include "app/lock.hpp"
 #include "app/preflight.hpp"
 #include "onedrive/logging/logging.hpp"
+#include "onedrive/ui/cli/console.hpp"
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -143,6 +145,24 @@ int test_restore_command() {
             "CLI restore preview did not expose the selected plan safely"
         );
     }
+    nlohmann::json plan;
+    std::istringstream lines{preview.standard_output};
+    for (std::string line; std::getline(lines, line);) {
+        const auto event = nlohmann::json::parse(line);
+        if (event.value("event", "") == "restore_plan") {
+            plan = event.at("values");
+        }
+    }
+    if (plan != nlohmann::json{
+                    {"files", "1"},
+                    {"directories", "0"},
+                    {"bytes", "42"},
+                    {"skipped", "0"},
+                    {"blocked", "0"},
+                    {"cancelled_deletes", "0"},
+                }) {
+        return fail("CLI restore preview returned an incorrect JSON plan");
+    }
     const auto restored = invoke(false);
     if (restored.exit_code != exit_code::success ||
         !restored.standard_output.contains(R"("event":"restore_completed")") ||
@@ -156,6 +176,131 @@ int test_restore_command() {
     if (invoke(false).exit_code != exit_code::success ||
         onedrive::test::read_file(root / "notes.txt") != "keep local changes") {
         return fail("CLI restore replaced an existing local file");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_restore_real_database_and_directory_lock() {
+    CliFixture fixture;
+    if (fixture.authenticate().exit_code != exit_code::success) {
+        return fail("real-database restore fixture could not authenticate");
+    }
+    fixture.runtime_factory.use_real_item_store = true;
+    const auto identity = onedrive::test::test_drive_identity();
+    const auto paths =
+        onedrive::account::AccountState::locate(fixture.state_path, identity);
+    const auto database_path = paths.drive_directory / "items.sqlite3";
+    const auto root = onedrive::account::AccountState::drive_data_directory(
+        fixture.sync_path, identity
+    );
+    const auto invoke = [&](bool preview) {
+        std::vector<std::string> arguments{
+            "onedrive-cpp",
+            "transfer",
+            "restore",
+            "notes.txt",
+            "--config",
+            fixture.config_path.string(),
+            "--ui",
+            "console",
+            "--output",
+            "json"
+        };
+        if (preview) {
+            arguments.push_back("--dry-run");
+        }
+        return run_application(fixture.runtime_factory, std::move(arguments));
+    };
+    const auto missing_database = invoke(true);
+    if (missing_database.exit_code != exit_code::failure ||
+        !missing_database.standard_error.contains("read-only") ||
+        std::filesystem::exists(database_path) ||
+        std::filesystem::exists(root)) {
+        return fail("restore preview created or accepted a missing database");
+    }
+    {
+        const onedrive::logging::Session logging{{}};
+        onedrive::storage::ItemDatabase database{
+            paths.drive_directory, identity
+        };
+        database.open();
+        database.apply_delta({
+            .drive_id = identity.drive_id,
+            .delta_link = "saved-cursor",
+        });
+        database.save_pending_delta({
+            .drive_id = identity.drive_id,
+            .scope_fingerprint = "saved-scope",
+            .delta = {.changes = {}, .delta_link = "pending-cursor"},
+        });
+        database.save_pending_delete({
+            .drive_id = identity.drive_id,
+            .remote_id = "file-id",
+            .expected_etag = "file-etag",
+            .remote_path = "notes.txt",
+            .local_path = root / "notes.txt",
+        });
+    }
+    const auto before = onedrive::test::read_file(database_path);
+    const auto modified = std::filesystem::last_write_time(database_path);
+    {
+        std::ostringstream output;
+        std::ostringstream error;
+        onedrive::cli::Console console{
+            {.ui = onedrive::cli::UiMode::console}, output, error
+        };
+        const auto lock = onedrive::app::detail::acquire_sync_directory_lock(
+            root, fixture.state_path, "sync", console
+        );
+        const auto store_count = fixture.runtime_factory.item_store_count;
+        for (const bool preview : {true, false}) {
+            if (invoke(preview).exit_code != exit_code::failure ||
+                fixture.runtime_factory.item_store_count != store_count ||
+                std::filesystem::exists(root)) {
+                return fail(
+                    "restore bypassed the synchronization directory lock"
+                );
+            }
+        }
+    }
+    if (invoke(true).exit_code != exit_code::success ||
+        std::filesystem::exists(root) ||
+        onedrive::test::read_file(database_path) != before ||
+        std::filesystem::last_write_time(database_path) != modified) {
+        return fail("CLI preview modified the real database or sync directory");
+    }
+    {
+        const onedrive::logging::Session logging{{}};
+        onedrive::storage::ItemDatabase database{
+            paths.drive_directory, identity
+        };
+        database.open_read_only();
+        if (database.size() != 0 ||
+            database.pending_deletes(identity.drive_id).size() != 1 ||
+            database.delta_link(identity.drive_id) != "saved-cursor" ||
+            !database.pending_delta(identity.drive_id)) {
+            return fail(
+                "CLI preview changed persisted recovery or cursor state"
+            );
+        }
+    }
+    if (invoke(false).exit_code != exit_code::success ||
+        onedrive::test::read_file(root / "notes.txt") != std::string(42, 'x')) {
+        return fail(
+            "CLI restore failed to install content with a real database"
+        );
+    }
+    const onedrive::logging::Session logging{{}};
+    onedrive::storage::ItemDatabase database{paths.drive_directory, identity};
+    database.open_read_only();
+    const auto pending = database.pending_delta(identity.drive_id);
+    if (database.size() != 1 || !database.find(identity.drive_id, "file-id") ||
+        !database.pending_deletes(identity.drive_id).empty() ||
+        database.delta_link(identity.drive_id) != "saved-cursor" || !pending ||
+        pending->delta.delta_link != "pending-cursor") {
+        return fail(
+            "CLI restore lost snapshots, deletion coordination or cursor state"
+        );
     }
     return EXIT_SUCCESS;
 }
@@ -876,8 +1021,14 @@ int test_flow() {
 } // namespace
 
 int main() {
-    onedrive::test::ScenarioProgress progress{5};
+    onedrive::test::ScenarioProgress progress{6};
     if (progress.run("restore_command", test_restore_command) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+    if (progress.run(
+            "restore_real_database_and_directory_lock",
+            test_restore_real_database_and_directory_lock
+        ) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
     if (const auto result = progress.run(
