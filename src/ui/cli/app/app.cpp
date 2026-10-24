@@ -5,6 +5,7 @@
 #include "commands.hpp"
 #include "monitor/signal.hpp"
 #include "onedrive/logging/logging.hpp"
+#include "app/lock.hpp"
 #include "app/preflight.hpp"
 
 #include <spdlog/spdlog.h>
@@ -13,6 +14,7 @@
 #include <filesystem>
 #include <iostream>
 #include <optional>
+#include <string>
 #include <utility>
 
 namespace onedrive::app {
@@ -128,6 +130,26 @@ int Application::run(int argc, char* argv[]) {
         console.finish();
         return result;
     } catch (const std::exception& error) {
+        if (arguments.operation == detail::Operation::restore &&
+            dynamic_cast<const detail::RuntimeBusyError*>(&error) != nullptr) {
+            const cli::Console diagnostic{{
+                .color =
+                    arguments.color_mode.value_or(cli::ColorMode::automatic),
+                .output = arguments.output_mode,
+                .ui = cli::UiMode::console,
+                .quiet = arguments.quiet,
+            }};
+            diagnostic.message(
+                events::MessageKind::error,
+                "restore_busy",
+                std::string{
+                    "Restore was not started. Stop the running sync/watch "
+                    "or other operation using this state or synchronization "
+                    "directory, then retry.\n"
+                } + error.what()
+            );
+            return exit_code::failure;
+        }
         if (const auto logger = spdlog::default_logger()) {
             logger->error("{}", error.what());
         } else {

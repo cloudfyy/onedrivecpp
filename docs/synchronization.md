@@ -116,6 +116,11 @@ onedrive-cpp transfer download "Documents/report.pdf" --dry-run
 
 Stop any running sync/Monitor before using the dedicated recovery command. Do
 not clear synchronization state or run bidirectional sync to undo a local deletion.
+Both restore and its preview check nonblocking locks before recovery. If another
+sync/Monitor or other operation owns the same state directory or an overlapping
+sync directory, restore reports the owner and exits with status 1. It does not
+wait, queue recovery, or automatically stop the owner. The refusal remains visible
+after the TUI closes.
 
 ```bash
 onedrive-cpp transfer restore "Documents" --dry-run

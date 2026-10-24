@@ -6,6 +6,7 @@
 #include "support/common.hpp"
 #include "cli/partials_fixture.hpp"
 #include "app/support.hpp"
+#include "app/lock.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -19,6 +20,7 @@
 #include <iostream>
 #include <optional>
 #include <poll.h>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -307,9 +309,120 @@ private:
 } // namespace
 
 int main() {
-    onedrive::test::ScenarioProgress progress{46};
+    onedrive::test::ScenarioProgress progress{54};
     try {
         using onedrive::cli::TuiView;
+        for (const auto* operation : {"synchronize", "monitor"}) {
+            for (const bool preview : {false, true}) {
+                for (const bool directory_lock : {false, true}) {
+                    if (const auto scenario_result = progress.run(
+                            std::string{"restore_busy_tui_"} + operation +
+                                (preview ? "_preview" : "_apply") +
+                                (directory_lock ? "_directory" : "_state"),
+                            [&]() -> int {
+                                onedrive::test::app::CliFixture fixture;
+                                std::ostringstream lock_output;
+                                std::ostringstream lock_error;
+                                const onedrive::cli::Console lock_console{
+                                    {.ui = onedrive::cli::UiMode::console},
+                                    lock_output,
+                                    lock_error
+                                };
+                                UniqueFD lock;
+                                if (directory_lock) {
+                                    if (fixture.authenticate().exit_code !=
+                                        onedrive::exit_code::success) {
+                                        return onedrive::test::fail(
+                                            "cannot authenticate "
+                                            "directory-lock TUI fixture"
+                                        );
+                                    }
+                                    const auto root = onedrive::account::
+                                        AccountState::drive_data_directory(
+                                            fixture.sync_path,
+                                            onedrive::test::
+                                                test_drive_identity()
+                                        );
+                                    lock = onedrive::app::detail::
+                                        acquire_sync_directory_lock(
+                                            root,
+                                            fixture.temporary_directory.path() /
+                                                "other-state",
+                                            operation,
+                                            lock_console
+                                        );
+                                } else {
+                                    lock = onedrive::app::detail::
+                                        acquire_runtime_lock(
+                                            fixture.state_path, operation
+                                        );
+                                }
+                                TerminalPager terminal{
+                                    0, 30, -1, TuiView::download, [&] {
+                                        std::vector<std::string> arguments{
+                                            "onedrive-cpp",
+                                            "transfer",
+                                            "restore",
+                                            "--config",
+                                            fixture.config_path.string(),
+                                            "--color",
+                                            "never",
+                                            "--ui",
+                                            "tui"
+                                        };
+                                        if (preview) {
+                                            arguments.push_back("--dry-run");
+                                        }
+                                        std::vector<char*> pointers;
+                                        for (auto& argument : arguments) {
+                                            pointers.push_back(argument.data());
+                                        }
+                                        onedrive::app::RuntimeFactory factory{
+                                            onedrive::util::borrowed_proxy,
+                                            fixture.runtime_factory
+                                        };
+                                        onedrive::app::Application application{
+                                            &factory
+                                        };
+                                        return application.run(
+                                            static_cast<int>(pointers.size()),
+                                            pointers.data()
+                                        );
+                                    }
+                                };
+                                terminal.expect_exit(
+                                    false, onedrive::exit_code::failure
+                                );
+                                const auto& output = terminal.output();
+                                const auto message =
+                                    output.find("Restore was not started.");
+                                if (message == std::string::npos ||
+                                    message < output.rfind("\033[?1049l") ||
+                                    !output.contains(
+                                        "Stop the running sync/watch"
+                                    ) ||
+                                    !output.contains(operation) ||
+                                    (directory_lock &&
+                                     !output.substr(message).contains(
+                                         "already using this synchronization "
+                                         "directory"
+                                     ))) {
+                                    return onedrive::test::fail(
+                                        "busy restore hid its error in the TUI "
+                                        "or "
+                                        "did not exit immediately\n" +
+                                        output
+                                    );
+                                }
+                                return EXIT_SUCCESS;
+                            }
+                        );
+                        scenario_result != EXIT_SUCCESS) {
+                        return scenario_result;
+                    }
+                }
+            }
+        }
         if (const auto scenario_result = progress.run(
                 "failure_retains_history",
                 [&]() -> int {

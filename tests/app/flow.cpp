@@ -8,6 +8,7 @@
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
+#include <unistd.h>
 
 namespace {
 
@@ -214,6 +215,7 @@ int test_restore_real_database_and_directory_lock() {
     const auto missing_database = invoke(true);
     if (missing_database.exit_code != exit_code::failure ||
         !missing_database.standard_error.contains("read-only") ||
+        missing_database.standard_error.contains("restore_busy") ||
         std::filesystem::exists(database_path) ||
         std::filesystem::exists(root)) {
         return fail("restore preview created or accepted a missing database");
@@ -249,17 +251,32 @@ int test_restore_real_database_and_directory_lock() {
         onedrive::cli::Console console{
             {.ui = onedrive::cli::UiMode::console}, output, error
         };
-        const auto lock = onedrive::app::detail::acquire_sync_directory_lock(
-            root, fixture.state_path, "sync", console
-        );
         const auto store_count = fixture.runtime_factory.item_store_count;
-        for (const bool preview : {true, false}) {
-            if (invoke(preview).exit_code != exit_code::failure ||
-                fixture.runtime_factory.item_store_count != store_count ||
-                std::filesystem::exists(root)) {
-                return fail(
-                    "restore bypassed the synchronization directory lock"
+        for (const auto* operation : {"synchronize", "monitor"}) {
+            const auto lock =
+                onedrive::app::detail::acquire_sync_directory_lock(
+                    root,
+                    fixture.temporary_directory.path() / "other-state",
+                    operation,
+                    console
                 );
+            for (const bool preview : {true, false}) {
+                const auto busy = invoke(preview);
+                if (busy.exit_code != exit_code::failure ||
+                    !busy.standard_error.contains(
+                        R"("event":"restore_busy")"
+                    ) ||
+                    !busy.standard_error.contains("Restore was not started.") ||
+                    !busy.standard_error.contains(
+                        "Stop the running sync/watch"
+                    ) ||
+                    fixture.runtime_factory.item_store_count != store_count ||
+                    std::filesystem::exists(root)) {
+                    return fail(
+                        "restore did not explain the competing sync/watch "
+                        "directory lock before opening its database"
+                    );
+                }
             }
         }
     }
@@ -300,6 +317,250 @@ int test_restore_real_database_and_directory_lock() {
         pending->delta.delta_link != "pending-cursor") {
         return fail(
             "CLI restore lost snapshots, deletion coordination or cursor state"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_restore_busy_state_exits_before_authentication() {
+    CliFixture fixture;
+    const auto invoke = [&](bool preview, bool json, bool quiet = false) {
+        std::vector<std::string> arguments{
+            "onedrive-cpp",
+            "transfer",
+            "restore",
+            "notes.txt",
+            "--config",
+            fixture.config_path.string(),
+            "--ui",
+            "console",
+            "--color",
+            "never"
+        };
+        if (preview) {
+            arguments.push_back("--dry-run");
+        }
+        if (json) {
+            arguments.insert(arguments.end(), {"--output", "json"});
+        }
+        if (quiet) {
+            arguments.push_back("--quiet");
+        }
+        return run_application(fixture.runtime_factory, std::move(arguments));
+    };
+    for (const auto* operation : {"synchronize", "monitor"}) {
+        const auto lock = onedrive::app::detail::acquire_runtime_lock(
+            fixture.state_path, operation
+        );
+        for (const bool preview : {true, false}) {
+            for (const bool json : {false, true}) {
+                for (const bool quiet : {false, true}) {
+                    const auto busy = invoke(preview, json, quiet);
+                    if (busy.exit_code != exit_code::failure ||
+                        !busy.standard_error.contains(
+                            "Restore was not started."
+                        ) ||
+                        !busy.standard_error.contains(
+                            "Stop the running sync/watch"
+                        ) ||
+                        !busy.standard_error.contains(operation) ||
+                        (quiet && !busy.standard_output.empty()) ||
+                        busy.standard_output.contains("restore_plan") ||
+                        fixture.runtime_factory.token_store_count != 0 ||
+                        fixture.runtime_factory.graph_client_count != 0 ||
+                        fixture.runtime_factory.item_store_count != 0 ||
+                        std::filesystem::exists(fixture.sync_path)) {
+                        return fail(
+                            "busy restore authenticated, started recovery or "
+                            "lost "
+                            "its refusal"
+                        );
+                    }
+                    if (json) {
+                        bool reported = false;
+                        std::istringstream lines{busy.standard_error};
+                        for (std::string line; std::getline(lines, line);) {
+                            const auto event = nlohmann::json::parse(line);
+                            if (event.value("event", "") == "restore_busy") {
+                                reported = event.value("level", "") == "error";
+                            }
+                        }
+                        if (!reported) {
+                            return fail(
+                                "busy restore did not return a structured JSON "
+                                "error"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if (fixture.authenticate().exit_code != exit_code::success ||
+        invoke(true, true).exit_code != exit_code::success) {
+        return fail("restore remained blocked by an exited sync/watch owner");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_restore_directory_lock_boundaries() {
+    for (const auto* operation : {"synchronize", "monitor"}) {
+        for (const std::string relationship :
+             {"ancestor", "descendant", "sibling"}) {
+            CliFixture fixture;
+            if (fixture.authenticate().exit_code != exit_code::success) {
+                return fail(
+                    "directory boundary fixture could not authenticate"
+                );
+            }
+            const auto root =
+                onedrive::account::AccountState::drive_data_directory(
+                    fixture.sync_path, onedrive::test::test_drive_identity()
+                );
+            const auto held = relationship == "ancestor" ? root.parent_path()
+                              : relationship == "descendant"
+                                  ? root / "Nested"
+                                  : root.parent_path() /
+                                        (root.filename().string() + "-other");
+            const auto owner_state =
+                fixture.temporary_directory.path() / "other-state";
+            std::ostringstream output;
+            std::ostringstream error;
+            onedrive::cli::Console console{
+                {.ui = onedrive::cli::UiMode::console}, output, error
+            };
+            auto lock = onedrive::app::detail::acquire_sync_directory_lock(
+                held, owner_state, operation, console
+            );
+            const auto invoke = [&](bool preview) {
+                std::vector<std::string> arguments{
+                    "onedrive-cpp",
+                    "transfer",
+                    "restore",
+                    "notes.txt",
+                    "--config",
+                    fixture.config_path.string(),
+                    "--ui",
+                    "console",
+                    "--output",
+                    "json"
+                };
+                if (preview) {
+                    arguments.push_back("--dry-run");
+                }
+                return run_application(
+                    fixture.runtime_factory, std::move(arguments)
+                );
+            };
+            const bool blocked = relationship != "sibling";
+            for (const bool preview : {true, false}) {
+                const auto result = invoke(preview);
+                if (blocked) {
+                    bool owner_reported = false;
+                    std::istringstream lines{result.standard_output};
+                    for (std::string line; std::getline(lines, line);) {
+                        const auto event = nlohmann::json::parse(line);
+                        if (event.value("event", "") == "runtime_busy") {
+                            const auto& values = event.at("values");
+                            owner_reported =
+                                values.at("resource") == "sync_directory" &&
+                                values.at("requested_directory") ==
+                                    root.string() &&
+                                values.at("operation") == operation &&
+                                values.at("state_directory") ==
+                                    owner_state.string() &&
+                                values.at("sync_directory") == held.string();
+                        }
+                    }
+                    if (result.exit_code != exit_code::failure ||
+                        !result.standard_error.contains(
+                            R"("event":"restore_busy")"
+                        ) ||
+                        !owner_reported ||
+                        result.standard_output.contains("restore_plan") ||
+                        fixture.runtime_factory.item_store_count != 0 ||
+                        std::filesystem::exists(root)) {
+                        return fail(
+                            "restore crossed a parent/child directory lease or "
+                            "lost its owner"
+                        );
+                    }
+                } else if (result.exit_code != exit_code::success ||
+                           result.standard_error.contains("restore_busy") ||
+                           (preview && std::filesystem::exists(root)) ||
+                           (!preview &&
+                            onedrive::test::read_file(root / "notes.txt") !=
+                                std::string(42, 'x'))) {
+                    return fail(
+                        "an unrelated, similarly named directory blocked "
+                        "restoration"
+                    );
+                }
+                if (!onedrive::test::throws_with<
+                        onedrive::app::detail::RuntimeBusyError>(
+                        [&] {
+                            static_cast<void>(onedrive::app::detail::
+                                                  acquire_sync_directory_lock(
+                                                      held,
+                                                      fixture.state_path,
+                                                      "restore",
+                                                      console
+                                                  ));
+                        },
+                        "another onedrive-cpp process"
+                    )) {
+                    return fail(
+                        "restore stopped or released another task's directory "
+                        "lease"
+                    );
+                }
+            }
+            lock.reset();
+            if (invoke(true).exit_code != exit_code::success) {
+                return fail(
+                    "restore remained blocked after the directory lease was "
+                    "released"
+                );
+            }
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_restore_busy_without_owner_metadata() {
+    CliFixture fixture;
+    const auto lock = onedrive::app::detail::acquire_runtime_lock(
+        fixture.state_path, "monitor"
+    );
+    if (::ftruncate(lock.get(), 0) == -1) {
+        return fail("cannot simulate unavailable runtime-lock owner metadata");
+    }
+    const auto result = run_application(
+        fixture.runtime_factory,
+        {"onedrive-cpp",
+         "transfer",
+         "restore",
+         "--dry-run",
+         "--config",
+         fixture.config_path.string(),
+         "--ui",
+         "console",
+         "--output",
+         "json",
+         "--quiet"}
+    );
+    if (result.exit_code != exit_code::failure ||
+        !result.standard_output.empty() ||
+        !result.standard_error.contains(R"("event":"restore_busy")") ||
+        !result.standard_error.contains("owner metadata is not available") ||
+        fixture.runtime_factory.token_store_count != 0 ||
+        fixture.runtime_factory.graph_client_count != 0 ||
+        fixture.runtime_factory.item_store_count != 0 ||
+        !onedrive::test::read_file(fixture.state_path / "onedrive-cpp.lock")
+             .empty() ||
+        std::filesystem::exists(fixture.sync_path)) {
+        return fail(
+            "restore ignored a busy lock with unavailable owner metadata"
         );
     }
     return EXIT_SUCCESS;
@@ -1021,13 +1282,29 @@ int test_flow() {
 } // namespace
 
 int main() {
-    onedrive::test::ScenarioProgress progress{6};
+    onedrive::test::ScenarioProgress progress{9};
     if (progress.run("restore_command", test_restore_command) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
     if (progress.run(
             "restore_real_database_and_directory_lock",
             test_restore_real_database_and_directory_lock
+        ) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+    if (progress.run(
+            "restore_busy_state_exits_before_authentication",
+            test_restore_busy_state_exits_before_authentication
+        ) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+    if (progress.run(
+            "restore_directory_lock_boundaries",
+            test_restore_directory_lock_boundaries
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "restore_busy_without_owner_metadata",
+            test_restore_busy_without_owner_metadata
         ) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }

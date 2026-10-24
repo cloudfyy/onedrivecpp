@@ -1,3 +1,13 @@
+onedrive-cpp (1.1.1-1~ubuntu24.04) noble; urgency=medium
+
+  * Prepare version 1.1.1.
+  * Add explicit missing-file recovery with read-only previews and safe
+    coordination of pending cloud deletions.
+  * Improve organizational authentication and notification compatibility.
+  * Prioritize file paths and summarize Drive information in CLI history.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sat, 24 Oct 2026 06:36:24 +0000
+
 onedrive-cpp (1.1.0-1~ubuntu24.04) noble; urgency=medium
 
   * Start the 1.1.0 development cycle for OneDrive for Business support.

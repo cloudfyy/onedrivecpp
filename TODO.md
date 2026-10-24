@@ -3,7 +3,7 @@
 ## 1.1 OneDrive for Business
 
 首阶段面向组织用户自己的 OneDrive；SharePoint／Teams 文档库、共享快捷方式和
-跨租户资源后续单独扩展。版本已提升至 1.1.0，尚未发布。
+跨租户资源后续单独扩展。版本已提升至 1.1.1，尚未发布。
 
 - [x] P1 支持同一账号配置多个 Drive
   - 新增 sync.drive_ids，与旧 sync.drive_id 互斥并保留单盘兼容。
