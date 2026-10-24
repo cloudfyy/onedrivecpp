@@ -18,7 +18,8 @@ records its distribution-specific version separately in `debian/changelog`.
   callback; shared per-account credentials, automatic access-token refresh,
   and owner-only refresh-token storage.
 - Incremental Microsoft Graph Delta synchronization with multiple account and
-  Drive isolation, selective-sync rules, and explicit single-file downloads.
+  Drive isolation, selective-sync rules, explicit single-file downloads, and
+  missing-local-file recovery with `transfer restore`.
 - Concurrent, resumable, integrity-checked downloads with atomic installation,
   disk-space coordination, aggregate rate limiting, and local-conflict backup
   or blocking policies.

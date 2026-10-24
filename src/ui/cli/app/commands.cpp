@@ -18,6 +18,7 @@
 #include "onedrive/storage/item_database.hpp"
 #include "onedrive/storage/item_store.hpp"
 #include "onedrive/sync/download/single_file.hpp"
+#include "onedrive/sync/download/restore.hpp"
 #include <spdlog/spdlog.h>
 
 #include <format>
@@ -586,8 +587,9 @@ int execute_command(
     }
     spdlog::info(
         "Starting {}{}",
-        operation == Operation::monitor ? "filesystem monitor"
-                                        : "synchronization",
+        operation == Operation::monitor   ? "filesystem monitor"
+        : operation == Operation::restore ? "missing-file restoration"
+                                          : "synchronization",
         config.dry_run ? " dry run" : ""
     );
     if (operation == Operation::synchronize) {
@@ -610,9 +612,22 @@ int execute_command(
         config.sync_data_directory, identity
     );
     const auto sync_lock = acquire_sync_directory_lock(
-        config.sync_data_directory, config.state_directory, "download", console
+        config.sync_data_directory,
+        config.state_directory,
+        operation_name(operation),
+        console
     );
     auto items = runtime_factory.create_item_store(config, identity);
+    if (operation == Operation::restore) {
+        if (config.dry_run) {
+            items->open_read_only();
+        } else {
+            items->open();
+        }
+        return sync::restore_missing_files(
+            config, arguments.restore_path, *graph, *items, console
+        );
+    }
     items->open();
     if (operation == Operation::download && config.dry_run) {
         return sync::plan_single_file_download(

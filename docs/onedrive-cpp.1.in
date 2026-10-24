@@ -70,6 +70,10 @@ onedrive-cpp \- modern C++ OneDrive synchronization client
 .B onedrive-cpp transfer sync
 .RI [ options ]
 .PP
+.B onedrive-cpp transfer restore
+.RI [ options ]
+.RI [ REMOTE_PATH ]
+.PP
 .B onedrive-cpp transfer watch
 .RI [ options ]
 .PP
@@ -413,6 +417,21 @@ without advancing the Drive delta link. With
 display the resolved remote path, local destination, and expected size without
 creating the item database or changing downloaded files.
 .TP
+.B transfer restore
+Restore missing local files and empty directories from the current cloud
+version. The optional Drive-relative path selects a file or directory; omitting
+it selects the configured sync scope of one Drive. Sync filters are honored.
+Existing local files are never overwritten, including concurrent creations.
+The command never uploads, moves or deletes cloud content and preserves the
+sync cursor and pending Delta batch. Successful files update their snapshots.
+Overlapping pending cloud deletions, including ancestor-directory deletes, are
+cancelled; other installation, upload or move journals block affected targets
+and are preserved. Stop Monitor before recovery. With
+.BR \-\-dry\-run ,
+read the existing state database without modifying snapshots or journals and
+display the recovery plan. Cloud-deleted files require recovery in the OneDrive
+web recycle bin. Review any blocked or failed recovery before resuming sync.
+.TP
 .B transfer sync
 Refresh the OAuth access token and retrieve recursive drive changes using the
 Microsoft Graph delta API. Successful non-dry-run queries atomically persist
@@ -650,6 +669,9 @@ For
 .BR download ,
 resolve and display the single-file plan without creating the item database or
 changing downloaded files. For
+.BR "transfer restore" ,
+preview missing local files and pending cloud deletions to cancel, without
+changing files or sync state. For
 .B transfer sync
 , display the effective synchronization inputs without modifying remote files.
 .SH CONFIGURATION

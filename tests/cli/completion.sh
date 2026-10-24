@@ -50,6 +50,7 @@ COMP_CWORD=2
 _onedrive_cpp_completion
 assert_contains sync "${COMPREPLY[@]}"
 assert_contains download "${COMPREPLY[@]}"
+assert_contains restore "${COMPREPLY[@]}"
 assert_contains watch "${COMPREPLY[@]}"
 
 COMP_WORDS=(onedrive-cpp transfer sync --)
@@ -114,6 +115,14 @@ COMP_CWORD=3
 _onedrive_cpp_completion
 assert_contains --ui "${COMPREPLY[@]}"
 assert_contains --theme "${COMPREPLY[@]}"
+
+COMP_WORDS=(onedrive-cpp transfer restore --)
+COMP_CWORD=3
+_onedrive_cpp_completion
+assert_contains --dry-run "${COMPREPLY[@]}"
+assert_contains --config "${COMPREPLY[@]}"
+assert_contains --ui "${COMPREPLY[@]}"
+assert_contains --output "${COMPREPLY[@]}"
 
 COMP_WORDS=(onedrive-cpp state "")
 COMP_CWORD=2

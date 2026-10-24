@@ -105,12 +105,14 @@ public:
     }
 
     [[nodiscard]] onedrive::graph::DeltaResult list_delta(
-        const std::optional<std::string>&,
+        const std::optional<std::string>& cursor,
         const onedrive::graph::DeltaProgress&,
         std::stop_token,
         std::span<const onedrive::graph::RemoteItem> = {}
     ) const {
-        return {};
+        ++delta_count;
+        last_delta_cursor = cursor;
+        return delta_result;
     }
 
     void download_file(
@@ -124,6 +126,9 @@ public:
         const onedrive::graph::DownloadCheckpoint& checkpoint,
         const onedrive::graph::DownloadData& data
     ) const {
+        if (before_download) {
+            before_download();
+        }
         ++download_count;
         last_expected_etag = expected_etag;
         last_initial_offset = initial_offset;
@@ -194,6 +199,7 @@ public:
     }
 
     void delete_item(const std::string&, const std::string&) const {
+        ++delete_count;
     }
     void delete_item(
         const std::string& remote_id,
@@ -227,6 +233,11 @@ public:
     }
 
     std::string contents{"data"};
+    onedrive::graph::DeltaResult delta_result;
+    std::function<void()> before_download;
+    mutable int delta_count{0};
+    mutable std::optional<std::string> last_delta_cursor;
+    mutable int delete_count{0};
     std::optional<std::string> streamed_contents;
     std::vector<std::uint64_t> progress_updates;
     bool send_checkpoint{true};

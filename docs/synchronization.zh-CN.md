@@ -82,6 +82,43 @@ checkpoint 恢复、完整性校验、磁盘空间预留、本地修改保护和
 onedrive-cpp transfer download "Documents/report.pdf" --dry-run
 ```
 
+## 恢复误删的本地文件
+
+先停止正在运行的 `sync`／`watch`，使用独立的恢复命令，而不是清空状态或重新运行
+双向同步：
+
+```bash
+# 预览一个文件或目录中的缺失内容
+onedrive-cpp transfer restore "Documents" --dry-run
+# 只补回本地缺失内容
+onedrive-cpp transfer restore "Documents"
+# 不提供路径时，检查当前单个 Drive 的整个配置同步范围
+onedrive-cpp transfer restore --dry-run
+onedrive-cpp transfer restore
+```
+
+路径相对于所选 Drive；可以指向文件或目录。所有范围均遵循当前 sync-list、
+根文件、dotfile、`.nosync` 和最大文件大小策略。目录范围包含后代及缺失的空目录，
+不会包含名称仅有相同前缀的兄弟目录。多 Drive 配置须先选择单个 Drive。
+
+恢复通过完整远端清单重新寻找未变化的文件，只下载本地缺失的云端当前版本。
+现有本地文件无论是否修改都不覆盖，传输期间新建的本地文件也受保护；即使配置
+允许 `safeBackup` 替换，恢复仍使用禁止覆盖策略。它不会上传、移动、删除云端
+内容，也不删除现有本地文件。可安全匹配的 partial checkpoint 仍会复用。
+
+成功安装的文件更新自己的可信快照，但不推进同步游标、不消费待应用 Delta 批次。
+恢复会取消直接针对待恢复目标或覆盖它的父目录的待执行云端删除记录；取消父目录
+记录意味着整条目录删除操作取消，范围外的独立删除记录保留。安装、上传或移动
+journal 若与目标重叠，则保留记录并明确阻止该目标，不自动执行或清除这些操作。
+
+`--dry-run` 只读已有同步数据库，列出文件、目录、字节数、跳过／阻止数量及将取消的
+云端删除记录数，不下载、不更改快照、journal 或游标。认证刷新和日志仍可能写入。
+正常恢复复用共享下载进度和已完成文件历史；有阻止项返回 3，其他错误返回 1。
+存在错误或阻止项时，不要在核对结果前重新启动双向同步。
+
+云端也已删除或不再可见的已跟踪文件会明确报告，不能靠重新下载找回；
+应先在 OneDrive 网页回收站恢复。恢复命令不提供历史版本／回收站操作。
+
 ## Delta 同步与原子应用
 
 `transfer sync` 命令会刷新 OAuth access token。Microsoft 返回轮换后的 refresh token

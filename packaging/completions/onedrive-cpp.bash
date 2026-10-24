@@ -81,7 +81,7 @@ _onedrive_cpp_completion()
                     state_action="$word"
                 fi
                 ;;
-            sync|download|watch)
+            sync|download|restore|watch)
                 if [[ "$command" == "transfer" ]]; then
                     transfer_action="$word"
                 fi
@@ -185,7 +185,7 @@ _onedrive_cpp_completion()
                     mapfile -t COMPREPLY < <(compgen -W \
                         "$common_options --ui --theme --dry-run --force-large-delete" -- "$current")
                     ;;
-                download)
+                download|restore)
                     mapfile -t COMPREPLY < <(compgen -W \
                         "$common_options --ui --theme --dry-run" -- "$current")
                     ;;
@@ -195,7 +195,7 @@ _onedrive_cpp_completion()
                     ;;
                 *)
                     mapfile -t COMPREPLY < <(
-                        compgen -W "sync download watch --help" -- "$current"
+                        compgen -W "sync download restore watch --help" -- "$current"
                     )
                     ;;
             esac

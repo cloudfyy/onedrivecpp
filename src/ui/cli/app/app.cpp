@@ -47,6 +47,7 @@ cli::TuiView tui_view(detail::Operation operation) noexcept {
         case detail::Operation::config:
             return cli::TuiView::config;
         case detail::Operation::download:
+        case detail::Operation::restore:
             return cli::TuiView::download;
         case detail::Operation::monitor:
             return cli::TuiView::watch;

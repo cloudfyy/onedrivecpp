@@ -21,7 +21,7 @@ RuntimePreflight::RuntimePreflight(
         throw std::runtime_error("sync.drive_id must not be empty");
     }
     if (config.drive_ids.size() > 1 &&
-        (operation == Operation::download ||
+        (operation == Operation::download || operation == Operation::restore ||
          operation == Operation::reset_cursor ||
          operation == Operation::clear_state ||
          operation == Operation::cleanup_state ||

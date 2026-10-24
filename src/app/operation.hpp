@@ -24,6 +24,7 @@ enum class Operation {
     migrate_state,
     clear_state,
     download,
+    restore,
     monitor,
     synchronize,
     monitor_status,
@@ -71,6 +72,8 @@ constexpr std::string_view operation_name(Operation operation) noexcept {
         return "clear_state";
     case Operation::download:
         return "download";
+    case Operation::restore:
+        return "restore";
     case Operation::monitor:
         return "monitor";
     case Operation::synchronize:
@@ -165,6 +168,7 @@ constexpr OperationCapabilities operation_capabilities(
                     operation == Operation::cleanup_state,
             };
         case Operation::download:
+        case Operation::restore:
         case Operation::monitor:
         case Operation::synchronize:
             return {

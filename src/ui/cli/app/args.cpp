@@ -131,6 +131,9 @@ ParseResult parse_arguments(int argc, char* argv[]) {
     auto* transfer_download = transfer->add_subcommand(
         "download", "Download one remote file by its Drive-relative path"
     );
+    auto* transfer_restore = transfer->add_subcommand(
+        "restore", "Restore missing local files without changing cloud content"
+    );
     auto* transfer_watch = transfer->add_subcommand(
         "watch", "Watch for synchronization changes"
     );
@@ -170,6 +173,7 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         std::pair{clear_state, Operation::clear_state},
         std::pair{transfer_sync, Operation::synchronize},
         std::pair{transfer_download, Operation::download},
+        std::pair{transfer_restore, Operation::restore},
         std::pair{transfer_watch, Operation::monitor},
         std::pair{monitor_status, Operation::monitor_status},
         std::pair{monitor_trigger, Operation::monitor_trigger},
@@ -297,6 +301,16 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         "--dry-run",
         arguments.force_dry_run,
         "Show the single-file download plan without changing local state"
+    );
+    transfer_restore->add_option(
+        "REMOTE_PATH",
+        arguments.restore_path,
+        "Optional Drive-relative file or directory; omit for the sync scope"
+    );
+    transfer_restore->add_flag(
+        "--dry-run",
+        arguments.force_dry_run,
+        "List missing local files without downloading or changing sync state"
     );
     inspect_sites
         ->add_option(

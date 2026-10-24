@@ -20,6 +20,7 @@ int test_multiple_drive_preflight() {
     config.drive_ids = {"first", "second"};
     for (const auto operation :
          {Operation::download,
+          Operation::restore,
           Operation::reset_cursor,
           Operation::clear_state,
           Operation::cleanup_state,
@@ -102,6 +103,59 @@ int test_logout_without_credentials() {
         onedrive::test::read_file(paths.token_directory / "account.json") !=
             account_metadata) {
         return fail("logout without a refresh token changed account metadata");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_restore_command() {
+    CliFixture fixture;
+    if (fixture.authenticate().exit_code != exit_code::success) {
+        return fail("restore command fixture could not authenticate");
+    }
+    const auto identity = onedrive::test::test_drive_identity();
+    const auto root = onedrive::account::AccountState::drive_data_directory(
+        fixture.sync_path, identity
+    );
+    const auto invoke = [&](bool preview) {
+        std::vector<std::string> arguments{
+            "onedrive-cpp",
+            "transfer",
+            "restore",
+            "notes.txt",
+            "--config",
+            fixture.config_path.string(),
+            "--ui",
+            "console",
+            "--output",
+            "json"
+        };
+        if (preview) {
+            arguments.push_back("--dry-run");
+        }
+        return run_application(fixture.runtime_factory, std::move(arguments));
+    };
+    const auto preview = invoke(true);
+    if (preview.exit_code != exit_code::success ||
+        !preview.standard_output.contains(R"("event":"restore_plan")") ||
+        !preview.standard_output.contains(R"("remote_path":"notes.txt")") ||
+        std::filesystem::exists(root / "notes.txt")) {
+        return fail(
+            "CLI restore preview did not expose the selected plan safely"
+        );
+    }
+    const auto restored = invoke(false);
+    if (restored.exit_code != exit_code::success ||
+        !restored.standard_output.contains(R"("event":"restore_completed")") ||
+        onedrive::test::read_file(root / "notes.txt") != std::string(42, 'x') ||
+        fixture.runtime_factory.item_store_apply_delta_count != 0) {
+        return fail(
+            "CLI restore did not use the resolved account/Drive destination"
+        );
+    }
+    onedrive::test::write_file(root / "notes.txt", "keep local changes");
+    if (invoke(false).exit_code != exit_code::success ||
+        onedrive::test::read_file(root / "notes.txt") != "keep local changes") {
+        return fail("CLI restore replaced an existing local file");
     }
     return EXIT_SUCCESS;
 }
@@ -822,7 +876,10 @@ int test_flow() {
 } // namespace
 
 int main() {
-    onedrive::test::ScenarioProgress progress{4};
+    onedrive::test::ScenarioProgress progress{5};
+    if (progress.run("restore_command", test_restore_command) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
     if (const auto result = progress.run(
             "multiple_drive_preflight", test_multiple_drive_preflight
         );

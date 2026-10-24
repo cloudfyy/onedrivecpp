@@ -37,6 +37,7 @@ int test_ui_option_help() {
              std::pair{"account", "login"},
              {"transfer", "sync"},
              {"transfer", "download"},
+             {"transfer", "restore"},
              {"transfer", "watch"},
              {"inspect", "health"},
              {"inspect", "status"},
@@ -122,6 +123,24 @@ int test_ui_option_help() {
 
 int test_args() {
     FakeRuntimeFactory runtime_factory;
+    for (const std::string scope : {"", "Documents", "Documents/report.pdf"}) {
+        std::vector<std::string> arguments{
+            "onedrive-cpp", "transfer", "restore", "--dry-run"
+        };
+        if (!scope.empty()) {
+            arguments.push_back(scope);
+        }
+        const auto restored = parse_test_arguments(std::move(arguments));
+        if (restored.exit_code ||
+            restored.arguments.operation !=
+                onedrive::app::detail::Operation::restore ||
+            restored.arguments.restore_path != scope ||
+            !restored.arguments.force_dry_run) {
+            return fail(
+                "restore did not accept its file, directory or Drive scope"
+            );
+        }
+    }
 
     const auto help =
         run_application(runtime_factory, {"build/release/onedrive-cpp"});

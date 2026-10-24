@@ -136,7 +136,7 @@ _onedrive_cpp()
                         '--dry-run[show synchronization plan without changing files]' \
                         '--force-large-delete[allow this sync to exceed the remote deletion limit]'
                     ;;
-                download)
+                download|restore)
                     _arguments \
                         '(-h --help)'{-h,--help}'[show command help]' \
                         '--config[path to configuration file]:configuration file:_files' \
@@ -147,7 +147,7 @@ _onedrive_cpp()
                         '--ui[download interface]:mode:(auto console tui)' \
                         '--theme[TUI color theme]:theme:(hacker ocean amber synthwave)' \
                         '--quiet[suppress informational and success output]' \
-                        '--dry-run[show download plan without changing local state]' \
+                        '--dry-run[show download or restoration plan without changing local state]' \
                         '1:remote Drive-relative path:'
                     ;;
                 watch)
@@ -164,7 +164,7 @@ _onedrive_cpp()
                     ;;
                 *)
                     _arguments \
-                        '1:transfer action:(sync download watch)'
+                        '1:transfer action:(sync download restore watch)'
                     ;;
             esac
             ;;

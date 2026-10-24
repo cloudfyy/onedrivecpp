@@ -320,7 +320,7 @@ CLI, GUI, and the systemd user service share the state-directory runtime lock.
 Monitor holds it for its entire lifetime, including waiting between rounds.
 Stopping does not release locks until workers and cleanup have finished.
 
-Sync/preview, Monitor, single-file download, and partial-file cleanup also claim
+Sync/preview, Monitor, single-file download, missing-file recovery, and partial-file cleanup also claim
 the resolved account/Drive synchronization directory. Different state directories
 cannot bypass this protection: identical and parent/child roots are rejected,
 while independent sibling Drive roots may run concurrently. Path normalization

@@ -765,7 +765,7 @@ add_onedrive_test(
     INCLUDE_DIRS src tests
 )
 foreach(
-    DOWNLOAD_TEST IN ITEMS single safe txn relaxed resume recover install_race
+    DOWNLOAD_TEST IN ITEMS single safe txn relaxed resume recover install_race restore
 )
     add_onedrive_test(
         download_${DOWNLOAD_TEST}_tests
@@ -774,6 +774,7 @@ foreach(
     )
 endforeach()
 target_link_libraries(download_single_tests PRIVATE onedrive_cli)
+target_link_libraries(download_restore_tests PRIVATE onedrive_cli)
 target_link_libraries(download_resume_tests PRIVATE spdlog::spdlog)
 target_link_options(
     download_install_race_tests PRIVATE

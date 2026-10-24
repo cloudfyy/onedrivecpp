@@ -70,6 +70,10 @@ onedrive-cpp \- 现代 C++ OneDrive 同步客户端
 .B onedrive-cpp transfer sync
 .RI [ 选项 ]
 .PP
+.B onedrive-cpp transfer restore
+.RI [ 选项 ]
+.RI [ 远端路径 ]
+.PP
 .B onedrive-cpp transfer watch
 .RI [ 选项 ]
 .PP
@@ -339,6 +343,18 @@ eTag 前置条件、HTTPS 重定向、Range 传输、持久 checkpoint、完整�
 时只显示解析后的远端路径、本地目标和预期大小，不创建 item 数据库，也不修改
 下载文件。
 .TP
+.B transfer restore
+从云端当前版本恢复本地缺失的文件和空目录。可选 Drive 相对路径指定文件或目录，
+省略时检查单个 Drive 的配置同步范围，遵循同步筛选策略。
+不覆盖现有本地文件，包括传输期间新建的文件；不上传、移动或删除云端内容。
+保留同步游标和待应用 Delta 批次，仅更新成功恢复文件的快照。
+取消覆盖恢复目标的待执行云端删除，包括祖先目录删除；其他重叠的安装、上传或
+移动 journal 保留并阻止对应目标。恢复前先停止 Monitor。指定
+.B \-\-dry\-run
+时只读已有同步数据库并显示计划，不更改快照或 journal。
+云端也已删除的文件须先到 OneDrive 网页回收站恢复；
+恢复受阻或失败时，核对结果后再重新启动同步。
+.TP
 .B transfer sync
 刷新 OAuth access token，并通过 Microsoft Graph Delta API 获取递归 Drive
 变化。非 dry-run 的成功查询会在应用远端变化后扫描本地变化并上传，最后原子
@@ -522,6 +538,8 @@ trace 会记录协商协议、新建连接数及 DNS、TCP、TLS、服务端等�
 对于
 .B transfer download
 ，只解析并显示单文件计划，不创建 item 数据库或修改本地文件。对于
+.B transfer restore
+，预览缺失文件和将取消的云端删除，不修改文件或同步状态。对于
 .B transfer sync
 ，显示有效同步输入，不修改本地文件、远端文件或同步状态。
 .SH 配置

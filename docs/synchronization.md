@@ -112,6 +112,49 @@ files:
 onedrive-cpp transfer download "Documents/report.pdf" --dry-run
 ```
 
+## Restoring accidentally deleted local files
+
+Stop any running sync/Monitor before using the dedicated recovery command. Do
+not clear synchronization state or run bidirectional sync to undo a local deletion.
+
+```bash
+onedrive-cpp transfer restore "Documents" --dry-run
+onedrive-cpp transfer restore "Documents"
+# Omit the path to check the configured sync scope of the selected single Drive.
+onedrive-cpp transfer restore --dry-run
+onedrive-cpp transfer restore
+```
+
+The optional path identifies a Drive-relative file or directory. Recovery
+honors current sync-list, root-file, dotfile, `.nosync`, and maximum-size policies.
+Directory selection includes descendants and missing empty directories, not
+similarly prefixed siblings. Multiple configured Drives must be reduced to one.
+
+Recovery fetches a full cloud listing, including unchanged files, and downloads
+the current cloud version only where local content is missing. Existing local
+files are never replaced, including files created during transfer and when
+`sync.local_conflict` allows safeBackup replacement. It does not upload, move,
+or delete cloud content, or delete existing local files. Matching partial
+checkpoints can still resume.
+
+Each successfully installed file updates its own snapshot without advancing the
+sync cursor or consuming a pending Delta batch. Pending cloud deletions targeting
+restored items or their ancestor directories are cancelled; cancelling an ancestor
+cancels that entire directory-delete operation. Unrelated deletion records remain.
+Overlapping installation, upload, and move journals are preserved and explicitly
+block those targets rather than being automatically executed or discarded.
+
+`--dry-run` opens an existing sync database read-only and lists files, directories,
+bytes, skipped/blocked counts, and pending cloud deletions that would be cancelled.
+It does not download or change snapshots, journals, or cursors; authentication
+refresh and logging can still write. Apply uses the shared download progress and
+completed-file history. Blocked targets return 3; other failures return 1. Do not
+restart bidirectional sync after an incomplete recovery until its results are reviewed.
+
+Previously tracked files that are deleted or no longer visible in the cloud are
+reported explicitly. Restore them in the OneDrive web recycle bin first. This
+command does not recover historical versions or operate the cloud recycle bin.
+
 ## Delta synchronization and atomic application
 
 The `transfer sync` command refreshes the OAuth access token, securely persists a
