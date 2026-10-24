@@ -258,14 +258,35 @@ finishes.
 Set `monitor.websocket_enabled = false` to disable Graph Socket.IO/WSS
 notifications; local inotify events and periodic Graph polling remain active.
 The startup message describes this setting, not a successful connection.
+The [Graph Socket.IO API](https://learn.microsoft.com/en-us/graph/api/subscriptions-socketio?view=graph-rest-1.0)
+supports both personal and work/school delegated accounts; the default
+`Files.ReadWrite` permission is sufficient for a user's own Drive. The returned
+URL's path selects the Socket.IO namespace, while WebSocket transport uses
+`/socket.io/` and preserves the returned query parameters.
+`expirationDateTime` is optional. When supplied, it controls renewal using the
+configured lead; when absent, the client does not invent a lease duration.
+Disconnects still reacquire the channel, and periodic Delta polling remains active.
+
+HTTP 403, 404, 405, 410 and 501 suspend that Drive's notification channel for the
+current Monitor session and explicitly report polling mode. Correct access or
+endpoint support and restart Monitor to try notifications again; this is not a
+claim that all organizational accounts lack support. HTTP 401 triggers token
+recovery; transport errors, malformed responses, HTTP 429 and server failures
+retain bounded retries while reporting polling mode. An unavailable channel
+does not disable other Drives' channels or local file monitoring. No extra
+permissions are requested and saved credentials are not removed by this fallback.
+
 `Notification WebSocket Engine.IO handshake completed` confirms that the
 transport has processed the server's Engine.IO open frame. With debug logging,
 channel acquisition, transport connection, and received Graph notifications are
 also reported. Handshake timeouts and connection failures are warnings; retries
 and fallback polling remain active. Notification URLs and their tokens are not
 included in these diagnostics.
+Retry delays and connection deadlines start when channel acquisition or token
+refresh finishes; time spent in those requests does not consume the next backoff
+or handshake budget.
 The request and connect timeouts bound channel acquisition and the WSS
-handshake. The renewal lead refreshes a channel before expiry, while the
+handshake. The renewal lead refreshes a channel with a supplied expiry, while the
 initial and maximum backoff values bound exponential retries. Engine.IO
 heartbeat timing is negotiated by the server and is intentionally not
 configurable.

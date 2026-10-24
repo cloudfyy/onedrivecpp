@@ -25,6 +25,63 @@ const std::string open_frame =
     R"(0{"sid":"one","pingInterval":25,"pingTimeout":20})";
 using Commands = std::vector<ProtocolCommand>;
 
+void test_documented_notification_namespaces() {
+    for (const auto& [url, name_space] :
+         {std::pair{
+              "https://notify.example.test/tenant/callback?token=secret",
+              "/tenant/callback"
+          },
+          std::pair{"https://notify.example.test?token=secret", "/"},
+          std::pair{"https://notify.example.test/", "/"},
+          std::pair{
+              "https://notify.example.test/notifications", "/notifications"
+          }}) {
+        require(
+            socket_io_namespace(url) == name_space,
+            "notification URL path was not used as its Socket.IO namespace"
+        );
+        SocketProtocol protocol{socket_io_namespace(url)};
+        protocol.connected();
+        const auto connect = std::string{name_space} == "/"
+                                 ? std::string{"40"}
+                                 : "40" + std::string{name_space};
+        require(
+            protocol.text(open_frame, true, 0ms) ==
+                Commands{
+                    {ProtocolEffect::send, connect},
+                    {ProtocolEffect::connected, {}}
+                },
+            "notification handshake subscribed an unrelated hardcoded namespace"
+        );
+        const auto acknowledgement = connect + (std::string{name_space} == "/"
+                                                    ? R"({"sid":"root"})"
+                                                    : R"(,{"sid":"channel"})");
+        require(
+            protocol.text(acknowledgement, true, 1ms).empty() &&
+                protocol.phase() == SocketPhase::listening,
+            "configured notification namespace acknowledgement was not "
+            "recognized"
+        );
+    }
+    require(
+        socket_io_url("https://notify.example.test?token=secret#ignored") ==
+            "wss://notify.example.test/socket.io/"
+            "?EIO=4&transport=websocket&token=secret",
+        "root notification endpoint lost its query or included its fragment"
+    );
+    for (const auto* url :
+         {"https://notify.example.test/bad,namespace",
+          "https://notify.example.test/bad\nnamespace"}) {
+        require(
+            onedrive::test::throws_with<std::invalid_argument>(
+                [url] { static_cast<void>(socket_io_namespace(url)); },
+                "invalid characters"
+            ),
+            "invalid Socket.IO namespace was accepted"
+        );
+    }
+}
+
 void test_protocol_handshake_and_heartbeat() {
     SocketProtocol protocol;
     require(
@@ -45,7 +102,6 @@ void test_protocol_handshake_and_heartbeat() {
     require(
         protocol.text(open_frame, true, 10ms) ==
                 Commands{
-                    {ProtocolEffect::send, "40"},
                     {ProtocolEffect::send, "40/notifications"},
                     {ProtocolEffect::connected, {}}
                 } &&
@@ -131,7 +187,7 @@ void test_protocol_fragments_and_errors() {
         );
         require(
             protocol.text(std::string_view{open_frame}.substr(split), true, 1ms)
-                    .size() == 3,
+                    .size() == 2,
             "fragmented Engine.IO message did not survive chunk boundaries"
         );
         require(
@@ -373,8 +429,12 @@ int test_transport_failure_event() {
 } // namespace
 
 int main() {
-    onedrive::test::ScenarioProgress progress{7};
+    onedrive::test::ScenarioProgress progress{8};
     try {
+        progress.run(
+            "documented_notification_namespaces",
+            test_documented_notification_namespaces
+        );
         progress.run(
             "protocol_handshake_and_heartbeat",
             test_protocol_handshake_and_heartbeat

@@ -11,6 +11,7 @@
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
 #include <chrono>
@@ -80,14 +81,22 @@ std::optional<ReceivedChunk> receive_chunk(CURL* curl) {
 
 } // namespace
 
-std::string socket_io_url(std::string_view notification_url) {
+namespace {
+
+struct SocketEndpoint {
+    std::string url;
+    std::string name_space;
+};
+
+SocketEndpoint socket_endpoint(std::string_view notification_url) {
     const auto scheme = notification_url.find("://");
     if (scheme == std::string_view::npos ||
         notification_url.substr(0, scheme) != "https") {
         throw std::invalid_argument("notification URL must use HTTPS");
     }
     const auto authority_begin = scheme + 3;
-    const auto path_begin = notification_url.find('/', authority_begin);
+    const auto path_begin =
+        notification_url.find_first_of("/?#", authority_begin);
     const auto authority = notification_url.substr(
         authority_begin,
         path_begin == std::string_view::npos
@@ -97,12 +106,34 @@ std::string socket_io_url(std::string_view notification_url) {
     if (authority.empty()) {
         throw std::invalid_argument("notification URL has no authority");
     }
+    const auto fragment = notification_url.find('#');
+    const auto query_begin = notification_url.find('?', authority_begin);
+    const auto path_end = notification_url.find_first_of("?#", authority_begin);
+    const auto name_space =
+        path_begin != std::string_view::npos &&
+                notification_url[path_begin] == '/'
+            ? notification_url.substr(
+                  path_begin,
+                  path_end == std::string_view::npos ? path_end
+                                                     : path_end - path_begin
+              )
+            : std::string_view{"/"};
+    if (name_space.find(',') != std::string_view::npos ||
+        std::ranges::any_of(notification_url, [](unsigned char c) {
+            return c <= 0x20;
+        })) {
+        throw std::invalid_argument(
+            "notification URL contains invalid characters"
+        );
+    }
     std::string_view query;
-    if (path_begin != std::string_view::npos) {
-        const auto query_begin = notification_url.find('?', path_begin);
-        if (query_begin != std::string_view::npos) {
-            query = notification_url.substr(query_begin + 1);
-        }
+    if (query_begin != std::string_view::npos &&
+        (fragment == std::string_view::npos || query_begin < fragment)) {
+        query = notification_url.substr(
+            query_begin + 1,
+            fragment == std::string_view::npos ? fragment
+                                               : fragment - query_begin - 1
+        );
     }
     std::string result = "wss://" + std::string{authority} +
                          "/socket.io/?EIO=4&transport=websocket";
@@ -110,7 +141,17 @@ std::string socket_io_url(std::string_view notification_url) {
         result += '&';
         result += query;
     }
-    return result;
+    return {std::move(result), std::string{name_space}};
+}
+
+} // namespace
+
+std::string socket_io_url(std::string_view notification_url) {
+    return socket_endpoint(notification_url).url;
+}
+
+std::string socket_io_namespace(std::string_view notification_url) {
+    return socket_endpoint(notification_url).name_space;
 }
 
 bool socket_io_notification(std::string_view frame) {
@@ -205,9 +246,10 @@ public:
 
     void connect(std::string_view notification_url) {
         disconnect();
-        worker_ = std::jthread{[this, url = socket_io_url(notification_url)](
-                                   const std::stop_token& stop_token
-                               ) { run(url, stop_token); }};
+        worker_ =
+            std::jthread{[this, endpoint = socket_endpoint(notification_url)](
+                             const std::stop_token& stop_token
+                         ) { run(endpoint, stop_token); }};
     }
 
     void disconnect() {
@@ -353,9 +395,10 @@ private:
     }
 
     void
-    run(const std::string& url, const std::stop_token& stop_token) noexcept {
+    run(const SocketEndpoint& endpoint,
+        const std::stop_token& stop_token) noexcept {
         try {
-            SocketProtocol protocol;
+            SocketProtocol protocol{endpoint.name_space};
             CURL* connection = nullptr;
             const auto now = [] {
                 return std::chrono::duration_cast<SocketProtocol::Time>(
@@ -401,7 +444,7 @@ private:
             if (!handle) {
                 throw std::runtime_error("cannot create WebSocket handle");
             }
-            configure(handle.get(), url, stop_token);
+            configure(handle.get(), endpoint.url, stop_token);
             throw_if_curl_error(
                 ::curl_easy_perform(handle.get()),
                 "cannot connect notification WebSocket"

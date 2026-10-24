@@ -70,7 +70,9 @@ void run_script(
     std::vector<std::string> sends,
     SendResult send_result = SendResult::complete,
     PerformResult perform_result = PerformResult::success,
-    bool kernel_readable = true
+    bool kernel_readable = true,
+    std::string_view notification_url =
+        "https://notify.example.test/notifications"
 ) {
     Script script;
     script.receives = std::move(receives);
@@ -79,7 +81,7 @@ void run_script(
     script.kernel_readable = kernel_readable;
     active = &script;
     SocketIoTransport transport{{}, 1s};
-    transport.connect(std::string{"https://notify.example.test/notifications"});
+    transport.connect(notification_url);
     std::vector<SocketEvent> observed;
     const bool completed = test::wait_until(
         [&] {
@@ -123,7 +125,7 @@ void test_fragmented_transport() {
         {SocketEvent::connected,
          SocketEvent::notification,
          SocketEvent::disconnected},
-        {"40", "40/notifications", "3"}
+        {"40/notifications", "3"}
     );
 }
 
@@ -139,7 +141,7 @@ void test_buffered_transport_without_kernel_readability() {
         {SocketEvent::connected,
          SocketEvent::notification,
          SocketEvent::disconnected},
-        {"40", "40/notifications"},
+        {"40/notifications"},
         SendResult::complete,
         PerformResult::success,
         false
@@ -159,10 +161,16 @@ void test_transport_failures() {
         run_script({failed}, {SocketEvent::disconnected}, {});
     }
     run_script(
-        {{open}}, {SocketEvent::disconnected}, {"40"}, SendResult::partial
+        {{open}},
+        {SocketEvent::disconnected},
+        {"40/notifications"},
+        SendResult::partial
     );
     run_script(
-        {{open}}, {SocketEvent::disconnected}, {"40"}, SendResult::failure
+        {{open}},
+        {SocketEvent::disconnected},
+        {"40/notifications"},
+        SendResult::failure
     );
     for (const auto result :
          {PerformResult::failure, PerformResult::unknown_exception}) {
@@ -170,6 +178,37 @@ void test_transport_failures() {
             {}, {SocketEvent::disconnected}, {}, SendResult::complete, result
         );
     }
+}
+
+void test_documented_endpoint_namespaces() {
+    run_script(
+        {{R"(0{"pingInterval":25000,"pingTimeout":20000})"},
+         {R"(40/tenant/callback,{"sid":"business"})"},
+         {R"(42/tenant/callback,["notification",{}])"},
+         {"41/tenant/callback,"}},
+        {SocketEvent::connected,
+         SocketEvent::notification,
+         SocketEvent::disconnected},
+        {"40/tenant/callback"},
+        SendResult::complete,
+        PerformResult::success,
+        true,
+        "https://notify.example.test/tenant/callback?token=secret"
+    );
+    run_script(
+        {{R"(0{"pingInterval":25000,"pingTimeout":20000})"},
+         {R"(40{"sid":"root"})"},
+         {R"(42["notification",{}])"},
+         {"41"}},
+        {SocketEvent::connected,
+         SocketEvent::notification,
+         SocketEvent::disconnected},
+        {"40"},
+        SendResult::complete,
+        PerformResult::success,
+        true,
+        "https://notify.example.test?token=secret"
+    );
 }
 
 class ThrowingSink final : public spdlog::sinks::sink {
@@ -339,8 +378,12 @@ extern "C" CURLcode __wrap_curl_ws_send(
 }
 
 int main() {
-    onedrive::test::ScenarioProgress progress{5};
+    onedrive::test::ScenarioProgress progress{6};
     try {
+        progress.run(
+            "documented_endpoint_namespaces",
+            test_documented_endpoint_namespaces
+        );
         progress.run("fragmented_transport", test_fragmented_transport);
         progress.run(
             "buffered_transport_without_kernel_readability",

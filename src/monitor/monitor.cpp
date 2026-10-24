@@ -567,28 +567,44 @@ int Monitor::run_loop(
                 return;
             }
             if (command == detail::NotificationCommand::connect_socket) {
-                notification_socket->connect(
-                    std::get<detail::NotificationConnectingState>(
-                        notification_state
-                    )
-                        .notification_url
-                );
-                return;
+                try {
+                    notification_socket->connect(
+                        std::get<detail::NotificationConnectingState>(
+                            notification_state
+                        )
+                            .notification_url
+                    );
+                    return;
+                } catch (const std::invalid_argument&) {
+                    spdlog::warn(
+                        "Invalid Graph notification endpoint; using polling "
+                        "mode while retrying notification setup"
+                    );
+                    notification_transition = detail::transition_notification(
+                        std::move(notification_state),
+                        detail::NotificationSocketDisconnectedEvent{
+                            std::chrono::steady_clock::now()
+                        },
+                        notification_timing
+                    );
+                    continue;
+                }
             }
-            const auto now = std::chrono::steady_clock::now();
             if (command == detail::NotificationCommand::refresh_token) {
+                const bool refreshed = notifications.refresh_token();
+                const auto completed_at = std::chrono::steady_clock::now();
                 notification_transition = detail::transition_notification(
                     std::move(notification_state),
-                    notifications.refresh_token()
+                    refreshed
                         ? detail::
                               NotificationEvent{detail::
                                                     NotificationTokenRefreshedEvent{
-                                                        now
+                                                        completed_at
                                                     }}
                         : detail::
                               NotificationEvent{detail::
                                                     NotificationTokenRefreshFailedEvent{
-                                                        now
+                                                        completed_at
                                                     }},
                     notification_timing
                 );
@@ -601,6 +617,7 @@ int Monitor::run_loop(
                     : "Acquiring"
             );
             const auto channel = notifications.acquire_channel();
+            const auto completed_at = std::chrono::steady_clock::now();
             if (channel) {
                 spdlog::debug(
                     "Graph notification channel acquired; connecting "
@@ -609,21 +626,30 @@ int Monitor::run_loop(
                 notification_transition = detail::transition_notification(
                     std::move(notification_state),
                     detail::NotificationChannelAcquiredEvent{
-                        .acquired_at = now,
+                        .acquired_at = completed_at,
                         .renew_at = channel->renew_at,
                         .notification_url = channel->url,
                     },
                     notification_timing
                 );
             } else {
+                if (channel.error() == NotificationFailure::unavailable) {
+                    spdlog::warn(
+                        "Graph notifications unavailable for this Monitor "
+                        "session; using polling mode. Restart Monitor after "
+                        "correcting access or endpoint support"
+                    );
+                } else {
+                    spdlog::warn(
+                        "Graph notifications temporarily unavailable; using "
+                        "polling mode while retrying notification setup"
+                    );
+                }
                 notification_transition = detail::transition_notification(
                     std::move(notification_state),
                     detail::NotificationChannelFailedEvent{
-                        .failed_at = now,
-                        .failure =
-                            channel.error()
-                                ? detail::NotificationFailure::unauthorized
-                                : detail::NotificationFailure::transient,
+                        .failed_at = completed_at,
+                        .failure = channel.error(),
                     },
                     notification_timing
                 );
@@ -794,6 +820,10 @@ int Monitor::run_loop(
                         );
                         break;
                     case detail::SocketEvent::disconnected:
+                        spdlog::warn(
+                            "Notification WebSocket disconnected; using "
+                            "polling mode while retrying notification setup"
+                        );
                         advance_notification(
                             channel,
                             detail::NotificationSocketDisconnectedEvent{

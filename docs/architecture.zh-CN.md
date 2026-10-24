@@ -293,12 +293,18 @@ listening、reading、validating、writing 和 closed 生命周期。显式时�
 Socket.IO framing、心跳处理和 eventfd 唤醒。
 其私有 `SocketProtocol` 归约器严格位于 channel/租约归约器下层，不负责重试、
 续订或 token 刷新。WebSocket 已连接、Engine.IO open、根 Socket.IO ready 与
-通知 namespace listening 是不同阶段。Engine.IO open 产生两条 namespace
-握手命令及原有的 connected 唤醒；ack 不会重复发布 connected。携带时间的事件
+通知 namespace listening 是不同阶段。Engine.IO open 为通知 URL 路径指定的
+namespace 生成握手命令，并保留原有 connected 唤醒；不再额外订阅无关的根或
+硬编码 `/notifications` 命名空间。ack 不会重复发布 connected。携带时间的事件
 驱动 Engine.IO 心跳 pong 和过期；拒绝、协议/传输错误与对端关闭只发布一次
 disconnected，主动停止则关闭而不发布断线唤醒。适配器排空 libcurl 数据块；
 文本重组可跨越 `CURLE_AGAIN`、多个 WebSocket frame 以及穿插的 WebSocket
 ping/pong 控制帧，完整消息限制为一 MiB。
+
+Graph 未返回 `expirationDateTime` 时，不虚构有效期或续订 deadline。明确的接口／
+访问不可用使该 Drive 进入 unavailable 状态，本次 Monitor 会话不再重试；
+暂时失败和未授权仍分别保留退避及令牌恢复路径。其他 Drive、本地事件及定时
+Delta 轮询不受这个通知 channel 的 unavailable 状态影响。
 
 ## 源码目录
 

@@ -73,7 +73,7 @@ struct DeltaResult {
 
 struct NotificationChannel {
     std::string notification_url;
-    std::chrono::system_clock::time_point expires_at;
+    std::optional<std::chrono::system_clock::time_point> expires_at{};
 };
 
 struct DriveQuota {
@@ -121,6 +121,7 @@ struct SiteInfo {
 enum class NotificationFailureKind {
     transient,
     unauthorized,
+    unavailable,
 };
 
 class NotificationChannelError final : public std::runtime_error {
@@ -134,6 +135,10 @@ public:
 
     [[nodiscard]] bool unauthorized() const noexcept {
         return kind_ == NotificationFailureKind::unauthorized;
+    }
+
+    [[nodiscard]] NotificationFailureKind kind() const noexcept {
+        return kind_;
     }
 
 private:

@@ -47,6 +47,88 @@ int test_connecting_state_ignored_event() {
     return EXIT_SUCCESS;
 }
 
+int test_unknown_expiration_and_unavailable() {
+    const NotificationTimePoint origin{};
+    auto transition = transition_notification(
+        NotificationAcquiringState{origin + 30s, 0},
+        NotificationChannelAcquiredEvent{
+            .acquired_at = origin,
+            .renew_at = std::nullopt,
+            .notification_url = "https://notify.example.test/tenant/callback",
+        },
+        timing
+    );
+    if (std::get<NotificationConnectingState>(transition.state).renew_at) {
+        return fail(
+            "unknown notification expiration invented a renewal deadline"
+        );
+    }
+    transition = transition_notification(
+        std::move(transition.state), NotificationSocketConnectedEvent{}, timing
+    );
+    transition = transition_notification(
+        std::move(transition.state),
+        NotificationDeadlineReachedEvent{origin + 24h},
+        timing
+    );
+    if (!std::holds_alternative<NotificationListeningState>(transition.state) ||
+        next_notification_deadline(transition.state) ||
+        transition.command != NotificationCommand::none) {
+        return fail(
+            "a channel without expiration was renewed on an invented schedule"
+        );
+    }
+    transition = transition_notification(
+        std::move(transition.state), RemoteNotificationReceivedEvent{}, timing
+    );
+    if (!transition.synchronize) {
+        return fail("a channel without expiration stopped receiving wakeups");
+    }
+    transition = transition_notification(
+        NotificationListeningState{origin + 1s},
+        NotificationDeadlineReachedEvent{origin + 1s},
+        timing
+    );
+    transition = transition_notification(
+        std::move(transition.state),
+        NotificationChannelFailedEvent{
+            origin, NotificationFailure::unavailable
+        },
+        timing
+    );
+    if (!std::holds_alternative<NotificationUnavailableState>(
+            transition.state
+        ) ||
+        transition.command != NotificationCommand::disconnect_socket ||
+        next_notification_deadline(transition.state)) {
+        return fail("unavailable renewal retained a socket or retry deadline");
+    }
+    for (const NotificationEvent event :
+         {NotificationEvent{NotificationStartEvent{origin}},
+          NotificationEvent{NotificationDeadlineReachedEvent{origin + 24h}},
+          NotificationEvent{NotificationSocketConnectedEvent{}},
+          NotificationEvent{RemoteNotificationReceivedEvent{}}}) {
+        transition =
+            transition_notification(std::move(transition.state), event, timing);
+        if (!std::holds_alternative<NotificationUnavailableState>(
+                transition.state
+            ) ||
+            transition.command != NotificationCommand::none ||
+            transition.synchronize) {
+            return fail(
+                "an unavailable notification channel restarted within its "
+                "session"
+            );
+        }
+    }
+    transition = transition_notification(
+        std::move(transition.state), NotificationStopEvent{}, timing
+    );
+    return std::holds_alternative<NotificationStoppedState>(transition.state)
+               ? EXIT_SUCCESS
+               : fail("an unavailable notification channel could not stop");
+}
+
 int test_happy_path_and_renewal() {
     const NotificationTimePoint origin{};
     NotificationState state = NotificationDormantState{};
@@ -385,7 +467,13 @@ int test_timeouts_and_stop() {
 } // namespace
 
 int main() {
-    onedrive::test::ScenarioProgress progress{5};
+    onedrive::test::ScenarioProgress progress{6};
+    if (progress.run(
+            "unknown_expiration_and_unavailable",
+            test_unknown_expiration_and_unavailable
+        ) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
     if (const int status = progress.run(
             "connecting_state_ignored_event",
             test_connecting_state_ignored_event

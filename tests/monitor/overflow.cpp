@@ -54,7 +54,9 @@ int test_inotify_overflow_recovery() {
                     }
                     std::filesystem::create_directory(nested);
                 }
-                return std::unexpected{false};
+                return std::unexpected{
+                    onedrive::monitor::NotificationFailure::transient
+                };
             },
             .refresh_token = [] { return true; },
             .initial_backoff = 1h,

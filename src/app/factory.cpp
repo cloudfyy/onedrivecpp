@@ -116,26 +116,50 @@ std::unique_ptr<monitor::FileMonitor> ProductionRuntimeFactory::create_monitor(
                     -> monitor::NotificationChannelResult {
                     try {
                         const auto channel = graph.notification_channel();
-                        const auto remaining = channel.expires_at -
-                                               std::chrono::system_clock::now();
-                        return monitor::NotificationChannel{
-                            .url = channel.notification_url,
-                            .renew_at =
+                        std::optional<std::chrono::steady_clock::time_point>
+                            renew_at;
+                        if (channel.expires_at) {
+                            const auto remaining =
+                                *channel.expires_at -
+                                std::chrono::system_clock::now();
+                            renew_at =
                                 std::chrono::steady_clock::now() +
                                 std::max(
                                     std::chrono::system_clock::duration::zero(),
                                     remaining - renewal_lead
-                                ),
+                                );
+                        }
+                        return monitor::NotificationChannel{
+                            .url = channel.notification_url,
+                            .renew_at = renew_at,
                         };
                     } catch (const graph::NotificationChannelError& error) {
                         spdlog::warn("{}", error.what());
-                        return std::unexpected{error.unauthorized()};
+                        switch (error.kind()) {
+                        case graph::NotificationFailureKind::unauthorized:
+                            return std::unexpected{
+                                monitor::NotificationFailure::unauthorized
+                            };
+                        case graph::NotificationFailureKind::unavailable:
+                            return std::unexpected{
+                                monitor::NotificationFailure::unavailable
+                            };
+                        case graph::NotificationFailureKind::transient:
+                            return std::unexpected{
+                                monitor::NotificationFailure::transient
+                            };
+                        }
+                        throw std::logic_error{
+                            "unknown notification failure kind"
+                        };
                     } catch (const std::exception& error) {
                         spdlog::warn(
                             "Cannot acquire Graph notification channel: {}",
                             error.what()
                         );
-                        return std::unexpected{false};
+                        return std::unexpected{
+                            monitor::NotificationFailure::transient
+                        };
                     }
                 },
                 .refresh_token =

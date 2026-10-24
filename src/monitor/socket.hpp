@@ -18,6 +18,8 @@ enum class SocketEvent {
 };
 
 [[nodiscard]] std::string socket_io_url(std::string_view notification_url);
+[[nodiscard]] std::string
+socket_io_namespace(std::string_view notification_url);
 [[nodiscard]] bool socket_io_notification(std::string_view frame);
 [[nodiscard]] std::optional<std::chrono::milliseconds>
 socket_io_heartbeat_timeout(std::string_view frame);

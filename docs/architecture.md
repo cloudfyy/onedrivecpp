@@ -347,7 +347,11 @@ the monitor scheduling state machine. The connection reducer owns channel
 acquisition, token refresh, socket connection, lease renewal, bounded
 exponential retry, and shutdown effects. A notification is only an advisory
 wakeup: it never contains authoritative item data and never advances a Delta
-cursor. Connecting or reconnecting schedules a catch-up Delta synchronization,
+cursor. Expiration and renewal deadlines are optional: a Graph response without
+`expirationDateTime` does not receive a fabricated deadline. Explicit endpoint or
+access unavailability enters a per-Drive unavailable state with no retry deadline
+until Monitor restarts; transient and unauthorized failures keep their separate
+retry/token-recovery paths. Connecting or reconnecting schedules a catch-up Delta synchronization,
 and a notification received during synchronization is latched for one
 additional pass. The existing periodic Graph poll remains active as the
 authoritative fallback, so channel discovery or socket failures cannot prevent
@@ -357,8 +361,10 @@ through Graph and runs Engine.IO 4 / Socket.IO framing over libcurl's
 WebSocket-only transport, including heartbeat handling and eventfd wakeups.
 Its private `SocketProtocol` reducer is strictly below the channel/lease reducer:
 WebSocket connection, Engine.IO open, root Socket.IO readiness, and notification
-namespace listening are distinct phases. Engine.IO open emits the two namespace
-handshakes and the existing connected wakeup; acknowledgements do not duplicate
+namespace listening are distinct phases. Engine.IO open emits a handshake for
+the namespace from the notification URL's pathname and the existing connected
+wakeup; it does not additionally subscribe to an unrelated root or hardcoded
+`/notifications` namespace. Acknowledgements do not duplicate
 it. Time-bearing events drive Engine.IO heartbeat pongs and expiry, while
 rejections, protocol/transport errors, and peer closure publish disconnection
 once. Intentional stop closes without a disconnected wakeup. The adapter drains

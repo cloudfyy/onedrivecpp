@@ -8,6 +8,7 @@
 #include <functional>
 #include <expected>
 #include <memory>
+#include <optional>
 #include <proxy/proxy.h>
 #include <stop_token>
 #include <string>
@@ -20,11 +21,17 @@ using SyncCallback = std::function<int(const std::stop_token&)>;
 
 struct NotificationChannel {
     std::string url;
-    std::chrono::steady_clock::time_point renew_at;
+    std::optional<std::chrono::steady_clock::time_point> renew_at{};
+};
+
+enum class NotificationFailure {
+    transient,
+    unauthorized,
+    unavailable,
 };
 
 using NotificationChannelResult =
-    std::expected<NotificationChannel, bool>;
+    std::expected<NotificationChannel, NotificationFailure>;
 
 struct NotificationCallbacks {
     std::function<NotificationChannelResult()> acquire_channel;

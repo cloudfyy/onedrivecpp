@@ -230,12 +230,28 @@ WebSocket 通知只负责唤醒。每次通知以及重连后的 catch-up 仍通
 设置 `monitor.websocket_enabled = false` 可禁用 Graph Socket.IO/WSS 通知；
 本地 inotify 事件和 Graph 定时轮询仍保持启用。
 启动时的启用说明只表示配置，不表示连接成功。
+[Graph Socket.IO 接口](https://learn.microsoft.com/zh-cn/graph/api/subscriptions-socketio?view=graph-rest-1.0)
+同时支持个人账号和工作／学校委托账号，访问自己的 Drive 时，默认
+`Files.ReadWrite` 权限已足够。返回 URL 的路径用于选择 Socket.IO 命名空间，
+WebSocket 传输仍使用 `/socket.io/` 并保留返回的查询参数。
+`expirationDateTime` 是可选字段；存在时按配置提前续期，不存在时不虚构租约时长。
+连接断开后仍重新获取 channel，Graph Delta 定时轮询始终保留。
+
+HTTP 403、404、405、410 和 501 会暂停该 Drive 在本次 Monitor 会话中的通知
+channel，并明确报告轮询模式。修正访问权限或接口支持后，重启 Monitor 才会
+重新尝试通知；这不表示所有组织账号均不受支持。HTTP 401 进入令牌恢复，
+传输错误、畸形响应、HTTP 429 和服务端暂时失败则在报告轮询模式的同时保留
+有界退避重试。一个 channel 不可用不会禁用其他 Drive 的通知或本地文件监控，
+也不会额外申请权限或删除保存的凭据。
+
 `Notification WebSocket Engine.IO handshake completed` 表示传输层已处理服务器的
 Engine.IO open 帧。启用 debug 日志后，还会记录 channel 获取、传输连接及收到
 Graph 通知；握手超时和连接失败会明确警告，重试和兜底轮询保持运行。
 这些诊断不包含通知 URL 或其中的令牌。
+退避及连接 deadline 从 channel 获取／令牌刷新完成后开始计算，
+不会用请求本身的耗时抵扣下一次退避或握手预算。
 request/connect timeout 分别限制
-channel 获取和 WSS 握手时间，renewal lead 控制提前续期时间，initial/maximum
+channel 获取和 WSS 握手时间，renewal lead 控制已提供有效期的 channel 提前续期时间，initial/maximum
 backoff 限制指数退避范围。Engine.IO heartbeat 时间由服务器协商，因此不提供
 本地配置。
 Monitor 调度器采用显式的单线程运行时状态机，状态包括 starting、idle、本地

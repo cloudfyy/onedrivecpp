@@ -15,7 +15,6 @@ namespace onedrive::graph {
 
 NotificationChannel MicrosoftGraphClient::notification_channel() const {
     using client_detail::graph_drive_prefix;
-    using client_detail::parse_graph_json;
     using client_detail::successful_status;
 
     const auto response = transport_->perform(
@@ -26,6 +25,7 @@ NotificationChannel MicrosoftGraphClient::notification_channel() const {
             .headers =
                 {
                     "Accept: application/json",
+                    "Content-Type: application/json",
                     "Authorization: Bearer " + access_token(),
                 },
             .body = {},
@@ -42,15 +42,27 @@ NotificationChannel MicrosoftGraphClient::notification_channel() const {
                 response.error().message,
         };
     }
-    const auto json = parse_graph_json(*response, "notification channel");
     if (!successful_status(response->status_code)) {
         if (response->status_code == http::status::unauthorized) {
             invalidate_access_token();
         }
+        auto kind = NotificationFailureKind::transient;
+        switch (response->status_code) {
+        case http::status::unauthorized:
+            kind = NotificationFailureKind::unauthorized;
+            break;
+        case http::status::forbidden:
+        case http::status::not_found:
+        case http::status::method_not_allowed:
+        case http::status::gone:
+        case http::status::not_implemented:
+            kind = NotificationFailureKind::unavailable;
+            break;
+        default:
+            break;
+        }
         throw NotificationChannelError{
-            response->status_code == http::status::unauthorized ?
-                NotificationFailureKind::unauthorized :
-                NotificationFailureKind::transient,
+            kind,
             std::format(
                 "Microsoft Graph notification channel request failed with "
                 "HTTP {}",
@@ -59,25 +71,37 @@ NotificationChannel MicrosoftGraphClient::notification_channel() const {
         };
     }
     try {
+        const auto json = nlohmann::json::parse(response->body);
         const auto url = json.at("notificationUrl").get<std::string>();
-        const auto expiration =
-            json.at("expirationDateTime").get<std::string>();
         if (url.empty()) {
-            throw std::runtime_error(
+            throw NotificationChannelError(
+                NotificationFailureKind::transient,
                 "Microsoft Graph returned an empty notification URL"
             );
         }
-        return {
+        NotificationChannel channel{
             .notification_url = url,
-            .expires_at = std::chrono::time_point_cast<
-                std::chrono::system_clock::duration>(
-                util::parse_remote_modified_time(expiration)
-            ),
         };
-    } catch (const nlohmann::json::exception& error) {
-        throw std::runtime_error(
-            "Microsoft Graph notification channel response is invalid: " +
-            std::string{error.what()}
+        if (const auto expiration = json.find("expirationDateTime");
+            expiration != json.end()) {
+            const auto timestamp = expiration->get<std::string>();
+            try {
+                channel.expires_at = std::chrono::time_point_cast<
+                    std::chrono::system_clock::duration>(
+                    util::parse_remote_modified_time(timestamp)
+                );
+            } catch (const std::runtime_error&) {
+                throw NotificationChannelError(
+                    NotificationFailureKind::transient,
+                    "Microsoft Graph notification channel expiration is invalid"
+                );
+            }
+        }
+        return channel;
+    } catch (const nlohmann::json::exception&) {
+        throw NotificationChannelError(
+            NotificationFailureKind::transient,
+            "Microsoft Graph notification channel response is invalid"
         );
     }
 }

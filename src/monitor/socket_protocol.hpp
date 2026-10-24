@@ -37,6 +37,10 @@ public:
     using Time = std::chrono::milliseconds;
     static constexpr std::size_t message_limit = std::size_t{1024} * 1024;
 
+    explicit SocketProtocol(std::string name_space = "/notifications")
+        : name_space_{std::move(name_space)} {
+    }
+
     [[nodiscard]] SocketPhase phase() const noexcept {
         return phase_;
     }
@@ -120,8 +124,8 @@ private:
             last_ping_ = now;
             // Preserve the transport's connected publication at Engine.IO open.
             return {
-                {ProtocolEffect::send, "40"},
-                {ProtocolEffect::send, "40/notifications"},
+                {ProtocolEffect::send,
+                 name_space_ == "/" ? "40" : "40" + name_space_},
                 {ProtocolEffect::connected, {}},
             };
         }
@@ -140,9 +144,10 @@ private:
                 return fail("Socket.IO readiness preceded Engine.IO open");
             if (message == "40" || message.starts_with("40{")) {
                 if (phase_ != SocketPhase::listening)
-                    phase_ = SocketPhase::ready;
-            } else if (message == "40/notifications" ||
-                       message.starts_with("40/notifications,")) {
+                    phase_ = name_space_ == "/" ? SocketPhase::listening
+                                                : SocketPhase::ready;
+            } else if (message == "40" + name_space_ ||
+                       message.starts_with("40" + name_space_ + ",")) {
                 phase_ = SocketPhase::listening;
             }
             return {};
@@ -157,6 +162,7 @@ private:
     }
 
     SocketPhase phase_{SocketPhase::connecting};
+    std::string name_space_;
     Time heartbeat_timeout_{};
     Time last_ping_{};
     std::string pending_;

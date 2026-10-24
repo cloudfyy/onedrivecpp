@@ -1,5 +1,7 @@
 #pragma once
 
+#include "onedrive/monitor/monitor.hpp"
+
 #include <algorithm>
 #include <chrono>
 #include <cstddef>
@@ -30,10 +32,7 @@ enum class NotificationCommand {
     disconnect_socket,
 };
 
-enum class NotificationFailure {
-    transient,
-    unauthorized,
-};
+using onedrive::monitor::NotificationFailure;
 
 enum class NotificationRetryTarget {
     acquire_channel,
@@ -54,13 +53,13 @@ struct NotificationRefreshingTokenState {
 
 struct NotificationConnectingState {
     NotificationTimePoint deadline;
-    NotificationTimePoint renew_at;
+    std::optional<NotificationTimePoint> renew_at;
     std::size_t failure_count;
     std::string notification_url;
 };
 
 struct NotificationListeningState {
-    NotificationTimePoint renew_at;
+    std::optional<NotificationTimePoint> renew_at;
 };
 
 struct NotificationBackoffState {
@@ -70,6 +69,7 @@ struct NotificationBackoffState {
 };
 
 struct NotificationStoppedState {};
+struct NotificationUnavailableState {};
 
 using NotificationState = std::variant<
     NotificationDormantState,
@@ -78,7 +78,8 @@ using NotificationState = std::variant<
     NotificationConnectingState,
     NotificationListeningState,
     NotificationBackoffState,
-    NotificationStoppedState>;
+    NotificationStoppedState,
+    NotificationUnavailableState>;
 
 struct NotificationTransition {
     NotificationState state;
@@ -92,7 +93,7 @@ struct NotificationStartEvent {
 
 struct NotificationChannelAcquiredEvent {
     NotificationTimePoint acquired_at;
-    NotificationTimePoint renew_at;
+    std::optional<NotificationTimePoint> renew_at;
     std::string notification_url;
 };
 
@@ -217,6 +218,12 @@ template <typename... Callables> struct NotificationOverloaded : Callables... {
             [&](NotificationAcquiringState current,
                 const NotificationChannelFailedEvent& failed)
                 -> NotificationTransition {
+                if (failed.failure == NotificationFailure::unavailable) {
+                    return {
+                        .state = NotificationUnavailableState{},
+                        .command = NotificationCommand::disconnect_socket,
+                    };
+                }
                 if (failed.failure == NotificationFailure::unauthorized) {
                     return {
                         .state =
@@ -300,7 +307,7 @@ template <typename... Callables> struct NotificationOverloaded : Callables... {
             [&](NotificationListeningState current,
                 const NotificationDeadlineReachedEvent& deadline)
                 -> NotificationTransition {
-                if (deadline.now < current.renew_at) {
+                if (!current.renew_at || deadline.now < *current.renew_at) {
                     return {.state = current};
                 }
                 return {
