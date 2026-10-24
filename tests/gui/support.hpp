@@ -14,12 +14,15 @@ inline void require(bool condition, const char* message) {
     }
 }
 
-template <typename Predicate> bool wait_until(Predicate predicate) {
+template <typename Predicate>
+bool wait_until(
+    Predicate predicate, qint64 timeout_ms = 5000, unsigned long sleep_ms = 1
+) {
     QElapsedTimer timer;
     timer.start();
-    while (!predicate() && timer.elapsed() < 5000) {
+    while (!predicate() && timer.elapsed() < timeout_ms) {
         QCoreApplication::processEvents();
-        QThread::msleep(1);
+        QThread::msleep(sleep_ms);
     }
     return predicate();
 }

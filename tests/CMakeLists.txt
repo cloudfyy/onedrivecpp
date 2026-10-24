@@ -273,6 +273,11 @@ if(ONEDRIVE_BUILD_GUI)
         gui_monitoring_tests
         SOURCES
             tests/gui/monitoring.cpp
+            tests/gui/monitoring_controller.cpp
+            tests/gui/monitoring_window.cpp
+            tests/gui/monitoring_external.cpp
+            tests/gui/monitoring_discovery.cpp
+            tests/gui/monitoring_process.cpp
             src/ui/gui/sync_controller.cpp
             src/ui/gui/sync_controller.hpp
             src/ui/gui/login_controller.cpp
@@ -308,6 +313,9 @@ if(ONEDRIVE_BUILD_GUI)
             src/ui/gui/configuration.cpp
             src/ui/gui/app_state_view_model.cpp
             tests/gui/localization.cpp
+            tests/gui/localization_widgets.cpp
+            tests/gui/localization_login.cpp
+            tests/gui/localization_runtime.cpp
         INCLUDE_DIRS src src/ui/gui tests
         LIBRARIES onedrive_app Qt6::Widgets Qt6::Network onedrive_gui_localization
     )
@@ -408,7 +416,11 @@ add_onedrive_test(
 )
 add_onedrive_test(
     tui_tests
-    SOURCES tests/cli/tui.cpp
+    SOURCES
+        tests/cli/tui.cpp
+        tests/cli/tui_transfer.cpp
+        tests/cli/tui_inspection.cpp
+        tests/cli/tui_drives.cpp
     INCLUDE_DIRS src tests
     LIBRARIES onedrive_cli
 )
@@ -564,6 +576,16 @@ foreach(
         INCLUDE_DIRS tests tests/graph
     )
 endforeach()
+target_sources(graph_drive_tests PRIVATE
+    graph/drive_access.cpp
+    graph/drive_metadata.cpp
+    graph/drive_items.cpp
+)
+target_sources(graph_download_tests PRIVATE
+    graph/download_control.cpp
+    graph/download_redirects.cpp
+    graph/download_chunks.cpp
+)
 target_include_directories(graph_delta_tests PRIVATE "${PROJECT_SOURCE_DIR}/src")
 target_sources(graph_delta_tests PRIVATE
     graph/delta_hierarchy.cpp
@@ -572,7 +594,12 @@ target_sources(graph_delta_tests PRIVATE
 )
 add_onedrive_test(
     graph_support_tests
-    SOURCES tests/graph/helpers.cpp
+    SOURCES
+        tests/graph/helpers.cpp
+        tests/graph/helpers_formats.cpp
+        tests/graph/helpers_ancestry.cpp
+        tests/graph/helpers_parsing.cpp
+        tests/graph/helpers_requests.cpp
     INCLUDE_DIRS src tests
     LIBRARIES spdlog::spdlog
 )
@@ -645,6 +672,27 @@ foreach(SYNC_TEST IN ITEMS base delete move move_recovery download upload mode p
         LIBRARIES onedrive_cli
     )
 endforeach()
+target_sources(sync_base_tests PRIVATE
+    sync/base_lifecycle.cpp
+    sync/base_filters.cpp
+    sync/base_content.cpp
+    sync/base_conflicts.cpp
+)
+target_sources(sync_upload_tests PRIVATE
+    sync/upload_files.cpp
+    sync/upload_resources.cpp
+    sync/upload_directories.cpp
+    sync/upload_recovery.cpp
+    sync/upload_sources.cpp
+    sync/upload_conflicts.cpp
+)
+target_sources(sync_delete_tests PRIVATE
+    sync/delete_remote.cpp
+    sync/delete_partials.cpp
+    sync/delete_local.cpp
+    sync/delete_guards.cpp
+    sync/delete_recovery.cpp
+)
 target_sources(sync_move_tests PRIVATE
     sync/move_files.cpp
     sync/move_journals.cpp

@@ -154,12 +154,15 @@ implemented separately. Local move dependency scheduling is independent of
 filesystem transaction execution; durable journal transitions and operation
 leases remain in the executor.
 
-Large GUI synchronization/settings, Graph Delta and synchronization move tests
-are split into scenario translation units while retaining their executable
-entry points and scenario order. GUI assertions/event-loop waiting and suite
-fixtures are shared instead of copied. Move scenarios own their temporary
-state; multi-step recovery and selective-sync scenarios remain together so
-their required state transitions are explicit.
+Large GUI, Graph, synchronization and TUI tests are split into scenario
+translation units while retaining their executable entry points and scenario
+order. GUI assertions/event-loop waiting and suite fixtures are shared instead
+of copied, preserving each suite's wait timeout and polling interval. The
+synchronization and application support headers compose separate Graph,
+storage, authentication and runtime fakes without duplicating their
+implementations. Independent upload, delete and move scenarios own their
+temporary state; multi-step recovery, guard retries and selective-sync
+scenarios remain together so their required state transitions are explicit.
 
 Synchronization, upload, and Delta publish typed `events::Event` values through
 the core `events::Observer` interface. It serializes callbacks from workers
