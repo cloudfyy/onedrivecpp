@@ -15,6 +15,12 @@ add_test(
 )
 set_tests_properties(prepare_source_tests PROPERTIES TIMEOUT 30)
 add_test(
+    NAME business_e2e_runner_tests
+    COMMAND ${Python3_EXECUTABLE} -B ${PROJECT_SOURCE_DIR}/tests/test_business_e2e.py
+        --client $<TARGET_FILE:onedrive-cpp>
+)
+set_tests_properties(business_e2e_runner_tests PROPERTIES TIMEOUT 30)
+add_test(
     NAME packaging_offline_input_tests
     COMMAND ${CMAKE_COMMAND}
         -DPROJECT_BUILD_DIR=${PROJECT_BINARY_DIR}

@@ -384,6 +384,64 @@ removal, empty inline throttle parents, and int64 timeout/throttle limits.
 for environment-inherited proxies and direct connections with empty overrides.
 No GUI sync action, migration or online credential validation is implied.
 
+## Independent OneDrive for Business E2E
+
+`tests/business_e2e.py` is a new standalone runner. It neither imports nor invokes
+`graph_sync_e2e.py` or `tests/e2e/`. It requires Python 3.11+, Linux and a built
+CLI; no extra Python packages or pre-existing remote fixtures are needed.
+
+Use an existing version-2 configuration and its authenticated **active account**.
+Stop ordinary sync/watch and keep them stopped throughout the test. The selected
+live Drive must report `driveType=business`; personal Drives and SharePoint
+document libraries are deliberately rejected before creating fixtures.
+
+```sh
+python3 tests/business_e2e.py \
+  --client build/release/onedrive-cpp \
+  --config ~/.config/onedrive-cpp/config.toml \
+  --allow-remote-writes
+```
+
+For `sync.drive_ids`, additionally pass `--drive '<configured-reference>'`;
+the runner never silently selects the first Drive. `--timeout 600` controls
+individual commands/convergence waits; large Drives may need a higher value.
+Authentication, Graph cloud and proxy settings come from the source config,
+including resolved relative proxy credential/CA paths.
+
+The runner copies only the active-account marker, account metadata and refresh
+token into private temporary state directories. It does not copy daily SQLite
+databases or modify source configuration/credential files. Refresh tokens can
+rotate in the isolated copies. Two real CLI clients with separate local roots
+test upload/download, Unicode and empty files/directories, unchanged-sync
+idempotence, file/directory moves retaining remote IDs, blocked local conflicts,
+restore preview/application without overwrites or cursor changes, real
+interruption/checkpoint reuse, sync/watch busy refusal, automatic watch
+upload/download and deletion propagation.
+
+All remote file mutations are confined by an exact selective-sync rule to a random
+`__onedrive_cpp_business_e2e_<uuid>` subtree. Test configuration explicitly enables
+writes/deletion propagation only there, regardless of source dry-run/direction
+settings. Finally, a fresh download-only mirror must retrieve the matching
+ownership nonce before deleting that subtree; another fresh client verifies
+removal. Drive-wide metadata can still be queried, but other files are not
+downloaded or mutated. Cleanup failures fail the run and print the subtree name for manual
+inspection. Private local state, tokens and downloaded contents are removed.
+
+The notification-enabled watch scenario proves compatibility, **not** actual
+WebSocket delivery: polling may service the change. Another scenario explicitly
+disables WebSockets to exercise polling. Tenant permission revocation,
+administrator policies, Conditional Access and notification delivery remain
+separate manual acceptance checks.
+
+Normal CTest runs only `business_e2e_runner_tests`, the offline isolation,
+failure/cleanup and actual-CLI configuration tests. Live execution is never
+automatically registered, even by the existing `e2e` preset.
+
+```sh
+python3 -B tests/test_business_e2e.py --client build/release/onedrive-cpp
+ctest --test-dir build/release -R '^business_e2e_runner_tests$' --output-on-failure
+```
+
 ## Live Graph end-to-end tests
 
 The `e2e` preset is disabled from normal builds and requires a dedicated test

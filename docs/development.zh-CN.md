@@ -357,6 +357,55 @@ CTest。用 `python3 tools/coverage_report.py build/coverage --name state-machin
 测量结束后切换回 `debug` 或 `release` preset 即可恢复正常开发；
 它们的独立构建目录不受覆盖率 preset 影响。
 
+## 独立的 OneDrive for Business E2E
+
+`tests/business_e2e.py` 是全新的独立脚本，既不导入也不调用
+`graph_sync_e2e.py` 或 `tests/e2e/`。需要 Python 3.11+、Linux 和已经构建的 CLI，
+无需额外 Python 包，也不要求预先准备云端测试文件。
+
+直接复用现有的第 2 版配置及其已登录的**活动账号**。先停止日常 sync/watch，
+并在整个测试期间保持停止。脚本会实时核实所选 Drive 的 `driveType=business`；
+个人版 Drive 和 SharePoint 文档库会在创建测试数据前被拒绝。
+
+```sh
+python3 tests/business_e2e.py \
+  --client build/release/onedrive-cpp \
+  --config ~/.config/onedrive-cpp/config.toml \
+  --allow-remote-writes
+```
+
+配置使用 `sync.drive_ids` 时，另加 `--drive '<配置中的引用>'`，不会默认取第一个。
+`--timeout 600` 控制单条命令和收敛等待；大 Drive 可适当增大。
+认证、Graph 云环境和代理设置均来自原配置，代理凭据/CA 的相对路径会按原配置
+位置解析。
+
+脚本只把活动账号标记、账号元数据和 refresh token 复制到私有临时状态目录，
+不复制日常 SQLite 数据库，不改写源配置或源凭据文件；令牌刷新只保存到隔离副本。
+两个真实 CLI 实例使用不同本地目录，验证双向传输、Unicode/空文件/空目录、
+无变更同步幂等、移动后远端 ID 不变、本地修改冲突、restore 预览/执行不覆盖已有
+内容且不推进游标、真实中断后复用下载检查点、sync/watch 占用拒绝、
+watch 自动上传/下载，以及双向删除传播。
+
+所有远端文件写入都通过精确的选择性同步规则限制在随机生成的
+`__onedrive_cpp_business_e2e_<uuid>` 子树。测试副本会明确开启该子树内的写入和删除
+传播，不沿用源配置的 dry-run/单向限制。结束时，新的只读下载实例必须取得匹配的
+所有权随机标记，才能删除该子树，再由另一个全新实例确认云端已清理。
+同步仍可能查询整个 Drive 的元数据，但不会下载或修改其他文件。
+清理失败会使测试失败，并打印子树名称供人工检查；本地临时状态、凭据和下载内容
+会被移除。
+
+通知开启场景只验证 watch **兼容运行**，不能证明实际收到 WebSocket 消息，
+因为轮询也可能完成同步；另有明确关闭 WebSocket 的场景验证轮询。
+租户权限撤销、管理员策略、条件访问和通知实际投递仍需单独人工验收。
+
+普通 CTest 只注册 `business_e2e_runner_tests`，执行离线隔离、失败清理和真实 CLI
+配置解析测试。即使启用旧 `e2e` preset，也不会自动运行这份在线脚本。
+
+```sh
+python3 -B tests/test_business_e2e.py --client build/release/onedrive-cpp
+ctest --test-dir build/release -R '^business_e2e_runner_tests$' --output-on-failure
+```
+
 ## 真实 Graph 端到端测试
 
 普通构建不会启用 `e2e` preset。这项测试需要专用测试账号或 Drive，并要求远端
