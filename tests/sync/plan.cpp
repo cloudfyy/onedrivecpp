@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "sync/core/plan.hpp"
 #include "support/common.hpp"
 
@@ -29,7 +30,9 @@ item(std::string id, std::string path, bool directory = false) {
 
 } // namespace
 
-int main() {
+namespace {
+
+int test_synchronization_planning() {
     namespace detail = onedrive::sync::detail;
 
     auto root = item("root", "root", true);
@@ -211,4 +214,17 @@ int main() {
         );
     }
     return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int main() {
+    onedrive::test::ScenarioProgress progress{1};
+    if (const auto result = progress.run(
+            "synchronization_planning", test_synchronization_planning
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish();
 }

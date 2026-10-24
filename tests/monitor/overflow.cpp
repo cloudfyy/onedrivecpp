@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/exit_code.hpp"
 
@@ -6,7 +7,9 @@
 
 #include <sstream>
 
-int main() {
+namespace {
+
+int test_inotify_overflow_recovery() {
     using namespace onedrive::test::monitor;
     std::size_t capacity{};
     std::ifstream capacity_file{"/proc/sys/fs/inotify/max_queued_events"};
@@ -100,4 +103,17 @@ int main() {
         );
     }
     return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int main() {
+    onedrive::test::ScenarioProgress progress{1};
+    if (const auto result = progress.run(
+            "inotify_overflow_recovery", test_inotify_overflow_recovery, 77
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish();
 }

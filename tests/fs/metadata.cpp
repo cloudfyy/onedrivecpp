@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "sync/filesystem/operations.hpp"
 #include "sync/filesystem/metadata.hpp"
 #include "support/common.hpp"
@@ -39,7 +40,9 @@ std::string read_xattr(
 
 }  // namespace
 
-int main() {
+namespace {
+
+int test_filesystem_metadata() {
     namespace detail = onedrive::sync::detail;
     using onedrive::config::FilesystemMetadataMode;
 
@@ -53,30 +56,27 @@ int main() {
     }
 
     if (detail::FilesystemMetadata::from_detected_support(
-            FilesystemMetadataMode::database,
-            true
-        ).uses_xattrs() ||
+            FilesystemMetadataMode::database, true
+        )
+            .uses_xattrs() ||
         detail::FilesystemMetadata::from_detected_support(
-            FilesystemMetadataMode::automatic,
-            false
-        ).uses_xattrs() ||
+            FilesystemMetadataMode::automatic, false
+        )
+            .uses_xattrs() ||
         !detail::FilesystemMetadata::from_detected_support(
-            FilesystemMetadataMode::automatic,
-            true
-        ).uses_xattrs() ||
+             FilesystemMetadataMode::automatic, true
+        )
+             .uses_xattrs() ||
         !detail::FilesystemMetadata::from_detected_support(
-            FilesystemMetadataMode::xattr,
-            true
-        ).uses_xattrs()) {
+             FilesystemMetadataMode::xattr, true
+        )
+             .uses_xattrs()) {
         return fail("detected xattr support selected the wrong strategy");
     }
     try {
-        static_cast<void>(
-            detail::FilesystemMetadata::from_detected_support(
-                FilesystemMetadataMode::xattr,
-                false
-            )
-        );
+        static_cast<void>(detail::FilesystemMetadata::from_detected_support(
+            FilesystemMetadataMode::xattr, false
+        ));
         return fail("required xattr mode accepted unavailable xattrs");
     } catch (const std::runtime_error&) {
     }
@@ -85,8 +85,7 @@ int main() {
     const auto root = temporary.path() / "root";
     std::filesystem::create_directories(root);
     const auto automatic = detail::FilesystemMetadata::detect(
-        FilesystemMetadataMode::automatic,
-        root
+        FilesystemMetadataMode::automatic, root
     );
     for (const auto& entry : std::filesystem::directory_iterator(root)) {
         if (entry.path().filename().string().starts_with(
@@ -108,8 +107,7 @@ int main() {
             .etag = "remote-etag",
         };
         detail::apply_remote_modified_time(
-            file,
-            "2026-10-02T03:04:05.123456789Z"
+            file, "2026-10-02T03:04:05.123456789Z"
         );
         automatic.write_remote_identity(item, file);
         if (read_xattr(file, "user.onedrive.remote_id") != item.id ||
@@ -126,8 +124,7 @@ int main() {
     }
 
     const auto database = detail::FilesystemMetadata::detect(
-        FilesystemMetadataMode::database,
-        root / "does-not-need-to-exist"
+        FilesystemMetadataMode::database, root / "does-not-need-to-exist"
     );
     if (database.uses_xattrs()) {
         return fail("database mode probed or enabled xattrs");
@@ -141,11 +138,22 @@ int main() {
     );
     try {
         static_cast<void>(detail::FilesystemMetadata::detect(
-            FilesystemMetadataMode::automatic,
-            file
+            FilesystemMetadataMode::automatic, file
         ));
         return fail("xattr probe creation failure was accepted");
     } catch (const std::runtime_error&) {
     }
     return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int main() {
+    onedrive::test::ScenarioProgress progress{1};
+    if (const auto result =
+            progress.run("filesystem_metadata", test_filesystem_metadata);
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish();
 }

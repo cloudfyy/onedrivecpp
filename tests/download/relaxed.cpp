@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 
 namespace {
@@ -157,5 +158,6 @@ int test_relaxed() {
 } // namespace
 
 int main() {
-    return test_relaxed();
+    onedrive::test::ScenarioProgress progress{1};
+    return progress.finish(progress.run("relaxed", test_relaxed));
 }

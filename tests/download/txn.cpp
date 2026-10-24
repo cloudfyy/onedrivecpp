@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 
 namespace {
@@ -195,8 +196,11 @@ int test_txn() {
 } // namespace
 
 int main() {
-    if (test_resumed_network_accounting() != EXIT_SUCCESS) {
+    onedrive::test::ScenarioProgress progress{2};
+    if (progress.run(
+            "resumed_network_accounting", test_resumed_network_accounting
+        ) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
-    return test_txn();
+    return progress.finish(progress.run("txn", test_txn));
 }

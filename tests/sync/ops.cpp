@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "sync/core/item_ops.hpp"
 #include "support/common.hpp"
 
@@ -27,7 +28,9 @@ bool wait_until(const std::atomic_bool& value) {
 
 }  // namespace
 
-int main() {
+namespace {
+
+int test_item_operation_coordination() {
     using onedrive::sync::detail::ItemOperationCoordinator;
 
     ItemOperationCoordinator coordinator;
@@ -90,10 +93,7 @@ int main() {
             auto second = coordinator.acquire_destination(
                 std::filesystem::current_path() / "target.txt"
             );
-            same_destination_acquired.store(
-                true,
-                std::memory_order_release
-            );
+            same_destination_acquired.store(true, std::memory_order_release);
         }};
         if (!wait_until(same_destination_started)) {
             return fail("same-destination worker did not start");
@@ -118,8 +118,7 @@ int main() {
         std::jthread different_destination_worker{[&] {
             auto second = coordinator.acquire_destination("second.txt");
             different_destination_acquired.store(
-                true,
-                std::memory_order_release
+                true, std::memory_order_release
             );
         }};
         if (!wait_until(different_destination_acquired)) {
@@ -133,8 +132,7 @@ int main() {
     } catch (const std::runtime_error&) {
     }
     {
-        auto after_exception =
-            coordinator.acquire_destination("EXCEPTION.txt");
+        auto after_exception = coordinator.acquire_destination("EXCEPTION.txt");
     }
 
     std::atomic_bool cancelled_wait_started{false};
@@ -146,16 +144,12 @@ int main() {
             cancelled_wait_started.store(true, std::memory_order_release);
             try {
                 static_cast<void>(coordinator.acquire(
-                    "drive",
-                    "cancelled-item",
-                    cancellation.get_token()
+                    "drive", "cancelled-item", cancellation.get_token()
                 ));
-            } catch (const onedrive::sync::detail::
-                         ItemOperationCancelledError&) {
-                cancelled_wait_completed.store(
-                    true,
-                    std::memory_order_release
-                );
+            } catch (
+                const onedrive::sync::detail::ItemOperationCancelledError&
+            ) {
+                cancelled_wait_completed.store(true, std::memory_order_release);
             }
         }};
         if (!wait_until(cancelled_wait_started)) {
@@ -177,15 +171,12 @@ int main() {
             cancelled_wait_started.store(true, std::memory_order_release);
             try {
                 static_cast<void>(coordinator.acquire_destination(
-                    "cancelled-destination.txt",
-                    cancellation.get_token()
+                    "cancelled-destination.txt", cancellation.get_token()
                 ));
-            } catch (const onedrive::sync::detail::
-                         ItemOperationCancelledError&) {
-                cancelled_wait_completed.store(
-                    true,
-                    std::memory_order_release
-                );
+            } catch (
+                const onedrive::sync::detail::ItemOperationCancelledError&
+            ) {
+                cancelled_wait_completed.store(true, std::memory_order_release);
             }
         }};
         if (!wait_until(cancelled_wait_started)) {
@@ -222,4 +213,17 @@ int main() {
     detached_lease = {};
 
     return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int main() {
+    onedrive::test::ScenarioProgress progress{1};
+    if (const auto result = progress.run(
+            "item_operation_coordination", test_item_operation_coordination
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish();
 }

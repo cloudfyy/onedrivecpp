@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "login_controller.hpp"
 #include "main_window.hpp"
 #include "app_state_view_model.hpp"
@@ -964,17 +965,31 @@ int test_browser_failure_and_queued_cancellation() {
 } // namespace
 
 int main(int argc, char** argv) {
+    onedrive::test::ScenarioProgress progress{9};
     QApplication application{argc, argv};
     application.setQuitOnLastWindowClosed(false);
-    if (test_loopback() != EXIT_SUCCESS || test_controller() != EXIT_SUCCESS ||
-        test_controller_signals_and_restart() != EXIT_SUCCESS ||
-        test_default_controller() != EXIT_SUCCESS ||
-        test_loopback_timeout_and_invalid_callback() != EXIT_SUCCESS ||
-        test_partial_connections() != EXIT_SUCCESS ||
-        test_window_close() != EXIT_SUCCESS ||
-        test_window_account_actions() != EXIT_SUCCESS ||
-        test_browser_failure_and_queued_cancellation() != EXIT_SUCCESS) {
+    if (progress.run("loopback", test_loopback) != EXIT_SUCCESS ||
+        progress.run("controller", test_controller) != EXIT_SUCCESS ||
+        progress.run(
+            "controller_signals_and_restart",
+            test_controller_signals_and_restart
+        ) != EXIT_SUCCESS ||
+        progress.run("default_controller", test_default_controller) !=
+            EXIT_SUCCESS ||
+        progress.run(
+            "loopback_timeout_and_invalid_callback",
+            test_loopback_timeout_and_invalid_callback
+        ) != EXIT_SUCCESS ||
+        progress.run("partial_connections", test_partial_connections) !=
+            EXIT_SUCCESS ||
+        progress.run("window_close", test_window_close) != EXIT_SUCCESS ||
+        progress.run("window_account_actions", test_window_account_actions) !=
+            EXIT_SUCCESS ||
+        progress.run(
+            "browser_failure_and_queued_cancellation",
+            test_browser_failure_and_queued_cancellation
+        ) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
-    return EXIT_SUCCESS;
+    return progress.finish();
 }

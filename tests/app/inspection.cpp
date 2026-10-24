@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/exit_code.hpp"
 #include "onedrive/util/sha256.hpp"
@@ -723,11 +724,14 @@ int test_inspection() {
 } // namespace
 
 int main() {
+    onedrive::test::ScenarioProgress progress{2};
     try {
-        if (test_multiple_drive_inspection() != EXIT_SUCCESS) {
+        if (progress.run(
+                "multiple_drive_inspection", test_multiple_drive_inspection
+            ) != EXIT_SUCCESS) {
             return EXIT_FAILURE;
         }
-        return test_inspection();
+        return progress.finish(progress.run("inspection", test_inspection));
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return EXIT_FAILURE;

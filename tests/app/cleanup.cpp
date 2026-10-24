@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/exit_code.hpp"
 #include "ui/cli/app/info.hpp"
@@ -522,13 +523,18 @@ void test_invalid_database_and_retry() {
 } // namespace
 
 int main() {
+    onedrive::test::ScenarioProgress progress{5};
     try {
-        test_cleanup();
-        test_changed_file();
-        test_unsafe_files();
-        test_references_and_missing_state();
-        test_invalid_database_and_retry();
-        return EXIT_SUCCESS;
+        progress.run("cleanup", test_cleanup);
+        progress.run("changed_file", test_changed_file);
+        progress.run("unsafe_files", test_unsafe_files);
+        progress.run(
+            "references_and_missing_state", test_references_and_missing_state
+        );
+        progress.run(
+            "invalid_database_and_retry", test_invalid_database_and_retry
+        );
+        return progress.finish();
     } catch (const std::exception& error) {
         return fail(error.what());
     }

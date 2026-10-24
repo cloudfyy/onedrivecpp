@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support/common.hpp"
 #include "util/atomic_file.hpp"
 
@@ -144,6 +145,7 @@ int __wrap_unlinkat(int directory, const char* name, int flags) {
 }
 
 int main() {
+    onedrive::test::ScenarioProgress progress{11};
     using onedrive::test::fail;
     const onedrive::test::TemporaryDirectory temporary;
     const auto destination = temporary.path() / "private";
@@ -167,61 +169,96 @@ int main() {
                  "too many temporary file collisions"
              },
          }) {
-        onedrive::test::write_file(destination, "original");
-        calls = 0;
-        temporary_descriptor = -1;
-        directory_descriptor = -1;
-        fault = scenario.fault;
-        const bool rejected = onedrive::test::throws_with(
-            [&] {
-                onedrive::util::write_file_atomically(
-                    destination, "replacement", 0600, "test file"
-                );
-            },
-            scenario.message
-        );
-        fault = Fault::none;
-        if (!rejected || calls == 0 ||
-            (scenario.fault == Fault::collisions_exhausted && calls != 128)) {
-            return fail(
-                "atomic syscall failure did not report the expected error"
+        if (const auto scenario_result = progress.run(
+                std::string{"atomic_write_failure (fault="} +
+                    std::to_string(static_cast<int>(scenario.fault)) +
+                    ", error=" + std::string{scenario.message} + ")",
+                [&]() -> int {
+                    onedrive::test::write_file(destination, "original");
+                    calls = 0;
+                    temporary_descriptor = -1;
+                    directory_descriptor = -1;
+                    fault = scenario.fault;
+                    const bool rejected = onedrive::test::throws_with(
+                        [&] {
+                            onedrive::util::write_file_atomically(
+                                destination, "replacement", 0600, "test file"
+                            );
+                        },
+                        scenario.message
+                    );
+                    fault = Fault::none;
+                    if (!rejected || calls == 0 ||
+                        (scenario.fault == Fault::collisions_exhausted &&
+                         calls != 128)) {
+                        return fail(
+                            "atomic syscall failure did not report the "
+                            "expected error"
+                        );
+                    }
+                    const auto expected =
+                        scenario.fault == Fault::flush_directory ? "replacement"
+                                                                 : "original";
+                    if (onedrive::test::read_file(destination) != expected) {
+                        return fail(
+                            "atomic failure violated the rename commit boundary"
+                        );
+                    }
+                    unsigned leftovers = 0;
+                    for (const auto& entry :
+                         std::filesystem::directory_iterator{
+                             temporary.path()
+                         }) {
+                        if (entry.path() != destination) {
+                            ++leftovers;
+                            std::filesystem::remove(entry.path());
+                        }
+                    }
+                    if (leftovers !=
+                        (scenario.fault == Fault::cleanup ? 1U : 0U)) {
+                        return fail(
+                            "atomic failure did not clean up its temporary file"
+                        );
+                    }
+                    return EXIT_SUCCESS;
+                }
             );
-        }
-        const auto expected = scenario.fault == Fault::flush_directory
-                                  ? "replacement"
-                                  : "original";
-        if (onedrive::test::read_file(destination) != expected) {
-            return fail("atomic failure violated the rename commit boundary");
-        }
-        unsigned leftovers = 0;
-        for (const auto& entry :
-             std::filesystem::directory_iterator{temporary.path()}) {
-            if (entry.path() != destination) {
-                ++leftovers;
-                std::filesystem::remove(entry.path());
-            }
-        }
-        if (leftovers != (scenario.fault == Fault::cleanup ? 1U : 0U)) {
-            return fail("atomic failure did not clean up its temporary file");
+            scenario_result != EXIT_SUCCESS) {
+            return scenario_result;
         }
     }
     for (const auto retry :
          {Fault::collision, Fault::interrupted_partial_write}) {
-        calls = 0;
-        temporary_descriptor = -1;
-        fault = retry;
-        onedrive::util::write_file_atomically(
-            destination, "complete-payload", 0600, "test file"
-        );
-        fault = Fault::none;
-        if (calls < 2 ||
-            onedrive::test::read_file(destination) != "complete-payload" ||
-            std::distance(
-                std::filesystem::directory_iterator{temporary.path()},
-                std::filesystem::directory_iterator{}
-            ) != 1) {
-            return fail("atomic retry lost data or leaked a temporary file");
+        if (const auto scenario_result = progress.run(
+                std::string{"atomic_write_retry (fault="} +
+                    std::to_string(static_cast<int>(retry)) + ")",
+                [&]() -> int {
+                    calls = 0;
+                    temporary_descriptor = -1;
+                    fault = retry;
+                    onedrive::util::write_file_atomically(
+                        destination, "complete-payload", 0600, "test file"
+                    );
+                    fault = Fault::none;
+                    if (calls < 2 ||
+                        onedrive::test::read_file(destination) !=
+                            "complete-payload" ||
+                        std::distance(
+                            std::filesystem::directory_iterator{
+                                temporary.path()
+                            },
+                            std::filesystem::directory_iterator{}
+                        ) != 1) {
+                        return fail(
+                            "atomic retry lost data or leaked a temporary file"
+                        );
+                    }
+                    return EXIT_SUCCESS;
+                }
+            );
+            scenario_result != EXIT_SUCCESS) {
+            return scenario_result;
         }
     }
-    return EXIT_SUCCESS;
+    return progress.finish();
 }

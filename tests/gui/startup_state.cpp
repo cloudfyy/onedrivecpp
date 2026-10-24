@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "app_state_view_model.hpp"
 #include "configuration.hpp"
 #include "localization.hpp"
@@ -420,23 +421,36 @@ void test_state_directory_settings_recovery() {
 } // namespace
 
 int main(int argc, char* argv[]) {
+    onedrive::test::ScenarioProgress progress{5};
     QApplication application{argc, argv};
     test::TemporaryDirectory home;
     qputenv("HOME", QByteArray::fromStdString(home.path().string()));
     StartupBrowserCapture browser;
     QDesktopServices::setUrlHandler("https", &browser, "open");
     try {
-        test_configuration_startup(browser);
-        test_account_startup(browser);
-        test_import_and_reload_recovery();
-        test_login_independent_of_sync_path();
-        test_state_directory_settings_recovery();
+        progress.run("configuration_startup", [&] {
+            return test_configuration_startup(browser);
+        });
+        progress.run("account_startup", [&] {
+            return test_account_startup(browser);
+        });
+        progress.run(
+            "import_and_reload_recovery", test_import_and_reload_recovery
+        );
+        progress.run(
+            "login_independent_of_sync_path",
+            test_login_independent_of_sync_path
+        );
+        progress.run(
+            "state_directory_settings_recovery",
+            test_state_directory_settings_recovery
+        );
     } catch (const std::exception& error) {
         QDesktopServices::unsetUrlHandler("https");
         return test::fail(error.what());
     }
     QDesktopServices::unsetUrlHandler("https");
-    return EXIT_SUCCESS;
+    return progress.finish();
 }
 
 #include "startup_state.moc"

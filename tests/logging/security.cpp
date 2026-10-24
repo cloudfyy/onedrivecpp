@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "onedrive/logging/logging.hpp"
 #include "onedrive/ui/common/observer.hpp"
 #include "support/common.hpp"
@@ -313,23 +314,34 @@ int test_business_event_routing() {
 }  // namespace
 
 int main() {
-    if (const int result = test_level_parsing(); result != EXIT_SUCCESS) {
-        return result;
-    }
-    if (const int result = test_private_log_and_rotation();
+    onedrive::test::ScenarioProgress progress{6};
+    if (const int result = progress.run("level_parsing", test_level_parsing);
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_rejects_unsafe_log_files();
+    if (const int result = progress.run(
+            "private_log_and_rotation", test_private_log_and_rotation
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_rejects_untrusted_directory();
+    if (const int result = progress.run(
+            "rejects_unsafe_log_files", test_rejects_unsafe_log_files
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_message_sink(); result != EXIT_SUCCESS) {
+    if (const int result = progress.run(
+            "rejects_untrusted_directory", test_rejects_untrusted_directory
+        );
+        result != EXIT_SUCCESS) {
         return result;
     }
-    return test_business_event_routing();
+    if (const int result = progress.run("message_sink", test_message_sink);
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish(
+        progress.run("business_event_routing", test_business_event_routing)
+    );
 }

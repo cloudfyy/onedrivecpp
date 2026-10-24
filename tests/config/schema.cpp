@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 
 #include <format>
@@ -208,7 +209,9 @@ int test_schema() {
 
 } // namespace
 
-int main() {
+namespace {
+
+int test_drive_selection_and_history_schema() {
     const auto config_path =
         std::filesystem::path{"/tmp/multi-drive-config.toml"};
     const auto multi = onedrive::config::Config::load_from_string(
@@ -314,8 +317,23 @@ int main() {
         )) {
         return onedrive::test::fail("unknown history setting was accepted");
     }
-    if (test_drive_id_validation() != EXIT_SUCCESS) {
+    return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int main() {
+    onedrive::test::ScenarioProgress progress{3};
+    if (const auto result = progress.run(
+            "drive_selection_and_history_schema",
+            test_drive_selection_and_history_schema
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (progress.run("drive_id_validation", test_drive_id_validation) !=
+        EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
-    return test_schema();
+    return progress.finish(progress.run("schema", test_schema));
 }

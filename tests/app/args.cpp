@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/exit_code.hpp"
 #include "ui/cli/app/args.hpp"
@@ -565,8 +566,10 @@ int test_args() {
 } // namespace
 
 int main() {
-    if (const auto result = test_ui_option_help(); result != EXIT_SUCCESS) {
+    onedrive::test::ScenarioProgress progress{2};
+    if (const auto result = progress.run("ui_option_help", test_ui_option_help);
+        result != EXIT_SUCCESS) {
         return result;
     }
-    return test_args();
+    return progress.finish(progress.run("args", test_args));
 }

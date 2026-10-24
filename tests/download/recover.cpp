@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/ui/common/observer.hpp"
 
@@ -293,5 +294,6 @@ int test_recover() {
 } // namespace
 
 int main() {
-    return test_recover();
+    onedrive::test::ScenarioProgress progress{1};
+    return progress.finish(progress.run("recover", test_recover));
 }

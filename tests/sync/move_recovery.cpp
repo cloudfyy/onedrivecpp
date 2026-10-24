@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/exit_code.hpp"
 
@@ -160,9 +161,14 @@ int invalid_recovery_journals() {
 } // namespace
 
 int main() {
-    if (const int result = journal_boundary_failures();
+    onedrive::test::ScenarioProgress progress{2};
+    if (const int result = progress.run(
+            "journal_boundary_failures", journal_boundary_failures
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    return invalid_recovery_journals();
+    return progress.finish(
+        progress.run("invalid_recovery_journals", invalid_recovery_journals)
+    );
 }

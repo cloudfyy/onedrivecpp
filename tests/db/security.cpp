@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/storage/item_database.hpp"
 #include "support/common.hpp"
@@ -24,7 +25,9 @@ using onedrive::test::TemporaryDirectory;
 
 } // namespace
 
-int main() {
+namespace {
+
+int test_database_security_and_recovery() {
     TemporaryDirectory temporary_directory;
     const auto assert_rejected = [](const std::filesystem::path& directory,
                                     std::string_view expected,
@@ -388,4 +391,18 @@ int main() {
     }
 
     return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int main() {
+    onedrive::test::ScenarioProgress progress{1};
+    if (const auto result = progress.run(
+            "database_security_and_recovery",
+            test_database_security_and_recovery
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish();
 }

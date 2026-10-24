@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/exit_code.hpp"
 #include "db/support.hpp"
@@ -225,8 +226,12 @@ int test_empty_and_confirmed_migration() {
 } // namespace
 
 int main() {
-    if (test_migration_command() != EXIT_SUCCESS) {
+    onedrive::test::ScenarioProgress progress{2};
+    if (progress.run("migration_command", test_migration_command) !=
+        EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
-    return test_empty_and_confirmed_migration();
+    return progress.finish(progress.run(
+        "empty_and_confirmed_migration", test_empty_and_confirmed_migration
+    ));
 }

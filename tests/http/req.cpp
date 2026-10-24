@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "http/callbacks.hpp"
 #include "http/curl.hpp"
@@ -50,19 +51,21 @@ static_assert(!onedrive::http::status::is_redirect(400));
 
 } // namespace
 
-int main() {
-    static_assert(noexcept(onedrive::http::detail::read_request_body(
-        nullptr, 0, 0, nullptr
-    )));
-    static_assert(noexcept(onedrive::http::detail::write_response(
-        nullptr, 0, 0, nullptr
-    )));
-    static_assert(noexcept(onedrive::http::detail::write_header(
-        nullptr, 0, 0, nullptr
-    )));
-    static_assert(noexcept(onedrive::http::detail::report_progress(
-        nullptr, 0, 0, 0, 0
-    )));
+namespace {
+
+int test_http_requests_and_responses() {
+    static_assert(noexcept(
+        onedrive::http::detail::read_request_body(nullptr, 0, 0, nullptr)
+    ));
+    static_assert(
+        noexcept(onedrive::http::detail::write_response(nullptr, 0, 0, nullptr))
+    );
+    static_assert(
+        noexcept(onedrive::http::detail::write_header(nullptr, 0, 0, nullptr))
+    );
+    static_assert(
+        noexcept(onedrive::http::detail::report_progress(nullptr, 0, 0, 0, 0))
+    );
 
     try {
         static_cast<void>(onedrive::http::detail::curl_proxy_auth(
@@ -99,20 +102,17 @@ int main() {
     };
     char upload_buffer[4]{};
     if (onedrive::http::detail::read_request_body(
-            upload_buffer,
-            1,
-            sizeof(upload_buffer),
-            &read_context
+            upload_buffer, 1, sizeof(upload_buffer), &read_context
         ) != CURL_READFUNC_ABORT ||
         read_context.failure.kind !=
             onedrive::http::detail::CallbackFailureKind::throttle ||
         !read_context.failure.exception) {
-        return fail("upload callback allocation failure crossed the C boundary");
+        return fail(
+            "upload callback allocation failure crossed the C boundary"
+        );
     }
     onedrive::http::DownloadProgress failing_progress{
-        [](std::uint64_t, std::uint64_t) {
-            throw std::bad_alloc{};
-        }
+        [](std::uint64_t, std::uint64_t) { throw std::bad_alloc{}; }
     };
     onedrive::http::detail::ProgressContext progress_context{
         .callback = &failing_progress,
@@ -120,8 +120,7 @@ int main() {
     if (onedrive::http::detail::report_progress(
             &progress_context, 1, 1, 0, 0
         ) == 0 ||
-        !progress_context.failed ||
-        !progress_context.exception) {
+        !progress_context.failed || !progress_context.exception) {
         return fail(
             "progress callback allocation failure crossed the C boundary"
         );
@@ -176,29 +175,24 @@ int main() {
             "unknown error") {
         return fail("missing callback exception was not classified");
     }
+    using onedrive::http::detail::callback_storage_error;
     using onedrive::http::detail::CallbackFailureKind;
     using onedrive::http::detail::CallbackStorage;
-    using onedrive::http::detail::callback_storage_error;
     if (callback_storage_error(
-            CallbackFailureKind::allocation,
-            CallbackStorage::response_headers
+            CallbackFailureKind::allocation, CallbackStorage::response_headers
         ) != "cannot allocate HTTP response header storage" ||
         callback_storage_error(
-            CallbackFailureKind::allocation,
-            CallbackStorage::response_body
+            CallbackFailureKind::allocation, CallbackStorage::response_body
         ) != "cannot allocate HTTP response body storage" ||
         callback_storage_error(
-            CallbackFailureKind::internal,
-            CallbackStorage::response_headers
+            CallbackFailureKind::internal, CallbackStorage::response_headers
         ) != "HTTP response header callback failed" ||
         callback_storage_error(
-            CallbackFailureKind::internal,
-            CallbackStorage::response_body
+            CallbackFailureKind::internal, CallbackStorage::response_body
         ) != "HTTP response body callback failed" ||
         !callback_storage_error(
-             CallbackFailureKind::none,
-             CallbackStorage::response_body
-         )
+             CallbackFailureKind::none, CallbackStorage::response_body
+        )
              .empty()) {
         return fail("callback storage failure diagnostics were incorrect");
     }
@@ -207,21 +201,17 @@ int main() {
     const onedrive::test::TemporaryDirectory temporary;
     std::error_code ignored;
     const auto callback_path = temporary.path() / "callback.bin";
-    onedrive::util::UniqueFD callback_descriptor{
-        ::open(
-            callback_path.c_str(),
-            O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC,
-            S_IRUSR | S_IWUSR
-        )
-    };
+    onedrive::util::UniqueFD callback_descriptor{::open(
+        callback_path.c_str(),
+        O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC,
+        S_IRUSR | S_IWUSR
+    )};
     if (!callback_descriptor) {
         return fail("cannot create callback boundary test file");
     }
-    onedrive::http::DownloadCheckpoint failing_checkpoint{
-        [](std::uint64_t) {
-            throw std::bad_alloc{};
-        }
-    };
+    onedrive::http::DownloadCheckpoint failing_checkpoint{[](std::uint64_t) {
+        throw std::bad_alloc{};
+    }};
     onedrive::http::detail::DownloadState checkpoint_state;
     onedrive::http::detail::WriteContext checkpoint_context{
         .descriptor = callback_descriptor.get(),
@@ -229,9 +219,7 @@ int main() {
         .checkpoint = &failing_checkpoint,
         .download_state = &checkpoint_state,
     };
-    if (onedrive::http::detail::make_download_checkpoint(
-            checkpoint_context
-        ) ||
+    if (onedrive::http::detail::make_download_checkpoint(checkpoint_context) ||
         checkpoint_context.failure.kind !=
             onedrive::http::detail::CallbackFailureKind::data_callback ||
         !checkpoint_context.failure.exception) {
@@ -267,9 +255,7 @@ int main() {
         gate_context.failure.kind !=
             onedrive::http::detail::CallbackFailureKind::data_callback ||
         !gate_context.failure.exception) {
-        return fail(
-            "response gate allocation failure crossed the C boundary"
-        );
+        return fail("response gate allocation failure crossed the C boundary");
     }
     auto http_listener = onedrive::test::create_loopback_listener(4);
     auto& listener = http_listener.socket;
@@ -616,4 +602,17 @@ int main() {
         return fail("invalid HTTP redirect options were accepted");
     }
     return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int main() {
+    onedrive::test::ScenarioProgress progress{1};
+    if (const auto result = progress.run(
+            "http_requests_and_responses", test_http_requests_and_responses
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish();
 }

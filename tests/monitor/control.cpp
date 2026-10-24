@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "onedrive/monitor/control.hpp"
 #include "onedrive/monitor/monitor.hpp"
 #include "onedrive/ui/common/observer.hpp"
@@ -843,20 +844,32 @@ void test_sync_result_names() {
 } // namespace
 
 int main(int argc, char* argv[]) {
+    onedrive::test::ScenarioProgress progress{7};
     try {
         if (argc == 4 && std::string_view{argv[1]} == "--child") {
             return child(argv[2], argv[3]);
         }
-        test_process_control();
-        test_cli_and_restart();
+        progress.run("process_control", test_process_control);
+        progress.run("cli_and_restart", test_cli_and_restart);
         const logging::Session restore{config::Config::defaults().logging};
-        test_initial_changes_and_transient_probes();
-        test_endpoint_validation_and_cleanup();
-        test_client_protocol_and_timeout();
-        test_same_process_instance_replacement();
-        test_sync_result_names();
+        progress.run(
+            "initial_changes_and_transient_probes",
+            test_initial_changes_and_transient_probes
+        );
+        progress.run(
+            "endpoint_validation_and_cleanup",
+            test_endpoint_validation_and_cleanup
+        );
+        progress.run(
+            "client_protocol_and_timeout", test_client_protocol_and_timeout
+        );
+        progress.run(
+            "same_process_instance_replacement",
+            test_same_process_instance_replacement
+        );
+        progress.run("sync_result_names", test_sync_result_names);
     } catch (const std::exception& error) {
         return test::fail(error.what());
     }
-    return EXIT_SUCCESS;
+    return progress.finish();
 }

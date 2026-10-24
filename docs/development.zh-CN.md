@@ -17,9 +17,8 @@ CLI 输出继续复用现有 Console 事件及文本／JSON／TUI 后端。
 
 ## 测试场景进度
 
-最近拆分的同步 base／delete／upload、Graph drive／download／support、TUI，
-以及 GUI monitoring／localization 测试程序复用 `tests/support/progress.hpp`。
-`ScenarioProgress` 输出每个场景的序号、总数、名称、`RUNNING`／`PASS`／`FAIL`
+所有独立的 C++ 测试程序均复用 `tests/support/progress.hpp`。
+`ScenarioProgress` 输出每个场景的序号、总数、名称、`RUNNING`／`PASS`／`FAIL`／`SKIP`
 状态及毫秒耗时。进度写入 `std::clog`，在场景开始前及结果输出后立即刷新，
 使卡住或超时的程序保留当前场景信息，同时不污染测试捕获的应用 stdout／stderr 流。
 即使场景的业务进度未换行，场景结果也会从新的一行开始。
@@ -32,10 +31,18 @@ ctest --test-dir build/release -V -j 1 -R '^sync_upload_tests$'
 ```
 
 这不会将单个场景注册成 CTest 测试项，也不改变测试入口、执行顺序、原有退出码
-或异常传播。共享状态及 Qt 翻译器保留原有作用域，子进程控制模式不输出场景进度。
-TUI 参数化场景的名称包含行数和页数。增加场景时同步维护声明的总数，并在成功
+或异常传播。现有命名用例及参数组合分别记录进度；共享状态的内联流程保持为
+连续场景，而不是逐条断言计数，以保留夹具依赖及 Qt 翻译器生命周期。
+子进程控制模式不输出场景进度。进度对象仅由创建它的进程输出，因此 fork 子进程
+即使返回父进程的场景调用栈，也不会重复输出父场景的结果。
+参数化场景的名称包含相关参数，例如 TUI 行数／
+页数、冲突策略、变更类型及 GUI 启动参数。增加场景时同步维护声明的总数，并在成功
 路径调用 `finish()`；执行数量不足或超出声明时明确报错，不伪造全部完成。
-其他测试程序暂时保留原有输出，后续再逐步接入。
+
+只有显式配置的跳过码才显示为 `SKIP`。例如 `monitor_overflow_tests` 将 `77`
+作为 `run()` 的第三个参数，与其 CTest `SKIP_RETURN_CODE` 保持一致，保留原有
+诊断及退出码。其他非零返回值和异常仍记为失败，跳过场景也不会掩盖其他场景的
+失败。Python、Shell、CMake 及应用冒烟测试保留原有输出与 CTest 注册方式。
 
 ## 共享传输进度
 

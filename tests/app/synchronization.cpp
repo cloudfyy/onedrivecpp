@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/exit_code.hpp"
 
@@ -861,20 +862,43 @@ int test_cli_pending_delta_restart() {
 }  // namespace
 
 int main() {
+    onedrive::test::ScenarioProgress progress{10};
     RecordingObserver multi_drive_observer;
-    if (test_multiple_drives(multi_drive_observer) != EXIT_SUCCESS) {
+    if (progress.run("multiple_drives", [&] {
+            return test_multiple_drives(multi_drive_observer);
+        }) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
-    if (test_multiple_drive_result_priority() != EXIT_SUCCESS ||
-        test_multiple_drive_preview_lifecycle() != EXIT_SUCCESS ||
-        test_multiple_drive_cancellation_boundaries() != EXIT_SUCCESS ||
-        test_multiple_drives_observer_failure() != EXIT_SUCCESS ||
-        test_synchronization_service() != EXIT_SUCCESS ||
-        test_synchronization_service_cancellation() != EXIT_SUCCESS ||
-        test_identity_cancellation() != EXIT_SUCCESS ||
-        test_populated_cache_cleanup() != EXIT_SUCCESS ||
-        test_cli_pending_delta_restart() != EXIT_SUCCESS) {
+    if (progress.run(
+            "multiple_drive_result_priority",
+            test_multiple_drive_result_priority
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "multiple_drive_preview_lifecycle",
+            test_multiple_drive_preview_lifecycle
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "multiple_drive_cancellation_boundaries",
+            test_multiple_drive_cancellation_boundaries
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "multiple_drives_observer_failure",
+            test_multiple_drives_observer_failure
+        ) != EXIT_SUCCESS ||
+        progress.run("synchronization_service", test_synchronization_service) !=
+            EXIT_SUCCESS ||
+        progress.run(
+            "synchronization_service_cancellation",
+            test_synchronization_service_cancellation
+        ) != EXIT_SUCCESS ||
+        progress.run("identity_cancellation", test_identity_cancellation) !=
+            EXIT_SUCCESS ||
+        progress.run("populated_cache_cleanup", test_populated_cache_cleanup) !=
+            EXIT_SUCCESS ||
+        progress.run(
+            "cli_pending_delta_restart", test_cli_pending_delta_restart
+        ) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
-    return EXIT_SUCCESS;
+    return progress.finish();
 }

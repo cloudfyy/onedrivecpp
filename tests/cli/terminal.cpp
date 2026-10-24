@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "ui/cli/terminal.hpp"
 #include "support/common.hpp"
 
@@ -74,5 +75,8 @@ int test_terminal_capabilities() {
 }  // namespace
 
 int main() {
-    return test_terminal_capabilities();
+    onedrive::test::ScenarioProgress progress{1};
+    return progress.finish(
+        progress.run("terminal_capabilities", test_terminal_capabilities)
+    );
 }

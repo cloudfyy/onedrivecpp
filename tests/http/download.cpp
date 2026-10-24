@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/http/http_client.hpp"
 #include "support/network.hpp"
@@ -35,7 +36,9 @@ using onedrive::test::http::ScopedUmask;
 
 } // namespace
 
-int main() {
+namespace {
+
+int test_http_download_and_resume() {
     const ScopedUmask download_umask{0022};
     const onedrive::test::TemporaryDirectory temporary;
     std::error_code ignored;
@@ -279,4 +282,17 @@ int main() {
         return fail("failed download data observer did not abort cleanly");
     }
     return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int main() {
+    onedrive::test::ScenarioProgress progress{1};
+    if (const auto result = progress.run(
+            "http_download_and_resume", test_http_download_and_resume
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish();
 }

@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/storage/item_database.hpp"
 #include "onedrive/exit_code.hpp"
@@ -500,15 +501,36 @@ void test_persistence_failure_stops_before_downloads() {
 } // namespace
 
 int main() {
+    onedrive::test::ScenarioProgress progress{7};
     try {
-        test_restart_preserves_modes_and_latest_changes();
-        test_empty_refresh_preview_and_refresh_failure();
-        test_scope_and_baseline_invalidation();
-        test_cursor_and_hierarchy_fallback();
-        test_partial_download_survives_restart();
-        test_legacy_hash_policy_refresh_preserves_downloads();
-        test_persistence_failure_stops_before_downloads();
-        return EXIT_SUCCESS;
+        progress.run(
+            "restart_preserves_modes_and_latest_changes",
+            test_restart_preserves_modes_and_latest_changes
+        );
+        progress.run(
+            "empty_refresh_preview_and_refresh_failure",
+            test_empty_refresh_preview_and_refresh_failure
+        );
+        progress.run(
+            "scope_and_baseline_invalidation",
+            test_scope_and_baseline_invalidation
+        );
+        progress.run(
+            "cursor_and_hierarchy_fallback", test_cursor_and_hierarchy_fallback
+        );
+        progress.run(
+            "partial_download_survives_restart",
+            test_partial_download_survives_restart
+        );
+        progress.run(
+            "legacy_hash_policy_refresh_preserves_downloads",
+            test_legacy_hash_policy_refresh_preserves_downloads
+        );
+        progress.run(
+            "persistence_failure_stops_before_downloads",
+            test_persistence_failure_stops_before_downloads
+        );
+        return progress.finish();
     } catch (const std::exception& error) {
         return onedrive::test::fail(error.what());
     }

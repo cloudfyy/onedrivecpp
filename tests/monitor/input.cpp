@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "monitor/input.hpp"
 #include "onedrive/monitor/monitor.hpp"
 #include "onedrive/exit_code.hpp"
@@ -288,27 +289,50 @@ extern "C" ssize_t __wrap___read_chk(
     return __real___read_chk(descriptor, buffer, size, buffer_size);
 }
 
-int main() {
+namespace {
+
+int test_keyboard_exit_keys() {
     if (!exits_for("q") || !exits_for("Q") || !exits_for("\033") ||
         !exits_for("xq") || exits_for("x") || exits_for("") ||
         !exits_for("q", true) || interruptions != 1) {
         return fail("monitor keyboard exit keys were handled incorrectly");
     }
-    if (const int result = test_terminal_mode();
+    return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int main() {
+    onedrive::test::ScenarioProgress progress{6};
+    if (const auto result =
+            progress.run("keyboard_exit_keys", test_keyboard_exit_keys);
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_input_errors();
+    if (const int result = progress.run("terminal_mode", test_terminal_mode);
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_monitor_keyboard_exit('q');
+    if (const int result = progress.run("input_errors", test_input_errors);
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_monitor_keyboard_exit('\033');
+    if (const int result = progress.run(
+            "monitor_keyboard_exit ('q')",
+            [&] { return test_monitor_keyboard_exit('q'); }
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    return test_keyboard_exit_during_initial_sync();
+    if (const int result = progress.run(
+            "monitor_keyboard_exit ('\\033')",
+            [&] { return test_monitor_keyboard_exit('\033'); }
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish(progress.run(
+        "keyboard_exit_during_initial_sync",
+        test_keyboard_exit_during_initial_sync
+    ));
 }

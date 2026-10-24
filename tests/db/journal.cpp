@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/storage/item_database.hpp"
 #include "support/common.hpp"
@@ -103,10 +104,9 @@ int test_replacement_migration() {
 
 } // namespace
 
-int main() {
-    if (test_replacement_migration() != EXIT_SUCCESS) {
-        return EXIT_FAILURE;
-    }
+namespace {
+
+int test_journal_persistence_and_reset() {
     TemporaryDirectory temporary_directory;
     {
         onedrive::storage::ItemDatabase database{
@@ -562,4 +562,22 @@ int main() {
         }
     }
     return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int main() {
+    onedrive::test::ScenarioProgress progress{2};
+    if (progress.run("replacement_migration", test_replacement_migration) !=
+        EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+
+    if (const auto result = progress.run(
+            "journal_persistence_and_reset", test_journal_persistence_and_reset
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish();
 }

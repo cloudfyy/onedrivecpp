@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support/common.hpp"
 
 #include <fmt/format.h>
@@ -9,7 +10,9 @@
 #include <sstream>
 #include <string>
 
-int main() {
+namespace {
+
+int test_formatting_and_logging_compatibility() {
     const auto message =
         fmt::format(FMT_STRING("{} [{}({})]"), "failure", "source.cpp", 42);
     if (message != "failure [source.cpp(42)]" ||
@@ -44,4 +47,18 @@ int main() {
         return onedrive::test::fail("fmt must report invalid runtime formats");
     }
     return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int main() {
+    onedrive::test::ScenarioProgress progress{1};
+    if (const auto result = progress.run(
+            "formatting_and_logging_compatibility",
+            test_formatting_and_logging_compatibility
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish();
 }

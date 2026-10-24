@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/storage/item_database.hpp"
 #include "onedrive/storage/status.hpp"
@@ -270,21 +271,12 @@ int test_immediate_blocked_persistence() {
 
 } // namespace
 
-int main() {
-    if (test_immediate_blocked_persistence() != EXIT_SUCCESS) {
-        return EXIT_FAILURE;
-    }
-    if (test_hash_algorithm_round_trip() != EXIT_SUCCESS) {
-        return EXIT_FAILURE;
-    }
-    if (const int result = test_full_refresh_preserves_blocked_snapshots();
-        result != EXIT_SUCCESS) {
-        return result;
-    }
+namespace {
+
+int test_database_state_and_permissions() {
     TemporaryDirectory temporary_directory;
     const auto absent_summary = onedrive::storage::read_state_summary(
-        temporary_directory.path() / "missing-drive",
-        "me"
+        temporary_directory.path() / "missing-drive", "me"
     );
     if (absent_summary.database_present) {
         return fail("missing state database was reported as available");
@@ -358,11 +350,12 @@ int main() {
                         .size = 42,
                         .local_size = 42,
                         .local_modified_ticks = 123456,
-                        .content_hash = onedrive::util::FileHash{
-                            .algorithm =
-                                onedrive::util::FileHashAlgorithm::sha256,
-                            .value = "saved-hash",
-                        },
+                        .content_hash =
+                            onedrive::util::FileHash{
+                                .algorithm =
+                                    onedrive::util::FileHashAlgorithm::sha256,
+                                .value = "saved-hash",
+                            },
                         .directory = false,
                     },
                 },
@@ -380,8 +373,7 @@ int main() {
             return fail("upsert did not preserve the expected item count");
         }
         const auto summary = onedrive::storage::read_state_summary(
-            temporary_directory.path(),
-            "me"
+            temporary_directory.path(), "me"
         );
         if (!summary.database_present || summary.tracked_items != 1 ||
             summary.blocked_items != 0 || !summary.delta_cursor ||
@@ -395,8 +387,7 @@ int main() {
             temporary_directory.path(), identity()
         };
         database.open_read_only();
-        if (database.size() != 3 ||
-            database.drive_items("me").size() != 1) {
+        if (database.size() != 3 || database.drive_items("me").size() != 1) {
             return fail("read-only database open did not expose saved state");
         }
         try {
@@ -456,8 +447,7 @@ int main() {
             !third->content_hash ||
             third->content_hash->algorithm !=
                 onedrive::util::FileHashAlgorithm::sha256 ||
-            third->content_hash->value != "saved-hash" ||
-            third->directory ||
+            third->content_hash->value != "saved-hash" || third->directory ||
             database.delta_link("me") !=
                 std::optional<std::string>{
                     "https://graph.example.test/delta-1"
@@ -624,4 +614,36 @@ int main() {
     }
 
     return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int main() {
+    onedrive::test::ScenarioProgress progress{4};
+    if (progress.run(
+            "immediate_blocked_persistence", test_immediate_blocked_persistence
+        ) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+    if (progress.run(
+            "hash_algorithm_round_trip", test_hash_algorithm_round_trip
+        ) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+    if (const int result = progress.run(
+            "full_refresh_preserves_blocked_snapshots",
+            test_full_refresh_preserves_blocked_snapshots
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+
+    if (const auto result = progress.run(
+            "database_state_and_permissions",
+            test_database_state_and_permissions
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish();
 }

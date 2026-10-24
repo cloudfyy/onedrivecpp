@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/http/http_client.hpp"
 #include "support/network.hpp"
@@ -35,7 +36,9 @@ using onedrive::test::http::ScopedUmask;
 
 } // namespace
 
-int main() {
+namespace {
+
+int test_http_response_headers_and_redirects() {
     auto http_listener = onedrive::test::create_loopback_listener(4);
     auto& listener = http_listener.socket;
     if (listener.get() == -1) {
@@ -166,4 +169,18 @@ int main() {
         return fail("HTTP redirect followed a non-HTTPS target");
     }
     return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int main() {
+    onedrive::test::ScenarioProgress progress{1};
+    if (const auto result = progress.run(
+            "http_response_headers_and_redirects",
+            test_http_response_headers_and_redirects
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish();
 }

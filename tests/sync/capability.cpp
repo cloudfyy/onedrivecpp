@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "onedrive/sync/capabilities.hpp"
 
 #include <array>
@@ -137,5 +138,8 @@ int test_capability_matrix() {
 } // namespace
 
 int main() {
-    return test_capability_matrix();
+    onedrive::test::ScenarioProgress progress{1};
+    return progress.finish(
+        progress.run("capability_matrix", test_capability_matrix)
+    );
 }

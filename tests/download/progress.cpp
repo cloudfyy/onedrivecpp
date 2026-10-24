@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "sync/download/progress.hpp"
 #include "support/common.hpp"
 
@@ -25,12 +26,12 @@ private:
 
 }  // namespace
 
-int main() {
+namespace {
+
+int test_transfer_estimation_and_reporting() {
     using namespace std::chrono_literals;
-    using Estimator =
-        onedrive::sync::detail::DownloadProgressEstimator;
-    using Reporter =
-        onedrive::sync::detail::DownloadProgressReporter;
+    using Estimator = onedrive::sync::detail::DownloadProgressEstimator;
+    using Reporter = onedrive::sync::detail::DownloadProgressReporter;
 
     const Estimator::Clock::time_point started{};
     Estimator large{started};
@@ -98,8 +99,7 @@ int main() {
     const auto completed = estimator.sample(1'000, 1'000, started + 4s);
     if (first.bytes_per_second != 100 ||
         first.estimated_seconds_remaining != 9 ||
-        first.elapsed_milliseconds != 1'000 ||
-        second.bytes_per_second != 125 ||
+        first.elapsed_milliseconds != 1'000 || second.bytes_per_second != 125 ||
         second.estimated_seconds_remaining != 6 ||
         second.elapsed_milliseconds != 2'000 ||
         completed.bytes_per_second != 181 ||
@@ -108,27 +108,19 @@ int main() {
         return fail("download progress smoothing or ETA was incorrect");
     }
 
-    const auto unchanged = estimator.sample(
-        1'000,
-        1'000,
-        started + 4s
-    );
+    const auto unchanged = estimator.sample(1'000, 1'000, started + 4s);
     if (unchanged.bytes_per_second != completed.bytes_per_second ||
         unchanged.estimated_seconds_remaining.has_value()) {
         return fail("unchanged download progress altered the estimate");
     }
 
     try {
-        static_cast<void>(
-            estimator.sample(999, 1'000, started + 5s)
-        );
+        static_cast<void>(estimator.sample(999, 1'000, started + 5s));
         return fail("backwards download bytes were accepted");
     } catch (const std::invalid_argument&) {
     }
     try {
-        static_cast<void>(
-            estimator.sample(1'000, 1'000, started + 3s)
-        );
+        static_cast<void>(estimator.sample(1'000, 1'000, started + 3s));
         return fail("backwards progress time was accepted");
     } catch (const std::invalid_argument&) {
     }
@@ -158,9 +150,7 @@ int main() {
             onedrive::util::ProgressState::ongoing,
             started + 1100ms
         )) {
-        return fail(
-            "file-count progress bypassed the timed refresh interval"
-        );
+        return fail("file-count progress bypassed the timed refresh interval");
     }
     if (!reporter.should_report(
             1'068,
@@ -193,4 +183,18 @@ int main() {
         return fail("completed progress was not reported");
     }
     return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int main() {
+    onedrive::test::ScenarioProgress progress{1};
+    if (const auto result = progress.run(
+            "transfer_estimation_and_reporting",
+            test_transfer_estimation_and_reporting
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish();
 }

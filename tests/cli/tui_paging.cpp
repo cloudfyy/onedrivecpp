@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "ui/cli/backend_factory.hpp"
 #include "onedrive/ui/cli/console.hpp"
 #include "onedrive/util/system_error.hpp"
@@ -306,175 +307,240 @@ private:
 } // namespace
 
 int main() {
+    onedrive::test::ScenarioProgress progress{46};
     try {
         using onedrive::cli::TuiView;
-        {
-            onedrive::test::app::CliFixture fixture;
-            std::filesystem::create_directories(fixture.sync_path);
-            if (fixture.authenticate().exit_code !=
-                onedrive::exit_code::success) {
-                return onedrive::test::fail(
-                    "could not authenticate history failure fixture"
-                );
-            }
-            fixture.runtime_factory.monitor_override =
-                [](const auto&,
-                   auto synchronize,
-                   auto&) -> std::unique_ptr<onedrive::monitor::FileMonitor> {
-                if (synchronize({}) != onedrive::exit_code::success) {
-                    throw std::runtime_error{
-                        "history fixture synchronization failed"
-                    };
-                }
-                throw std::runtime_error{"simulated monitor startup failure"};
-            };
-            TerminalPager terminal{
-                0, 30, -1, TuiView::watch, [&] {
-                    std::vector<std::string> arguments{
-                        "onedrive-cpp",
-                        "transfer",
-                        "watch",
-                        "--config",
-                        fixture.config_path.string(),
-                        "--color",
-                        "never",
-                        "--ui",
-                        "tui"
-                    };
-                    std::vector<char*> pointers;
-                    for (auto& argument : arguments) {
-                        pointers.push_back(argument.data());
+        if (const auto scenario_result = progress.run(
+                "failure_retains_history",
+                [&]() -> int {
+                    onedrive::test::app::CliFixture fixture;
+                    std::filesystem::create_directories(fixture.sync_path);
+                    if (fixture.authenticate().exit_code !=
+                        onedrive::exit_code::success) {
+                        return onedrive::test::fail(
+                            "could not authenticate history failure fixture"
+                        );
                     }
-                    onedrive::app::RuntimeFactory factory{
-                        onedrive::util::borrowed_proxy, fixture.runtime_factory
+                    fixture.runtime_factory.monitor_override =
+                        [](
+                            const auto&, auto synchronize, auto&
+                        ) -> std::unique_ptr<onedrive::monitor::FileMonitor> {
+                        if (synchronize({}) != onedrive::exit_code::success) {
+                            throw std::runtime_error{
+                                "history fixture synchronization failed"
+                            };
+                        }
+                        throw std::runtime_error{
+                            "simulated monitor startup failure"
+                        };
                     };
-                    onedrive::app::Application application{&factory};
-                    return application.run(
-                        static_cast<int>(pointers.size()), pointers.data()
+                    TerminalPager terminal{
+                        0, 30, -1, TuiView::watch, [&] {
+                            std::vector<std::string> arguments{
+                                "onedrive-cpp",
+                                "transfer",
+                                "watch",
+                                "--config",
+                                fixture.config_path.string(),
+                                "--color",
+                                "never",
+                                "--ui",
+                                "tui"
+                            };
+                            std::vector<char*> pointers;
+                            for (auto& argument : arguments) {
+                                pointers.push_back(argument.data());
+                            }
+                            onedrive::app::RuntimeFactory factory{
+                                onedrive::util::borrowed_proxy,
+                                fixture.runtime_factory
+                            };
+                            onedrive::app::Application application{&factory};
+                            return application.run(
+                                static_cast<int>(pointers.size()),
+                                pointers.data()
+                            );
+                        }
+                    };
+                    terminal.expect_exit(false, onedrive::exit_code::failure);
+                    const auto& output = terminal.output();
+                    const auto heading = output.find(
+                        "Completed file operations (this process):"
                     );
-                }
-            };
-            terminal.expect_exit(false, onedrive::exit_code::failure);
-            const auto& output = terminal.output();
-            const auto heading =
-                output.find("Completed file operations (this process):");
-            if (!output.contains("simulated monitor startup failure") ||
-                !output.contains("notes.txt") || heading == std::string::npos ||
-                heading !=
-                    output.rfind("Completed file operations (this process):") ||
-                !output.contains(
-                    "1 retained (limit 10000); 0 older operations omitted."
-                ) ||
-                heading < output.rfind("\033[?1049l")) {
-                return onedrive::test::fail(
-                    "CLI failure lost completed history, duplicated it, or "
-                    "exported before leaving fullscreen\n" +
-                    output
-                );
-            }
-        }
-        {
-            onedrive::test::app::CliFixture fixture;
-            bool logged = false;
-            fixture.runtime_factory.authentication_response_override =
-                [&](const onedrive::http::HttpRequest&)
-                -> std::optional<onedrive::http::HttpResult> {
-                    if (!logged) {
-                        logged = true;
-                        spdlog::trace("application trace log");
-                        spdlog::debug("application debug log");
-                        spdlog::info("application info log");
-                        spdlog::warn("application warning log");
-                        spdlog::error("application error log");
-                        spdlog::critical("application critical log");
+                    if (!output.contains("simulated monitor startup failure") ||
+                        !output.contains("notes.txt") ||
+                        heading == std::string::npos ||
+                        heading !=
+                            output.rfind(
+                                "Completed file operations (this process):"
+                            ) ||
+                        !output.contains(
+                            "1 retained (limit 10000); 0 older operations "
+                            "omitted."
+                        ) ||
+                        heading < output.rfind("\033[?1049l")) {
+                        return onedrive::test::fail(
+                            "CLI failure lost completed history, duplicated "
+                            "it, or "
+                            "exported before leaving fullscreen\n" +
+                            output
+                        );
                     }
-                    return std::nullopt;
-                };
-            TerminalPager terminal{
-                0, 30, -1, TuiView::auth,
-                [&] {
-                    std::vector<std::string> arguments{
-                        "onedrive-cpp", "account", "login", "--config",
-                        fixture.config_path.string(), "--ui", "tui",
-                        "--log-level", "trace", "--color", "never"
-                    };
-                    std::vector<char*> pointers;
-                    for (auto& argument : arguments) {
-                        pointers.push_back(argument.data());
-                    }
-                    onedrive::app::RuntimeFactory factory{
-                        onedrive::util::borrowed_proxy, fixture.runtime_factory
-                    };
-                    onedrive::app::Application application{&factory};
-                    return application.run(
-                        static_cast<int>(pointers.size()), pointers.data()
-                    );
+                    return EXIT_SUCCESS;
                 }
-            };
-            terminal.expect_exit();
-            for (const auto* message :
-                 {"application warning log", "application error log",
-                  "application critical log"}) {
-                if (!terminal.output().contains(message) ||
-                    !onedrive::test::read_file(fixture.log_path)
-                         .contains(message)) {
-                    return onedrive::test::fail(
-                        "CLI did not forward backend diagnostics to TUI and file"
-                    );
-                }
-            }
-            for (const auto* message :
-                 {"application trace log", "application debug log",
-                  "application info log"}) {
-                if (terminal.output().contains(message) ||
-                    !onedrive::test::read_file(fixture.log_path)
-                         .contains(message)) {
-                    return onedrive::test::fail(
-                        "TUI filtering removed low-severity file logs or "
-                        "displayed backend details"
-                    );
-                }
-            }
-        }
-        {
-            TerminalPager terminal{20, 12, -1, TuiView::partials};
-            terminal.expect_result("File 1/20", "> folder/partial-1.bin");
-            terminal.send("\033[B");
-            terminal.expect_result("File 2/20", "> folder/partial-2.bin");
-            terminal.send(std::string(25, 'j'));
-            terminal.expect_result("File 20/20", "> folder/partial-20.bin");
-            terminal.resize(24);
-            terminal.expect_result(
-                "File 20/20",
-                "temporary file: /sync/folder/partial-20.bin.partial"
             );
-            terminal.resize(12);
-            terminal.expect_result("File 20/20", "> folder/partial-20.bin");
-            terminal.send("\033[B\033[A");
-            terminal.expect_result("File 19/20", "> folder/partial-19.bin");
-            terminal.send("k");
-            terminal.expect_result("File 18/20", "> folder/partial-18.bin");
-            terminal.send("q");
-            terminal.expect_exit();
+            scenario_result != EXIT_SUCCESS) {
+            return scenario_result;
         }
-        {
-            TerminalPager pager{3, 30, -1, TuiView::blocked};
-            pager.expect_result("Item 1/3", "folder/item-1.txt");
-            if (!pager.output().contains("recorded: 3")) {
-                return onedrive::test::fail(
-                    "blocked-item paging lost its summary"
-                );
-            }
-            pager.send("n");
-            pager.expect_result("Item 2/3", "folder/item-2.txt");
-            pager.send("\033[C");
-            pager.expect_result("Item 3/3", "folder/item-3.txt");
-            pager.send("p");
-            pager.expect_result("Item 2/3", "folder/item-2.txt");
-            pager.send("\033[D");
-            pager.expect_result("Item 1/3", "folder/item-1.txt");
-            pager.send("q");
-            pager.expect_exit();
+        if (const auto scenario_result = progress.run(
+                "diagnostics_to_tui_and_file",
+                [&]() -> int {
+                    onedrive::test::app::CliFixture fixture;
+                    bool logged = false;
+                    fixture.runtime_factory.authentication_response_override =
+                        [&](
+                            const onedrive::http::HttpRequest&
+                        ) -> std::optional<onedrive::http::HttpResult> {
+                        if (!logged) {
+                            logged = true;
+                            spdlog::trace("application trace log");
+                            spdlog::debug("application debug log");
+                            spdlog::info("application info log");
+                            spdlog::warn("application warning log");
+                            spdlog::error("application error log");
+                            spdlog::critical("application critical log");
+                        }
+                        return std::nullopt;
+                    };
+                    TerminalPager terminal{
+                        0, 30, -1, TuiView::auth, [&] {
+                            std::vector<std::string> arguments{
+                                "onedrive-cpp",
+                                "account",
+                                "login",
+                                "--config",
+                                fixture.config_path.string(),
+                                "--ui",
+                                "tui",
+                                "--log-level",
+                                "trace",
+                                "--color",
+                                "never"
+                            };
+                            std::vector<char*> pointers;
+                            for (auto& argument : arguments) {
+                                pointers.push_back(argument.data());
+                            }
+                            onedrive::app::RuntimeFactory factory{
+                                onedrive::util::borrowed_proxy,
+                                fixture.runtime_factory
+                            };
+                            onedrive::app::Application application{&factory};
+                            return application.run(
+                                static_cast<int>(pointers.size()),
+                                pointers.data()
+                            );
+                        }
+                    };
+                    terminal.expect_exit();
+                    for (const auto* message :
+                         {"application warning log",
+                          "application error log",
+                          "application critical log"}) {
+                        if (!terminal.output().contains(message) ||
+                            !onedrive::test::read_file(fixture.log_path)
+                                 .contains(message)) {
+                            return onedrive::test::fail(
+                                "CLI did not forward backend diagnostics to "
+                                "TUI and file"
+                            );
+                        }
+                    }
+                    for (const auto* message :
+                         {"application trace log",
+                          "application debug log",
+                          "application info log"}) {
+                        if (terminal.output().contains(message) ||
+                            !onedrive::test::read_file(fixture.log_path)
+                                 .contains(message)) {
+                            return onedrive::test::fail(
+                                "TUI filtering removed low-severity file logs "
+                                "or "
+                                "displayed backend details"
+                            );
+                        }
+                    }
+                    return EXIT_SUCCESS;
+                }
+            );
+            scenario_result != EXIT_SUCCESS) {
+            return scenario_result;
+        }
+        if (const auto scenario_result = progress.run(
+                "partial_navigation_and_resize",
+                [&]() -> int {
+                    TerminalPager terminal{20, 12, -1, TuiView::partials};
+                    terminal.expect_result(
+                        "File 1/20", "> folder/partial-1.bin"
+                    );
+                    terminal.send("\033[B");
+                    terminal.expect_result(
+                        "File 2/20", "> folder/partial-2.bin"
+                    );
+                    terminal.send(std::string(25, 'j'));
+                    terminal.expect_result(
+                        "File 20/20", "> folder/partial-20.bin"
+                    );
+                    terminal.resize(24);
+                    terminal.expect_result(
+                        "File 20/20",
+                        "temporary file: /sync/folder/partial-20.bin.partial"
+                    );
+                    terminal.resize(12);
+                    terminal.expect_result(
+                        "File 20/20", "> folder/partial-20.bin"
+                    );
+                    terminal.send("\033[B\033[A");
+                    terminal.expect_result(
+                        "File 19/20", "> folder/partial-19.bin"
+                    );
+                    terminal.send("k");
+                    terminal.expect_result(
+                        "File 18/20", "> folder/partial-18.bin"
+                    );
+                    terminal.send("q");
+                    terminal.expect_exit();
+                    return EXIT_SUCCESS;
+                }
+            );
+            scenario_result != EXIT_SUCCESS) {
+            return scenario_result;
+        }
+        if (const auto scenario_result = progress.run(
+                "blocked_item_navigation",
+                [&]() -> int {
+                    TerminalPager pager{3, 30, -1, TuiView::blocked};
+                    pager.expect_result("Item 1/3", "folder/item-1.txt");
+                    if (!pager.output().contains("recorded: 3")) {
+                        return onedrive::test::fail(
+                            "blocked-item paging lost its summary"
+                        );
+                    }
+                    pager.send("n");
+                    pager.expect_result("Item 2/3", "folder/item-2.txt");
+                    pager.send("\033[C");
+                    pager.expect_result("Item 3/3", "folder/item-3.txt");
+                    pager.send("p");
+                    pager.expect_result("Item 2/3", "folder/item-2.txt");
+                    pager.send("\033[D");
+                    pager.expect_result("Item 1/3", "folder/item-1.txt");
+                    pager.send("q");
+                    pager.expect_exit();
+                    return EXIT_SUCCESS;
+                }
+            );
+            scenario_result != EXIT_SUCCESS) {
+            return scenario_result;
         }
         for (const auto view : {
                  TuiView::health,
@@ -491,54 +557,103 @@ int main() {
                  TuiView::config,
              }) {
             for (const auto* key : {"\r", "q", "Q"}) {
-                TerminalPager terminal{0, 30, -1, view};
-                terminal.expect_result();
-                terminal.send(key);
-                terminal.expect_exit();
+                if (const auto scenario_result = progress.run(
+                        std::string{"empty_view_exit (view="} +
+                            std::to_string(static_cast<int>(view)) +
+                            ", key=" + (key[0] == '\r' ? "enter" : key) + ")",
+                        [&]() -> int {
+                            TerminalPager terminal{0, 30, -1, view};
+                            terminal.expect_result();
+                            terminal.send(key);
+                            terminal.expect_exit();
+                            return EXIT_SUCCESS;
+                        }
+                    );
+                    scenario_result != EXIT_SUCCESS) {
+                    return scenario_result;
+                }
             }
         }
-        {
-            TerminalPager pager{3, 12};
-            pager.expect_page(1, 3);
-            pager.send("n");
-            pager.expect_page(2, 3);
-            pager.send("\033[C");
-            pager.expect_page(3, 3);
-            pager.send("p");
-            pager.expect_page(2, 3);
-            pager.send("\033[D");
-            pager.expect_page(1, 3);
-            pager.send("q");
-            pager.expect_exit();
+        if (const auto scenario_result = progress.run(
+                "result_page_navigation",
+                [&]() -> int {
+                    TerminalPager pager{3, 12};
+                    pager.expect_page(1, 3);
+                    pager.send("n");
+                    pager.expect_page(2, 3);
+                    pager.send("\033[C");
+                    pager.expect_page(3, 3);
+                    pager.send("p");
+                    pager.expect_page(2, 3);
+                    pager.send("\033[D");
+                    pager.expect_page(1, 3);
+                    pager.send("q");
+                    pager.expect_exit();
+                    return EXIT_SUCCESS;
+                }
+            );
+            scenario_result != EXIT_SUCCESS) {
+            return scenario_result;
         }
-        {
-            TerminalPager pager{3};
-            pager.expect_page(1, 3);
-            pager.send("\r");
-            pager.expect_exit();
+        if (const auto scenario_result = progress.run(
+                "enter_exits_results",
+                [&]() -> int {
+                    TerminalPager pager{3};
+                    pager.expect_page(1, 3);
+                    pager.send("\r");
+                    pager.expect_exit();
+                    return EXIT_SUCCESS;
+                }
+            );
+            scenario_result != EXIT_SUCCESS) {
+            return scenario_result;
         }
-        {
-            TerminalPager pager{1};
-            pager.expect_page(1, 1);
-            pager.send("q");
-            pager.expect_exit();
+        if (const auto scenario_result = progress.run(
+                "single_result_page",
+                [&]() -> int {
+                    TerminalPager pager{1};
+                    pager.expect_page(1, 1);
+                    pager.send("q");
+                    pager.expect_exit();
+                    return EXIT_SUCCESS;
+                }
+            );
+            scenario_result != EXIT_SUCCESS) {
+            return scenario_result;
         }
-        {
-            TerminalPager pager{3};
-            pager.expect_page(1, 3);
-            pager.send("\003");
-            pager.expect_exit(true);
+        if (const auto scenario_result = progress.run(
+                "interrupt_restores_terminal",
+                [&]() -> int {
+                    TerminalPager pager{3};
+                    pager.expect_page(1, 3);
+                    pager.send("\003");
+                    pager.expect_exit(true);
+                    return EXIT_SUCCESS;
+                }
+            );
+            scenario_result != EXIT_SUCCESS) {
+            return scenario_result;
         }
         for (const auto descriptor : {STDIN_FILENO, STDOUT_FILENO}) {
-            TerminalPager pager{3, 30, descriptor};
-            if (descriptor == STDIN_FILENO) {
-                pager.expect_page(1, 3);
-            } else {
-                pager.send("\n");
+            if (const auto scenario_result = progress.run(
+                    std::string{"redirected_pager (descriptor="} +
+                        std::to_string(descriptor) + ")",
+                    [&]() -> int {
+                        TerminalPager pager{3, 30, descriptor};
+                        if (descriptor == STDIN_FILENO) {
+                            pager.expect_page(1, 3);
+                        } else {
+                            pager.send("\n");
+                        }
+                        pager.expect_exit();
+                        return EXIT_SUCCESS;
+                    }
+                );
+                scenario_result != EXIT_SUCCESS) {
+                return scenario_result;
             }
-            pager.expect_exit();
         }
-        return EXIT_SUCCESS;
+        return progress.finish();
     } catch (const std::exception& error) {
         return onedrive::test::fail(error.what());
     }

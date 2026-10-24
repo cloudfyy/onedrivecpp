@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 
 #include "onedrive/app/queries.hpp"
@@ -356,16 +357,27 @@ int test_status_snapshot() {
 } // namespace
 
 int main() {
-    if (test_multiple_drive_blockers() != EXIT_SUCCESS) {
+    onedrive::test::ScenarioProgress progress{7};
+    if (progress.run("multiple_drive_blockers", test_multiple_drive_blockers) !=
+        EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
-    if (test_blocked_item_matching() != EXIT_SUCCESS ||
-        test_blocked_query_absence_and_selection() != EXIT_SUCCESS ||
-        test_blocked_query_metadata_errors() != EXIT_SUCCESS ||
-        test_blocked_query_rejects_unsafe_state() != EXIT_SUCCESS ||
-        test_quota_snapshot() != EXIT_SUCCESS ||
-        test_status_snapshot() != EXIT_SUCCESS) {
+    if (progress.run("blocked_item_matching", test_blocked_item_matching) !=
+            EXIT_SUCCESS ||
+        progress.run(
+            "blocked_query_absence_and_selection",
+            test_blocked_query_absence_and_selection
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "blocked_query_metadata_errors", test_blocked_query_metadata_errors
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "blocked_query_rejects_unsafe_state",
+            test_blocked_query_rejects_unsafe_state
+        ) != EXIT_SUCCESS ||
+        progress.run("quota_snapshot", test_quota_snapshot) != EXIT_SUCCESS ||
+        progress.run("status_snapshot", test_status_snapshot) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
-    return EXIT_SUCCESS;
+    return progress.finish();
 }

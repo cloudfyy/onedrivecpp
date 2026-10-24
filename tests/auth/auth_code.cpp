@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "onedrive/auth/auth_code.hpp"
 #include "support/common.hpp"
 #include "support/http.hpp"
@@ -661,14 +662,28 @@ int test_url_variants_and_missing_options() {
 } // namespace
 
 int main() {
-    if (test_success() != EXIT_SUCCESS ||
-        test_terminal_states() != EXIT_SUCCESS ||
-        test_invalid_transitions_and_exchange_failures() != EXIT_SUCCESS ||
-        test_entrypoint_cancellation_and_deadlines() != EXIT_SUCCESS ||
-        test_exchange_outcomes() != EXIT_SUCCESS ||
-        test_explicit_failures_and_clock_exception() != EXIT_SUCCESS ||
-        test_url_variants_and_missing_options() != EXIT_SUCCESS) {
+    onedrive::test::ScenarioProgress progress{7};
+    if (progress.run("success", test_success) != EXIT_SUCCESS ||
+        progress.run("terminal_states", test_terminal_states) != EXIT_SUCCESS ||
+        progress.run(
+            "invalid_transitions_and_exchange_failures",
+            test_invalid_transitions_and_exchange_failures
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "entrypoint_cancellation_and_deadlines",
+            test_entrypoint_cancellation_and_deadlines
+        ) != EXIT_SUCCESS ||
+        progress.run("exchange_outcomes", test_exchange_outcomes) !=
+            EXIT_SUCCESS ||
+        progress.run(
+            "explicit_failures_and_clock_exception",
+            test_explicit_failures_and_clock_exception
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "url_variants_and_missing_options",
+            test_url_variants_and_missing_options
+        ) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
-    return EXIT_SUCCESS;
+    return progress.finish();
 }

@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/exit_code.hpp"
 
@@ -187,5 +188,6 @@ int test_stop() {
 } // namespace
 
 int main() {
-    return test_stop();
+    onedrive::test::ScenarioProgress progress{1};
+    return progress.finish(progress.run("stop", test_stop));
 }

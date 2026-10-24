@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "onedrive/ui/cli/console.hpp"
 #include "support/common.hpp"
 
@@ -45,7 +46,9 @@ public:
 
 }  // namespace
 
-int main() {
+namespace {
+
+int test_console_events_and_output() {
     using namespace onedrive::cli;
     using onedrive::util::ProgressState;
 
@@ -230,9 +233,7 @@ int main() {
         .deletions = 10,
     });
     plain.blocked_item(
-        "conflict.txt",
-        "local_modification",
-        "local file was modified"
+        "conflict.txt", "local_modification", "local file was modified"
     );
     plain.download_progress(
         1,
@@ -246,9 +247,7 @@ int main() {
             .elapsed_milliseconds = 500,
         }
     );
-    plain.download_progress(
-        1, 2, 10, 10, ProgressState::ongoing
-    );
+    plain.download_progress(1, 2, 10, 10, ProgressState::ongoing);
     plain.download_progress(
         2,
         2,
@@ -260,15 +259,9 @@ int main() {
             .elapsed_milliseconds = 3'723'000,
         }
     );
+    plain.download_progress(0, 1, 1'536, 3'072, ProgressState::ongoing);
     plain.download_progress(
-        0, 1, 1'536, 3'072, ProgressState::ongoing
-    );
-    plain.download_progress(
-        0,
-        1,
-        1024U * 1024U,
-        2U * 1024U * 1024U,
-        ProgressState::ongoing
+        0, 1, 1024U * 1024U, 2U * 1024U * 1024U, ProgressState::ongoing
     );
     plain.download_progress(
         0,
@@ -278,27 +271,24 @@ int main() {
         ProgressState::ongoing
     );
     if (plain_output.str() !=
-        "Completed.\nSummary\n  Files: 12\n  Bytes: 42\n"
-        "Microsoft Graph delta: ...\n"
-        "Microsoft Graph delta complete: 3 pages, 412 items scanned, 400 "
-        "unique changes (300 files, 90 folders, 10 deletions), 137.3 "
-        "items/page\n"
-        "DL: 1/2 files, 50% (5 B/10 B), 2.0 KiB/s, ETA 00:01:05\n"
-        "DL: 1/2 files, 99% (10 B/10 B)\n"
-        "Done: 2/2 files, 100% (10 B/10 B), 1.0 KiB/s, "
-        "elapsed 01:02:03\n"
-        "DL: 0/1 files, 50% (1.5 KiB/3.0 KiB)\n"
-        "DL: 0/1 files, 50% (1.0 MiB/2.0 MiB)\n"
-        "DL: 0/1 files, 50% (1.0 GiB/2.0 GiB)\n" ||
-        plain_error.str() !=
-            "Blocked 'conflict.txt': local file was modified "
-            "(local_modification)\n") {
+            "Completed.\nSummary\n  Files: 12\n  Bytes: 42\n"
+            "Microsoft Graph delta: ...\n"
+            "Microsoft Graph delta complete: 3 pages, 412 items scanned, 400 "
+            "unique changes (300 files, 90 folders, 10 deletions), 137.3 "
+            "items/page\n"
+            "DL: 1/2 files, 50% (5 B/10 B), 2.0 KiB/s, ETA 00:01:05\n"
+            "DL: 1/2 files, 99% (10 B/10 B)\n"
+            "Done: 2/2 files, 100% (10 B/10 B), 1.0 KiB/s, "
+            "elapsed 01:02:03\n"
+            "DL: 0/1 files, 50% (1.5 KiB/3.0 KiB)\n"
+            "DL: 0/1 files, 50% (1.0 MiB/2.0 MiB)\n"
+            "DL: 0/1 files, 50% (1.0 GiB/2.0 GiB)\n" ||
+        plain_error.str() != "Blocked 'conflict.txt': local file was modified "
+                             "(local_modification)\n") {
         return fail("plain console output was incorrect");
     }
     try {
-        plain.message(
-            static_cast<MessageKind>(255), "invalid", "Invalid"
-        );
+        plain.message(static_cast<MessageKind>(255), "invalid", "Invalid");
         return fail("text console accepted an unknown message kind");
     } catch (const std::logic_error&) {
     }
@@ -333,9 +323,8 @@ int main() {
         std::ostringstream error;
         const Console level_json{{.output = OutputMode::json}, output, error};
         level_json.message(kind, "log", level);
-        const auto payload = nlohmann::json::parse(
-            is_error ? error.str() : output.str()
-        );
+        const auto payload =
+            nlohmann::json::parse(is_error ? error.str() : output.str());
         if (payload.at("level") != level || payload.at("message") != level ||
             !(is_error ? output.str() : error.str()).empty()) {
             return fail("JSON output changed backend levels or error routing");
@@ -363,9 +352,8 @@ int main() {
             if (!output.str().empty() || !error.str().empty()) {
                 return fail("quiet JSON retained a low-severity message");
             }
-        } else if (nlohmann::json::parse(
-                       is_error ? error.str() : output.str()
-                   ).at("level") != level) {
+        } else if (nlohmann::json::parse(is_error ? error.str() : output.str())
+                       .at("level") != level) {
             return fail("quiet JSON suppressed or changed a diagnostic level");
         }
     }
@@ -398,9 +386,7 @@ int main() {
         .deletions = 10,
     });
     json.blocked_item(
-        "conflict.txt",
-        "local_modification",
-        "local file was modified"
+        "conflict.txt", "local_modification", "local file was modified"
     );
     json.download_progress(
         0,
@@ -439,16 +425,13 @@ int main() {
     std::getline(json_lines, line);
     const auto download_progress = nlohmann::json::parse(line);
     std::getline(json_lines, line);
-    const auto completed_download_progress =
-        nlohmann::json::parse(line);
+    const auto completed_download_progress = nlohmann::json::parse(line);
     const auto blocked = nlohmann::json::parse(json_error.str());
-    if (message.at("event") != "phase" ||
-        message.at("message") != "Working" ||
+    if (message.at("event") != "phase" || message.at("message") != "Working" ||
         section.at("event") != "summary" ||
         section.at("values").at("files") != "12" ||
         delta_progress.at("event") != "delta_progress" ||
-        delta_progress.at("pages") != 4 ||
-        delta_progress.at("items") != 625 ||
+        delta_progress.at("pages") != 4 || delta_progress.at("items") != 625 ||
         delta_progress.at("completed") != false ||
         delta_summary.at("event") != "delta_summary" ||
         delta_summary.at("pages") != 4 ||
@@ -466,15 +449,12 @@ int main() {
         download_progress.at("estimated_seconds_remaining") != 1 ||
         download_progress.at("elapsed_milliseconds") != 250 ||
         download_progress.at("completed") != false ||
-        completed_download_progress.at("event") !=
-            "download_progress" ||
+        completed_download_progress.at("event") != "download_progress" ||
         completed_download_progress.at("completed") != true ||
         completed_download_progress.at("bytes_per_second") != 8 ||
-        !completed_download_progress.at(
-            "estimated_seconds_remaining"
-        ).is_null() ||
-        completed_download_progress.at("elapsed_milliseconds") !=
-            1'500 ||
+        !completed_download_progress.at("estimated_seconds_remaining")
+             .is_null() ||
+        completed_download_progress.at("elapsed_milliseconds") != 1'500 ||
         blocked.at("event") != "item_blocked" ||
         blocked.at("path") != "conflict.txt" ||
         blocked.at("reason_code") != "local_modification" ||
@@ -483,16 +463,12 @@ int main() {
         return fail("JSON console output was invalid");
     }
     try {
-        json.message(
-            static_cast<MessageKind>(255), "invalid", "Invalid"
-        );
+        json.message(static_cast<MessageKind>(255), "invalid", "Invalid");
         return fail("JSON console accepted an unknown message kind");
     } catch (const std::logic_error&) {
     }
     try {
-        static_cast<void>(
-            json.confirm("confirm", "Continue?", "yes")
-        );
+        static_cast<void>(json.confirm("confirm", "Continue?", "yes"));
         return fail("JSON console accepted interactive confirmation");
     } catch (const std::runtime_error&) {
     }
@@ -511,22 +487,16 @@ int main() {
     quiet_json.message(MessageKind::trace, "trace", "Hidden");
     quiet_json.message(MessageKind::debug, "debug", "Hidden");
     quiet_json.section(
-        "summary",
-        "Hidden",
-        {{.label = "Files", .key = "files", .value = "12"}}
+        "summary", "Hidden", {{.label = "Files", .key = "files", .value = "12"}}
     );
     quiet_json.delta_progress(1, 200, ProgressState::ongoing);
     quiet_json.delta_summary({
         .pages = 1,
         .scanned_items = 200,
     });
-    quiet_json.download_progress(
-        0, 1, 1, 2, ProgressState::ongoing
-    );
+    quiet_json.download_progress(0, 1, 1, 2, ProgressState::ongoing);
     quiet_json.blocked_item(
-        "conflict.txt",
-        "local_modification",
-        "local file was modified"
+        "conflict.txt", "local_modification", "local file was modified"
     );
     const auto quiet_json_blocked =
         nlohmann::json::parse(quiet_json_error.str());
@@ -551,22 +521,16 @@ int main() {
     quiet.message(MessageKind::trace, "trace", "Hidden");
     quiet.message(MessageKind::debug, "debug", "Hidden");
     quiet.section(
-        "summary",
-        "Hidden",
-        {{.label = "Files", .key = "files", .value = "12"}}
+        "summary", "Hidden", {{.label = "Files", .key = "files", .value = "12"}}
     );
     quiet.delta_progress(1, 200, ProgressState::ongoing);
     quiet.delta_summary({
         .pages = 1,
         .scanned_items = 200,
     });
-    quiet.download_progress(
-        0, 1, 1, 2, ProgressState::ongoing
-    );
+    quiet.download_progress(0, 1, 1, 2, ProgressState::ongoing);
     quiet.blocked_item(
-        "conflict.txt",
-        "local_modification",
-        "local file was modified"
+        "conflict.txt", "local_modification", "local file was modified"
     );
     quiet.message(MessageKind::warning, "warning", "Visible warning");
     quiet.message(MessageKind::error, "error", "Visible error");
@@ -581,18 +545,13 @@ int main() {
         return fail("text console reported the wrong output mode");
     }
 
-    if (download_progress_percentage(
-            0, 0, 0, 0, ProgressState::ongoing
-        ) != 0 ||
-        download_progress_percentage(
-            0, 0, 0, 0, ProgressState::completed
-        ) != 100 ||
-        download_progress_percentage(
-            1, 4, 0, 0, ProgressState::ongoing
-        ) != 25 ||
-        download_progress_percentage(
-            5, 4, 0, 0, ProgressState::ongoing
-        ) != 99) {
+    if (download_progress_percentage(0, 0, 0, 0, ProgressState::ongoing) != 0 ||
+        download_progress_percentage(0, 0, 0, 0, ProgressState::completed) !=
+            100 ||
+        download_progress_percentage(1, 4, 0, 0, ProgressState::ongoing) !=
+            25 ||
+        download_progress_percentage(5, 4, 0, 0, ProgressState::ongoing) !=
+            99) {
         return fail("download progress fallback percentage was incorrect");
     }
 
@@ -605,9 +564,7 @@ int main() {
         automatic_output,
         automatic_error
     };
-    automatic.message(
-        MessageKind::information, "phase", "Console fallback"
-    );
+    automatic.message(MessageKind::information, "phase", "Console fallback");
     if (automatic_output.str() != "Console fallback\n" ||
         !automatic_error.str().empty()) {
         return fail("automatic UI did not fall back for redirected output");
@@ -686,13 +643,9 @@ int main() {
     auto backend = std::make_unique<CapturingBackend>();
     auto* captured = backend.get();
     const Console event_console{std::move(backend)};
-    event_console.message(
-        MessageKind::information, "phase", "Working"
-    );
+    event_console.message(MessageKind::information, "phase", "Working");
     event_console.section(
-        "summary",
-        "Summary",
-        {{.label = "Files", .key = "files", .value = "2"}}
+        "summary", "Summary", {{.label = "Files", .key = "files", .value = "2"}}
     );
     event_console.delta_progress(2, 350, ProgressState::ongoing);
     event_console.delta_summary({
@@ -703,9 +656,7 @@ int main() {
         .directories = 30,
         .deletions = 10,
     });
-    event_console.blocked_item(
-        "conflict.txt", "local_modification", "changed"
-    );
+    event_console.blocked_item("conflict.txt", "local_modification", "changed");
     event_console.download_progress(
         1,
         2,
@@ -727,40 +678,41 @@ int main() {
         captured->events.size() != 8 ||
         !std::holds_alternative<MessageEvent>(captured->events[0]) ||
         !std::holds_alternative<SectionEvent>(captured->events[1]) ||
-        !std::holds_alternative<DeltaProgressEvent>(
-            captured->events[2]
-        ) ||
-        !std::holds_alternative<DeltaSummaryEvent>(
-            captured->events[3]
-        ) ||
-        !std::holds_alternative<BlockedItemEvent>(
-            captured->events[4]
-        ) ||
-        !std::holds_alternative<DownloadProgressEvent>(
-            captured->events[5]
-        ) ||
+        !std::holds_alternative<DeltaProgressEvent>(captured->events[2]) ||
+        !std::holds_alternative<DeltaSummaryEvent>(captured->events[3]) ||
+        !std::holds_alternative<BlockedItemEvent>(captured->events[4]) ||
+        !std::holds_alternative<DownloadProgressEvent>(captured->events[5]) ||
         !std::holds_alternative<EndDownloadProgressEvent>(
             captured->events[6]
         ) ||
         !std::holds_alternative<MessageEvent>(captured->events[7]) ||
         std::get<MessageEvent>(captured->events[0]).event != "phase" ||
-        std::get<DeltaSummaryEvent>(captured->events[3])
-                .summary.files != 300 ||
+        std::get<DeltaSummaryEvent>(captured->events[3]).summary.files != 300 ||
         std::get<DownloadProgressEvent>(captured->events[5])
                 .metrics.bytes_per_second != 5 ||
         std::get<MessageEvent>(captured->events[7]).kind !=
             MessageKind::warning ||
-        !captured->confirmation ||
-        captured->confirmation->event != "confirm" ||
+        !captured->confirmation || captured->confirmation->event != "confirm" ||
         captured->confirmation->expected != "yes") {
         return fail("console facade did not publish structured events");
     }
     try {
-        const Console invalid{
-            std::unique_ptr<ConsoleBackend>{}
-        };
+        const Console invalid{std::unique_ptr<ConsoleBackend>{}};
         return fail("null console backend was accepted");
     } catch (const std::invalid_argument&) {
     }
     return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int main() {
+    onedrive::test::ScenarioProgress progress{1};
+    if (const auto result = progress.run(
+            "console_events_and_output", test_console_events_and_output
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish();
 }

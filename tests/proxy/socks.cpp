@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 
 namespace {
@@ -206,5 +207,6 @@ int test_socks() {
 } // namespace
 
 int main() {
-    return test_socks();
+    onedrive::test::ScenarioProgress progress{1};
+    return progress.finish(progress.run("socks", test_socks));
 }

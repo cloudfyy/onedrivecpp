@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/exit_code.hpp"
 
@@ -61,5 +62,8 @@ int test_production_factory() {
 } // namespace
 
 int main() {
-    return test_production_factory();
+    onedrive::test::ScenarioProgress progress{1};
+    return progress.finish(
+        progress.run("production_factory", test_production_factory)
+    );
 }

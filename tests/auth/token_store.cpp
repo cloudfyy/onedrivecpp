@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "onedrive/auth/token_store.hpp"
 #include "support/common.hpp"
 
@@ -61,5 +62,8 @@ int test_token_store_boundaries() {
 } // namespace
 
 int main() {
-    return test_token_store_boundaries();
+    onedrive::test::ScenarioProgress progress{1};
+    return progress.finish(
+        progress.run("token_store_boundaries", test_token_store_boundaries)
+    );
 }

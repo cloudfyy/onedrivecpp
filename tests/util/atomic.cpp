@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "util/atomic_file.hpp"
 #include "support/common.hpp"
 
@@ -18,16 +19,15 @@ using onedrive::test::throws_with;
 
 }  // namespace
 
-int main() {
+namespace {
+
+int test_atomic_file_writes() {
     const onedrive::test::TemporaryDirectory temporary;
     const auto destination = temporary.path() / "private";
     onedrive::util::write_file_atomically(
-        destination,
-        "first",
-        S_IRUSR | S_IWUSR,
-        "test file"
+        destination, "first", S_IRUSR | S_IWUSR, "test file"
     );
-    struct stat status {};
+    struct stat status{};
     if (onedrive::test::read_file(destination) != "first" ||
         ::stat(destination.c_str(), &status) == -1 ||
         (status.st_mode & 0777) != (S_IRUSR | S_IWUSR)) {
@@ -35,18 +35,18 @@ int main() {
     }
 
     onedrive::util::write_file_atomically(
-        destination,
-        "second",
-        S_IRUSR | S_IWUSR,
-        "test file"
+        destination, "second", S_IRUSR | S_IWUSR, "test file"
     );
     if (onedrive::test::read_file(destination) != "second") {
         return fail("atomic test file was not replaced");
     }
 
     const std::array binary{
-        std::byte{0xff}, std::byte{'a'}, std::byte{0},
-        std::byte{'b'}, std::byte{0xff},
+        std::byte{0xff},
+        std::byte{'a'},
+        std::byte{0},
+        std::byte{'b'},
+        std::byte{0xff},
     };
     onedrive::util::write_file_atomically(
         destination,
@@ -69,25 +69,18 @@ int main() {
 
     std::jthread first{[&] {
         onedrive::util::write_file_atomically(
-            destination,
-            "concurrent-first",
-            S_IRUSR | S_IWUSR,
-            "test file"
+            destination, "concurrent-first", S_IRUSR | S_IWUSR, "test file"
         );
     }};
     std::jthread second{[&] {
         onedrive::util::write_file_atomically(
-            destination,
-            "concurrent-second",
-            S_IRUSR | S_IWUSR,
-            "test file"
+            destination, "concurrent-second", S_IRUSR | S_IWUSR, "test file"
         );
     }};
     first.join();
     second.join();
     const auto contents = onedrive::test::read_file(destination);
-    if (contents != "concurrent-first" &&
-        contents != "concurrent-second") {
+    if (contents != "concurrent-first" && contents != "concurrent-second") {
         return fail("concurrent atomic test file write was corrupted");
     }
     for (const auto& entry :
@@ -103,10 +96,7 @@ int main() {
     std::filesystem::create_directory_symlink(real_parent, linked_parent);
     try {
         onedrive::util::write_file_atomically(
-            linked_parent / "private",
-            "data",
-            S_IRUSR | S_IWUSR,
-            "test file"
+            linked_parent / "private", "data", S_IRUSR | S_IWUSR, "test file"
         );
         return fail("atomic test file followed a parent symlink");
     } catch (const std::runtime_error&) {
@@ -118,10 +108,7 @@ int main() {
     if (!throws_with(
             [] {
                 onedrive::util::write_file_atomically(
-                    {},
-                    "data",
-                    S_IRUSR | S_IWUSR,
-                    "test file"
+                    {}, "data", S_IRUSR | S_IWUSR, "test file"
                 );
             },
             "requires a filename"
@@ -129,15 +116,11 @@ int main() {
         return fail("atomic write accepted an empty destination");
     }
 
-    const auto excessive_name =
-        temporary.path() / std::string(256, 'x');
+    const auto excessive_name = temporary.path() / std::string(256, 'x');
     if (!throws_with(
             [&] {
                 onedrive::util::write_file_atomically(
-                    excessive_name,
-                    "data",
-                    S_IRUSR | S_IWUSR,
-                    "test file"
+                    excessive_name, "data", S_IRUSR | S_IWUSR, "test file"
                 );
             },
             "cannot create test file"
@@ -150,10 +133,7 @@ int main() {
     if (!throws_with(
             [&] {
                 onedrive::util::write_file_atomically(
-                    directory_target,
-                    "data",
-                    S_IRUSR | S_IWUSR,
-                    "test file"
+                    directory_target, "data", S_IRUSR | S_IWUSR, "test file"
                 );
             },
             "cannot replace test file"
@@ -167,4 +147,16 @@ int main() {
         }
     }
     return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int main() {
+    onedrive::test::ScenarioProgress progress{1};
+    if (const auto result =
+            progress.run("atomic_file_writes", test_atomic_file_writes);
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish();
 }

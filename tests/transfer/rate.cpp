@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "onedrive/http/transfer_rate_limiter.hpp"
 #include "support/common.hpp"
 
@@ -162,17 +163,29 @@ int test_queued_cancellation_does_not_block_following_waiters() {
 }  // namespace
 
 int main() {
-    if (const int result = test_invalid_and_zero_acquisitions();
+    onedrive::test::ScenarioProgress progress{4};
+    if (const int result = progress.run(
+            "invalid_and_zero_acquisitions", test_invalid_and_zero_acquisitions
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_concurrent_acquisitions_share_rate();
+    if (const int result = progress.run(
+            "concurrent_acquisitions_share_rate",
+            test_concurrent_acquisitions_share_rate
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_waiting_acquisition_is_cancellable();
+    if (const int result = progress.run(
+            "waiting_acquisition_is_cancellable",
+            test_waiting_acquisition_is_cancellable
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    return test_queued_cancellation_does_not_block_following_waiters();
+    return progress.finish(progress.run(
+        "queued_cancellation_does_not_block_following_waiters",
+        test_queued_cancellation_does_not_block_following_waiters
+    ));
 }

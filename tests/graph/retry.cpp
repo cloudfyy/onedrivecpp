@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 
 namespace {
@@ -381,36 +382,51 @@ int test_transient_service_retries() {
 } // namespace
 
 int main() {
-    if (const int result = test_missing_authentication();
+    onedrive::test::ScenarioProgress progress{8};
+    if (const int result =
+            progress.run("missing_authentication", test_missing_authentication);
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "refresh_token_failure_is_reported_by_graph_client",
+            test_refresh_token_failure_is_reported_by_graph_client
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "graph_client_rejects_invalid_configuration",
+            test_graph_client_rejects_invalid_configuration
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
     if (const int result =
-            test_refresh_token_failure_is_reported_by_graph_client();
+            progress.run("invalid_file_hash", test_invalid_file_hash);
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_graph_client_rejects_invalid_configuration();
+    if (const int result = progress.run("graph_error", test_graph_error);
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_invalid_file_hash(); result != EXIT_SUCCESS) {
-        return result;
-    }
-    if (const int result = test_graph_error(); result != EXIT_SUCCESS) {
-        return result;
-    }
-    if (const int result = test_throttling_retry_after();
+    if (const int result =
+            progress.run("throttling_retry_after", test_throttling_retry_after);
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_throttling_fallback_and_limit();
+    if (const int result = progress.run(
+            "throttling_fallback_and_limit", test_throttling_fallback_and_limit
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_transient_service_retries();
+    if (const int result = progress.run(
+            "transient_service_retries", test_transient_service_retries
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    return EXIT_SUCCESS;
+    return progress.finish();
 }

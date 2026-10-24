@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "sync/download/integrity.hpp"
 #include "onedrive/util/sha256.hpp"
 #include "support/common.hpp"
@@ -276,21 +277,31 @@ int test_sha1_hashes(const std::filesystem::path& root) {
 }  // namespace
 
 int main() {
+    onedrive::test::ScenarioProgress progress{5};
     TemporaryDirectory temporary;
-    if (test_sha1_hashes(temporary.path()) != EXIT_SUCCESS) {
+    if (progress.run("sha1_hashes", [&] {
+            return test_sha1_hashes(temporary.path());
+        }) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
-    if (const int result = test_quick_xor_hash_vectors(temporary.path());
+    if (const int result = progress.run(
+            "quick_xor_hash_vectors",
+            [&] { return test_quick_xor_hash_vectors(temporary.path()); }
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_streaming_hashes();
+    if (const int result =
+            progress.run("streaming_hashes", test_streaming_hashes);
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_shared_sha256_hasher();
+    if (const int result =
+            progress.run("shared_sha256_hasher", test_shared_sha256_hasher);
         result != EXIT_SUCCESS) {
         return result;
     }
-    return test_integrity_verification();
+    return progress.finish(
+        progress.run("integrity_verification", test_integrity_verification)
+    );
 }

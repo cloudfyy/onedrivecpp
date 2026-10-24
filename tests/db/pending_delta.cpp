@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/storage/item_database.hpp"
 #include "onedrive/storage/status.hpp"
@@ -299,11 +300,14 @@ void test_version_27_upgrade() {
 } // namespace
 
 int main() {
+    onedrive::test::ScenarioProgress progress{3};
     try {
-        test_round_trip_and_transactions();
-        test_version_26_upgrade();
-        test_version_27_upgrade();
-        return EXIT_SUCCESS;
+        progress.run(
+            "round_trip_and_transactions", test_round_trip_and_transactions
+        );
+        progress.run("version_26_upgrade", test_version_26_upgrade);
+        progress.run("version_27_upgrade", test_version_27_upgrade);
+        return progress.finish();
     } catch (const std::exception& error) {
         return onedrive::test::fail(error.what());
     }

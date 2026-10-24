@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 
 #include <iterator>
@@ -177,5 +178,6 @@ int test_safe() {
 } // namespace
 
 int main() {
-    return test_safe();
+    onedrive::test::ScenarioProgress progress{1};
+    return progress.finish(progress.run("safe", test_safe));
 }

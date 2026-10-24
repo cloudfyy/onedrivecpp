@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "onedrive/http/http_client.hpp"
 #include "support/common.hpp"
 
@@ -47,30 +48,44 @@ extern "C" CURLcode __wrap_curl_easy_perform(CURL*) {
 }
 
 int main() {
+    onedrive::test::ScenarioProgress progress{4};
     const onedrive::http::CurlHttpClient client;
     for (std::size_t failure = 0; failure <= headers.size(); ++failure) {
-        fail_append = failure;
-        append_calls = 0;
-        perform_calls = 0;
-        freed_lists = 0;
-        freed_nodes = 0;
-        ordered_headers = true;
-        const auto result = client.perform({
-            .url = "https://headers.example.test/",
-            .headers = {headers.begin(), headers.end()},
-        });
-        const auto expected_nodes = failure == 0 ? headers.size() : failure - 1;
-        if (result || freed_nodes != expected_nodes ||
-            freed_lists != (expected_nodes == 0 ? 0U : 1U) ||
-            !ordered_headers ||
-            append_calls != (failure == 0 ? headers.size() : failure) ||
-            perform_calls != (failure == 0 ? 1U : 0U) ||
-            (failure != 0 &&
-             result.error().message != "cannot allocate HTTP headers")) {
-            return onedrive::test::fail(
-                "HTTP header append did not preserve and release its owned list"
+        if (const auto scenario_result = progress.run(
+                std::string{"http_header_allocation (failure="} +
+                    std::to_string(failure) + ")",
+                [&]() -> int {
+                    fail_append = failure;
+                    append_calls = 0;
+                    perform_calls = 0;
+                    freed_lists = 0;
+                    freed_nodes = 0;
+                    ordered_headers = true;
+                    const auto result = client.perform({
+                        .url = "https://headers.example.test/",
+                        .headers = {headers.begin(), headers.end()},
+                    });
+                    const auto expected_nodes =
+                        failure == 0 ? headers.size() : failure - 1;
+                    if (result || freed_nodes != expected_nodes ||
+                        freed_lists != (expected_nodes == 0 ? 0U : 1U) ||
+                        !ordered_headers ||
+                        append_calls !=
+                            (failure == 0 ? headers.size() : failure) ||
+                        perform_calls != (failure == 0 ? 1U : 0U) ||
+                        (failure != 0 && result.error().message !=
+                                             "cannot allocate HTTP headers")) {
+                        return onedrive::test::fail(
+                            "HTTP header append did not preserve and release "
+                            "its owned list"
+                        );
+                    }
+                    return EXIT_SUCCESS;
+                }
             );
+            scenario_result != EXIT_SUCCESS) {
+            return scenario_result;
         }
     }
-    return EXIT_SUCCESS;
+    return progress.finish();
 }

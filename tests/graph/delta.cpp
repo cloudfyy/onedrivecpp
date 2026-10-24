@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "graph/delta_changes.hpp"
 #include "graph/delta_hierarchy.hpp"
@@ -259,52 +260,104 @@ int test_delta_resume_and_url_validation() {
 using namespace onedrive::test::graph::delta_cases;
 
 int main() {
-    if (test_delta_mixed_metadata_capabilities() != EXIT_SUCCESS ||
-        test_business_delta_paths_across_pages() != EXIT_SUCCESS ||
-        test_business_delta_saved_and_fetched_ancestors() != EXIT_SUCCESS ||
-        test_delta_rejects_malformed_sizes() != EXIT_SUCCESS ||
-        test_delta_cached_ancestor_validation() != EXIT_SUCCESS ||
-        test_delta_injected_ancestor_failures() != EXIT_SUCCESS ||
-        test_business_delta_moves_and_restart() != EXIT_SUCCESS ||
-        test_business_delta_invalid_ancestry_and_cancellation() !=
+    onedrive::test::ScenarioProgress progress{21};
+    if (progress.run(
+            "delta_mixed_metadata_capabilities",
+            test_delta_mixed_metadata_capabilities
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "business_delta_paths_across_pages",
+            test_business_delta_paths_across_pages
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "business_delta_saved_and_fetched_ancestors",
+            test_business_delta_saved_and_fetched_ancestors
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "delta_rejects_malformed_sizes", test_delta_rejects_malformed_sizes
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "delta_cached_ancestor_validation",
+            test_delta_cached_ancestor_validation
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "delta_injected_ancestor_failures",
+            test_delta_injected_ancestor_failures
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "business_delta_moves_and_restart",
+            test_business_delta_moves_and_restart
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "business_delta_invalid_ancestry_and_cancellation",
+            test_business_delta_invalid_ancestry_and_cancellation
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "unsupported_delta_across_pages",
+            test_unsupported_delta_across_pages
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "onenote_partial_delta_ancestry",
+            test_onenote_partial_delta_ancestry
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "onenote_ancestor_lookup_failures",
+            test_onenote_ancestor_lookup_failures
+        ) != EXIT_SUCCESS ||
+        progress.run("shared_delta_changes", test_shared_delta_changes) !=
             EXIT_SUCCESS ||
-        test_unsupported_delta_across_pages() != EXIT_SUCCESS ||
-        test_onenote_partial_delta_ancestry() != EXIT_SUCCESS ||
-        test_onenote_ancestor_lookup_failures() != EXIT_SUCCESS ||
-        test_shared_delta_changes() != EXIT_SUCCESS ||
-        test_delta_transport_and_shape_failures() != EXIT_SUCCESS ||
-        test_delta_cancelled_before_request_or_between_pages() !=
-            EXIT_SUCCESS) {
+        progress.run(
+            "delta_transport_and_shape_failures",
+            test_delta_transport_and_shape_failures
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "delta_cancelled_before_request_or_between_pages",
+            test_delta_cancelled_before_request_or_between_pages
+        ) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
-    if (const int result = test_untrusted_pagination_url();
+    if (const int result = progress.run(
+            "untrusted_pagination_url", test_untrusted_pagination_url
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_invalid_root_page_shapes();
-        result != EXIT_SUCCESS) {
-        return result;
-    }
-    if (const int result = test_delta_with_pagination();
+    if (const int result = progress.run(
+            "invalid_root_page_shapes", test_invalid_root_page_shapes
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
     if (const int result =
-            test_delta_requires_valid_file_system_modified_time();
+            progress.run("delta_with_pagination", test_delta_with_pagination);
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_delta_resume_and_url_validation();
+    if (const int result = progress.run(
+            "delta_requires_valid_file_system_modified_time",
+            test_delta_requires_valid_file_system_modified_time
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_invalid_delta_cursor_error();
+    if (const int result = progress.run(
+            "delta_resume_and_url_validation",
+            test_delta_resume_and_url_validation
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_delta_request_cancellation();
+    if (const int result = progress.run(
+            "invalid_delta_cursor_error", test_invalid_delta_cursor_error
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    return EXIT_SUCCESS;
+    if (const int result = progress.run(
+            "delta_request_cancellation", test_delta_request_cancellation
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish();
 }

@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/http/http_client.hpp"
 #include "support/network.hpp"
@@ -35,7 +36,9 @@ using onedrive::test::http::ScopedUmask;
 
 } // namespace
 
-int main() {
+namespace {
+
+int test_http_cancellation_and_callbacks() {
     const ScopedUmask download_umask{0022};
     const onedrive::test::TemporaryDirectory temporary;
     std::error_code ignored;
@@ -186,8 +189,7 @@ int main() {
            std::span<const onedrive::http::HttpHeader> headers) {
             return status_code == 206 &&
                    std::ranges::any_of(
-                       headers,
-                       [](const onedrive::http::HttpHeader& header) {
+                       headers, [](const onedrive::http::HttpHeader& header) {
                            return header.name == "Content-Range" &&
                                   header.value == "bytes 6-32773/32774";
                        }
@@ -368,8 +370,7 @@ int main() {
            std::span<const onedrive::http::HttpHeader> headers) {
             return status_code == 206 &&
                    std::ranges::any_of(
-                       headers,
-                       [](const onedrive::http::HttpHeader& header) {
+                       headers, [](const onedrive::http::HttpHeader& header) {
                            return header.name == "Content-Range" &&
                                   header.value == "bytes 6-15/16";
                        }
@@ -525,4 +526,18 @@ int main() {
         return fail("reset concurrent HTTP requests did not fail cleanly");
     }
     return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int main() {
+    onedrive::test::ScenarioProgress progress{1};
+    if (const auto result = progress.run(
+            "http_cancellation_and_callbacks",
+            test_http_cancellation_and_callbacks
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish();
 }

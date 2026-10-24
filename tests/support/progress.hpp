@@ -17,6 +17,9 @@
 #include <type_traits>
 #include <utility>
 
+#include <sys/types.h>
+#include <unistd.h>
+
 namespace onedrive::test {
 
 class ScenarioProgress {
@@ -39,8 +42,15 @@ public:
                  (std::same_as<std::invoke_result_t<Operation &&>, int> ||
                   std::same_as<std::invoke_result_t<Operation &&>, void>)
     std::invoke_result_t<Operation&&> run(
-        std::string_view name, Operation&& operation
+        std::string_view name,
+        Operation&& operation,
+        std::optional<int> skip_code = {}
     ) {
+        if (skip_code == EXIT_SUCCESS) {
+            throw std::invalid_argument{
+                "test scenario skip code must be nonzero"
+            };
+        }
         if (current_ == total_) {
             throw std::logic_error{"more test scenarios than declared"};
         }
@@ -65,8 +75,22 @@ public:
             report(index, name, "FAIL", started, "non-standard exception");
             throw;
         }
-        record_failure(result);
-        report(index, name, result == EXIT_SUCCESS ? "PASS" : "FAIL", started);
+        const bool skipped = result != EXIT_SUCCESS && skip_code == result;
+        if (skipped) {
+            if (skipped_ == EXIT_SUCCESS) {
+                skipped_ = result;
+            }
+        } else {
+            record_failure(result);
+        }
+        report(
+            index,
+            name,
+            result == EXIT_SUCCESS ? "PASS"
+            : skipped              ? "SKIP"
+                                   : "FAIL",
+            started
+        );
         if constexpr (std::same_as<std::invoke_result_t<Operation&&>, int>) {
             return result;
         }
@@ -84,7 +108,7 @@ public:
                 "test progress finished before all scenarios ran"
             };
         }
-        return EXIT_SUCCESS;
+        return skipped_;
     }
 
 private:
@@ -103,6 +127,10 @@ private:
         std::optional<Clock::time_point> started = {},
         std::string_view detail = {}
     ) const {
+        // A forked child may return through its parent's active scenario.
+        if (::getpid() != process_id_) {
+            return;
+        }
         std::ostringstream line;
         line.imbue(std::locale::classic());
         line << '[' << index << '/' << total_ << "] " << state << ' ' << name;
@@ -130,8 +158,10 @@ private:
 
     std::size_t total_;
     std::ostream& output_;
+    pid_t process_id_{::getpid()};
     std::size_t current_{0};
     int failure_{EXIT_SUCCESS};
+    int skipped_{EXIT_SUCCESS};
 };
 
 } // namespace onedrive::test

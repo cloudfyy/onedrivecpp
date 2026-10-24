@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "onedrive/account/account_state.hpp"
 #include "support/common.hpp"
 
@@ -110,10 +111,9 @@ bool rejected_active_marker(
 
 } // namespace
 
-int main() {
-    if (test_saved_drive_types_and_legacy_state() != EXIT_SUCCESS) {
-        return EXIT_FAILURE;
-    }
+namespace {
+
+int test_account_state_layout_and_markers() {
     TemporaryDirectory temporary;
     const onedrive::account::DriveIdentity identity{
         .user_id = "stable-user-id",
@@ -145,7 +145,8 @@ int main() {
          std::filesystem::perms::all) !=
             (std::filesystem::perms::owner_read |
              std::filesystem::perms::owner_write) ||
-        onedrive::account::AccountState::active_token_directory(temporary.path()
+        onedrive::account::AccountState::active_token_directory(
+            temporary.path()
         ) != paths.token_directory) {
         return fail("friendly account state layout was not created");
     }
@@ -472,4 +473,25 @@ int main() {
         return fail("valid CRLF active account marker was not resolved");
     }
     return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int main() {
+    onedrive::test::ScenarioProgress progress{2};
+    if (progress.run(
+            "saved_drive_types_and_legacy_state",
+            test_saved_drive_types_and_legacy_state
+        ) != EXIT_SUCCESS) {
+        return EXIT_FAILURE;
+    }
+
+    if (const auto result = progress.run(
+            "account_state_layout_and_markers",
+            test_account_state_layout_and_markers
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish();
 }

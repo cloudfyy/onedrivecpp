@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "sync/filter/remote_path.hpp"
 #include "sync/filter/selective.hpp"
 #include "support/common.hpp"
@@ -60,7 +61,9 @@ void write_rules(
 
 } // namespace
 
-int main() {
+namespace {
+
+int test_selective_sync_filtering() {
     namespace detail = onedrive::sync::detail;
     constexpr auto file = detail::SyncItemKind::file;
     constexpr auto directory = detail::SyncItemKind::directory;
@@ -115,10 +118,8 @@ int main() {
     if (empty_rules.includes("anything.txt", file)) {
         return fail("an empty sync list did not exclude everything");
     }
-    const auto root_file_rules = detail::SyncList::load(
-        rules_path,
-        detail::RootFilePolicy::include
-    );
+    const auto root_file_rules =
+        detail::SyncList::load(rules_path, detail::RootFilePolicy::include);
     if (!root_file_rules.includes("root.txt", file) ||
         root_file_rules.includes("Folder/nested.txt", file) ||
         root_file_rules.includes("RootFolder", directory) ||
@@ -126,10 +127,8 @@ int main() {
         return fail("implicit root-file selection semantics were incorrect");
     }
     write_rules(rules_path, "!/blocked.txt\n");
-    const auto excluded_root_file_rules = detail::SyncList::load(
-        rules_path,
-        detail::RootFilePolicy::include
-    );
+    const auto excluded_root_file_rules =
+        detail::SyncList::load(rules_path, detail::RootFilePolicy::include);
     if (excluded_root_file_rules.includes("blocked.txt", file) ||
         !excluded_root_file_rules.includes("included.txt", file)) {
         return fail("root-file exclusion did not override implicit inclusion");
@@ -182,11 +181,14 @@ int main() {
     }
     write_rules(rules_path, "/Visible/\n");
     if (detail::SyncList::configured({
-            .rules_path = rules_path,
-            .sync_root = policy_root,
-        })
-            .fingerprint() != detail::SyncList::load(rules_path).fingerprint()) {
-        return fail("default policies changed the legacy sync-list fingerprint");
+                                         .rules_path = rules_path,
+                                         .sync_root = policy_root,
+                                     })
+            .fingerprint() !=
+        detail::SyncList::load(rules_path).fingerprint()) {
+        return fail(
+            "default policies changed the legacy sync-list fingerprint"
+        );
     }
     {
         std::ofstream marker{policy_root / ".nosync"};
@@ -375,4 +377,17 @@ int main() {
     }
 
     return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int main() {
+    onedrive::test::ScenarioProgress progress{1};
+    if (const auto result = progress.run(
+            "selective_sync_filtering", test_selective_sync_filtering
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish();
 }

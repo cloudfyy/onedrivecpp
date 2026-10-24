@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include <array>
 #include <ranges>
@@ -927,28 +928,42 @@ int test_invalid_upload_session_responses() {
 } // namespace
 
 int main() {
-    if (const int result = test_simple_file_uploads(); result != EXIT_SUCCESS) {
+    onedrive::test::ScenarioProgress progress{6};
+    if (const int result =
+            progress.run("simple_file_uploads", test_simple_file_uploads);
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "simple_upload_cancellation_is_not_a_resource_failure",
+            test_simple_upload_cancellation_is_not_a_resource_failure
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "upload_session_cancellation_stages",
+            test_upload_session_cancellation_stages
+        );
+        result != EXIT_SUCCESS) {
         return result;
     }
     if (const int result =
-            test_simple_upload_cancellation_is_not_a_resource_failure();
+            progress.run("upload_sessions", test_upload_sessions);
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_upload_session_cancellation_stages();
+    if (const int result =
+            progress.run("upload_session_resume", test_upload_session_resume);
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_upload_sessions(); result != EXIT_SUCCESS) {
-        return result;
-    }
-    if (const int result = test_upload_session_resume();
+    if (const int result = progress.run(
+            "invalid_upload_session_responses",
+            test_invalid_upload_session_responses
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_invalid_upload_session_responses();
-        result != EXIT_SUCCESS) {
-        return result;
-    }
-    return EXIT_SUCCESS;
+    return progress.finish();
 }

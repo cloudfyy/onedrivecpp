@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "onedrive/metrics/metrics.hpp"
 #include "support/common.hpp"
 
@@ -105,5 +106,6 @@ int test_file_metrics() {
 } // namespace
 
 int main() {
-    return test_file_metrics();
+    onedrive::test::ScenarioProgress progress{1};
+    return progress.finish(progress.run("file_metrics", test_file_metrics));
 }

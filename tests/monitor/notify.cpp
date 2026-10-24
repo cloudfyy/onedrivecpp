@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "monitor/notify.hpp"
 #include "support/common.hpp"
 
@@ -384,21 +385,32 @@ int test_timeouts_and_stop() {
 } // namespace
 
 int main() {
-    if (const int status = test_connecting_state_ignored_event();
+    onedrive::test::ScenarioProgress progress{5};
+    if (const int status = progress.run(
+            "connecting_state_ignored_event",
+            test_connecting_state_ignored_event
+        );
         status != EXIT_SUCCESS) {
         return status;
     }
-    if (const int status = test_happy_path_and_renewal();
+    if (const int status =
+            progress.run("happy_path_and_renewal", test_happy_path_and_renewal);
         status != EXIT_SUCCESS) {
         return status;
     }
-    if (const int status = test_authentication_recovery();
+    if (const int status = progress.run(
+            "authentication_recovery", test_authentication_recovery
+        );
         status != EXIT_SUCCESS) {
         return status;
     }
-    if (const int status = test_transient_retry_and_reconnect();
+    if (const int status = progress.run(
+            "transient_retry_and_reconnect", test_transient_retry_and_reconnect
+        );
         status != EXIT_SUCCESS) {
         return status;
     }
-    return test_timeouts_and_stop();
+    return progress.finish(
+        progress.run("timeouts_and_stop", test_timeouts_and_stop)
+    );
 }

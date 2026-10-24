@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/exit_code.hpp"
 #include "onedrive/ui/cli/console.hpp"
@@ -339,9 +340,18 @@ int test_single_file_download_coordination() {
 } // namespace
 
 int main() {
-    if (test_unsupported_single_downloads() != EXIT_SUCCESS ||
-        test_single_file_invalid_metadata_and_paths() != EXIT_SUCCESS) {
+    onedrive::test::ScenarioProgress progress{3};
+    if (progress.run(
+            "unsupported_single_downloads", test_unsupported_single_downloads
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "single_file_invalid_metadata_and_paths",
+            test_single_file_invalid_metadata_and_paths
+        ) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
-    return test_single_file_download_coordination();
+    return progress.finish(progress.run(
+        "single_file_download_coordination",
+        test_single_file_download_coordination
+    ));
 }

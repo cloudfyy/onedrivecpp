@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "onedrive/http/http_client.hpp"
 #include "support/common.hpp"
 #include "support/network.hpp"
@@ -52,7 +53,9 @@ int __wrap_ftruncate(int descriptor, off_t size) {
 }
 }
 
-int main() {
+namespace {
+
+int test_http_download_failures() {
     using onedrive::test::fail;
     const onedrive::test::TemporaryDirectory temporary;
     destination = temporary.path() / "download";
@@ -243,4 +246,16 @@ int main() {
         std::filesystem::remove_all(destination);
     }
     return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int main() {
+    onedrive::test::ScenarioProgress progress{1};
+    if (const auto result =
+            progress.run("http_download_failures", test_http_download_failures);
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish();
 }

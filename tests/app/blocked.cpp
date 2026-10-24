@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/logging/logging.hpp"
 #include "onedrive/util/unique_file_descriptor.hpp"
@@ -314,14 +315,18 @@ int test_query_errors() {
 } // namespace
 
 int main() {
+    onedrive::test::ScenarioProgress progress{4};
     try {
-        if (test_empty_state() != EXIT_SUCCESS ||
-            test_records_and_read_only_behavior() != EXIT_SUCCESS ||
-            test_filters() != EXIT_SUCCESS ||
-            test_query_errors() != EXIT_SUCCESS) {
+        if (progress.run("empty_state", test_empty_state) != EXIT_SUCCESS ||
+            progress.run(
+                "records_and_read_only_behavior",
+                test_records_and_read_only_behavior
+            ) != EXIT_SUCCESS ||
+            progress.run("filters", test_filters) != EXIT_SUCCESS ||
+            progress.run("query_errors", test_query_errors) != EXIT_SUCCESS) {
             return EXIT_FAILURE;
         }
-        return EXIT_SUCCESS;
+        return progress.finish();
     } catch (const std::exception& error) {
         return fail(error.what());
     }

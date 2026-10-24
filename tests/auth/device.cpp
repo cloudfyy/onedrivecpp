@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "onedrive/auth/device_auth.hpp"
 #include "onedrive/auth/token_store.hpp"
 #include "onedrive/http/http_client.hpp"
@@ -665,33 +666,47 @@ int test_cancellation() {
 } // namespace
 
 int main() {
-    if (test_authorization_code_exchange() != EXIT_SUCCESS) {
+    onedrive::test::ScenarioProgress progress{9};
+    if (progress.run(
+            "authorization_code_exchange", test_authorization_code_exchange
+        ) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
-    if (test_cancellation() != EXIT_SUCCESS) {
+    if (progress.run("cancellation", test_cancellation) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
-    if (const int result = test_queued_transport_contract();
+    if (const int result = progress.run(
+            "queued_transport_contract", test_queued_transport_contract
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_device_flow(); result != EXIT_SUCCESS) {
-        return result;
-    }
-    if (const int result = test_refresh_and_token_store();
+    if (const int result = progress.run("device_flow", test_device_flow);
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_declined_authorization();
+    if (const int result = progress.run(
+            "refresh_and_token_store", test_refresh_and_token_store
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_invalid_device_code_responses();
+    if (const int result =
+            progress.run("declined_authorization", test_declined_authorization);
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_polling_errors(); result != EXIT_SUCCESS) {
+    if (const int result = progress.run(
+            "invalid_device_code_responses", test_invalid_device_code_responses
+        );
+        result != EXIT_SUCCESS) {
         return result;
     }
-    return test_invalid_refresh_responses();
+    if (const int result = progress.run("polling_errors", test_polling_errors);
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish(progress.run(
+        "invalid_refresh_responses", test_invalid_refresh_responses
+    ));
 }

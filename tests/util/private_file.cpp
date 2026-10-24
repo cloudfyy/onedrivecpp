@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "util/private_file.hpp"
 #include "support/common.hpp"
 #include "onedrive/util/path_security.hpp"
@@ -239,14 +240,26 @@ int test_borrowed_descriptor() {
 } // namespace
 
 int main() {
-    for (auto test :
-         {test_size_boundaries,
-          test_permissions_and_links,
-          test_non_regular_paths,
-          test_borrowed_descriptor}) {
-        if (const int result = test(); result != EXIT_SUCCESS) {
-            return result;
-        }
+    onedrive::test::ScenarioProgress progress{4};
+    if (const int result =
+            progress.run("size_boundaries", test_size_boundaries);
+        result != EXIT_SUCCESS) {
+        return result;
     }
-    return EXIT_SUCCESS;
+    if (const int result =
+            progress.run("permissions_and_links", test_permissions_and_links);
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result =
+            progress.run("non_regular_paths", test_non_regular_paths);
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result =
+            progress.run("borrowed_descriptor", test_borrowed_descriptor);
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish();
 }

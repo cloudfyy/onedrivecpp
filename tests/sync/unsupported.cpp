@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/exit_code.hpp"
 #include "onedrive/storage/item_database.hpp"
@@ -689,17 +690,45 @@ void test_root_remote_deletion_continues_with_blocked_notes() {
 } // namespace
 
 int main() {
+    onedrive::test::ScenarioProgress progress{9};
     try {
-        test_existing_notes_and_durable_retries();
-        test_package_children_and_ordinary_one_files();
-        test_persisted_ancestry_and_drive_isolation();
-        test_ordinary_integrity_failure_remains_fatal();
-        test_preview_persists_diagnostics_without_committing_sync_state();
-        test_pending_restart_keeps_format_classification();
-        test_unknown_blockers_are_not_retried_or_cleared();
-        test_fixed_policies_guard_pending_recovery();
-        test_root_remote_deletion_continues_with_blocked_notes();
-        return EXIT_SUCCESS;
+        progress.run(
+            "existing_notes_and_durable_retries",
+            test_existing_notes_and_durable_retries
+        );
+        progress.run(
+            "package_children_and_ordinary_one_files",
+            test_package_children_and_ordinary_one_files
+        );
+        progress.run(
+            "persisted_ancestry_and_drive_isolation",
+            test_persisted_ancestry_and_drive_isolation
+        );
+        progress.run(
+            "ordinary_integrity_failure_remains_fatal",
+            test_ordinary_integrity_failure_remains_fatal
+        );
+        progress.run(
+            "preview_persists_diagnostics_without_committing_sync_state",
+            test_preview_persists_diagnostics_without_committing_sync_state
+        );
+        progress.run(
+            "pending_restart_keeps_format_classification",
+            test_pending_restart_keeps_format_classification
+        );
+        progress.run(
+            "unknown_blockers_are_not_retried_or_cleared",
+            test_unknown_blockers_are_not_retried_or_cleared
+        );
+        progress.run(
+            "fixed_policies_guard_pending_recovery",
+            test_fixed_policies_guard_pending_recovery
+        );
+        progress.run(
+            "root_remote_deletion_continues_with_blocked_notes",
+            test_root_remote_deletion_continues_with_blocked_notes
+        );
+        return progress.finish();
     } catch (const std::exception& error) {
         return test::fail(error.what());
     }

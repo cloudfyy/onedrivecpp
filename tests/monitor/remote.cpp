@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/exit_code.hpp"
 
@@ -193,12 +194,22 @@ int test_notification_retry_after_transient_failures() {
 } // namespace
 
 int main() {
-    if (test_multiple_channels_and_local_roots() != EXIT_SUCCESS) {
+    onedrive::test::ScenarioProgress progress{3};
+    if (progress.run(
+            "multiple_channels_and_local_roots",
+            test_multiple_channels_and_local_roots
+        ) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
-    if (const int result = test_notification_authentication_and_connection();
+    if (const int result = progress.run(
+            "notification_authentication_and_connection",
+            test_notification_authentication_and_connection
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    return test_notification_retry_after_transient_failures();
+    return progress.finish(progress.run(
+        "notification_retry_after_transient_failures",
+        test_notification_retry_after_transient_failures
+    ));
 }

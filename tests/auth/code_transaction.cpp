@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "auth/code_transaction.hpp"
 #include "support/common.hpp"
 
@@ -240,13 +241,19 @@ extern "C" void __wrap_OPENSSL_cleanse(void* pointer, std::size_t size) {
 }
 
 int main() {
+    onedrive::test::ScenarioProgress progress{5};
     try {
-        test_owned_moves_and_terminal_cleanup();
-        test_terminal<Cancelled>();
-        test_terminal<Expired>();
-        test_terminal<Failed>();
-        test_unwinding_and_replacement();
-        return EXIT_SUCCESS;
+        progress.run(
+            "owned_moves_and_terminal_cleanup",
+            test_owned_moves_and_terminal_cleanup
+        );
+        progress.run("terminal<Cancelled>", test_terminal<Cancelled>);
+        progress.run("terminal<Expired>", test_terminal<Expired>);
+        progress.run("terminal<Failed>", test_terminal<Failed>);
+        progress.run(
+            "unwinding_and_replacement", test_unwinding_and_replacement
+        );
+        return progress.finish();
     } catch (const std::exception& error) {
         return test::fail(error.what());
     }

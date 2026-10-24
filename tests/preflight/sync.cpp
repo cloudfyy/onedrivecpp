@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "app/checks.hpp"
 #include "app/lock.hpp"
@@ -126,5 +127,6 @@ int test_sync() {
 } // namespace
 
 int main() {
-    return test_sync();
+    onedrive::test::ScenarioProgress progress{1};
+    return progress.finish(progress.run("sync", test_sync));
 }

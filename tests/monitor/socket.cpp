@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "monitor/socket.hpp"
 #include "monitor/socket_protocol.hpp"
 #include "support/common.hpp"
@@ -372,21 +373,32 @@ int test_transport_failure_event() {
 } // namespace
 
 int main() {
+    onedrive::test::ScenarioProgress progress{7};
     try {
-        test_protocol_handshake_and_heartbeat();
-        test_protocol_fragments_and_errors();
-        test_protocol_stop();
+        progress.run(
+            "protocol_handshake_and_heartbeat",
+            test_protocol_handshake_and_heartbeat
+        );
+        progress.run(
+            "protocol_fragments_and_errors", test_protocol_fragments_and_errors
+        );
+        progress.run("protocol_stop", test_protocol_stop);
     } catch (const std::exception& error) {
         return fail(error.what());
     }
-    if (const int result = test_url_conversion(); result != EXIT_SUCCESS) {
+    if (const int result = progress.run("url_conversion", test_url_conversion);
+        result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_open_frame(); result != EXIT_SUCCESS) {
+    if (const int result = progress.run("open_frame", test_open_frame);
+        result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_event_parsing(); result != EXIT_SUCCESS) {
+    if (const int result = progress.run("event_parsing", test_event_parsing);
+        result != EXIT_SUCCESS) {
         return result;
     }
-    return test_transport_failure_event();
+    return progress.finish(
+        progress.run("transport_failure_event", test_transport_failure_event)
+    );
 }

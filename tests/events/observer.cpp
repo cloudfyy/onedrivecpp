@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "onedrive/ui/common/observer.hpp"
 #include "onedrive/ui/common/file_history.hpp"
 #include "onedrive/exit_code.hpp"
@@ -790,16 +791,28 @@ int test_sync_summary_accumulation() {
 } // namespace
 
 int main() {
-    if (test_payloads() != EXIT_SUCCESS ||
-        test_workers_and_errors() != EXIT_SUCCESS ||
-        test_sync_summary_accumulation() != EXIT_SUCCESS ||
-        test_file_history() != EXIT_SUCCESS ||
-        test_file_operation_actions() != EXIT_SUCCESS ||
-        test_recovered_file_operations() != EXIT_SUCCESS ||
-        test_staged_move_operation_history() != EXIT_SUCCESS ||
-        test_partial_file_operation_history() != EXIT_SUCCESS ||
-        test_headless_sync() != EXIT_SUCCESS) {
+    onedrive::test::ScenarioProgress progress{9};
+    if (progress.run("payloads", test_payloads) != EXIT_SUCCESS ||
+        progress.run("workers_and_errors", test_workers_and_errors) !=
+            EXIT_SUCCESS ||
+        progress.run(
+            "sync_summary_accumulation", test_sync_summary_accumulation
+        ) != EXIT_SUCCESS ||
+        progress.run("file_history", test_file_history) != EXIT_SUCCESS ||
+        progress.run("file_operation_actions", test_file_operation_actions) !=
+            EXIT_SUCCESS ||
+        progress.run(
+            "recovered_file_operations", test_recovered_file_operations
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "staged_move_operation_history", test_staged_move_operation_history
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "partial_file_operation_history",
+            test_partial_file_operation_history
+        ) != EXIT_SUCCESS ||
+        progress.run("headless_sync", test_headless_sync) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
-    return EXIT_SUCCESS;
+    return progress.finish();
 }

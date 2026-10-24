@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "onedrive/auth/auth_code.hpp"
 #include "support/common.hpp"
 
@@ -208,12 +209,13 @@ extern "C" void __wrap_OPENSSL_cleanse(void* buffer, std::size_t size) {
 }
 
 int main() {
+    onedrive::test::ScenarioProgress progress{4};
     try {
-        test_begin_failures();
-        test_random_cleanup();
-        test_callback_parser_failures();
-        test_invalid_stored_redirect();
-        return EXIT_SUCCESS;
+        progress.run("begin_failures", test_begin_failures);
+        progress.run("random_cleanup", test_random_cleanup);
+        progress.run("callback_parser_failures", test_callback_parser_failures);
+        progress.run("invalid_stored_redirect", test_invalid_stored_redirect);
+        return progress.finish();
     } catch (const std::exception& error) {
         reset(Fault::none);
         return test::fail(error.what());

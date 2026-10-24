@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "sync/filesystem/operations.hpp"
 #include "sync/filesystem/metadata.hpp"
 #include "onedrive/util/path_security.hpp"
@@ -38,11 +39,14 @@ bool rejects_path_with(
 
 } // namespace
 
-int main() {
+namespace {
+
+int test_safe_local_filesystem() {
     namespace detail = onedrive::sync::detail;
 
     if (detail::persisted_file_size(
-            static_cast<std::uintmax_t>(std::numeric_limits<std::int64_t>::max()
+            static_cast<std::uintmax_t>(
+                std::numeric_limits<std::int64_t>::max()
             )
         ) != std::numeric_limits<std::int64_t>::max()) {
         return fail("maximum persistent file size was not preserved");
@@ -477,4 +481,16 @@ int main() {
         return fail("database metadata mode enabled xattrs");
     }
     return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int main() {
+    onedrive::test::ScenarioProgress progress{1};
+    if (const auto result =
+            progress.run("safe_local_filesystem", test_safe_local_filesystem);
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish();
 }

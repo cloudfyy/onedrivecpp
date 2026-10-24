@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "app/checks.hpp"
 #include "app/lock.hpp"
 #include "onedrive/ui/common/observer.hpp"
@@ -557,17 +558,22 @@ int test_shared_services_and_json() {
 } // namespace
 
 int main(int argc, char* argv[]) {
+    onedrive::test::ScenarioProgress progress{3};
     if (argc > 1) {
         return child_main(argc, argv);
     }
     try {
-        if (test_exclusion() != EXIT_SUCCESS ||
-            test_races_and_missing_roots() != EXIT_SUCCESS ||
-            test_shared_services_and_json() != EXIT_SUCCESS) {
+        if (progress.run("exclusion", test_exclusion) != EXIT_SUCCESS ||
+            progress.run(
+                "races_and_missing_roots", test_races_and_missing_roots
+            ) != EXIT_SUCCESS ||
+            progress.run(
+                "shared_services_and_json", test_shared_services_and_json
+            ) != EXIT_SUCCESS) {
             return EXIT_FAILURE;
         }
     } catch (const std::exception& error) {
         return fail(error.what());
     }
-    return EXIT_SUCCESS;
+    return progress.finish();
 }

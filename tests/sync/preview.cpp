@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/exit_code.hpp"
 #include "onedrive/util/sha256.hpp"
@@ -771,21 +772,59 @@ void test_selectively_retained_path_error_clears_cache() {
 } // namespace
 
 int main() {
+    onedrive::test::ScenarioProgress progress{13};
     try {
-        test_retained_changes_and_modes();
-        test_latest_changes_and_repeated_preview();
-        test_expired_cursor_and_directory_fallback();
-        test_scope_state_and_journal_invalidation();
-        test_state_changes_during_preview_are_not_cached();
-        test_local_revalidation_and_unsuccessful_tasks();
-        test_local_deletions_are_replanned_and_guarded();
-        test_full_snapshot_reuse_removes_missing_tracked_items();
-        test_tracked_directory_fallback();
-        test_snapshot_order_and_metadata_equality();
-        test_cache_publication_and_fallback_failures();
-        test_cached_selective_exclusions_preserve_local_content();
-        test_selectively_retained_path_error_clears_cache();
-        return EXIT_SUCCESS;
+        progress.run(
+            "retained_changes_and_modes", test_retained_changes_and_modes
+        );
+        progress.run(
+            "latest_changes_and_repeated_preview",
+            test_latest_changes_and_repeated_preview
+        );
+        progress.run(
+            "expired_cursor_and_directory_fallback",
+            test_expired_cursor_and_directory_fallback
+        );
+        progress.run(
+            "scope_state_and_journal_invalidation",
+            test_scope_state_and_journal_invalidation
+        );
+        progress.run(
+            "state_changes_during_preview_are_not_cached",
+            test_state_changes_during_preview_are_not_cached
+        );
+        progress.run(
+            "local_revalidation_and_unsuccessful_tasks",
+            test_local_revalidation_and_unsuccessful_tasks
+        );
+        progress.run(
+            "local_deletions_are_replanned_and_guarded",
+            test_local_deletions_are_replanned_and_guarded
+        );
+        progress.run(
+            "full_snapshot_reuse_removes_missing_tracked_items",
+            test_full_snapshot_reuse_removes_missing_tracked_items
+        );
+        progress.run(
+            "tracked_directory_fallback", test_tracked_directory_fallback
+        );
+        progress.run(
+            "snapshot_order_and_metadata_equality",
+            test_snapshot_order_and_metadata_equality
+        );
+        progress.run(
+            "cache_publication_and_fallback_failures",
+            test_cache_publication_and_fallback_failures
+        );
+        progress.run(
+            "cached_selective_exclusions_preserve_local_content",
+            test_cached_selective_exclusions_preserve_local_content
+        );
+        progress.run(
+            "selectively_retained_path_error_clears_cache",
+            test_selectively_retained_path_error_clears_cache
+        );
+        return progress.finish();
     } catch (const std::exception& error) {
         return onedrive::test::fail(error.what());
     }

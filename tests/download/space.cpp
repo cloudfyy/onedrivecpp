@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "sync/download/space.hpp"
 #include "support/common.hpp"
 
@@ -294,25 +295,40 @@ int test_lease_outlives_coordinator() {
 }  // namespace
 
 int main() {
-    if (const int result = test_consumed_bytes_release_promises();
+    onedrive::test::ScenarioProgress progress{6};
+    if (const int result = progress.run(
+            "consumed_bytes_release_promises",
+            test_consumed_bytes_release_promises
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_waits_for_capacity();
+    if (const int result =
+            progress.run("waits_for_capacity", test_waits_for_capacity);
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_expands_existing_reservations();
+    if (const int result = progress.run(
+            "expands_existing_reservations", test_expands_existing_reservations
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_expansion_waits_for_other_leases();
+    if (const int result = progress.run(
+            "expansion_waits_for_other_leases",
+            test_expansion_waits_for_other_leases
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_insufficient_capacity_and_cancellation();
+    if (const int result = progress.run(
+            "insufficient_capacity_and_cancellation",
+            test_insufficient_capacity_and_cancellation
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    return test_lease_outlives_coordinator();
+    return progress.finish(progress.run(
+        "lease_outlives_coordinator", test_lease_outlives_coordinator
+    ));
 }

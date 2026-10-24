@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "monitor/socket.hpp"
 #include "support/common.hpp"
 
@@ -338,13 +339,17 @@ extern "C" CURLcode __wrap_curl_ws_send(
 }
 
 int main() {
+    onedrive::test::ScenarioProgress progress{5};
     try {
-        test_fragmented_transport();
-        test_buffered_transport_without_kernel_readability();
-        test_transport_failures();
-        test_failure_reporting_throws();
-        test_transport_stop();
-        return EXIT_SUCCESS;
+        progress.run("fragmented_transport", test_fragmented_transport);
+        progress.run(
+            "buffered_transport_without_kernel_readability",
+            test_buffered_transport_without_kernel_readability
+        );
+        progress.run("transport_failures", test_transport_failures);
+        progress.run("failure_reporting_throws", test_failure_reporting_throws);
+        progress.run("transport_stop", test_transport_stop);
+        return progress.finish();
     } catch (const std::exception& error) {
         active = nullptr;
         return test::fail(error.what());

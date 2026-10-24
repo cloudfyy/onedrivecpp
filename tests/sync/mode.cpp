@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/exit_code.hpp"
 
@@ -506,26 +507,43 @@ int test_download_only_preserves_and_untracks_local_items() {
 } // namespace
 
 int main() {
-    if (const auto result = test_missing_file_delta_echo();
+    onedrive::test::ScenarioProgress progress{7};
+    if (const auto result = progress.run(
+            "missing_file_delta_echo", test_missing_file_delta_echo
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
     for (const bool retry_blocked : {false, true}) {
-        if (const auto result = test_modified_file_delta_echo(retry_blocked);
+        if (const auto result = progress.run(
+                std::string{"modified_file_delta_echo ("} +
+                    "retry_blocked=" + std::to_string(retry_blocked) + ")",
+                [&] { return test_modified_file_delta_echo(retry_blocked); }
+            );
             result != EXIT_SUCCESS) {
             return result;
         }
     }
-    if (const auto result = test_unchanged_echo_preserves_path_conflicts();
+    if (const auto result = progress.run(
+            "unchanged_echo_preserves_path_conflicts",
+            test_unchanged_echo_preserves_path_conflicts
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const auto result = test_upload_only(); result != EXIT_SUCCESS) {
-        return result;
-    }
-    if (const auto result = test_download_only_propagates_remote_deletions();
+    if (const auto result = progress.run("upload_only", test_upload_only);
         result != EXIT_SUCCESS) {
         return result;
     }
-    return test_download_only_preserves_and_untracks_local_items();
+    if (const auto result = progress.run(
+            "download_only_propagates_remote_deletions",
+            test_download_only_propagates_remote_deletions
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish(progress.run(
+        "download_only_preserves_and_untracks_local_items",
+        test_download_only_preserves_and_untracks_local_items
+    ));
 }

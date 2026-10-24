@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "support/common.hpp"
 #include "onedrive/storage/item_database.hpp"
@@ -239,8 +240,12 @@ int test_unsafe_sidecars() {
 } // namespace
 
 int main() {
-    if (test_migration() != EXIT_SUCCESS || test_failures() != EXIT_SUCCESS) {
+    onedrive::test::ScenarioProgress progress{3};
+    if (progress.run("migration", test_migration) != EXIT_SUCCESS ||
+        progress.run("failures", test_failures) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
-    return test_unsafe_sidecars();
+    return progress.finish(
+        progress.run("unsafe_sidecars", test_unsafe_sidecars)
+    );
 }

@@ -21,10 +21,9 @@ Console events and text/JSON/TUI backends.
 
 ## Test scenario progress
 
-The recently decomposed sync base/delete/upload, Graph drive/download/support,
-TUI, and GUI monitoring/localization test programs use
-`tests/support/progress.hpp`. `ScenarioProgress` prints each scenario's index,
-total, name, `RUNNING`/`PASS`/`FAIL` status and elapsed milliseconds. Output goes
+All standalone C++ test programs use `tests/support/progress.hpp`.
+`ScenarioProgress` prints each scenario's index, total, name,
+`RUNNING`/`PASS`/`FAIL`/`SKIP` status and elapsed milliseconds. Output goes
 to `std::clog` and is flushed before the scenario starts and after its result,
 so a stalled or timed-out process leaves its active scenario visible without
 polluting captured application stdout/stderr streams. Results start on a new
@@ -38,13 +37,24 @@ ctest --test-dir build/release -V -j 1 -R '^sync_upload_tests$'
 ```
 
 This does not register individual scenarios with CTest or change test entry
-points, execution order, existing exit codes or exception propagation. Shared
-state and Qt translator lifetimes remain in their original scopes; subprocess
-control modes do not emit scenario progress. Parameterized TUI cases include
-their row/page values in their names. Maintain the declared scenario count
-when adding cases and call `finish()` on the successful path; an incomplete or
-overfull plan is an error, not reported as full completion. Other test programs
-retain their existing output until they are explicitly migrated.
+points, execution order, existing exit codes or exception propagation.
+Existing named cases and parameter combinations have their own progress
+records. Stateful inline workflows stay grouped rather than reporting every
+assertion separately, preserving shared fixtures and Qt translator lifetimes.
+Subprocess control modes do not emit scenario progress. A reporter is owned by
+its creating process, so a forked child returning through an active scenario
+does not duplicate its parent's result. Parameterized cases
+include their relevant values in their names, such as TUI rows/pages, conflict
+policies, mutation modes and GUI startup arguments. Maintain the declared
+scenario count when adding cases and call `finish()` on the successful path; an incomplete or
+overfull plan is an error, not reported as full completion.
+
+Only explicitly configured skip codes produce `SKIP`. For example,
+`monitor_overflow_tests` passes `77` as the third argument to `run()` to match
+its CTest `SKIP_RETURN_CODE`; the original diagnostic and exit code are retained.
+Other nonzero results and exceptions remain failures, and a skipped scenario
+does not mask another scenario's failure. Python, shell, CMake and application
+smoke tests keep their native output and existing CTest registration.
 
 ## Shared transfer progress
 

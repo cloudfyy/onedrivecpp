@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "localization.hpp"
 #include "onedrive/version.hpp"
 #include "support/common.hpp"
@@ -133,37 +134,79 @@ void test_process(
 } // namespace
 
 int main(int argc, char* argv[]) {
+    onedrive::test::ScenarioProgress progress{17};
     QCoreApplication application{argc, argv};
     try {
-        test_locales();
-        test_invalid_options();
+        progress.run("locales", test_locales);
+        progress.run("invalid_options", test_invalid_options);
         for (const auto& language : {"auto", "en", "zh_CN"}) {
-            test_process(
-                {"--language", language, "--help"},
-                true,
-                "auto (system locale), en (English)"
+            progress.run(
+                std::string{"process (--language "} + language + " --help)",
+                [&] {
+                    return test_process(
+                        {"--language", language, "--help"},
+                        true,
+                        "auto (system locale), en (English)"
+                    );
+                }
             );
         }
-        test_process({"-h"}, true, "--language");
-        test_process({"--help-all"}, true, "--language");
+        progress.run("process (-h)", [&] {
+            return test_process({"-h"}, true, "--language");
+        });
+        progress.run("process (--help-all)", [&] {
+            return test_process({"--help-all"}, true, "--language");
+        });
         const auto version =
             QByteArray{"onedrive-cpp-gui "} + build_info::version + '\n';
-        test_process({"--version"}, true, version);
-        test_process({"-v"}, true, version);
-        test_process({"--language=zh_CN", "--version"}, true, version);
-        test_process({"--language=fr"}, false, "Expected auto, en, or zh_CN.");
-        test_process({"--language="}, false, "Expected auto, en, or zh_CN.");
-        test_process(
-            {"--help", "--language=fr"}, false, "Expected auto, en, or zh_CN."
-        );
-        test_process({"--unknown"}, false, "Unknown option");
-        test_process({"--language"}, false, "Missing value");
-        test_process({"unexpected"}, false, "Unexpected positional arguments");
-        test_process(
-            {"--help", "unexpected"}, false, "Unexpected positional arguments"
-        );
+        progress.run("process (--version)", [&] {
+            return test_process({"--version"}, true, version);
+        });
+        progress.run("process (-v)", [&] {
+            return test_process({"-v"}, true, version);
+        });
+        progress.run("process (--language=zh_CN --version)", [&] {
+            return test_process(
+                {"--language=zh_CN", "--version"}, true, version
+            );
+        });
+        progress.run("process (--language=fr)", [&] {
+            return test_process(
+                {"--language=fr"}, false, "Expected auto, en, or zh_CN."
+            );
+        });
+        progress.run("process (--language=)", [&] {
+            return test_process(
+                {"--language="}, false, "Expected auto, en, or zh_CN."
+            );
+        });
+        progress.run("process (--help --language=fr)", [&] {
+            return test_process(
+                {"--help", "--language=fr"},
+                false,
+                "Expected auto, en, or zh_CN."
+            );
+        });
+        progress.run("process (--unknown)", [&] {
+            return test_process({"--unknown"}, false, "Unknown option");
+        });
+        progress.run("process (--language)", [&] {
+            return test_process({"--language"}, false, "Missing value");
+        });
+        progress.run("process (unexpected)", [&] {
+            return test_process(
+                {"unexpected"}, false, "Unexpected positional arguments"
+            );
+        });
+        progress.run("process (--help unexpected)", [&] {
+            return test_process(
+                {"--help", "unexpected"},
+                false,
+                "Unexpected positional arguments"
+            );
+        });
     } catch (const std::exception& error) {
         return test::fail(error.what());
     }
-    return EXIT_SUCCESS;
+    return progress.finish();
 }

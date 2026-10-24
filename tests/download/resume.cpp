@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/logging/logging.hpp"
 #include "graph/support.hpp"
@@ -542,9 +543,14 @@ int test_graph_supported_integrity() {
 } // namespace
 
 int main() {
-    if (test_resume() != EXIT_SUCCESS ||
-        test_graph_supported_integrity() != EXIT_SUCCESS) {
+    onedrive::test::ScenarioProgress progress{3};
+    if (progress.run("resume", test_resume) != EXIT_SUCCESS ||
+        progress.run(
+            "graph_supported_integrity", test_graph_supported_integrity
+        ) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
-    return test_integrity_diagnostics();
+    return progress.finish(
+        progress.run("integrity_diagnostics", test_integrity_diagnostics)
+    );
 }

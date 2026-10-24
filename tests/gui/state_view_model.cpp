@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "app_state_view_model.hpp"
 #include "configuration.hpp"
 
@@ -311,15 +312,37 @@ int test_shared_config_file_reader_limits() {
 } // namespace
 
 int main() {
-    if (test_view_model_without_account() != EXIT_SUCCESS ||
-        test_view_model_with_saved_credentials() != EXIT_SUCCESS ||
-        test_basic_settings_preserve_other_toml() != EXIT_SUCCESS ||
-        test_basic_settings_add_missing_tables() != EXIT_SUCCESS ||
-        test_basic_settings_add_key_to_existing_table() != EXIT_SUCCESS ||
-        test_manual_settings_create_first_config() != EXIT_SUCCESS ||
-        test_import_and_atomic_save() != EXIT_SUCCESS ||
-        test_shared_config_file_reader_limits() != EXIT_SUCCESS) {
+    onedrive::test::ScenarioProgress progress{8};
+    if (progress.run(
+            "view_model_without_account", test_view_model_without_account
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "view_model_with_saved_credentials",
+            test_view_model_with_saved_credentials
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "basic_settings_preserve_other_toml",
+            test_basic_settings_preserve_other_toml
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "basic_settings_add_missing_tables",
+            test_basic_settings_add_missing_tables
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "basic_settings_add_key_to_existing_table",
+            test_basic_settings_add_key_to_existing_table
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "manual_settings_create_first_config",
+            test_manual_settings_create_first_config
+        ) != EXIT_SUCCESS ||
+        progress.run("import_and_atomic_save", test_import_and_atomic_save) !=
+            EXIT_SUCCESS ||
+        progress.run(
+            "shared_config_file_reader_limits",
+            test_shared_config_file_reader_limits
+        ) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
-    return EXIT_SUCCESS;
+    return progress.finish();
 }

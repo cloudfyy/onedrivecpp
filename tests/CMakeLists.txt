@@ -399,7 +399,7 @@ if(ONEDRIVE_BUILD_GUI)
             src/ui/gui/system_appearance.cpp
             src/ui/gui/system_appearance.hpp
             tests/gui/system_appearance.cpp
-        INCLUDE_DIRS src/ui/gui
+        INCLUDE_DIRS src/ui/gui tests
         LIBRARIES Qt6::Widgets Qt6::DBus
     )
     set_target_properties(gui_system_appearance_tests PROPERTIES AUTOMOC ON)

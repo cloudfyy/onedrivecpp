@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 
 namespace {
@@ -134,5 +135,6 @@ int test_transfer() {
 } // namespace
 
 int main() {
-    return test_transfer();
+    onedrive::test::ScenarioProgress progress{1};
+    return progress.finish(progress.run("transfer", test_transfer));
 }

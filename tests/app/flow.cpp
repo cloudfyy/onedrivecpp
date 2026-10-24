@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/exit_code.hpp"
 #include "app/preflight.hpp"
@@ -821,17 +822,23 @@ int test_flow() {
 } // namespace
 
 int main() {
-    if (const auto result = test_multiple_drive_preflight();
+    onedrive::test::ScenarioProgress progress{4};
+    if (const auto result = progress.run(
+            "multiple_drive_preflight", test_multiple_drive_preflight
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const auto result = test_logout_without_credentials();
+    if (const auto result = progress.run(
+            "logout_without_credentials", test_logout_without_credentials
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const auto result = test_log_level_thresholds();
+    if (const auto result =
+            progress.run("log_level_thresholds", test_log_level_thresholds);
         result != EXIT_SUCCESS) {
         return result;
     }
-    return test_flow();
+    return progress.finish(progress.run("flow", test_flow));
 }

@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "sync/download/installation.hpp"
 #include "onedrive/ui/common/observer.hpp"
@@ -937,51 +938,157 @@ extern "C" int __wrap_fsync(int descriptor) {
 }
 
 int main() {
+    onedrive::test::ScenarioProgress progress{58};
     try {
         for (const auto policy : {Policy::block, Policy::backup}) {
             for (const bool existing : {false, true}) {
                 for (const bool atomic_save : {false, true}) {
-                    test_commit_edit(policy, existing, atomic_save);
+                    progress.run(
+                        std::string{"commit_edit ("} + "policy=" +
+                            std::string{
+                                policy == Policy::block ? "block" : "backup"
+                            } +
+                            ", existing=" + std::to_string(existing) +
+                            ", atomic_save=" + std::to_string(atomic_save) +
+                            ")",
+                        [&] {
+                            return test_commit_edit(
+                                policy, existing, atomic_save
+                            );
+                        }
+                    );
                 }
-                test_recovery_edit(policy, existing, false);
+                progress.run(
+                    std::string{"recovery_edit ("} + "policy=" +
+                        std::string{
+                            policy == Policy::block ? "block" : "backup"
+                        } +
+                        ", existing=" + std::to_string(existing) +
+                        ", arguments=false" + ")",
+                    [&] { return test_recovery_edit(policy, existing, false); }
+                );
                 for (const bool edited : {false, true}) {
-                    test_exchange_recovery(policy, existing, edited);
+                    progress.run(
+                        std::string{"exchange_recovery ("} + "policy=" +
+                            std::string{
+                                policy == Policy::block ? "block" : "backup"
+                            } +
+                            ", existing=" + std::to_string(existing) +
+                            ", edited=" + std::to_string(edited) + ")",
+                        [&] {
+                            return test_exchange_recovery(
+                                policy, existing, edited
+                            );
+                        }
+                    );
                 }
             }
-            test_recovery_edit(policy, true, true);
-            test_path_type_change(policy, false);
-            test_path_type_change(policy, true);
-            test_late_deletion(policy);
-            test_deleted_destination_recovery(policy);
+            progress.run(
+                std::string{"recovery_edit ("} + "policy=" +
+                    std::string{policy == Policy::block ? "block" : "backup"} +
+                    ", arguments=true,true" + ")",
+                [&] { return test_recovery_edit(policy, true, true); }
+            );
+            progress.run(
+                std::string{"path_type_change ("} + "policy=" +
+                    std::string{policy == Policy::block ? "block" : "backup"} +
+                    ", arguments=false" + ")",
+                [&] { return test_path_type_change(policy, false); }
+            );
+            progress.run(
+                std::string{"path_type_change ("} + "policy=" +
+                    std::string{policy == Policy::block ? "block" : "backup"} +
+                    ", arguments=true" + ")",
+                [&] { return test_path_type_change(policy, true); }
+            );
+            progress.run(
+                std::string{"late_deletion ("} + "policy=" +
+                    std::string{policy == Policy::block ? "block" : "backup"} +
+                    ")",
+                [&] { return test_late_deletion(policy); }
+            );
+            progress.run(
+                std::string{"deleted_destination_recovery ("} + "policy=" +
+                    std::string{policy == Policy::block ? "block" : "backup"} +
+                    ")",
+                [&] { return test_deleted_destination_recovery(policy); }
+            );
         }
-        test_second_edit_during_rollback();
-        test_missing_backup_recovery();
-        test_post_install_persistence_failure();
-        test_unsupported_atomic_operation(false);
-        test_unsupported_atomic_operation(true);
-        test_backup_retains_open_file();
+        progress.run(
+            "second_edit_during_rollback", test_second_edit_during_rollback
+        );
+        progress.run("missing_backup_recovery", test_missing_backup_recovery);
+        progress.run(
+            "post_install_persistence_failure",
+            test_post_install_persistence_failure
+        );
+        progress.run("unsupported_atomic_operation (false)", [&] {
+            return test_unsupported_atomic_operation(false);
+        });
+        progress.run("unsupported_atomic_operation (true)", [&] {
+            return test_unsupported_atomic_operation(true);
+        });
+        progress.run("backup_retains_open_file", test_backup_retains_open_file);
         for (const bool state : {false, true}) {
-            test_invalid_exchange_journal(state);
-            test_wrong_journal_size(state);
-            test_installation_guards(state);
+            progress.run(
+                std::string{"invalid_exchange_journal ("} +
+                    "state=" + std::to_string(state) + ")",
+                [&] { return test_invalid_exchange_journal(state); }
+            );
+            progress.run(
+                std::string{"wrong_journal_size ("} +
+                    "state=" + std::to_string(state) + ")",
+                [&] { return test_wrong_journal_size(state); }
+            );
+            progress.run(
+                std::string{"installation_guards ("} +
+                    "state=" + std::to_string(state) + ")",
+                [&] { return test_installation_guards(state); }
+            );
         }
-        test_rollback_boundary(false, false);
-        test_rollback_boundary(true, false);
-        test_rollback_boundary(false, true);
-        test_interrupted_exchange(1, false);
-        test_interrupted_exchange(2, false);
-        test_interrupted_exchange(0, true);
-        test_displaced_backup_collision(false);
-        test_displaced_backup_collision(true);
-        test_displaced_backup_disappears();
-        test_backup_flush_failure();
-        test_backup_without_callback();
-        test_recovery_backup_notification();
-        test_invalid_backup_journals();
-        test_legacy_path_types(false, false);
-        test_legacy_path_types(true, false);
-        test_legacy_path_types(false, true);
-        return EXIT_SUCCESS;
+        progress.run("rollback_boundary (false, false)", [&] {
+            return test_rollback_boundary(false, false);
+        });
+        progress.run("rollback_boundary (true, false)", [&] {
+            return test_rollback_boundary(true, false);
+        });
+        progress.run("rollback_boundary (false, true)", [&] {
+            return test_rollback_boundary(false, true);
+        });
+        progress.run("interrupted_exchange (1, false)", [&] {
+            return test_interrupted_exchange(1, false);
+        });
+        progress.run("interrupted_exchange (2, false)", [&] {
+            return test_interrupted_exchange(2, false);
+        });
+        progress.run("interrupted_exchange (0, true)", [&] {
+            return test_interrupted_exchange(0, true);
+        });
+        progress.run("displaced_backup_collision (false)", [&] {
+            return test_displaced_backup_collision(false);
+        });
+        progress.run("displaced_backup_collision (true)", [&] {
+            return test_displaced_backup_collision(true);
+        });
+        progress.run(
+            "displaced_backup_disappears", test_displaced_backup_disappears
+        );
+        progress.run("backup_flush_failure", test_backup_flush_failure);
+        progress.run("backup_without_callback", test_backup_without_callback);
+        progress.run(
+            "recovery_backup_notification", test_recovery_backup_notification
+        );
+        progress.run("invalid_backup_journals", test_invalid_backup_journals);
+        progress.run("legacy_path_types (false, false)", [&] {
+            return test_legacy_path_types(false, false);
+        });
+        progress.run("legacy_path_types (true, false)", [&] {
+            return test_legacy_path_types(true, false);
+        });
+        progress.run("legacy_path_types (false, true)", [&] {
+            return test_legacy_path_types(false, true);
+        });
+        return progress.finish();
     } catch (const std::exception& error) {
         return fail(error.what());
     }

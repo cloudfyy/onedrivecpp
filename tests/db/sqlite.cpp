@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "storage/sqlite.hpp"
 #include "storage/schema.hpp"
 #include "support/common.hpp"
@@ -159,17 +160,27 @@ int test_initial_schema_creation_rolls_back() {
 }  // namespace
 
 int main() {
-    if (const int result = test_transaction_rolls_back();
+    onedrive::test::ScenarioProgress progress{4};
+    if (const int result =
+            progress.run("transaction_rolls_back", test_transaction_rolls_back);
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_close_defers_until_statements_finalize();
+    if (const int result = progress.run(
+            "close_defers_until_statements_finalize",
+            test_close_defers_until_statements_finalize
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_initial_schema_creation_rolls_back();
+    if (const int result = progress.run(
+            "initial_schema_creation_rolls_back",
+            test_initial_schema_creation_rolls_back
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    return test_cleanup_failures_do_not_escape();
+    return progress.finish(progress.run(
+        "cleanup_failures_do_not_escape", test_cleanup_failures_do_not_escape
+    ));
 }

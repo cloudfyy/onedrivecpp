@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "onedrive/util/sha256.hpp"
 #include "util/base64.hpp"
 #include "util/uri.hpp"
@@ -100,8 +101,10 @@ int test_sha256() {
 } // namespace
 
 int main() {
-    if (test_encodings() != EXIT_SUCCESS || test_sha256() != EXIT_SUCCESS) {
+    onedrive::test::ScenarioProgress progress{2};
+    if (progress.run("encodings", test_encodings) != EXIT_SUCCESS ||
+        progress.run("sha256", test_sha256) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
-    return EXIT_SUCCESS;
+    return progress.finish();
 }

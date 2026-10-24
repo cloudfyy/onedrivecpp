@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 
 #include <stop_token>
@@ -289,17 +290,28 @@ int test_identity_startup_cancellation() {
 } // namespace
 
 int main() {
-    if (const int result = test_shared_resources_and_shortcuts();
+    onedrive::test::ScenarioProgress progress{4};
+    if (const int result = progress.run(
+            "shared_resources_and_shortcuts",
+            test_shared_resources_and_shortcuts
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_sites_and_document_libraries();
+    if (const int result = progress.run(
+            "sites_and_document_libraries", test_sites_and_document_libraries
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_rejects_invalid_discovery_data();
+    if (const int result = progress.run(
+            "rejects_invalid_discovery_data",
+            test_rejects_invalid_discovery_data
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    return test_identity_startup_cancellation();
+    return progress.finish(progress.run(
+        "identity_startup_cancellation", test_identity_startup_cancellation
+    ));
 }

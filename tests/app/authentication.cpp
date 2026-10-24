@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/app/authentication.hpp"
 #include "onedrive/ui/common/observer.hpp"
@@ -660,12 +661,25 @@ int test_identity_cancellation_and_failures() {
 } // namespace
 
 int main() {
-    if (test_shared_credentials_and_runtime_lock() != EXIT_SUCCESS ||
-        test_auth_code_authentication() != EXIT_SUCCESS ||
-        test_authentication_service() != EXIT_SUCCESS ||
-        test_cancelled_and_throwing_callbacks() != EXIT_SUCCESS ||
-        test_identity_cancellation_and_failures() != EXIT_SUCCESS) {
+    onedrive::test::ScenarioProgress progress{5};
+    if (progress.run(
+            "shared_credentials_and_runtime_lock",
+            test_shared_credentials_and_runtime_lock
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "auth_code_authentication", test_auth_code_authentication
+        ) != EXIT_SUCCESS ||
+        progress.run("authentication_service", test_authentication_service) !=
+            EXIT_SUCCESS ||
+        progress.run(
+            "cancelled_and_throwing_callbacks",
+            test_cancelled_and_throwing_callbacks
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "identity_cancellation_and_failures",
+            test_identity_cancellation_and_failures
+        ) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
-    return EXIT_SUCCESS;
+    return progress.finish();
 }

@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/exit_code.hpp"
 #include "onedrive/monitor/monitor.hpp"
@@ -883,6 +884,7 @@ int __wrap_fstatat(
 }
 
 int main() {
+    onedrive::test::ScenarioProgress progress{84};
     for (const bool tracked : {false, true}) {
         for (const bool upload_only : {false, true}) {
             for (const auto mutation :
@@ -891,18 +893,40 @@ int main() {
                   SnapshotMutation::replacement,
                   SnapshotMutation::deletion,
                   SnapshotMutation::read_failure}) {
-                if (const auto result = test_edit_during_snapshot(
-                        tracked, upload_only, mutation
+                if (const auto result = progress.run(
+                        std::string{"edit_during_snapshot ("} +
+                            "tracked=" + std::to_string(tracked) +
+                            ", upload_only=" + std::to_string(upload_only) +
+                            ", mutation=" +
+                            std::to_string(static_cast<int>(mutation)) + ")",
+                        [&] {
+                            return test_edit_during_snapshot(
+                                tracked, upload_only, mutation
+                            );
+                        }
                     );
                     result != EXIT_SUCCESS) {
                     return result;
                 }
-                if (const auto result = test_watch_retries_unstable_snapshot();
+                if (const auto result = progress.run(
+                        std::string{"watch_retries_unstable_snapshot ("} +
+                            "tracked=" + std::to_string(tracked) +
+                            ", upload_only=" + std::to_string(upload_only) +
+                            ", mutation=" +
+                            std::to_string(static_cast<int>(mutation)) + ")",
+                        test_watch_retries_unstable_snapshot
+                    );
                     result != EXIT_SUCCESS) {
                     return result;
                 }
-                if (const auto result =
-                        test_journaled_modification_is_not_skipped();
+                if (const auto result = progress.run(
+                        std::string{"journaled_modification_is_not_skipped ("} +
+                            "tracked=" + std::to_string(tracked) +
+                            ", upload_only=" + std::to_string(upload_only) +
+                            ", mutation=" +
+                            std::to_string(static_cast<int>(mutation)) + ")",
+                        test_journaled_modification_is_not_skipped
+                    );
                     result != EXIT_SUCCESS) {
                     return result;
                 }
@@ -916,8 +940,17 @@ int main() {
                   ReuseMutation::modified_time,
                   ReuseMutation::atomic_save,
                   ReuseMutation::none}) {
-                if (const auto result = test_edit_during_delta_reuse(
-                        download_only, metadata_echo, mutation
+                if (const auto result = progress.run(
+                        std::string{"edit_during_delta_reuse ("} +
+                            "download_only=" + std::to_string(download_only) +
+                            ", metadata_echo=" + std::to_string(metadata_echo) +
+                            ", mutation=" +
+                            std::to_string(static_cast<int>(mutation)) + ")",
+                        [&] {
+                            return test_edit_during_delta_reuse(
+                                download_only, metadata_echo, mutation
+                            );
+                        }
                     );
                     result != EXIT_SUCCESS) {
                     return result;
@@ -926,30 +959,46 @@ int main() {
         }
     }
     for (const int identities : {0, 1}) {
-        if (const auto result = test_delete_during_watch_scan(identities);
+        if (const auto result = progress.run(
+                std::string{"delete_during_watch_scan ("} +
+                    "identities=" + std::to_string(identities) + ")",
+                [&] { return test_delete_during_watch_scan(identities); }
+            );
             result != EXIT_SUCCESS) {
             return result;
         }
     }
-    if (const auto result = test_delete_during_delta_reuse();
+    if (const auto result = progress.run(
+            "delete_during_delta_reuse", test_delete_during_delta_reuse
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const auto result = test_delete_before_upload_commit();
+    if (const auto result = progress.run(
+            "delete_before_upload_commit", test_delete_before_upload_commit
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const auto result = test_delete_metadata_version_race();
+    if (const auto result = progress.run(
+            "delete_metadata_version_race", test_delete_metadata_version_race
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const auto result = test_create_delete_during_sync();
+    if (const auto result = progress.run(
+            "create_delete_during_sync", test_create_delete_during_sync
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const auto result = test_transient_probe_is_ignored();
+    if (const auto result = progress.run(
+            "transient_probe_is_ignored", test_transient_probe_is_ignored
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    return test_failure_log_includes_exception();
+    return progress.finish(progress.run(
+        "failure_log_includes_exception", test_failure_log_includes_exception
+    ));
 }

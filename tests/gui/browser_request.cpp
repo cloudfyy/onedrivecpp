@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "ui/gui/browser_request.hpp"
 #include "support/common.hpp"
 
@@ -302,12 +303,19 @@ void test_cancellation_and_invalid_events() {
 } // namespace
 
 int main() {
+    onedrive::test::ScenarioProgress progress{4};
     try {
-        test_fragments_and_validation();
-        test_deadlines_and_bounds();
-        test_partial_writes_and_connections();
-        test_cancellation_and_invalid_events();
-        return EXIT_SUCCESS;
+        progress.run("fragments_and_validation", test_fragments_and_validation);
+        progress.run("deadlines_and_bounds", test_deadlines_and_bounds);
+        progress.run(
+            "partial_writes_and_connections",
+            test_partial_writes_and_connections
+        );
+        progress.run(
+            "cancellation_and_invalid_events",
+            test_cancellation_and_invalid_events
+        );
+        return progress.finish();
     } catch (const std::exception& error) {
         return onedrive::test::fail(error.what());
     }

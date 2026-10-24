@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/exit_code.hpp"
 
@@ -492,46 +493,69 @@ int test_duplicate_destination_downloads_are_serialized() {
 } // namespace
 
 int main() {
-    if (const int result = test_pending_download_recovery();
-        result != EXIT_SUCCESS) {
-        return result;
-    }
-    if (const int result = test_post_install_recovery();
-        result != EXIT_SUCCESS) {
-        return result;
-    }
-    if (const int result = test_unsafe_pending_path_rejected();
-        result != EXIT_SUCCESS) {
-        return result;
-    }
-    if (const int result = test_mismatched_recovery_file_preserved();
-        result != EXIT_SUCCESS) {
-        return result;
-    }
-    if (const int result = test_partial_download_resume();
-        result != EXIT_SUCCESS) {
-        return result;
-    }
-    if (const int result = test_concurrent_failure_cancels_active_download();
-        result != EXIT_SUCCESS) {
-        return result;
-    }
-    if (const int result = test_external_cancellation_stops_active_download();
-        result != EXIT_SUCCESS) {
-        return result;
-    }
-    if (const int result = test_bounded_concurrent_downloads();
-        result != EXIT_SUCCESS) {
-        return result;
-    }
-    if (const int result = test_configured_download_order();
+    onedrive::test::ScenarioProgress progress{10};
+    if (const int result = progress.run(
+            "pending_download_recovery", test_pending_download_recovery
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
     if (const int result =
-            test_duplicate_destination_downloads_are_serialized();
+            progress.run("post_install_recovery", test_post_install_recovery);
         result != EXIT_SUCCESS) {
         return result;
     }
-    return EXIT_SUCCESS;
+    if (const int result = progress.run(
+            "unsafe_pending_path_rejected", test_unsafe_pending_path_rejected
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "mismatched_recovery_file_preserved",
+            test_mismatched_recovery_file_preserved
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "partial_download_resume", test_partial_download_resume
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "concurrent_failure_cancels_active_download",
+            test_concurrent_failure_cancels_active_download
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "external_cancellation_stops_active_download",
+            test_external_cancellation_stops_active_download
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "bounded_concurrent_downloads", test_bounded_concurrent_downloads
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "configured_download_order", test_configured_download_order
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "duplicate_destination_downloads_are_serialized",
+            test_duplicate_destination_downloads_are_serialized
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish();
 }

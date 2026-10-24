@@ -1,11 +1,14 @@
 #include "support/common.hpp"
 #include "support/progress.hpp"
 
+#include <cerrno>
 #include <iomanip>
 #include <memory>
 #include <regex>
 #include <sstream>
 #include <utility>
+
+#include <sys/wait.h>
 
 namespace {
 
@@ -220,25 +223,162 @@ int test_progress_counts_and_output_errors() {
     return EXIT_SUCCESS;
 }
 
+int test_progress_skip_codes() {
+    std::ostringstream output;
+    onedrive::test::ScenarioProgress progress{5, output};
+    if (progress.run(
+            "skipped", [] { return 77; }, 77
+        ) != 77 ||
+        progress.run(
+            "failed", [] { return 23; }, 77
+        ) != 23 ||
+        progress.run(
+            "passed", [] { return EXIT_SUCCESS; }, 77
+        ) != EXIT_SUCCESS ||
+        !throws_with<std::runtime_error>(
+            [&] {
+                progress.run(
+                    "thrown", [] { throw std::runtime_error{"original"}; }, 77
+                );
+            },
+            "original"
+        ) ||
+        progress.run(
+            "skipped after failure", [] { return 77; }, 77
+        ) != 77 ||
+        progress.finish() != 23 || progress.finish(19) != 19) {
+        return fail("scenario progress changed skip codes or masked a failure");
+    }
+    const auto reported = output.str();
+    if (!reported.contains("[1/5] SKIP skipped (") ||
+        !reported.contains("[2/5] FAIL failed (") ||
+        !reported.contains("[3/5] PASS passed (") ||
+        !reported.contains("[4/5] FAIL thrown (") ||
+        !reported.contains("[5/5] SKIP skipped after failure (") ||
+        !reported.contains(": original\n")) {
+        return fail("scenario progress confused skips, failures and success");
+    }
+    onedrive::test::ScenarioProgress skipped{1, output};
+    if (skipped.run(
+            "only skip", [] { return 77; }, 77
+        ) != 77 ||
+        skipped.finish() != 77 ||
+        !output.str().contains("[1/1] SKIP only skip (")) {
+        return fail("scenario progress replaced a configured skip exit code");
+    }
+    onedrive::test::ScenarioProgress incomplete{2, output};
+    incomplete.run("skip before unfinished", [] { return 77; }, 77);
+    if (!throws_with<std::logic_error>(
+            [&] { static_cast<void>(incomplete.finish()); },
+            "before all scenarios"
+        )) {
+        return fail("a skipped scenario hid an incomplete scenario plan");
+    }
+    onedrive::test::ScenarioProgress ordinary{1, output};
+    if (ordinary.run("ordinary", [] { return 77; }) != 77 ||
+        ordinary.finish() != 77 ||
+        !output.str().contains("[1/1] FAIL ordinary (")) {
+        return fail("scenario progress treated an unconfigured code as a skip");
+    }
+    onedrive::test::ScenarioProgress invalid{1, output};
+    bool invoked = false;
+    if (!throws_with<std::invalid_argument>(
+            [&] { invalid.run("invalid", [&] { invoked = true; }, 0); },
+            "skip code must be nonzero"
+        ) ||
+        invoked || output.str().contains("RUNNING invalid")) {
+        return fail("scenario progress accepted success as a skip code");
+    }
+    invalid.run("valid", [] {});
+    return invalid.finish();
+}
+
+int test_progress_forked_process() {
+    const onedrive::test::TemporaryDirectory temporary;
+    const auto path = temporary.path() / "progress";
+    const auto parent = ::getpid();
+    std::ofstream output{path};
+    onedrive::test::ScenarioProgress progress{1, output};
+    const int result = progress.run("forked", [&] {
+        const auto child = ::fork();
+        if (child == -1) {
+            return fail("cannot fork scenario progress regression");
+        }
+        if (child == 0) {
+            return EXIT_SUCCESS;
+        }
+        int status = 0;
+        pid_t waited;
+        do {
+            waited = ::waitpid(child, &status, 0);
+        } while (waited == -1 && errno == EINTR);
+        if (waited != child || !WIFEXITED(status) ||
+            WEXITSTATUS(status) != EXIT_SUCCESS) {
+            return fail("forked scenario progress did not preserve child exit");
+        }
+        return EXIT_SUCCESS;
+    });
+    if (::getpid() != parent) {
+        ::_exit(progress.finish(result));
+    }
+    if (result != EXIT_SUCCESS || progress.finish() != EXIT_SUCCESS) {
+        return fail("forked scenario progress changed the parent result");
+    }
+    output.close();
+    const std::regex expected{
+        R"(\[1/1\] RUNNING forked\n\n)"
+        R"(\[1/1\] PASS forked \([0-9]+\.[0-9]{3} ms\)\n)"
+    };
+    if (!std::regex_match(onedrive::test::read_file(path), expected)) {
+        return fail("forked child emitted its parent's scenario result");
+    }
+    return EXIT_SUCCESS;
+}
+
 } // namespace
 
 int main() {
-    if (const auto result = test_exception_matching(); result != EXIT_SUCCESS) {
-        return result;
-    }
-    if (const auto result = test_borrowed_arguments(); result != EXIT_SUCCESS) {
-        return result;
-    }
-    if (const auto result = test_fixture_files(); result != EXIT_SUCCESS) {
-        return result;
-    }
-    if (const auto result = test_progress_output_and_flushing();
+    onedrive::test::ScenarioProgress progress{8};
+    if (const auto result =
+            progress.run("exception_matching", test_exception_matching);
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const auto result = test_progress_failures_and_exceptions();
+    if (const auto result =
+            progress.run("borrowed_arguments", test_borrowed_arguments);
         result != EXIT_SUCCESS) {
         return result;
     }
-    return test_progress_counts_and_output_errors();
+    if (const auto result = progress.run("fixture_files", test_fixture_files);
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const auto result = progress.run(
+            "progress_output_and_flushing", test_progress_output_and_flushing
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const auto result = progress.run(
+            "progress_failures_and_exceptions",
+            test_progress_failures_and_exceptions
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const auto result = progress.run(
+            "progress_counts_and_output_errors",
+            test_progress_counts_and_output_errors
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const auto result =
+            progress.run("progress_skip_codes", test_progress_skip_codes);
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish(
+        progress.run("progress_forked_process", test_progress_forked_process)
+    );
 }

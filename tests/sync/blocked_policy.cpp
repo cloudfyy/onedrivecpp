@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "onedrive/sync/blocked_policy.hpp"
 #include "support/common.hpp"
 
@@ -205,12 +206,19 @@ void test_recovery_guard_matches_identity_and_subtrees() {
 } // namespace
 
 int main() {
+    onedrive::test::ScenarioProgress progress{4};
     try {
-        test_remote_strategies();
-        test_local_strategies();
-        test_unknown_policy_is_conservative();
-        test_recovery_guard_matches_identity_and_subtrees();
-        return EXIT_SUCCESS;
+        progress.run("remote_strategies", test_remote_strategies);
+        progress.run("local_strategies", test_local_strategies);
+        progress.run(
+            "unknown_policy_is_conservative",
+            test_unknown_policy_is_conservative
+        );
+        progress.run(
+            "recovery_guard_matches_identity_and_subtrees",
+            test_recovery_guard_matches_identity_and_subtrees
+        );
+        return progress.finish();
     } catch (const std::exception& error) {
         return onedrive::test::fail(error.what());
     }

@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support/common.hpp"
 #include "sync/filesystem/metadata.hpp"
 
@@ -137,7 +138,9 @@ int __wrap_close(int descriptor) {
 }
 }
 
-int main() {
+namespace {
+
+int test_filesystem_metadata_failures() {
     using onedrive::config::FilesystemMetadataMode;
     using onedrive::sync::detail::FilesystemMetadata;
     using onedrive::test::fail;
@@ -321,4 +324,17 @@ int main() {
         }
     }
     return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int main() {
+    onedrive::test::ScenarioProgress progress{1};
+    if (const auto result = progress.run(
+            "filesystem_metadata_failures", test_filesystem_metadata_failures
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish();
 }

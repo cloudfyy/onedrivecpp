@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "util/typestate.hpp"
 
 #include <cstdlib>
@@ -93,7 +94,9 @@ static_assert(!HasMoveOnlyValue<JournaledTransaction>);
 
 } // namespace
 
-int main() {
+namespace {
+
+int test_transaction_state_transitions() {
     auto retained = PreparedTransaction{
         MoveOnlyPayload{std::make_unique<int>(17)},
     };
@@ -109,4 +112,17 @@ int main() {
     };
     auto journaled = journal_transaction(std::move(prepared));
     return journaled.value == 42 ? EXIT_SUCCESS : EXIT_FAILURE;
+}
+
+} // namespace
+
+int main() {
+    onedrive::test::ScenarioProgress progress{1};
+    if (const auto result = progress.run(
+            "transaction_state_transitions", test_transaction_state_transitions
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    return progress.finish();
 }

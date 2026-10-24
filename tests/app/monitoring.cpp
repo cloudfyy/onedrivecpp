@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 #include "onedrive/exit_code.hpp"
 
@@ -250,17 +251,29 @@ int test_monitoring_service_cancellation() {
 }  // namespace
 
 int main() {
+    onedrive::test::ScenarioProgress progress{6};
     RecordingObserver multi_drive_observer;
     for (const auto* scenario :
          {"success", "retry", "store_retry", "authentication"}) {
-        if (test_multiple_drive_monitoring(multi_drive_observer, scenario) !=
-            EXIT_SUCCESS) {
+        if (progress.run(
+                std::string{"multiple_drive_monitoring ("} +
+                    "scenario=" + std::string{scenario} + ")",
+                [&] {
+                    return test_multiple_drive_monitoring(
+                        multi_drive_observer, scenario
+                    );
+                }
+            ) != EXIT_SUCCESS) {
             return EXIT_FAILURE;
         }
     }
-    if (test_monitoring_service() != EXIT_SUCCESS ||
-        test_monitoring_service_cancellation() != EXIT_SUCCESS) {
+    if (progress.run("monitoring_service", test_monitoring_service) !=
+            EXIT_SUCCESS ||
+        progress.run(
+            "monitoring_service_cancellation",
+            test_monitoring_service_cancellation
+        ) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
-    return EXIT_SUCCESS;
+    return progress.finish();
 }

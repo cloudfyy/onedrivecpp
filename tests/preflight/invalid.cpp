@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 
 #include "onedrive/util/mount.hpp"
@@ -341,5 +342,6 @@ int test_invalid() {
 } // namespace
 
 int main() {
-    return test_invalid();
+    onedrive::test::ScenarioProgress progress{1};
+    return progress.finish(progress.run("invalid", test_invalid));
 }

@@ -1,3 +1,4 @@
+#include "support/progress.hpp"
 #include "support.hpp"
 
 namespace {
@@ -134,13 +135,20 @@ int test_transport_failure_is_transient() {
 } // namespace
 
 int main() {
-    if (const int result = test_notification_channel();
+    onedrive::test::ScenarioProgress progress{3};
+    if (const int result =
+            progress.run("notification_channel", test_notification_channel);
         result != EXIT_SUCCESS) {
         return result;
     }
-    if (const int result = test_unauthorized_channel_invalidates_token();
+    if (const int result = progress.run(
+            "unauthorized_channel_invalidates_token",
+            test_unauthorized_channel_invalidates_token
+        );
         result != EXIT_SUCCESS) {
         return result;
     }
-    return test_transport_failure_is_transient();
+    return progress.finish(progress.run(
+        "transport_failure_is_transient", test_transport_failure_is_transient
+    ));
 }
