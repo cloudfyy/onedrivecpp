@@ -1,3 +1,13 @@
+onedrive-cpp (1.2.1-1~ubuntu24.04) noble; urgency=medium
+
+  * Prepare version 1.2.1.
+  * Add independent SharePoint document library E2E verification runner with
+    multi-drive configuration discovery and offline tests.
+  * Refactor SyncEngine::synchronize into a five-stage pipeline, expand unit
+    test coverage, and resolve clang-tidy static analyzer findings.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Sun, 25 Oct 2026 19:49:00 +0800
+
 onedrive-cpp (1.2.0-1~ubuntu24.04) noble; urgency=medium
 
   * Start the 1.2.0 development cycle for SharePoint document library support.

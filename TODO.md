@@ -2,7 +2,7 @@
 
 ## 1.2 SharePoint 文档库
 
-面向组织站点（SharePoint／Teams）文档库同步与发掘。版本已提升至 1.2.0，尚未发布。
+面向组织站点（SharePoint／Teams）文档库同步与发掘。版本已提升至 1.2.1。
 
 - [x] P1 增强 SharePoint 站点与文档库发现（Graph & CLI）
   - `onedrive-cpp inspect sites [query]` 支持省略查询词（或 `*`）列出可访问站点；关键字未命中时自动回退列出可访问站点提示。
@@ -15,6 +15,7 @@
   - 在设置 -> 账户的 `Drive IDs` 旁提供“浏览 SharePoint 文档库…”对话框，支持站点搜索/地址解析、查看文档库列表（名称、Drive ID、配额、URL）并一键追加到 `sync.drive_ids`（中英双语）。
 - [x] P1 补齐 SharePoint 自动化测试与使用文档（Tests & Docs）
   - 补齐站点 URL/通配发现、SharePoint 上传富化（size/hash 变化不触发假冲突）、崩溃恢复及 GUI 选择器的自动化测试，更新 `README.md`、`README.zh-CN.md` 和 `docs/usage.md`。
+  - 新增 `tests/sharepoint_e2e.py` 及离线单测 `tests/test_sharepoint_e2e.py`，支持从 `config.toml` 自动识别或探测 `documentLibrary` 类型的文档库 Drive 并执行 10 项端到端验证。
 
 ## 1.1 OneDrive for Business
 
