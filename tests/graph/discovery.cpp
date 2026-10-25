@@ -187,6 +187,15 @@ int test_sites_and_document_libraries() {
             .body = R"json({"value":[]})json",
         },
         onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body =
+                R"json({"id":"example.sharepoint.test,root-id,web-id","name":"root","displayName":"Root Site","webUrl":"https://example.sharepoint.test"})json",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body = R"json({"value":[]})json",
+        },
+        onedrive::http::HttpResponse{
             .status_code = 404,
             .body =
                 R"json({"error":{"code":"itemNotFound","message":"Site not found"}})json",
@@ -213,13 +222,14 @@ int test_sites_and_document_libraries() {
         direct_client.search_sites("example.sharepoint.test:/teams/ops");
     const auto by_site_id =
         direct_client.search_sites("example.sharepoint.test,site-id,web-id");
+    const auto by_root_keyword = direct_client.search_sites("root");
     const auto missing_site = direct_client.search_sites(
         "https://example.sharepoint.test/sites/missing"
     );
     if (by_url.size() != 1 || by_url[0].drives.size() != 1 ||
         by_root_url.size() != 1 || by_colon_path.size() != 1 ||
-        by_site_id.size() != 1 || !missing_site.empty() ||
-        direct_pointer->queued.requests.size() != 10 ||
+        by_site_id.size() != 1 || by_root_keyword.size() != 1 ||
+        !missing_site.empty() || direct_pointer->queued.requests.size() != 12 ||
         direct_pointer->queued.requests[1].url !=
             "https://graph.example.test/v1.0/sites/example.sharepoint.test:/"
             "sites/engineering?$select=id,name,displayName,webUrl" ||
@@ -234,9 +244,43 @@ int test_sites_and_document_libraries() {
             "example.sharepoint.test%2Csite-id%2Cweb-id?"
             "$select=id,name,displayName,webUrl" ||
         direct_pointer->queued.requests[9].url !=
+            "https://graph.example.test/v1.0/sites/root?"
+            "$select=id,name,displayName,webUrl" ||
+        direct_pointer->queued.requests[11].url !=
             "https://graph.example.test/v1.0/sites/example.sharepoint.test:/"
             "sites/missing?$select=id,name,displayName,webUrl") {
         return fail("direct SharePoint site resolution failed");
+    }
+
+    const auto fallback_hit = onedrive::graph::search_sites_with_fallback(
+        "unmatched",
+        [&](const std::string& target)
+            -> std::vector<onedrive::graph::SiteInfo> {
+            if (target == "*") {
+                return by_url;
+            }
+            return {};
+        }
+    );
+    const auto fallback_forbidden = onedrive::graph::search_sites_with_fallback(
+        "https://example.sharepoint.test/sites/missing",
+        [&](const std::string& target)
+            -> std::vector<onedrive::graph::SiteInfo> {
+            if (target == "*") {
+                throw std::runtime_error{"Access denied on wildcard"};
+            }
+            return {};
+        }
+    );
+    if (!fallback_hit.used_wildcard_fallback ||
+        fallback_hit.effective_query != "unmatched" ||
+        fallback_hit.sites.size() != 1 ||
+        fallback_forbidden.used_wildcard_fallback ||
+        !fallback_forbidden.sites.empty()) {
+        return fail(
+            "search_sites_with_fallback did not handle wildcard fallback "
+            "scenarios"
+        );
     }
     return EXIT_SUCCESS;
 }

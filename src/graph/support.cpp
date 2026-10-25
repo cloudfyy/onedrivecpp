@@ -466,8 +466,8 @@ std::optional<UnsupportedItem> item_unsupported_format(const Json& value) {
     for (const auto& rule : unsupported_format_rules) {
         if (std::ranges::any_of(
                 rule.mime_types,
-                [&](std::string_view mime) {
-                    return util::ascii_iequals(mime_type, mime);
+                [&](std::string_view rule_mime) {
+                    return util::ascii_iequals(mime_type, rule_mime);
                 }
             ) &&
             std::ranges::any_of(rule.extensions, [&](std::string_view suffix) {

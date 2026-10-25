@@ -76,8 +76,9 @@ Severity severity_for(spdlog::level::level_enum level) noexcept {
 
 class MessageCallbackSink final : public spdlog::sinks::sink {
 public:
-    explicit MessageCallbackSink(MessageSink sink)
-        : sink_{std::move(sink)} {}
+    explicit MessageCallbackSink(MessageSink message_sink)
+        : sink_{std::move(message_sink)} {
+    }
 
     void disconnect() {
         const std::scoped_lock lock{mutex_};

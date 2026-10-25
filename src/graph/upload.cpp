@@ -409,16 +409,14 @@ RemoteItem MicrosoftGraphClient::upload_file(
     const auto maximum_send_speed =
         upload_transport.maximum_send_speed_bytes_per_second;
     const http::UploadThrottle upload_throttle =
-        upload_rate_limiter_ ?
-            http::UploadThrottle{
-                [limiter = upload_rate_limiter_.get()](
-                    std::size_t bytes,
-                    const std::stop_token& stop_token
-                ) {
-                    return limiter->acquire(bytes, stop_token);
-                }
-            } :
-            http::UploadThrottle{};
+        upload_rate_limiter_
+            ? http::UploadThrottle{[limiter = upload_rate_limiter_.get()](
+                                       std::size_t bytes,
+                                       const std::stop_token& chunk_stop_token
+                                   ) {
+                  return limiter->acquire(bytes, chunk_stop_token);
+              }}
+            : http::UploadThrottle{};
     const auto require_upload_success = [&](const http::HttpResponse& response,
                                             const Json& json) {
         if (!successful_status(response.status_code)) {

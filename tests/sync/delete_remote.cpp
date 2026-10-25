@@ -45,6 +45,43 @@ int test_remote_delete_unchanged() {
         !unchanged_metrics.last_success) {
         return fail("unchanged remote deletion was not executed safely");
     }
+
+    const auto enriched_root = temporary.path() / "unchanged-enriched";
+    std::filesystem::create_directories(enriched_root);
+    onedrive::test::write_file(enriched_root / "report.docx", "data");
+    auto enriched_state =
+        tracked_item(enriched_root, "deleted-enriched", "report.docx");
+    enriched_state.size = 128;
+    enriched_state.local_size = 4;
+    enriched_state.content_hash = onedrive::util::FileHash{
+        .algorithm = onedrive::util::FileHashAlgorithm::quick_xor,
+        .value = onedrive::sync::detail::quick_xor_hash(
+            enriched_root / "report.docx"
+        ),
+    };
+    FakeGraphClient enriched_graph;
+    enriched_graph.changes = {deleted_item("deleted-enriched")};
+    FakeItemStore enriched_items;
+    enriched_items.saved_delta_link = "saved";
+    enriched_items.items.emplace("deleted-enriched", std::move(enriched_state));
+    FakeMetrics enriched_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(enriched_root, false),
+            enriched_graph,
+            enriched_items,
+            enriched_metrics,
+            &default_console
+        }
+                .synchronize() != exit_code::success ||
+        std::filesystem::exists(enriched_root / "report.docx") ||
+        enriched_items.applied_delta.removals !=
+            std::vector<std::string>{"deleted-enriched"} ||
+        !enriched_items.applied_delta.blocked_upserts.empty()) {
+        return fail(
+            "server-enriched SharePoint/Business remote deletion was blocked "
+            "unexpectedly"
+        );
+    }
     return EXIT_SUCCESS;
 }
 

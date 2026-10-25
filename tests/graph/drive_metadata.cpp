@@ -62,7 +62,7 @@ int test_drive_information_and_quota() {
         onedrive::http::HttpResponse{
             .status_code = 200,
             .body =
-                R"json({"value":[{"id":"drive-2","name":"Team","driveType":"business","owner":{"group":{"displayName":"Team Owner"}}}]})json",
+                R"json({"value":[{"id":"drive-2","name":"Team","driveType":"business","owner":{"group":{"displayName":"Team Owner"}}},{"id":"drive-3","name":"Shared Documents","driveType":"documentLibrary","owner":{"site":{"displayName":"Engineering Site"}}}]})json",
         },
         onedrive::http::HttpResponse{
             .status_code = 200,
@@ -85,9 +85,19 @@ int test_drive_information_and_quota() {
     const auto drives = client.list_drives();
     const auto current = client.drive_info();
     const auto& requests = transport_pointer->queued.requests;
-    if (drives.size() != 2 || drives[0].owner != "Alice" || !drives[0].quota ||
-        drives[0].quota->remaining != 600 || drives[1].owner != "Team Owner" ||
-        drives[1].quota || current.id != "drive-1" || !current.quota ||
+    if (drives.size() != 3 || drives[0].owner != "Alice" ||
+        drives[0].kind() != onedrive::account::DriveKind::personal ||
+        drives[0].source_policy().supports_post_upload_enrichment ||
+        !drives[0].quota || drives[0].quota->remaining != 600 ||
+        drives[1].owner != "Team Owner" ||
+        drives[1].kind() != onedrive::account::DriveKind::business ||
+        !drives[1].source_policy().supports_post_upload_enrichment ||
+        drives[1].source_policy().is_shared_library || drives[1].quota ||
+        drives[2].owner != "Engineering Site" ||
+        drives[2].kind() != onedrive::account::DriveKind::sharepoint_library ||
+        !drives[2].source_policy().supports_post_upload_enrichment ||
+        !drives[2].source_policy().is_shared_library ||
+        current.id != "drive-1" || !current.quota ||
         current.quota->deleted != 25 || requests.size() != 4 ||
         requests[1].url !=
             "https://graph.example.test/v1.0/me/drives?$select=id,name,"
@@ -97,6 +107,41 @@ int test_drive_information_and_quota() {
             "https://graph.example.test/v1.0/me/drive?$select=id,name,"
             "driveType,webUrl,owner,quota") {
         return fail("Graph drive information or quota was not parsed");
+    }
+
+    FakeTransport sharepoint_identity_transport{std::deque<
+        onedrive::http::HttpResult>{
+        onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body = R"json({"id":"user-1","displayName":"Alice"})json",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body =
+                R"json({"id":"b!sp-drive","name":"","driveType":"documentLibrary"})json",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 404,
+        },
+    }};
+    const auto sp_identity = onedrive::graph::fetch_drive_identity(
+        onedrive::http::HttpTransport{
+            onedrive::util::borrowed_proxy, sharepoint_identity_transport
+        },
+        "access-secret",
+        {
+            .drive_id = "b!sp-drive",
+            .endpoint = "https://graph.example.test/v1.0",
+        }
+    );
+    if (sp_identity.kind() !=
+            onedrive::account::DriveKind::sharepoint_library ||
+        sp_identity.drive_name != "Documents" ||
+        !sp_identity.source_policy().is_shared_library) {
+        return fail(
+            "SharePoint drive identity did not apply documentLibrary source "
+            "policy defaults"
+        );
     }
     return EXIT_SUCCESS;
 }

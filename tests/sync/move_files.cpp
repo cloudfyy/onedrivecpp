@@ -77,6 +77,51 @@ int test_remote_move_renames() {
         sha1_graph.download_count != 0) {
         return fail("SHA-1-verified remote move downloaded unchanged content");
     }
+
+    const auto enriched_root = temporary.path() / "enriched-rename";
+    std::filesystem::create_directory(enriched_root);
+    onedrive::test::write_file(enriched_root / "report.docx", "data");
+    auto enriched_previous =
+        tracked_item(enriched_root, "sp-enriched-move", "report.docx");
+    enriched_previous.size = 128;
+    enriched_previous.local_size = 4;
+    enriched_previous.etag = "etag-enriched-1";
+    enriched_previous.ctag = "ctag-enriched-1";
+    auto enriched_moved = file("sp-enriched-move", "archive/report.docx", 128);
+    enriched_moved.etag = "etag-enriched-2";
+    enriched_moved.ctag = "ctag-enriched-1";
+    enriched_moved.last_modified = enriched_previous.last_modified;
+    enriched_moved.content_hash = onedrive::util::FileHash{
+        .algorithm = onedrive::util::FileHashAlgorithm::quick_xor,
+        .value = "serverEnrichedQuickXorHash==",
+    };
+    FakeGraphClient enriched_graph;
+    enriched_graph.changes = {enriched_moved};
+    FakeItemStore enriched_items;
+    enriched_items.saved_delta_link = "saved";
+    enriched_items.items.emplace("sp-enriched-move", enriched_previous);
+    FakeMetrics enriched_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(enriched_root, false),
+            enriched_graph,
+            enriched_items,
+            enriched_metrics,
+            &default_console
+        }
+                .synchronize() != exit_code::success ||
+        std::filesystem::exists(enriched_root / "report.docx") ||
+        onedrive::test::read_file(enriched_root / "archive/report.docx") !=
+            "data" ||
+        enriched_graph.download_count != 0 ||
+        enriched_items.applied_delta.upserts.size() != 1 ||
+        enriched_items.applied_delta.upserts[0].local_size != 4 ||
+        enriched_items.applied_delta.upserts[0].content_hash !=
+            enriched_previous.content_hash) {
+        return fail(
+            "server-enriched SharePoint/Business remote move did not preserve "
+            "local baseline"
+        );
+    }
     return EXIT_SUCCESS;
 }
 

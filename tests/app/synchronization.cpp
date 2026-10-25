@@ -64,6 +64,10 @@ int test_multiple_drives(const onedrive::events::Observer& observer) {
                     }
                     auto identity = onedrive::test::test_drive_identity(id);
                     identity.drive_id = scenario == "alias" ? "same" : id;
+                    if (id == "second") {
+                        identity.drive_type = "documentLibrary";
+                        identity.drive_name = "Shared Documents";
+                    }
                     if (id == "second" && scenario == "different_account") {
                         identity.user_id = "another-user";
                     }
@@ -146,7 +150,11 @@ int test_multiple_drives(const onedrive::events::Observer& observer) {
                  } ||
              implementation.item_store_sync_directories.size() != 2 ||
              implementation.item_store_sync_directories[0] ==
-                 implementation.item_store_sync_directories[1])) {
+                 implementation.item_store_sync_directories[1] ||
+             !implementation.item_store_sync_directories[1]
+                  .filename()
+                  .string()
+                  .starts_with("Shared-Documents--"))) {
             return fail(
                 "multi-drive synchronization was not ordered and isolated"
             );

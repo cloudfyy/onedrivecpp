@@ -59,7 +59,7 @@ DownloadBatch download_files(
     std::vector<std::uint64_t> task_downloaded(tasks.size());
     enum class DownloadTaskState {
         active,
-        completed,
+        finished,
     };
     std::vector<DownloadTaskState> task_states(
         tasks.size(), DownloadTaskState::active
@@ -107,7 +107,7 @@ DownloadBatch download_files(
             std::uint64_t downloaded,
             util::ProgressState state) {
             const std::scoped_lock lock{observer_mutex};
-            const bool completed = state == util::ProgressState::completed;
+            const bool task_completed = state == util::ProgressState::completed;
             const auto expected_size =
                 static_cast<std::uint64_t>(tasks[index].item.size);
             const auto current = std::min(downloaded, expected_size);
@@ -115,9 +115,9 @@ DownloadBatch download_files(
                 downloaded_bytes += current - task_downloaded[index];
                 task_downloaded[index] = current;
             }
-            if (completed &&
+            if (task_completed &&
                 task_states[index] == DownloadTaskState::active) {
-                task_states[index] = DownloadTaskState::completed;
+                task_states[index] = DownloadTaskState::finished;
                 ++completed_files;
             }
             const bool all_completed = completed_files == file_count;

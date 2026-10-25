@@ -349,16 +349,14 @@ void MicrosoftGraphClient::download_file(
     const auto maximum_receive_speed =
         download_transport.maximum_receive_speed_bytes_per_second;
     const http::DownloadThrottle download_throttle =
-        download_rate_limiter_ ?
-            http::DownloadThrottle{
-                [limiter = download_rate_limiter_.get()](
-                    std::size_t bytes,
-                    const std::stop_token& stop_token
-                ) {
-                    return limiter->acquire(bytes, stop_token);
-                }
-            } :
-            http::DownloadThrottle{};
+        download_rate_limiter_
+            ? http::DownloadThrottle{[limiter = download_rate_limiter_.get()](
+                                         std::size_t bytes,
+                                         const std::stop_token& chunk_stop_token
+                                     ) {
+                  return limiter->acquire(bytes, chunk_stop_token);
+              }}
+            : http::DownloadThrottle{};
     struct DownloadAttempt {
         std::vector<std::string> headers;
         std::uint64_t offset;
