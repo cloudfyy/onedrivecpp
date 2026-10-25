@@ -62,7 +62,7 @@ int test_drive_information_and_quota() {
         onedrive::http::HttpResponse{
             .status_code = 200,
             .body =
-                R"json({"value":[{"id":"drive-2","name":"Team","driveType":"business","owner":{"group":{"displayName":"Team Owner"}}},{"id":"drive-3","name":"Shared Documents","driveType":"documentLibrary","owner":{"site":{"displayName":"Engineering Site"}}}]})json",
+                R"json({"value":[{"id":"drive-2","name":"Archive","driveType":"personal","owner":{"user":{"displayName":"Bob"}}}]})json",
         },
         onedrive::http::HttpResponse{
             .status_code = 200,
@@ -85,19 +85,13 @@ int test_drive_information_and_quota() {
     const auto drives = client.list_drives();
     const auto current = client.drive_info();
     const auto& requests = transport_pointer->queued.requests;
-    if (drives.size() != 3 || drives[0].owner != "Alice" ||
+    if (drives.size() != 2 || drives[0].owner != "Alice" ||
         drives[0].kind() != onedrive::account::DriveKind::personal ||
         drives[0].source_policy().supports_post_upload_enrichment ||
-        !drives[0].quota || drives[0].quota->remaining != 600 ||
-        drives[1].owner != "Team Owner" ||
-        drives[1].kind() != onedrive::account::DriveKind::business ||
-        !drives[1].source_policy().supports_post_upload_enrichment ||
-        drives[1].source_policy().is_shared_library || drives[1].quota ||
-        drives[2].owner != "Engineering Site" ||
-        drives[2].kind() != onedrive::account::DriveKind::sharepoint_library ||
-        !drives[2].source_policy().supports_post_upload_enrichment ||
-        !drives[2].source_policy().is_shared_library ||
-        current.id != "drive-1" || !current.quota ||
+        drives[0].source_policy().is_shared_library || !drives[0].quota ||
+        drives[0].quota->remaining != 600 || drives[1].owner != "Bob" ||
+        drives[1].kind() != onedrive::account::DriveKind::personal ||
+        drives[1].quota || current.id != "drive-1" || !current.quota ||
         current.quota->deleted != 25 || requests.size() != 4 ||
         requests[1].url !=
             "https://graph.example.test/v1.0/me/drives?$select=id,name,"
@@ -107,6 +101,105 @@ int test_drive_information_and_quota() {
             "https://graph.example.test/v1.0/me/drive?$select=id,name,"
             "driveType,webUrl,owner,quota") {
         return fail("Graph drive information or quota was not parsed");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_business_drive_information_and_identity() {
+    auto transport = std::make_unique<
+        FakeTransport>(std::deque<onedrive::http::HttpResult>{
+        onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body = R"({"token_type":"Bearer","expires_in":3600,)"
+                    R"("access_token":"access-secret"})",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body =
+                R"json({"value":[{"id":"business-drive-1","name":"Team","driveType":"business","owner":{"group":{"displayName":"Team Owner"}}}]})json",
+        },
+    });
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(std::string{"existing-refresh"})
+        ),
+        auth_options(),
+        {
+            .drive_id = "business-drive-1",
+            .endpoint = "https://graph.example.test/v1.0",
+        },
+    };
+    const auto drives = client.list_drives();
+    if (drives.size() != 1 || drives[0].owner != "Team Owner" ||
+        drives[0].kind() != onedrive::account::DriveKind::business ||
+        !drives[0].source_policy().supports_post_upload_enrichment ||
+        drives[0].source_policy().is_shared_library || drives[0].quota) {
+        return fail("OneDrive for Business drive information was not parsed");
+    }
+
+    FakeTransport identity_transport{std::deque<onedrive::http::HttpResult>{
+        json_response(200, R"({"id":"user","displayName":"User"})"),
+        json_response(
+            200,
+            R"({"id":"business-drive-1","name":"Work OneDrive","driveType":"business"})"
+        ),
+        json_response(404, ""),
+    }};
+    onedrive::http::HttpTransport proxy{
+        onedrive::util::borrowed_proxy, identity_transport
+    };
+    const auto identity = onedrive::graph::fetch_drive_identity(
+        proxy,
+        "access",
+        {.drive_id = "business-drive-1",
+         .endpoint = "https://graph.example.test/v1.0"}
+    );
+    if (identity.drive_type != "business" ||
+        identity.kind() != onedrive::account::DriveKind::business ||
+        !identity.source_policy().supports_post_upload_enrichment ||
+        identity.source_policy().is_shared_library) {
+        return fail(
+            "OneDrive for Business drive identity did not apply business "
+            "source policy"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_sharepoint_drive_information_and_identity() {
+    auto transport = std::make_unique<
+        FakeTransport>(std::deque<onedrive::http::HttpResult>{
+        onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body = R"({"token_type":"Bearer","expires_in":3600,)"
+                    R"("access_token":"access-secret"})",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body =
+                R"json({"value":[{"id":"b!sp-drive","name":"Shared Documents","driveType":"documentLibrary","owner":{"site":{"displayName":"Engineering Site"}}}]})json",
+        },
+    });
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(std::string{"existing-refresh"})
+        ),
+        auth_options(),
+        {
+            .drive_id = "b!sp-drive",
+            .endpoint = "https://graph.example.test/v1.0",
+        },
+    };
+    const auto drives = client.list_drives();
+    if (drives.size() != 1 || drives[0].owner != "Engineering Site" ||
+        drives[0].kind() != onedrive::account::DriveKind::sharepoint_library ||
+        !drives[0].source_policy().supports_post_upload_enrichment ||
+        !drives[0].source_policy().is_shared_library) {
+        return fail(
+            "SharePoint document library drive information was not parsed"
+        );
     }
 
     FakeTransport sharepoint_identity_transport{std::deque<
@@ -134,7 +227,8 @@ int test_drive_information_and_quota() {
             .endpoint = "https://graph.example.test/v1.0",
         }
     );
-    if (sp_identity.kind() !=
+    if (sp_identity.drive_type != "documentLibrary" ||
+        sp_identity.kind() !=
             onedrive::account::DriveKind::sharepoint_library ||
         sp_identity.drive_name != "Documents" ||
         !sp_identity.source_policy().is_shared_library) {
@@ -370,8 +464,7 @@ int test_drive_identity_and_profile_photo() {
 
 int test_drive_identity_types() {
     using Json = nlohmann::json;
-    for (const std::string type :
-         {"personal", "business", "documentLibrary", "futureType", ""}) {
+    for (const std::string type : {"personal", "futureType", ""}) {
         Json drive{{"id", "canonical-drive"}, {"name", "Drive"}};
         if (!type.empty()) {
             drive["driveType"] = type;
@@ -538,6 +631,101 @@ int test_profile_photo_rejects_invalid_responses() {
             "simulated profile photo transport failure"
         )) {
         return fail("Graph profile photo error response was mishandled");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_sharepoint_library_permission_errors() {
+    FakeTransport denied_library_identity{std::deque<
+        onedrive::http::HttpResult>{
+        onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body = R"({"id":"user-id","displayName":"Alice Example"})",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 403,
+            .body =
+                R"json({"error":{"code":"accessDenied","message":"library denied"}})json",
+        },
+    }};
+    onedrive::http::HttpTransport denied_library_proxy{
+        onedrive::util::borrowed_proxy, denied_library_identity
+    };
+    try {
+        static_cast<void>(onedrive::graph::fetch_drive_identity(
+            denied_library_proxy,
+            "access-token",
+            {
+                .drive_id = "b!sp-library",
+                .endpoint = "https://graph.example.test/v1.0",
+            }
+        ));
+        return fail("denied SharePoint library identity query was accepted");
+    } catch (const std::runtime_error& error) {
+        const std::string text = error.what();
+        if (!text.contains("library denied") ||
+            !text.contains("Sites.Read.All") ||
+            !text.contains("auth.scopes")) {
+            return fail(
+                "SharePoint library 403 did not include permission guidance"
+            );
+        }
+    }
+
+    auto transport = std::make_unique<
+        FakeTransport>(std::deque<onedrive::http::HttpResult>{
+        onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body = R"({"token_type":"Bearer","expires_in":3600,)"
+                    R"("access_token":"access-secret"})",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 403,
+            .body =
+                R"json({"error":{"code":"accessDenied","message":"read-only library"}})json",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 403,
+            .body =
+                R"json({"error":{"code":"accessDenied","message":"move denied"}})json",
+        },
+    });
+    onedrive::graph::MicrosoftGraphClient client{
+        wrap_transport(std::move(transport)),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(std::string{"existing-refresh"})
+        ),
+        auth_options(),
+        {
+            .drive_id = "b!sp-library",
+            .endpoint = "https://graph.example.test/v1.0",
+        },
+    };
+    try {
+        client.delete_item("readonly", "readonly-etag");
+        return fail(
+            "SharePoint library deletion permission error was accepted"
+        );
+    } catch (const onedrive::graph::UploadResourceError& error) {
+        if (error.reason_code() != "remote_permission" ||
+            !std::string{error.what()}.contains("read-only library")) {
+            return fail(
+                "SharePoint deletion permission error had unexpected reason"
+            );
+        }
+    }
+    try {
+        static_cast<void>(
+            client.move_item("readonly", "readonly-etag", "Target/denied.txt")
+        );
+        return fail("SharePoint library move permission error was accepted");
+    } catch (const onedrive::graph::UploadResourceError& error) {
+        if (error.reason_code() != "remote_permission" ||
+            !std::string{error.what()}.contains("move denied")) {
+            return fail(
+                "SharePoint move permission error had unexpected reason"
+            );
+        }
     }
     return EXIT_SUCCESS;
 }

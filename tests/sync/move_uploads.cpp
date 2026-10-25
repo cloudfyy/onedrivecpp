@@ -666,4 +666,97 @@ int test_local_move_parent_recovery() {
     return EXIT_SUCCESS;
 }
 
+int test_sharepoint_local_move_permission() {
+    const onedrive::cli::Console default_console;
+    TemporaryDirectory temporary;
+    const std::string sp_drive_id = "b!sp-library";
+
+    const auto permission_move_root =
+        temporary.path() / "sharepoint-move-permission";
+    std::filesystem::create_directories(permission_move_root);
+    {
+        std::ofstream output{permission_move_root / "before.txt"};
+        output << "data";
+    }
+    FakeItemStore permission_move_items;
+    permission_move_items.saved_delta_link = "saved";
+    auto sp_item =
+        tracked_item(permission_move_root, "permission-move", "before.txt");
+    sp_item.drive_id = sp_drive_id;
+    permission_move_items.items.emplace("permission-move", std::move(sp_item));
+    FakeGraphClient permission_move_graph;
+    FakeMetrics permission_move_metrics;
+    auto permission_move_config = config_for(permission_move_root, false);
+    permission_move_config.drive_id = sp_drive_id;
+    permission_move_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
+    static_cast<void>(onedrive::sync::SyncEngine{
+        permission_move_config,
+        permission_move_graph,
+        permission_move_items,
+        permission_move_metrics,
+        &default_console
+    }
+                          .synchronize());
+    std::filesystem::rename(
+        permission_move_root / "before.txt", permission_move_root / "after.txt"
+    );
+    permission_move_graph.move_permission_denied_id = "permission-move";
+    if (onedrive::sync::SyncEngine{
+            permission_move_config,
+            permission_move_graph,
+            permission_move_items,
+            permission_move_metrics,
+            &default_console
+        }
+                .synchronize() != onedrive::exit_code::blocked ||
+        !permission_move_metrics.last_success ||
+        !permission_move_items.pending_remote_moves_by_id.empty() ||
+        !permission_move_graph.deleted_items.empty() ||
+        permission_move_graph.upload_count != 0 ||
+        permission_move_items.blocked.size() != 1 ||
+        permission_move_items.blocked.front().drive_id != sp_drive_id ||
+        permission_move_items.blocked.front().remote_path != "after.txt" ||
+        permission_move_items.blocked.front().reason_code !=
+            "upload_remote_permission") {
+        return fail(
+            "SharePoint remote move permission failure deleted source or "
+            "uploaded duplicate destination"
+        );
+    }
+    if (onedrive::sync::SyncEngine{
+            permission_move_config,
+            permission_move_graph,
+            permission_move_items,
+            permission_move_metrics,
+            &default_console
+        }
+                .synchronize() != onedrive::exit_code::blocked ||
+        !permission_move_graph.deleted_items.empty() ||
+        permission_move_graph.upload_count != 0 ||
+        permission_move_items.blocked.size() != 1) {
+        return fail(
+            "subsequent sync round did not protect blocked SharePoint local "
+            "move"
+        );
+    }
+    std::filesystem::rename(
+        permission_move_root / "after.txt", permission_move_root / "before.txt"
+    );
+    if (onedrive::sync::SyncEngine{
+            permission_move_config,
+            permission_move_graph,
+            permission_move_items,
+            permission_move_metrics,
+            &default_console
+        }
+                .synchronize() != onedrive::exit_code::success ||
+        !permission_move_items.blocked.empty()) {
+        return fail(
+            "reverting blocked SharePoint local move did not clear its "
+            "blocked item"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
 } // namespace onedrive::test::sync::move_cases

@@ -12,6 +12,7 @@ void test_inline_removal_and_utf8();
 void test_editor_enum_reload_and_numeric_syntax();
 void test_numeric_limits_round_trip();
 void test_editor_browse_and_advanced();
+void test_sharepoint_library_browser();
 void test_configuration_fingerprint();
 void test_persistence_rejects_without_writes();
 void test_cancel_save_and_import_errors();

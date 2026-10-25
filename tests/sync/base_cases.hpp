@@ -22,5 +22,7 @@ int test_download_conflict_backup();
 int test_download_time_backup();
 int test_download_parent_symlink();
 int test_account_layout_symlink();
+int test_business_enriched_content_tag_reuse();
+int test_sharepoint_enriched_content_tag_reuse();
 
 } // namespace onedrive::test::sync::base_cases

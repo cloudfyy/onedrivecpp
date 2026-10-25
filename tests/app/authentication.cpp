@@ -153,7 +153,7 @@ int test_auth_code_authentication() {
         }
     );
     if (!result || !exchanged || result->identity.drive_id != "drive-id" ||
-        result->identity.drive_type != "business" ||
+        result->identity.drive_type != "personal" ||
         onedrive::test::read_file(result->token_directory / "refresh_token") !=
             "refresh-token" ||
         observer.operation_states() !=
@@ -731,16 +731,67 @@ int test_identity_cancellation_and_failures() {
     }
     return EXIT_SUCCESS;
 }
+
+int test_business_authentication() {
+    CliFixture fixture;
+    auto config = onedrive::config::Config::load(fixture.config_path);
+    config.drive_id = "business-drive-id";
+    config.drive_ids = {"business-drive-id"};
+    const onedrive::app::RuntimeFactory factory{
+        onedrive::util::borrowed_proxy, fixture.runtime_factory
+    };
+    const auto result = onedrive::app::authenticate_account(
+        config, factory, [](const onedrive::app::DeviceAuthorization&) {}
+    );
+    if (!result || result->identity.drive_id != "business-drive-id" ||
+        result->identity.drive_type != "business" ||
+        result->identity.kind() != onedrive::account::DriveKind::business) {
+        return fail(
+            "OneDrive for Business authentication did not persist business "
+            "drive identity"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_sharepoint_authentication() {
+    CliFixture fixture;
+    auto config = onedrive::config::Config::load(fixture.config_path);
+    config.drive_id = "b!sp-library";
+    config.drive_ids = {"b!sp-library"};
+    const onedrive::app::RuntimeFactory factory{
+        onedrive::util::borrowed_proxy, fixture.runtime_factory
+    };
+    const auto result = onedrive::app::authenticate_account(
+        config, factory, [](const onedrive::app::DeviceAuthorization&) {}
+    );
+    if (!result || result->identity.drive_id != "b!sp-library" ||
+        result->identity.drive_type != "documentLibrary" ||
+        result->identity.kind() !=
+            onedrive::account::DriveKind::sharepoint_library) {
+        return fail(
+            "SharePoint authentication did not persist documentLibrary drive "
+            "identity"
+        );
+    }
+    return EXIT_SUCCESS;
+}
 } // namespace
 
 int main() {
-    onedrive::test::ScenarioProgress progress{6};
+    onedrive::test::ScenarioProgress progress{8};
     if (progress.run(
             "shared_credentials_and_runtime_lock",
             test_shared_credentials_and_runtime_lock
         ) != EXIT_SUCCESS ||
         progress.run(
             "auth_code_authentication", test_auth_code_authentication
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "business_authentication", test_business_authentication
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "sharepoint_authentication", test_sharepoint_authentication
         ) != EXIT_SUCCESS ||
         progress.run("authentication_service", test_authentication_service) !=
             EXIT_SUCCESS ||

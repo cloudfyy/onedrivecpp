@@ -649,7 +649,7 @@ int test_flow() {
     if (authentication.exit_code != exit_code::success ||
         !authentication.standard_output.contains("\x1b[") ||
         !authentication.standard_output.contains("Authentication succeeded") ||
-        !authentication.standard_output.contains("business") ||
+        !authentication.standard_output.contains("personal") ||
         !authentication.standard_output.contains(
             "WARNING: Authentication requests broad organizational"
         ) ||
@@ -890,7 +890,7 @@ int test_flow() {
     if (status.exit_code != exit_code::success ||
         !status.standard_output.contains(R"("event":"status")") ||
         !status.standard_output.contains(R"("account":"Test User")") ||
-        !status.standard_output.contains(R"("drive_type":"business")") ||
+        !status.standard_output.contains(R"("drive_type":"personal")") ||
         !status.standard_output.contains(R"("state_database":"absent")") ||
         !status.standard_output.contains(R"("last_sync":"never")") ||
         runtime_factory.graph_info_client_count != 7) {

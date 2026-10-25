@@ -242,18 +242,13 @@ void test_account_startup(StartupBrowserCapture& browser) {
         state_directory,
         {.user_id = "user", .user_display_name = "User",
          .configured_drive_id = "me", .drive_id = "drive",
-         .drive_name = "Drive", .drive_type = "business"},
+         .drive_name = "Drive", .drive_type = "personal"},
         "saved-token"
     );
     auto state = gui::load_app_state_view_model(file);
     require(state.account_status == gui::AccountStatus::credentials_available,
             "saved credentials were not detected");
     check_window(state, false, browser);
-    for (const auto* kind : {"personal", "documentLibrary"}) {
-        auto kind_state = state;
-        kind_state.drive_type = kind;
-        check_window(kind_state, false, browser);
-    }
     const auto token = paths.token_directory / "refresh_token";
     std::filesystem::remove(token);
     state = gui::load_app_state_view_model(file);
@@ -290,6 +285,56 @@ void test_account_startup(StartupBrowserCapture& browser) {
     state = gui::load_app_state_view_model(file);
     require(state.account_status == gui::AccountStatus::invalid,
             "unreadable active account marker was silently treated as absent");
+    check_window(state, false, browser);
+}
+
+void test_business_account_startup(StartupBrowserCapture& browser) {
+    test::TemporaryDirectory fixture;
+    const auto file = fixture.path() / "config.toml";
+    const auto state_directory = fixture.path() / "state";
+    test::write_file(file, configuration(fixture.path()));
+    std::filesystem::create_directory(state_directory);
+    static_cast<void>(account::AccountState::activate(
+        state_directory,
+        {.user_id = "business-user",
+         .user_display_name = "Business User",
+         .configured_drive_id = "me",
+         .drive_id = "business-drive",
+         .drive_name = "OneDrive - Contoso",
+         .drive_type = "business"},
+        "saved-token"
+    ));
+    const auto state = gui::load_app_state_view_model(file);
+    require(
+        state.account_status == gui::AccountStatus::credentials_available &&
+            state.drive_type == "business",
+        "saved OneDrive for Business credentials were not detected"
+    );
+    check_window(state, false, browser);
+}
+
+void test_sharepoint_account_startup(StartupBrowserCapture& browser) {
+    test::TemporaryDirectory fixture;
+    const auto file = fixture.path() / "config.toml";
+    const auto state_directory = fixture.path() / "state";
+    test::write_file(file, configuration(fixture.path()));
+    std::filesystem::create_directory(state_directory);
+    static_cast<void>(account::AccountState::activate(
+        state_directory,
+        {.user_id = "sp-user",
+         .user_display_name = "SharePoint User",
+         .configured_drive_id = "me",
+         .drive_id = "b!sp-library",
+         .drive_name = "Shared Documents",
+         .drive_type = "documentLibrary"},
+        "saved-token"
+    ));
+    const auto state = gui::load_app_state_view_model(file);
+    require(
+        state.account_status == gui::AccountStatus::credentials_available &&
+            state.drive_type == "documentLibrary",
+        "saved SharePoint document library credentials were not detected"
+    );
     check_window(state, false, browser);
 }
 
@@ -435,7 +480,7 @@ void test_state_directory_settings_recovery() {
 } // namespace
 
 int main(int argc, char* argv[]) {
-    onedrive::test::ScenarioProgress progress{5};
+    onedrive::test::ScenarioProgress progress{7};
     QApplication application{argc, argv};
     test::TemporaryDirectory home;
     qputenv("HOME", QByteArray::fromStdString(home.path().string()));
@@ -447,6 +492,12 @@ int main(int argc, char* argv[]) {
         });
         progress.run("account_startup", [&] {
             return test_account_startup(browser);
+        });
+        progress.run("business_account_startup", [&] {
+            return test_business_account_startup(browser);
+        });
+        progress.run("sharepoint_account_startup", [&] {
+            return test_sharepoint_account_startup(browser);
         });
         progress.run(
             "import_and_reload_recovery", test_import_and_reload_recovery

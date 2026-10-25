@@ -293,7 +293,7 @@ int test_quota_snapshot() {
         onedrive::app::load_quota_snapshot(config, runtime_factory);
     if (snapshot.drive.id != "drive-id" ||
         snapshot.drive.name != "Test Drive" ||
-        snapshot.drive.type != "business" ||
+        snapshot.drive.type != "personal" ||
         snapshot.drive.web_url != "https://example.test/drive" ||
         snapshot.drive.owner != "Test User" || !snapshot.drive.quota ||
         snapshot.drive.quota->total != 2'048 ||
@@ -325,7 +325,7 @@ int test_status_snapshot() {
     if (initial.identity.user_display_name != "Test User" ||
         initial.identity.drive_id != "drive-id" ||
         initial.identity.drive_name != "Test Drive" ||
-        initial.identity.drive_type != "business" ||
+        initial.identity.drive_type != "personal" ||
         initial.sync_mode != onedrive::sync::SyncMode::upload_only ||
         initial.delete_policy != onedrive::sync::DeletePolicy::preserve ||
         initial.last_run || initial.state.database_present ||
@@ -354,10 +354,66 @@ int test_status_snapshot() {
     return EXIT_SUCCESS;
 }
 
+int test_business_quota_and_status_snapshots() {
+    TemporaryDirectory temporary;
+    FakeRuntimeFactory implementation;
+    implementation.configured_drive_id = "business-drive-id";
+    const onedrive::app::RuntimeFactory runtime_factory{
+        onedrive::util::borrowed_proxy, implementation
+    };
+    auto config = onedrive::config::Config::defaults();
+    config.state_directory = temporary.path() / "state";
+    config.drive_id = "business-drive-id";
+    config.drive_ids = {"business-drive-id"};
+    std::filesystem::create_directories(config.state_directory);
+    const auto quota =
+        onedrive::app::load_quota_snapshot(config, runtime_factory);
+    const auto status =
+        onedrive::app::load_sync_status_snapshot(config, runtime_factory);
+    if (quota.drive.id != "business-drive-id" ||
+        quota.drive.type != "business" ||
+        status.identity.drive_id != "business-drive-id" ||
+        status.identity.drive_type != "business") {
+        return fail(
+            "OneDrive for Business quota or status snapshot did not report "
+            "business drive type"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_sharepoint_quota_and_status_snapshots() {
+    TemporaryDirectory temporary;
+    FakeRuntimeFactory implementation;
+    implementation.configured_drive_id = "b!sp-library";
+    const onedrive::app::RuntimeFactory runtime_factory{
+        onedrive::util::borrowed_proxy, implementation
+    };
+    auto config = onedrive::config::Config::defaults();
+    config.state_directory = temporary.path() / "state";
+    config.drive_id = "b!sp-library";
+    config.drive_ids = {"b!sp-library"};
+    std::filesystem::create_directories(config.state_directory);
+    const auto quota =
+        onedrive::app::load_quota_snapshot(config, runtime_factory);
+    const auto status =
+        onedrive::app::load_sync_status_snapshot(config, runtime_factory);
+    if (quota.drive.id != "b!sp-library" ||
+        quota.drive.type != "documentLibrary" ||
+        status.identity.drive_id != "b!sp-library" ||
+        status.identity.drive_type != "documentLibrary") {
+        return fail(
+            "SharePoint quota or status snapshot did not report "
+            "documentLibrary drive type"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
 } // namespace
 
 int main() {
-    onedrive::test::ScenarioProgress progress{7};
+    onedrive::test::ScenarioProgress progress{9};
     if (progress.run("multiple_drive_blockers", test_multiple_drive_blockers) !=
         EXIT_SUCCESS) {
         return EXIT_FAILURE;
@@ -376,7 +432,15 @@ int main() {
             test_blocked_query_rejects_unsafe_state
         ) != EXIT_SUCCESS ||
         progress.run("quota_snapshot", test_quota_snapshot) != EXIT_SUCCESS ||
-        progress.run("status_snapshot", test_status_snapshot) != EXIT_SUCCESS) {
+        progress.run("status_snapshot", test_status_snapshot) != EXIT_SUCCESS ||
+        progress.run(
+            "business_quota_and_status_snapshots",
+            test_business_quota_and_status_snapshots
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "sharepoint_quota_and_status_snapshots",
+            test_sharepoint_quota_and_status_snapshots
+        ) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }
     return progress.finish();

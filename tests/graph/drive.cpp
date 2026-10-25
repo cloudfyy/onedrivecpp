@@ -9,7 +9,7 @@ using namespace onedrive::test::graph;
 using namespace onedrive::test::graph::drive_cases;
 
 int main() {
-    onedrive::test::ScenarioProgress progress{16};
+    onedrive::test::ScenarioProgress progress{19};
     if (progress.run(
             "unsupported_root_and_path_metadata",
             test_unsupported_root_and_path_metadata
@@ -42,6 +42,20 @@ int main() {
     }
     if (const int result = progress.run(
             "drive_information_and_quota", test_drive_information_and_quota
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "business_drive_information_and_identity",
+            test_business_drive_information_and_identity
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "sharepoint_drive_information_and_identity",
+            test_sharepoint_drive_information_and_identity
         );
         result != EXIT_SUCCESS) {
         return result;
@@ -99,6 +113,13 @@ int main() {
     if (const int result = progress.run(
             "profile_photo_rejects_invalid_responses",
             test_profile_photo_rejects_invalid_responses
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "sharepoint_library_permission_errors",
+            test_sharepoint_library_permission_errors
         );
         result != EXIT_SUCCESS) {
         return result;

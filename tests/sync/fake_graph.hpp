@@ -349,6 +349,12 @@ public:
         const std::string& remote_id, const std::string& expected_etag
     ) const {
         deleted_items.emplace_back(remote_id, expected_etag);
+        if (remote_id == delete_permission_denied_id) {
+            throw onedrive::graph::UploadResourceError{
+                "remote_permission",
+                "simulated remote deletion permission failure"
+            };
+        }
         if (delete_conflict) {
             throw onedrive::graph::UploadConflictError{
                 "simulated deletion conflict"
@@ -387,6 +393,12 @@ public:
         remote_mutations.push_back(
             "move:" + remote_id + ":" + destination_path
         );
+        if (remote_id == move_permission_denied_id) {
+            throw onedrive::graph::UploadResourceError{
+                "remote_permission",
+                "simulated remote move permission failure"
+            };
+        }
         if (move_conflict) {
             throw onedrive::graph::UploadConflictError{
                 "simulated remote move conflict"
@@ -451,7 +463,9 @@ public:
     std::optional<onedrive::util::FileHash> upload_enriched_hash;
     std::string directory_resource_error_path;
     bool delete_conflict{false};
+    std::string delete_permission_denied_id;
     bool move_conflict{false};
+    std::string move_permission_denied_id;
     bool moved_item_directory{false};
     bool fail_after_upload_checkpoint{false};
     std::chrono::milliseconds download_delay{0};

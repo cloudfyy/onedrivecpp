@@ -48,7 +48,18 @@ public:
         }
         auto identity =
             onedrive::test::test_drive_identity(configured_drive_id_);
-        identity.drive_type = "business";
+        if (configured_drive_id_ == "business-drive-id") {
+            identity.drive_id = "business-drive-id";
+            identity.drive_name = "OneDrive - Contoso";
+            identity.drive_type = "business";
+        } else if (configured_drive_id_ == "b!sp-library" ||
+                   configured_drive_id_ == "library-drive-id") {
+            identity.drive_id = configured_drive_id_;
+            identity.drive_name = "Shared Documents";
+            identity.drive_type = "documentLibrary";
+        } else {
+            identity.drive_type = "personal";
+        }
         return identity;
     }
 
@@ -70,11 +81,17 @@ public:
     }
 
     [[nodiscard]] onedrive::graph::DriveInfo drive_info() const {
+        const std::string type =
+            configured_drive_id_ == "business-drive-id" ? "business"
+            : (configured_drive_id_ == "b!sp-library" ||
+               configured_drive_id_ == "library-drive-id")
+                ? "documentLibrary"
+                : "personal";
         return {
             .id = configured_drive_id_ == "me" ? "drive-id"
                                                : configured_drive_id_,
             .name = "Test Drive",
-            .type = "business",
+            .type = type,
             .web_url = "https://example.test/drive",
             .owner = "Test User",
             .quota = onedrive::graph::DriveQuota{

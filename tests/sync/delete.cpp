@@ -10,7 +10,7 @@ using namespace onedrive::test::sync;
 using namespace onedrive::test::sync::delete_cases;
 
 int main() {
-    onedrive::test::ScenarioProgress progress{30};
+    onedrive::test::ScenarioProgress progress{33};
     for (const auto& [name, test] : {
              std::pair<std::string_view, int (*)()>{
                  "remote_delete_preserved_metadata",
@@ -186,6 +186,27 @@ int main() {
     }
     if (const int result =
             progress.run("local_delete_conflict", test_local_delete_conflict);
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "business_remote_delete_enriched_unchanged",
+            test_business_remote_delete_enriched_unchanged
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "sharepoint_remote_delete_enriched_unchanged",
+            test_sharepoint_remote_delete_enriched_unchanged
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "sharepoint_local_delete_permission",
+            test_sharepoint_local_delete_permission
+        );
         result != EXIT_SUCCESS) {
         return result;
     }

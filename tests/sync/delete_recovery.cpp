@@ -275,4 +275,78 @@ int test_local_delete_conflict() {
     return EXIT_SUCCESS;
 }
 
+int test_sharepoint_local_delete_permission() {
+    const onedrive::cli::Console default_console;
+    onedrive::test::TemporaryDirectory temporary;
+    const std::string sp_drive_id = "b!sp-library";
+    const auto permission_root =
+        temporary.path() / "sharepoint-delete-permission";
+    std::filesystem::create_directories(permission_root);
+    {
+        std::ofstream output{permission_root / "readonly.txt"};
+        output << "read";
+    }
+    {
+        std::ofstream output{permission_root / "writable.txt"};
+        output << "edit";
+    }
+    FakeItemStore permission_items;
+    permission_items.saved_delta_link = "saved";
+    auto readonly_item =
+        tracked_item(permission_root, "readonly-delete", "readonly.txt");
+    readonly_item.drive_id = sp_drive_id;
+    auto writable_item =
+        tracked_item(permission_root, "writable-delete", "writable.txt");
+    writable_item.drive_id = sp_drive_id;
+    permission_items.items.emplace("readonly-delete", std::move(readonly_item));
+    permission_items.items.emplace("writable-delete", std::move(writable_item));
+    std::filesystem::remove(permission_root / "readonly.txt");
+    std::filesystem::remove(permission_root / "writable.txt");
+    FakeGraphClient permission_graph;
+    permission_graph.delete_permission_denied_id = "readonly-delete";
+    FakeMetrics permission_metrics;
+    auto permission_config = config_for(permission_root, false);
+    permission_config.drive_id = sp_drive_id;
+    permission_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
+    if (onedrive::sync::SyncEngine{
+            permission_config,
+            permission_graph,
+            permission_items,
+            permission_metrics,
+            &default_console
+        }
+                .synchronize() != exit_code::blocked ||
+        !permission_metrics.last_success ||
+        !permission_items.pending_deletes_by_id.empty() ||
+        !permission_items.find(sp_drive_id, "readonly-delete") ||
+        permission_items.find(sp_drive_id, "writable-delete") ||
+        permission_items.blocked.size() != 1 ||
+        permission_items.blocked.front().drive_id != sp_drive_id ||
+        permission_items.blocked.front().remote_path != "readonly.txt" ||
+        permission_items.blocked.front().reason_code !=
+            "upload_delete_permission") {
+        return fail(
+            "SharePoint remote deletion permission failure aborted sync or "
+            "dropped tracked state"
+        );
+    }
+    permission_graph.delete_permission_denied_id.clear();
+    if (onedrive::sync::SyncEngine{
+            permission_config,
+            permission_graph,
+            permission_items,
+            permission_metrics,
+            &default_console
+        }
+                .synchronize() != exit_code::success ||
+        permission_items.find(sp_drive_id, "readonly-delete") ||
+        !permission_items.blocked.empty()) {
+        return fail(
+            "restored SharePoint remote delete permission did not clear "
+            "blocked deletion"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
 } // namespace onedrive::test::sync::delete_cases

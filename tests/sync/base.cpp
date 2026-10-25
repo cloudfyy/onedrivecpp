@@ -11,7 +11,7 @@ using namespace onedrive::test::sync;
 using namespace onedrive::test::sync::base_cases;
 
 int main() {
-    onedrive::test::ScenarioProgress progress{20};
+    onedrive::test::ScenarioProgress progress{22};
     if (const int result = progress.run(
             "engine_owns_configuration", test_engine_owns_configuration
         );
@@ -133,6 +133,20 @@ int main() {
     if (const int result = progress.run(
             "invalid_delta_cursor_restarts_full_query",
             test_invalid_delta_cursor_restarts_full_query
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "business_enriched_content_tag_reuse",
+            test_business_enriched_content_tag_reuse
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "sharepoint_enriched_content_tag_reuse",
+            test_sharepoint_enriched_content_tag_reuse
         );
         result != EXIT_SUCCESS) {
         return result;

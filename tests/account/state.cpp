@@ -19,7 +19,7 @@ using onedrive::test::TemporaryDirectory;
 
 using onedrive::test::throws_with;
 
-int test_saved_drive_types_and_legacy_state() {
+int test_saved_personal_drive_and_legacy_state() {
     using onedrive::account::AccountState;
     TemporaryDirectory temporary;
     onedrive::account::DriveIdentity identity{
@@ -32,8 +32,7 @@ int test_saved_drive_types_and_legacy_state() {
     const auto paths =
         AccountState::activate(temporary.path(), identity, "original-token");
     onedrive::test::write_file(paths.drive_directory / "items.sqlite3", "keep");
-    for (const std::string type :
-         {"personal", "business", "documentLibrary", "futureType"}) {
+    for (const std::string type : {"personal", "futureType"}) {
         identity.drive_type = type;
         const auto updated = AccountState::prepare(temporary.path(), identity);
         const auto saved = AccountState::saved_drive(temporary.path(), "me");
@@ -51,7 +50,9 @@ int test_saved_drive_types_and_legacy_state() {
                 paths.drive_directory / "items.sqlite3"
             ) != "keep" ||
             AccountState::saved_drive(temporary.path(), "unrelated")) {
-            return fail("Drive type metadata changed identity or selected another Drive");
+            return fail(
+                "Drive type metadata changed identity or selected another Drive"
+            );
         }
     }
     const auto metadata_path = paths.drive_directory / "drive.json";
@@ -72,7 +73,10 @@ int test_saved_drive_types_and_legacy_state() {
     identity.drive_type = "personal";
     static_cast<void>(AccountState::prepare(temporary.path(), identity));
     const auto enriched = AccountState::saved_drive(temporary.path(), "me");
-    if (!enriched || enriched->identity.drive_type != "personal") {
+    if (!enriched || enriched->identity.drive_type != "personal" ||
+        enriched->identity.kind() != onedrive::account::DriveKind::personal ||
+        enriched->identity.source_policy().supports_post_upload_enrichment ||
+        enriched->identity.source_policy().is_shared_library) {
         return fail("legacy Drive metadata was not enriched in place");
     }
     metadata["drive_type"] = 42;
@@ -86,6 +90,65 @@ int test_saved_drive_types_and_legacy_state() {
             "invalid saved account/drive metadata"
         )) {
         return fail("malformed Drive type appeared as unknown");
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_saved_business_drive_state() {
+    using onedrive::account::AccountState;
+    TemporaryDirectory temporary;
+    const onedrive::account::DriveIdentity identity{
+        .user_id = "business-user",
+        .user_display_name = "Business User",
+        .configured_drive_id = "me",
+        .drive_id = "business-drive-id",
+        .drive_name = "OneDrive - Contoso",
+        .drive_type = "business",
+    };
+    const auto paths =
+        AccountState::activate(temporary.path(), identity, "business-token");
+    const auto saved = AccountState::saved_drive(temporary.path(), "me");
+    const auto canonical =
+        AccountState::saved_drive(temporary.path(), identity.drive_id);
+    if (!saved || !canonical || saved->identity.drive_type != "business" ||
+        canonical->identity.drive_type != "business" ||
+        saved->identity.kind() != onedrive::account::DriveKind::business ||
+        !saved->identity.source_policy().supports_post_upload_enrichment ||
+        saved->identity.source_policy().is_shared_library ||
+        saved->directory != paths.drive_directory) {
+        return fail(
+            "OneDrive for Business saved Drive state did not preserve business "
+            "metadata"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_saved_sharepoint_drive_state() {
+    using onedrive::account::AccountState;
+    TemporaryDirectory temporary;
+    const onedrive::account::DriveIdentity identity{
+        .user_id = "sp-user",
+        .user_display_name = "SharePoint User",
+        .configured_drive_id = "b!sp-library",
+        .drive_id = "b!sp-library",
+        .drive_name = "Shared Documents",
+        .drive_type = "documentLibrary",
+    };
+    const auto paths =
+        AccountState::activate(temporary.path(), identity, "sp-token");
+    const auto saved =
+        AccountState::saved_drive(temporary.path(), "b!sp-library");
+    if (!saved || saved->identity.drive_type != "documentLibrary" ||
+        saved->identity.kind() !=
+            onedrive::account::DriveKind::sharepoint_library ||
+        !saved->identity.source_policy().supports_post_upload_enrichment ||
+        !saved->identity.source_policy().is_shared_library ||
+        saved->directory != paths.drive_directory) {
+        return fail(
+            "SharePoint document library saved Drive state did not preserve "
+            "library metadata"
+        );
     }
     return EXIT_SUCCESS;
 }
@@ -517,10 +580,16 @@ int test_account_state_layout_and_markers() {
 } // namespace
 
 int main() {
-    onedrive::test::ScenarioProgress progress{2};
+    onedrive::test::ScenarioProgress progress{4};
     if (progress.run(
-            "saved_drive_types_and_legacy_state",
-            test_saved_drive_types_and_legacy_state
+            "saved_personal_drive_and_legacy_state",
+            test_saved_personal_drive_and_legacy_state
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "saved_business_drive_state", test_saved_business_drive_state
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "saved_sharepoint_drive_state", test_saved_sharepoint_drive_state
         ) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }

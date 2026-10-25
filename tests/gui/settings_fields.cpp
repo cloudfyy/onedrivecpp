@@ -220,7 +220,14 @@ void test_editor_browse_and_advanced() {
             );
         }
     }
+}
 
+void test_sharepoint_library_browser() {
+    gui::SettingsEditor editor;
+    editor.load(config::Config::defaults());
+    editor.show();
+    auto* tabs = editor.findChild<QTabWidget*>("settingsTabs");
+    require(tabs != nullptr, "settings tabs missing");
     tabs->setCurrentIndex(0);
     text(editor, "auth.application_id", "sp-client-id");
     auto* drive_ids = editor.findChild<QPlainTextEdit*>("sync.drive_ids");

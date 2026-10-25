@@ -93,7 +93,25 @@ public:
             return onedrive::http::HttpResponse{
                 .status_code = 200,
                 .body =
-                    R"({"id":"drive-id","name":"Test Drive","driveType":"business"})",
+                    R"({"id":"drive-id","name":"Test Drive","driveType":"personal"})",
+            };
+        }
+        if (request.url.ends_with(
+                "/drives/business-drive-id?$select=id,name,driveType"
+            )) {
+            return onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"id":"business-drive-id","name":"OneDrive - Contoso","driveType":"business"})",
+            };
+        }
+        if (request.url.ends_with(
+                "/drives/b%21sp-library?$select=id,name,driveType"
+            )) {
+            return onedrive::http::HttpResponse{
+                .status_code = 200,
+                .body =
+                    R"({"id":"b!sp-library","name":"Shared Documents","driveType":"documentLibrary"})",
             };
         }
         if (request.url.ends_with("/me/photo/$value")) {

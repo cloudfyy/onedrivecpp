@@ -62,7 +62,7 @@ int test_view_model_with_saved_credentials() {
             .configured_drive_id = "me",
             .drive_id = "drive-id",
             .drive_name = "Test Drive",
-            .drive_type = "business",
+            .drive_type = "personal",
         },
         "refresh-token"
     );
@@ -77,9 +77,81 @@ int test_view_model_with_saved_credentials() {
     const auto state = onedrive::gui::load_app_state_view_model(config_file);
     if (state.account_status !=
             onedrive::gui::AccountStatus::credentials_available ||
-        state.drive_type != "business") {
+        state.drive_type != "personal") {
         return onedrive::test::fail(
             "GUI view model did not detect saved account credentials"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_view_model_with_business_credentials() {
+    TemporaryDirectory temporary;
+    const auto config_file = temporary.path() / "config.toml";
+    const auto state_directory = temporary.path() / "state";
+    onedrive::test::write_file(
+        config_file,
+        "config_version = 2\n"
+        "[state]\n"
+        "directory = \"" +
+            state_directory.string() + "\"\n"
+    );
+    std::filesystem::create_directories(state_directory);
+    static_cast<void>(onedrive::account::AccountState::activate(
+        state_directory,
+        {
+            .user_id = "business-user",
+            .user_display_name = "Business User",
+            .configured_drive_id = "me",
+            .drive_id = "business-drive-id",
+            .drive_name = "OneDrive - Contoso",
+            .drive_type = "business",
+        },
+        "refresh-token"
+    ));
+    const auto state = onedrive::gui::load_app_state_view_model(config_file);
+    if (state.account_status !=
+            onedrive::gui::AccountStatus::credentials_available ||
+        state.drive_type != "business") {
+        return onedrive::test::fail(
+            "GUI view model did not detect saved OneDrive for Business "
+            "credentials"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_view_model_with_sharepoint_credentials() {
+    TemporaryDirectory temporary;
+    const auto config_file = temporary.path() / "config.toml";
+    const auto state_directory = temporary.path() / "state";
+    onedrive::test::write_file(
+        config_file,
+        "config_version = 2\n"
+        "[state]\n"
+        "directory = \"" +
+            state_directory.string() + "\"\n"
+    );
+    std::filesystem::create_directories(state_directory);
+    static_cast<void>(onedrive::account::AccountState::activate(
+        state_directory,
+        {
+            .user_id = "sp-user",
+            .user_display_name = "SharePoint User",
+            .configured_drive_id = "me",
+            .drive_id = "b!sp-library",
+            .drive_name = "Shared Documents",
+            .drive_type = "documentLibrary",
+        },
+        "refresh-token"
+    ));
+    const auto state = onedrive::gui::load_app_state_view_model(config_file);
+    if (state.account_status !=
+            onedrive::gui::AccountStatus::credentials_available ||
+        state.drive_type != "documentLibrary") {
+        return onedrive::test::fail(
+            "GUI view model did not detect saved SharePoint document library "
+            "credentials"
         );
     }
     return EXIT_SUCCESS;
@@ -312,13 +384,21 @@ int test_shared_config_file_reader_limits() {
 } // namespace
 
 int main() {
-    onedrive::test::ScenarioProgress progress{8};
+    onedrive::test::ScenarioProgress progress{10};
     if (progress.run(
             "view_model_without_account", test_view_model_without_account
         ) != EXIT_SUCCESS ||
         progress.run(
             "view_model_with_saved_credentials",
             test_view_model_with_saved_credentials
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "view_model_with_business_credentials",
+            test_view_model_with_business_credentials
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "view_model_with_sharepoint_credentials",
+            test_view_model_with_sharepoint_credentials
         ) != EXIT_SUCCESS ||
         progress.run(
             "basic_settings_preserve_other_toml",

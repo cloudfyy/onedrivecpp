@@ -45,12 +45,22 @@ int test_remote_delete_unchanged() {
         !unchanged_metrics.last_success) {
         return fail("unchanged remote deletion was not executed safely");
     }
+    return EXIT_SUCCESS;
+}
 
+namespace {
+
+int verify_remote_delete_enriched_unchanged(
+    std::string_view drive_id, std::string_view label
+) {
+    const onedrive::cli::Console default_console;
+    TemporaryDirectory temporary;
     const auto enriched_root = temporary.path() / "unchanged-enriched";
     std::filesystem::create_directories(enriched_root);
     onedrive::test::write_file(enriched_root / "report.docx", "data");
     auto enriched_state =
         tracked_item(enriched_root, "deleted-enriched", "report.docx");
+    enriched_state.drive_id = std::string{drive_id};
     enriched_state.size = 128;
     enriched_state.local_size = 4;
     enriched_state.content_hash = onedrive::util::FileHash{
@@ -65,8 +75,10 @@ int test_remote_delete_unchanged() {
     enriched_items.saved_delta_link = "saved";
     enriched_items.items.emplace("deleted-enriched", std::move(enriched_state));
     FakeMetrics enriched_metrics;
+    auto config = config_for(enriched_root, false);
+    config.drive_id = std::string{drive_id};
     if (onedrive::sync::SyncEngine{
-            config_for(enriched_root, false),
+            config,
             enriched_graph,
             enriched_items,
             enriched_metrics,
@@ -78,11 +90,25 @@ int test_remote_delete_unchanged() {
             std::vector<std::string>{"deleted-enriched"} ||
         !enriched_items.applied_delta.blocked_upserts.empty()) {
         return fail(
-            "server-enriched SharePoint/Business remote deletion was blocked "
-            "unexpectedly"
+            "server-enriched " + std::string{label} +
+            " remote deletion was blocked unexpectedly"
         );
     }
     return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int test_business_remote_delete_enriched_unchanged() {
+    return verify_remote_delete_enriched_unchanged(
+        "business-drive", "OneDrive for Business"
+    );
+}
+
+int test_sharepoint_remote_delete_enriched_unchanged() {
+    return verify_remote_delete_enriched_unchanged(
+        "b!sp-library", "SharePoint"
+    );
 }
 
 int test_remote_delete_preview() {

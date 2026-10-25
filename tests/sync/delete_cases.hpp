@@ -33,4 +33,8 @@ int test_local_delete_commit_recovery();
 int test_local_delete_reappeared();
 int test_local_delete_conflict();
 
+int test_business_remote_delete_enriched_unchanged();
+int test_sharepoint_remote_delete_enriched_unchanged();
+int test_sharepoint_local_delete_permission();
+
 } // namespace onedrive::test::sync::delete_cases

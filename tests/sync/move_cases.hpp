@@ -35,4 +35,8 @@ int test_local_move_directory();
 int test_local_move_selective_boundaries();
 int test_local_move_parent_recovery();
 
+int test_business_remote_move_enriched_file();
+int test_sharepoint_remote_move_enriched_file();
+int test_sharepoint_local_move_permission();
+
 } // namespace onedrive::test::sync::move_cases

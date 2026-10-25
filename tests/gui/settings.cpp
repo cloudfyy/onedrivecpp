@@ -8,7 +8,7 @@ using namespace onedrive;
 using namespace onedrive::test::gui_settings;
 
 int main(int argc, char** argv) {
-    onedrive::test::ScenarioProgress progress{21};
+    onedrive::test::ScenarioProgress progress{22};
     QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
     QApplication application{argc, argv};
     try {
@@ -37,6 +37,9 @@ int main(int argc, char** argv) {
         );
         progress.run(
             "editor_browse_and_advanced", test_editor_browse_and_advanced
+        );
+        progress.run(
+            "sharepoint_library_browser", test_sharepoint_library_browser
         );
         progress.run(
             "configuration_fingerprint", test_configuration_fingerprint
