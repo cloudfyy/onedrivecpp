@@ -465,6 +465,20 @@ LocalCommittedRemoteDelete execute_pending_delete(
                 deletion.remote_id, deletion.expected_etag, stop_token
             );
         }
+    } catch (const graph::UploadResourceError& error) {
+        save_upload_blocked(
+            items,
+            deletion.drive_id,
+            deletion.remote_path,
+            deletion.directory,
+            "delete_permission",
+            error.what()
+        );
+        items.remove_pending_delete(
+            deletion.drive_id,
+            deletion.remote_id
+        );
+        throw;
     } catch (const graph::UploadConflictError&) {
         save_upload_blocked(
             items,
@@ -561,11 +575,21 @@ void recover_pending_deletes(
         auto journaled = JournaledRemoteDelete{
             PendingRemoteDeletePayload{deletion},
         };
-        static_cast<void>(
-            execute_pending_delete(
-                std::move(journaled), graph, items, stop_token
-            )
-        );
+        try {
+            static_cast<void>(
+                execute_pending_delete(
+                    std::move(journaled), graph, items, stop_token
+                )
+            );
+        } catch (const graph::UploadResourceError& error) {
+            observer.message(
+                events::MessageKind::warning,
+                "pending_delete_resource_blocked",
+                "Deferred pending remote deletion '" + deletion.remote_path +
+                    "': " + error.what()
+            );
+            continue;
+        }
         observer.message(
             events::MessageKind::information,
             "pending_delete_recovered",

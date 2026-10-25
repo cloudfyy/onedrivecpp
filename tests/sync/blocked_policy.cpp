@@ -104,7 +104,8 @@ void test_local_strategies() {
           "upload_remote_quota",
           "upload_remote_permission",
           "upload_delete_limit",
-          "upload_delete_conflict"}) {
+          "upload_delete_conflict",
+          "upload_delete_permission"}) {
         const auto item = record(reason);
         const auto& strategy = blocked_item_strategy(item.reason_code);
         const bool deletion = item.reason_code.starts_with("upload_delete_");

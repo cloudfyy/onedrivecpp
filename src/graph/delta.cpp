@@ -127,7 +127,9 @@ DeltaResult MicrosoftGraphClient::list_delta(
                 graph_error_message(json, response->status_code)
             );
         }
-        require_successful_graph_response(json, response->status_code);
+        require_successful_graph_response(
+            json, response->status_code, {}, options_.drive_id
+        );
 
         try {
             const auto& values =

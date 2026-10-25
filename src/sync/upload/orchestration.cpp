@@ -514,9 +514,23 @@ UploadSummary upload_local_changes(
                 "local move has no tracked item: " + move.remote_id
             );
         }
-        execute_new_remote_move(
-            sync_root, move, *previous, graph, items, stop_token
-        );
+        try {
+            execute_new_remote_move(
+                sync_root, move, *previous, graph, items, stop_token
+            );
+        } catch (const graph::UploadResourceError& error) {
+            moves.protected_local_paths.insert(
+                move.destination_local_path.lexically_normal().string()
+            );
+            ++summary.blocked;
+            observer.message(
+                events::MessageKind::warning,
+                "local_upload_resource_blocked",
+                "Deferred remote move to '" + move.destination_remote_path +
+                    "': " + error.what()
+            );
+            continue;
+        }
         moves.moved_remote_ids.erase(move.remote_id);
         ++summary.moved;
         observer.file_operation({
@@ -578,7 +592,18 @@ UploadSummary upload_local_changes(
     observer.sync_phase(events::SyncPhase::applying);
     for (const auto& deletion : deletion_plan.operations) {
         throw_if_cancelled(stop_token);
-        execute_new_remote_delete(deletion, graph, items, stop_token);
+        try {
+            execute_new_remote_delete(deletion, graph, items, stop_token);
+        } catch (const graph::UploadResourceError& error) {
+            ++summary.blocked;
+            observer.message(
+                events::MessageKind::warning,
+                "local_upload_resource_blocked",
+                "Deferred remote deletion '" + deletion.remote_path +
+                    "': " + error.what()
+            );
+            continue;
+        }
         ++summary.deleted;
         observer.file_operation({
             .action = events::FileAction::deleted_remotely,

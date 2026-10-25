@@ -495,6 +495,20 @@ LocalCommittedRemoteMove execute_pending_remote_move(
             );
         }
         remote = existing;
+    } catch (const graph::UploadResourceError& error) {
+        save_upload_blocked(
+            items,
+            move.drive_id,
+            move.destination_remote_path,
+            move.directory,
+            error.reason_code(),
+            error.what()
+        );
+        items.remove_pending_remote_move(
+            move.drive_id,
+            move.remote_id
+        );
+        throw;
     }
     auto graph_committed = mark_graph_remote_move_committed(
         std::move(transaction), std::move(remote)
@@ -594,9 +608,19 @@ void recover_pending_remote_moves(
                 .previous = *previous,
             },
         };
-        static_cast<void>(execute_pending_remote_move(
-            sync_root, std::move(journaled), graph, items, stop_token
-        ));
+        try {
+            static_cast<void>(execute_pending_remote_move(
+                sync_root, std::move(journaled), graph, items, stop_token
+            ));
+        } catch (const graph::UploadResourceError& error) {
+            observer.message(
+                events::MessageKind::warning,
+                "pending_remote_move_resource_blocked",
+                "Deferred pending remote move to '" +
+                    move.destination_remote_path + "': " + error.what()
+            );
+            continue;
+        }
         observer.message(
             events::MessageKind::information,
             "pending_remote_move_recovered",

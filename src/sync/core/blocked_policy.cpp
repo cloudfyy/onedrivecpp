@@ -224,6 +224,7 @@ const std::array rules{
     Rule{"upload_remote_permission", &local_resource},
     Rule{"upload_delete_limit", &deletion_limit},
     Rule{"upload_delete_conflict", &deletion_conflict},
+    Rule{"upload_delete_permission", &deletion_conflict},
 };
 
 } // namespace

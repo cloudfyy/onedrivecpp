@@ -130,12 +130,23 @@ bool successful_status(long status_code) noexcept {
 void require_successful_graph_response(
     const Json& response,
     long status_code,
-    std::string_view description
+    std::string_view description,
+    std::string_view configured_drive_id
 ) {
     if (successful_status(status_code)) {
         return;
     }
-    const auto message = graph_error_message(response, status_code);
+    auto message = graph_error_message(response, status_code);
+    if (!configured_drive_id.empty() &&
+        !account::is_default_drive_reference(configured_drive_id) &&
+        upload_permission_error(response, status_code)) {
+        message +=
+            " (accessing SharePoint document libraries or non-default Drives "
+            "requires site/file permissions such as Sites.Read.All, "
+            "Sites.ReadWrite.All, Files.Read.All, or Files.ReadWrite.All in "
+            "auth.scopes and membership on the target SharePoint site; sign "
+            "in again after updating auth.scopes)";
+    }
     if (status_code == http::status::unauthorized) {
         throw AccountAuthenticationError{
             description.empty() ? message

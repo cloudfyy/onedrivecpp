@@ -197,7 +197,7 @@ http::HttpResponse MicrosoftGraphClient::graph_get(
         const auto document =
             client_detail::parse_graph_json(response, description);
         client_detail::require_successful_graph_response(
-            document, response.status_code
+            document, response.status_code, {}, options_.drive_id
         );
     }
     return response;
@@ -244,7 +244,8 @@ account::DriveIdentity fetch_drive_identity(
         client_detail::require_successful_graph_response(
             json,
             response->status_code,
-            "Microsoft Graph " + std::string{name} + " query failed"
+            "Microsoft Graph " + std::string{name} + " query failed",
+            options.drive_id
         );
         return json;
     };

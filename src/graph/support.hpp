@@ -37,7 +37,8 @@ upload_permission_error(const Json& response, long status_code);
 void require_successful_graph_response(
     const Json& response,
     long status_code,
-    std::string_view description = {}
+    std::string_view description = {},
+    std::string_view configured_drive_id = {}
 );
 [[nodiscard]] std::uint64_t effective_upload_rate(
     const http::UploadTransportOptions& options
