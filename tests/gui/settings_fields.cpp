@@ -330,6 +330,39 @@ void test_editor_browse_and_advanced() {
             drive_ids->toPlainText() == "me\ndrv-eng-docs\ndrv-eng-specs",
         "SharePoint browser did not deduplicate and append selected Drive IDs"
     );
+
+    // Also verify selecting a library row without checking any checkbox appends
+    // that library's Drive ID.
+    bool sp_row_selected = false;
+    QObject::connect(&sp_dialogs, &QTimer::timeout, &editor, [&] {
+        auto* dialog =
+            qobject_cast<QDialog*>(QApplication::activeModalWidget());
+        if (!dialog || dialog->objectName() != "sharePointBrowserDialog" ||
+            sp_row_selected) {
+            return;
+        }
+        sp_row_selected = true;
+        auto* search_btn =
+            dialog->findChild<QPushButton*>("sharePointSearchButton");
+        auto* tree = dialog->findChild<QTreeWidget*>("sharePointLibrariesTree");
+        require(search_btn && tree, "SharePoint browser tree missing");
+        search_btn->click();
+        require(
+            tree->topLevelItemCount() == 1 &&
+                tree->topLevelItem(0)->childCount() == 3,
+            "SharePoint browser did not populate items for row selection"
+        );
+        tree->setCurrentItem(tree->topLevelItem(0)->child(2));
+        QMetaObject::invokeMethod(dialog, "accept", Qt::QueuedConnection);
+    });
+    drive_ids->setPlainText("me");
+    sp_dialogs.start(1);
+    browse_sp->click();
+    sp_dialogs.stop();
+    require(
+        sp_row_selected && drive_ids->toPlainText() == "me\ndrv-eng-specs",
+        "SharePoint browser did not fall back to selected tree row Drive ID"
+    );
 }
 
 void test_configuration_fingerprint() {

@@ -49,6 +49,54 @@ int test_remote_content_tag_strategy() {
         return fail("unchanged cTag did not reuse local file content");
     }
 
+    // Verify that SharePoint/Business server-enriched files (where remote size
+    // and remote hash differ from the local upload baseline) preserve their
+    // local size and local content hash when reused via unchanged cTag.
+    const auto enriched_root = temporary.path() / "ctag-enriched-reused";
+    std::filesystem::create_directories(enriched_root);
+    {
+        std::ofstream output{enriched_root / "report.docx"};
+        output << "data";
+    }
+    auto enriched_previous =
+        tracked_item(enriched_root, "enriched-doc", "report.docx");
+    enriched_previous.etag = "old-etag";
+    enriched_previous.ctag = "content-version";
+    enriched_previous.size = 512;
+    enriched_previous.local_size = 4;
+    const auto local_hash = enriched_previous.content_hash;
+    auto enriched_change = file("enriched-doc", "report.docx", 512);
+    enriched_change.etag = "new-etag";
+    enriched_change.ctag = "content-version";
+    enriched_change.content_hash = onedrive::util::FileHash{
+        .algorithm = onedrive::util::FileHashAlgorithm::quick_xor,
+        .value = "enriched-server-hash",
+    };
+    FakeGraphClient enriched_graph;
+    enriched_graph.changes = {enriched_change};
+    FakeItemStore enriched_items;
+    enriched_items.saved_delta_link = "saved";
+    enriched_items.items.emplace("enriched-doc", enriched_previous);
+    FakeMetrics enriched_metrics;
+    if (onedrive::sync::SyncEngine{
+            config_for(enriched_root, false),
+            enriched_graph,
+            enriched_items,
+            enriched_metrics,
+            &default_console
+        }
+                .synchronize() != exit_code::success ||
+        enriched_graph.download_count != 0 ||
+        enriched_items.applied_delta.upserts.size() != 1 ||
+        enriched_items.applied_delta.upserts[0].size != 512 ||
+        enriched_items.applied_delta.upserts[0].local_size != 4 ||
+        enriched_items.applied_delta.upserts[0].content_hash != local_hash) {
+        return fail(
+            "enriched SharePoint file reuse overwrote local baseline size or "
+            "hash"
+        );
+    }
+
     const auto changed_root = temporary.path() / "ctag-changed";
     std::filesystem::create_directories(changed_root);
     {

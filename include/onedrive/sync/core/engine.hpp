@@ -108,6 +108,8 @@ public:
     [[nodiscard]] int synchronize(const std::stop_token& stop_token = {});
 
 private:
+    struct Pipeline;
+
     config::Config config_;
     graph::GraphClient graph_;
     storage::ItemStore items_;

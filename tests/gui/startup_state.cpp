@@ -73,11 +73,15 @@ void check_window(
     const auto* logs = window.findChild<QPlainTextEdit*>("logMessages");
     const auto* drive_type = window.findChild<QLabel*>("driveType");
     require(sign_in && status && login_status, "startup controls are missing");
-    require(drive_type &&
-                drive_type->text() ==
-                    (state.drive_type == "business" ? "OneDrive for Business"
-                                                    : "Unknown drive type"),
-            "saved Drive type was guessed or not displayed");
+    const QString expected_english_drive_type =
+        state.drive_type == "personal"          ? "OneDrive Personal"
+        : state.drive_type == "business"        ? "OneDrive for Business"
+        : state.drive_type == "documentLibrary" ? "SharePoint document library"
+                                                : "Unknown drive type";
+    require(
+        drive_type && drive_type->text() == expected_english_drive_type,
+        "saved Drive type was guessed or not displayed"
+    );
     require(
         logs &&
             logs->toPlainText().contains(
@@ -140,10 +144,15 @@ void check_window(
     const auto english = status->text();
     localization.set_language(gui::Language::simplified_chinese);
     QCoreApplication::processEvents();
-    require(drive_type->text() ==
-                (state.drive_type == "business" ? "OneDrive 商业版"
-                                                : "未知云盘类型"),
-            "Drive type did not retranslate");
+    const QString expected_chinese_drive_type =
+        state.drive_type == "personal"          ? "OneDrive 个人版"
+        : state.drive_type == "business"        ? "OneDrive 商业版"
+        : state.drive_type == "documentLibrary" ? "SharePoint 文档库"
+                                                : "未知云盘类型";
+    require(
+        drive_type->text() == expected_chinese_drive_type,
+        "Drive type did not retranslate"
+    );
     require(window.findChild<QPushButton*>("reloadSettingsButton")->text() ==
                 "重新加载配置",
             "recovery control did not retranslate");
@@ -240,6 +249,11 @@ void test_account_startup(StartupBrowserCapture& browser) {
     require(state.account_status == gui::AccountStatus::credentials_available,
             "saved credentials were not detected");
     check_window(state, false, browser);
+    for (const auto* kind : {"personal", "documentLibrary"}) {
+        auto kind_state = state;
+        kind_state.drive_type = kind;
+        check_window(kind_state, false, browser);
+    }
     const auto token = paths.token_directory / "refresh_token";
     std::filesystem::remove(token);
     state = gui::load_app_state_view_model(file);

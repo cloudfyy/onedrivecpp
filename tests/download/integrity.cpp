@@ -132,6 +132,45 @@ int test_integrity_verification() {
             .quick_xor = {},
         }
     );
+
+    if (!detail::content_hash_matches(
+            {
+                .algorithm = onedrive::util::FileHashAlgorithm::sha256,
+                .value = "3A6EB0790F39AC87C94F3856B2DD2C5D110E6811602261A9A923D"
+                         "3BB23ADC8B7",
+            },
+            sha256
+        ) ||
+        detail::content_hash_matches(
+            {
+                .algorithm = onedrive::util::FileHashAlgorithm::sha256,
+                .value = std::string(64, '0'),
+            },
+            sha256
+        ) ||
+        !detail::content_hash_matches(
+            {
+                .algorithm = onedrive::util::FileHashAlgorithm::quick_xor,
+                .value = "ZAgDHcIAAAAAAAAABAAAAAAAAAA=",
+            },
+            "ZAgDHcIAAAAAAAAABAAAAAAAAAA="
+        ) ||
+        detail::content_hash_matches(
+            {
+                .algorithm = onedrive::util::FileHashAlgorithm::quick_xor,
+                .value = "zAgDHcIAAAAAAAAABAAAAAAAAAA=",
+            },
+            "ZAgDHcIAAAAAAAAABAAAAAAAAAA="
+        ) ||
+        !detail::content_hash_matches(
+            {
+                .algorithm = onedrive::util::FileHashAlgorithm::sha1,
+                .value = "A17C9AAA61E80A1BF71D0D850AF4E5BAA9800BBD",
+            },
+            "a17c9aaa61e80a1bf71d0d850af4e5baa9800bbd"
+        )) {
+        return fail("content_hash_matches did not enforce algorithm rules");
+    }
     return EXIT_SUCCESS;
 }
 
@@ -270,6 +309,40 @@ int test_sha1_hashes(const std::filesystem::path& root) {
         static_cast<void>(detail::sha1_hash(root / "missing-sha1.bin"));
         return fail("SHA-1 hashing accepted a missing file");
     } catch (const std::runtime_error&) {
+    }
+
+    const auto match_path = root / "match-check.bin";
+    write_file(match_path, "data");
+    if (!detail::file_matches_content_hash(
+            match_path,
+            onedrive::util::FileHash{
+                .algorithm = onedrive::util::FileHashAlgorithm::sha256,
+                .value = "3A6EB0790F39AC87C94F3856B2DD2C5D110E6811602261A9A923D"
+                         "3BB23ADC8B7",
+            }
+        ) ||
+        !detail::file_matches_content_hash(
+            match_path,
+            onedrive::util::FileHash{
+                .algorithm = onedrive::util::FileHashAlgorithm::quick_xor,
+                .value = "ZAgDHcIAAAAAAAAABAAAAAAAAAA=",
+            }
+        ) ||
+        !detail::file_matches_content_hash(
+            match_path,
+            onedrive::util::FileHash{
+                .algorithm = onedrive::util::FileHashAlgorithm::sha1,
+                .value = "A17C9AAA61E80A1BF71D0D850AF4E5BAA9800BBD",
+            }
+        ) ||
+        detail::file_matches_content_hash(
+            match_path,
+            onedrive::util::FileHash{
+                .algorithm = onedrive::util::FileHashAlgorithm::quick_xor,
+                .value = "AAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+            }
+        )) {
+        return fail("file_matches_content_hash did not validate file hashes");
     }
     return EXIT_SUCCESS;
 }

@@ -107,67 +107,148 @@ void discard_orphaned_partial_files(
     }
 }
 
+void report_delta_summary(
+    const graph::DeltaResult& delta,
+    std::size_t pages,
+    std::size_t scanned_items,
+    const events::Observer& observer
+) {
+    events::DeltaSummary summary{
+        .pages = pages,
+        .scanned_items = scanned_items,
+        .unique_changes = delta.changes.size(),
+    };
+    for (const auto& change : delta.changes) {
+        if (change.deleted) {
+            ++summary.deletions;
+        } else if (change.directory) {
+            ++summary.directories;
+        } else {
+            ++summary.files;
+        }
+    }
+    observer.delta_summary(summary);
+}
+
+void log_sync_filter_configuration(
+    const config::Config& config, const detail::SyncList& sync_filter
+) {
+    if (config.sync_list) {
+        spdlog::info(
+            "Loaded {} selective synchronization rules from '{}' "
+            "(root files: {})",
+            sync_filter.rule_count(),
+            config.sync_list->string(),
+            config.sync_root_files ? "included" : "rule-selected"
+        );
+    }
+    spdlog::info(
+        "Synchronization filters: .nosync {}, dotfiles {}, maximum file "
+        "size {}",
+        config.nosync_enabled ? "enabled" : "disabled",
+        config.dotfiles == config::DotfilePolicy::exclude ? "excluded"
+                                                          : "included",
+        config.maximum_file_size_bytes == 0
+            ? std::string{"unlimited"}
+            : std::to_string(config.maximum_file_size_bytes) + " bytes"
+    );
+}
+
 } // namespace
 
-int SyncEngine::synchronize(const std::stop_token& stop_token) {
+// Synchronize pipeline breaking the end-to-end synchronization lifecycle into
+// five explicit stages:
+//   1. prepare_context()      - Mount validation, journal recovery, filter &
+//                               cursor/cache state resolution
+//   2. fetch_remote_delta()   - Incremental/full Graph delta fetch, cursor
+//                               fallback, and retained delta hierarchy merge
+//   3. build_sync_plan()      - Descendant expansion, blocked retries,
+//                               selective filter & upload suppression, and
+//                               SyncPlan construction
+//   4. execute_or_preview()   - Preview-only upload planning or full local
+//                               apply + remote upload orchestration
+//   5. finalize_run()         - Metrics, completion reporting, and session
+//                               PreviewCache snapshot persistence
+struct SyncEngine::Pipeline {
+    SyncEngine& engine;
+    const events::Observer& observer;
+    SyncCapabilities capabilities;
+    const std::stop_token& stop_token;
+    std::chrono::steady_clock::time_point started_at;
     std::optional<PreviewCache::Snapshot> previous_preview;
-    if (preview_cache_) {
-        previous_preview = std::move(preview_cache_->snapshot_);
-        preview_cache_->clear();
-    }
-    const auto started_at = std::chrono::steady_clock::now();
-    const auto record_result = [this,
-                                started_at](metrics::SyncRunOutcome outcome) {
-        metrics_.record_sync_run(
-            outcome, std::chrono::steady_clock::now() - started_at
-        );
-    };
-    const auto& observer = *observer_;
-    const auto capabilities = capabilities_for(
-        config_.sync_mode,
-        config_.delete_policy,
-        config_.dry_run ? ExecutionMode::preview : ExecutionMode::apply
-    );
 
-    try {
+    // Stage 1 output: prepared local filesystem & resolved cursor/cache state.
+    struct PreparedContext {
+        std::filesystem::path sync_root;
+        std::optional<PreviewCache::State> cache_state;
+        engine_detail::PreparedSyncFilesystem prepared;
+        detail::SyncList sync_filter;
+        std::string scope_fingerprint;
+        std::string sync_filter_fingerprint;
+        std::optional<std::string> previous_delta_link;
+        std::optional<std::string> previous_sync_filter_fingerprint;
+        std::optional<std::string> query_delta_link;
+        std::optional<graph::DeltaResult> retained_delta;
+        std::optional<storage::DeltaApplyMode> retained_mode;
+    };
+
+    // Stage 2 output: reconciled remote delta and sorted tracked item baseline.
+    struct RemoteDeltaBatch {
+        graph::DeltaResult delta;
+        storage::DeltaApplyMode apply_mode{storage::DeltaApplyMode::replace};
+        std::optional<graph::DeltaResult> preview_delta;
+        std::vector<storage::ItemState> tracked_items;
+    };
+
+    // Stage 3 output: executable downlink SyncPlan and orphaned partial files.
+    struct PlannedBatch {
+        detail::SyncPlan plan;
+        std::vector<storage::PartialDownload> orphaned_partials;
+    };
+
+    // Stage 1: Validate mount point, recover interrupted filesystem journals,
+    // and resolve whether preview cache or pending delta can be resumed.
+    [[nodiscard]] PreparedContext prepare_context() {
+        const auto& config = engine.config_;
+        auto& items = engine.items_;
+
         throw_if_cancelled(stop_token);
         onedrive::util::require_sync_mount(
-            config_.sync_data_directory, config_.sync_data_mount_point
+            config.sync_data_directory, config.sync_data_mount_point
         );
-        observer.sync_context(config_.sync_mode, capabilities.previews());
+        observer.sync_context(config.sync_mode, capabilities.previews());
         observer.sync_phase(events::SyncPhase::preparing);
+
         std::filesystem::path sync_root =
-            onedrive::util::normalized_absolute(config_.sync_data_directory);
+            onedrive::util::normalized_absolute(config.sync_data_directory);
         auto cache_state =
-            preview_cache_ && (capabilities.previews() || previous_preview)
-                ? PreviewCache::capture_state(items_, config_.drive_id)
+            engine.preview_cache_ &&
+                    (capabilities.previews() || previous_preview)
+                ? PreviewCache::capture_state(items, config.drive_id)
                 : std::nullopt;
         auto prepared = engine_detail::prepare_sync_filesystem(
-            config_,
+            config,
             sync_root,
             capabilities,
-            graph_,
-            items_,
+            engine.graph_,
+            items,
             observer,
             stop_token
         );
-        auto& safe_root = prepared.safe_root;
-        auto& metadata = prepared.metadata;
-        const auto recovered_uploads = prepared.recovered_uploads;
 
-        const auto sync_filter = detail::SyncList::configured({
-            .rules_path = config_.sync_list,
+        auto sync_filter = detail::SyncList::configured({
+            .rules_path = config.sync_list,
             .sync_root = sync_root,
-            .include_root_files = config_.sync_root_files,
-            .nosync_enabled = config_.nosync_enabled,
-            .dotfiles = config_.dotfiles,
-            .maximum_file_size_bytes = config_.maximum_file_size_bytes,
+            .include_root_files = config.sync_root_files,
+            .nosync_enabled = config.nosync_enabled,
+            .dotfiles = config.dotfiles,
+            .maximum_file_size_bytes = config.maximum_file_size_bytes,
         });
         const std::string sync_filter_fingerprint =
             engine_detail::sync_scope_fingerprint(sync_filter.fingerprint());
-        const auto previous_delta_link = items_.delta_link(config_.drive_id);
+        const auto previous_delta_link = items.delta_link(config.drive_id);
         const auto previous_sync_filter_fingerprint =
-            items_.sync_filter_fingerprint(config_.drive_id);
+            items.sync_filter_fingerprint(config.drive_id);
         const bool sync_filter_changed =
             previous_delta_link.has_value() &&
             previous_sync_filter_fingerprint.value_or("") !=
@@ -175,8 +256,11 @@ int SyncEngine::synchronize(const std::stop_token& stop_token) {
         auto query_delta_link = sync_filter_changed
                                     ? std::optional<std::string>{}
                                     : previous_delta_link;
-        const auto scope_fingerprint = PreviewCache::scope_fingerprint(config_);
-        auto pending_delta = items_.pending_delta(config_.drive_id);
+        const auto scope_fingerprint = PreviewCache::scope_fingerprint(config);
+
+        // Validate persisted pending_delta against current scope, filter, and
+        // applied cursor.
+        auto pending_delta = items.pending_delta(config.drive_id);
         if (pending_delta &&
             (pending_delta->scope_fingerprint != scope_fingerprint ||
              pending_delta->sync_filter_fingerprint !=
@@ -194,14 +278,17 @@ int SyncEngine::synchronize(const std::stop_token& stop_token) {
             );
             pending_delta.reset();
             if (!capabilities.previews()) {
-                items_.remove_pending_delta(config_.drive_id);
+                items.remove_pending_delta(config.drive_id);
             }
         }
+
+        // Validate in-memory preview cache against current scope, filter, and
+        // local database state snapshot.
         std::optional<graph::DeltaResult> retained_delta;
         std::optional<storage::DeltaApplyMode> retained_mode;
         if (previous_preview &&
             (!cache_state ||
-             previous_preview->scope != PreviewCache::scope(config_) ||
+             previous_preview->scope != PreviewCache::scope(config) ||
              previous_preview->filter != sync_filter_fingerprint ||
              previous_preview->state != *cache_state)) {
             previous_preview.reset();
@@ -212,6 +299,9 @@ int SyncEngine::synchronize(const std::stop_token& stop_token) {
                 "synchronization state; fetching remote changes again..."
             );
         }
+
+        // Prefer session preview cache; otherwise fall back to persisted
+        // pending_delta.
         if (previous_preview) {
             query_delta_link = previous_preview->delta.delta_link;
             retained_delta = std::move(previous_preview->delta);
@@ -242,32 +332,37 @@ int SyncEngine::synchronize(const std::stop_token& stop_token) {
                 "remote state..."
             );
         }
-        std::vector<std::string> snapshot_removals;
-        if (config_.sync_list) {
-            spdlog::info(
-                "Loaded {} selective synchronization rules from '{}' "
-                "(root files: {})",
-                sync_filter.rule_count(),
-                config_.sync_list->string(),
-                config_.sync_root_files ? "included" : "rule-selected"
-            );
-        }
-        spdlog::info(
-            "Synchronization filters: .nosync {}, dotfiles {}, maximum file "
-            "size {}",
-            config_.nosync_enabled ? "enabled" : "disabled",
-            config_.dotfiles == config::DotfilePolicy::exclude ? "excluded"
-                                                               : "included",
-            config_.maximum_file_size_bytes == 0
-                ? std::string{"unlimited"}
-                : std::to_string(config_.maximum_file_size_bytes) + " bytes"
-        );
+
+        log_sync_filter_configuration(config, sync_filter);
+        return {
+            .sync_root = std::move(sync_root),
+            .cache_state = std::move(cache_state),
+            .prepared = std::move(prepared),
+            .sync_filter = std::move(sync_filter),
+            .scope_fingerprint = std::move(scope_fingerprint),
+            .sync_filter_fingerprint = std::move(sync_filter_fingerprint),
+            .previous_delta_link = std::move(previous_delta_link),
+            .previous_sync_filter_fingerprint =
+                std::move(previous_sync_filter_fingerprint),
+            .query_delta_link = std::move(query_delta_link),
+            .retained_delta = std::move(retained_delta),
+            .retained_mode = retained_mode,
+        };
+    }
+
+    // Stage 2: Query Microsoft Graph delta, handle expired cursors, merge
+    // retained preview/pending delta changes (or fall back to full scan if
+    // directory hierarchy changed), and persist pending_delta for crash safety.
+    [[nodiscard]] RemoteDeltaBatch fetch_remote_delta(PreparedContext& ctx) {
+        const auto& config = engine.config_;
+        auto& items = engine.items_;
+
         spdlog::debug(
             "Preparing Microsoft Graph delta query for drive '{}': {} tracked "
             "items, saved cursor {}",
-            config_.drive_id,
-            items_.size(),
-            query_delta_link ? "present" : "absent"
+            config.drive_id,
+            items.size(),
+            ctx.query_delta_link ? "present" : "absent"
         );
         observer.message(
             events::MessageKind::information,
@@ -275,38 +370,41 @@ int SyncEngine::synchronize(const std::stop_token& stop_token) {
             "Fetching Microsoft Graph changes..."
         );
         throw_if_cancelled(stop_token);
-        auto apply_mode = query_delta_link.has_value()
+
+        auto apply_mode = ctx.query_delta_link.has_value()
                               ? storage::DeltaApplyMode::merge
                               : storage::DeltaApplyMode::replace;
-        if (retained_mode) {
-            apply_mode = *retained_mode;
+        if (ctx.retained_mode) {
+            apply_mode = *ctx.retained_mode;
         }
+
         graph::DeltaResult delta;
         std::size_t delta_pages = 0;
         std::size_t delta_scanned_items = 0;
         observer.sync_phase(events::SyncPhase::scanning);
-        const auto delta_progress =
-            [&observer, &delta_pages, &delta_scanned_items](
-                std::size_t pages, std::size_t items, util::ProgressState state
-            ) {
-                delta_pages = pages;
-                delta_scanned_items = items;
-                observer.delta_progress(pages, items, state);
-            };
+        const auto delta_progress = [this, &delta_pages, &delta_scanned_items](
+                                        std::size_t pages,
+                                        std::size_t scanned,
+                                        util::ProgressState state
+                                    ) {
+            delta_pages = pages;
+            delta_scanned_items = scanned;
+            observer.delta_progress(pages, scanned, state);
+        };
         const auto known_directories =
-            blocked_ancestor_context(config_.drive_id, items_);
+            blocked_ancestor_context(config.drive_id, items);
         try {
-            delta = graph_.list_delta(
-                query_delta_link,
+            delta = engine.graph_.list_delta(
+                ctx.query_delta_link,
                 delta_progress,
                 stop_token,
-                query_delta_link
+                ctx.query_delta_link
                     ? std::span<const graph::RemoteItem>{known_directories}
                     : std::span<const graph::RemoteItem>{}
             );
         } catch (const graph::DeltaCursorInvalidError& error) {
             previous_preview.reset();
-            retained_delta.reset();
+            ctx.retained_delta.reset();
             spdlog::warn(
                 "{}; retrying with a full Microsoft Graph delta query",
                 error.what()
@@ -317,15 +415,22 @@ int SyncEngine::synchronize(const std::stop_token& stop_token) {
                 "The saved Microsoft Graph cursor is no longer valid; "
                 "fetching the full remote state..."
             );
-            delta = graph_.list_delta(std::nullopt, delta_progress, stop_token);
+            delta = engine.graph_.list_delta(
+                std::nullopt, delta_progress, stop_token
+            );
             apply_mode = storage::DeltaApplyMode::replace;
         }
+
         throw_if_cancelled(stop_token);
-        auto tracked_items = items_.drive_items(config_.drive_id);
+        auto tracked_items = items.drive_items(config.drive_id);
         std::ranges::sort(tracked_items, {}, &storage::ItemState::remote_id);
-        if (retained_delta) {
+
+        // Merge incremental tail changes onto retained preview/pending delta,
+        // or re-fetch from scratch if a folder rename/deletion invalidates
+        // cached descendant paths.
+        if (ctx.retained_delta) {
             graph::client_detail::DeltaChanges changes{
-                std::move(retained_delta->changes)
+                std::move(ctx.retained_delta->changes)
             };
             const bool hierarchy_changed = std::ranges::any_of(
                 delta.changes, [&](const graph::RemoteItem& change) {
@@ -366,8 +471,9 @@ int SyncEngine::synchronize(const std::stop_token& stop_token) {
                     "Remote directory changes or unidentified deletions may "
                     "affect saved paths; fetching the full remote state..."
                 );
-                delta =
-                    graph_.list_delta(std::nullopt, delta_progress, stop_token);
+                delta = engine.graph_.list_delta(
+                    std::nullopt, delta_progress, stop_token
+                );
                 apply_mode = storage::DeltaApplyMode::replace;
             } else {
                 for (auto& change : delta.changes) {
@@ -376,47 +482,53 @@ int SyncEngine::synchronize(const std::stop_token& stop_token) {
                 delta.changes = std::move(changes).release();
             }
         }
+
         throw_if_cancelled(stop_token);
         std::optional<graph::DeltaResult> preview_delta;
-        if (capabilities.previews() && cache_state) {
+        if (capabilities.previews() && ctx.cache_state) {
             preview_delta = delta;
         }
         if (!capabilities.previews()) {
-            items_.save_pending_delta({
-                .drive_id = config_.drive_id,
-                .scope_fingerprint = scope_fingerprint,
-                .sync_filter_fingerprint = sync_filter_fingerprint,
-                .applied_delta_link = previous_delta_link,
-                .applied_filter_fingerprint = previous_sync_filter_fingerprint,
+            items.save_pending_delta({
+                .drive_id = config.drive_id,
+                .scope_fingerprint = ctx.scope_fingerprint,
+                .sync_filter_fingerprint = ctx.sync_filter_fingerprint,
+                .applied_delta_link = ctx.previous_delta_link,
+                .applied_filter_fingerprint =
+                    ctx.previous_sync_filter_fingerprint,
                 .delta = delta,
                 .apply_mode = apply_mode,
             });
         }
-        events::DeltaSummary delta_summary{
-            .pages = delta_pages,
-            .scanned_items = delta_scanned_items,
-            .unique_changes = delta.changes.size(),
+        report_delta_summary(delta, delta_pages, delta_scanned_items, observer);
+        return {
+            .delta = std::move(delta),
+            .apply_mode = apply_mode,
+            .preview_delta = std::move(preview_delta),
+            .tracked_items = std::move(tracked_items),
         };
-        for (const auto& change : delta.changes) {
-            if (change.deleted) {
-                ++delta_summary.deletions;
-            } else if (change.directory) {
-                ++delta_summary.directories;
-            } else {
-                ++delta_summary.files;
-            }
-        }
-        observer.delta_summary(delta_summary);
-        std::vector<storage::UploadSuppression> upload_suppressions;
+    }
+
+    // Stage 3: Expand directory moves/deletions to tracked descendants, merge
+    // blocked retry items, apply selective sync filtering, and build SyncPlan.
+    [[nodiscard]] PlannedBatch
+    build_sync_plan(PreparedContext& ctx, RemoteDeltaBatch& remote_batch) {
+        const auto& config = engine.config_;
+        auto& items = engine.items_;
+        auto& delta = remote_batch.delta;
+        const auto apply_mode = remote_batch.apply_mode;
+        const auto& tracked_items = remote_batch.tracked_items;
+
         if (apply_mode == storage::DeltaApplyMode::replace) {
             engine_detail::add_full_refresh_deletions(delta, tracked_items);
         }
         engine_detail::add_deleted_descendants(delta, tracked_items);
         engine_detail::add_moved_descendants(delta, tracked_items);
         auto orphaned_partials = orphaned_partial_downloads(
-            delta, apply_mode, items_.partial_downloads(config_.drive_id)
+            delta, apply_mode, items.partial_downloads(config.drive_id)
         );
-        const auto previously_blocked = items_.blocked_items(config_.drive_id);
+
+        const auto previously_blocked = items.blocked_items(config.drive_id);
         engine_detail::preserve_blocked_deletions(delta, previously_blocked);
         if (!previously_blocked.empty()) {
             engine_detail::add_blocked_retries(
@@ -429,6 +541,11 @@ int SyncEngine::synchronize(const std::stop_token& stop_token) {
                 previously_blocked.size()
             );
         }
+
+        // Apply selective sync rules and record upload suppressions for locally
+        // retained files that were excluded by filter changes.
+        std::vector<std::string> snapshot_removals;
+        std::vector<storage::UploadSuppression> upload_suppressions;
         {
             std::unordered_set<
                 std::string,
@@ -446,7 +563,7 @@ int SyncEngine::synchronize(const std::stop_token& stop_token) {
             }
             auto filtered = detail::filter_delta(
                 std::move(delta),
-                sync_filter,
+                ctx.sync_filter,
                 [&](std::string_view remote_id) {
                     return tracked_ids.contains(remote_id);
                 },
@@ -457,7 +574,7 @@ int SyncEngine::synchronize(const std::stop_token& stop_token) {
                 filtered.excluded
             );
             snapshot_removals = std::move(filtered.snapshot_removals);
-            if (safe_root) {
+            if (ctx.prepared.safe_root) {
                 for (const auto& remote_id : filtered.retained_remote_ids) {
                     const auto previous = std::ranges::find(
                         tracked_items, remote_id, &storage::ItemState::remote_id
@@ -483,11 +600,11 @@ int SyncEngine::synchronize(const std::stop_token& stop_token) {
                     if (!std::filesystem::is_regular_file(status)) {
                         continue;
                     }
-                    const auto identity = safe_root->identity(
+                    const auto identity = ctx.prepared.safe_root->identity(
                         previous->local_path, detail::FilesystemItemKind::file
                     );
                     upload_suppressions.push_back({
-                        .drive_id = config_.drive_id,
+                        .drive_id = config.drive_id,
                         .remote_id = previous->remote_id,
                         .local_path = previous->local_path,
                         .source_device = identity.device,
@@ -497,24 +614,40 @@ int SyncEngine::synchronize(const std::stop_token& stop_token) {
             }
             delta = std::move(filtered.delta);
         }
+
         auto plan = detail::SyncPlan::build(
             std::move(delta),
-            config_.drive_id,
-            sync_root,
+            config.drive_id,
+            ctx.sync_root,
             apply_mode,
-            sync_filter_fingerprint,
+            ctx.sync_filter_fingerprint,
             std::move(snapshot_removals),
             tracked_items,
             std::move(upload_suppressions),
-            &items_
+            &items
         );
         throw_if_cancelled(stop_token);
         for (const auto& partial : orphaned_partials) {
             plan.remove_partial_download(partial.item.remote_id);
         }
         engine_detail::report_plan(
-            plan, config_.drive_id, observer, capabilities
+            plan, config.drive_id, observer, capabilities
         );
+        return {
+            .plan = std::move(plan),
+            .orphaned_partials = std::move(orphaned_partials),
+        };
+    }
+
+    // Stage 4: Dispatch between non-destructive preview mode and real execution
+    // (downlink apply -> SQLite cursor commit -> uplink scan & upload).
+    [[nodiscard]] std::size_t
+    execute_or_preview(PreparedContext& ctx, PlannedBatch& planned) {
+        const auto& config = engine.config_;
+        auto& items = engine.items_;
+        auto& safe_root = ctx.prepared.safe_root;
+        auto& metadata = ctx.prepared.metadata;
+        auto& plan = planned.plan;
 
         std::size_t blocked_count = plan.blocked_count();
         detail::UploadSummary upload_summary;
@@ -522,130 +655,141 @@ int SyncEngine::synchronize(const std::stop_token& stop_token) {
             if (capabilities.plans_uploads() && safe_root && metadata) {
                 upload_summary = detail::upload_local_changes(
                     *safe_root,
-                    config_.drive_id,
-                    graph_,
-                    items_,
+                    config.drive_id,
+                    engine.graph_,
+                    items,
                     *metadata,
-                    &sync_filter,
+                    &ctx.sync_filter,
                     observer,
                     capabilities,
                     {
                         .maximum_affected_items =
-                            config_.maximum_remote_deletions,
-                        .force = config_.force_large_delete,
+                            config.maximum_remote_deletions,
+                        .force = config.force_large_delete,
                     },
-                    config_.upload_concurrency,
+                    config.upload_concurrency,
                     stop_token
                 );
                 blocked_count += upload_summary.blocked;
                 engine_detail::report_upload_plan(
-                    config_, upload_summary, observer
+                    config, upload_summary, observer
                 );
             }
             spdlog::debug(
                 "Dry run preserved files, snapshots, and cursor; saved blocked "
                 "diagnostics for drive '{}'",
-                config_.drive_id
+                config.drive_id
             );
-        } else {
-            if (!safe_root || !metadata) {
-                throw std::logic_error{
-                    "Synchronization filesystem was not prepared"
-                };
-            }
-            auto& active_safe_root = *safe_root;
-            auto& active_metadata = *metadata;
-            observer.message(
-                events::MessageKind::information,
-                "execution_started",
-                "Executing synchronization plan..."
-            );
-            observer.sync_phase(events::SyncPhase::applying);
-            const auto summary = engine_detail::execute_plan(
-                plan,
+            return blocked_count;
+        }
+
+        if (!safe_root || !metadata) {
+            throw std::logic_error{
+                "Synchronization filesystem was not prepared"
+            };
+        }
+        auto& active_safe_root = *safe_root;
+        auto& active_metadata = *metadata;
+        observer.message(
+            events::MessageKind::information,
+            "execution_started",
+            "Executing synchronization plan..."
+        );
+        observer.sync_phase(events::SyncPhase::applying);
+        const auto summary = engine_detail::execute_plan(
+            plan,
+            active_safe_root,
+            config.drive_id,
+            engine.graph_,
+            items,
+            active_metadata,
+            observer,
+            capabilities,
+            config.download_concurrency,
+            config.transfer_order,
+            config.local_conflict,
+            config.sync_permissions,
+            stop_token
+        );
+        throw_if_cancelled(stop_token);
+        observer.sync_phase(events::SyncPhase::applying);
+        spdlog::debug(
+            "Persisting remote delta for drive '{}'", config.drive_id
+        );
+        blocked_count = plan.blocked_count();
+        const auto unsupported_count = plan.unsupported_count();
+        throw_if_cancelled(stop_token);
+        items.apply_delta(plan.release_state_delta());
+        discard_orphaned_partial_files(planned.orphaned_partials);
+        if (capabilities.uploads()) {
+            upload_summary = detail::upload_local_changes(
                 active_safe_root,
-                config_.drive_id,
-                graph_,
-                items_,
+                config.drive_id,
+                engine.graph_,
+                items,
                 active_metadata,
+                &ctx.sync_filter,
                 observer,
                 capabilities,
-                config_.download_concurrency,
-                config_.transfer_order,
-                config_.local_conflict,
-                config_.sync_permissions,
+                {
+                    .maximum_affected_items = config.maximum_remote_deletions,
+                    .force = config.force_large_delete,
+                },
+                config.upload_concurrency,
                 stop_token
             );
-            throw_if_cancelled(stop_token);
-            observer.sync_phase(events::SyncPhase::applying);
-            spdlog::debug(
-                "Persisting remote delta for drive '{}'", config_.drive_id
-            );
-            blocked_count = plan.blocked_count();
-            const auto unsupported_count = plan.unsupported_count();
-            throw_if_cancelled(stop_token);
-            items_.apply_delta(plan.release_state_delta());
-            discard_orphaned_partial_files(orphaned_partials);
-            if (capabilities.uploads()) {
-                upload_summary = detail::upload_local_changes(
-                    active_safe_root,
-                    config_.drive_id,
-                    graph_,
-                    items_,
-                    active_metadata,
-                    &sync_filter,
-                    observer,
-                    capabilities,
-                    {
-                        .maximum_affected_items =
-                            config_.maximum_remote_deletions,
-                        .force = config_.force_large_delete,
-                    },
-                    config_.upload_concurrency,
-                    stop_token
-                );
-                blocked_count += upload_summary.blocked;
-            }
-            observer.sync_phase(events::SyncPhase::applying);
-            upload_summary.uploaded += recovered_uploads;
-            engine_detail::report_execution_summary(
-                summary,
-                upload_summary,
-                blocked_count,
-                unsupported_count,
-                observer
-            );
+            blocked_count += upload_summary.blocked;
         }
+        observer.sync_phase(events::SyncPhase::applying);
+        upload_summary.uploaded += ctx.prepared.recovered_uploads;
+        engine_detail::report_execution_summary(
+            summary, upload_summary, blocked_count, unsupported_count, observer
+        );
+        return blocked_count;
+    }
+
+    // Stage 5: Record metrics, emit completion events, and store the session
+    // PreviewCache snapshot if the local baseline remained unchanged.
+    [[nodiscard]] int finalize_run(
+        PreparedContext& ctx,
+        RemoteDeltaBatch& remote_batch,
+        std::size_t blocked_count
+    ) {
+        const auto& config = engine.config_;
+        auto& items = engine.items_;
 
         throw_if_cancelled(stop_token);
         if (capabilities.previews()) {
             observer.sync_summary({.blocked = blocked_count});
         }
-        if (capabilities.previews() && cache_state) {
-            cache_state->blocked = items_.blocked_items(config_.drive_id);
+        if (capabilities.previews() && ctx.cache_state) {
+            ctx.cache_state->blocked = items.blocked_items(config.drive_id);
             std::ranges::sort(
-                cache_state->blocked, {}, &storage::BlockedItem::remote_id
+                ctx.cache_state->blocked, {}, &storage::BlockedItem::remote_id
             );
         }
-        record_result(metrics::SyncRunOutcome::succeeded);
+        engine.metrics_.record_sync_run(
+            metrics::SyncRunOutcome::succeeded,
+            std::chrono::steady_clock::now() - started_at
+        );
         engine_detail::report_completion(
             blocked_count, capabilities.previews(), started_at, observer
         );
-        if (preview_cache_ && preview_delta && cache_state &&
-            !stop_token.stop_requested() &&
-            !preview_delta->delta_link.empty() &&
-            PreviewCache::capture_state(items_, config_.drive_id) ==
-                cache_state) {
-            preview_cache_->snapshot_.emplace(
+        if (engine.preview_cache_ && remote_batch.preview_delta &&
+            ctx.cache_state && !stop_token.stop_requested() &&
+            !remote_batch.preview_delta->delta_link.empty() &&
+            PreviewCache::capture_state(items, config.drive_id) ==
+                ctx.cache_state) {
+            engine.preview_cache_->snapshot_.emplace(
                 PreviewCache::Snapshot{
-                    .scope = PreviewCache::scope(config_),
-                    .filter = sync_filter_fingerprint,
-                    .state = *cache_state,
-                    .delta = std::move(*preview_delta),
-                    .apply_mode = apply_mode,
+                    .scope = PreviewCache::scope(config),
+                    .filter = ctx.sync_filter_fingerprint,
+                    .state = *ctx.cache_state,
+                    .delta = std::move(*remote_batch.preview_delta),
+                    .apply_mode = remote_batch.apply_mode,
                 }
             );
-        } else if (preview_cache_ && capabilities.previews()) {
+        } else if (engine.preview_cache_ && capabilities.previews()) {
             observer.message(
                 events::MessageKind::information,
                 "preview_cache_unavailable",
@@ -655,6 +799,44 @@ int SyncEngine::synchronize(const std::stop_token& stop_token) {
             );
         }
         return blocked_count == 0 ? exit_code::success : exit_code::blocked;
+    }
+};
+
+int SyncEngine::synchronize(const std::stop_token& stop_token) {
+    std::optional<PreviewCache::Snapshot> previous_preview;
+    if (preview_cache_) {
+        previous_preview = std::move(preview_cache_->snapshot_);
+        preview_cache_->clear();
+    }
+    const auto started_at = std::chrono::steady_clock::now();
+    const auto record_result = [this,
+                                started_at](metrics::SyncRunOutcome outcome) {
+        metrics_.record_sync_run(
+            outcome, std::chrono::steady_clock::now() - started_at
+        );
+    };
+    const auto& observer = *observer_;
+    const auto capabilities = capabilities_for(
+        config_.sync_mode,
+        config_.delete_policy,
+        config_.dry_run ? ExecutionMode::preview : ExecutionMode::apply
+    );
+
+    try {
+        Pipeline pipeline{
+            .engine = *this,
+            .observer = observer,
+            .capabilities = capabilities,
+            .stop_token = stop_token,
+            .started_at = started_at,
+            .previous_preview = std::move(previous_preview),
+        };
+        auto context = pipeline.prepare_context();
+        auto remote_batch = pipeline.fetch_remote_delta(context);
+        auto planned = pipeline.build_sync_plan(context, remote_batch);
+        const auto blocked_count =
+            pipeline.execute_or_preview(context, planned);
+        return pipeline.finalize_run(context, remote_batch, blocked_count);
     } catch (const SyncCancelledError&) {
         record_result(metrics::SyncRunOutcome::cancelled);
         observer.message(
