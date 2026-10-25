@@ -20,7 +20,7 @@ int main(int argc, char* argv[]) {
     QApplication application{argc, argv};
     QCoreApplication::setApplicationName("onedrive-cpp-gui");
     QCoreApplication::setApplicationVersion(onedrive::build_info::version);
-    QApplication::setWindowIcon(QIcon::fromTheme("onedrive-cpp"));
+    QApplication::setWindowIcon(onedrive::gui::application_icon());
     QCommandLineParser parser;
     onedrive::gui::Language language{onedrive::gui::Language::automatic};
     try {

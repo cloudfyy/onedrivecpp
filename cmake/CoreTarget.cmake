@@ -280,6 +280,37 @@ if(ONEDRIVE_BUILD_GUI)
         BASE "${CMAKE_CURRENT_BINARY_DIR}"
         FILES ${ONEDRIVE_QM_FILES} "${ONEDRIVE_QTBASE_ZH_CN}"
     )
+    set(ONEDRIVE_ICON_RESOURCES
+        "${PROJECT_SOURCE_DIR}/assets/onedrive-cpp-logo.svg"
+        "${PROJECT_SOURCE_DIR}/assets/onedrive-cpp-logo-16.png"
+        "${PROJECT_SOURCE_DIR}/assets/onedrive-cpp-logo-24.png"
+        "${PROJECT_SOURCE_DIR}/assets/onedrive-cpp-logo-32.png"
+        "${PROJECT_SOURCE_DIR}/assets/onedrive-cpp-logo-48.png"
+        "${PROJECT_SOURCE_DIR}/assets/onedrive-cpp-logo-64.png"
+        "${PROJECT_SOURCE_DIR}/assets/onedrive-cpp-logo-128.png"
+        "${PROJECT_SOURCE_DIR}/assets/onedrive-cpp-logo-256.png"
+        "${PROJECT_SOURCE_DIR}/assets/onedrive-cpp-logo.png"
+        "${PROJECT_SOURCE_DIR}/assets/onedrive-cpp-logo-1024.png"
+    )
+    set_source_files_properties(
+        "${PROJECT_SOURCE_DIR}/assets/onedrive-cpp-logo.svg"
+        PROPERTIES QT_RESOURCE_ALIAS onedrive-cpp.svg
+    )
+    foreach(ONEDRIVE_ICON_SIZE IN ITEMS 16 24 32 48 64 128 256 1024)
+        set_source_files_properties(
+            "${PROJECT_SOURCE_DIR}/assets/onedrive-cpp-logo-${ONEDRIVE_ICON_SIZE}.png"
+            PROPERTIES QT_RESOURCE_ALIAS "onedrive-cpp-${ONEDRIVE_ICON_SIZE}.png"
+        )
+    endforeach()
+    set_source_files_properties(
+        "${PROJECT_SOURCE_DIR}/assets/onedrive-cpp-logo.png"
+        PROPERTIES QT_RESOURCE_ALIAS onedrive-cpp-512.png
+    )
+    qt_add_resources(onedrive_gui_localization onedrive_icons
+        PREFIX "/icons"
+        BASE "${PROJECT_SOURCE_DIR}/assets"
+        FILES ${ONEDRIVE_ICON_RESOURCES}
+    )
 
     add_executable(
         onedrive-cpp-gui

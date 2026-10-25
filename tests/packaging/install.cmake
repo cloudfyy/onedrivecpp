@@ -39,7 +39,22 @@ foreach(PREFIX IN ITEMS /usr /usr/local "/opt/onedrive cpp%test$dollar")
         "${EXPECTED_BINDIR}/onedrive-cpp-gui"
         "${PREFIX}/share/applications/onedrive-cpp-gui.desktop"
         "${PREFIX}/share/icons/hicolor/scalable/apps/onedrive-cpp.svg"
+        "${PREFIX}/share/icons/hicolor/16x16/apps/onedrive-cpp.png"
+        "${PREFIX}/share/icons/hicolor/16x16@2/apps/onedrive-cpp.png"
+        "${PREFIX}/share/icons/hicolor/24x24/apps/onedrive-cpp.png"
+        "${PREFIX}/share/icons/hicolor/24x24@2/apps/onedrive-cpp.png"
+        "${PREFIX}/share/icons/hicolor/32x32/apps/onedrive-cpp.png"
+        "${PREFIX}/share/icons/hicolor/32x32@2/apps/onedrive-cpp.png"
+        "${PREFIX}/share/icons/hicolor/48x48/apps/onedrive-cpp.png"
+        "${PREFIX}/share/icons/hicolor/64x64/apps/onedrive-cpp.png"
+        "${PREFIX}/share/icons/hicolor/64x64@2/apps/onedrive-cpp.png"
+        "${PREFIX}/share/icons/hicolor/128x128/apps/onedrive-cpp.png"
+        "${PREFIX}/share/icons/hicolor/128x128@2/apps/onedrive-cpp.png"
+        "${PREFIX}/share/icons/hicolor/256x256/apps/onedrive-cpp.png"
+        "${PREFIX}/share/icons/hicolor/256x256@2/apps/onedrive-cpp.png"
         "${PREFIX}/share/icons/hicolor/512x512/apps/onedrive-cpp.png"
+        "${PREFIX}/share/icons/hicolor/512x512@2/apps/onedrive-cpp.png"
+        "${PREFIX}/share/icons/hicolor/1024x1024/apps/onedrive-cpp.png"
     )
         if(EXPECT_GUI AND NOT EXISTS "${STAGING_DIR}${GUI_FILE}")
             message(FATAL_ERROR "Missing installed GUI file: ${GUI_FILE}")

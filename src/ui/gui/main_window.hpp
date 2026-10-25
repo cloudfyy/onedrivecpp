@@ -32,6 +32,8 @@ namespace onedrive::gui {
 class Localization;
 class SettingsEditor;
 
+[[nodiscard]] QIcon application_icon();
+
 class MainWindow final : public QMainWindow {
     Q_OBJECT
 

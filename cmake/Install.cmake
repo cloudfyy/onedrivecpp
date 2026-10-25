@@ -10,10 +10,33 @@ if(ONEDRIVE_BUILD_GUI)
         DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
         RENAME onedrive-cpp.svg
     )
+    foreach(ONEDRIVE_ICON_SIZE IN ITEMS 16 24 32 48 64 128 256 1024)
+        install(FILES "assets/onedrive-cpp-logo-${ONEDRIVE_ICON_SIZE}.png"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${ONEDRIVE_ICON_SIZE}x${ONEDRIVE_ICON_SIZE}/apps"
+            RENAME onedrive-cpp.png
+        )
+    endforeach()
     install(FILES assets/onedrive-cpp-logo.png
         DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/512x512/apps
         RENAME onedrive-cpp.png
     )
+    foreach(ONEDRIVE_HIDPI_PAIR IN ITEMS
+        "16:assets/onedrive-cpp-logo-32.png"
+        "24:assets/onedrive-cpp-logo-48.png"
+        "32:assets/onedrive-cpp-logo-64.png"
+        "64:assets/onedrive-cpp-logo-128.png"
+        "128:assets/onedrive-cpp-logo-256.png"
+        "256:assets/onedrive-cpp-logo.png"
+        "512:assets/onedrive-cpp-logo-1024.png"
+    )
+        string(REPLACE ":" ";" ONEDRIVE_HIDPI_SPEC "${ONEDRIVE_HIDPI_PAIR}")
+        list(GET ONEDRIVE_HIDPI_SPEC 0 ONEDRIVE_HIDPI_BASE)
+        list(GET ONEDRIVE_HIDPI_SPEC 1 ONEDRIVE_HIDPI_SOURCE)
+        install(FILES "${ONEDRIVE_HIDPI_SOURCE}"
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/${ONEDRIVE_HIDPI_BASE}x${ONEDRIVE_HIDPI_BASE}@2/apps"
+            RENAME onedrive-cpp.png
+        )
+    endforeach()
 endif()
 install(FILES config/onedrive-cpp.toml
     DESTINATION ${ONEDRIVE_SYSTEM_CONFIG_DIR}
@@ -30,6 +53,7 @@ install(FILES LICENSE debian/copyright README.md README.zh-CN.md TERMS.md PRIVAC
 install(
     FILES
         assets/onedrive-cpp-logo.png
+        assets/onedrive-cpp-logo-1024.png
         assets/onedrive-cpp-logo.svg
     DESTINATION ${CMAKE_INSTALL_DOCDIR}/assets
 )

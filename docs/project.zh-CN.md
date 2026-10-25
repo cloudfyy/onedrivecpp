@@ -25,7 +25,8 @@ CMake 安装和 DEB 包均将 `LICENSE` 与机器可读的 `copyright` 文件安
 - [服务条款](../TERMS.md)
 - [隐私声明](../PRIVACY.md)
 - 项目 Logo：[SVG](../assets/onedrive-cpp-logo.svg) |
-  [512x512 PNG](../assets/onedrive-cpp-logo.png)
+  [512x512 PNG](../assets/onedrive-cpp-logo.png) |
+  [1024x1024 PNG](../assets/onedrive-cpp-logo-1024.png)
 
 这些法律文件是项目维护者拟定的草案，不构成法律建议。正式公开或商业发布前，
 应根据实际运营主体和适用司法管辖区进行审核。onedrive-cpp 是独立项目，与

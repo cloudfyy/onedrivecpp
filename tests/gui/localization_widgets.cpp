@@ -6,8 +6,18 @@ namespace onedrive::test::gui_localization {
 void test_states_and_messages(bool chinese) {
     require(
         QFile::exists(":/i18n/onedrive_zh_CN.qm") &&
-            QFile::exists(":/i18n/qtbase_zh_CN.qm"),
-        "translations were not embedded in the executable"
+            QFile::exists(":/i18n/qtbase_zh_CN.qm") &&
+            QFile::exists(":/icons/onedrive-cpp.svg") &&
+            QFile::exists(":/icons/onedrive-cpp-16.png") &&
+            QFile::exists(":/icons/onedrive-cpp-24.png") &&
+            QFile::exists(":/icons/onedrive-cpp-32.png") &&
+            QFile::exists(":/icons/onedrive-cpp-48.png") &&
+            QFile::exists(":/icons/onedrive-cpp-64.png") &&
+            QFile::exists(":/icons/onedrive-cpp-128.png") &&
+            QFile::exists(":/icons/onedrive-cpp-256.png") &&
+            QFile::exists(":/icons/onedrive-cpp-512.png") &&
+            QFile::exists(":/icons/onedrive-cpp-1024.png"),
+        "translations or icons were not embedded in the executable"
     );
     require(
         gui::account_status_text(gui::AccountStatus::no_account) ==
@@ -340,6 +350,15 @@ void test_about_button() {
         {},
         &localization
     };
+    const auto icon = window.windowIcon();
+    require(
+        !icon.isNull() &&
+            icon.availableSizes().contains(QSize{16, 16}) &&
+            icon.availableSizes().contains(QSize{512, 512}) &&
+            icon.availableSizes().contains(QSize{1024, 1024}) &&
+            icon.pixmap(QSize{1024, 1024}).size() == QSize{1024, 1024},
+        "MainWindow did not load its multi-resolution and HD application icon"
+    );
     for (const bool chinese : {false, true, false}) {
         localization.set_language(
             chinese ? gui::Language::simplified_chinese : gui::Language::english
@@ -357,7 +376,9 @@ void test_about_button() {
             auto* dialog =
                 qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
             if (dialog) {
-                valid = dialog->windowTitle() == expected(
+                valid = !dialog->windowIcon().isNull() &&
+                        !dialog->iconPixmap().isNull() &&
+                        dialog->windowTitle() == expected(
                                                      chinese,
                                                      "About OneDrive client",
                                                      "关于 OneDrive 客户端"

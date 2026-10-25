@@ -2,8 +2,47 @@
 #include "main_window.hpp"
 #include "onedrive/exit_code.hpp"
 #include "onedrive/util/byte_size.hpp"
+#include <QIcon>
 #include <QLabel>
 #include <QLocale>
+#include <QSize>
+#include <utility>
+
+namespace onedrive::gui {
+
+namespace {
+
+QIcon bundled_application_icon() {
+    QIcon icon;
+    for (const auto& [size, resource] : {
+             std::pair{16, ":/icons/onedrive-cpp-16.png"},
+             std::pair{24, ":/icons/onedrive-cpp-24.png"},
+             std::pair{32, ":/icons/onedrive-cpp-32.png"},
+             std::pair{48, ":/icons/onedrive-cpp-48.png"},
+             std::pair{64, ":/icons/onedrive-cpp-64.png"},
+             std::pair{128, ":/icons/onedrive-cpp-128.png"},
+             std::pair{256, ":/icons/onedrive-cpp-256.png"},
+             std::pair{512, ":/icons/onedrive-cpp-512.png"},
+             std::pair{1024, ":/icons/onedrive-cpp-1024.png"},
+         }) {
+        icon.addFile(QString::fromLatin1(resource), QSize{size, size});
+    }
+    return icon;
+}
+
+} // namespace
+
+QIcon application_icon() {
+    QIcon bundled = bundled_application_icon();
+    QIcon themed = QIcon::fromTheme("onedrive-cpp", bundled);
+    if (themed.isNull() ||
+        !themed.availableSizes().contains(QSize{1024, 1024})) {
+        return bundled;
+    }
+    return themed;
+}
+
+} // namespace onedrive::gui
 
 namespace onedrive::gui::window_detail {
 

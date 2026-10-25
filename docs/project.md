@@ -28,7 +28,8 @@ The reference project mentioned above is not the source of this C++ implementati
 - [Terms of Service](../TERMS.md)
 - [Privacy Statement](../PRIVACY.md)
 - Project logo: [SVG](../assets/onedrive-cpp-logo.svg) |
-  [512x512 PNG](../assets/onedrive-cpp-logo.png)
+  [512x512 PNG](../assets/onedrive-cpp-logo.png) |
+  [1024x1024 PNG](../assets/onedrive-cpp-logo-1024.png)
 
 The legal documents are project-maintainer drafts, not legal advice. Review
 them for the applicable organization and jurisdiction before a public or

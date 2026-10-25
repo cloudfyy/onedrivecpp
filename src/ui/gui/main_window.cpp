@@ -41,6 +41,7 @@ MainWindow::MainWindow(
       tabs_{new QTabWidget{this}},
       login_{std::move(authenticate)},
       synchronization_{std::move(synchronize), nullptr, std::move(monitor)} {
+    setWindowIcon(application_icon());
     setWindowTitle(tr("onedrive client"));
     resize(860, 520);
 
@@ -221,8 +222,14 @@ void MainWindow::retranslate_ui() {
 void MainWindow::show_about() {
     QMessageBox dialog{this};
     dialog.setObjectName("aboutDialog");
+    dialog.setWindowIcon(windowIcon());
     dialog.setWindowTitle(tr("About OneDrive client"));
-    dialog.setIcon(QMessageBox::Information);
+    const QPixmap about_pixmap = windowIcon().pixmap(QSize{64, 64});
+    if (!about_pixmap.isNull()) {
+        dialog.setIconPixmap(about_pixmap);
+    } else {
+        dialog.setIcon(QMessageBox::Information);
+    }
     dialog.setTextFormat(Qt::RichText);
     dialog.setText(
         tr("<b>OneDrive client</b><br>"
