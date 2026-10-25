@@ -58,20 +58,22 @@ SyncPlan SyncPlan::build(
         plan.delta_.changes, ancestor_context
     );
 
-    std::unordered_map<std::string, storage::BlockedItem> unknown_blocks;
+    std::vector<storage::BlockedItem> unknown_blocks;
     if (blocked_store) {
         for (auto blocked : blocked_store->blocked_items(drive_id)) {
             if (blocked_item_strategy(blocked.reason_code).traits().kind ==
                 BlockedPolicyKind::unknown) {
-                unknown_blocks.emplace(blocked.remote_id, std::move(blocked));
+                unknown_blocks.push_back(std::move(blocked));
             }
         }
     }
     for (std::size_t index = 0; index < plan.delta_.changes.size(); ++index) {
         const auto& item = plan.delta_.changes[index];
-        if (const auto previous = unknown_blocks.find(item.id);
+        if (const auto previous = std::ranges::find(
+                unknown_blocks, item.id, &storage::BlockedItem::remote_id
+            );
             previous != unknown_blocks.end()) {
-            plan.state_delta_.blocked_upserts.push_back(previous->second);
+            plan.state_delta_.blocked_upserts.push_back(*previous);
             continue;
         }
         if (!item.unsupported_format.empty()) {
@@ -140,10 +142,11 @@ SyncPlan SyncPlan::build(
             item_state_for(drive_id, item, std::move(local_path))
         );
     }
-    for (const auto& [id, blocked] : unknown_blocks) {
+    for (const auto& blocked : unknown_blocks) {
         if (std::ranges::none_of(
-                plan.state_delta_.blocked_upserts,
-                [&](const auto& item) { return item.remote_id == id; }
+                plan.state_delta_.blocked_upserts, [&](const auto& item) {
+                    return item.remote_id == blocked.remote_id;
+                }
             )) {
             plan.state_delta_.blocked_upserts.push_back(blocked);
         }

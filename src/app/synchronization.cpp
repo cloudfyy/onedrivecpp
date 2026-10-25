@@ -18,7 +18,7 @@
 namespace onedrive::app {
 
 int synchronize_account(
-    config::Config config,
+    const config::Config& config,
     const RuntimeFactory& runtime_factory,
     const events::Observer& observer,
     const std::stop_token& stop_token,

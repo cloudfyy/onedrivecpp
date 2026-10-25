@@ -16,6 +16,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cstdint>
+#include <deque>
 #include <limits>
 #include <poll.h>
 #include <pthread.h>
@@ -550,19 +551,18 @@ int Monitor::run_loop(
 
     struct NotificationRuntime {
         const NotificationCallbacks* callbacks;
-        std::unique_ptr<detail::SocketIoTransport> socket;
-        detail::NotificationState state;
+        detail::SocketIoTransport socket;
+        detail::NotificationState state{detail::NotificationDormantState{}};
+
+        explicit NotificationRuntime(const NotificationCallbacks& cb)
+            : callbacks{&cb},
+              socket{cb.proxy, cb.connect_timeout} {
+        }
     };
-    std::vector<NotificationRuntime> channels;
+    std::deque<NotificationRuntime> channels;
     const auto add_channel = [&](const NotificationCallbacks& callbacks) {
         if (callbacks) {
-            channels.push_back({
-                .callbacks = &callbacks,
-                .socket = std::make_unique<detail::SocketIoTransport>(
-                    callbacks.proxy, callbacks.connect_timeout
-                ),
-                .state = detail::NotificationDormantState{},
-            });
+            channels.emplace_back(callbacks);
         }
     };
     add_channel(notifications_);
@@ -595,12 +595,12 @@ int Monitor::run_loop(
                 return;
             }
             if (command == detail::NotificationCommand::disconnect_socket) {
-                notification_socket->disconnect();
+                notification_socket.disconnect();
                 return;
             }
             if (command == detail::NotificationCommand::connect_socket) {
                 try {
-                    notification_socket->connect(
+                    notification_socket.connect(
                         std::get<detail::NotificationConnectingState>(
                             notification_state
                         )
@@ -743,7 +743,7 @@ int Monitor::run_loop(
         const auto channel_descriptor_offset = descriptors.size();
         for (const auto& channel : channels) {
             descriptors.push_back({
-                .fd = channel.socket->descriptor(),
+                .fd = channel.socket.descriptor(),
                 .events = POLLIN,
                 .revents = 0,
             });
@@ -840,7 +840,7 @@ int Monitor::run_loop(
                              [channel_descriptor_offset + index]
                                  .revents &
                          POLLIN) != 0) {
-                        for (const auto event : channel.socket->drain()) {
+                        for (const auto event : channel.socket.drain()) {
                             switch (event) {
                             case detail::SocketEvent::connected:
                                 advance_notification(

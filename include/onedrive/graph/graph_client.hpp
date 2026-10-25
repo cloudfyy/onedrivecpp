@@ -135,7 +135,7 @@ struct SiteSearchOutcome {
 
 template <typename Search>
 [[nodiscard]] SiteSearchOutcome
-search_sites_with_fallback(std::string_view raw_query, Search&& search) {
+search_sites_with_fallback(std::string_view raw_query, const Search& search) {
     const std::string effective_query =
         raw_query.empty() ? std::string{"*"} : std::string{raw_query};
     auto sites = search(effective_query);
@@ -145,8 +145,9 @@ search_sites_with_fallback(std::string_view raw_query, Search&& search) {
             sites = search(std::string{"*"});
             used_fallback = !sites.empty();
         } catch (const std::exception&) {
-            // Ignore wildcard fallback failures when tenant permissions only
+            // Wildcard fallback is best-effort when tenant permissions only
             // allow direct site resolution (e.g., Sites.Selected).
+            used_fallback = false;
         }
     }
     return {

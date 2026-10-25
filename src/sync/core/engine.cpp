@@ -172,10 +172,12 @@ void log_sync_filter_configuration(
 struct SyncEngine::Pipeline {
     SyncEngine& engine;
     const events::Observer& observer;
-    SyncCapabilities capabilities;
+    SyncCapabilities capabilities{capabilities_for(
+        SyncMode::bidirectional, DeletePolicy::propagate, ExecutionMode::apply
+    )};
     const std::stop_token& stop_token;
-    std::chrono::steady_clock::time_point started_at;
-    std::optional<PreviewCache::Snapshot> previous_preview;
+    std::chrono::steady_clock::time_point started_at{};
+    std::optional<PreviewCache::Snapshot> previous_preview{};
 
     // Stage 1 output: prepared local filesystem & resolved cursor/cache state.
     struct PreparedContext {
@@ -244,10 +246,10 @@ struct SyncEngine::Pipeline {
             .dotfiles = config.dotfiles,
             .maximum_file_size_bytes = config.maximum_file_size_bytes,
         });
-        const std::string sync_filter_fingerprint =
+        std::string sync_filter_fingerprint =
             engine_detail::sync_scope_fingerprint(sync_filter.fingerprint());
-        const auto previous_delta_link = items.delta_link(config.drive_id);
-        const auto previous_sync_filter_fingerprint =
+        auto previous_delta_link = items.delta_link(config.drive_id);
+        auto previous_sync_filter_fingerprint =
             items.sync_filter_fingerprint(config.drive_id);
         const bool sync_filter_changed =
             previous_delta_link.has_value() &&
@@ -256,7 +258,7 @@ struct SyncEngine::Pipeline {
         auto query_delta_link = sync_filter_changed
                                     ? std::optional<std::string>{}
                                     : previous_delta_link;
-        const auto scope_fingerprint = PreviewCache::scope_fingerprint(config);
+        auto scope_fingerprint = PreviewCache::scope_fingerprint(config);
 
         // Validate persisted pending_delta against current scope, filter, and
         // applied cursor.

@@ -80,14 +80,14 @@ SyncController::SyncController(
         );
     };
     if (!synchronize_) {
-        synchronize_ = [](config::Config config,
+        synchronize_ = [](const config::Config& config,
                           const events::Observer& observer,
                           const std::stop_token& token,
                           sync::PreviewCache* cache) {
             const app::ProductionRuntimeFactory production;
             const app::RuntimeFactory factory{util::borrowed_proxy, production};
             return app::synchronize_account(
-                std::move(config), factory, observer, token, cache
+                config, factory, observer, token, cache
             );
         };
     }

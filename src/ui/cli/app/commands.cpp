@@ -593,9 +593,7 @@ int execute_command(
         config.dry_run ? " dry run" : ""
     );
     if (operation == Operation::synchronize) {
-        return synchronize_account(
-            std::move(config), runtime_factory, console
-        );
+        return synchronize_account(config, runtime_factory, console);
     }
     if (operation == Operation::monitor) {
         return monitor_account(
