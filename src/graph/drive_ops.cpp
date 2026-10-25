@@ -335,7 +335,7 @@ RemoteItem MicrosoftGraphClient::ancestor_by_id(
                 "?$select=id,name,parentReference,folder,package,root,deleted,"
                 "file",
             "ancestor lookup",
-            stop_token
+            std::move(stop_token)
         ),
         "ancestor lookup"
     ));

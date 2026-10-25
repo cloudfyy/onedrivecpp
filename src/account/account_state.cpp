@@ -150,6 +150,7 @@ std::optional<std::string> existing_metadata_id(
             return found->get<std::string>();
         }
     } catch (const std::exception&) {
+        return std::nullopt;
     }
     return std::nullopt;
 }

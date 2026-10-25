@@ -346,7 +346,7 @@ public:
 
     [[nodiscard]] account::DriveIdentity
     drive_identity(std::stop_token token = {}) const {
-        return implementation()->drive_identity(token);
+        return implementation()->drive_identity(std::move(token));
     }
 
     [[nodiscard]] std::vector<RemoteItem> list_root() const {
@@ -568,7 +568,7 @@ public:
     MicrosoftGraphClient& operator=(MicrosoftGraphClient&&) = delete;
 
     [[nodiscard]] account::DriveIdentity
-    drive_identity(std::stop_token token = {}) const;
+    drive_identity(const std::stop_token& token = {}) const;
     [[nodiscard]] std::vector<DriveInfo> list_drives() const;
     [[nodiscard]] DriveInfo drive_info() const;
     [[nodiscard]] std::vector<SharedResource> list_shared_resources() const;

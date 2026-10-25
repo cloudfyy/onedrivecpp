@@ -369,7 +369,7 @@ MicrosoftGraphClient::access_token(const std::stop_token& stop_token) const {
 }
 
 account::DriveIdentity
-MicrosoftGraphClient::drive_identity(std::stop_token token) const {
+MicrosoftGraphClient::drive_identity(const std::stop_token& token) const {
     try {
         return fetch_drive_identity(
             *transport_, access_token(token), options_, token

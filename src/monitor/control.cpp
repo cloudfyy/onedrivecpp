@@ -321,7 +321,7 @@ struct ControlServer::Impl {
                     "cannot prepare Monitor control socket"
                 );
             }
-            worker = std::jthread{[this](std::stop_token token) {
+            worker = std::jthread{[this](const std::stop_token& token) {
                 try {
                     serve(token);
                 } catch (...) {
@@ -356,6 +356,10 @@ struct ControlServer::Impl {
         }
         remove_endpoint();
     }
+    Impl(const Impl&) = delete;
+    Impl& operator=(const Impl&) = delete;
+    Impl(Impl&&) = delete;
+    Impl& operator=(Impl&&) = delete;
 
     void remove_endpoint() noexcept {
         struct stat status{};
@@ -449,7 +453,7 @@ struct ControlServer::Impl {
         return reply;
     }
 
-    void serve(std::stop_token token) {
+    void serve(const std::stop_token& token) {
         while (!token.stop_requested()) {
             pollfd descriptor{listener.get(), POLLIN, 0};
             const int result = ::poll(&descriptor, 1, 100);

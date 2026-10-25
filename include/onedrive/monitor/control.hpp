@@ -49,6 +49,8 @@ public:
     ~ControlServer();
     ControlServer(const ControlServer&) = delete;
     ControlServer& operator=(const ControlServer&) = delete;
+    ControlServer(ControlServer&&) = delete;
+    ControlServer& operator=(ControlServer&&) = delete;
 
     [[nodiscard]] int descriptor() const noexcept;
     [[nodiscard]] std::stop_token stop_token() const noexcept;

@@ -15,7 +15,7 @@ DeltaHierarchyResolver::DeltaHierarchyResolver(
     : items_{std::move(items)},
       known_directories_{known_directories},
       lookup_{std::move(lookup)},
-      stop_token_{stop_token} {
+      stop_token_{std::move(stop_token)} {
 }
 
 DeltaHierarchyResolver::PathSource

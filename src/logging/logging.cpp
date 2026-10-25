@@ -5,7 +5,8 @@
 #include "util/ascii.hpp"
 
 #include <spdlog/logger.h>
-#include <spdlog/sinks/base_sink.h>
+#include <spdlog/pattern_formatter.h>
+#include <spdlog/sinks/sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
@@ -73,8 +74,7 @@ Severity severity_for(spdlog::level::level_enum level) noexcept {
     return Severity::information;
 }
 
-class MessageCallbackSink final
-    : public spdlog::sinks::base_sink<std::mutex> {
+class MessageCallbackSink final : public spdlog::sinks::sink {
 public:
     explicit MessageCallbackSink(MessageSink sink)
         : sink_{std::move(sink)} {}
@@ -84,8 +84,8 @@ public:
         sink_ = {};
     }
 
-private:
-    void sink_it_(const spdlog::details::log_msg& message) override {
+    void log(const spdlog::details::log_msg& message) override {
+        const std::scoped_lock lock{mutex_};
         if (sink_) {
             sink_(
                 severity_for(message.level),
@@ -94,8 +94,14 @@ private:
         }
     }
 
-    void flush_() override {}
+    void flush() override {}
 
+    void set_pattern(const std::string&) override {}
+
+    void set_formatter(std::unique_ptr<spdlog::formatter>) override {}
+
+private:
+    std::mutex mutex_;
     MessageSink sink_;
 };
 
@@ -110,8 +116,7 @@ private:
     );
 }
 
-class SecureRotatingFileSink final
-    : public spdlog::sinks::base_sink<std::mutex> {
+class SecureRotatingFileSink final : public spdlog::sinks::sink {
 public:
     SecureRotatingFileSink(
         const std::filesystem::path& path,
@@ -138,6 +143,51 @@ public:
             );
         }
         open_file();
+    }
+
+    void log(const spdlog::details::log_msg& message) override {
+        const std::scoped_lock lock{mutex_};
+        spdlog::memory_buf_t formatted;
+        formatter_->format(message, formatted);
+        if (size_ != 0 &&
+            size_ + formatted.size() > maximum_size_) {
+            rotate();
+        }
+        std::size_t offset = 0;
+        while (offset < formatted.size()) {
+            const auto result = ::write(
+                file_.get(),
+                formatted.data() + offset,
+                formatted.size() - offset
+            );
+            if (result == -1 && errno == EINTR) {
+                continue;
+            }
+            if (result == -1) {
+                throw_log_error("cannot write log file", path_, errno);
+            }
+            offset += static_cast<std::size_t>(result);
+        }
+        size_ += formatted.size();
+    }
+
+    void flush() override {
+        const std::scoped_lock lock{mutex_};
+        if (::fsync(file_.get()) == -1) {
+            throw_log_error("cannot flush log file", path_, errno);
+        }
+    }
+
+    void set_pattern(const std::string& pattern) override {
+        const std::scoped_lock lock{mutex_};
+        formatter_ = std::make_unique<spdlog::pattern_formatter>(pattern);
+    }
+
+    void set_formatter(
+        std::unique_ptr<spdlog::formatter> sink_formatter
+    ) override {
+        const std::scoped_lock lock{mutex_};
+        formatter_ = std::move(sink_formatter);
     }
 
 private:
@@ -260,37 +310,10 @@ private:
         open_file();
     }
 
-    void sink_it_(const spdlog::details::log_msg& message) override {
-        spdlog::memory_buf_t formatted;
-        formatter_->format(message, formatted);
-        if (size_ != 0 &&
-            size_ + formatted.size() > maximum_size_) {
-            rotate();
-        }
-        std::size_t offset = 0;
-        while (offset < formatted.size()) {
-            const auto result = ::write(
-                file_.get(),
-                formatted.data() + offset,
-                formatted.size() - offset
-            );
-            if (result == -1 && errno == EINTR) {
-                continue;
-            }
-            if (result == -1) {
-                throw_log_error("cannot write log file", path_, errno);
-            }
-            offset += static_cast<std::size_t>(result);
-        }
-        size_ += formatted.size();
-    }
-
-    void flush_() override {
-        if (::fsync(file_.get()) == -1) {
-            throw_log_error("cannot flush log file", path_, errno);
-        }
-    }
-
+    std::mutex mutex_;
+    std::unique_ptr<spdlog::formatter> formatter_{
+        std::make_unique<spdlog::pattern_formatter>()
+    };
     std::filesystem::path path_;
     std::string filename_;
     util::UniqueFD directory_;

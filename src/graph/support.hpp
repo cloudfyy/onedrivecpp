@@ -295,7 +295,7 @@ void resolve_unsupported_ancestry(
     std::vector<RemoteItem>& items,
     std::span<const RemoteItem> known_directories,
     const std::function<RemoteItem(const std::string&)>& lookup,
-    std::stop_token stop_token = {}
+    const std::stop_token& stop_token = {}
 );
 enum class ContentValidation {
     strict,
