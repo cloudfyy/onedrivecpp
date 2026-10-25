@@ -1,0 +1,59 @@
+name: Code checks
+run-name: Code checks (${{ github.ref_name }})
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clang-tidy:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare verified release source
+        run: python3 tools/prepare_source.py
+      - uses: docker/setup-buildx-action@v4
+      - name: Prepare target build image
+        uses: docker/build-push-action@v7
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: 'false'
+        with:
+          context: .
+          file: .github/packaging.Dockerfile
+          tags: onedrive-lint-build
+          load: true
+          pull: true
+          build-args: |
+            UBUNTU_VERSION=26.04
+            BUILD_PROFILE=
+          cache-from: type=gha,scope=package-image-ubuntu26.04-${{ runner.arch }}
+          cache-to: type=gha,mode=max,scope=package-image-ubuntu26.04-${{ runner.arch }}
+      - name: Run Clang-Tidy checks without network access
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(python3 -c 'import json; print(json.load(open("vcpkg.json"))["version-semver"])')
+          mkdir -p build/lint-work/source
+          tar -xf "build/source/onedrive-cpp-$version.tar.xz" \
+            --strip-components=1 -C build/lint-work/source
+          docker run --rm --network none \
+            --user "$(id -u):$(id -g)" --env HOME=/tmp/build-home \
+            --volume "$PWD/build/lint-work:/work" \
+            --workdir /work/source \
+            onedrive-lint-build bash -euo pipefail -c '
+              mkdir -p "$HOME"
+              cmake --preset lint \
+                -DBUILD_TESTING=OFF \
+                -DONEDRIVE_BUILD_GUI=ON \
+                -DONEDRIVE_OFFLINE_BUILD=ON
+              cmake --build --preset lint --target onedrive-cpp onedrive-cpp-gui
+            '

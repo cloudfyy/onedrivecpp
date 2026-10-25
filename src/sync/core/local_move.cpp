@@ -77,14 +77,7 @@ template <typename... States>
 [[nodiscard]] bool has_discardable_move_journal(
     const std::variant<States...>& transaction
 ) noexcept {
-    return std::visit(
-        [](const auto& active) {
-            return std::same_as<
-                std::remove_cvref_t<decltype(active)>,
-                JournaledLocalMove>;
-        },
-        transaction
-    );
+    return std::holds_alternative<JournaledLocalMove>(transaction);
 }
 
 template <typename... States>
@@ -454,9 +447,11 @@ void execute_staging_action(
                 using Transaction =
                     std::remove_cvref_t<decltype(transaction)>;
                 if constexpr (std::same_as<Transaction, StagedLocalMove>) {
-                    return std::move(transaction);
+                    return std::forward<decltype(transaction)>(transaction);
                 } else {
-                    return stage_local_move(std::move(transaction));
+                    return stage_local_move(
+                        std::forward<decltype(transaction)>(transaction)
+                    );
                 }
             },
             std::move(*move_transaction)
@@ -556,11 +551,13 @@ void execute_install_action(
                                   Transaction,
                                   JournaledLocalMove> ||
                               std::same_as<Transaction, StagedLocalMove>) {
-                    return install_local_move(std::move(transaction));
+                    return install_local_move(
+                        std::forward<decltype(transaction)>(transaction)
+                    );
                 } else if constexpr (std::same_as<
                                          Transaction,
                                          InstalledLocalMove>) {
-                    return std::move(transaction);
+                    return std::forward<decltype(transaction)>(transaction);
                 } else {
                     throw std::logic_error(
                         "local move was installed without a journal"
@@ -569,7 +566,7 @@ void execute_install_action(
             },
             std::move(move_transaction)
         );
-        move_transaction.emplace<InstalledLocalMove>(std::move(installed));
+        move_transaction = std::move(installed);
     };
     const auto block = [&](std::string code, std::string message) {
         context.block(move, std::move(code), std::move(message));

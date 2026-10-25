@@ -31,7 +31,6 @@ Style style_for(MessageKind kind) {
         case MessageKind::warning:
             return {.symbol = "!!", .color = "\033[33m"};
         case MessageKind::error:
-            return {.symbol = "XX", .color = "\033[31m"};
         case MessageKind::critical:
             return {.symbol = "XX", .color = "\033[31m"};
     }

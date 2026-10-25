@@ -24,7 +24,9 @@ struct TreeWalkErrors {
 
 template <typename Visitor>
 void walk_directory_tree(
-    const std::filesystem::path& root, TreeWalkErrors errors, Visitor&& visitor
+    const std::filesystem::path& root,
+    TreeWalkErrors errors,
+    const Visitor& visitor
 ) {
     std::error_code error;
     std::filesystem::recursive_directory_iterator iterator{
@@ -51,7 +53,7 @@ void walk_directory_tree(
                 "': " + error.message()
             );
         }
-        TreeWalkAction action;
+        TreeWalkAction action{TreeWalkAction::continue_walk};
         try {
             action = std::invoke(visitor, *iterator, status);
         } catch (const std::filesystem::filesystem_error& failure) {

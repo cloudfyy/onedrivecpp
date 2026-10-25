@@ -39,8 +39,8 @@ using util::transition_transaction;
 
 class LocalUploadResourceError final : public std::runtime_error {
 public:
-    LocalUploadResourceError(std::string reason_code, std::string message)
-        : std::runtime_error{std::move(message)},
+    LocalUploadResourceError(std::string reason_code, const std::string& message)
+        : std::runtime_error{message},
           reason_code_{std::move(reason_code)} {}
 
     [[nodiscard]] const std::string& reason_code() const noexcept {
@@ -167,7 +167,7 @@ storage::PendingUpload& pending_upload(
 JournaledUpload journal_upload(PreparedUpload upload) noexcept {
     return transition_transaction<UploadJournaledState>(
         std::move(upload),
-        [](PreparedUploadPayload&& payload) noexcept {
+        [](PreparedUploadPayload payload) noexcept {
             static_cast<void>(payload.snapshot.release());
             return JournaledUploadPayload{
                 .pending = payload.pending,
@@ -183,7 +183,7 @@ RemoteCommittedUpload mark_remote_upload_committed(
     return transition_transaction<UploadRemoteCommittedState>(
         std::move(upload),
         [remote = std::move(remote)](
-            JournaledUploadPayload&& payload
+            JournaledUploadPayload payload
         ) mutable noexcept {
             return RemoteCommittedUploadPayload{
                 .pending = payload.pending,
@@ -711,7 +711,7 @@ std::size_t recover_pending_uploads(
             sizes.push_back(static_cast<std::uint64_t>(upload.local_size));
         }
     }
-    UploadProgressTracker progress{std::move(sizes), observer};
+    UploadProgressTracker progress{sizes, observer};
     std::size_t recovered_files = 0;
     for (std::size_t index = 0; index < pending.size(); ++index) {
         auto upload = pending[index];
@@ -744,7 +744,9 @@ std::size_t recover_pending_uploads(
                     drive_id, upload_blocked_id(upload.remote_path)
                 );
             }
-            progress.skip(progress_indices[index].value());
+            if (const auto progress_index = progress_indices[index]) {
+                progress.skip(*progress_index);
+            }
             continue;
         }
         try {
@@ -763,6 +765,7 @@ std::size_t recover_pending_uploads(
                 );
                 continue;
             }
+            const auto progress_index = progress_indices[index].value_or(0);
             if (!std::filesystem::is_regular_file(
                     upload.snapshot_path
                 ) ||
@@ -782,7 +785,7 @@ std::size_t recover_pending_uploads(
                     std::uint64_t total,
                     std::uint64_t transferred) {
                     progress.update(
-                        progress_indices[index].value(),
+                        progress_index,
                         completed,
                         total,
                         transferred
@@ -813,7 +816,7 @@ std::size_t recover_pending_uploads(
             items.remove_blocked_item(
                 drive_id, upload_blocked_id(upload.remote_path)
             );
-            progress.finish(progress_indices[index].value());
+            progress.finish(progress_index);
             ++recovered_files;
             observer.message(
                 source_present ? events::MessageKind::information

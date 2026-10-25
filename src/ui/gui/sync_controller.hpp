@@ -38,6 +38,7 @@ public:
         CachedSynchronizationFunction synchronize, QObject* parent = nullptr
     );
     ~SyncController() override;
+    Q_DISABLE_COPY_MOVE(SyncController)
     void start(const std::filesystem::path& config_file, bool preview);
     void start_monitoring(const std::filesystem::path& config_file);
     void cancel();

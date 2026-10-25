@@ -202,6 +202,10 @@ public:
     ~FtxuiConsoleBackend() override {
         leave_fullscreen();
     }
+    FtxuiConsoleBackend(const FtxuiConsoleBackend&) = delete;
+    FtxuiConsoleBackend& operator=(const FtxuiConsoleBackend&) = delete;
+    FtxuiConsoleBackend(FtxuiConsoleBackend&&) = delete;
+    FtxuiConsoleBackend& operator=(FtxuiConsoleBackend&&) = delete;
 
     void finish() override {
         if (view_ == TuiView::sync || view_ == TuiView::watch ||
@@ -732,7 +736,7 @@ private:
                 )
             ));
         }
-        if (show_context) {
+        if (show_context && context_) {
             content.push_back(text(
                 fmt::format(
                     "Direction: {} // {}{}",
@@ -751,7 +755,7 @@ private:
                 )
             ));
         }
-        if (show_summary) {
+        if (show_summary && summary_) {
             content.push_back(text(
                 fmt::format(
                     "Last round: {} downloaded, {} uploaded, {} moved, {} "

@@ -16,7 +16,7 @@ namespace onedrive::sync {
     graph::GraphClient& graph,
     storage::ItemStore& items,
     const events::Observer& observer,
-    std::stop_token stop_token = {}
+    const std::stop_token& stop_token = {}
 );
 
 } // namespace onedrive::sync

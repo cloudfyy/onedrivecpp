@@ -106,7 +106,7 @@ struct SyncPhaseEvent {
 };
 
 struct SyncContextEvent {
-    sync::SyncMode direction;
+    sync::SyncMode direction{sync::SyncMode::bidirectional};
     bool preview{false};
 };
 

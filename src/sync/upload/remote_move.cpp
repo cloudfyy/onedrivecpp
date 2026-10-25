@@ -55,7 +55,7 @@ LocalMoveDiscovery discover_local_moves(
         },
         [&](const std::filesystem::directory_entry& entry,
             const std::filesystem::file_status& status) {
-            const auto path = entry.path();
+            const auto& path = entry.path();
             const bool directory = std::filesystem::is_directory(status);
             const bool regular = std::filesystem::is_regular_file(status);
             if (std::filesystem::is_symlink(status) ||
@@ -379,7 +379,7 @@ GraphCommittedRemoteMove mark_graph_remote_move_committed(
     return transition_transaction<RemoteMoveGraphCommittedState>(
         std::move(transaction),
         [remote = std::move(remote)](
-            PendingRemoteMovePayload&& payload
+            PendingRemoteMovePayload payload
         ) mutable noexcept {
             return GraphCommittedRemoteMovePayload{
                 .move = std::move(payload.move),
@@ -395,7 +395,7 @@ LocalCommittedRemoteMove mark_local_remote_move_committed(
 ) noexcept {
     return transition_transaction<RemoteMoveLocalCommittedState>(
         std::move(transaction),
-        [](GraphCommittedRemoteMovePayload&& payload) noexcept {
+        [](GraphCommittedRemoteMovePayload payload) noexcept {
             return LocalCommittedRemoteMovePayload{
                 .move = std::move(payload.move),
             };
@@ -422,7 +422,7 @@ concept LocalCommittableRemoteMove = requires(Transaction transaction) {
 
 template <typename Transaction>
 concept HasRemoteMoveResult =
-    requires(Transaction transaction) { transaction.remote.id; };
+    requires(const Transaction& transaction) { transaction.remote.id; };
 
 static_assert(JournalableRemoteMove<PreparedRemoteMove>);
 static_assert(!JournalableRemoteMove<JournaledRemoteMove>);
@@ -443,7 +443,7 @@ LocalCommittedRemoteMove execute_pending_remote_move(
     JournaledRemoteMove transaction,
     graph::GraphClient& graph,
     storage::ItemStore& items,
-    std::stop_token stop_token
+    const std::stop_token& stop_token
 ) {
     const auto& move = transaction.move;
     if (!local_move_identity_matches(sync_root, move)) {
@@ -545,7 +545,7 @@ void execute_new_remote_move(
     storage::ItemState previous,
     graph::GraphClient& graph,
     storage::ItemStore& items,
-    std::stop_token stop_token
+    const std::stop_token& stop_token
 ) {
     auto prepared = PreparedRemoteMove{
         PendingRemoteMovePayload{

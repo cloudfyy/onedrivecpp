@@ -406,9 +406,9 @@ void MainWindow::render_logs() {
             }
             auto block = cursor.block();
             cursor.insertText(messages[index]);
-            if (sequences[index]) {
-                block.setUserData(new LogBlockData{*sequences[index]});
-                if (anchor == sequences[index]) {
+            if (const auto sequence = sequences[index]) {
+                block.setUserData(new LogBlockData{*sequence});
+                if (anchor == sequence) {
                     restored = block;
                 }
             }

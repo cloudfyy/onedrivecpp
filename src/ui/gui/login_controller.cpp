@@ -28,7 +28,7 @@ constexpr int reply_write_poll_interval_milliseconds = 10;
 auth::AuthResult<void> request_browser_authorization(
     auth::AuthCodeSession& session,
     const std::function<void(const QString&)>& open_browser,
-    std::stop_token token
+    const std::stop_token& token
 ) {
     if (!open_browser) {
         throw std::invalid_argument{
@@ -231,7 +231,7 @@ LoginController::LoginController(
         authenticate_ =
             [](const config::Config& config,
                const std::function<void(const QString&)>& open_browser,
-               std::stop_token token) {
+               const std::stop_token& token) {
                 const app::ProductionRuntimeFactory production;
                 const app::RuntimeFactory factory{
                     util::borrowed_proxy, production
@@ -239,7 +239,10 @@ LoginController::LoginController(
                 return app::authenticate_auth_code_account(
                     config,
                     factory,
-                    [&](auth::AuthCodeSession& session, std::stop_token stop) {
+                    [&](
+                        auth::AuthCodeSession& session,
+                        const std::stop_token& stop
+                    ) {
                         return request_browser_authorization(
                             session, open_browser, stop
                         );
@@ -271,7 +274,7 @@ void LoginController::start(const std::filesystem::path& config_file) {
     }
     running_ = true;
     try {
-        worker_ = std::jthread{[this, config_file](std::stop_token token) {
+        worker_ = std::jthread{[this, config_file](const std::stop_token& token) {
             QString error;
             bool cancelled = false;
             try {

@@ -105,7 +105,7 @@ public:
           preview_cache_{preview_cache} {
     }
 
-    [[nodiscard]] int synchronize(std::stop_token stop_token = {});
+    [[nodiscard]] int synchronize(const std::stop_token& stop_token = {});
 
 private:
     config::Config config_;

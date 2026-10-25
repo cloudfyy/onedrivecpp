@@ -291,7 +291,7 @@ file_content_hash(int descriptor, util::FileHashAlgorithm algorithm) {
     }
     constexpr std::string_view hex{"0123456789abcdef"};
     std::string result;
-    result.reserve(size * 2U);
+    result.reserve(static_cast<std::size_t>(size) * 2U);
     for (const auto byte : std::span{output}.first(size)) {
         result.push_back(hex[byte >> 4U]);
         result.push_back(hex[byte & 0x0FU]);

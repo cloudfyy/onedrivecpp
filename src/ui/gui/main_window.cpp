@@ -38,12 +38,12 @@ MainWindow::MainWindow(
 )
     : state_{std::move(state)},
       localization_{localization},
+      tabs_{new QTabWidget{this}},
       login_{std::move(authenticate)},
       synchronization_{std::move(synchronize), nullptr, std::move(monitor)} {
     setWindowTitle(tr("onedrive client"));
     resize(860, 520);
 
-    tabs_ = new QTabWidget{this};
     tabs_->setObjectName("mainTabs");
     tabs_->setUsesScrollButtons(true);
     create_overview_page();

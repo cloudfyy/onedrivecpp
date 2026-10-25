@@ -44,6 +44,7 @@ public:
         }
     }
 
+    ~Statement() = default;
     Statement(const Statement&) = delete;
     Statement& operator=(const Statement&) = delete;
     Statement(Statement&&) = delete;

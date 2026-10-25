@@ -101,7 +101,7 @@ ItemOperationCoordinator::Lease ItemOperationCoordinator::acquire(
     };
     {
         std::unique_lock lock{state_->mutex};
-        if (!state_->condition.wait(lock, stop_token, [&] {
+        if (!state_->condition.wait(lock, std::move(stop_token), [&] {
                 return !state_->active.contains(key);
             })) {
             throw ItemOperationCancelledError{
@@ -125,7 +125,7 @@ ItemOperationCoordinator::acquire_destination(
     };
     {
         std::unique_lock lock{state_->mutex};
-        if (!state_->condition.wait(lock, stop_token, [&] {
+        if (!state_->condition.wait(lock, std::move(stop_token), [&] {
                 return !state_->active.contains(key);
             })) {
             throw ItemOperationCancelledError{

@@ -56,7 +56,7 @@ SyncController::SyncController(
                            std::stop_token token,
                            sync::PreviewCache*
                        ) {
-            return function(std::move(config), observer, token);
+            return function(std::move(config), observer, std::move(token));
         };
     }
     if (monitor) {
@@ -72,7 +72,7 @@ SyncController::SyncController(
     logging::initialize();
     monitor_ = [](config::Config config,
                   const events::Observer& observer,
-                  std::stop_token token) {
+                  const std::stop_token& token) {
         const app::ProductionRuntimeFactory production;
         const app::RuntimeFactory factory{util::borrowed_proxy, production};
         return app::monitor_account(
@@ -82,7 +82,7 @@ SyncController::SyncController(
     if (!synchronize_) {
         synchronize_ = [](config::Config config,
                           const events::Observer& observer,
-                          std::stop_token token,
+                          const std::stop_token& token,
                           sync::PreviewCache* cache) {
             const app::ProductionRuntimeFactory production;
             const app::RuntimeFactory factory{util::borrowed_proxy, production};
@@ -192,7 +192,7 @@ void SyncController::start_task(
     running_ = true;
     try {
         worker_ = std::jthread{[this, config_file, preview, monitoring](
-                                   std::stop_token token
+                                   const std::stop_token& token
                                ) {
             int result = exit_code::failure;
             QString error;

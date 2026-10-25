@@ -78,12 +78,12 @@ void MonitorController::request(
             "No state directory is selected for Monitor control."
         );
     }
-    query(command, std::move(expected_target));
+    query(command, expected_target);
 }
 
 void MonitorController::query(
     monitor::ControlCommand command,
-    std::optional<monitor::ControlTarget> expected_target
+    const std::optional<monitor::ControlTarget>& expected_target
 ) {
     busy_ = true;
     requesting_ = command != monitor::ControlCommand::status;

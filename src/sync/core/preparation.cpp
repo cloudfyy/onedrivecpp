@@ -15,7 +15,7 @@ PreparedSyncFilesystem prepare_sync_filesystem(
     graph::GraphClient& graph,
     storage::ItemStore& items,
     const events::Observer& observer,
-    std::stop_token stop_token
+    const std::stop_token& stop_token
 ) {
     PreparedSyncFilesystem prepared;
     if (capabilities.previews()) {

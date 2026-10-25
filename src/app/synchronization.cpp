@@ -21,7 +21,7 @@ int synchronize_account(
     config::Config config,
     const RuntimeFactory& runtime_factory,
     const events::Observer& observer,
-    std::stop_token stop_token,
+    const std::stop_token& stop_token,
     sync::PreviewCache* preview_cache
 ) {
     detail::OperationStateMachine state{

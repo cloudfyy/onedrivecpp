@@ -67,7 +67,7 @@ int restore_missing_files(
     graph::GraphClient& graph,
     storage::ItemStore& items,
     const events::Observer& observer,
-    std::stop_token stop_token
+    const std::stop_token& stop_token
 ) {
     throw_if_cancelled(stop_token);
     util::require_sync_mount(

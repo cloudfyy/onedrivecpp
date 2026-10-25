@@ -234,7 +234,7 @@ ExecutionSummary execute_plan(
                 continue;
             }
 
-            if (target_status.current_remote_file) {
+            if (target_status.current_remote_file && previous) {
                 spdlog::debug(
                     "Reusing completed download for '{}'", item.remote_path
                 );

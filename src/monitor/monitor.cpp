@@ -897,7 +897,7 @@ int Monitor::run_loop(
 
         drain_channels(&descriptors);
         transition = detail::resolve_poll_events(
-            std::move(state),
+            state,
             control && control->take_trigger(),
             notification_sync_requested,
             std::chrono::steady_clock::now(),
@@ -914,7 +914,7 @@ int Monitor::run_loop(
             "Monitor synchronization triggered by {}",
             detail::synchronization_reason_name(reason)
         );
-        do {
+        while (transition.effect == detail::MonitorEffect::synchronize) {
             const int result = synchronize();
             if (result != exit_code::success) {
                 spdlog::warn(
@@ -957,7 +957,7 @@ int Monitor::run_loop(
                 timing
             );
             state = transition.state;
-        } while (transition.effect == detail::MonitorEffect::synchronize);
+        }
     }
 }
 

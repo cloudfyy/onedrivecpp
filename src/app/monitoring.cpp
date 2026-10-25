@@ -22,7 +22,7 @@ int monitor_account(
     const RuntimeFactory& runtime_factory,
     const events::Observer& observer,
     bool keyboard_exit,
-    std::stop_token stop_token
+    const std::stop_token& stop_token
 ) {
     detail::OperationStateMachine state{
         observer, events::OperationKind::monitoring

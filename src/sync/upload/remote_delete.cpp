@@ -369,7 +369,7 @@ LocalCommittedRemoteDelete mark_remote_delete_local_committed(
 ) noexcept {
     return transition_transaction<RemoteDeleteLocalCommittedState>(
         std::move(transaction),
-        [](PendingRemoteDeletePayload&&) noexcept {
+        [](const PendingRemoteDeletePayload&) noexcept {
             return LocalCommittedRemoteDeletePayload{};
         }
     );
@@ -392,7 +392,7 @@ concept LocallyCommittableRemoteDelete = requires(Transaction transaction) {
 
 template <typename Transaction>
 concept HasPendingRemoteDelete =
-    requires(Transaction transaction) { transaction.deletion.remote_id; };
+    requires(const Transaction& transaction) { transaction.deletion.remote_id; };
 
 static_assert(JournalableRemoteDelete<PreparedRemoteDelete>);
 static_assert(!JournalableRemoteDelete<JournaledRemoteDelete>);
@@ -409,7 +409,7 @@ LocalCommittedRemoteDelete execute_pending_delete(
     JournaledRemoteDelete transaction,
     graph::GraphClient& graph,
     storage::ItemStore& items,
-    std::stop_token stop_token
+    const std::stop_token& stop_token
 ) {
     auto& deletion = transaction.deletion;
     const auto require_missing_source = [&] {
@@ -497,7 +497,7 @@ void execute_new_remote_delete(
     storage::PendingDelete deletion,
     graph::GraphClient& graph,
     storage::ItemStore& items,
-    std::stop_token stop_token
+    const std::stop_token& stop_token
 ) {
     auto prepared = PreparedRemoteDelete{
         PendingRemoteDeletePayload{std::move(deletion)},

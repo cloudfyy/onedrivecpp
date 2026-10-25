@@ -15,6 +15,7 @@ class MonitorController final : public QObject {
 public:
     explicit MonitorController(QObject* parent = nullptr);
     ~MonitorController() override;
+    Q_DISABLE_COPY_MOVE(MonitorController)
     void set_state_directory(const std::filesystem::path& state_directory);
     void refresh();
     void request(
@@ -38,7 +39,7 @@ Q_SIGNALS:
 private:
     void query(
         monitor::ControlCommand command,
-        std::optional<monitor::ControlTarget> expected_target
+        const std::optional<monitor::ControlTarget>& expected_target
     );
     std::filesystem::path state_directory_;
     std::optional<monitor::ControlReply> status_;

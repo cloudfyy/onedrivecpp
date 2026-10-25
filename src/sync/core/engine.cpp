@@ -109,7 +109,7 @@ void discard_orphaned_partial_files(
 
 } // namespace
 
-int SyncEngine::synchronize(std::stop_token stop_token) {
+int SyncEngine::synchronize(const std::stop_token& stop_token) {
     std::optional<PreviewCache::Snapshot> previous_preview;
     if (preview_cache_) {
         previous_preview = std::move(preview_cache_->snapshot_);
@@ -548,6 +548,13 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
                 config_.drive_id
             );
         } else {
+            if (!safe_root || !metadata) {
+                throw std::logic_error{
+                    "Synchronization filesystem was not prepared"
+                };
+            }
+            auto& active_safe_root = *safe_root;
+            auto& active_metadata = *metadata;
             observer.message(
                 events::MessageKind::information,
                 "execution_started",
@@ -556,11 +563,11 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
             observer.sync_phase(events::SyncPhase::applying);
             const auto summary = engine_detail::execute_plan(
                 plan,
-                *safe_root,
+                active_safe_root,
                 config_.drive_id,
                 graph_,
                 items_,
-                *metadata,
+                active_metadata,
                 observer,
                 capabilities,
                 config_.download_concurrency,
@@ -581,11 +588,11 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
             discard_orphaned_partial_files(orphaned_partials);
             if (capabilities.uploads()) {
                 upload_summary = detail::upload_local_changes(
-                    *safe_root,
+                    active_safe_root,
                     config_.drive_id,
                     graph_,
                     items_,
-                    *metadata,
+                    active_metadata,
                     &sync_filter,
                     observer,
                     capabilities,
@@ -624,7 +631,8 @@ int SyncEngine::synchronize(std::stop_token stop_token) {
         engine_detail::report_completion(
             blocked_count, capabilities.previews(), started_at, observer
         );
-        if (preview_delta && !stop_token.stop_requested() &&
+        if (preview_cache_ && preview_delta && cache_state &&
+            !stop_token.stop_requested() &&
             !preview_delta->delta_link.empty() &&
             PreviewCache::capture_state(items_, config_.drive_id) ==
                 cache_state) {

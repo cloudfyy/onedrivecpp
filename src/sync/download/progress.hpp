@@ -69,7 +69,8 @@ using TransferProgressReporter = DownloadProgressReporter;
 class UploadProgressTracker final {
 public:
     UploadProgressTracker(
-        std::vector<std::uint64_t> sizes, const events::Observer& observer
+        const std::vector<std::uint64_t>& sizes,
+        const events::Observer& observer
     );
     void update(
         std::size_t index,
@@ -82,7 +83,7 @@ public:
 
 private:
     struct File {
-        std::uint64_t size;
+        std::uint64_t size{0};
         std::uint64_t completed{0};
         std::uint64_t transferred{0};
         bool finished{false};

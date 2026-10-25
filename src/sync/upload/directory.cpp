@@ -133,7 +133,7 @@ GraphCreatedDirectoryUpload mark_directory_upload_graph_created(
     return transition_transaction<DirectoryUploadGraphCreatedState>(
         std::move(transaction),
         [remote = std::move(remote)](
-            PendingDirectoryUploadPayload&& payload
+            PendingDirectoryUploadPayload payload
         ) mutable noexcept {
             return GraphCreatedDirectoryUploadPayload{
                 .pending = std::move(payload.pending),
@@ -170,7 +170,7 @@ LocalCommittedDirectoryUpload commit_created_directory(
     metadata.write_remote_identity(remote, pending.local_path);
     return transition_transaction<DirectoryUploadLocalCommittedState>(
         std::move(transaction),
-        [](GraphCreatedDirectoryUploadPayload&&) noexcept {
+        [](const GraphCreatedDirectoryUploadPayload&) noexcept {
             return LocalCommittedDirectoryUploadPayload{};
         }
     );

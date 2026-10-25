@@ -118,7 +118,7 @@ int migrate_state(
         }
     }
     for (const auto& result : results) {
-        if (!result.migration_required) {
+        if (!result.migration_required || !result.schema_version) {
             continue;
         }
         try {

@@ -238,7 +238,7 @@ std::vector<UploadCandidate> discover_uploads(
         },
         [&](const std::filesystem::directory_entry& entry,
             const std::filesystem::file_status& status) {
-            const auto path = entry.path();
+            const auto& path = entry.path();
             if (std::filesystem::is_symlink(status)) {
                 ++blocked;
                 save_upload_blocked(
@@ -617,7 +617,7 @@ UploadSummary upload_local_changes(
     for (std::size_t index = first_file; index < uploads.size(); ++index) {
         upload_sizes.push_back(uploads[index].size);
     }
-    UploadProgressTracker progress{std::move(upload_sizes), observer};
+    UploadProgressTracker progress{upload_sizes, observer};
     std::atomic_size_t next_upload{first_file};
     std::stop_source stop;
     std::stop_callback cancel_workers{

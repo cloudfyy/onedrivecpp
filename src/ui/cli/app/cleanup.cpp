@@ -391,7 +391,8 @@ int cleanup_state(
                         "file changed after preview; run cleanup again"
                     );
                 }
-                if (safe_root->remove(
+                if (safe_root &&
+                    safe_root->remove(
                         candidate.path,
                         sync::detail::FilesystemItemKind::file,
                         util::filesystem_identity(*file)

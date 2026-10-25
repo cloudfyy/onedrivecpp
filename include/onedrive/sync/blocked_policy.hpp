@@ -63,6 +63,10 @@ protected:
     explicit BlockedItemStrategy(BlockedPolicyTraits traits)
         : traits_{traits} {
     }
+    BlockedItemStrategy(const BlockedItemStrategy&) = default;
+    BlockedItemStrategy& operator=(const BlockedItemStrategy&) = default;
+    BlockedItemStrategy(BlockedItemStrategy&&) = default;
+    BlockedItemStrategy& operator=(BlockedItemStrategy&&) = default;
 
 private:
     BlockedPolicyTraits traits_;

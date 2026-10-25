@@ -316,6 +316,17 @@ if(ONEDRIVE_BUILD_GUI)
     target_compile_options(onedrive-cpp-gui PRIVATE
         $<$<CXX_COMPILER_ID:Clang,GNU>:-Wall;-Wextra;-Wpedantic;-Wconversion;-Wshadow>
     )
+    if(ONEDRIVE_ENABLE_CLANG_TIDY)
+        set(ONEDRIVE_GUI_CLANG_TIDY "${CMAKE_CXX_CLANG_TIDY}")
+        list(
+            APPEND ONEDRIVE_GUI_CLANG_TIDY
+            "--checks=-cppcoreguidelines-owning-memory"
+        )
+        set_target_properties(
+            onedrive-cpp-gui
+            PROPERTIES CXX_CLANG_TIDY "${ONEDRIVE_GUI_CLANG_TIDY}"
+        )
+    endif()
 endif()
 
 if(ONEDRIVE_ENABLE_CLANG_TIDY)

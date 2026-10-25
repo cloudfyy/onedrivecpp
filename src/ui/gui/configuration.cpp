@@ -28,7 +28,7 @@ namespace {
 
 constexpr mode_t private_directory_mode = S_IRWXU;
 constexpr mode_t private_file_mode = S_IRUSR | S_IWUSR;
-constexpr std::size_t maximum_config_bytes = 1024U * 1024U;
+constexpr std::size_t maximum_config_bytes = std::size_t{1024} * 1024U;
 
 void validate_gui_endpoints(const config::Config& config) {
     const auto validate =

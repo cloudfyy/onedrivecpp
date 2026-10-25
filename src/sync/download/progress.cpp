@@ -162,7 +162,7 @@ add_transfer_bytes(std::uint64_t value, std::uint64_t additional) {
 } // namespace
 
 UploadProgressTracker::UploadProgressTracker(
-    std::vector<std::uint64_t> sizes, const events::Observer& observer
+    const std::vector<std::uint64_t>& sizes, const events::Observer& observer
 )
     : observer_{observer},
       file_count_{sizes.size()} {

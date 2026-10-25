@@ -23,7 +23,7 @@ inline std::pair<std::string, std::string> serialize_file_hash(
 }
 
 inline std::optional<util::FileHash> parse_file_hash(
-    std::string algorithm, std::string value, std::string_view context
+    std::string_view algorithm, std::string value, std::string_view context
 ) {
     if (algorithm.empty() && value.empty()) {
         return std::nullopt;

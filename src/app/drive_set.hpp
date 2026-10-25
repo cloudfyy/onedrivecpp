@@ -18,7 +18,7 @@ public:
         Operation operation = Operation::synchronize
     );
     [[nodiscard]] int synchronize(
-        std::stop_token stop_token, sync::PreviewCache* cache = nullptr
+        const std::stop_token& stop_token, sync::PreviewCache* cache = nullptr
     );
     [[nodiscard]] std::vector<graph::GraphClient*> graph_clients() const;
 
@@ -33,7 +33,9 @@ private:
         std::unique_ptr<metrics::Metrics> metrics;
     };
     void prepare(
-        Target& target, std::stop_token token, const events::Observer& observer
+        Target& target,
+        const std::stop_token& token,
+        const events::Observer& observer
     );
 
     const RuntimeFactory& factory_;

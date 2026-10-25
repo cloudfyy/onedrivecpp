@@ -48,7 +48,7 @@ auth::AuthResult<AuthenticationResult> observe_authentication(
     };
     state.transition(events::OperationState::authenticating);
     try {
-        auto result = authenticate();
+        auto result = std::invoke(std::forward<Authenticate>(authenticate));
         if (result) {
             state.transition(events::OperationState::ready);
         } else if (result.error().code == auth::AuthErrorCode::cancelled) {
@@ -67,7 +67,7 @@ auth::AuthResult<AuthenticationResult> activate_authorized_account(
     const config::Config& config,
     const http::HttpTransport& transport,
     const auth::OAuthTokens& tokens,
-    std::stop_token stop_token
+    const std::stop_token& stop_token
 ) {
     if (stop_token.stop_requested()) {
         return cancelled();
@@ -100,7 +100,7 @@ auth::AuthResult<AuthenticationResult> authenticate_account_impl(
     const config::Config& config,
     const RuntimeFactory& runtime_factory,
     AcquireTokens&& acquire_tokens,
-    std::stop_token stop_token
+    const std::stop_token& stop_token
 ) {
     if (stop_token.stop_requested()) {
         return cancelled();
@@ -126,7 +126,7 @@ auth::AuthResult<AuthenticationResult> authenticate_device_code_account_impl(
     const config::Config& config,
     const RuntimeFactory& runtime_factory,
     const AuthorizationCallback& authorization,
-    std::stop_token stop_token
+    const std::stop_token& stop_token
 ) {
     return authenticate_account_impl(
         config,
@@ -157,7 +157,7 @@ auth::AuthResult<AuthenticationResult> authenticate_auth_code_account_impl(
     const config::Config& config,
     const RuntimeFactory& runtime_factory,
     const AuthCodeAuthorizationCallback& authorization,
-    std::stop_token stop_token
+    const std::stop_token& stop_token
 ) {
     if (!authorization) {
         throw std::invalid_argument{
@@ -195,7 +195,7 @@ auth::AuthResult<AuthenticationResult> authenticate_auth_code_account(
     const RuntimeFactory& runtime_factory,
     const events::Observer& observer,
     const AuthCodeAuthorizationCallback& authorization,
-    std::stop_token stop_token
+    const std::stop_token& stop_token
 ) {
     return observe_authentication(observer, [&] {
         return authenticate_auth_code_account_impl(
@@ -208,7 +208,7 @@ auth::AuthResult<AuthenticationResult> authenticate_auth_code_account(
     const config::Config& config,
     const RuntimeFactory& runtime_factory,
     const AuthCodeAuthorizationCallback& authorization,
-    std::stop_token stop_token
+    const std::stop_token& stop_token
 ) {
     static const NullObserver observer;
     return authenticate_auth_code_account(
@@ -221,7 +221,7 @@ auth::AuthResult<AuthenticationResult> authenticate_account(
     const RuntimeFactory& runtime_factory,
     const events::Observer& observer,
     const AuthorizationCallback& authorization,
-    std::stop_token stop_token
+    const std::stop_token& stop_token
 ) {
     if (!authorization) {
         throw std::invalid_argument{
@@ -239,7 +239,7 @@ auth::AuthResult<AuthenticationResult> authenticate_account(
     const config::Config& config,
     const RuntimeFactory& runtime_factory,
     const AuthorizationCallback& authorization,
-    std::stop_token stop_token
+    const std::stop_token& stop_token
 ) {
     static const NullObserver observer;
     return authenticate_account(

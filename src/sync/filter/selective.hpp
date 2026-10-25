@@ -125,7 +125,7 @@ class TrackedItemPredicate {
 public:
     template <typename Callable>
         requires std::predicate<const Callable&, std::string_view>
-    explicit TrackedItemPredicate(Callable& callable) noexcept
+    explicit TrackedItemPredicate(const Callable& callable) noexcept
         : object_{std::addressof(callable)},
           invoke_{[](const void* object, std::string_view remote_id) {
               return std::invoke(
@@ -133,6 +133,9 @@ public:
                   remote_id
               );
           }} {}
+
+    template <typename Callable>
+    explicit TrackedItemPredicate(const Callable&&) = delete;
 
     [[nodiscard]] bool operator()(std::string_view remote_id) const {
         return invoke_(object_, remote_id);
@@ -151,14 +154,11 @@ private:
 );
 
 template <typename Predicate>
-    requires std::predicate<
-        const std::remove_reference_t<Predicate>&,
-        std::string_view
-    >
+    requires std::predicate<const Predicate&, std::string_view>
 [[nodiscard]] FilteredDelta filter_delta(
     graph::DeltaResult delta,
     const SyncList& sync_list,
-    Predicate&& is_tracked,
+    const Predicate& is_tracked,
     storage::DeltaApplyMode apply_mode
 ) {
     return filter_delta_impl(

@@ -6,7 +6,12 @@ namespace onedrive::cli {
 
 class ConsoleBackend {
 public:
+    ConsoleBackend() = default;
     virtual ~ConsoleBackend() = default;
+    ConsoleBackend(const ConsoleBackend&) = default;
+    ConsoleBackend& operator=(const ConsoleBackend&) = default;
+    ConsoleBackend(ConsoleBackend&&) = default;
+    ConsoleBackend& operator=(ConsoleBackend&&) = default;
 
     virtual void emit(const ConsoleEvent& event) = 0;
     virtual void finish() {}

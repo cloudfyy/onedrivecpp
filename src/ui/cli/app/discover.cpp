@@ -135,7 +135,7 @@ int show_sites(
             console.section(
                 "site_drive",
                 "SharePoint document library:",
-                std::move(fields)
+                fields
             );
         }
     }

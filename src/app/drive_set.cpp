@@ -68,13 +68,18 @@ DriveSet::DriveSet(
 }
 
 void DriveSet::prepare(
-    Target& target, std::stop_token token, const events::Observer& observer
+    Target& target,
+    const std::stop_token& token,
+    const events::Observer& observer
 ) {
     if (target.metrics) {
         return;
     }
     if (token.stop_requested()) {
         throw graph::RequestCancelledError{"Drive preparation cancelled"};
+    }
+    if (!target.identity) {
+        throw std::logic_error{"Drive target identity is not initialized"};
     }
     const auto& identity = *target.identity;
     auto selected = target.config;
@@ -100,7 +105,7 @@ void DriveSet::prepare(
 }
 
 int DriveSet::synchronize(
-    std::stop_token stop_token, sync::PreviewCache* cache
+    const std::stop_token& stop_token, sync::PreviewCache* cache
 ) {
     int aggregate = exit_code::success;
     std::size_t failed = 0;
@@ -110,6 +115,7 @@ int DriveSet::synchronize(
     std::unordered_set<std::string> seen;
     if (cache) {
         std::vector<std::string> references;
+        references.reserve(targets_.size());
         for (const auto& target : targets_) {
             references.push_back(target.reference);
         }
@@ -231,6 +237,7 @@ int DriveSet::synchronize(
 
 std::vector<graph::GraphClient*> DriveSet::graph_clients() const {
     std::vector<graph::GraphClient*> clients;
+    clients.reserve(targets_.size());
     for (const auto& target : targets_) {
         clients.push_back(target.graph.get());
     }

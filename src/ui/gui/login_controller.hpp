@@ -14,7 +14,7 @@ namespace onedrive::gui {
 [[nodiscard]] auth::AuthResult<void> request_browser_authorization(
     auth::AuthCodeSession& session,
     const std::function<void(const QString&)>& open_browser,
-    std::stop_token token = {}
+    const std::stop_token& token = {}
 );
 
 using AuthenticationFunction =
@@ -32,6 +32,7 @@ public:
         AuthenticationFunction authenticate = {}, QObject* parent = nullptr
     );
     ~LoginController() override;
+    Q_DISABLE_COPY_MOVE(LoginController)
     void start(const std::filesystem::path& config_file);
     void cancel();
     [[nodiscard]] bool running() const noexcept;

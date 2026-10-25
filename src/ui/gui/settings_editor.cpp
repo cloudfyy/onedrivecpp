@@ -20,10 +20,10 @@
 namespace onedrive::gui {
 
 SettingsEditor::SettingsEditor(QWidget* parent)
-    : QWidget{parent} {
+    : QWidget{parent},
+      tabs_{new QTabWidget{this}} {
     auto* layout = new QVBoxLayout{this};
     layout->setContentsMargins(0, 0, 0, 0);
-    tabs_ = new QTabWidget{this};
     tabs_->setObjectName("settingsTabs");
     layout->addWidget(tabs_);
     add_account_page();
@@ -87,7 +87,7 @@ void SettingsEditor::add(
     bool directory,
     std::function<bool(const config::Config&)> present
 ) {
-    QWidget* widget;
+    QWidget* widget = nullptr;
     if (kind == Kind::choice) {
         auto* combo = new QComboBox;
         for (const auto& choice : choices) {
@@ -120,7 +120,7 @@ void SettingsEditor::add(
         layout->addWidget(widget);
         layout->addWidget(browse);
         connect(browse, &QPushButton::clicked, this, [this, widget, directory] {
-            auto* edit = static_cast<QLineEdit*>(widget);
+            auto* edit = qobject_cast<QLineEdit*>(widget);
             const auto selected =
                 directory ? QFileDialog::getExistingDirectory(
                                 this, tr("Select directory"), edit->text()
@@ -167,16 +167,16 @@ void SettingsEditor::add(
 
 QString SettingsEditor::value(const Field& field) {
     if (field.kind == Kind::choice) {
-        return static_cast<QComboBox*>(field.widget)->currentData().toString();
+        return qobject_cast<QComboBox*>(field.widget)->currentData().toString();
     }
     if (field.kind == Kind::boolean) {
-        return static_cast<QCheckBox*>(field.widget)->isChecked() ? "true"
-                                                                  : "false";
+        return qobject_cast<QCheckBox*>(field.widget)->isChecked() ? "true"
+                                                                   : "false";
     }
     if (field.kind == Kind::list || field.kind == Kind::override_list) {
-        return static_cast<QPlainTextEdit*>(field.widget)->toPlainText();
+        return qobject_cast<QPlainTextEdit*>(field.widget)->toPlainText();
     }
-    return static_cast<QLineEdit*>(field.widget)->text();
+    return qobject_cast<QLineEdit*>(field.widget)->text();
 }
 
 void SettingsEditor::load(const config::Config& config) {
@@ -188,17 +188,17 @@ void SettingsEditor::load(const config::Config& config) {
             field.widget->setEnabled(field.baseline_present);
         }
         if (field.kind == Kind::choice) {
-            auto* combo = static_cast<QComboBox*>(field.widget);
+            auto* combo = qobject_cast<QComboBox*>(field.widget);
             combo->setCurrentIndex(combo->findData(field.baseline));
         } else if (field.kind == Kind::boolean) {
-            static_cast<QCheckBox*>(field.widget)
+            qobject_cast<QCheckBox*>(field.widget)
                 ->setChecked(field.baseline == "true");
         } else if (field.kind == Kind::list ||
                    field.kind == Kind::override_list) {
-            static_cast<QPlainTextEdit*>(field.widget)
+            qobject_cast<QPlainTextEdit*>(field.widget)
                 ->setPlainText(field.baseline);
         } else {
-            static_cast<QLineEdit*>(field.widget)->setText(field.baseline);
+            qobject_cast<QLineEdit*>(field.widget)->setText(field.baseline);
         }
     }
 }
@@ -231,7 +231,7 @@ void SettingsEditor::retranslate() {
             field.override->setText(tr("Override environment"));
         }
         if (field.kind == Kind::choice) {
-            auto* combo = static_cast<QComboBox*>(field.widget);
+            auto* combo = qobject_cast<QComboBox*>(field.widget);
             for (std::size_t i = 0; i < field.choices.size(); ++i) {
                 combo->setItemText(
                     static_cast<int>(i), tr(field.choices[i].second)

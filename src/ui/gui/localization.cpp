@@ -68,12 +68,14 @@ Localization::Localization(Language language) {
     set_language(language);
 }
 
-Localization::Localization(const QLocale& locale) {
+Localization::Localization(const QLocale& locale)
+    : language_{
+          locale.language() == QLocale::Chinese &&
+                  locale.script() == QLocale::SimplifiedChineseScript
+              ? Language::simplified_chinese
+              : Language::english
+      } {
     initialize_translation_resources();
-    language_ = locale.language() == QLocale::Chinese &&
-                        locale.script() == QLocale::SimplifiedChineseScript
-                    ? Language::simplified_chinese
-                    : Language::english;
     apply_locale(locale);
 }
 

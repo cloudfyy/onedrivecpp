@@ -67,18 +67,11 @@ const std::string& remote_path(const ActiveDownload& download) {
 FailedDownloadDisposition handle_failed_download(
     ActiveDownload& download
 ) noexcept {
-    return std::visit(
-        [](auto& active) {
-            using Active = std::remove_cvref_t<decltype(active)>;
-            if constexpr (std::same_as<Active, PreparedDownload>) {
-                discard_prepared_download(active);
-                return FailedDownloadDisposition::discarded;
-            } else {
-                return FailedDownloadDisposition::journal_retained;
-            }
-        },
-        download
-    );
+    if (auto* prepared = std::get_if<PreparedDownload>(&download)) {
+        discard_prepared_download(*prepared);
+        return FailedDownloadDisposition::discarded;
+    }
+    return FailedDownloadDisposition::journal_retained;
 }
 
 const char* describe(FailedDownloadDisposition disposition) noexcept {

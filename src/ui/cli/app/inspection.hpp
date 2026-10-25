@@ -41,8 +41,8 @@ enum class LocalFileStatus {
 };
 
 struct InspectedFile {
-    const storage::ItemState* item;
-    LocalFileStatus status;
+    const storage::ItemState* item{nullptr};
+    LocalFileStatus status{LocalFileStatus::ok};
     std::optional<std::uint64_t> actual_size;
 };
 
@@ -63,8 +63,8 @@ enum class PartialStatus {
 };
 
 struct InspectedPartial {
-    const storage::PartialDownload* partial;
-    PartialStatus status;
+    const storage::PartialDownload* partial{nullptr};
+    PartialStatus status{PartialStatus::resumable};
     std::optional<std::uint64_t> actual_size;
 };
 

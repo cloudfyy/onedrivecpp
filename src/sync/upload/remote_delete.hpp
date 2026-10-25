@@ -11,7 +11,7 @@ void execute_new_remote_delete(
     storage::PendingDelete deletion,
     graph::GraphClient& graph,
     storage::ItemStore& items,
-    std::stop_token stop_token = {}
+    const std::stop_token& stop_token = {}
 );
 
 }  // namespace onedrive::sync::detail

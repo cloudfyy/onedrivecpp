@@ -32,7 +32,7 @@ private:
 
     struct State {
         std::filesystem::path directory;
-        std::uintmax_t safety_reserve;
+        std::uintmax_t safety_reserve{0};
         SpaceQuery query;
         std::mutex mutex;
         std::condition_variable condition;
@@ -75,6 +75,11 @@ public:
         SpaceQuery query = {}
     );
     ~DownloadSpaceCoordinator();
+    DownloadSpaceCoordinator(const DownloadSpaceCoordinator&) = delete;
+    DownloadSpaceCoordinator&
+    operator=(const DownloadSpaceCoordinator&) = delete;
+    DownloadSpaceCoordinator(DownloadSpaceCoordinator&&) = delete;
+    DownloadSpaceCoordinator& operator=(DownloadSpaceCoordinator&&) = delete;
 
     [[nodiscard]] Lease acquire(std::uintmax_t bytes);
     void cancel() noexcept;

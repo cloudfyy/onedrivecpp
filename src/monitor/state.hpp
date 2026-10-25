@@ -293,19 +293,14 @@ synchronization_reason(LocalChangeKind kind) noexcept {
 ) {
     if (manual_triggered) {
         notification_sync_requested = false;
-        return transition_monitor(
-            std::move(state), ManualTriggerEvent{}, timing
-        );
+        return transition_monitor(state, ManualTriggerEvent{}, timing);
     }
     if (notification_sync_requested) {
         notification_sync_requested = false;
-        return transition_monitor(
-            std::move(state), RemoteChangeEvent{}, timing
-        );
+        return transition_monitor(state, RemoteChangeEvent{}, timing);
     }
-    auto transition = transition_monitor(
-        std::move(state), DeadlineReachedEvent{now}, timing
-    );
+    auto transition =
+        transition_monitor(state, DeadlineReachedEvent{now}, timing);
     if (transition.effect == MonitorEffect::synchronize) {
         notification_sync_requested = false;
     }

@@ -226,7 +226,7 @@ int show_drives(
         std::ranges::move(
             drive_file_fields(inspection), std::back_inserter(fields)
         );
-        console.section("drive", "OneDrive drive:", std::move(fields));
+        console.section("drive", "OneDrive drive:", fields);
     }
     return exit_code::success;
 }
@@ -243,7 +243,7 @@ int show_quota(
         {.label = "drive id:", .key = "drive_id", .value = drive.id},
     };
     std::ranges::move(quota_fields(drive.quota), std::back_inserter(fields));
-    console.section("quota", "OneDrive storage quota:", std::move(fields));
+    console.section("quota", "OneDrive storage quota:", fields);
     return exit_code::success;
 }
 
@@ -368,7 +368,7 @@ int show_status(
             },
         }
     );
-    console.section("status", "Synchronization status:", std::move(fields));
+    console.section("status", "Synchronization status:", fields);
     return exit_code::success;
 }
 

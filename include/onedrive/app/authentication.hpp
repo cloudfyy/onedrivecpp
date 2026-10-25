@@ -47,14 +47,14 @@ authenticate_auth_code_account(
     const RuntimeFactory& runtime_factory,
     const events::Observer& observer,
     const AuthCodeAuthorizationCallback& authorization,
-    std::stop_token stop_token = {}
+    const std::stop_token& stop_token = {}
 );
 [[nodiscard]] auth::AuthResult<AuthenticationResult>
 authenticate_auth_code_account(
     const config::Config& config,
     const RuntimeFactory& runtime_factory,
     const AuthCodeAuthorizationCallback& authorization,
-    std::stop_token stop_token = {}
+    const std::stop_token& stop_token = {}
 );
 
 [[nodiscard]] auth::AuthResult<AuthenticationResult> authenticate_account(
@@ -62,13 +62,13 @@ authenticate_auth_code_account(
     const RuntimeFactory& runtime_factory,
     const events::Observer& observer,
     const AuthorizationCallback& authorization,
-    std::stop_token stop_token = {}
+    const std::stop_token& stop_token = {}
 );
 [[nodiscard]] auth::AuthResult<AuthenticationResult> authenticate_account(
     const config::Config& config,
     const RuntimeFactory& runtime_factory,
     const AuthorizationCallback& authorization,
-    std::stop_token stop_token = {}
+    const std::stop_token& stop_token = {}
 );
 
 } // namespace onedrive::app
