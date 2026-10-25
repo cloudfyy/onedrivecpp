@@ -1,5 +1,7 @@
 #pragma once
 
+#include "onedrive/account/drive_source.hpp"
+
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -22,6 +24,14 @@ struct DriveIdentity {
     std::string drive_name;
     std::optional<ProfilePhoto> photo;
     std::string drive_type{};
+
+    [[nodiscard]] constexpr DriveKind kind() const noexcept {
+        return parse_drive_kind(drive_type);
+    }
+
+    [[nodiscard]] constexpr DriveSourcePolicy source_policy() const noexcept {
+        return drive_source_policy(drive_type);
+    }
 };
 
 struct AccountPaths {

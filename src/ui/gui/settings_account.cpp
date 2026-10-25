@@ -1,9 +1,236 @@
 #include "settings_editor.hpp"
+#include "onedrive/app/factory.hpp"
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QFormLayout>
+#include <QHBoxLayout>
+#include <QHeaderView>
+#include <QLabel>
+#include <QLineEdit>
+#include <QPlainTextEdit>
+#include <QPushButton>
 #include <QRegularExpression>
 #include <QStringList>
+#include <QTreeWidget>
+#include <QTreeWidgetItem>
+#include <QVBoxLayout>
+#include <exception>
 
 namespace onedrive::gui {
+
+config::Config SettingsEditor::effective_account_config() const {
+    auto config = config_;
+    if (auto* app_id = findChild<QLineEdit*>("auth.application_id")) {
+        config.application_id = app_id->text().trimmed().toStdString();
+    }
+    if (auto* tenant = findChild<QLineEdit*>("auth.tenant_id")) {
+        const auto text = tenant->text().trimmed();
+        if (!text.isEmpty()) {
+            config.azure_tenant_id = text.toStdString();
+        }
+    }
+    if (auto* state_dir = findChild<QLineEdit*>("state.directory")) {
+        const auto text = state_dir->text().trimmed();
+        if (!text.isEmpty()) {
+            config.state_directory = text.toStdString();
+        }
+    }
+    if (auto* auth_endpoint = findChild<QLineEdit*>("auth.endpoint")) {
+        const auto text = auth_endpoint->text().trimmed();
+        if (!text.isEmpty()) {
+            config.auth_endpoint = text.toStdString();
+        }
+    }
+    if (auto* graph_endpoint = findChild<QLineEdit*>("graph.endpoint")) {
+        const auto text = graph_endpoint->text().trimmed();
+        if (!text.isEmpty()) {
+            config.graph_endpoint = text.toStdString();
+        }
+    }
+    if (auto* scopes = findChild<QPlainTextEdit*>("auth.scopes")) {
+        const auto joined =
+            scopes->toPlainText()
+                .split(QRegularExpression{"\\s+"}, Qt::SkipEmptyParts)
+                .join(' ');
+        if (!joined.isEmpty()) {
+            config.auth_scope = joined.toStdString();
+        }
+    }
+    return config;
+}
+
+void SettingsEditor::browse_sharepoint_libraries() {
+    auto* drive_ids_edit = findChild<QPlainTextEdit*>("sync.drive_ids");
+    if (!drive_ids_edit) {
+        return;
+    }
+
+    QDialog dialog{this};
+    dialog.setObjectName("sharePointBrowserDialog");
+    dialog.setWindowTitle(tr("Browse SharePoint libraries"));
+    dialog.resize(680, 440);
+
+    auto* root_layout = new QVBoxLayout{&dialog};
+    auto* search_layout = new QHBoxLayout;
+    auto* search_edit = new QLineEdit{&dialog};
+    search_edit->setObjectName("sharePointSearchEdit");
+    search_edit->setPlaceholderText(
+        tr("Keyword, site URL, hostname:/sites/path, or * for all sites")
+    );
+    auto* search_button = new QPushButton{tr("Search sites"), &dialog};
+    search_button->setObjectName("sharePointSearchButton");
+    search_layout->addWidget(search_edit);
+    search_layout->addWidget(search_button);
+    root_layout->addLayout(search_layout);
+
+    auto* status_label = new QLabel{
+        tr("Enter a site keyword or URL, or click Search sites to list "
+           "accessible SharePoint sites."),
+        &dialog
+    };
+    status_label->setObjectName("sharePointBrowserStatus");
+    status_label->setWordWrap(true);
+    root_layout->addWidget(status_label);
+
+    auto* tree = new QTreeWidget{&dialog};
+    tree->setObjectName("sharePointLibrariesTree");
+    tree->setColumnCount(4);
+    tree->setHeaderLabels(
+        {tr("Site / Library"), tr("Drive ID"), tr("Type"), tr("Web URL")}
+    );
+    tree->setSelectionMode(QAbstractItemView::ExtendedSelection);
+    tree->header()->setStretchLastSection(true);
+    root_layout->addWidget(tree);
+
+    auto* buttons = new QDialogButtonBox{
+        QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog
+    };
+    if (auto* ok_button = buttons->button(QDialogButtonBox::Ok)) {
+        ok_button->setObjectName("sharePointAddButton");
+        ok_button->setText(tr("Add selected Drive IDs"));
+    }
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    root_layout->addWidget(buttons);
+
+    const auto run_query = [&] {
+        const auto raw = search_edit->text().trimmed().toStdString();
+        const auto effective = effective_account_config();
+        const auto fetch_sites = [&](const std::string& target) {
+            if (site_search_) {
+                return site_search_(effective, target);
+            }
+            return app::ProductionRuntimeFactory{}
+                .create_graph_info_client(effective)
+                ->search_sites(target);
+        };
+        tree->clear();
+        try {
+            const auto outcome =
+                graph::search_sites_with_fallback(raw, fetch_sites);
+            const auto& sites = outcome.sites;
+            if (sites.empty()) {
+                status_label->setText(
+                    tr("No accessible SharePoint sites matched the query.")
+                );
+                return;
+            }
+            std::size_t library_count = 0;
+            for (const auto& site : sites) {
+                auto* site_item = new QTreeWidgetItem{tree};
+                site_item->setText(
+                    0, QString::fromStdString(site.display_name)
+                );
+                site_item->setText(1, QString::fromStdString(site.id));
+                site_item->setText(2, tr("Site"));
+                site_item->setText(3, QString::fromStdString(site.web_url));
+                site_item->setFlags(Qt::ItemIsEnabled);
+                for (const auto& drive : site.drives) {
+                    ++library_count;
+                    auto* drive_item = new QTreeWidgetItem{site_item};
+                    const auto drive_id = QString::fromStdString(drive.id);
+                    drive_item->setText(0, QString::fromStdString(drive.name));
+                    drive_item->setText(1, drive_id);
+                    drive_item->setText(2, QString::fromStdString(drive.type));
+                    drive_item->setText(
+                        3, QString::fromStdString(drive.web_url)
+                    );
+                    drive_item->setData(0, Qt::UserRole, drive_id);
+                    drive_item->setFlags(
+                        Qt::ItemIsEnabled | Qt::ItemIsSelectable |
+                        Qt::ItemIsUserCheckable
+                    );
+                    drive_item->setCheckState(0, Qt::Unchecked);
+                }
+                site_item->setExpanded(true);
+            }
+            if (outcome.used_wildcard_fallback) {
+                status_label->setText(
+                    tr("No SharePoint sites matched \"%1\". Showing %2 "
+                       "accessible site(s) and %3 document library(ies).")
+                        .arg(QString::fromStdString(outcome.effective_query))
+                        .arg(sites.size())
+                        .arg(library_count)
+                );
+            } else {
+                status_label->setText(
+                    tr("Found %1 SharePoint site(s) and %2 document "
+                       "library(ies).")
+                        .arg(sites.size())
+                        .arg(library_count)
+                );
+            }
+        } catch (const std::exception& error) {
+            status_label->setText(tr("Could not query SharePoint sites:\n%1")
+                                      .arg(QString::fromUtf8(error.what())));
+        }
+    };
+    connect(search_button, &QPushButton::clicked, &dialog, run_query);
+    connect(search_edit, &QLineEdit::returnPressed, &dialog, run_query);
+
+    if (dialog.exec() != QDialog::Accepted) {
+        return;
+    }
+
+    QStringList selected_ids;
+    for (int i = 0; i < tree->topLevelItemCount(); ++i) {
+        auto* site_item = tree->topLevelItem(i);
+        for (int j = 0; j < site_item->childCount(); ++j) {
+            auto* drive_item = site_item->child(j);
+            if (drive_item->checkState(0) == Qt::Checked) {
+                selected_ids.push_back(
+                    drive_item->data(0, Qt::UserRole).toString()
+                );
+            }
+        }
+    }
+    if (selected_ids.isEmpty()) {
+        for (auto* item : tree->selectedItems()) {
+            const auto id = item->data(0, Qt::UserRole).toString();
+            if (!id.isEmpty()) {
+                selected_ids.push_back(id);
+            }
+        }
+    }
+    if (selected_ids.isEmpty()) {
+        return;
+    }
+
+    QStringList lines;
+    for (const auto& line :
+         drive_ids_edit->toPlainText().split('\n', Qt::SkipEmptyParts)) {
+        const auto trimmed = line.trimmed();
+        if (!trimmed.isEmpty() && !lines.contains(trimmed)) {
+            lines.push_back(trimmed);
+        }
+    }
+    for (const auto& id : selected_ids) {
+        if (!id.isEmpty() && !lines.contains(id)) {
+            lines.push_back(id);
+        }
+    }
+    drive_ids_edit->setPlainText(lines.join('\n'));
+}
 
 void SettingsEditor::add_account_page() {
     auto* account = page();

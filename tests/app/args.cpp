@@ -501,11 +501,13 @@ int test_args() {
             .exit_code != exit_code::usage_error) {
         return fail("transfer download accepted a missing remote path");
     }
-    if (run_application(
-            runtime_factory, {"onedrive-cpp", "inspect", "sites"}
-        )
-            .exit_code != exit_code::usage_error) {
-        return fail("inspect sites accepted a missing search query");
+    const auto wildcard_sites =
+        parse_test_arguments({"onedrive-cpp", "inspect", "sites"});
+    if (wildcard_sites.exit_code ||
+        wildcard_sites.arguments.operation !=
+            onedrive::app::detail::Operation::sites ||
+        !wildcard_sites.arguments.site_query.empty()) {
+        return fail("inspect sites rejected an omitted default wildcard query");
     }
     for (const std::string_view command :
          {"doctor", "status", "drives", "shared", "sites", "quota"}) {

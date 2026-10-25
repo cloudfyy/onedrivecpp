@@ -10,6 +10,7 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDialog>
 #include <QFileDialog>
 #include <QLabel>
 #include <QLineEdit>
@@ -20,6 +21,7 @@
 #include <QThread>
 #include <QTimer>
 #include <QToolButton>
+#include <QTreeWidget>
 
 #include <algorithm>
 #include <atomic>

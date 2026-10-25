@@ -221,6 +221,7 @@ const std::array rules{
     Rule{"upload_local_permission", &local_resource},
     Rule{"upload_local_storage", &local_resource},
     Rule{"upload_remote_quota", &local_resource},
+    Rule{"upload_remote_permission", &local_resource},
     Rule{"upload_delete_limit", &deletion_limit},
     Rule{"upload_delete_conflict", &deletion_conflict},
 };

@@ -145,14 +145,141 @@ int test_sites_and_document_libraries() {
             "https://graph.example.test/v1.0/library-next") {
         return fail("SharePoint sites or document libraries were not parsed");
     }
+
+    auto direct_transport = std::make_unique<
+        FakeTransport>(std::deque<onedrive::http::HttpResult>{
+        token_response(),
+        onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body =
+                R"json({"id":"example.sharepoint.test,site-id,web-id","name":"engineering","displayName":"Engineering","webUrl":"https://example.sharepoint.test/sites/engineering"})json",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body =
+                R"json({"value":[{"id":"documents-id","name":"Documents","driveType":"documentLibrary"}]})json",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body =
+                R"json({"id":"example.sharepoint.test,root-id,web-id","name":"root","displayName":"Root Site","webUrl":"https://example.sharepoint.test"})json",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body = R"json({"value":[]})json",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body =
+                R"json({"id":"example.sharepoint.test,ops-id,web-id","name":"ops","displayName":"Operations","webUrl":"https://example.sharepoint.test/teams/ops"})json",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body = R"json({"value":[]})json",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body =
+                R"json({"id":"example.sharepoint.test,site-id,web-id","name":"engineering","displayName":"Engineering","webUrl":"https://example.sharepoint.test/sites/engineering"})json",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 200,
+            .body = R"json({"value":[]})json",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 404,
+            .body =
+                R"json({"error":{"code":"itemNotFound","message":"Site not found"}})json",
+        },
+    });
+    auto* direct_pointer = direct_transport.get();
+    onedrive::graph::MicrosoftGraphClient direct_client{
+        wrap_transport(std::move(direct_transport)),
+        wrap_token_store(
+            std::make_unique<FakeTokenStore>(std::string{"existing-refresh"})
+        ),
+        auth_options(),
+        {
+            .drive_id = "me",
+            .endpoint = "https://graph.example.test/v1.0",
+        },
+    };
+    const auto by_url = direct_client.search_sites(
+        "  https://example.sharepoint.test/sites/engineering/  "
+    );
+    const auto by_root_url =
+        direct_client.search_sites("https://example.sharepoint.test/");
+    const auto by_colon_path =
+        direct_client.search_sites("example.sharepoint.test:/teams/ops");
+    const auto by_site_id =
+        direct_client.search_sites("example.sharepoint.test,site-id,web-id");
+    const auto missing_site = direct_client.search_sites(
+        "https://example.sharepoint.test/sites/missing"
+    );
+    if (by_url.size() != 1 || by_url[0].drives.size() != 1 ||
+        by_root_url.size() != 1 || by_colon_path.size() != 1 ||
+        by_site_id.size() != 1 || !missing_site.empty() ||
+        direct_pointer->queued.requests.size() != 10 ||
+        direct_pointer->queued.requests[1].url !=
+            "https://graph.example.test/v1.0/sites/example.sharepoint.test:/"
+            "sites/engineering?$select=id,name,displayName,webUrl" ||
+        direct_pointer->queued.requests[3].url !=
+            "https://graph.example.test/v1.0/sites/example.sharepoint.test?"
+            "$select=id,name,displayName,webUrl" ||
+        direct_pointer->queued.requests[5].url !=
+            "https://graph.example.test/v1.0/sites/example.sharepoint.test:/"
+            "teams/ops?$select=id,name,displayName,webUrl" ||
+        direct_pointer->queued.requests[7].url !=
+            "https://graph.example.test/v1.0/sites/"
+            "example.sharepoint.test%2Csite-id%2Cweb-id?"
+            "$select=id,name,displayName,webUrl" ||
+        direct_pointer->queued.requests[9].url !=
+            "https://graph.example.test/v1.0/sites/example.sharepoint.test:/"
+            "sites/missing?$select=id,name,displayName,webUrl") {
+        return fail("direct SharePoint site resolution failed");
+    }
     return EXIT_SUCCESS;
 }
 
 int test_rejects_invalid_discovery_data() {
+    for (const auto* invalid_query :
+         {"",
+          "   ",
+          "http://example.sharepoint.test/sites/team",
+          "https://invalid_host/sites/team",
+          "https://example.sharepoint.test/sites/../secret",
+          "https://example.sharepoint.test/sites/team?query=1",
+          "invalid_host:/sites/team"}) {
+        try {
+            static_cast<void>(make_client({})->search_sites(invalid_query));
+            return fail("an invalid SharePoint site query was accepted");
+        } catch (const std::invalid_argument&) {
+        }
+    }
     try {
-        static_cast<void>(make_client({})->search_sites(""));
-        return fail("an empty SharePoint site query was accepted");
-    } catch (const std::invalid_argument&) {
+        static_cast<void>(
+            make_client(
+                {
+                    onedrive::http::HttpResponse{
+                        .status_code = 403,
+                        .body =
+                            R"json({"error":{"code":"accessDenied","message":"Access denied"}})json",
+                    },
+                }
+            )
+                ->search_sites("*")
+        );
+        return fail("a forbidden SharePoint site query was accepted");
+    } catch (const std::runtime_error& error) {
+        const std::string_view message{error.what()};
+        if (!message.contains("Access denied") ||
+            !message.contains("Sites.Read.All") ||
+            !message.contains("Sites.Selected")) {
+            return fail(
+                "forbidden SharePoint site query did not include permission "
+                "guidance"
+            );
+        }
     }
     try {
         static_cast<void>(

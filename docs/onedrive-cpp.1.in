@@ -23,7 +23,7 @@ onedrive-cpp \- modern C++ OneDrive synchronization client
 .PP
 .B onedrive-cpp inspect sites
 .RI [ options ]
-.I QUERY
+.RI [ QUERY ]
 .PP
 .B onedrive-cpp inspect quota
 .RI [ options ]
@@ -261,13 +261,21 @@ URL, and the local OneDrive path for shortcuts. The command performs read-only
 Graph queries and does not synchronize content.
 .TP
 .B inspect sites
-Search accessible SharePoint sites matching
+Search or resolve accessible SharePoint sites matching
 .I QUERY
-and list their document-library Drives. This read-only command requires
+(defaulting to
+.B *
+when omitted) and list their document-library Drives. Accepts a keyword,
+SharePoint site URL,
+.IR hostname :/sites/ path ,
+.BR root ,
+or site ID. This read-only command requires
 .B Sites.Read.All
 or
 .B Sites.ReadWrite.All
-in
+for search, or
+.B Sites.Selected
+for direct site resolution, in
 .BR auth.scopes ;
 run
 .B onedrive-cpp account login

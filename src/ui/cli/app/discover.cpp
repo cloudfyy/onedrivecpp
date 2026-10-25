@@ -15,6 +15,14 @@ std::string source_name(graph::SharedResourceSource source) {
                : "shortcut";
 }
 
+std::vector<cli::Field> site_fields(const graph::SiteInfo& site) {
+    return {
+        {.label = "name:", .key = "name", .value = site.display_name},
+        {.label = "id:", .key = "id", .value = site.id},
+        {.label = "web URL:", .key = "web_url", .value = site.web_url},
+    };
+}
+
 } // namespace
 
 int show_shared(
@@ -87,34 +95,28 @@ int show_sites(
     const cli::Console& console,
     const std::string& query
 ) {
-    const auto sites =
-        runtime_factory.create_graph_info_client(config)->search_sites(query);
-    if (sites.empty()) {
+    const auto client = runtime_factory.create_graph_info_client(config);
+    const auto outcome = graph::search_sites_with_fallback(
+        query,
+        [&](const std::string& target) { return client->search_sites(target); }
+    );
+    if (outcome.sites.empty() || outcome.used_wildcard_fallback) {
         console.message(
             cli::MessageKind::information,
             "no_sharepoint_sites",
             "No accessible SharePoint sites matched the query."
         );
+        for (const auto& site : outcome.sites) {
+            console.section(
+                "available_site",
+                "Available SharePoint site:",
+                site_fields(site)
+            );
+        }
         return exit_code::success;
     }
-    for (const auto& site : sites) {
-        console.section(
-            "site",
-            "SharePoint site:",
-            {
-                {
-                    .label = "name:",
-                    .key = "name",
-                    .value = site.display_name,
-                },
-                {.label = "id:", .key = "id", .value = site.id},
-                {
-                    .label = "web URL:",
-                    .key = "web_url",
-                    .value = site.web_url,
-                },
-            }
-        );
+    for (const auto& site : outcome.sites) {
+        console.section("site", "SharePoint site:", site_fields(site));
         for (const auto& drive : site.drives) {
             auto fields = drive_fields(drive);
             fields.insert(

@@ -144,23 +144,26 @@ MicrosoftGraphClient::MicrosoftGraphClient(
 
 MicrosoftGraphClient::~MicrosoftGraphClient() = default;
 
-http::HttpResponse MicrosoftGraphClient::graph_get(
+http::HttpResponse MicrosoftGraphClient::graph_get_response(
     const std::string& url,
     std::string_view description,
     std::stop_token stop_token
 ) const {
     auto response = client_detail::perform_with_retries(
         [&] {
-            return transport_->perform(http::HttpRequest{
-                .method = http::HttpMethod::get,
-                .url = url,
-                .headers = {
-                    "Accept: application/json",
-                    "Authorization: Bearer " + access_token(stop_token),
-                },
-                .body = {},
-                .stop_token = stop_token,
-            });
+            return transport_->perform(
+                http::HttpRequest{
+                    .method = http::HttpMethod::get,
+                    .url = url,
+                    .headers =
+                        {
+                            "Accept: application/json",
+                            "Authorization: Bearer " + access_token(stop_token),
+                        },
+                    .body = {},
+                    .stop_token = stop_token,
+                }
+            );
         },
         options_,
         options_.maximum_throttle_retries,
@@ -169,7 +172,8 @@ http::HttpResponse MicrosoftGraphClient::graph_get(
         stop_token
     );
     if (stop_token.stop_requested() ||
-        (!response && response.error().code == http::HttpErrorCode::cancelled)) {
+        (!response &&
+         response.error().code == http::HttpErrorCode::cancelled)) {
         throw RequestCancelledError{
             "Microsoft Graph " + std::string{description} + " was cancelled"
         };
@@ -180,14 +184,23 @@ http::HttpResponse MicrosoftGraphClient::graph_get(
             " failed: " + response.error().message
         );
     }
-    if (!client_detail::successful_status(response->status_code)) {
+    return *std::move(response);
+}
+
+http::HttpResponse MicrosoftGraphClient::graph_get(
+    const std::string& url,
+    std::string_view description,
+    std::stop_token stop_token
+) const {
+    auto response = graph_get_response(url, description, std::move(stop_token));
+    if (!client_detail::successful_status(response.status_code)) {
         const auto document =
-            client_detail::parse_graph_json(*response, description);
+            client_detail::parse_graph_json(response, description);
         client_detail::require_successful_graph_response(
-            document, response->status_code
+            document, response.status_code
         );
     }
-    return *std::move(response);
+    return response;
 }
 
 account::DriveIdentity fetch_drive_identity(
@@ -251,8 +264,10 @@ account::DriveIdentity fetch_drive_identity(
         identity.user_display_name =
             user.at("displayName").get<std::string>();
         identity.drive_id = drive.at("id").get<std::string>();
-        identity.drive_name = drive.value("name", std::string{"OneDrive"});
         identity.drive_type = drive.value("driveType", std::string{});
+        const auto default_name =
+            std::string{identity.source_policy().default_drive_name};
+        identity.drive_name = drive.value("name", default_name);
     } catch (const Json::exception& error) {
         throw std::runtime_error(
             "Microsoft Graph identity response is missing required data: " +
@@ -266,7 +281,8 @@ account::DriveIdentity fetch_drive_identity(
         );
     }
     if (identity.drive_name.empty()) {
-        identity.drive_name = "OneDrive";
+        identity.drive_name =
+            std::string{identity.source_policy().default_drive_name};
     }
 
     if (stop_token.stop_requested()) {

@@ -220,6 +220,116 @@ void test_editor_browse_and_advanced() {
             );
         }
     }
+
+    tabs->setCurrentIndex(0);
+    text(editor, "auth.application_id", "sp-client-id");
+    auto* drive_ids = editor.findChild<QPlainTextEdit*>("sync.drive_ids");
+    auto* browse_sp = editor.findChild<QPushButton*>("browseSharePointButton");
+    require(
+        drive_ids != nullptr && browse_sp != nullptr,
+        "SharePoint library browser button missing"
+    );
+    std::vector<std::string> queries;
+    std::string observed_app_id;
+    editor.set_site_search_function(
+        [&](const config::Config& cfg,
+            const std::string& query) -> std::vector<graph::SiteInfo> {
+            observed_app_id = cfg.application_id;
+            queries.push_back(query);
+            if (query == "error") {
+                throw std::runtime_error{"simulated 403 Sites.Read.All"};
+            }
+            if (query == "missing") {
+                return {};
+            }
+            return {
+                graph::SiteInfo{
+                    .id = "contoso.sharepoint.com,site-1,web-1",
+                    .name = "engineering",
+                    .display_name = "Engineering",
+                    .web_url = "https://contoso.sharepoint.com/sites/eng",
+                    .drives = {
+                        graph::DriveInfo{
+                            .id = "me",
+                            .name = "Existing Default",
+                            .type = "documentLibrary",
+                            .web_url = "https://contoso.sharepoint.com/sites/"
+                                       "eng/Default",
+                        },
+                        graph::DriveInfo{
+                            .id = "drv-eng-docs",
+                            .name = "Documents",
+                            .type = "documentLibrary",
+                            .web_url = "https://contoso.sharepoint.com/sites/"
+                                       "eng/Shared%20Documents",
+                        },
+                        graph::DriveInfo{
+                            .id = "drv-eng-specs",
+                            .name = "Specs",
+                            .type = "documentLibrary",
+                            .web_url = "https://contoso.sharepoint.com/sites/"
+                                       "eng/Specs",
+                        },
+                    },
+                },
+            };
+        }
+    );
+    bool sp_handled = false;
+    QTimer sp_dialogs;
+    QObject::connect(&sp_dialogs, &QTimer::timeout, &editor, [&] {
+        auto* dialog =
+            qobject_cast<QDialog*>(QApplication::activeModalWidget());
+        if (!dialog || dialog->objectName() != "sharePointBrowserDialog" ||
+            sp_handled) {
+            return;
+        }
+        sp_handled = true;
+        auto* search_edit =
+            dialog->findChild<QLineEdit*>("sharePointSearchEdit");
+        auto* search_btn =
+            dialog->findChild<QPushButton*>("sharePointSearchButton");
+        auto* status = dialog->findChild<QLabel*>("sharePointBrowserStatus");
+        auto* tree = dialog->findChild<QTreeWidget*>("sharePointLibrariesTree");
+        require(
+            search_edit && search_btn && status && tree,
+            "SharePoint browser dialog controls missing"
+        );
+        search_edit->setText("error");
+        search_btn->click();
+        require(
+            status->text().contains("simulated 403 Sites.Read.All"),
+            "SharePoint browser did not surface query failure"
+        );
+        search_edit->setText("missing");
+        search_btn->click();
+        require(
+            tree->topLevelItemCount() == 1 &&
+                tree->topLevelItem(0)->childCount() == 3 &&
+                status->text().contains("missing"),
+            "SharePoint browser did not fall back to wildcard site listing"
+        );
+        search_edit->clear();
+        search_btn->click();
+        require(
+            tree->topLevelItemCount() == 1 &&
+                tree->topLevelItem(0)->childCount() == 3,
+            "SharePoint browser default wildcard search failed"
+        );
+        tree->topLevelItem(0)->child(0)->setCheckState(0, Qt::Checked);
+        tree->topLevelItem(0)->child(1)->setCheckState(0, Qt::Checked);
+        tree->topLevelItem(0)->child(2)->setCheckState(0, Qt::Checked);
+        QMetaObject::invokeMethod(dialog, "accept", Qt::QueuedConnection);
+    });
+    sp_dialogs.start(1);
+    browse_sp->click();
+    sp_dialogs.stop();
+    require(
+        sp_handled && observed_app_id == "sp-client-id" &&
+            queries == std::vector<std::string>{"error", "missing", "*", "*"} &&
+            drive_ids->toPlainText() == "me\ndrv-eng-docs\ndrv-eng-specs",
+        "SharePoint browser did not deduplicate and append selected Drive IDs"
+    );
 }
 
 void test_configuration_fingerprint() {

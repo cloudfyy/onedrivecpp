@@ -28,6 +28,8 @@ inline constexpr std::size_t maximum_json_response_bytes =
 [[nodiscard]] std::string graph_error_message(const Json& response, long status_code);
 [[nodiscard]] std::string graph_error_code(const Json& response);
 [[nodiscard]] bool upload_quota_error(const Json& response, long status_code);
+[[nodiscard]] bool
+upload_permission_error(const Json& response, long status_code);
 [[noreturn]] void throw_upload_response_error(const Json& response, long status_code);
 [[nodiscard]] std::string normalized_endpoint(std::string endpoint);
 [[nodiscard]] std::string graph_drive_prefix(const GraphOptions& options);

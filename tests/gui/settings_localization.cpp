@@ -42,6 +42,12 @@ void test_tooltips_and_language_switching() {
             remember(browse, tip);
             remember(input->parentWidget(), tip);
         }
+        if (auto* browse_sp = input->parentWidget()->findChild<QPushButton*>(
+                "browseSharePointButton", Qt::FindDirectChildrenOnly
+            )) {
+            remember(browse_sp, tip);
+            remember(input->parentWidget(), tip);
+        }
         if (auto* override = editor->findChild<QCheckBox*>(
                 input->objectName() + ".override"
             )) {

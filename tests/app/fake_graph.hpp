@@ -120,7 +120,9 @@ public:
 
     [[nodiscard]] std::vector<onedrive::graph::SiteInfo>
     search_sites(const std::string& query) const {
-        if (empty_sites_ || query != "Engineering") {
+        if (empty_sites_ ||
+            (query != "Engineering" && query != "*" &&
+             query != "https://example.sharepoint.test/sites/engineering")) {
             return {};
         }
         return {

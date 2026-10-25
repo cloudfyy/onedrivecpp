@@ -789,6 +789,49 @@ int test_flow() {
                                     )) {
         return fail("shared command did not report an empty result");
     }
+    const auto unmatched_sites = run_application(
+        runtime_factory,
+        {
+            "onedrive-cpp",
+            "inspect",
+            "sites",
+            "Marketing",
+            "--config",
+            config_path.string(),
+            "--output",
+            "json",
+        }
+    );
+    const auto wildcard_sites = run_application(
+        runtime_factory,
+        {
+            "onedrive-cpp",
+            "inspect",
+            "sites",
+            "--config",
+            config_path.string(),
+            "--output",
+            "json",
+        }
+    );
+    runtime_factory.graph_info_client_count -= 2;
+    if (unmatched_sites.exit_code != exit_code::success ||
+        !unmatched_sites.standard_output.contains(
+            R"("event":"no_sharepoint_sites")"
+        ) ||
+        !unmatched_sites.standard_output.contains(
+            R"("event":"available_site")"
+        ) ||
+        !unmatched_sites.standard_output.contains(R"("name":"Engineering")") ||
+        wildcard_sites.exit_code != exit_code::success ||
+        !wildcard_sites.standard_output.contains(R"("event":"site_drive")") ||
+        !wildcard_sites.standard_output.contains(
+            R"("id":"library-drive-id")"
+        )) {
+        return fail(
+            "sites command did not list default sites or fallback suggestions"
+        );
+    }
     runtime_factory.empty_sites = true;
     const auto no_sites = run_application(
         runtime_factory,
@@ -806,8 +849,9 @@ int test_flow() {
     runtime_factory.empty_sites = false;
     if (no_sites.exit_code != exit_code::success ||
         !no_sites.standard_output.contains(
-                                       R"("event":"no_sharepoint_sites")"
-                                   )) {
+            R"("event":"no_sharepoint_sites")"
+        ) ||
+        no_sites.standard_output.contains(R"("event":"available_site")")) {
         return fail("sites command did not report an empty result");
     }
 

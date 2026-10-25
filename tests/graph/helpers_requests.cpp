@@ -163,6 +163,28 @@ int test_paths_and_errors() {
             return fail("Graph quota response used the wrong error code");
         }
     }
+    const Json permission_error = {
+        {"error", {{"code", "accessDenied"}, {"message", "read-only library"}}},
+    };
+    if (!detail::upload_permission_error(Json::object(), 403) ||
+        !detail::upload_permission_error(permission_error, 400) ||
+        !detail::upload_permission_error(
+            Json{{"error", {{"code", "notAllowed"}}}}, 400
+        ) ||
+        detail::upload_permission_error(error, 403) ||
+        detail::upload_permission_error(Json::object(), 400)) {
+        return fail(
+            "Graph permission helpers classified a response incorrectly"
+        );
+    }
+    try {
+        detail::throw_upload_response_error(permission_error, 403);
+        return fail("Graph permission response was accepted");
+    } catch (const onedrive::graph::UploadResourceError& resource_error) {
+        if (resource_error.reason_code() != "remote_permission") {
+            return fail("Graph permission response used the wrong error code");
+        }
+    }
     if (!throws_with(
             [&] { detail::throw_upload_response_error(Json::object(), 500); },
             "HTTP 500"

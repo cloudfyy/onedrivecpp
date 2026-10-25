@@ -309,6 +309,84 @@ int test_local_change_during_upload() {
         !items.pending_uploads_by_path.empty() || !metrics.last_success) {
         return fail("follow-up upload did not commit the changed local file");
     }
+
+    const auto sp_root = temporary.path() / "sharepoint-enriched-upload";
+    std::filesystem::create_directories(sp_root);
+    onedrive::test::write_file(sp_root / "report.docx", "payload");
+    FakeItemStore sp_items;
+    sp_items.saved_delta_link = "saved";
+    FakeGraphClient sp_graph;
+    sp_graph.upload_enriched_size = 42;
+    sp_graph.upload_enriched_hash = onedrive::util::FileHash{
+        .algorithm = onedrive::util::FileHashAlgorithm::quick_xor,
+        .value = "SgAAAAAAAAAAAAAAAQAAAAAAAAA=",
+    };
+    FakeMetrics sp_metrics;
+    auto sp_config = config_for(sp_root, false);
+    sp_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
+    if (onedrive::sync::SyncEngine{
+            sp_config, sp_graph, sp_items, sp_metrics, &default_console
+        }
+                .synchronize() != exit_code::success ||
+        sp_graph.upload_count != 1) {
+        return fail("SharePoint enriched file upload was rejected");
+    }
+    const auto sp_uploaded = sp_items.find("me", "uploaded-1");
+    if (!sp_uploaded || sp_uploaded->size != 42 ||
+        sp_uploaded->local_size != 7 || !sp_uploaded->content_hash ||
+        sp_uploaded->content_hash->algorithm !=
+            onedrive::util::FileHashAlgorithm::sha256) {
+        return fail("SharePoint enriched upload lost local vs remote size");
+    }
+    sp_graph.changes = {
+        onedrive::graph::RemoteItem{
+            .id = "uploaded-1",
+            .name = "report.docx",
+            .etag = "uploaded-etag-1",
+            .parent_id = "root-id",
+            .remote_path = "report.docx",
+            .last_modified = "2026-10-04T09:00:00Z",
+            .size = 42,
+            .content_hash = sp_graph.upload_enriched_hash,
+        },
+    };
+    if (onedrive::sync::SyncEngine{
+            sp_config, sp_graph, sp_items, sp_metrics, &default_console
+        }
+                .synchronize() != exit_code::success ||
+        sp_graph.download_count != 0 || sp_graph.upload_count != 1) {
+        return fail(
+            "SharePoint enriched Delta echo triggered redundant transfer"
+        );
+    }
+    sp_graph.changes[0].name = "renamed.docx";
+    sp_graph.changes[0].remote_path = "renamed.docx";
+    if (onedrive::sync::SyncEngine{
+            sp_config, sp_graph, sp_items, sp_metrics, &default_console
+        }
+                .synchronize() != exit_code::success ||
+        sp_graph.download_count != 0 || sp_graph.upload_count != 1 ||
+        !std::filesystem::exists(sp_root / "renamed.docx")) {
+        return fail(
+            "SharePoint enriched remote move failed to reuse local file"
+        );
+    }
+    sp_graph.changes = {
+        onedrive::graph::RemoteItem{
+            .id = "uploaded-1",
+            .deleted = true,
+        },
+    };
+    if (onedrive::sync::SyncEngine{
+            sp_config, sp_graph, sp_items, sp_metrics, &default_console
+        }
+                .synchronize() != exit_code::success ||
+        std::filesystem::exists(sp_root / "renamed.docx") ||
+        !sp_items.blocked.empty()) {
+        return fail(
+            "SharePoint enriched remote deletion falsely blocked local file"
+        );
+    }
     return EXIT_SUCCESS;
 }
 

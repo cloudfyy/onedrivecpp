@@ -271,7 +271,8 @@ public:
         }
         if (remote_path == upload_resource_error_path) {
             throw onedrive::graph::UploadResourceError{
-                "remote_quota", "simulated OneDrive quota exhaustion"
+                upload_resource_error_code,
+                "simulated OneDrive quota exhaustion"
             };
         }
         if (before_upload_return) {
@@ -297,8 +298,10 @@ public:
             .parent_id = "root-id",
             .remote_path = remote_path,
             .last_modified = "2026-10-04T09:00:00Z",
-            .size =
-                static_cast<std::int64_t>(std::filesystem::file_size(source)),
+            .size = upload_enriched_size.value_or(
+                static_cast<std::int64_t>(std::filesystem::file_size(source))
+            ),
+            .content_hash = upload_enriched_hash,
         };
     }
 
@@ -443,6 +446,9 @@ public:
     bool fatal_upload_error{false};
     std::string upload_resource_error_path;
     bool directory_conflict{false};
+    std::string upload_resource_error_code{"remote_quota"};
+    std::optional<std::int64_t> upload_enriched_size;
+    std::optional<onedrive::util::FileHash> upload_enriched_hash;
     std::string directory_resource_error_path;
     bool delete_conflict{false};
     bool move_conflict{false};

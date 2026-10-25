@@ -91,6 +91,15 @@ struct DriveInfo {
     std::string web_url;
     std::string owner;
     std::optional<DriveQuota> quota;
+
+    [[nodiscard]] constexpr account::DriveKind kind() const noexcept {
+        return account::parse_drive_kind(type);
+    }
+
+    [[nodiscard]] constexpr account::DriveSourcePolicy
+    source_policy() const noexcept {
+        return account::drive_source_policy(type);
+    }
 };
 
 enum class SharedResourceSource {
@@ -117,6 +126,35 @@ struct SiteInfo {
     std::string web_url;
     std::vector<DriveInfo> drives;
 };
+
+struct SiteSearchOutcome {
+    std::string effective_query;
+    std::vector<SiteInfo> sites;
+    bool used_wildcard_fallback{false};
+};
+
+template <typename Search>
+[[nodiscard]] SiteSearchOutcome
+search_sites_with_fallback(std::string_view raw_query, Search&& search) {
+    const std::string effective_query =
+        raw_query.empty() ? std::string{"*"} : std::string{raw_query};
+    auto sites = search(effective_query);
+    bool used_fallback = false;
+    if (sites.empty() && effective_query != "*") {
+        try {
+            sites = search(std::string{"*"});
+            used_fallback = !sites.empty();
+        } catch (const std::exception&) {
+            // Ignore wildcard fallback failures when tenant permissions only
+            // allow direct site resolution (e.g., Sites.Selected).
+        }
+    }
+    return {
+        .effective_query = effective_query,
+        .sites = std::move(sites),
+        .used_wildcard_fallback = used_fallback,
+    };
+}
 
 enum class NotificationFailureKind {
     transient,
@@ -656,12 +694,18 @@ private:
 
     [[nodiscard]] std::string
     access_token(const std::stop_token& stop_token = {}) const;
-    [[nodiscard]] http::HttpResponse
-    graph_get(
-        const std::string& url, std::string_view description,
+    [[nodiscard]] http::HttpResponse graph_get_response(
+        const std::string& url,
+        std::string_view description,
+        std::stop_token stop_token = {}
+    ) const;
+    [[nodiscard]] http::HttpResponse graph_get(
+        const std::string& url,
+        std::string_view description,
         std::stop_token stop_token = {}
     ) const;
     [[nodiscard]] RemoteItem ancestor_by_id(
+
         const std::string& remote_id, std::stop_token stop_token
     ) const;
     void invalidate_access_token() const;

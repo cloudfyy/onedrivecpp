@@ -1,9 +1,11 @@
 #pragma once
 
 #include "onedrive/config/config.hpp"
+#include "onedrive/graph/graph_client.hpp"
 
 #include <QWidget>
 #include <functional>
+#include <string>
 #include <vector>
 
 class QFormLayout;
@@ -17,9 +19,14 @@ namespace onedrive::gui {
 class SettingsEditor final : public QWidget {
     Q_OBJECT
 public:
+    using SiteSearchFunction = std::function<std::vector<graph::SiteInfo>(
+        const config::Config& config, const std::string& query
+    )>;
+
     explicit SettingsEditor(QWidget* parent = nullptr);
     void load(const config::Config& config);
     void retranslate();
+    void set_site_search_function(SiteSearchFunction search);
     [[nodiscard]] std::vector<config::SettingPatch> patches() const;
 
 private:
@@ -54,6 +61,8 @@ private:
     void note(QFormLayout* form, const char* text);
     QFormLayout* advanced(QFormLayout* form, const char* title);
     void add_account_page();
+    void browse_sharepoint_libraries();
+    [[nodiscard]] config::Config effective_account_config() const;
     void add_sync_page();
     void add_transfer_page();
     void add_network_page();
@@ -72,6 +81,8 @@ private:
         std::function<bool(const config::Config&)> present = {});
     [[nodiscard]] static QString value(const Field& field);
     QTabWidget* tabs_;
+    config::Config config_{config::Config::defaults()};
+    SiteSearchFunction site_search_;
     std::vector<Field> fields_;
     std::vector<std::pair<QLabel*, const char*>> notes_;
     std::vector<std::pair<QToolButton*, const char*>> advanced_;

@@ -55,9 +55,7 @@ bool deletion_snapshot_matches(
            before.st_mtim.tv_nsec == after.st_mtim.tv_nsec &&
            before.st_ctim.tv_sec == after.st_ctim.tv_sec &&
            before.st_ctim.tv_nsec == after.st_ctim.tv_nsec &&
-           (expected.algorithm == util::FileHashAlgorithm::quick_xor
-                ? actual == expected.value
-                : util::ascii_iequals(actual, expected.value));
+           detail::content_hash_matches(expected, actual);
 }
 
 } // namespace

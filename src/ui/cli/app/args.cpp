@@ -312,11 +312,11 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         arguments.force_dry_run,
         "List missing local files without downloading or changing sync state"
     );
-    inspect_sites
-        ->add_option(
-            "QUERY", arguments.site_query, "SharePoint site search query"
-        )
-        ->required();
+    inspect_sites->add_option(
+        "QUERY",
+        arguments.site_query,
+        "Optional SharePoint site search query, URL, or hostname:/sites/path"
+    );
     inspect_blocked->add_option(
         "--reason", arguments.blocked_reason, "Only show this exact reason code"
     );

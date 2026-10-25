@@ -84,6 +84,20 @@ void apply_remote_modified_time(
     std::string_view etag,
     std::string_view ctag
 ) noexcept;
+[[nodiscard]] inline bool
+has_enriched_remote_size(const storage::ItemState& state) noexcept {
+    // Business and SharePoint document libraries may enrich Office files
+    // post-upload or post-move, changing remote size while preserving the
+    // locally recorded baseline size and content hash.
+    return !state.directory && state.size != state.local_size;
+}
+inline void preserve_local_content_hash(
+    storage::ItemState& state, const storage::ItemState& previous
+) {
+    if (!state.content_hash || state.size != previous.local_size) {
+        state.content_hash = previous.content_hash;
+    }
+}
 [[nodiscard]] LocalFileBaseline capture_local_file_baseline(
     const std::filesystem::path& path
 );

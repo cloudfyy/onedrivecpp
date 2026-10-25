@@ -88,9 +88,10 @@ requesting every permission above.
 For organizations that restrict access to selected sites, `Sites.Selected`
 supports delegated access but requires both Entra consent and an explicit
 application permission assignment on each target site. The signed-in user's own
-permissions still apply. It is not a drop-in replacement for tenant-wide site
-search; the client's site discovery currently requires `Sites.Read.All` or
-`Sites.ReadWrite.All`. A selected-site workflow remains future work.
+permissions still apply. While `Sites.Selected` does not permit tenant-wide
+wildcard search (`*`), `inspect sites` and the GUI SharePoint library browser
+can resolve an assigned site directly by its SharePoint URL,
+`hostname:/sites/path`, or site ID.
 
 The client currently uses one configured `auth.scopes` list for both CLI and
 GUI; it does not automatically request extra permissions when a SharePoint

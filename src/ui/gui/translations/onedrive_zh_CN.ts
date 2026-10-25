@@ -2254,6 +2254,68 @@ Relative file references will be resolved from the active configuration director
         <source>Transfers</source>
         <translation>传输</translation>
     </message>
+    <message>
+        <source>Browse SharePoint libraries…</source>
+        <translation>浏览 SharePoint 文档库…</translation>
+    </message>
+    <message>
+        <source>Browse SharePoint libraries</source>
+        <translation>浏览 SharePoint 文档库</translation>
+    </message>
+    <message>
+        <source>Keyword, site URL, hostname:/sites/path, or * for all sites</source>
+        <translation>关键字、站点 URL、hostname:/sites/path，或输入 * 列出所有站点</translation>
+    </message>
+    <message>
+        <source>Search sites</source>
+        <translation>搜索站点</translation>
+    </message>
+    <message>
+        <source>Enter a site keyword or URL, or click Search sites to list accessible SharePoint sites.</source>
+        <translation>输入站点关键字或 URL，或点击“搜索站点”列出可访问的 SharePoint 站点。</translation>
+    </message>
+    <message>
+        <source>Site / Library</source>
+        <translation>站点／文档库</translation>
+    </message>
+    <message>
+        <source>Drive ID</source>
+        <translation>驱动器 ID</translation>
+    </message>
+    <message>
+        <source>Type</source>
+        <translation>类型</translation>
+    </message>
+    <message>
+        <source>Web URL</source>
+        <translation>网页链接</translation>
+    </message>
+    <message>
+        <source>Add selected Drive IDs</source>
+        <translation>添加所选驱动器 ID</translation>
+    </message>
+    <message>
+        <source>No accessible SharePoint sites matched the query.</source>
+        <translation>没有匹配查询的可访问 SharePoint 站点。</translation>
+    </message>
+    <message>
+        <source>Site</source>
+        <translation>站点</translation>
+    </message>
+    <message>
+        <source>No SharePoint sites matched &quot;%1&quot;. Showing %2 accessible site(s) and %3 document library(ies).</source>
+        <translation>没有匹配“%1”的 SharePoint 站点。已显示 %2 个可访问站点和 %3 个文档库。</translation>
+    </message>
+    <message>
+        <source>Found %1 SharePoint site(s) and %2 document library(ies).</source>
+        <translation>找到 %1 个 SharePoint 站点和 %2 个文档库。</translation>
+    </message>
+    <message>
+        <source>Could not query SharePoint sites:
+%1</source>
+        <translation>无法查询 SharePoint 站点：
+%1</translation>
+    </message>
 </context>
 <context>
     <name>onedrive::gui::SyncController</name>

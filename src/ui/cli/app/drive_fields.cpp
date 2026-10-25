@@ -16,7 +16,9 @@ std::vector<cli::Field> account_fields(const account::DriveIdentity& identity) {
         {.label = "drive:", .key = "drive", .value = identity.drive_name},
         {.label = "type:",
          .key = "drive_type",
-         .value = identity.drive_type.empty() ? "unknown" : identity.drive_type},
+         .value = identity.drive_type.empty()
+                      ? std::string{identity.source_policy().canonical_type}
+                      : identity.drive_type},
     };
 }
 

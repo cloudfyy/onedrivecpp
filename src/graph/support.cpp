@@ -83,6 +83,18 @@ bool upload_quota_error(const Json& response, long status_code) {
            util::ascii_iequals(code, "insufficientStorage");
 }
 
+bool upload_permission_error(const Json& response, long status_code) {
+    if (upload_quota_error(response, status_code)) {
+        return false;
+    }
+    if (status_code == http::status::forbidden) {
+        return true;
+    }
+    const auto code = graph_error_code(response);
+    return util::ascii_iequals(code, "accessDenied") ||
+           util::ascii_iequals(code, "notAllowed");
+}
+
 [[noreturn]] void throw_upload_response_error(
     const Json& response,
     long status_code
@@ -90,6 +102,9 @@ bool upload_quota_error(const Json& response, long status_code) {
     const auto message = graph_error_message(response, status_code);
     if (upload_quota_error(response, status_code)) {
         throw UploadResourceError{"remote_quota", message};
+    }
+    if (upload_permission_error(response, status_code)) {
+        throw UploadResourceError{"remote_permission", message};
     }
     throw std::runtime_error(message);
 }
@@ -102,10 +117,10 @@ std::string normalized_endpoint(std::string endpoint) {
 }
 
 std::string graph_drive_prefix(const GraphOptions& options) {
-    return options.drive_id == "me" ?
-        options.endpoint + "/me/drive" :
-        options.endpoint + "/drives/" +
-            percent_encode_uri_component(options.drive_id);
+    return account::is_default_drive_reference(options.drive_id)
+               ? options.endpoint + "/me/drive"
+               : options.endpoint + "/drives/" +
+                     percent_encode_uri_component(options.drive_id);
 }
 
 bool successful_status(long status_code) noexcept {

@@ -17,14 +17,15 @@ QString number(std::uint64_t value) {
 }
 
 QString drive_type_text(const std::string& type) {
-    if (type == "personal") {
+    switch (account::parse_drive_kind(type)) {
+    case account::DriveKind::personal:
         return MainWindow::tr("OneDrive Personal");
-    }
-    if (type == "business") {
+    case account::DriveKind::business:
         return MainWindow::tr("OneDrive for Business");
-    }
-    if (type == "documentLibrary") {
+    case account::DriveKind::sharepoint_library:
         return MainWindow::tr("SharePoint document library");
+    case account::DriveKind::unknown:
+        return MainWindow::tr("Unknown drive type");
     }
     return MainWindow::tr("Unknown drive type");
 }

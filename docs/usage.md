@@ -199,10 +199,16 @@ not zero. Invalid databases and filesystem inspection errors are reported.
 
 `inspect shared` lists items returned by `sharedWithMe` and
 shortcuts added to the configured OneDrive, including the target Drive and
-item IDs needed for configuration. `inspect sites QUERY` searches accessible
-SharePoint sites and lists each site's document-library Drives. Site discovery
-requires `Sites.Read.All` or `Sites.ReadWrite.All`; change scopes and run
-`onedrive-cpp account login` again before using it.
+item IDs needed for configuration. `inspect sites [QUERY]` lists or searches
+accessible SharePoint sites and each site's document-library Drives: omit
+`QUERY` (or pass `*`) to list accessible sites, pass a keyword, or pass a
+SharePoint site URL (`https://contoso.sharepoint.com/sites/eng`),
+`hostname:/sites/path`, `root`, or three-part site ID to resolve a single site
+directly (compatible with `Sites.Selected`). When a keyword query matches no
+sites, the command falls back to listing accessible sites with `*` when
+permitted. Tenant-wide search requires `Sites.Read.All` or
+`Sites.ReadWrite.All`; direct site resolution also works with `Sites.Selected`.
+Change scopes and run `onedrive-cpp account login` again before using it.
 
 `inspect quota` reports total, used, remaining, deleted, and quota-state values for the
 configured drive. `inspect status` combines the active account and canonical Drive

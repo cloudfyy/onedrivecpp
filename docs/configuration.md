@@ -84,11 +84,14 @@ target. `inspect drives` includes and marks every configured target, even when
 it is absent from the account's default Drive listing.
 Single-file download, shared-item discovery, verification, cleanup, and
 Drive-specific reset/clear require a single-target configuration to avoid
-ambiguous selection. GUI settings expose one Drive ID per line; editing the list
+ambiguous selection. GUI settings expose one Drive ID per line and provide a
+**Browse SharePoint libraries…** dialog to search or resolve SharePoint sites
+and append selected document-library Drive IDs; editing the list
 replaces the legacy key, while changing unrelated settings preserves it.
-Business Delta compatibility and live organizational OneDrive acceptance are
-in place, but configuring several libraries does not grant access to them or
-bypass tenant conditional-access policies.
+Business Delta compatibility, SharePoint post-upload enrichment handling, and
+live organizational OneDrive acceptance are in place, but configuring several
+libraries does not grant access to them or bypass tenant conditional-access
+policies.
 
 ## Reference configuration
 

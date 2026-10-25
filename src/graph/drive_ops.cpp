@@ -74,7 +74,7 @@ DriveInfo client_detail::parse_drive_info(
         };
         if (const auto owner = value.find("owner");
             owner != value.end() && owner->is_object()) {
-            for (const auto* kind : {"user", "group"}) {
+            for (const auto* kind : {"user", "group", "site"}) {
                 if (const auto identity = owner->find(kind);
                     identity != owner->end() && identity->is_object()) {
                     drive.owner =

@@ -77,8 +77,9 @@ Sites.ReadWrite.All
 
 对于只允许访问指定站点的组织，`Sites.Selected` 支持委托访问，但既需要 Entra
 同意，还需要为应用显式授予各目标站点的访问权限；登录用户自身的权限也仍然生效。
-它不能直接替代全租户站点搜索，客户端现有站点发现仍要求 `Sites.Read.All` 或
-`Sites.ReadWrite.All`。指定站点工作流尚待实现。
+虽然 `Sites.Selected` 不支持全租户通配搜索（`*`），但 `inspect sites` 与 GUI
+SharePoint 文档库浏览器均支持通过站点 URL、`hostname:/sites/path` 或站点 ID
+直接解析已授权站点并列出其文档库。
 
 目前 CLI 和 GUI 共用配置中的一份 `auth.scopes`，不会在用户选择 SharePoint
 功能时自动申请额外权限。修改列表后，应先停止运行中的 Monitor，再重新登录，

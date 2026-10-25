@@ -313,6 +313,22 @@ std::string file_content_hash(
     throw std::invalid_argument("unknown file hash algorithm");
 }
 
+bool content_hash_matches(
+    const util::FileHash& expected, std::string_view actual
+) noexcept {
+    return expected.algorithm == util::FileHashAlgorithm::quick_xor
+               ? actual == expected.value
+               : onedrive::util::ascii_iequals(actual, expected.value);
+}
+
+bool file_matches_content_hash(
+    const std::filesystem::path& path, const util::FileHash& expected
+) {
+    return content_hash_matches(
+        expected, file_content_hash(path, expected.algorithm)
+    );
+}
+
 void verify_download_integrity(
     const graph::RemoteItem& item,
     const DownloadHashes& hashes
@@ -321,16 +337,12 @@ void verify_download_integrity(
         return;
     }
     const auto& expected = item.content_hash.value();
-    const std::string actual =
+    const std::string_view actual =
         expected.algorithm == util::FileHashAlgorithm::sha256 ? hashes.sha256
         : expected.algorithm == util::FileHashAlgorithm::sha1
             ? hashes.sha1
             : hashes.quick_xor;
-    const bool matches =
-        expected.algorithm != util::FileHashAlgorithm::quick_xor
-            ? onedrive::util::ascii_iequals(actual, expected.value)
-            : actual == expected.value;
-    if (!matches) {
+    if (!content_hash_matches(expected, actual)) {
         const std::string_view algorithm =
             expected.algorithm == util::FileHashAlgorithm::sha256 ? "SHA-256"
             : expected.algorithm == util::FileHashAlgorithm::sha1

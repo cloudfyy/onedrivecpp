@@ -49,48 +49,8 @@ int synchronize_account(
         if (stop_token.stop_requested()) {
             return finish_cancelled();
         }
-        if (config.drive_ids.size() > 1) {
-            detail::DriveSet drives{config, runtime_factory, observer};
-            const int result = drives.synchronize(stop_token, preview_cache);
-            if (result == exit_code::cancelled) {
-                return finish_cancelled();
-            }
-            state.transition(
-                result == exit_code::success ? events::OperationState::ready
-                                             : events::OperationState::failed
-            );
-            return result;
-        }
-        auto graph = runtime_factory.create_graph_client(config);
-        const auto identity = graph->drive_identity(stop_token);
-        if (stop_token.stop_requested()) {
-            return finish_cancelled();
-        }
-        config.drive_id = identity.drive_id;
-        config.sync_data_directory =
-            account::AccountState::drive_data_directory(
-                config.sync_data_directory, identity
-            );
-        const auto sync_lock = detail::acquire_sync_directory_lock(
-            config.sync_data_directory,
-            config.state_directory,
-            "synchronize",
-            observer
-        );
-        detail::prepare_sync_directory(config, detail::Operation::synchronize);
-        auto items = runtime_factory.create_item_store(config, identity);
-        items->open();
-        auto metrics = runtime_factory.create_metrics(config, identity);
-        const int result =
-            sync::SyncEngine{
-                std::move(config),
-                *graph,
-                *items,
-                *metrics,
-                &observer,
-                preview_cache
-            }
-                .synchronize(stop_token);
+        detail::DriveSet drives{config, runtime_factory, observer};
+        const int result = drives.synchronize(stop_token, preview_cache);
         if (result == exit_code::cancelled) {
             return finish_cancelled();
         }

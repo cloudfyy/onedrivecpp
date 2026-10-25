@@ -1,8 +1,12 @@
 #include "onedrive/graph/graph_client.hpp"
 #include "graph/support.hpp"
 
+#include "util/ascii.hpp"
 #include "util/uri.hpp"
 
+#include <algorithm>
+#include <cctype>
+#include <optional>
 #include <stdexcept>
 #include <string_view>
 
@@ -10,6 +14,174 @@ namespace onedrive::graph {
 namespace {
 
 using client_detail::Json;
+
+bool valid_sharepoint_hostname(std::string_view host) noexcept {
+    if (host.empty() || !host.contains('.') || host.starts_with('.') ||
+        host.ends_with('.') || host.starts_with('-') || host.ends_with('-') ||
+        host.contains("..")) {
+        return false;
+    }
+    return std::ranges::all_of(host, [](char character) {
+        const auto byte = static_cast<unsigned char>(character);
+        return std::isalnum(byte) != 0 || character == '.' || character == '-';
+    });
+}
+
+bool valid_site_id_token(std::string_view token) noexcept {
+    if (token.empty()) {
+        return false;
+    }
+    return std::ranges::all_of(token, [](char character) {
+        const auto byte = static_cast<unsigned char>(character);
+        return std::isalnum(byte) != 0 || character == '-' || character == '_';
+    });
+}
+
+bool valid_sharepoint_site_id(std::string_view value) noexcept {
+    const auto first_comma = value.find(',');
+    if (first_comma == std::string_view::npos) {
+        return false;
+    }
+    const auto second_comma = value.find(',', first_comma + 1);
+    if (second_comma == std::string_view::npos ||
+        value.find(',', second_comma + 1) != std::string_view::npos) {
+        return false;
+    }
+    return valid_sharepoint_hostname(value.substr(0, first_comma)) &&
+           valid_site_id_token(
+               value.substr(first_comma + 1, second_comma - first_comma - 1)
+           ) &&
+           valid_site_id_token(value.substr(second_comma + 1));
+}
+
+bool contains_unsafe_site_target_characters(std::string_view value) noexcept {
+    return std::ranges::any_of(value, [](char character) {
+        const auto byte = static_cast<unsigned char>(character);
+        return byte <= 0x20U || byte == 0x7FU || character == '?' ||
+               character == '#' || character == '\\' || character == '@';
+    });
+}
+
+std::string
+build_host_site_path(std::string_view host, std::string_view relative_path) {
+    if (!valid_sharepoint_hostname(host)) {
+        throw std::invalid_argument(
+            "SharePoint site target has an invalid hostname"
+        );
+    }
+    while (relative_path.starts_with('/')) {
+        relative_path.remove_prefix(1);
+    }
+    while (relative_path.ends_with('/')) {
+        relative_path.remove_suffix(1);
+    }
+    const auto encoded_host =
+        onedrive::util::percent_encode_uri_component(host);
+    if (relative_path.empty()) {
+        return "/sites/" + encoded_host;
+    }
+    return "/sites/" + encoded_host + ":/" +
+           client_detail::percent_encode_remote_path(relative_path);
+}
+
+struct SiteQueryPlan {
+    enum class Mode {
+        direct_resource,
+        keyword_search,
+    };
+
+    Mode mode{Mode::keyword_search};
+    std::string target;
+};
+
+using SiteQueryStrategy =
+    std::optional<SiteQueryPlan> (*)(std::string_view query);
+
+std::optional<SiteQueryPlan> resolve_https_site_url(std::string_view query) {
+    if (!query.contains("://")) {
+        return std::nullopt;
+    }
+    constexpr std::string_view https_scheme{"https://"};
+    if (!query.starts_with(https_scheme)) {
+        throw std::invalid_argument("SharePoint site URL must use https://");
+    }
+    if (contains_unsafe_site_target_characters(query)) {
+        throw std::invalid_argument(
+            "SharePoint site URL contains unsupported characters"
+        );
+    }
+    const auto rest = query.substr(https_scheme.size());
+    const auto slash = rest.find('/');
+    const auto host = rest.substr(0, slash);
+    const auto path = slash == std::string_view::npos ? std::string_view{}
+                                                      : rest.substr(slash + 1);
+    return SiteQueryPlan{
+        .mode = SiteQueryPlan::Mode::direct_resource,
+        .target = build_host_site_path(host, path),
+    };
+}
+
+std::optional<SiteQueryPlan>
+resolve_host_relative_site_path(std::string_view query) {
+    if (!query.contains(":/")) {
+        return std::nullopt;
+    }
+    if (contains_unsafe_site_target_characters(query)) {
+        throw std::invalid_argument(
+            "SharePoint site path contains unsupported characters"
+        );
+    }
+    const auto separator = query.find(":/");
+    return SiteQueryPlan{
+        .mode = SiteQueryPlan::Mode::direct_resource,
+        .target = build_host_site_path(
+            query.substr(0, separator), query.substr(separator + 2)
+        ),
+    };
+}
+
+std::optional<SiteQueryPlan>
+resolve_direct_site_identifier(std::string_view query) {
+    if (query != "root" && !valid_sharepoint_site_id(query)) {
+        return std::nullopt;
+    }
+    return SiteQueryPlan{
+        .mode = SiteQueryPlan::Mode::direct_resource,
+        .target =
+            "/sites/" + onedrive::util::percent_encode_uri_component(query),
+    };
+}
+
+std::optional<SiteQueryPlan>
+resolve_keyword_site_search(std::string_view query) {
+    return SiteQueryPlan{
+        .mode = SiteQueryPlan::Mode::keyword_search,
+        .target = "/sites?search=" +
+                  onedrive::util::percent_encode_uri_component(query) +
+                  "&$select=id,name,displayName,webUrl",
+    };
+}
+
+SiteQueryPlan resolve_site_query_plan(std::string_view raw_query) {
+    const auto trimmed = onedrive::util::trim_ascii_whitespace(raw_query);
+    if (trimmed.empty()) {
+        throw std::invalid_argument(
+            "SharePoint site discovery requires a non-empty search query"
+        );
+    }
+    constexpr std::array<SiteQueryStrategy, 4> strategies{
+        &resolve_https_site_url,
+        &resolve_host_relative_site_path,
+        &resolve_direct_site_identifier,
+        &resolve_keyword_site_search,
+    };
+    for (const auto strategy : strategies) {
+        if (auto plan = strategy(trimmed)) {
+            return *std::move(plan);
+        }
+    }
+    throw std::logic_error("unreachable SharePoint site query strategy");
+}
 
 std::string identity_name(const Json& value) {
     for (const auto* relationship : {"sharedBy", "owner", "createdBy"}) {
@@ -153,26 +325,37 @@ MicrosoftGraphClient::list_shared_resources() const {
 
 std::vector<SiteInfo>
 MicrosoftGraphClient::search_sites(const std::string& query) const {
-    if (query.empty()) {
-        throw std::invalid_argument(
-            "SharePoint site discovery requires a non-empty search query"
-        );
-    }
-    std::vector<SiteInfo> sites;
-    for (const auto& value : client_detail::paged_graph_values(
-             options_.endpoint + "/sites?search=" +
-                 onedrive::util::percent_encode_uri_component(query) +
-                 "&$select=id,name,displayName,webUrl",
-             options_.endpoint,
-             "SharePoint sites",
-             [&](const std::string& url) {
-                 return client_detail::parse_graph_json(
-                     graph_get(url, "SharePoint sites query"),
-                     "SharePoint sites"
-                 );
-             }
-         )) {
-        auto site = parse_site(value);
+    const auto plan = resolve_site_query_plan(query);
+    const auto perform_site_get = [&](const std::string& url,
+                                      std::string_view description,
+                                      bool allow_not_found =
+                                          false) -> std::optional<Json> {
+        const auto response = graph_get_response(url, description);
+        if (allow_not_found &&
+            response.status_code == http::status::not_found) {
+            return std::nullopt;
+        }
+        auto document = client_detail::parse_graph_json(response, description);
+        if (!client_detail::successful_status(response.status_code)) {
+            if (response.status_code == http::status::forbidden) {
+                throw std::runtime_error(
+                    client_detail::graph_error_message(
+                        document, response.status_code
+                    ) +
+                    " (SharePoint discovery requires site permissions such as "
+                    "Sites.Read.All, Sites.ReadWrite.All, or "
+                    "Files.ReadWrite.All in auth.scopes, or Sites.Selected "
+                    "with a direct site URL/ID; sign in again after updating "
+                    "auth.scopes)"
+                );
+            }
+            client_detail::require_successful_graph_response(
+                document, response.status_code
+            );
+        }
+        return std::optional<Json>{std::in_place, std::move(document)};
+    };
+    const auto populate_site_drives = [&](SiteInfo& site) {
         for (const auto& drive : client_detail::paged_graph_values(
                  options_.endpoint + "/sites/" +
                      onedrive::util::percent_encode_uri_component(site.id) +
@@ -180,9 +363,8 @@ MicrosoftGraphClient::search_sites(const std::string& query) const {
                  options_.endpoint,
                  "SharePoint document libraries",
                  [&](const std::string& url) {
-                     return client_detail::parse_graph_json(
-                         graph_get(url, "SharePoint document libraries query"),
-                         "SharePoint document libraries"
+                     return *perform_site_get(
+                         url, "SharePoint document libraries"
                      );
                  }
              )) {
@@ -192,6 +374,35 @@ MicrosoftGraphClient::search_sites(const std::string& query) const {
                 )
             );
         }
+    };
+
+    std::vector<SiteInfo> sites;
+    if (plan.mode == SiteQueryPlan::Mode::direct_resource) {
+        const auto document = perform_site_get(
+            options_.endpoint + plan.target +
+                "?$select=id,name,displayName,webUrl",
+            "SharePoint site",
+            true
+        );
+        if (!document) {
+            return sites;
+        }
+        auto site = parse_site(*document);
+        populate_site_drives(site);
+        sites.push_back(std::move(site));
+        return sites;
+    }
+
+    for (const auto& value : client_detail::paged_graph_values(
+             options_.endpoint + plan.target,
+             options_.endpoint,
+             "SharePoint sites",
+             [&](const std::string& url) {
+                 return *perform_site_get(url, "SharePoint sites");
+             }
+         )) {
+        auto site = parse_site(value);
+        populate_site_drives(site);
         sites.push_back(std::move(site));
     }
     return sites;

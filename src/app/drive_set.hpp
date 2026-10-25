@@ -40,6 +40,7 @@ private:
 
     const RuntimeFactory& factory_;
     const events::Observer& observer_;
+    bool multi_drive_{false};
     std::vector<Target> targets_;
     std::optional<std::string> user_id_;
     Operation operation_;

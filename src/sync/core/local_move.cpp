@@ -144,24 +144,18 @@ bool remote_file_content_unchanged(
     const storage::ItemState& previous,
     const std::filesystem::path& path
 ) {
+    if (detail::has_enriched_remote_size(previous)) {
+        return item.size == previous.size &&
+               item.last_modified == previous.last_modified &&
+               detail::remote_content_version_matches(
+                   previous, item.etag, item.ctag
+               );
+    }
     if (!item.content_hash) {
         return item.size == previous.size &&
                item.last_modified == previous.last_modified;
     }
-    detail::DownloadHashes hashes;
-    if (item.content_hash->algorithm == util::FileHashAlgorithm::sha256) {
-        hashes.sha256 = detail::content_fingerprint(path);
-    } else if (item.content_hash->algorithm == util::FileHashAlgorithm::sha1) {
-        hashes.sha1 = detail::sha1_hash(path);
-    } else {
-        hashes.quick_xor = detail::quick_xor_hash(path);
-    }
-    try {
-        detail::verify_download_integrity(item, hashes);
-        return true;
-    } catch (const detail::DownloadIntegrityError&) {
-        return false;
-    }
+    return detail::file_matches_content_hash(path, *item.content_hash);
 }
 
 struct DirectoryMove {
@@ -815,9 +809,7 @@ void execute_install_action(
             if (remote_file_content_unchanged(
                     move.item, move.previous, destination
                 )) {
-                if (!state.content_hash) {
-                    state.content_hash = move.previous.content_hash;
-                }
+                detail::preserve_local_content_hash(state, move.previous);
                 context.summary.reusable_files.insert(move.item.id);
             }
         }

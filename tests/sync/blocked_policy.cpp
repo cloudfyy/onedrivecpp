@@ -102,6 +102,7 @@ void test_local_strategies() {
           "upload_local_permission",
           "upload_local_storage",
           "upload_remote_quota",
+          "upload_remote_permission",
           "upload_delete_limit",
           "upload_delete_conflict"}) {
         const auto item = record(reason);

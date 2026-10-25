@@ -564,11 +564,20 @@ FileUploadResult execute_file_upload(
             stop_token,
             progress
         );
-        if (remote.remote_path != upload.remote_path ||
-            remote.size != baseline.size) {
+        if (remote.remote_path != upload.remote_path || remote.directory ||
+            remote.size < 0) {
             throw std::runtime_error(
                 "Microsoft Graph upload response does not match local "
                 "file '" + upload.path.string() + "'"
+            );
+        }
+        if (remote.size != baseline.size) {
+            spdlog::info(
+                "Remote upload '{}' size changed from {} to {} bytes after "
+                "server-side enrichment",
+                upload.remote_path,
+                baseline.size,
+                remote.size
             );
         }
         auto remote_committed = mark_remote_upload_committed(

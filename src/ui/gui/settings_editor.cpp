@@ -146,6 +146,19 @@ void SettingsEditor::add(
         layout->addWidget(widget);
         connect(override, &QCheckBox::toggled, widget, &QWidget::setEnabled);
     }
+    if (std::string_view{table} == "sync" &&
+        std::string_view{key} == "drive_ids") {
+        container = new QWidget;
+        auto* layout = new QVBoxLayout{container};
+        layout->setContentsMargins(0, 0, 0, 0);
+        auto* browse = new QPushButton{tr("Browse SharePoint libraries…")};
+        browse->setObjectName("browseSharePointButton");
+        layout->addWidget(widget);
+        layout->addWidget(browse);
+        connect(browse, &QPushButton::clicked, this, [this] {
+            browse_sharepoint_libraries();
+        });
+    }
     form->addRow(label_widget, container);
     fields_.push_back(
         {table,
@@ -180,6 +193,7 @@ QString SettingsEditor::value(const Field& field) {
 }
 
 void SettingsEditor::load(const config::Config& config) {
+    config_ = config;
     for (auto& field : fields_) {
         field.baseline = field.read(config);
         if (field.override) {
@@ -248,6 +262,13 @@ void SettingsEditor::retranslate() {
     for (auto* button : findChildren<QPushButton*>("browseButton")) {
         button->setText(tr("Browse…"));
     }
+    for (auto* button : findChildren<QPushButton*>("browseSharePointButton")) {
+        button->setText(tr("Browse SharePoint libraries…"));
+    }
+}
+
+void SettingsEditor::set_site_search_function(SiteSearchFunction search) {
+    site_search_ = std::move(search);
 }
 
 std::vector<config::SettingPatch> SettingsEditor::patches() const {

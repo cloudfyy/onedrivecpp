@@ -274,9 +274,14 @@ blocked 文件。不同状态可重叠，例如已有本地文件仍可能有待
 
 `inspect shared` 会列出 `sharedWithMe` 返回的项目，以及已添加到当前 OneDrive 的
 快捷方式（shortcut）；同时显示配置共享 Drive 所需的目标 Drive ID 和 item ID。
-`inspect sites QUERY` 搜索可访问的 SharePoint 站点并列出各站点的文档库 Drive。
-站点发现要求 `Sites.Read.All` 或 `Sites.ReadWrite.All`；修改 scope 后需要重新
-运行 `onedrive-cpp account login`。
+`inspect sites [QUERY]` 列出或搜索可访问的 SharePoint 站点及各站点的文档库
+Drive：省略 `QUERY`（或传入 `*`）可列出可访问站点；也可传入关键字，或直接传入
+SharePoint 站点 URL（`https://contoso.sharepoint.com/sites/eng`）、
+`hostname:/sites/path`、`root` 或三段式站点 ID 精确解析单个站点（兼容
+`Sites.Selected`）。当关键字未匹配到站点时，若权限允许会自动回退到 `*` 列出
+可用站点提示。全租户站点搜索要求 `Sites.Read.All` 或 `Sites.ReadWrite.All`，
+单站点直接解析也可使用 `Sites.Selected`；修改 scope 后需要重新运行
+`onedrive-cpp account login`。
 
 `inspect quota` 显示配置 Drive 的总量、已用、剩余、回收站占用和配额状态。`inspect status`
 合并当前账号及规范 Drive 身份与本地只读状态，包括同步模式、删除策略、最后一次

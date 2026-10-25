@@ -51,7 +51,21 @@ DriveSet::DriveSet(
 )
     : factory_{factory},
       observer_{observer},
+      multi_drive_{config.drive_ids.size() > 1},
       operation_{operation} {
+    if (!multi_drive_) {
+        auto graph = factory_.create_graph_client(config);
+        targets_.push_back({
+            .config = config,
+            .reference = config.drive_id,
+            .graph = std::move(graph),
+            .identity = std::nullopt,
+            .lock = {},
+            .items = {},
+            .metrics = {},
+        });
+        return;
+    }
     for (const auto& id : config.configured_drive_ids()) {
         auto selected = config.for_drive(id);
         auto graph = factory_.create_graph_client(selected);
@@ -107,6 +121,29 @@ void DriveSet::prepare(
 int DriveSet::synchronize(
     const std::stop_token& stop_token, sync::PreviewCache* cache
 ) {
+    if (!multi_drive_) {
+        auto& target = targets_.front();
+        if (!target.identity) {
+            target.identity = target.graph->drive_identity(stop_token);
+        }
+        if (stop_token.stop_requested()) {
+            if (cache) {
+                cache->clear();
+            }
+            return exit_code::cancelled;
+        }
+        prepare(target, stop_token, observer_);
+        return sync::SyncEngine{
+            target.config,
+            *target.graph,
+            *target.items,
+            *target.metrics,
+            &observer_,
+            cache
+        }
+            .synchronize(stop_token);
+    }
+
     int aggregate = exit_code::success;
     std::size_t failed = 0;
     std::size_t blocked = 0;
