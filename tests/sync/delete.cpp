@@ -12,21 +12,21 @@ using namespace onedrive::test::sync::delete_cases;
 int main() {
     onedrive::test::ScenarioProgress progress{30};
     for (const auto& [name, test] : {
-             std::pair{
+             std::pair<std::string_view, int (*)()>{
                  "remote_delete_preserved_metadata",
-                 test_remote_delete_preserved_metadata
+                 &test_remote_delete_preserved_metadata
              },
-             std::pair{
+             std::pair<std::string_view, int (*)()>{
                  "remote_delete_unverified_snapshot",
-                 test_remote_delete_unverified_snapshot
+                 &test_remote_delete_unverified_snapshot
              },
-             std::pair{
+             std::pair<std::string_view, int (*)()>{
                  "remote_delete_inspection_failure",
-                 test_remote_delete_inspection_failure
+                 &test_remote_delete_inspection_failure
              },
-             std::pair{
+             std::pair<std::string_view, int (*)()>{
                  "remote_delete_transferred_snapshot",
-                 test_remote_delete_transferred_snapshot
+                 &test_remote_delete_transferred_snapshot
              },
          }) {
         if (const int result = progress.run(name, test);
