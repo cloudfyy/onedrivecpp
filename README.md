@@ -7,7 +7,7 @@ Ubuntu 24.04 LTS and later. Its separation of responsibilities is inspired by
 [abraunegg/onedrive](https://github.com/abraunegg/onedrive), but it does not
 copy the reference project's D implementation.
 
-The current development version is **1.2.2**. CLI, TUI, GUI, user-agent and CPack versions
+The current development version is **1.2.3**. CLI, TUI, GUI, user-agent and CPack versions
 are generated from `version-semver` in `vcpkg.json`; Debian source packaging
 records its distribution-specific version separately in `debian/changelog`.
 
@@ -514,8 +514,8 @@ From a Git checkout, prepare the release source archive while online:
 
 ```bash
 python3 tools/prepare_source.py
-tar -xf build/source/onedrive-cpp-1.2.2.tar.xz -C build/source
-cd build/source/onedrive-cpp-1.2.2
+tar -xf build/source/onedrive-cpp-1.2.3.tar.xz -C build/source
+cd build/source/onedrive-cpp-1.2.3
 ```
 
 The archive contains the working-tree contents of Git-tracked files and the
@@ -575,7 +575,7 @@ tests. The generated `.deb` is placed in the parent directory of the project,
 for example:
 
 ```text
-../onedrive-cpp_1.2.2-1~ubuntu24.04_amd64.deb
+../onedrive-cpp_1.2.3-1~ubuntu24.04_amd64.deb
 ```
 
 Debian rules override debhelper's `FETCHCONTENT_FULLY_DISCONNECTED` setting so
@@ -595,7 +595,7 @@ does not change the version. The checked-in changelog targets Ubuntu 24.04
 (`noble`); before building on Ubuntu 26.04 (`resolute`), update its entry, for example:
 
 ```bash
-dch --newversion 1.2.2-1~ubuntu26.04 --distribution resolute
+dch --newversion 1.2.3-1~ubuntu26.04 --distribution resolute
 ```
 
 Use `noble` and the `ubuntu24.04` suffix for Ubuntu 24.04. Increment the Debian
@@ -670,13 +670,13 @@ build jobs use read-only repository permissions.
 
 Use `v<application-version>` for Debian revision 1, and
 `v<application-version>-<revision>` for subsequent packaging releases.
-The current `1.2.2-1~ubuntu24.04` metadata requires tag **`v1.2.2`**; existing
+The current `1.2.3-1~ubuntu24.04` metadata requires tag **`v1.2.3`**; existing
 release tags remain unchanged. The workflow rejects a tag that disagrees with
 `vcpkg.json` or the changelog. After committing and pushing the release changes:
 
 ```bash
-git tag -a v1.2.2 -m "onedrive-cpp 1.2.2"
-git push origin v1.2.2
+git tag -a v1.2.3 -m "onedrive-cpp 1.2.3"
+git push origin v1.2.3
 ```
 
 Enable GitHub Actions in the repository and allow workflows to create releases.

@@ -1,3 +1,14 @@
+onedrive-cpp (1.2.3-1~ubuntu24.04) noble; urgency=medium
+
+  * Prepare version 1.2.3.
+  * Auto-detect desktop GUI sessions in CLI account login to use OAuth 2.0
+    authorization code + PKCE with automatic fallback to device code, and add
+    --auth-flow {auto,auth-code,device-code}.
+  * Share the loopback browser callback HTTP listener between GUI and CLI.
+  * Report unexpected CLI arguments before missing subcommand errors.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Mon, 26 Oct 2026 10:21:00 +0800
+
 onedrive-cpp (1.2.2-1~ubuntu24.04) noble; urgency=medium
 
   * Prepare version 1.2.2.
