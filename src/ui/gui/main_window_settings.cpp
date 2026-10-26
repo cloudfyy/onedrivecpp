@@ -3,6 +3,7 @@
 #include "configuration.hpp"
 #include "localization.hpp"
 #include "settings_editor.hpp"
+#include <QApplication>
 #include <QFileDialog>
 #include <QFormLayout>
 #include <QHBoxLayout>
@@ -29,6 +30,12 @@ void MainWindow::create_settings_page() {
     settings_layout->addRow(tr("Configuration file"), config_path);
     settings_editor_ = new SettingsEditor{settings};
     settings_layout->addRow(settings_editor_);
+    connect(
+        settings_editor_,
+        &SettingsEditor::changed,
+        this,
+        &MainWindow::update_unsaved_indicator
+    );
     sync_directory_edit_ =
         settings_editor_->findChild<QLineEdit*>("sync.data_directory");
     state_directory_edit_ =
@@ -107,6 +114,7 @@ void MainWindow::refresh_settings(bool preserve_edits) {
     state_directory_edit_->setEnabled(editable);
     settings_editor_->setEnabled(editable);
     save_button_->setEnabled(editable);
+    update_unsaved_indicator();
     refresh_actions();
     render_sync();
     refresh_startup_status();
@@ -174,6 +182,20 @@ void MainWindow::refresh_startup_status() {
     }
     startup_status_->setText(messages.join("\n\n"));
     settings_status_->setText(startup_status_->text());
+}
+
+void MainWindow::update_unsaved_indicator() {
+    const bool dirty = has_unsaved_settings();
+    const QString base_title = tr("onedrive client");
+    setWindowTitle(dirty ? base_title + " *" : base_title);
+    QApplication::setApplicationDisplayName(windowTitle());
+    if (tabs_ && settings_) {
+        const int index = tabs_->indexOf(settings_);
+        if (index >= 0) {
+            const QString tab_title = tr("Settings");
+            tabs_->setTabText(index, dirty ? tab_title + " *" : tab_title);
+        }
+    }
 }
 
 bool MainWindow::has_unsaved_settings() const {

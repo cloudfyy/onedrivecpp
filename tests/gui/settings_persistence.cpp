@@ -457,46 +457,89 @@ void test_unsaved_settings_close_prompt() {
     };
     window.show();
     auto* editor = window.findChild<gui::SettingsEditor*>();
+    auto* main_tabs = window.findChild<QTabWidget*>("mainTabs");
     require(
-        editor != nullptr && !editor->has_unsaved_changes(),
+        editor != nullptr && main_tabs != nullptr &&
+            !editor->has_unsaved_changes() &&
+            window.windowTitle() == "onedrive client" &&
+            main_tabs->tabText(3) == "Settings",
         "clean editor reported unsaved changes"
     );
 
-    // Field kind & override baseline tracking.
+    // Field kind & override baseline tracking + title/tab indicator.
     choice(window, "sync.mode", "download_only");
-    require(editor->has_unsaved_changes(), "choice edit not detected");
+    require(
+        editor->has_unsaved_changes() &&
+            window.windowTitle() == "onedrive client *" &&
+            main_tabs->tabText(3) == "Settings *",
+        "choice edit or title/tab indicator not updated"
+    );
     choice(window, "sync.mode", "bidirectional");
-    require(!editor->has_unsaved_changes(), "reverted choice still dirty");
+    require(
+        !editor->has_unsaved_changes() &&
+            window.windowTitle() == "onedrive client" &&
+            main_tabs->tabText(3) == "Settings",
+        "reverted choice still dirty or indicator not cleared"
+    );
 
     checked(window, "sync.nosync_enabled", false);
-    require(editor->has_unsaved_changes(), "boolean edit not detected");
+    require(
+        editor->has_unsaved_changes() &&
+            window.windowTitle() == "onedrive client *" &&
+            main_tabs->tabText(3) == "Settings *",
+        "boolean edit not detected"
+    );
     checked(window, "sync.nosync_enabled", true);
-    require(!editor->has_unsaved_changes(), "reverted boolean still dirty");
+    require(
+        !editor->has_unsaved_changes() &&
+            window.windowTitle() == "onedrive client" &&
+            main_tabs->tabText(3) == "Settings",
+        "reverted boolean still dirty"
+    );
 
     list(window, "sync.drive_ids", "drive-1");
-    require(editor->has_unsaved_changes(), "list edit not detected");
+    require(
+        editor->has_unsaved_changes() &&
+            window.windowTitle() == "onedrive client *" &&
+            main_tabs->tabText(3) == "Settings *",
+        "list edit not detected"
+    );
     list(window, "sync.drive_ids", "me");
-    require(!editor->has_unsaved_changes(), "reverted list still dirty");
+    require(
+        !editor->has_unsaved_changes() &&
+            window.windowTitle() == "onedrive client" &&
+            main_tabs->tabText(3) == "Settings",
+        "reverted list still dirty"
+    );
 
     checked(window, "proxy.url.override", true);
     require(
-        editor->has_unsaved_changes(), "enabling override checkbox not detected"
+        editor->has_unsaved_changes() &&
+            window.windowTitle() == "onedrive client *" &&
+            main_tabs->tabText(3) == "Settings *",
+        "enabling override checkbox not detected"
     );
     text(window, "proxy.url", "https://proxy.example.test:8443");
     checked(window, "proxy.url.override", false);
     require(
-        !editor->has_unsaved_changes(),
+        !editor->has_unsaved_changes() &&
+            window.windowTitle() == "onedrive client" &&
+            main_tabs->tabText(3) == "Settings",
         "disabled override draft falsely reported unsaved changes"
     );
 
     text(window, "auth.application_id", "modified-client");
     require(
-        editor->has_unsaved_changes(),
+        editor->has_unsaved_changes() &&
+            window.windowTitle() == "onedrive client *" &&
+            main_tabs->tabText(3) == "Settings *",
         "modified editor did not report unsaved changes"
     );
     window.findChild<QPushButton*>("reloadSettingsButton")->click();
     require(
-        !editor->has_unsaved_changes(),
+        !editor->has_unsaved_changes() &&
+            window.windowTitle() == "onedrive client" &&
+            main_tabs->tabText(3) == "Settings",
         "reload did not clear unsaved changes state"
     );
     text(window, "auth.application_id", "modified-client");

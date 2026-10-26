@@ -30,6 +30,9 @@ public:
     [[nodiscard]] bool has_unsaved_changes() const;
     [[nodiscard]] std::vector<config::SettingPatch> patches() const;
 
+signals:
+    void changed();
+
 private:
     enum class Kind {
         text,

@@ -48,13 +48,16 @@ void test_runtime_language(bool system_chinese) {
     const auto check_ui = [&](bool chinese, gui::Language language) {
         require(
             window.windowTitle() ==
-                    expected(chinese, "onedrive client", "OneDrive 客户端") &&
+                    expected(
+                        chinese, "onedrive client *", "OneDrive 客户端 *"
+                    ) &&
                 QApplication::applicationDisplayName() ==
                     window.windowTitle() &&
                 tabs->tabText(0) == expected(chinese, "Overview", "概览") &&
                 tabs->tabText(1) == expected(chinese, "Sync", "同步") &&
                 tabs->tabText(2) == expected(chinese, "Files", "文件") &&
-                tabs->tabText(3) == expected(chinese, "Settings", "设置") &&
+                tabs->tabText(3) ==
+                    expected(chinese, "Settings *", "设置 *") &&
                 tabs->tabText(4) == expected(chinese, "Logs", "日志") &&
                 sign_in->text() == expected(chinese, "Sign in", "登录账号") &&
                 has_label(window, expected(chinese, "Account", "账号")) &&

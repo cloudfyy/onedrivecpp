@@ -84,14 +84,12 @@ void MainWindow::changeEvent(QEvent* event) {
 }
 
 void MainWindow::retranslate_ui() {
-    setWindowTitle(tr("onedrive client"));
     about_button_->setText(tr("About"));
-    QApplication::setApplicationDisplayName(windowTitle());
     tabs_->setTabText(0, tr("Overview"));
     tabs_->setTabText(1, tr("Sync"));
     tabs_->setTabText(tabs_->indexOf(files_page_), tr("Files"));
-    tabs_->setTabText(tabs_->indexOf(settings_), tr("Settings"));
     tabs_->setTabText(tabs_->indexOf(logs_page_), tr("Logs"));
+    update_unsaved_indicator();
     files_hint_->setText(tr(
         "Completed operations since this application started. Times are local. "
         "Preview and external Monitor operations are not included."

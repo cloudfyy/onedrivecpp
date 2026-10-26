@@ -93,18 +93,34 @@ void SettingsEditor::add(
         for (const auto& choice : choices) {
             combo->addItem(QString{}, QString::fromUtf8(choice.first));
         }
+        connect(
+            combo,
+            &QComboBox::currentIndexChanged,
+            this,
+            [this](int) { Q_EMIT changed(); }
+        );
         widget = combo;
     } else if (kind == Kind::boolean) {
-        widget = new QCheckBox;
+        auto* checkbox = new QCheckBox;
+        connect(checkbox, &QCheckBox::toggled, this, [this](bool) {
+            Q_EMIT changed();
+        });
+        widget = checkbox;
     } else if (kind == Kind::list || kind == Kind::override_list) {
         auto* edit = new QPlainTextEdit;
         edit->setMaximumHeight(90);
+        connect(edit, &QPlainTextEdit::textChanged, this, [this] {
+            Q_EMIT changed();
+        });
         widget = edit;
     } else {
         auto* edit = new QLineEdit;
         if (kind == Kind::number) {
             edit->setPlaceholderText("0–9223372036854775807");
         }
+        connect(edit, &QLineEdit::textChanged, this, [this](const QString&) {
+            Q_EMIT changed();
+        });
         widget = edit;
     }
     widget->setObjectName(QString::fromUtf8(table) + "." + key);
@@ -145,6 +161,9 @@ void SettingsEditor::add(
         layout->addWidget(override);
         layout->addWidget(widget);
         connect(override, &QCheckBox::toggled, widget, &QWidget::setEnabled);
+        connect(override, &QCheckBox::toggled, this, [this](bool) {
+            Q_EMIT changed();
+        });
     }
     if (std::string_view{table} == "sync" &&
         std::string_view{key} == "drive_ids") {
@@ -215,6 +234,7 @@ void SettingsEditor::load(const config::Config& config) {
             qobject_cast<QLineEdit*>(field.widget)->setText(field.baseline);
         }
     }
+    Q_EMIT changed();
 }
 
 void SettingsEditor::retranslate() {
