@@ -1264,6 +1264,12 @@ int test_cli_gui_detection_and_auth_flow() {
         const std::string old_path = old_path_raw ? old_path_raw : "";
         struct PathGuard {
             std::string previous;
+            explicit PathGuard(std::string value)
+                : previous{std::move(value)} {}
+            PathGuard(const PathGuard&) = delete;
+            PathGuard& operator=(const PathGuard&) = delete;
+            PathGuard(PathGuard&&) = delete;
+            PathGuard& operator=(PathGuard&&) = delete;
             ~PathGuard() {
                 // NOLINTNEXTLINE(concurrency-mt-unsafe)
                 ::setenv("PATH", previous.c_str(), 1);

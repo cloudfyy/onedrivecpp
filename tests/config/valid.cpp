@@ -243,14 +243,21 @@ int test_valid() {
             std::string name;
             std::optional<std::string> value;
             explicit EnvRestore(const char* var) : name{var} {
+                // NOLINTNEXTLINE(concurrency-mt-unsafe)
                 if (const char* current = std::getenv(var)) {
                     value = current;
                 }
             }
+            EnvRestore(const EnvRestore&) = delete;
+            EnvRestore& operator=(const EnvRestore&) = delete;
+            EnvRestore(EnvRestore&&) = delete;
+            EnvRestore& operator=(EnvRestore&&) = delete;
             ~EnvRestore() {
                 if (value.has_value()) {
+                    // NOLINTNEXTLINE(concurrency-mt-unsafe)
                     ::setenv(name.c_str(), value->c_str(), 1);
                 } else {
+                    // NOLINTNEXTLINE(concurrency-mt-unsafe)
                     ::unsetenv(name.c_str());
                 }
             }

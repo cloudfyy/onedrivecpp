@@ -43,6 +43,7 @@ cli::Language resolve_help_language(
             try {
                 cli_language = cli::Console::parse_language(*language_value);
             } catch (const std::invalid_argument&) {
+                cli_language.reset();
             }
             continue;
         }
@@ -62,6 +63,7 @@ cli::Language resolve_help_language(
                 return cli::resolve_language(loaded.console_language);
             }
         } catch (const std::exception&) {
+            return cli::resolve_language(cli::Language::automatic);
         }
     }
     return cli::resolve_language(cli::Language::automatic);

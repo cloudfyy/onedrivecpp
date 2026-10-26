@@ -11,7 +11,7 @@ void test_runtime_language(bool system_chinese) {
     gui::MainWindow window{
         gui::load_app_state_view_model(file),
         [&login_calls](
-            const auto&, const auto&, std::stop_token token
+            const auto&, const auto&, const std::stop_token& token
         ) -> auth::AuthResult<app::AuthenticationResult> {
             ++login_calls;
             while (!token.stop_requested()) {
@@ -184,7 +184,7 @@ void test_runtime_language(bool system_chinese) {
         gui::load_app_state_view_model(file),
         [](const auto&,
            const auto&,
-           std::stop_token) -> auth::AuthResult<app::AuthenticationResult> {
+           const std::stop_token&) -> auth::AuthResult<app::AuthenticationResult> {
             throw std::runtime_error{"raw server detail: /中文/%1"};
         },
         &localization

@@ -53,16 +53,26 @@ inline RunResult run_application(
 ) {
     struct DefaultEnglishLocaleGuard {
         bool active{
+            // NOLINTNEXTLINE(concurrency-mt-unsafe)
             std::getenv("ONEDRIVE_CPP_TEST_KEEP_LOCALE") == nullptr &&
+            // NOLINTNEXTLINE(concurrency-mt-unsafe)
             std::getenv("ONEDRIVE_CPP_LANG") == nullptr
         };
         DefaultEnglishLocaleGuard() noexcept {
             if (active) {
+                // NOLINTNEXTLINE(concurrency-mt-unsafe)
                 ::setenv("ONEDRIVE_CPP_LANG", "en", 1);
             }
         }
+        DefaultEnglishLocaleGuard(const DefaultEnglishLocaleGuard&) = delete;
+        DefaultEnglishLocaleGuard&
+        operator=(const DefaultEnglishLocaleGuard&) = delete;
+        DefaultEnglishLocaleGuard(DefaultEnglishLocaleGuard&&) = delete;
+        DefaultEnglishLocaleGuard&
+        operator=(DefaultEnglishLocaleGuard&&) = delete;
         ~DefaultEnglishLocaleGuard() {
             if (active) {
+                // NOLINTNEXTLINE(concurrency-mt-unsafe)
                 ::unsetenv("ONEDRIVE_CPP_LANG");
             }
         }

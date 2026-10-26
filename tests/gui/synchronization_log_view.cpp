@@ -11,7 +11,9 @@ void test_session_logs_and_tabs() {
         gui::load_app_state_view_model(fixture.file),
         {},
         &localization,
-        [&](config::Config, const events::Observer& observer, std::stop_token) {
+        [&](const config::Config&,
+            const events::Observer& observer,
+            const std::stop_token&) {
             ++run;
             for (int index = 0; index < 80; ++index) {
                 observer.message(
@@ -283,9 +285,9 @@ void test_live_log_scroll() {
         gui::load_app_state_view_model(fixture.file),
         {},
         nullptr,
-        [&](config::Config,
+        [&](const config::Config&,
             const events::Observer& observer,
-            std::stop_token token) {
+            const std::stop_token& token) {
             for (int phase = 0; phase < 4; ++phase) {
                 while (requested < phase && !token.stop_requested()) {
                     QThread::msleep(1);
@@ -401,7 +403,9 @@ void test_live_log_threshold() {
         gui::load_app_state_view_model(fixture.file),
         {},
         &localization,
-        [&](config::Config, const events::Observer&, std::stop_token token) {
+        [&](const config::Config&,
+            const events::Observer&,
+            const std::stop_token& token) {
             for (int phase = 0; phase <= 5; ++phase) {
                 while (requested < phase && !token.stop_requested()) {
                     QThread::msleep(1);
@@ -427,6 +431,8 @@ void test_live_log_threshold() {
                     break;
                 case 5:
                     spdlog::error("after clear error");
+                    break;
+                default:
                     break;
                 }
                 emitted = phase;

@@ -1305,10 +1305,7 @@ std::size_t display_width(std::string_view text) noexcept {
     std::size_t width = 0;
     for (std::size_t index = 0; index < text.size();) {
         const auto byte = static_cast<unsigned char>(text[index]);
-        if (byte < 0x80U) {
-            ++width;
-            ++index;
-        } else if ((byte & 0xE0U) == 0xC0U) {
+        if ((byte & 0xE0U) == 0xC0U) {
             ++width;
             index += 2;
         } else if ((byte & 0xF0U) == 0xE0U) {
