@@ -1,12 +1,148 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
+import fcntl
 import os
 from pathlib import Path
 import secrets
 import shutil
 import sqlite3
+import stat
+from typing import Iterator
 
-from .base import E2EError, sha256
+from .base import E2EError, require, sha256
+
+
+def private_read(path: Path, *, token: bool = False) -> bytes:
+    for component in (path, *path.parents):
+        require(
+            not component.is_symlink(),
+            "Credential paths must not use symlinks",
+        )
+    descriptor = os.open(
+        path,
+        os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC,
+    )
+    try:
+        metadata = os.fstat(descriptor)
+        require(
+            stat.S_ISREG(metadata.st_mode) and metadata.st_uid == os.geteuid(),
+            "Credentials must be regular files owned by the current user",
+        )
+        if token:
+            require(
+                stat.S_IMODE(metadata.st_mode) == 0o600,
+                "Token must be mode 0600",
+            )
+        with os.fdopen(descriptor, "rb", closefd=False) as source:
+            contents = source.read(1024 * 1024 + 1)
+        require(
+            0 < len(contents) <= 1024 * 1024,
+            "Credential file is empty or too large",
+        )
+        return contents
+    finally:
+        os.close(descriptor)
+
+
+def private_write(path: Path, contents: bytes) -> None:
+    descriptor = os.open(
+        path,
+        os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
+        0o600,
+    )
+    with os.fdopen(descriptor, "wb") as destination:
+        os.fchmod(destination.fileno(), 0o600)
+        destination.write(contents)
+
+
+def _read_account_credentials(state: Path) -> tuple[str, bytes, bytes]:
+    marker = (
+        private_read(state / "active_account").decode("utf-8").rstrip("\r\n")
+    )
+    require(
+        marker not in ("", ".", "..")
+        and "/" not in marker
+        and "\\" not in marker
+        and "\0" not in marker,
+        "Invalid active-account marker",
+    )
+    account = state / "accounts" / marker
+    token = private_read(account / "refresh_token", token=True)
+    require(bool(token.strip()), "Refresh token contains only whitespace")
+    return (
+        marker,
+        private_read(account / "account.json"),
+        token,
+    )
+
+
+def credentials_snapshot(
+    state: Path,
+    *,
+    require_lock: bool = True,
+) -> tuple[str, bytes, bytes]:
+    lock = state / "onedrive-cpp.lock"
+    if not require_lock and not lock.exists():
+        return _read_account_credentials(state)
+    private_read(lock)
+    descriptor = os.open(lock, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    with os.fdopen(descriptor, "rb") as source_lock:
+        try:
+            fcntl.flock(source_lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise E2EError(
+                "Source account is busy; stop sync/watch before copying credentials"
+            ) from error
+        return _read_account_credentials(state)
+
+
+def write_isolated_credentials(
+    state_directory: Path,
+    credentials: tuple[str, bytes, bytes],
+) -> None:
+    marker, account, token = credentials
+    state_directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    state_directory.chmod(0o700)
+    accounts = state_directory / "accounts"
+    accounts.mkdir(exist_ok=True, mode=0o700)
+    accounts.chmod(0o700)
+    account_directory = accounts / marker
+    account_directory.mkdir(exist_ok=True, mode=0o700)
+    account_directory.chmod(0o700)
+    private_write(state_directory / "active_account", (marker + "\n").encode())
+    private_write(account_directory / "account.json", account)
+    private_write(account_directory / "refresh_token", token)
+
+
+@contextmanager
+def hold_source_state_lock(source_state: Path) -> Iterator[None]:
+    lock_path = source_state / "onedrive-cpp.lock"
+    if not lock_path.exists():
+        yield
+        return
+    private_read(lock_path)
+    descriptor = os.open(lock_path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    with os.fdopen(descriptor, "rb") as lock_file:
+        try:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise E2EError(
+                "Source account is busy; stop sync/watch before copying credentials"
+            ) from error
+        try:
+            yield
+        finally:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def copy_isolated_state(source_state: Path, state_directory: Path) -> None:
+    if state_directory.exists():
+        raise E2EError(
+            f"isolated state directory already exists: {state_directory}"
+        )
+    credentials = credentials_snapshot(source_state, require_lock=False)
+    write_isolated_credentials(state_directory, credentials)
 
 
 def tracked_item_count(state_directory: Path, remote_path: Path) -> int:

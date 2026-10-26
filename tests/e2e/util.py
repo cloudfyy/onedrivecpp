@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import time
 
-from .base import E2EError
+from .base import E2EError, require
 
 
 def materialized_files(sync_data_directory: Path) -> list[Path]:
@@ -30,6 +30,32 @@ def safe_backup_files(destination: Path) -> list[Path]:
         and path.name.startswith(prefix)
         and path.name.endswith(suffix)
     )
+
+
+def parse_events(
+    completed: subprocess.CompletedProcess[str],
+) -> list[dict[str, object]]:
+    result: list[dict[str, object]] = []
+    for line in (completed.stdout + "\n" + completed.stderr).splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict):
+            result.append(event)
+    return result
+
+
+def section(
+    completed: subprocess.CompletedProcess[str],
+    name: str,
+) -> dict[str, object]:
+    matches = [
+        event for event in parse_events(completed) if event.get("event") == name
+    ]
+    require(len(matches) == 1, f"Expected one {name} JSON event")
+    values = matches[0].get("values", {})
+    return values if isinstance(values, dict) else {}
 
 
 def json_event_count(
@@ -66,11 +92,11 @@ def log_text_since(log_file: Path, offset: int) -> str:
 def save_artifacts(
     completed: list[subprocess.CompletedProcess[str]],
     log_file: Path,
+    artifact_dir: Path | None = None,
 ) -> None:
-    destination_value = os.environ.get("ONEDRIVE_E2E_ARTIFACT_DIR", "").strip()
-    if not destination_value:
+    if artifact_dir is None:
         return
-    destination = Path(destination_value).expanduser().resolve()
+    destination = artifact_dir.expanduser().resolve()
     destination.mkdir(parents=True, exist_ok=True)
     for index, result in enumerate(completed, start=1):
         (destination / f"command-{index}.stdout.log").write_text(

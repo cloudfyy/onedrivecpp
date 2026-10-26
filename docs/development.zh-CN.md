@@ -374,10 +374,13 @@ CTest。用 `python3 tools/coverage_report.py build/coverage --name state-machin
 测量结束后切换回 `debug` 或 `release` preset 即可恢复正常开发；
 它们的独立构建目录不受覆盖率 preset 影响。
 
-## 独立的 OneDrive for Business E2E
+## 独立的 OneDrive for Business 与 SharePoint E2E
 
-`tests/business_e2e.py` 是全新的独立脚本，既不导入也不调用
-`graph_sync_e2e.py` 或 `tests/e2e/`。需要 Python 3.11+、Linux 和已经构建的 CLI，
+`tests/business_e2e.py` 与 `tests/sharepoint_e2e.py` 是分别面向 OneDrive for Business
+（`driveType=business`）与 SharePoint 文档库（`driveType=documentLibrary`）的按需在线
+E2E 脚本，与个人版 `tests/graph_sync_e2e.py` 共用 `tests/e2e/`（`base.py`、`state.py`、
+`util.py`、`drive_runner.py`）中的配置解析、多盘选择、凭据安全快照与隔离、JSON 事件解析
+以及双客户端场景运行器。需要 Python 3.11+、Linux 和已经构建的 CLI，
 无需额外 Python 包，也不要求预先准备云端测试文件。
 
 直接复用现有的第 2 版配置及其已登录的**活动账号**。先停止日常 sync/watch，
@@ -425,10 +428,12 @@ ctest --test-dir build/release -R '^business_e2e_runner_tests$' --output-on-fail
 
 ## 真实 Graph 端到端测试
 
-普通构建不会启用 `e2e` preset。这项测试需要专用测试账号或 Drive，并要求远端
-根目录预先放置内容稳定的测试夹具（fixture）。仓库外的配置必须已经完成认证，
-且绝不能提交到仓库。测试运行器（runner）会把状态目录复制到隔离的临时工作区，
-只清理这份副本，并配置独立的 `sync_list`。
+普通构建不会启用 `e2e` preset。这项测试针对个人版 OneDrive（`driveType = "personal"`），
+直接从配置文件（默认 `~/.config/onedrive-cpp/config.toml`，或通过 `--config <path>`
+指定）读取配置，无需设置环境变量，也不要求预先在云端准备测试文件。仓库外的配置必须
+已经完成认证，且绝不能提交到仓库。测试运行器（runner）只会把活动账号凭据复制到隔离
+的临时工作区，校验所选 Drive 的 `driveType = "personal"`，在云端自动创建可丢弃的基线
+fixture 子树（`__onedrive_cpp_fixture_e2e_<hex>/small.bin`），并配置独立的 `sync_list`。
 它会验证以下行为：显式单文件下载可以绕过空规则文件；之后的同步会排除该文件的
 快照，但不会删除本地文件；加入包含规则后，会触发完整远端状态查询并重新下载
 fixture；最后一次增量同步不会替换未变化的文件。随后，runner 会写入发生冲突的
@@ -440,7 +445,7 @@ fixture；最后一次增量同步不会替换未变化的文件。随后，runn
 简单上传、超过 250 MB 的 upload session、已完成上传的恢复、本地与远端同时
 修改时的冲突备份、移动到新父目录，以及本地删除。大文件默认为 250,000,001
 字节；
-`ONEDRIVE_E2E_LARGE_UPLOAD_BYTES` 可以把它增大到 1 GB，但不能降到 upload
+`--large-upload-bytes` 可以把它增大到 1 GB，但不能降到 upload
 session 阈值以下。随后，它会使用复制账号中的 token 创建另一个名称唯一、可丢弃的 Graph 子树，
 再将一个文件和一个目录移动到其他远端父目录并重命名。测试会验证同步过程复用了
 相同的本地 inode、更新了快照，并发出结构化移动事件。即使测试失败，远端临时
@@ -450,22 +455,24 @@ session 阈值以下。随后，它会使用复制账号中的 token 创建另�
 
 最后，runner 会向隔离状态注入一条可信快照，其 ID 不存在于真实的完整 Graph
 Delta 响应中。测试将验证本地安全删除、SQLite 清理和结构化输出，同时确认真实
-fixture 保持不变。它还会启用 `sync_root_files`，验证选择摘要的变化会触发完整
-Graph 查询，并确认已被规则选中的 fixture 不会重写。
+fixture 保持不变。它还会在 dry-run 模式下启用 `sync_root_files`，验证选择摘要的
+变化会触发完整 Graph 查询，并确认已被规则选中的 fixture 不会重写。
 
 ### 配置与运行
 
 ```bash
-export ONEDRIVE_E2E_CONFIG=/absolute/path/to/dedicated-e2e.toml
-export ONEDRIVE_E2E_EXPECTED_PATH=fixture/small.bin
-export ONEDRIVE_E2E_EXPECTED_SHA256=<64位小写十六进制值>
-# 可选；必须大于 250,000,000，且不能超过 1,000,000,000。
-export ONEDRIVE_E2E_LARGE_UPLOAD_BYTES=250000001
+python3 tests/graph_sync_e2e.py \
+  --client build/release/onedrive-cpp \
+  --config ~/.config/onedrive-cpp/config.toml
 
+# 或通过 CTest 运行（默认读取 ~/.config/onedrive-cpp/config.toml）：
 cmake --preset e2e
 cmake --build --preset e2e
 ctest --preset e2e -R graph_sync_e2e
 ```
+
+当配置使用 `sync.drive_ids` 包含多个 Drive 时，可通过 `--drive <配置中的引用>`
+显式指定，或由脚本自动选择其中的个人版 Drive（`"me"` / `drive_type = "personal"`）。
 
 runner 会输出阶段编号和百分比进度。CTest 默认不显示通过中测试的输出；只有
 需要实时观察进度时才增加 `--verbose`。
@@ -477,13 +484,11 @@ Graph 场景、系统边界场景、进程编排、状态 fixture 和 runner 自
 
 ### 测试数据与产物安全
 
-专用 Drive 必须授予文件写权限，并且只能包含可丢弃的测试数据；runner 生成的
-`sync_list` 只会落地预期 fixture 和临时 fixture。应预留足够的本地空间同时保存
-大文件源和稳定上传快照，并确保测试账号有足够配额保存远端副本。设置
-`ONEDRIVE_E2E_ARTIFACT_DIR` 后，失败时会保留命令输出和客户端日志；
-这些诊断信息可能包含远端文件元数据，应按敏感数据保管。临时配置、复制的 token、
-SQLite 状态和下载内容始终会被删除。不要让 E2E runner 使用日常状态目录或日常
-Drive。
+个人版 Drive 必须授予文件写权限。应预留足够的本地空间同时保存大文件源和稳定上传
+快照，并确保测试账号有足够配额保存远端副本。传入 `--artifact-dir <目录>` 后，
+失败时会保留命令输出和客户端日志；这些诊断信息可能包含远端文件元数据，应按敏感
+数据保管。临时配置、复制的 token、SQLite 状态、下载内容以及远端临时 fixture
+子树始终会被删除。
 
 ### 系统边界场景
 

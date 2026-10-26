@@ -70,7 +70,7 @@ def run_upload_scenarios(context: LiveScenarioContext) -> None:
         move_contents = b"onedrive-cpp local move upload E2E\n"
         move_file.write_bytes(move_contents)
         large_file = upload_local_root / "session.bin"
-        large_size = large_upload_size()
+        large_size = large_upload_size(context.large_upload_bytes)
         large_sha256 = write_pattern_file(
             large_file,
             large_size,

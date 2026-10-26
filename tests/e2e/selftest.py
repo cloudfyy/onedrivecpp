@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -10,10 +9,16 @@ from .base import (
     E2EError,
     fixture_path,
     large_upload_size,
+    load_live_settings,
+    saved_drive_types,
+    select_business_drive,
+    select_personal_drive,
+    select_sharepoint_drives,
     sha256,
     sync_list_rule,
     sync_list_subtree_rule,
     sync_root_for_fixture,
+    toml_document,
     write_pattern_file,
 )
 from .graph import inject_disappeared_item
@@ -23,6 +28,7 @@ from .selftest_progress import self_test_progress
 from .run import run_sync_after_stop
 from .state import (
     active_refresh_token_path,
+    copy_isolated_state,
     inject_completed_upload,
     pending_upload_row,
     replace_private_file,
@@ -34,7 +40,9 @@ from .util import (
     json_event_count,
     json_text_event_count,
     materialized_files,
+    parse_events,
     safe_backup_files,
+    section,
 )
 
 
@@ -151,34 +159,26 @@ def self_test() -> None:
         except E2EError as error:
             if "must exceed" not in str(error):
                 raise
-        original_large_size = os.environ.get(
-            "ONEDRIVE_E2E_LARGE_UPLOAD_BYTES"
-        )
+        if large_upload_size(250_000_001) != 250_000_001:
+            raise E2EError("large upload size self-test failed")
         try:
-            os.environ["ONEDRIVE_E2E_LARGE_UPLOAD_BYTES"] = "250000001"
-            if large_upload_size() != 250_000_001:
-                raise E2EError("large upload size self-test failed")
-            os.environ["ONEDRIVE_E2E_LARGE_UPLOAD_BYTES"] = "invalid"
-            try:
-                large_upload_size()
-                raise E2EError("invalid large upload size was accepted")
-            except E2EError as error:
-                if "must be an integer" not in str(error):
-                    raise
-            os.environ["ONEDRIVE_E2E_LARGE_UPLOAD_BYTES"] = "1000000001"
-            try:
-                large_upload_size()
-                raise E2EError("oversized large upload fixture was accepted")
-            except E2EError as error:
-                if "exceeds 1 GB" not in str(error):
-                    raise
-        finally:
-            if original_large_size is None:
-                os.environ.pop("ONEDRIVE_E2E_LARGE_UPLOAD_BYTES", None)
-            else:
-                os.environ["ONEDRIVE_E2E_LARGE_UPLOAD_BYTES"] = (
-                    original_large_size
-                )
+            large_upload_size("invalid")
+            raise E2EError("invalid large upload size was accepted")
+        except E2EError as error:
+            if "must be an integer" not in str(error):
+                raise
+        try:
+            large_upload_size(250_000_000)
+            raise E2EError("small large upload size was accepted")
+        except E2EError as error:
+            if "must exceed" not in str(error):
+                raise
+        try:
+            large_upload_size(1_000_000_001)
+            raise E2EError("oversized large upload fixture was accepted")
+        except E2EError as error:
+            if "exceeds 1 GB" not in str(error):
+                raise
         recovery_source = expected.with_name("recovery.txt")
         recovery_source.write_text("recovery", encoding="utf-8")
         with sqlite3.connect(database) as connection:
@@ -251,6 +251,12 @@ def self_test() -> None:
         recovery_source.unlink()
         account = state / "accounts" / "account--12345678"
         account.mkdir(parents=True)
+        account_json = account / "account.json"
+        account_json.write_text(
+            '{"configured_drive_id":"me","drive_id":"personal-drive-id",'
+            '"drive_type":"personal"}\n',
+            encoding="utf-8",
+        )
         token = account / "refresh_token"
         token.write_text("old-token", encoding="utf-8")
         token.chmod(0o600)
@@ -266,6 +272,87 @@ def self_test() -> None:
             or token.stat().st_mode & 0o777 != 0o600
         ):
             raise E2EError("private token replacement self-test failed")
+        isolated_state = root / "isolated-state"
+        copy_isolated_state(state, isolated_state)
+        if (
+            active_refresh_token_path(isolated_state).read_text(
+                encoding="utf-8"
+            )
+            != "new-token"
+            or (isolated_state / "items.sqlite3").exists()
+        ):
+            raise E2EError("isolated state copy self-test failed")
+        sample_config_path = root / "sample-config.toml"
+        sample_config_path.write_text(
+            'config_version = 2\n'
+            '[auth]\n'
+            'application_id = "app-id"\n'
+            '[sync]\n'
+            'data_directory = "/tmp/sync"\n'
+            'drive_ids = ["me", "b!sp-library"]\n'
+            '[state]\n'
+            f'directory = "{state}"\n',
+            encoding="utf-8",
+        )
+        loaded_settings = load_live_settings(
+            Path("/bin/true"),
+            sample_config_path,
+        )
+        if (
+            loaded_settings.drive_id != "me"
+            or loaded_settings.source_state != state
+        ):
+            raise E2EError("live settings configuration load self-test failed")
+        if (
+            select_personal_drive(
+                {"sync": {"drive_ids": ["b!sp-library", "me"]}},
+                known_types={"b!sp-library": "documentLibrary"},
+            )
+            != "me"
+        ):
+            raise E2EError("personal Drive auto-selection self-test failed")
+        if (
+            select_business_drive(
+                {"sync": {"drive_ids": ["me", "b!sp-library"]}},
+                "me",
+            )
+            != "me"
+        ):
+            raise E2EError("business Drive selection self-test failed")
+        if select_sharepoint_drives(
+            {"sync": {"drive_ids": ["me", "b!sp-library"]}},
+            known_types={"me": "business", "b!sp-library": "documentLibrary"},
+        ) != ["b!sp-library"]:
+            raise E2EError("sharepoint Drive auto-selection self-test failed")
+        sp_drive_dir = account / "drives" / "sp_b!sp-library"
+        sp_drive_dir.mkdir(parents=True)
+        (sp_drive_dir / "drive.json").write_text(
+            '{"configured_drive_id":"b!sp-library",'
+            '"drive_id":"b!sp-library",'
+            '"drive_type":"documentLibrary"}\n',
+            encoding="utf-8",
+        )
+        if (
+            saved_drive_types(state, account.name).get("b!sp-library")
+            != "documentLibrary"
+        ):
+            raise E2EError("saved drive types lookup self-test failed")
+        if '"config_version" = 2' not in toml_document(
+            {"config_version": 2, "sync": {"drive_id": "me"}}
+        ):
+            raise E2EError("TOML document serialization self-test failed")
+        status_event_result = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout='{"event":"status","values":{"drive_type":"personal"}}\n',
+            stderr="",
+        )
+        if (
+            len(parse_events(status_event_result)) != 1
+            or section(status_event_result, "status").get("drive_type")
+            != "personal"
+        ):
+            raise E2EError("JSON status section self-test failed")
 
         self_test_graph(state, token)
         backup = expected.with_name(

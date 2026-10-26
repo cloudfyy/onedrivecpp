@@ -18,6 +18,8 @@ class LiveScenarioContext:
     sync_list: Path
     log_file: Path
     source_text: str
+    drive_id: str
+    large_upload_bytes: int
     expected_path: Path
     stable: Path
     graph_endpoint: str

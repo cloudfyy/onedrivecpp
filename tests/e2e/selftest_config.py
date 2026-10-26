@@ -132,3 +132,24 @@ def self_test_config() -> None:
         )
         if replaced_root_files["sync"]["sync_root_files"] is not True:
             raise E2EError("existing root-file policy was not replaced")
+        multiline_drive_ids = source.replace(
+            'data_directory = "/old/sync"',
+            'data_directory = "/old/sync"\n'
+            'drive_ids = [\n'
+            '    "me",\n'
+            '    "b!sp-library",\n'
+            ']',
+        )
+        rewritten_drive = tomllib.loads(
+            rewrite_config(
+                multiline_drive_ids,
+                Path("/new/sync"),
+                Path("/new/state"),
+                drive_id="me",
+            )
+        )
+        if (
+            rewritten_drive["sync"].get("drive_id") != "me"
+            or "drive_ids" in rewritten_drive["sync"]
+        ):
+            raise E2EError("drive_ids replacement self-test failed")

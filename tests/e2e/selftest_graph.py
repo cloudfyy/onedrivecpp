@@ -7,8 +7,14 @@ import time
 from urllib import error as url_error, request
 
 from . import graph as graph_module
-from .base import E2EError
-from .graph import GraphMoveFixture, json_request, refresh_graph_access_token
+from .base import BASELINE_FIXTURE_BYTES, E2EError
+from .graph import (
+    GraphMoveFixture,
+    create_baseline_fixture,
+    json_request,
+    refresh_graph_access_token,
+    resolve_personal_drive_id,
+)
 
 
 def self_test_graph(state: Path, token: Path) -> None:
@@ -112,6 +118,10 @@ def self_test_graph(state: Path, token: Path) -> None:
                 "access_token": "access-token",
                 "refresh_token": "rotated-token",
             }
+        if method == "GET" and url.endswith("/me/drive"):
+            return {"id": "personal-drive-id", "driveType": "personal"}
+        if method == "GET" and url.endswith("/drives/b%21sp-lib"):
+            return {"id": "b!sp-lib", "driveType": "documentLibrary"}
         if method == "GET" and url.endswith("/root:/root/missing.bin"):
             raise E2EError(
                 "GET request returned unexpected HTTP status 404"
@@ -143,6 +153,42 @@ def self_test_graph(state: Path, token: Path) -> None:
             or token.read_text(encoding="utf-8") != "rotated-token"
         ):
             raise E2EError("token refresh self-test failed")
+        if (
+            resolve_personal_drive_id(
+                "https://graph.example.test/v1.0/",
+                "me",
+                access_token,
+            )
+            != "personal-drive-id"
+        ):
+            raise E2EError("personal Drive resolution self-test failed")
+        try:
+            resolve_personal_drive_id(
+                "https://graph.example.test/v1.0/",
+                "b!sp-lib",
+                access_token,
+            )
+            raise E2EError("non-personal Drive was accepted")
+        except E2EError as drive_error:
+            if "driveType='personal'" not in str(drive_error):
+                raise
+        baseline_fixture, baseline_path, baseline_sha = (
+            create_baseline_fixture(
+                "https://graph.example.test/v1.0/",
+                "personal-drive-id",
+                access_token,
+            )
+        )
+        if (
+            baseline_path.name != "small.bin"
+            or not baseline_path.parent.name.startswith(
+                "__onedrive_cpp_fixture_e2e_"
+            )
+            or len(baseline_sha) != 64
+        ):
+            raise E2EError("baseline fixture creation self-test failed")
+        baseline_fixture.delete_root()
+        del requests[1:]
 
         graph_fixture = GraphMoveFixture(
             "https://graph.example.test/v1.0/",

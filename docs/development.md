@@ -406,11 +406,16 @@ removal, empty inline throttle parents, and int64 timeout/throttle limits.
 for environment-inherited proxies and direct connections with empty overrides.
 No GUI sync action, migration or online credential validation is implied.
 
-## Independent OneDrive for Business E2E
+## Independent OneDrive for Business and SharePoint E2E
 
-`tests/business_e2e.py` is a new standalone runner. It neither imports nor invokes
-`graph_sync_e2e.py` or `tests/e2e/`. It requires Python 3.11+, Linux and a built
-CLI; no extra Python packages or pre-existing remote fixtures are needed.
+`tests/business_e2e.py` and `tests/sharepoint_e2e.py` are opt-in live runners
+for OneDrive for Business (`driveType=business`) and SharePoint document
+libraries (`driveType=documentLibrary`). Both scripts share configuration
+loading, Drive selection, credential-isolation helpers, JSON event parsing, and
+the dual-client scenario runner in `tests/e2e/` (`base.py`, `state.py`,
+`util.py`, and `drive_runner.py`) with `tests/graph_sync_e2e.py`. They require
+Python 3.11+, Linux and a built CLI; no extra Python packages or pre-existing
+remote fixtures are needed.
 
 Use an existing version-2 configuration and its authenticated **active account**.
 Stop ordinary sync/watch and keep them stopped throughout the test. The selected
@@ -467,10 +472,14 @@ ctest --test-dir build/release -R '^business_e2e_runner_tests$' --output-on-fail
 ## Live Graph end-to-end tests
 
 The `e2e` preset is disabled from normal builds and requires a dedicated test
-account or Drive whose remote root contains a stable fixture. The external
-configuration must already be authenticated and must not be committed. The
-runner copies its state directory into an isolated temporary workspace, clears
-only that copy, and configures an isolated `sync_list`. It verifies that an
+account or Drive (`driveType = "personal"`). The external configuration
+(`~/.config/onedrive-cpp/config.toml` by default, or `--config <path>`) must
+already be authenticated and must not be committed; no environment variables or
+pre-existing remote fixture files are required. The runner copies only the
+active account credentials into an isolated temporary workspace, verifies that
+the selected Drive reports `driveType = "personal"`, creates a disposable
+remote baseline fixture subtree (`__onedrive_cpp_fixture_e2e_<hex>/small.bin`),
+and configures an isolated `sync_list`. It verifies that an
 explicit single-file download bypasses an empty list, that the following sync
 excludes its snapshot without deleting the local file, that adding an inclusion
 rule triggers a full remote-state query and re-downloads the fixture, and that
@@ -485,7 +494,7 @@ external configuration. It also creates a disposable local subtree and verifies
 remote directory creation, simple upload, an upload-session file larger than
 250 MB, completed-upload recovery, simultaneous local/remote conflict backup,
 local moves into new parents, and local deletion. The large fixture defaults to
-250,000,001 bytes; `ONEDRIVE_E2E_LARGE_UPLOAD_BYTES` may increase it up to 1 GB
+250,000,001 bytes; `--large-upload-bytes` may increase it up to 1 GB
 but cannot lower it below the upload-session threshold. It then uses the copied
 account token to create another uniquely named disposable Graph subtree, moves
 and renames a file and a directory across remote parents, and verifies that
@@ -499,23 +508,26 @@ clean remote content replacement; and deletion of an individual remote file.
 Finally, the runner injects an isolated trusted snapshot
 whose ID is absent from a real full Graph Delta response and verifies safe
 local deletion, SQLite cleanup, structured output, and preservation of the
-live fixture. It also enables `sync_root_files`, verifies that the selection
-fingerprint forces a full Graph query, and confirms the existing rule-selected
-fixture is not rewritten.
+live fixture. It also enables `sync_root_files` in dry-run mode, verifies that
+the selection fingerprint forces a full Graph query, and confirms the existing
+rule-selected fixture is not rewritten.
 
 ### Configure and run
 
 ```bash
-export ONEDRIVE_E2E_CONFIG=/absolute/path/to/dedicated-e2e.toml
-export ONEDRIVE_E2E_EXPECTED_PATH=fixture/small.bin
-export ONEDRIVE_E2E_EXPECTED_SHA256=<64-lowercase-hex-digits>
-# Optional; must remain above 250,000,000 and no greater than 1,000,000,000.
-export ONEDRIVE_E2E_LARGE_UPLOAD_BYTES=250000001
+python3 tests/graph_sync_e2e.py \
+  --client build/release/onedrive-cpp \
+  --config ~/.config/onedrive-cpp/config.toml
 
+# Or via CTest (reads ~/.config/onedrive-cpp/config.toml by default):
 cmake --preset e2e
 cmake --build --preset e2e
 ctest --preset e2e -R graph_sync_e2e
 ```
+
+If `sync.drive_ids` contains multiple Drives, pass `--drive <configured-drive>`
+or let the runner automatically select the configured Personal Drive (`"me"` /
+`drive_type = "personal"`).
 
 The runner emits numbered stage and percentage progress. CTest keeps passing
 test output quiet by default; add `--verbose` only when live progress needs to
@@ -530,16 +542,13 @@ Graph helper self-tests are likewise separated from the main self-test driver.
 
 ### Test data and artifact safety
 
-The dedicated Drive must grant file write access and should contain only
-disposable test data even though the runner's generated `sync_list` materializes
-only the expected and temporary fixtures. Allow enough local free space for
-both the large source and its stable upload snapshot, and enough test-account
-quota for the remote copy. Set
-`ONEDRIVE_E2E_ARTIFACT_DIR` to retain command output and the client log after a
-failure. These diagnostics may contain remote file metadata and must be handled
-as sensitive data. Configuration, copied tokens, SQLite state, and downloaded
-content are always removed. Never point the E2E runner at a daily-use state or
-Drive.
+The Personal Drive must grant file write access. Allow enough local free space
+for both the large source and its stable upload snapshot, and enough
+test-account quota for the remote copy. Pass `--artifact-dir <path>` to retain
+command output and the client log after a failure. These diagnostics may contain
+remote file metadata and must be handled as sensitive data. Temporary
+configuration, copied tokens, SQLite state, downloaded content, and remote
+fixture subtrees are always removed.
 
 ### System-boundary scenarios
 

@@ -22,9 +22,10 @@ def run_monitor_scenarios(
     local_root: Path,
     remote_root: Path,
     fixture: GraphMoveFixture,
+    large_upload_bytes: int = 250_000_001,
 ) -> subprocess.CompletedProcess[str]:
     large_source = workspace / "monitor-large-source.bin"
-    large_size = large_upload_size()
+    large_size = large_upload_size(large_upload_bytes)
     large_digest = write_pattern_file(large_source, large_size)
 
     def exercise(

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
+import secrets
 import shutil
 import sqlite3
 import time
 from urllib import error as url_error, parse, request
 
-from .base import E2EError
+from .base import BASELINE_FIXTURE_BYTES, E2EError
 from .state import active_refresh_token_path, replace_private_file
 
 
@@ -134,6 +136,49 @@ def refresh_graph_access_token(
     if rotated_refresh_token != refresh_token:
         replace_private_file(token_path, rotated_refresh_token)
     return access_token
+
+
+def resolve_personal_drive_id(
+    endpoint: str,
+    configured_drive: str,
+    access_token: str,
+) -> str:
+    drive_path = (
+        "/me/drive"
+        if configured_drive == "me"
+        else "/drives/" + parse.quote(configured_drive, safe="")
+    )
+    response = json_request(
+        endpoint.rstrip("/") + drive_path,
+        "GET",
+        access_token=access_token,
+        expected_statuses={200},
+    )
+    if not isinstance(response, dict):
+        raise E2EError("Graph Drive metadata response is not a JSON object")
+    drive_id = response.get("id")
+    drive_type = response.get("driveType")
+    if not isinstance(drive_id, str) or not drive_id:
+        raise E2EError("Graph Drive metadata response has no Drive ID")
+    if drive_type != "personal":
+        raise E2EError(
+            f"Personal Graph E2E requires driveType='personal', got {drive_type!r}"
+        )
+    return drive_id
+
+
+def create_baseline_fixture(
+    endpoint: str,
+    drive_id: str,
+    access_token: str,
+) -> tuple[GraphMoveFixture, Path, str]:
+    fixture = GraphMoveFixture(endpoint, drive_id, access_token)
+    root_name = f"__onedrive_cpp_fixture_e2e_{secrets.token_hex(6)}"
+    root_id = fixture.create_folder(root_name)
+    fixture.upload_file(root_id, "small.bin", BASELINE_FIXTURE_BYTES)
+    expected_path = Path(root_name) / "small.bin"
+    expected_sha256 = hashlib.sha256(BASELINE_FIXTURE_BYTES).hexdigest()
+    return fixture, expected_path, expected_sha256
 
 
 class GraphMoveFixture:

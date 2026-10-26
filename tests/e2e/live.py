@@ -1,25 +1,32 @@
 from __future__ import annotations
 
 from pathlib import Path
-import shutil
+import subprocess
 import tempfile
 
 from .base import (
     E2EError,
+    LiveSettings,
     fixture_path,
     load_live_settings,
     rewrite_config,
     sha256,
     sync_list_rule,
 )
-from .graph import inject_disappeared_item, refresh_graph_access_token
+from .graph import (
+    GraphMoveFixture,
+    create_baseline_fixture,
+    inject_disappeared_item,
+    refresh_graph_access_token,
+    resolve_personal_drive_id,
+)
 from .live_context import LiveScenarioContext
 from .live_coverage import run_additional_coverage_scenarios
 from .live_move import run_remote_move_scenarios
 from .live_upload import run_upload_scenarios
 from .progress import E2EProgress
 from .run import reset_copied_state, reset_delta_cursor, run_single_download, run_sync
-from .state import tracked_item_count
+from .state import copy_isolated_state, tracked_item_count
 from .util import (
     has_json_event,
     log_text_since,
@@ -29,13 +36,17 @@ from .util import (
 )
 
 
-def run_live(client: Path, work_root: Path) -> None:
-    settings = load_live_settings(client)
-    expected_path = settings.expected_path
-    expected_sha256 = settings.expected_sha256
+def run_live(
+    client: Path,
+    work_root: Path,
+    settings: LiveSettings | None = None,
+) -> None:
+    if settings is None:
+        settings = load_live_settings(client)
     source_text = settings.source_text
     source_config = settings.source_config
     source_state = settings.source_state
+    selected_drive = settings.drive_id
 
     work_root.mkdir(parents=True, exist_ok=True)
     completed: list[subprocess.CompletedProcess[str]] = []
@@ -48,7 +59,7 @@ def run_live(client: Path, work_root: Path) -> None:
         sync_list = workspace / "sync_list"
         log_file = workspace / "onedrive-cpp.log"
         home.mkdir()
-        shutil.copytree(source_state, state_directory)
+        copy_isolated_state(source_state, state_directory)
         sync_list.write_text("", encoding="utf-8")
         config.write_text(
             rewrite_config(
@@ -58,12 +69,39 @@ def run_live(client: Path, work_root: Path) -> None:
                 sync_list,
                 "backup",
                 False,
+                drive_id=selected_drive,
             ),
             encoding="utf-8",
         )
+        baseline_fixture: GraphMoveFixture | None = None
         try:
             progress = E2EProgress(10)
             progress.step("Preparing isolated state")
+            graph_config = source_config.get("graph", {})
+            if not isinstance(graph_config, dict):
+                raise E2EError("E2E configuration graph table is invalid")
+            graph_endpoint = graph_config.get(
+                "endpoint",
+                "https://graph.microsoft.com/v1.0",
+            )
+            if not isinstance(graph_endpoint, str) or not graph_endpoint:
+                raise E2EError("E2E Graph endpoint is invalid")
+            access_token = refresh_graph_access_token(
+                source_config,
+                state_directory,
+            )
+            personal_drive_id = resolve_personal_drive_id(
+                graph_endpoint,
+                selected_drive,
+                access_token,
+            )
+            baseline_fixture, expected_path, expected_sha256 = (
+                create_baseline_fixture(
+                    graph_endpoint,
+                    personal_drive_id,
+                    access_token,
+                )
+            )
             reset = reset_copied_state(client, config, home)
             completed.append(reset)
             if reset.returncode != 0:
@@ -128,8 +166,8 @@ def run_live(client: Path, work_root: Path) -> None:
                     f"{included.returncode}"
                 )
             if (
-                "Selective synchronization rules changed; fetching the full "
-                "remote state"
+                "Synchronization filters or unsupported-format rules changed; "
+                "fetching the full remote state"
                 not in log_text_since(log_file, log_offset)
             ):
                 raise E2EError(
@@ -174,6 +212,8 @@ def run_live(client: Path, work_root: Path) -> None:
                     sync_list,
                     "backup",
                     True,
+                    dry_run=True,
+                    drive_id=selected_drive,
                 ),
                 encoding="utf-8",
             )
@@ -191,13 +231,25 @@ def run_live(client: Path, work_root: Path) -> None:
                     f"{root_files_sync.returncode}"
                 )
             if (
-                "Selective synchronization rules changed; fetching the full "
-                "remote state"
+                "Synchronization filters or unsupported-format rules changed; "
+                "fetching the full remote state"
                 not in log_text_since(log_file, log_offset)
             ):
                 raise E2EError(
                     "enabling root files did not report a full remote-state query"
                 )
+            config.write_text(
+                rewrite_config(
+                    source_text,
+                    sync_data_directory,
+                    state_directory,
+                    sync_list,
+                    "backup",
+                    False,
+                    drive_id=selected_drive,
+                ),
+                encoding="utf-8",
+            )
             root_files_fixture = fixture_path(
                 sync_data_directory,
                 expected_path,
@@ -364,15 +416,6 @@ def run_live(client: Path, work_root: Path) -> None:
                     "live Graph upload E2E did not restore the fixture"
                 )
 
-            graph_config = source_config.get("graph", {})
-            if not isinstance(graph_config, dict):
-                raise E2EError("E2E configuration graph table is invalid")
-            graph_endpoint = graph_config.get(
-                "endpoint",
-                "https://graph.microsoft.com/v1.0",
-            )
-            if not isinstance(graph_endpoint, str) or not graph_endpoint:
-                raise E2EError("E2E Graph endpoint is invalid")
             access_token = refresh_graph_access_token(
                 source_config,
                 state_directory,
@@ -387,6 +430,8 @@ def run_live(client: Path, work_root: Path) -> None:
                 sync_list=sync_list,
                 log_file=log_file,
                 source_text=source_text,
+                drive_id=selected_drive,
+                large_upload_bytes=settings.large_upload_bytes,
                 expected_path=expected_path,
                 stable=stable,
                 graph_endpoint=graph_endpoint,
@@ -439,5 +484,8 @@ def run_live(client: Path, work_root: Path) -> None:
                 )
             progress.step("Live Graph E2E completed")
         except Exception:
-            save_artifacts(completed, log_file)
+            save_artifacts(completed, log_file, settings.artifact_dir)
             raise
+        finally:
+            if baseline_fixture is not None:
+                baseline_fixture.delete_root()

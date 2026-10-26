@@ -3,11 +3,12 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import secrets
-import shutil
+import subprocess
 import tempfile
 
 from .base import (
     E2EError,
+    LiveSettings,
     fixture_path,
     large_upload_size,
     load_live_settings,
@@ -18,7 +19,12 @@ from .base import (
     sync_root_for_fixture,
     write_pattern_file,
 )
-from .graph import GraphMoveFixture, refresh_graph_access_token
+from .graph import (
+    GraphMoveFixture,
+    create_baseline_fixture,
+    refresh_graph_access_token,
+    resolve_personal_drive_id,
+)
 from .monitor import run_monitor_scenarios
 from .progress import E2EProgress
 from .proxy import ConnectionDropProxy
@@ -28,7 +34,12 @@ from .run import (
     run_sync_after_stop,
     run_sync_until_upload_progress_then_kill,
 )
-from .state import pending_upload_row, tracked_drive_id, tracked_item_count
+from .state import (
+    copy_isolated_state,
+    pending_upload_row,
+    tracked_drive_id,
+    tracked_item_count,
+)
 from .util import save_artifacts
 
 
@@ -36,11 +47,13 @@ def run_boundary(
     client: Path,
     work_root: Path,
     scenario: str,
+    settings: LiveSettings | None = None,
 ) -> None:
     scenarios = {"network", "storage", "permission", "crash", "monitor"}
     if scenario not in scenarios:
         raise E2EError(f"unknown system boundary scenario: {scenario}")
-    settings = load_live_settings(client)
+    if settings is None:
+        settings = load_live_settings(client)
     work_root.mkdir(parents=True, exist_ok=True)
     completed: list[subprocess.CompletedProcess[str]] = []
     with tempfile.TemporaryDirectory(
@@ -55,22 +68,8 @@ def run_boundary(
         sync_list = workspace / "sync_list"
         log_file = workspace / "onedrive-cpp.log"
         home.mkdir()
-        shutil.copytree(settings.source_state, state_directory)
-        sync_list.write_text(
-            sync_list_rule(settings.expected_path),
-            encoding="utf-8",
-        )
-        config.write_text(
-            rewrite_config(
-                settings.source_text,
-                sync_data_directory,
-                state_directory,
-                sync_list,
-                "backup",
-                False,
-            ),
-            encoding="utf-8",
-        )
+        copy_isolated_state(settings.source_state, state_directory)
+        baseline_fixture: GraphMoveFixture | None = None
         fixture: GraphMoveFixture | None = None
         boundary_root_path = Path(
             "__onedrive_cpp_boundary_"
@@ -82,6 +81,47 @@ def run_boundary(
         progress = E2EProgress(4)
         try:
             progress.step(f"Preparing isolated {scenario} boundary state")
+            graph_config = settings.source_config.get("graph", {})
+            if not isinstance(graph_config, dict):
+                raise E2EError("E2E configuration graph table is invalid")
+            graph_endpoint = graph_config.get(
+                "endpoint",
+                "https://graph.microsoft.com/v1.0",
+            )
+            if not isinstance(graph_endpoint, str) or not graph_endpoint:
+                raise E2EError("E2E Graph endpoint is invalid")
+            access_token = refresh_graph_access_token(
+                settings.source_config,
+                state_directory,
+            )
+            personal_drive_id = resolve_personal_drive_id(
+                graph_endpoint,
+                settings.drive_id,
+                access_token,
+            )
+            baseline_fixture, expected_path, expected_sha256 = (
+                create_baseline_fixture(
+                    graph_endpoint,
+                    personal_drive_id,
+                    access_token,
+                )
+            )
+            sync_list.write_text(
+                sync_list_rule(expected_path),
+                encoding="utf-8",
+            )
+            config.write_text(
+                rewrite_config(
+                    settings.source_text,
+                    sync_data_directory,
+                    state_directory,
+                    sync_list,
+                    "backup",
+                    False,
+                    drive_id=settings.drive_id,
+                ),
+                encoding="utf-8",
+            )
             reset = reset_copied_state(client, config, home)
             completed.append(reset)
             if reset.returncode != 0:
@@ -99,26 +139,17 @@ def run_boundary(
                 )
             baseline_file = fixture_path(
                 sync_data_directory,
-                settings.expected_path,
+                expected_path,
             )
-            if sha256(baseline_file) != settings.expected_sha256:
+            if sha256(baseline_file) != expected_sha256:
                 raise E2EError(
                     f"{scenario} boundary baseline fixture changed"
                 )
-            graph_config = settings.source_config.get("graph", {})
-            if not isinstance(graph_config, dict):
-                raise E2EError("E2E configuration graph table is invalid")
-            graph_endpoint = graph_config.get(
-                "endpoint",
-                "https://graph.microsoft.com/v1.0",
-            )
-            if not isinstance(graph_endpoint, str) or not graph_endpoint:
-                raise E2EError("E2E Graph endpoint is invalid")
             fixture = GraphMoveFixture(
                 graph_endpoint,
                 tracked_drive_id(
                     state_directory,
-                    settings.expected_path,
+                    expected_path,
                 ),
                 refresh_graph_access_token(
                     settings.source_config,
@@ -128,12 +159,12 @@ def run_boundary(
             boundary_local_root = (
                 sync_root_for_fixture(
                     baseline_file,
-                    settings.expected_path,
+                    expected_path,
                 )
                 / boundary_root_path
             )
             sync_list.write_text(
-                sync_list_rule(settings.expected_path)
+                sync_list_rule(expected_path)
                 + sync_list_subtree_rule(boundary_root_path),
                 encoding="utf-8",
             )
@@ -145,6 +176,7 @@ def run_boundary(
                     sync_list,
                     "backup",
                     False,
+                    drive_id=settings.drive_id,
                 ),
                 encoding="utf-8",
             )
@@ -180,6 +212,7 @@ def run_boundary(
                             "backup",
                             False,
                             proxy_url=proxy.url,
+                            drive_id=settings.drive_id,
                         ),
                         encoding="utf-8",
                     )
@@ -298,7 +331,7 @@ def run_boundary(
             elif scenario == "crash":
                 boundary_local_root.mkdir(parents=True)
                 source = boundary_local_root / "session.bin"
-                size = large_upload_size()
+                size = large_upload_size(settings.large_upload_bytes)
                 digest = write_pattern_file(source, size)
                 remote_path = boundary_root_path / source.name
                 config.write_text(
@@ -310,10 +343,11 @@ def run_boundary(
                         "backup",
                         False,
                         upload_maximum_rate_bytes_per_second=5_000_000,
+                        drive_id=settings.drive_id,
                     ),
                     encoding="utf-8",
                 )
-                crashed, progress = (
+                crashed, crash_progress = (
                     run_sync_until_upload_progress_then_kill(
                         client,
                         config,
@@ -324,7 +358,10 @@ def run_boundary(
                     )
                 )
                 completed.append(crashed)
-                if progress[2] <= 0 or not Path(progress[3]).is_file():
+                if (
+                    crash_progress[2] <= 0
+                    or not Path(crash_progress[3]).is_file()
+                ):
                     raise E2EError(
                         "crash boundary did not preserve a resumable journal"
                     )
@@ -337,6 +374,7 @@ def run_boundary(
                         "backup",
                         False,
                         upload_maximum_rate_bytes_per_second=0,
+                        drive_id=settings.drive_id,
                     ),
                     encoding="utf-8",
                 )
@@ -364,6 +402,7 @@ def run_boundary(
                         False,
                         monitor_poll_interval_seconds=60,
                         monitor_settle_delay_milliseconds=100,
+                        drive_id=settings.drive_id,
                     ),
                     encoding="utf-8",
                 )
@@ -376,6 +415,7 @@ def run_boundary(
                     boundary_local_root,
                     boundary_root_path,
                     fixture,
+                    settings.large_upload_bytes,
                 )
                 completed.append(result)
                 capture_root()
@@ -394,7 +434,7 @@ def run_boundary(
                     )
             progress.step(f"{scenario} boundary completed")
         except Exception:
-            save_artifacts(completed, log_file)
+            save_artifacts(completed, log_file, settings.artifact_dir)
             raise
         finally:
             if fixture is not None:
@@ -407,3 +447,5 @@ def run_boundary(
                     except E2EError:
                         pass
                 fixture.delete_root()
+            if baseline_fixture is not None:
+                baseline_fixture.delete_root()
