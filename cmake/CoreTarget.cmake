@@ -182,6 +182,7 @@ target_compile_options(onedrive_core PRIVATE
 
 add_library(onedrive_app
     src/app/authentication.cpp
+    src/app/browser_callback.cpp
     src/app/monitoring.cpp
     src/app/drive_set.cpp
     src/app/synchronization.cpp

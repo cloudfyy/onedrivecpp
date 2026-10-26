@@ -5,25 +5,15 @@
 #include "onedrive/app/factory.hpp"
 #include "app/checks.hpp"
 
-#include <QMetaObject>
 #include <QCoreApplication>
-#include <QElapsedTimer>
-#include <QTcpServer>
-#include <QTcpSocket>
-#include <QUrl>
+#include <QMetaObject>
 
 #include <exception>
-#include <memory>
 #include <stdexcept>
+#include <string>
 #include <utility>
 
 namespace onedrive::gui {
-namespace {
-
-constexpr int authorization_poll_interval_milliseconds = 100;
-constexpr int reply_write_poll_interval_milliseconds = 10;
-
-} // namespace
 
 auth::AuthResult<void> request_browser_authorization(
     auth::AuthCodeSession& session,
@@ -38,188 +28,48 @@ auth::AuthResult<void> request_browser_authorization(
                 .toStdString()
         };
     }
-    if (token.stop_requested()) {
-        const auto cancelled = session.begin("http://localhost/", token);
-        return std::unexpected(cancelled.error());
-    }
-    QTcpServer server;
-    if (!server.listen(QHostAddress::LocalHost, 0)) {
-        throw std::runtime_error{
+    const app::detail::BrowserCallbackMessages messages{
+        .received_message =
             QCoreApplication::translate(
-                "BrowserLogin", "Cannot listen for browser authorization: %1"
+                "BrowserLogin",
+                "Authorization received. Return to OneDrive client. "
+                "You may close this tab."
             )
-                .arg(server.errorString())
-                .toStdString()
-        };
-    }
-    const auto redirect =
-        QString{"http://localhost:%1/"}.arg(server.serverPort());
-    const auto url = session.begin(redirect.toStdString(), token);
-    if (!url) {
-        return std::unexpected(url.error());
-    }
-    open_browser(QString::fromStdString(*url));
-    detail::BrowserRequest request{
-        QCoreApplication::translate(
-            "BrowserLogin",
-            "Authorization received. Return to OneDrive client. "
-            "You may close this tab."
-        )
-            .toStdString(),
-        QCoreApplication::translate(
-            "BrowserLogin", "Invalid authorization callback."
-        )
-            .toStdString()
+                .toStdString(),
+        .invalid_message =
+            QCoreApplication::translate(
+                "BrowserLogin", "Invalid authorization callback."
+            )
+                .toStdString(),
+        .invalid_request_error =
+            QCoreApplication::translate(
+                "BrowserLogin",
+                "Invalid authorization callback HTTP request."
+            )
+                .toStdString(),
+        .listen_error_prefix =
+            QCoreApplication::translate(
+                "BrowserLogin", "Cannot listen for browser authorization"
+            )
+                .toStdString(),
+        .listener_failed_prefix =
+            QCoreApplication::translate(
+                "BrowserLogin", "Browser authorization listener failed"
+            )
+                .toStdString(),
     };
-    QElapsedTimer timer;
-    timer.start();
-    const auto now = [&] {
-        return detail::BrowserRequest::Time{timer.elapsed()};
-    };
-    while (true) {
-        if (const auto ready = session.check(token); !ready) {
-            return ready;
-        }
-        bool timed_out = false;
-        if (!server.waitForNewConnection(
-                authorization_poll_interval_milliseconds, &timed_out
-            )) {
-            if (!timed_out) {
-                throw std::runtime_error{
-                    QCoreApplication::translate(
-                        "BrowserLogin",
-                        "Browser authorization listener failed: %1"
-                    )
-                        .arg(server.errorString())
-                        .toStdString()
-                };
-            }
-            continue;
-        }
-        std::unique_ptr<QTcpSocket> socket{server.nextPendingConnection()};
-        if (!socket) {
-            continue;
-        }
-        socket->setReadBufferSize(
-            static_cast<qint64>(detail::BrowserRequest::request_limit)
-        );
-        auth::AuthResult<void> callback = std::unexpected(
-            auth::AuthError{
-                .code = auth::AuthErrorCode::invalid_response,
-                .message = QCoreApplication::translate(
-                               "BrowserLogin",
-                               "Invalid authorization callback HTTP request."
-                )
-                               .toStdString(),
-            }
-        );
-        auto commands = request.connected(now());
-        while (!commands.empty()) {
-            auto next = std::vector<detail::BrowserCommand>{};
-            for (const auto command : commands) {
-                using Command = detail::BrowserCommand;
-                switch (command) {
-                case Command::read: {
-                    if (const auto ready = session.check(token); !ready) {
-                        callback = ready;
-                        next = request.cancel();
-                        break;
-                    }
-                    if (socket->bytesAvailable() == 0)
-                        socket->waitForReadyRead(
-                            authorization_poll_interval_milliseconds
-                        );
-                    const auto bytes = socket->read(
-                        static_cast<qint64>(
-                            detail::BrowserRequest::request_limit -
-                            request.request().size()
-                        )
-                    );
-                    if (!bytes.isEmpty())
-                        next = request.bytes(
-                            std::string_view{
-                                bytes.constData(),
-                                static_cast<std::size_t>(bytes.size())
-                            },
-                            now()
-                        );
-                    else if (socket->state() != QAbstractSocket::ConnectedState)
-                        next = request.peer_closed(now());
-                    else
-                        next = request.tick(now());
-                    break;
-                }
-                case Command::validate: {
-                    const auto target = detail::browser_request_target(
-                        request.request(),
-                        "localhost:" + std::to_string(server.serverPort())
-                    );
-                    if (target) {
-                        const auto encoded =
-                            QByteArray::fromStdString(std::string{*target});
-                        const auto parsed =
-                            QUrl::fromEncoded(encoded, QUrl::StrictMode);
-                        if (parsed.isValid() && parsed.isRelative() &&
-                            parsed.authority().isEmpty() &&
-                            !parsed.hasFragment()) {
-                            callback = session.accept_callback(
-                                "http://localhost:" +
-                                    std::to_string(server.serverPort()) +
-                                    std::string{*target},
-                                token
-                            );
-                        }
-                    }
-                    const auto outcome =
-                        callback ? detail::CallbackOutcome::accepted
-                        : session.state() == auth::AuthCodeState::failed
-                            ? detail::CallbackOutcome::rejected
-                        : session.state() !=
-                                auth::AuthCodeState::awaiting_callback
-                            ? detail::CallbackOutcome::interrupted
-                            : detail::CallbackOutcome::invalid;
-                    next = request.validated(outcome, now());
-                    break;
-                }
-                case Command::write: {
-                    const auto remaining = request.remaining_reply();
-                    const auto accepted = socket->write(
-                        remaining.data(), static_cast<qint64>(remaining.size())
-                    );
-                    if (accepted < 0) {
-                        next = request.peer_closed(now());
-                    } else {
-                        if (accepted == 0)
-                            socket->waitForBytesWritten(
-                                reply_write_poll_interval_milliseconds
-                            );
-                        next = request.accepted(
-                            static_cast<std::size_t>(accepted), now()
-                        );
-                    }
-                    break;
-                }
-                case Command::flush:
-                    if (socket->bytesToWrite() > 0)
-                        socket->waitForBytesWritten(
-                            reply_write_poll_interval_milliseconds
-                        );
-                    next = request.flushed(
-                        static_cast<std::size_t>(socket->bytesToWrite()), now()
-                    );
-                    break;
-                case Command::close_connection:
-                    socket->disconnectFromHost();
-                    break;
-                case Command::listen:
-                    break;
-                case Command::finish:
-                    return callback;
-                }
-            }
-            commands = std::move(next);
-        }
-    }
+    bool bind_or_open_aborted = false;
+    return app::detail::run_loopback_browser_authorization(
+        session,
+        [&](std::string_view url) {
+            open_browser(QString::fromStdString(std::string{url}));
+            return app::detail::BrowserOpenAction::wait_for_callback;
+        },
+        messages,
+        false,
+        bind_or_open_aborted,
+        token
+    );
 }
 
 LoginController::LoginController(
