@@ -57,8 +57,8 @@ void test_session_logs_and_tabs() {
     auto* clear = button(window, "clearLogsButton");
     require(
         tabs && tabs->count() == 5 && tabs->tabText(0) == "Overview" &&
-            tabs->tabText(1) == "Sync" && tabs->tabText(2) == "Logs" &&
-            tabs->tabText(3) == "Files" && tabs->tabText(4) == "Settings" &&
+            tabs->tabText(1) == "Sync" && tabs->tabText(2) == "Files" &&
+            tabs->tabText(3) == "Settings" && tabs->tabText(4) == "Logs" &&
             tabs->currentWidget() == overview &&
             sync_page->isAncestorOf(sync) && !overview->isAncestorOf(sync) &&
             logs_page->isAncestorOf(messages) && messages->isReadOnly() &&
@@ -145,7 +145,7 @@ void test_session_logs_and_tabs() {
     localization.set_language(gui::Language::simplified_chinese);
     QCoreApplication::processEvents();
     require(
-        tabs->currentWidget() == logs_page && tabs->tabText(2) == "日志" &&
+        tabs->currentWidget() == logs_page && tabs->tabText(4) == "日志" &&
             level->currentData().toInt() ==
                 static_cast<int>(events::MessageKind::warning) &&
             level->currentText() == "警告" && copy->text() == "复制日志" &&

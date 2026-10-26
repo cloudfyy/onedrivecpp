@@ -136,9 +136,9 @@ void test_window_and_settings(bool chinese) {
         tabs && tabs->tabText(0) == expected(chinese, "Overview", "概览") &&
             tabs->count() == 5 &&
             tabs->tabText(1) == expected(chinese, "Sync", "同步") &&
-            tabs->tabText(2) == expected(chinese, "Logs", "日志") &&
-            tabs->tabText(3) == expected(chinese, "Files", "文件") &&
-            tabs->tabText(4) == expected(chinese, "Settings", "设置"),
+            tabs->tabText(2) == expected(chinese, "Files", "文件") &&
+            tabs->tabText(3) == expected(chinese, "Settings", "设置") &&
+            tabs->tabText(4) == expected(chinese, "Logs", "日志"),
         "tab labels were not translated"
     );
     for (const auto& pair : {

@@ -49,10 +49,10 @@ MainWindow::MainWindow(
     tabs_->setUsesScrollButtons(true);
     create_overview_page();
     create_sync_page();
-    create_logs_page();
-    create_settings_page();
     create_files_page();
+    create_settings_page();
     tabs_->addTab(settings_, tr("Settings"));
+    create_logs_page();
     setCentralWidget(tabs_);
     create_header_controls();
     connect_sync_controller();
@@ -89,9 +89,9 @@ void MainWindow::retranslate_ui() {
     QApplication::setApplicationDisplayName(windowTitle());
     tabs_->setTabText(0, tr("Overview"));
     tabs_->setTabText(1, tr("Sync"));
-    tabs_->setTabText(2, tr("Logs"));
-    tabs_->setTabText(tabs_->indexOf(settings_), tr("Settings"));
     tabs_->setTabText(tabs_->indexOf(files_page_), tr("Files"));
+    tabs_->setTabText(tabs_->indexOf(settings_), tr("Settings"));
+    tabs_->setTabText(tabs_->indexOf(logs_page_), tr("Logs"));
     files_hint_->setText(tr(
         "Completed operations since this application started. Times are local. "
         "Preview and external Monitor operations are not included."
