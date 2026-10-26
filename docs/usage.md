@@ -164,9 +164,15 @@ and file terminology rather than API names.
 `console.theme` selects `hacker` (the green default), `ocean`, `amber`, or
 `synthwave`; `--theme` overrides it for one run. `--color=never` and
 `NO_COLOR` keep the selected layout but suppress theme colors.
+`console.language` selects `auto` (system locale), `en`, or `zh_CN` for CLI and
+TUI display strings and help; `--language` or `ONEDRIVE_CPP_LANG` overrides it
+for one run (`--output json` keys, configuration keys, and diagnostic log files
+remain in English).
 Command help shows named choices, without internal enum numbers:
 
 ```text
+--language {auto,en,zh_CN} [auto]
+--auth-flow {auto,auth-code,device-code} [auto]
 --ui {auto,console,tui} [auto]
 --theme {hacker,ocean,amber,synthwave} [hacker]
 ```

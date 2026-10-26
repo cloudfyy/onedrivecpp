@@ -7,15 +7,19 @@
 - [x] P1 增强 SharePoint 站点与文档库发现（Graph & CLI）
   - `onedrive-cpp inspect sites [query]` 支持省略查询词（或 `*`）列出可访问站点；关键字未命中时自动回退列出可访问站点提示。
   - 支持直接传入 SharePoint 站点 URL、`hostname:/sites/path` 或站点 ID 进行精确解析（调用 `/sites/{hostname}:/{server-relative-path}` 或 `/sites/{id}`），兼容 `Sites.Selected` 等无全局搜索权限的场景。
+  - 仅列出 `documentLibrary` 类型的文档库 Drive（过滤 `PreservationHoldLibrary` 等系统库），并在输出中明确区分 `site_id` 与 `drive_id`。
   - 针对 SharePoint 发现与访问中的 `403 AccessDenied` / 权限范围缺失给出明确诊断提示。
 - [x] P1 兼容 SharePoint 文档库上传后富化与同步边角（Sync Engine）
   - 兼容 SharePoint 文档库（`documentLibrary`）服务端上传后富化（Office/PDF 属性注入导致返回 `remote.size`、`eTag`/`cTag`、`quickXorHash` 与本地不一致），在上传提交和崩溃恢复中分别记录远端新元数据与本地文件基线，避免假冲突或死循环重传。
   - 覆盖文档库只读/权限受限错误分类与目录元数据边角处理。
-- [x] P1 增加 GUI SharePoint 文档库浏览与选择器（GUI）
+- [x] P1 增加 GUI SharePoint 文档库浏览与选择器与设置防误关保护（GUI）
   - 在设置 -> 账户的 `Drive IDs` 旁提供“浏览 SharePoint 文档库…”对话框，支持站点搜索/地址解析、查看文档库列表（名称、Drive ID、配额、URL）并一键追加到 `sync.drive_ids`（中英双语）。
-- [x] P1 补齐 SharePoint 自动化测试与使用文档（Tests & Docs）
-  - 补齐站点 URL/通配发现、SharePoint 上传富化（size/hash 变化不触发假冲突）、崩溃恢复及 GUI 选择器的自动化测试，更新 `README.md`、`README.zh-CN.md` 和 `docs/usage.md`。
-  - 新增 `tests/sharepoint_e2e.py` 及离线单测 `tests/test_sharepoint_e2e.py`，支持从 `config.toml` 自动识别或探测 `documentLibrary` 类型的文档库 Drive 并执行 12 项端到端验证。
+  - 主界面标签页调整为 **概览 / 同步 / 文件 / 设置 / 日志**；当设置存在未保存修改时，窗口标题栏与设置标签页实时显示 `" *"` 标识，关闭窗口时弹出保存、放弃修改或取消提示框。
+- [x] P1 补齐 SharePoint 自动化测试、多语言表驱动架构与 CI 加速（Tests, i18n & CI）
+  - 补齐站点 URL/通配发现、SharePoint 上传富化（size/hash 变化不触发假冲突）、崩溃恢复、GUI 选择器及未保存提醒的自动化测试，全面更新中英文文档与手册页。
+  - 新增 `tests/sharepoint_e2e.py` 及离线单测 `tests/test_sharepoint_e2e.py`（注册为 `sharepoint_e2e_runner_tests`），与 `tests/business_e2e.py` 共用 12 项端到端验证场景（含只读 `inspect`、`state`、`--dry-run`、`upload_only`、`transfer download`、`monitor trigger` 等）。
+  - 将配置、CLI、TUI 与 GUI 的语言及区域解析统一为可扩展的表驱动架构（`LanguageCatalog`）。
+  - 修复 CLI11 跨版本未知参数逆序问题，并为 `release.yml`（Ubuntu 24.04/26.04 打包）与 `lint.yml`（Clang-Tidy 静态检查）全面接入 `ccache` 编译缓存。
 
 ## 1.1 OneDrive for Business
 

@@ -101,8 +101,11 @@ rate limiting, shell completion, and packaging integration.
 .SH OPTIONAL GRAPHICAL INTERFACE
 When built with GUI support, run
 .BR onedrive-cpp-gui .
-The GUI uses browser authorization-code login with PKCE; CLI login retains the
-device-code flow. Both use the configured account state.
+The GUI uses browser authorization-code login with PKCE; CLI login defaults to
+browser authorization-code login with PKCE in desktop sessions and falls back
+to (or explicitly selects via
+.BR \-\-auth-flow )
+the device-code flow. Both use the configured account state.
 .PP
 Use
 .B \-\-language auto
@@ -115,10 +118,21 @@ changes the running interface without
 discarding settings edits or restarting login or synchronization. The selection applies only to
 the current process. The adjacent About button shows the build version, license,
 and project link. Both controls remain available during login, synchronization,
-and monitoring. There is no menu bar. CLI output remains English.
+and monitoring. There is no menu bar. CLI and TUI language is configured
+separately via
+.BR \-\-language ,
+.BR ONEDRIVE_CPP_LANG ,
+or
+.BR console.language ;
+JSON output, configuration keys, and log files remain English.
 .PP
 Settings contain Account and directories, Sync rules, Transfers, Network,
 Monitor, and Advanced and logs pages. Hover over a field for a brief explanation.
+When any field or override has unsaved changes, the window title and Settings
+tab show a
+.B *
+indicator; closing the window with unsaved changes prompts to save, discard, or
+cancel.
 Saving validates the configuration, preserves comments and unedited values,
 backs up an existing configuration, and writes atomically.
 Import copies validated TOML content to the active configuration file, leaving
@@ -131,7 +145,7 @@ credential errors remain visible and recoverable through Settings.
 Saved credentials are not proof of an online-valid login.
 Changing the state directory does not migrate tokens or databases.
 .PP
-The main tabs are Overview, Sync, Logs, Settings, and Files.
+The main tabs are Overview, Sync, Files, Settings, and Logs.
 Overview shows account/directories and the current or latest task result.
 Synchronization provides Preview changes, Sync now, Stop, and View logs.
 Tasks use saved settings,
@@ -657,6 +671,19 @@ for destructive operations that would otherwise prompt interactively.
 Suppress informational and success command output while retaining warnings
 and errors. Diagnostic logging remains controlled separately by
 .BR \-\-log\-level .
+.TP
+.BI \-\-language " LANGUAGE"
+Select the CLI/TUI display language:
+.BR auto ,
+.BR en ,
+or
+.BR zh_CN .
+Overrides
+.B console.language
+and
+.B ONEDRIVE_CPP_LANG
+for one run. JSON output keys, configuration keys, and diagnostic log files
+remain in English.
 .TP
 .BI \-\-ui " MODE"
 Select the login, inspection, and transfer interface:

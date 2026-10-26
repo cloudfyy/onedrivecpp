@@ -330,15 +330,16 @@ terminal transitions use non-throwing variant access, with compile-time checks
 that terminal payload assignment cannot throw. An invalid stored redirect is an
 internal error: it terminates the session, cleanses its secrets, and propagates.
 
-The GUI loopback listener uses the private, Qt-independent `BrowserRequest`
-reducer for listening, reading, validation, buffered writing, and closure.
-Explicit elapsed-time events enforce the 8192-byte request cap, two-second
-request deadline, and bounded 100-ms reply flush. The Qt adapter executes the
-read/write/close commands and retains strict QUrl target checks. HTTP/1.1 GET
-and exactly one matching loopback Host are required. Invalid connections receive
-400 and resume listening; accepted callbacks and terminal authorization errors
-finish the flow. Qt write acceptance and actual buffer drainage are separate
-events, so partial writes retain the unsent suffix.
+The GUI and CLI loopback listeners share the private, Qt-independent
+`BrowserRequest` reducer for listening, reading, validation, buffered writing,
+and closure. Explicit elapsed-time events enforce the 8192-byte request cap,
+two-second request deadline, and bounded 100-ms reply flush. The Qt adapter and
+CLI POSIX socket adapter execute the read/write/close commands and retain strict
+URL target checks. HTTP/1.1 GET and exactly one matching loopback Host are
+required. Invalid connections receive 400 and resume listening; accepted
+callbacks and terminal authorization errors finish the flow. Write acceptance
+and actual buffer drainage are separate events, so partial writes retain the
+unsent suffix.
 
 ## Notification architecture
 
@@ -386,6 +387,8 @@ The directories correspond to the responsibilities of
 - `src/account`: Stable account and Drive identity, metadata, and paths.
 - `src/auth`: Device-code and authorization-code PKCE OAuth, token refresh, and
   secure token persistence.
+- `src/i18n`: Table-driven language catalog (`LanguageCatalog`), locale
+  resolution, and CLI/TUI localization tables without Qt dependencies.
 - `src/ui/common`: Shared event reporting implementation without terminal or Qt
   dependencies.
 - `src/ui/cli`: Text, JSON, and FTXUI user output plus terminal capability

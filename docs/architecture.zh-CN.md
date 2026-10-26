@@ -268,12 +268,12 @@ created → awaiting callback → authorized → exchanging token → completed�
 访问，并在编译期验证终态载荷赋值不会抛异常。已保存的回调地址若无法解析，则作为
 内部错误终止会话、清零秘密并向调用方传播异常。
 
-GUI loopback 监听器通过私有、独立于 Qt 的 `BrowserRequest` 归约器管理
+GUI 与 CLI 的 loopback 监听器共用私有、独立于 Qt 的 `BrowserRequest` 归约器，管理
 listening、reading、validating、writing 和 closed 生命周期。显式时间事件约束
-8192 字节请求上限、两秒请求期限和有界的 100 毫秒回复排空。Qt 适配器执行
-读写与关闭命令，并保留严格的 QUrl 目标检查。请求必须使用 HTTP/1.1 GET，
-且恰好包含一个匹配 loopback 的 Host。无效连接收到 400 后继续监听；
-有效回调和授权终态错误结束流程。Qt 写入缓冲区的接受量与实际排空分别建模，
+8192 字节请求上限、两秒请求期限和有界的 100 毫秒回复排空。Qt 适配器与 CLI
+POSIX 套接字适配器执行读写与关闭命令，并保留严格的回调目标检查。请求必须使用
+HTTP/1.1 GET，且恰好包含一个匹配 loopback 的 Host。无效连接收到 400 后继续监听；
+有效回调和授权终态错误结束流程。写入缓冲区的接受量与实际排空分别建模，
 部分写入会保留尚未接受的后缀。
 
 ## 通知架构
@@ -317,6 +317,8 @@ TLS 读取可能已将完整帧留在 libcurl 缓冲区中，而此时内核套�
 - `src/app`：结构化应用查询、运行时依赖工厂和预检。
 - `src/account`：稳定账号与 Drive 身份、元数据和路径。
 - `src/auth`：设备代码与授权码 PKCE OAuth、Token 刷新和安全持久化。
+- `src/i18n`：不依赖 Qt 的表驱动多语言目录（`LanguageCatalog`）、区域解析与
+  CLI/TUI 翻译表。
 - `src/ui/common`：前端共用的事件报告实现，不依赖终端或 Qt。
 - `src/ui/cli`：文本、JSON、FTXUI 用户输出及终端能力探测。
 - `src/ui/cli/app`：CLI 参数解析、入口生命周期、命令编排和输出格式化。
@@ -334,6 +336,3 @@ TLS 读取可能已将完整帧留在 libcurl 缓冲区中，而此时内核套�
 - `src/metrics`：指标端口及生产环境空实现适配器。
 - `packaging/systemd`：systemd 用户服务。
 - `debian`：Ubuntu/Debian 原生打包元数据。
-- `src/metrics`：Metrics 端口和无操作生产适配器。
-- `packaging/systemd`：systemd 用户服务。
-- `debian`：Ubuntu/Debian 原生包元数据。

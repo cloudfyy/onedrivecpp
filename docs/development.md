@@ -212,7 +212,9 @@ and synchronization messages without reconstructing the window, resetting form
 values, or touching active workers. The header also contains the About button;
 both controls remain enabled when the Settings page is disabled during a task.
 The tab bar scrolls when space is limited; there is no menu bar.
-The CLI/TUI parser is unchanged.
+Configuration, CLI, TUI, and GUI share the table-driven `LanguageCatalog` for
+supported language descriptors and locale matching (`--language auto|en|zh_CN`,
+`ONEDRIVE_CPP_LANG`, `console.language`).
 Backend error details are intentionally preserved rather than translated.
 The localization regressions also switch languages during browser authorization
 and after successful or failed account refresh. A Qt URL handler captures valid
@@ -266,7 +268,11 @@ settings can remove its table without losing surrounding comments.
 GUI save/import reject inline URL credentials and unsafe auth/Graph endpoints;
 password/CA files are references only, with runtime file-security checks intact.
 Save validates before backup/atomic replacement. Import/reload intentionally
-reset all draft fields; language switches and login completion do not.
+reset all draft fields; language switches and login completion do not. When any
+field or override differs from the loaded configuration, the window title
+(`onedrive client *` / `OneDrive 客户端 *`) and Settings tab (`Settings *` /
+`设置 *`) display `" *"`; saving, reloading, or reverting edits clears it, and
+closing the window with unsaved edits prompts to Save, Discard, or Cancel.
 
 `gui_settings_tests` exercises real offscreen controls and saved TOML for every
 exposed setting, 64-bit boundaries, parser constraints, comments/unrelated fields,
@@ -294,7 +300,7 @@ coalescing. Window regressions cover translated progress/history, blocked and
 failed results, settings/account interlocks, unsaved drafts, bounded history
 with explicit omissions, and cancel-and-join on close. Graph/application tests
 also cancel token refresh and drive identity lookup before storage creation.
-Tab/log regressions check the Overview/Sync/Logs/Settings/Files split,
+Tab/log regressions check the Overview/Sync/Files/Settings/Logs split,
 navigation and overview summaries, cross-task history and exact overflow counts,
 timestamps, every level filter, copying displayed text, clear-during-sync,
 auto-scroll on/off, raw multiline details, and bilingual history/filter/draft
@@ -419,11 +425,16 @@ remote fixtures are needed.
 
 Use an existing version-2 configuration and its authenticated **active account**.
 Stop ordinary sync/watch and keep them stopped throughout the test. The selected
-live Drive must report `driveType=business`; personal Drives and SharePoint
-document libraries are deliberately rejected before creating fixtures.
+live Drive must report `driveType=business` (for `business_e2e.py`) or
+`driveType=documentLibrary` (for `sharepoint_e2e.py`).
 
 ```sh
 python3 tests/business_e2e.py \
+  --client build/release/onedrive-cpp \
+  --config ~/.config/onedrive-cpp/config.toml \
+  --allow-remote-writes
+
+python3 tests/sharepoint_e2e.py \
   --client build/release/onedrive-cpp \
   --config ~/.config/onedrive-cpp/config.toml \
   --allow-remote-writes
@@ -439,11 +450,15 @@ The runner copies only the active-account marker, account metadata and refresh
 token into private temporary state directories. It does not copy daily SQLite
 databases or modify source configuration/credential files. Refresh tokens can
 rotate in the isolated copies. Two real CLI clients with separate local roots
-test upload/download, Unicode and empty files/directories, unchanged-sync
-idempotence, file/directory moves retaining remote IDs, blocked local conflicts,
-restore preview/application without overwrites or cursor changes, real
-interruption/checkpoint reuse, sync/watch busy refusal, automatic watch
-upload/download and deletion propagation.
+exercise 12 scenarios: upload/download, Unicode and empty files/directories,
+read-only `inspect` (`status`, `quota`, `drives`, `files`, `verify`, `storage`,
+`config`, `health`, `blocked`, `partials`) and `state` (`reset-cursor`,
+`cleanup`) verification, unchanged-sync idempotence, `--dry-run` preview and
+`upload_only` direction, single-file `transfer download`, file/directory moves
+retaining remote IDs, blocked local conflicts, restore preview/application
+without overwrites or cursor changes, real interruption/checkpoint reuse,
+sync/watch busy refusal, automatic watch upload/download plus `monitor status` /
+`monitor trigger` IPC control, and deletion propagation.
 
 All remote file mutations are confined by an exact selective-sync rule to a random
 `__onedrive_cpp_business_e2e_<uuid>` subtree. Test configuration explicitly enables
@@ -460,13 +475,14 @@ disables WebSockets to exercise polling. Tenant permission revocation,
 administrator policies, Conditional Access and notification delivery remain
 separate manual acceptance checks.
 
-Normal CTest runs only `business_e2e_runner_tests`, the offline isolation,
-failure/cleanup and actual-CLI configuration tests. Live execution is never
-automatically registered, even by the existing `e2e` preset.
+Normal CTest runs `business_e2e_runner_tests` and `sharepoint_e2e_runner_tests`,
+the offline isolation, failure/cleanup and actual-CLI configuration tests. Live
+execution is never automatically registered, even by the existing `e2e` preset.
 
 ```sh
 python3 -B tests/test_business_e2e.py --client build/release/onedrive-cpp
-ctest --test-dir build/release -R '^business_e2e_runner_tests$' --output-on-failure
+python3 -B tests/test_sharepoint_e2e.py --client build/release/onedrive-cpp
+ctest --test-dir build/release -R '^(business|sharepoint)_e2e_runner_tests$' --output-on-failure
 ```
 
 ## Live Graph end-to-end tests

@@ -13,10 +13,11 @@ records its distribution-specific version separately in `debian/changelog`.
 
 ## Features
 
-- [OAuth 2.0 authentication](docs/authentication.md): CLI/TUI device-code login
-  and GUI system-browser Authorization Code + PKCE (S256) login with a loopback
-  callback; shared per-account credentials, automatic access-token refresh,
-  and owner-only refresh-token storage.
+- [OAuth 2.0 authentication](docs/authentication.md): GUI and desktop CLI/TUI
+  system-browser Authorization Code + PKCE (S256) login with a loopback
+  callback, plus automatic or explicit (`--auth-flow`) CLI device-code login;
+  shared per-account credentials, automatic access-token refresh, and
+  owner-only refresh-token storage.
 - Incremental Microsoft Graph Delta synchronization with multiple account and
   Drive isolation, selective-sync rules, explicit single-file downloads, and
   missing-local-file recovery with `transfer restore`.
@@ -34,13 +35,15 @@ records its distribution-specific version separately in `debian/changelog`.
 - Long-running inotify monitoring with Graph WebSocket notifications, polling
   fallback, event coalescing, overflow recovery, and clean signal handling.
 - Optional English/Simplified Chinese Qt GUI with live language switching,
-  validated settings editing/import, shared Monitor ownership and controls,
-  persistent blocked-item inspection, and session/round statistics.
+  validated settings editing/import, unsaved-change indicators and close
+  confirmation, SharePoint library discovery, shared Monitor ownership and
+  controls, persistent blocked-item inspection, and session/round statistics.
 - Completed file-operation history in CLI and GUI with timestamps, actions,
   old/new paths, configurable retention, and explicit omission counts.
-- Console and interactive FTXUI terminal interfaces, dry-run and structured JSON
-  output, rotating logs, proxy support, shell completion, a manual page,
-  a hardened systemd user service, and Debian packaging.
+- English and Simplified Chinese Console and interactive FTXUI terminal
+  interfaces (`--language`, `ONEDRIVE_CPP_LANG`, `console.language`), dry-run
+  and structured JSON output, rotating logs, proxy support, shell completion,
+  bilingual manual pages, a hardened systemd user service, and Debian packaging.
 
 OneNote files and packages recognized from Graph metadata are not supported.
 They are explicitly reported and skipped while other files continue; existing
@@ -219,7 +222,7 @@ when needed, and report authentication or connectivity errors.
 Sync-path validation does not prevent login when authentication/state settings
 are usable; synchronization requires valid sync settings and saved credentials.
 
-The main tabs are **Overview / Sync / Logs / Files / Settings**. Overview
+The main tabs are **Overview / Sync / Files / Settings / Logs**. Overview
 shows account and directory information plus the current/latest sync result.
 Overview has no synchronization buttons; task controls are on the Sync tab.
 
@@ -329,10 +332,16 @@ They share one draft and global save/import/
 reload controls. Save validates with the core TOML parser, preserves comments
 and untouched settings, backs up the original, and replaces the file atomically.
 Import and reload replace the draft; switching tabs or language preserves it.
+When any field or override differs from the loaded configuration, the window
+title (`onedrive client *` / `OneDrive 客户端 *`) and Settings tab
+(`Settings *` / `设置 *`) show a `" *"` indicator; saving, reloading, or
+reverting edits clears it. Closing the window with unsaved changes prompts to
+**Save**, **Discard**, or **Cancel** before exiting.
 Directory changes do not migrate files or credentials. Changes apply to the next
 operation; settings are disabled during login or synchronization.
 
-The tabs cover Application/tenant/Drive IDs and directories; sync direction,
+The tabs cover Application/tenant/Drive IDs (including a **Browse SharePoint
+libraries…** dialog) and directories; sync direction,
 deletion/conflict/dotfile policies, selective rules, file-size limit and advanced
 `.nosync`/root-file/deletion guard settings; upload/download concurrency,
 per-request/aggregate rates, ordering, and advanced chunk/checkpoint/retry/
@@ -352,7 +361,10 @@ trusted HTTPS auth/Graph endpoints, scopes (changes require signing in again),
 and a required mount point. No files, credentials or state are migrated.
 Persistent dry-run/force-delete flags and CLI themes are not GUI settings.
 
-CLI/TUI text, JSON output, configuration keys, and logs are unchanged.
+Switching the GUI language affects only the running GUI window; CLI/TUI language
+is configured separately via `--language`, `ONEDRIVE_CPP_LANG`, or
+`console.language`, while JSON output, configuration keys, and log files remain
+unchanged.
 `ONEDRIVE_BUILD_GUI` defaults to `OFF`; headless builds need neither Qt nor
 translation tools. See [GUI localization tests](docs/development.md#gui-localization)
 for maintenance and offscreen validation.
@@ -646,7 +658,9 @@ application version.
 
 Only compiler results and dependency-image layers are reused: every run still
 configures, links, tests and packages the current source, with the native build
-and lifecycle containers offline. The first run is a cold build; later gains
+and lifecycle containers offline. `.github/workflows/lint.yml` likewise uses a
+persistent `ccache` cache (`ONEDRIVE_USE_PCH=OFF`) in its offline Ubuntu 26.04
+Clang-Tidy container. The first run is a cold build; later gains
 depend on cache hits and the size of the change. `ccache.txt` is uploaded with
 the build logs, including on native-build failure. Delete the relevant Actions
 caches to force a cold rebuild or refresh cached dependency installation layers.

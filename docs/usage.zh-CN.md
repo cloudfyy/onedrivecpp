@@ -245,9 +245,15 @@ download 面板复用同步期间持久显示的进度、传输速率和 ETA。�
 可选择默认的荧光绿 `hacker`、青蓝 `ocean`、琥珀 `amber` 或洋红/青色
 `synthwave`；`--theme` 只覆盖本次运行。`--color=never` 和 `NO_COLOR` 会保留
 所选布局，但关闭主题颜色。
+`console.language` 选择 CLI 与 TUI 界面和帮助文本的语言（`auto` 跟随系统语言、
+`en` 英语或 `zh_CN` 简体中文），可通过 `--language` 或环境变量
+`ONEDRIVE_CPP_LANG` 覆盖本次运行（`--output json` 字段、配置键名和诊断日志文件
+保持英文）。
 命令帮助只显示名称选项，不展示内部枚举编号：
 
 ```text
+--language {auto,en,zh_CN} [auto]
+--auth-flow {auto,auth-code,device-code} [auto]
 --ui {auto,console,tui} [auto]
 --theme {hacker,ocean,amber,synthwave} [hacker]
 ```

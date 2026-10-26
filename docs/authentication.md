@@ -3,9 +3,10 @@
 English | [简体中文](authentication.zh-CN.md) |
 [Documentation index](README.md)
 
-The CLI uses the OAuth 2.0 Device Authorization Grant. The GUI uses the system
-browser with Authorization Code + PKCE (S256) and a loopback callback.
-You must register
+The GUI and desktop CLI/TUI (`--auth-flow auto` or `auth-code`) use the system
+browser with Authorization Code + PKCE (S256) and a loopback callback; the CLI
+also supports and falls back to the OAuth 2.0 Device Authorization Grant
+(`--auth-flow device-code`). You must register
 your own public client application in Microsoft Entra; do not create a client
 secret.
 
@@ -37,8 +38,8 @@ Application Developer role.
 7. Open **Authentication > Advanced settings**, set
    **Allow public client flows** to **Yes**, and save.
 
-8. For GUI login, open **Authentication > Add a platform > Mobile and desktop
-   applications**, add the redirect URI `http://localhost`, and save. The GUI
+8. For browser login (GUI or CLI `auth-code`), open **Authentication > Add a platform > Mobile and desktop
+   applications**, add the redirect URI `http://localhost`, and save. The client
    listens on IPv4 loopback with a random port and uses `http://localhost:PORT/`;
    Microsoft ignores the port when matching a localhost redirect registration.
    Do not register this as a Web application.

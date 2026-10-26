@@ -159,8 +159,8 @@ GUI 专用的 `QCommandLineParser` 在安装翻译器、创建窗口前解析
 `Localization` 控制器，通过 `LanguageChange` 更新现有控件和保留的登录／同步消息，
 不重建窗口、不重置表单、不干预活动线程。页签栏右侧同时放置关于按钮，
 两个控件不受任务期间设置页禁用的影响；空间不足时页签可滚动，不再显示菜单栏。
-语言选择仅本次运行有效，
-CLI/TUI 参数解析器保持不变。
+语言选择仅本次运行有效；配置、CLI、TUI 与 GUI 共用表驱动 `LanguageCatalog`
+（`--language auto|en|zh_CN`、`ONEDRIVE_CPP_LANG`、`console.language`）。
 本地化回归测试还覆盖浏览器授权期间以及账号刷新成功／失败后的语言切换。
 Qt URL 处理器捕获有效浏览器请求，不启动真实浏览器；格式错误、非 HTTPS、
 缺少主机及含用户凭据的 URL 不得到达处理器。通过显式控制工作线程完成时机，
@@ -199,7 +199,10 @@ GUI 及测试程序。不要手动编辑生成的 `.qm` 文件。离屏测试分
 显式空值，未编辑的空代理表也保留；移除所有代理设置可移除表而保留周围注释。
 GUI 保存／导入拒绝 URL 内联凭据及不安全的认证／Graph 端点；密码／CA 文件只作
 引用，运行时安全检查不变。保存先验证，再备份与原子替换。导入／重新加载重置所有草稿；语言切换和登录
-完成不会丢弃草稿。
+完成不会丢弃草稿。当配置字段或覆盖项存在未保存修改时，窗口标题栏
+（`onedrive client *` / `OneDrive 客户端 *`）与设置页签（`Settings *` /
+`设置 *`）实时显示 `" *"` 标识；保存、重新加载或恢复原值后移除标识，关闭窗口时
+若存在未保存修改则弹出保存、放弃修改或取消提示框。
 
 `gui_settings_tests` 使用真实离屏控件与保存后的 TOML 验证所有新增字段、64 位
 边界、解析器约束、注释／无关配置保留、备份、可选键删除、草稿／语言／子页
@@ -252,7 +255,7 @@ Graph 分页去重与预览缓存合并共用私有 `graph/delta_changes.hpp` �
 `.one` 文件和元数据错误。单文件及 GUI 双语回归覆盖明确的不支持结果、数量、
 翻译历史和严重级别筛选。
 
-页面／日志回归验证概览、同步、日志、设置、文件五页的布局与导航、概览摘要、
+页面／日志回归验证概览、同步、文件、设置、日志五页的布局与导航、概览摘要、
 跨任务历史及精确省略计数、时间戳、全部级别筛选、复制显示内容、同步中清空、
 自动滚动开关、原始多行详情，以及双语切换保留历史／筛选／草稿。
 账号测试验证浏览器授权参数不会进入本次运行日志。
@@ -384,11 +387,16 @@ E2E 脚本，与个人版 `tests/graph_sync_e2e.py` 共用 `tests/e2e/`（`base.
 无需额外 Python 包，也不要求预先准备云端测试文件。
 
 直接复用现有的第 2 版配置及其已登录的**活动账号**。先停止日常 sync/watch，
-并在整个测试期间保持停止。脚本会实时核实所选 Drive 的 `driveType=business`；
-个人版 Drive 和 SharePoint 文档库会在创建测试数据前被拒绝。
+并在整个测试期间保持停止。脚本会实时核实所选 Drive 的 `driveType=business`
+（`business_e2e.py`）或 `driveType=documentLibrary`（`sharepoint_e2e.py`）。
 
 ```sh
 python3 tests/business_e2e.py \
+  --client build/release/onedrive-cpp \
+  --config ~/.config/onedrive-cpp/config.toml \
+  --allow-remote-writes
+
+python3 tests/sharepoint_e2e.py \
   --client build/release/onedrive-cpp \
   --config ~/.config/onedrive-cpp/config.toml \
   --allow-remote-writes
@@ -401,10 +409,13 @@ python3 tests/business_e2e.py \
 
 脚本只把活动账号标记、账号元数据和 refresh token 复制到私有临时状态目录，
 不复制日常 SQLite 数据库，不改写源配置或源凭据文件；令牌刷新只保存到隔离副本。
-两个真实 CLI 实例使用不同本地目录，验证双向传输、Unicode/空文件/空目录、
-无变更同步幂等、移动后远端 ID 不变、本地修改冲突、restore 预览/执行不覆盖已有
-内容且不推进游标、真实中断后复用下载检查点、sync/watch 占用拒绝、
-watch 自动上传/下载，以及双向删除传播。
+两个真实 CLI 实例使用不同本地目录，执行 12 个场景：双向传输、Unicode/空文件/空目录、
+只读 `inspect`（`status`、`quota`、`drives`、`files`、`verify`、`storage`、
+`config`、`health`、`blocked`、`partials`）与 `state`（`reset-cursor`、
+`cleanup`）校验、无变更同步幂等、`--dry-run` 预览与 `upload_only` 单向模式、
+单文件 `transfer download`、移动后远端 ID 不变、本地修改冲突、restore 预览/执行
+不覆盖已有内容且不推进游标、真实中断后复用下载检查点、sync/watch 占用拒绝、
+watch 自动上传/下载及 `monitor status` / `monitor trigger` IPC 控制，以及双向删除传播。
 
 所有远端文件写入都通过精确的选择性同步规则限制在随机生成的
 `__onedrive_cpp_business_e2e_<uuid>` 子树。测试副本会明确开启该子树内的写入和删除
@@ -418,12 +429,14 @@ watch 自动上传/下载，以及双向删除传播。
 因为轮询也可能完成同步；另有明确关闭 WebSocket 的场景验证轮询。
 租户权限撤销、管理员策略、条件访问和通知实际投递仍需单独人工验收。
 
-普通 CTest 只注册 `business_e2e_runner_tests`，执行离线隔离、失败清理和真实 CLI
-配置解析测试。即使启用旧 `e2e` preset，也不会自动运行这份在线脚本。
+普通 CTest 注册 `business_e2e_runner_tests` 与 `sharepoint_e2e_runner_tests`，
+执行离线隔离、失败清理和真实 CLI 配置解析测试。即使启用旧 `e2e` preset，也不会
+自动运行在线脚本。
 
 ```sh
 python3 -B tests/test_business_e2e.py --client build/release/onedrive-cpp
-ctest --test-dir build/release -R '^business_e2e_runner_tests$' --output-on-failure
+python3 -B tests/test_sharepoint_e2e.py --client build/release/onedrive-cpp
+ctest --test-dir build/release -R '^(business|sharepoint)_e2e_runner_tests$' --output-on-failure
 ```
 
 ## 真实 Graph 端到端测试

@@ -3,9 +3,10 @@
 [English](authentication.md) | 简体中文 |
 [文档中心](README.zh-CN.md)
 
-CLI 采用 OAuth 2.0 设备授权流程；GUI 使用系统浏览器、授权码 + PKCE（S256）
-及本地回环回调，不显示设备验证码。使用前，必须在 Microsoft Entra 中注册
-自己的公共客户端应用；不要创建客户端密钥。
+GUI 与桌面环境下的 CLI/TUI（`--auth-flow auto` 或 `auth-code`）使用系统浏览器、
+授权码 + PKCE（S256）及本地回环回调；CLI 同时支持并在无图形环境时自动回退到
+OAuth 2.0 设备授权流程（`--auth-flow device-code`）。使用前，必须在 Microsoft
+Entra 中注册自己的公共客户端应用；不要创建客户端密钥。
 
 ## 注册应用
 
@@ -33,9 +34,9 @@ Microsoft 目前要求账号具有有效的 Azure 订阅、可访问的 Microsof
 7. 打开 **身份验证（Authentication）> 高级设置（Advanced settings）**，
    将 **Allow public client flows** 设置为 **Yes** 并保存。
 
-8. GUI 登录还需要打开 **身份验证 > 添加平台 > 移动和桌面应用
+8. 浏览器登录（GUI 或 CLI `auth-code`）还需要打开 **身份验证 > 添加平台 > 移动和桌面应用
    （Mobile and desktop applications）**，添加 `http://localhost` 并保存。
-   GUI 仅监听 IPv4 回环地址的随机端口，回调为 `http://localhost:PORT/`；
+   客户端仅监听 IPv4 回环地址的随机端口，回调为 `http://localhost:PORT/`；
    Microsoft 匹配 localhost 注册地址时忽略端口。不要将其注册为 Web 应用。
 
 CLI 设备代码流不需要 Redirect URI。也不要为公共客户端添加 Client Secret，因为

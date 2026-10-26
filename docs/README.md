@@ -10,7 +10,7 @@ relevant reference chapter.
 
 1. [Project overview and installation](../README.md)
 2. [Microsoft authentication](authentication.md)
-   covers CLI/TUI device-code login, GUI browser login with PKCE, and shared
+   covers CLI/TUI and GUI browser PKCE login, device-code login, and shared
    credentials.
 3. [Configuration](configuration.md)
 4. [Usage and command output](usage.md)

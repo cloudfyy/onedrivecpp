@@ -37,22 +37,39 @@ jobs:
             BUILD_PROFILE=
           cache-from: type=gha,scope=package-image-ubuntu26.04-${{ runner.arch }}
           cache-to: type=gha,mode=max,scope=package-image-ubuntu26.04-${{ runner.arch }}
+      - name: Restore compiler cache
+        uses: actions/cache@v5
+        with:
+          path: build/ccache
+          key: ccache-v1-lint-ubuntu26.04-${{ runner.arch }}-${{ hashFiles('.github/packaging.Dockerfile', '.clang-tidy', 'debian/control', 'cmake/CompilerChecks.cmake', 'packaging/dependencies.json') }}-${{ github.sha }}
+          restore-keys: |
+            ccache-v1-lint-ubuntu26.04-${{ runner.arch }}-${{ hashFiles('.github/packaging.Dockerfile', '.clang-tidy', 'debian/control', 'cmake/CompilerChecks.cmake', 'packaging/dependencies.json') }}-
+            ccache-v1-lint-ubuntu26.04-${{ runner.arch }}-
       - name: Run Clang-Tidy checks without network access
         shell: bash
         run: |
           set -euo pipefail
           version=$(python3 -c 'import json; print(json.load(open("vcpkg.json"))["version-semver"])')
-          mkdir -p build/lint-work/source
+          mkdir -p build/lint-work/source build/ccache
           tar -xf "build/source/onedrive-cpp-$version.tar.xz" \
             --strip-components=1 -C build/lint-work/source
           docker run --rm --network none \
             --user "$(id -u):$(id -g)" --env HOME=/tmp/build-home \
+            --env CMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            --env CCACHE_DIR=/ccache \
+            --env CCACHE_BASEDIR=/work/source \
+            --env CCACHE_COMPILERCHECK=content \
+            --env CCACHE_MAXSIZE=1G \
             --volume "$PWD/build/lint-work:/work" \
+            --volume "$PWD/build/ccache:/ccache" \
             --workdir /work/source \
             onedrive-lint-build bash -euo pipefail -c '
               mkdir -p "$HOME"
+              ccache --zero-stats
+              trap "ccache --show-stats" EXIT
               cmake --preset lint \
                 -DBUILD_TESTING=OFF \
+                -DONEDRIVE_USE_PCH=OFF \
                 -DONEDRIVE_BUILD_GUI=ON \
                 -DONEDRIVE_OFFLINE_BUILD=ON
               cmake --build --preset lint --target onedrive-cpp onedrive-cpp-gui
