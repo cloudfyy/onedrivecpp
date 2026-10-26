@@ -55,6 +55,7 @@ struct Config {
     ColorMode console_color{ColorMode::automatic};
     UiMode console_ui{UiMode::automatic};
     TuiTheme console_theme{TuiTheme::hacker};
+    Language console_language{Language::automatic};
     std::size_t file_history_limit{default_file_history_limit};
     logging::Options logging;
     std::filesystem::path sync_data_directory;

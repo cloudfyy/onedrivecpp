@@ -3,6 +3,7 @@
 #include "onedrive/config/config.hpp"
 #include "onedrive/exit_code.hpp"
 #include "onedrive/version.hpp"
+#include "ui/cli/localization.hpp"
 
 #include <CLI/CLI.hpp>
 
@@ -10,18 +11,86 @@
 #include <cstdlib>
 #include <iostream>
 #include <map>
+#include <stdexcept>
+#include <string_view>
 #include <utility>
 
 namespace onedrive::app::detail {
+namespace {
+
+cli::Language resolve_help_language(
+    int argc, char* argv[], const std::filesystem::path& default_config
+) {
+    std::filesystem::path config_path = default_config;
+    std::optional<cli::Language> cli_language;
+    bool wants_help = argc < 2;
+    for (int index = 1; index < argc; ++index) {
+        const std::string_view arg{argv[index]};
+        if (arg == "--") {
+            break;
+        }
+        if (arg == "-h" || arg == "--help") {
+            wants_help = true;
+            continue;
+        }
+        std::optional<std::string_view> language_value;
+        if (arg == "--language" && index + 1 < argc) {
+            language_value = std::string_view{argv[index + 1]};
+        } else if (arg.starts_with("--language=")) {
+            language_value = arg.substr(std::string_view{"--language="}.size());
+        }
+        if (language_value) {
+            try {
+                cli_language = cli::Console::parse_language(*language_value);
+            } catch (const std::invalid_argument&) {
+            }
+            continue;
+        }
+        if (arg == "--config" && index + 1 < argc) {
+            config_path = argv[index + 1];
+        } else if (arg.starts_with("--config=")) {
+            config_path = arg.substr(std::string_view{"--config="}.size());
+        }
+    }
+    if (cli_language) {
+        return cli::resolve_language(*cli_language);
+    }
+    if (wants_help) {
+        try {
+            const auto loaded = config::Config::load(config_path);
+            if (loaded.console_language != cli::Language::automatic) {
+                return cli::resolve_language(loaded.console_language);
+            }
+        } catch (const std::exception&) {
+        }
+    }
+    return cli::resolve_language(cli::Language::automatic);
+}
+
+} // namespace
 
 ParseResult parse_arguments(int argc, char* argv[]) {
     ParseResult result;
     auto& arguments = result.arguments;
     arguments.config_path = config::default_config_path();
+    const auto help_language =
+        resolve_help_language(argc, argv, arguments.config_path);
+    const auto tr = [help_language](std::string_view text) {
+        return std::string{cli::detail::translate_text(text, help_language)};
+    };
     const std::map<std::string, cli::ColorMode> color_modes{
         {"auto", cli::ColorMode::automatic},
         {"always", cli::ColorMode::always},
         {"never", cli::ColorMode::never},
+    };
+    const std::map<std::string, cli::Language> languages{
+        {"auto", cli::Language::automatic},
+        {"en", cli::Language::english},
+        {"zh_CN", cli::Language::simplified_chinese},
+        {"zh-CN", cli::Language::simplified_chinese},
+        {"zh_cn", cli::Language::simplified_chinese},
+        {"zh-cn", cli::Language::simplified_chinese},
+        {"zh", cli::Language::simplified_chinese},
     };
     const std::map<std::string, cli::OutputMode> output_modes{
         {"text", cli::OutputMode::text},
@@ -45,11 +114,28 @@ ParseResult parse_arguments(int argc, char* argv[]) {
     };
 
     CLI::App application{
-        "A modern C++ OneDrive synchronization client", "onedrive-cpp"
+        tr("A modern C++ OneDrive synchronization client"), "onedrive-cpp"
     };
     const auto application_version =
         std::string{"onedrive-cpp "} + build_info::version;
-    application.set_version_flag("--version", application_version);
+    application.set_help_flag(
+        "-h,--help", tr("Print this help message and exit")
+    );
+    application.set_version_flag(
+        "--version",
+        application_version,
+        tr("Display program version information and exit")
+    );
+    if (cli::detail::is_chinese(help_language)) {
+        auto formatter = application.get_formatter();
+        formatter->label("Usage", "用法");
+        formatter->label("OPTIONS", "选项");
+        formatter->label("Options", "选项");
+        formatter->label("SUBCOMMANDS", "子命令");
+        formatter->label("Subcommands", "子命令");
+        formatter->label("Positionals", "位置参数");
+        formatter->label("REQUIRED", "必填");
+    }
     application.formatter_fn(
         [formatter = application.get_formatter(), application_version](
             const CLI::App* command, std::string name, CLI::AppFormatMode mode
@@ -61,101 +147,108 @@ ParseResult parse_arguments(int argc, char* argv[]) {
     application.require_subcommand(1);
 
     auto* account = application.add_subcommand(
-        "account", "Manage Microsoft account authentication"
+        "account", tr("Manage Microsoft account authentication")
     );
     account->require_subcommand(1);
     auto* account_login = account->add_subcommand(
-        "login", "Authorize with Microsoft using the device code flow"
+        "login", tr("Authorize with Microsoft using the device code flow")
     );
     auto* account_logout = account->add_subcommand(
-        "logout", "Remove the locally stored refresh token"
+        "logout", tr("Remove the locally stored refresh token")
     );
     auto* inspect = application.add_subcommand(
-        "inspect", "Inspect account, cloud, and synchronization state"
+        "inspect", tr("Inspect account, cloud, and synchronization state")
     );
     inspect->require_subcommand(1);
     auto* inspect_health = inspect->add_subcommand(
-        "health", "Run local synchronization-state diagnostics"
+        "health", tr("Run local synchronization-state diagnostics")
     );
     auto* inspect_drives = inspect->add_subcommand(
-        "drives", "List OneDrive drives available to the active account"
+        "drives", tr("List OneDrive drives available to the active account")
     );
     auto* inspect_shared = inspect->add_subcommand(
-        "shared", "List items shared with the account and OneDrive shortcuts"
+        "shared",
+        tr("List items shared with the account and OneDrive shortcuts")
     );
     auto* inspect_sites = inspect->add_subcommand(
-        "sites", "Find SharePoint sites and their document libraries"
+        "sites", tr("Find SharePoint sites and their document libraries")
     );
     auto* inspect_quota = inspect->add_subcommand(
-        "quota", "Show storage quota for the configured drive"
+        "quota", tr("Show storage quota for the configured drive")
     );
     auto* inspect_status = inspect->add_subcommand(
-        "status", "Show read-only synchronization status"
+        "status", tr("Show read-only synchronization status")
     );
     auto* inspect_blocked = inspect->add_subcommand(
-        "blocked", "List saved blocked items without connecting to OneDrive"
+        "blocked",
+        tr("List saved blocked items without connecting to OneDrive")
     );
     auto* inspect_storage = inspect->add_subcommand(
-        "storage", "Show local synchronization storage usage"
+        "storage", tr("Show local synchronization storage usage")
     );
     auto* inspect_partials = inspect->add_subcommand(
-        "partials", "List resumable and invalid partial downloads"
+        "partials", tr("List resumable and invalid partial downloads")
     );
     auto* inspect_files = inspect->add_subcommand(
-        "files", "Check downloaded files against saved synchronization state"
+        "files",
+        tr("Check downloaded files against saved synchronization state")
     );
     auto* inspect_verify = inspect->add_subcommand(
-        "verify", "Verify downloaded file metadata or content"
+        "verify", tr("Verify downloaded file metadata or content")
     );
     auto* inspect_config = inspect->add_subcommand(
-        "config", "Show effective non-secret configuration"
+        "config", tr("Show effective non-secret configuration")
     );
     auto* state = application.add_subcommand(
-        "state", "Maintain saved synchronization state"
+        "state", tr("Maintain saved synchronization state")
     );
     state->require_subcommand(1);
     auto* reset_cursor = state->add_subcommand(
         "reset-cursor",
-        "Reset the cloud change cursor while preserving item state"
+        tr("Reset the cloud change cursor while preserving item state")
     );
     auto* cleanup_state = state->add_subcommand(
-        "cleanup", "Remove invalid and orphaned partial download state"
+        "cleanup", tr("Remove invalid and orphaned partial download state")
     );
     auto* migrate_state = state->add_subcommand(
-        "migrate", "Back up and upgrade local state databases without syncing"
+        "migrate",
+        tr("Back up and upgrade local state databases without syncing")
     );
     auto* clear_state = state->add_subcommand(
         "clear",
-        "Clear all saved synchronization state for the configured drive"
+        tr("Clear all saved synchronization state for the configured drive")
     );
-    auto* transfer =
-        application.add_subcommand("transfer", "Transfer OneDrive files");
+    auto* transfer = application.add_subcommand(
+        "transfer", tr("Transfer OneDrive files")
+    );
     transfer->require_subcommand(1);
     auto* transfer_sync =
-        transfer->add_subcommand("sync", "Synchronize OneDrive files");
+        transfer->add_subcommand("sync", tr("Synchronize OneDrive files"));
     auto* transfer_download = transfer->add_subcommand(
-        "download", "Download one remote file by its Drive-relative path"
+        "download", tr("Download one remote file by its Drive-relative path")
     );
     auto* transfer_restore = transfer->add_subcommand(
-        "restore", "Restore missing local files without changing cloud content"
+        "restore",
+        tr("Restore missing local files without changing cloud content")
     );
     auto* transfer_watch = transfer->add_subcommand(
-        "watch", "Watch for synchronization changes"
+        "watch", tr("Watch for synchronization changes")
     );
     auto* monitor = application.add_subcommand(
-        "monitor", "Explicitly control the running local Monitor"
+        "monitor", tr("Explicitly control the running local Monitor")
     );
     monitor->require_subcommand(1);
     auto* monitor_status = monitor->add_subcommand(
-        "status", "Query the running Monitor without connecting to OneDrive"
+        "status", tr("Query the running Monitor without connecting to OneDrive")
     );
     auto* monitor_trigger = monitor->add_subcommand(
         "trigger",
-        "Request a synchronization check (acknowledgement, not completion)"
+        tr("Request a synchronization check (acknowledgement, not completion)")
     );
     auto* monitor_stop = monitor->add_subcommand(
         "stop",
-        "Request cancellation and shutdown (acknowledgement, not completion)"
+        tr("Request cancellation and shutdown (acknowledgement, not completion)"
+        )
     );
     const std::array command_operations{
         std::pair{account_login, Operation::authenticate},
@@ -185,19 +278,35 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         std::pair{monitor_stop, Operation::monitor_stop},
     };
 
+    const auto add_language_option = [&](CLI::App& command) {
+        command
+            .add_option(
+                "--language",
+                arguments.language,
+                tr("Display language: auto, en, or zh_CN")
+            )
+            ->transform(CLI::CheckedTransformer(languages).description(""))
+            ->type_name("{auto,en,zh_CN}")
+            ->default_str("auto");
+    };
+    for (auto* group :
+         {&application, account, inspect, state, transfer, monitor}) {
+        add_language_option(*group);
+    }
+
     const auto add_common_options = [&](CLI::App& command) {
         command
             .add_option(
                 "--config",
                 arguments.config_path,
-                "Path to the configuration file"
+                tr("Path to the configuration file")
             )
             ->type_name("PATH");
         command
             .add_option(
                 "--log-level",
                 arguments.log_level,
-                "Minimum log level (overrides configuration)"
+                tr("Minimum log level (overrides configuration)")
             )
             ->check(
                 CLI::IsMember(
@@ -215,26 +324,29 @@ ParseResult parse_arguments(int argc, char* argv[]) {
             .add_option(
                 "--log-file",
                 arguments.log_file,
-                "Write rotating logs to this file (overrides configuration)"
+                tr("Write rotating logs to this file (overrides configuration)")
             )
             ->type_name("PATH");
         command
             .add_option(
                 "--color",
                 arguments.color_mode,
-                "Color output override: auto, always, or never"
+                tr("Color output override: auto, always, or never")
             )
             ->transform(CLI::CheckedTransformer(color_modes));
+        add_language_option(command);
         command
             .add_option(
-                "--output", arguments.output_mode, "Output format: text or json"
+                "--output",
+                arguments.output_mode,
+                tr("Output format: text or json")
             )
             ->transform(CLI::CheckedTransformer(output_modes))
             ->default_str("text");
         command.add_flag(
             "--quiet",
             arguments.quiet,
-            "Suppress informational and success output"
+            tr("Suppress informational and success output")
         );
     };
     for (const auto& [command, operation] : command_operations) {
@@ -245,7 +357,7 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         ->add_option(
             "--auth-flow",
             arguments.auth_flow,
-            "Authentication flow: auto, auth-code, or device-code"
+            tr("Authentication flow: auto, auth-code, or device-code")
         )
         ->transform(CLI::CheckedTransformer(auth_flows).description(""))
         ->type_name("{auto,auth-code,device-code}")
@@ -253,35 +365,38 @@ ParseResult parse_arguments(int argc, char* argv[]) {
     clear_state->add_flag(
         "--yes",
         arguments.assume_yes,
-        "Confirm the state clear without an interactive prompt"
+        tr("Confirm the state clear without an interactive prompt")
     );
     cleanup_state->add_flag(
         "--dry-run",
         arguments.force_dry_run,
-        "Show cleanup candidates without removing files or state"
+        tr("Show cleanup candidates without removing files or state")
     );
     cleanup_state->add_flag(
         "--yes",
         arguments.assume_yes,
-        "Confirm removal of invalid partial files and state"
+        tr("Confirm removal of invalid partial files and state")
     );
     migrate_state->add_flag(
         "--dry-run",
         arguments.force_dry_run,
-        "List database versions and upgrade candidates without changing them"
+        tr("List database versions and upgrade candidates without changing them"
+        )
     );
     migrate_state->add_flag(
-        "--yes", arguments.assume_yes, "Confirm database backups and upgrades"
+        "--yes",
+        arguments.assume_yes,
+        tr("Confirm database backups and upgrades")
     );
     transfer_sync->add_flag(
         "--dry-run",
         arguments.force_dry_run,
-        "Show synchronization inputs without changing remote files"
+        tr("Show synchronization inputs without changing remote files")
     );
     transfer_sync->add_flag(
         "--force-large-delete",
         arguments.force_large_delete,
-        "Allow this sync to exceed the configured remote deletion limit"
+        tr("Allow this sync to exceed the configured remote deletion limit")
     );
     for (const auto& [command, operation] : command_operations) {
         if (!operation_capabilities(operation).supports_tui) {
@@ -289,7 +404,7 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         }
         command
             ->add_option(
-                "--ui", arguments.ui_mode, "Interface: auto, console, or tui"
+                "--ui", arguments.ui_mode, tr("Interface: auto, console, or tui")
             )
             ->transform(CLI::CheckedTransformer(ui_modes).description(""))
             ->type_name("{auto,console,tui}")
@@ -298,7 +413,7 @@ ParseResult parse_arguments(int argc, char* argv[]) {
             ->add_option(
                 "--theme",
                 arguments.tui_theme,
-                "TUI theme: hacker, ocean, amber, or synthwave"
+                tr("TUI theme: hacker, ocean, amber, or synthwave")
             )
             ->transform(CLI::CheckedTransformer(tui_themes).description(""))
             ->type_name("{hacker,ocean,amber,synthwave}")
@@ -308,47 +423,51 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         ->add_option(
             "REMOTE_PATH",
             arguments.remote_download_path,
-            "Drive-relative path of the remote file"
+            tr("Drive-relative path of the remote file")
         )
         ->required();
     transfer_download->add_flag(
         "--dry-run",
         arguments.force_dry_run,
-        "Show the single-file download plan without changing local state"
+        tr("Show the single-file download plan without changing local state")
     );
     transfer_restore->add_option(
         "REMOTE_PATH",
         arguments.restore_path,
-        "Optional Drive-relative file or directory; omit for the sync scope"
+        tr("Optional Drive-relative file or directory; omit for the sync scope")
     );
     transfer_restore->add_flag(
         "--dry-run",
         arguments.force_dry_run,
-        "List missing local files without downloading or changing sync state"
+        tr("List missing local files without downloading or changing sync state"
+        )
     );
     inspect_sites->add_option(
         "QUERY",
         arguments.site_query,
-        "Optional SharePoint site search query, URL, or hostname:/sites/path"
+        tr("Optional SharePoint site search query, URL, or hostname:/sites/path"
+        )
     );
     inspect_blocked->add_option(
-        "--reason", arguments.blocked_reason, "Only show this exact reason code"
+        "--reason",
+        arguments.blocked_reason,
+        tr("Only show this exact reason code")
     );
     inspect_blocked->add_option(
         "--search",
         arguments.blocked_search,
-        "Search paths, reason codes, and messages (ASCII case-insensitive)"
+        tr("Search paths, reason codes, and messages (ASCII case-insensitive)")
     );
     inspect_files->add_option(
         "PATH",
         arguments.inspect_path,
-        "Optional Drive-relative file or directory path"
+        tr("Optional Drive-relative file or directory path")
     );
     inspect_files
         ->add_option(
             "--status",
             arguments.inspect_file_status,
-            "Only show files with this status"
+            tr("Only show files with this status")
         )
         ->check(CLI::IsMember(
             {"ok", "missing", "modified", "type-changed", "outside-root"}
@@ -356,13 +475,13 @@ ParseResult parse_arguments(int argc, char* argv[]) {
     inspect_verify->add_option(
         "PATH",
         arguments.inspect_path,
-        "Optional Drive-relative file or directory path"
+        tr("Optional Drive-relative file or directory path")
     );
     inspect_verify
         ->add_option(
             "--mode",
             arguments.verify_mode,
-            "Verification mode: metadata or content"
+            tr("Verification mode: metadata or content")
         )
         ->check(CLI::IsMember({"metadata", "content"}))
         ->default_str("metadata");

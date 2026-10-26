@@ -187,7 +187,10 @@ private:
         }
         master_.reset();
         slave_.reset();
-        if (::setenv("TERM", "xterm-256color", 1) == -1) {
+        if (::setenv("TERM", "xterm-256color", 1) == -1 ||
+            ::unsetenv("DISPLAY") == -1 ||
+            ::unsetenv("WAYLAND_DISPLAY") == -1 ||
+            ::setenv("ONEDRIVE_CPP_LANG", "en", 0) == -1) {
             std::_Exit(EXIT_FAILURE);
         }
         int result = EXIT_SUCCESS;

@@ -38,11 +38,13 @@ public:
     ) const;
     [[nodiscard]] OutputMode output_mode() const noexcept;
     [[nodiscard]] UiMode ui_mode() const noexcept;
+    [[nodiscard]] Language language() const noexcept;
 
     [[nodiscard]] static ColorMode parse_color_mode(std::string_view value);
     [[nodiscard]] static OutputMode parse_output_mode(std::string_view value);
     [[nodiscard]] static UiMode parse_ui_mode(std::string_view value);
     [[nodiscard]] static TuiTheme parse_tui_theme(std::string_view value);
+    [[nodiscard]] static Language parse_language(std::string_view value);
 
 private:
     void on_event(const events::Event& event) const override;

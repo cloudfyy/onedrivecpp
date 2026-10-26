@@ -593,6 +593,12 @@ int show_config(
                 .value = color_mode_name(config.console_color),
             },
             {
+                .label = "language:",
+                .key = "language",
+                .value =
+                    std::string{config::language_name(config.console_language)},
+            },
+            {
                 .label = "file history limit:",
                 .key = "file_history_limit",
                 .value = std::to_string(config.file_history_limit),

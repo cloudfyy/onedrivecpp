@@ -80,6 +80,7 @@ int Application::run(int argc, char* argv[]) {
                     : cli::UiMode::console,
             .theme = arguments.tui_theme.value_or(config.console_theme),
             .view = tui_view(arguments.operation),
+            .language = arguments.language.value_or(config.console_language),
             .quiet = arguments.quiet,
             .file_history_limit = config.file_history_limit,
         }};
@@ -105,6 +106,9 @@ int Application::run(int argc, char* argv[]) {
         };
         config.dry_run = config.dry_run || arguments.force_dry_run;
         config.force_large_delete = arguments.force_large_delete;
+        if (arguments.language) {
+            config.console_language = *arguments.language;
+        }
 
         std::optional<monitor::detail::TerminationSignalMask>
             monitor_signal_mask;
@@ -135,6 +139,8 @@ int Application::run(int argc, char* argv[]) {
                     arguments.color_mode.value_or(cli::ColorMode::automatic),
                 .output = arguments.output_mode,
                 .ui = cli::UiMode::console,
+                .language =
+                    arguments.language.value_or(cli::Language::automatic),
                 .quiet = arguments.quiet,
             }};
             diagnostic.message(

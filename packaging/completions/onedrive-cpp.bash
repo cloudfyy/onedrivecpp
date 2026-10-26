@@ -21,6 +21,12 @@ _onedrive_cpp_completion()
             )
             return
             ;;
+        --language)
+            mapfile -t COMPREPLY < <(
+                compgen -W "auto en zh_CN" -- "$current"
+            )
+            return
+            ;;
         --output)
             mapfile -t COMPREPLY < <(compgen -W "text json" -- "$current")
             return
@@ -107,6 +113,7 @@ _onedrive_cpp_completion()
         --log-level
         --log-file
         --color
+        --language
         --output
         --quiet
         --help

@@ -21,7 +21,51 @@ using onedrive::test::fail;
 using namespace onedrive::test::tui_cases;
 
 int main() {
-    onedrive::test::ScenarioProgress progress{16};
+    onedrive::test::ScenarioProgress progress{17};
+    {
+        using namespace onedrive::cli;
+        std::ostringstream zh_output;
+        std::ostringstream zh_error;
+        const Console zh_console{detail::make_ftxui_console_backend(
+            {.ui = UiMode::tui,
+             .view = TuiView::watch,
+             .language = Language::simplified_chinese},
+            zh_output,
+            zh_error,
+            120,
+            40
+        )};
+        if (const auto zh_result =
+                progress.run("chinese_localization", [&] {
+                    zh_console.operation_state(
+                        OperationKind::monitoring, OperationState::watching
+                    );
+                    zh_console.sync_context(
+                        onedrive::sync::SyncMode::bidirectional, false
+                    );
+                    zh_console.sync_phase(onedrive::events::SyncPhase::preparing);
+                    zh_console.download_progress(
+                        0, 0, 0, 0, onedrive::util::ProgressState::ongoing
+                    );
+                    const auto rendered = zh_output.str();
+                    const auto frame =
+                        rendered.substr(rendered.rfind("\033[H"));
+                    if (!frame.contains("ONEDRIVE // 监控") ||
+                        !frame.contains("方向：双向同步 // 自动监控") ||
+                        !frame.contains("下载") ||
+                        !frame.contains("总量未知；无法计算百分比。")) {
+                        return fail(
+                            "Chinese TUI did not localize status bar or "
+                            "progress card\n" +
+                            frame
+                        );
+                    }
+                    return EXIT_SUCCESS;
+                });
+            zh_result != EXIT_SUCCESS) {
+            return zh_result;
+        }
+    }
     {
         using namespace onedrive::cli;
         std::ostringstream output;

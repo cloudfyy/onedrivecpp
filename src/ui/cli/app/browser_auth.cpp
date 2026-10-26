@@ -225,7 +225,16 @@ auth::AuthResult<void> request_cli_browser_authorization(
     const std::stop_token& token
 ) {
     ChildProcessReaper browser_reaper;
-    const BrowserCallbackMessages messages{};
+    const bool chinese =
+        console.language() == config::Language::simplified_chinese;
+    const BrowserCallbackMessages messages =
+        chinese
+            ? BrowserCallbackMessages{
+                  .received_message =
+                      "已收到授权。请返回 OneDrive C++，可以关闭此标签页。",
+                  .invalid_message = "无效的授权回调。",
+              }
+            : BrowserCallbackMessages{};
     return run_loopback_browser_authorization(
         session,
         [&](std::string_view url) {

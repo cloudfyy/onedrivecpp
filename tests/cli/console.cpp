@@ -625,8 +625,60 @@ int test_console_events_and_output() {
         Console::parse_tui_theme("hacker") != TuiTheme::hacker ||
         Console::parse_tui_theme("ocean") != TuiTheme::ocean ||
         Console::parse_tui_theme("amber") != TuiTheme::amber ||
-        Console::parse_tui_theme("synthwave") != TuiTheme::synthwave) {
+        Console::parse_tui_theme("synthwave") != TuiTheme::synthwave ||
+        Console::parse_language("auto") != Language::automatic ||
+        Console::parse_language("en") != Language::english ||
+        Console::parse_language("zh_CN") != Language::simplified_chinese ||
+        Console::parse_language("zh-CN") != Language::simplified_chinese ||
+        Console::parse_language("zh") != Language::simplified_chinese) {
         return fail("console option parsing returned the wrong mode");
+    }
+    try {
+        static_cast<void>(Console::parse_language("invalid"));
+        return fail("invalid language was accepted");
+    } catch (const std::invalid_argument&) {
+    }
+
+    std::ostringstream zh_output;
+    std::ostringstream zh_error;
+    const Console zh_console{
+        {
+            .color = ColorMode::never,
+            .output = OutputMode::text,
+            .language = Language::simplified_chinese,
+        },
+        zh_output,
+        zh_error
+    };
+    if (zh_console.language() != Language::simplified_chinese) {
+        return fail("Chinese console did not report simplified_chinese");
+    }
+    zh_console.section(
+        "effective_config",
+        "Effective configuration:",
+        {
+            {.label = "language:", .key = "language", .value = "zh_CN"},
+            {.label = "sync mode:", .key = "sync_mode", .value = "bidirectional"},
+        }
+    );
+    zh_console.delta_summary({
+        .pages = 1,
+        .scanned_items = 5,
+        .unique_changes = 4,
+        .files = 3,
+        .directories = 1,
+        .deletions = 0,
+    });
+    zh_console.blocked_item(
+        "conflict.txt", "local_modification", "local file was modified"
+    );
+    if (!zh_output.str().contains("有效配置：\n  语言：     简体中文\n  同步模式： bidirectional\n") ||
+        !zh_output.str().contains("Microsoft Graph 增量同步完成：") ||
+        !zh_error.str().contains("已受阻 'conflict.txt'：")) {
+        return fail(
+            "Chinese text console did not localize or align output:\n" +
+            zh_output.str() + zh_error.str()
+        );
     }
     try {
         static_cast<void>(Console::parse_color_mode("invalid"));

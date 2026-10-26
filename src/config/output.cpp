@@ -33,7 +33,9 @@ void load_output_options(
     }
 
     if (const auto* console = optional_table(root, "console", "console")) {
-        validate_keys(*console, {"color", "ui", "theme"}, "console");
+        validate_keys(
+            *console, {"color", "ui", "theme", "language"}, "console"
+        );
         if (const auto value = optional_value<std::string>(
                 *console, "color", "console.color", "a string"
             )) {
@@ -64,6 +66,17 @@ void load_output_options(
             } catch (const std::invalid_argument&) {
                 throw std::runtime_error(
                     "invalid TOML configuration value for 'console.theme'"
+                );
+            }
+        }
+        if (const auto value = optional_value<std::string>(
+                *console, "language", "console.language", "a string"
+            )) {
+            try {
+                config.console_language = parse_language(*value);
+            } catch (const std::invalid_argument&) {
+                throw std::runtime_error(
+                    "invalid TOML configuration value for 'console.language'"
                 );
             }
         }

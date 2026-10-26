@@ -127,6 +127,10 @@ UiMode Console::ui_mode() const noexcept {
     return backend_->ui_mode();
 }
 
+Language Console::language() const noexcept {
+    return backend_->language();
+}
+
 ColorMode Console::parse_color_mode(std::string_view value) {
     return config::parse_color_mode(value);
 }
@@ -147,6 +151,10 @@ UiMode Console::parse_ui_mode(std::string_view value) {
 
 TuiTheme Console::parse_tui_theme(std::string_view value) {
     return config::parse_tui_theme(value);
+}
+
+Language Console::parse_language(std::string_view value) {
+    return config::parse_language(value);
 }
 
 std::ostream& Console::default_output() {

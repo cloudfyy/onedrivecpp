@@ -170,3 +170,10 @@ COMP_WORDS=(onedrive-cpp transfer sync --output j)
 COMP_CWORD=4
 _onedrive_cpp_completion
 assert_contains json "${COMPREPLY[@]}"
+
+COMP_WORDS=(onedrive-cpp transfer sync --language "")
+COMP_CWORD=4
+_onedrive_cpp_completion
+assert_contains auto "${COMPREPLY[@]}"
+assert_contains en "${COMPREPLY[@]}"
+assert_contains zh_CN "${COMPREPLY[@]}"

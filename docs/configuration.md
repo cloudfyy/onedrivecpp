@@ -105,6 +105,8 @@ ui = "auto"
 theme = "hacker"
 # "auto", "always", or "never"
 color = "auto"
+# "auto", "en", or "zh_CN"; overridden by --language or ONEDRIVE_CPP_LANG.
+language = "auto"
 
 [history]
 # CLI/GUI completed operations since startup; positive, default 10000.

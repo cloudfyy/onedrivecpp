@@ -7,6 +7,8 @@ color = "auto"
 ui = "auto"
 # TUI colors: "hacker", "ocean", "amber", or "synthwave".
 theme = "hacker"
+# Display language: "auto", "en", or "zh_CN".
+language = "auto"
 
 [history]
 # Completed operations retained in memory by CLI/GUI for this process.

@@ -155,6 +155,59 @@ int test_valid() {
     {
         std::ofstream output{path};
         output << "config_version = 2\n"
+               << "[console]\n"
+               << "language = \"french\"\n";
+    }
+    try {
+        static_cast<void>(onedrive::config::Config::load(path));
+        std::filesystem::remove(path);
+        std::cerr << "invalid console language was accepted\n";
+        return EXIT_FAILURE;
+    } catch (const std::runtime_error& error) {
+        if (!std::string{error.what()}.contains("console.language")) {
+            std::filesystem::remove(path);
+            std::cerr << "invalid console language reported wrong error\n";
+            return EXIT_FAILURE;
+        }
+    }
+
+    for (const auto& [raw, expected] :
+         std::initializer_list<std::pair<const char*, onedrive::config::Language>>{
+             {"auto", onedrive::config::Language::automatic},
+             {"en", onedrive::config::Language::english},
+             {"zh_CN", onedrive::config::Language::simplified_chinese},
+             {"zh-CN", onedrive::config::Language::simplified_chinese},
+             {"zh", onedrive::config::Language::simplified_chinese},
+         }) {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
+               << "[console]\n"
+               << "language = \"" << raw << "\"\n";
+        output.close();
+        const auto loaded = onedrive::config::Config::load(path);
+        if (loaded.console_language != expected) {
+            std::filesystem::remove(path);
+            std::cerr << "console.language was not parsed as expected\n";
+            return EXIT_FAILURE;
+        }
+    }
+    if (onedrive::config::resolve_locale_language("zh_CN.UTF-8") !=
+            onedrive::config::Language::simplified_chinese ||
+        onedrive::config::resolve_locale_language("zh-Hans-CN") !=
+            onedrive::config::Language::simplified_chinese ||
+        onedrive::config::resolve_locale_language("en_US.UTF-8") !=
+            onedrive::config::Language::english ||
+        onedrive::config::language_name(
+            onedrive::config::Language::simplified_chinese
+        ) != "zh_CN") {
+        std::filesystem::remove(path);
+        std::cerr << "locale language resolution returned the wrong language\n";
+        return EXIT_FAILURE;
+    }
+
+    {
+        std::ofstream output{path};
+        output << "config_version = 2\n"
                << "[logging]\n"
                << "level = \"verbose\"\n";
     }

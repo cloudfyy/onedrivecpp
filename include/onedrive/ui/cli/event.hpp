@@ -23,6 +23,12 @@ using config::UiMode;
 
 using config::TuiTheme;
 
+using config::Language;
+using config::language_name;
+using config::parse_language;
+using config::resolve_language;
+using config::resolve_locale_language;
+
 enum class TuiView {
     auth,
     health,
@@ -50,6 +56,7 @@ struct ConsoleOptions {
     UiMode ui{UiMode::console};
     TuiTheme theme{TuiTheme::hacker};
     TuiView view{TuiView::sync};
+    Language language{Language::english};
     bool quiet{false};
     std::size_t file_history_limit{config::default_file_history_limit};
 };

@@ -51,6 +51,23 @@ inline RunResult run_application(
     std::vector<std::string> arguments,
     std::string standard_input = {}
 ) {
+    struct DefaultEnglishLocaleGuard {
+        bool active{
+            std::getenv("ONEDRIVE_CPP_TEST_KEEP_LOCALE") == nullptr &&
+            std::getenv("ONEDRIVE_CPP_LANG") == nullptr
+        };
+        DefaultEnglishLocaleGuard() noexcept {
+            if (active) {
+                ::setenv("ONEDRIVE_CPP_LANG", "en", 1);
+            }
+        }
+        ~DefaultEnglishLocaleGuard() {
+            if (active) {
+                ::unsetenv("ONEDRIVE_CPP_LANG");
+            }
+        }
+    } const locale_guard;
+
     std::vector<char*> argument_pointers;
     argument_pointers.reserve(arguments.size());
     for (auto& argument : arguments) {

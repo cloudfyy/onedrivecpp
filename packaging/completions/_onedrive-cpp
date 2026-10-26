@@ -8,6 +8,7 @@ _onedrive_cpp()
     _arguments -C \
         '(-h --help)'{-h,--help}'[show command help]' \
         '--version[show version information]' \
+        '--language[display language]:language:(auto en zh_CN)' \
         '1:command:(account inspect state transfer monitor)' \
         '*::argument:->command_options'
 

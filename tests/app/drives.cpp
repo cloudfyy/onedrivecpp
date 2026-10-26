@@ -22,7 +22,7 @@ Json drive_results(const RunResult& result) {
         const auto event = Json::parse(line);
         if (event.at("event") == "drive") {
             const auto& values = event.at("values");
-            const auto id = values.at("id").get<std::string>();
+            const auto id = values.at("drive_id").get<std::string>();
             if (drives.contains(id)) {
                 throw std::runtime_error("drive listing repeated a Drive ID");
             }

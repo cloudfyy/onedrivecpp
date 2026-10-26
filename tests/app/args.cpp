@@ -680,11 +680,105 @@ int test_args() {
     return EXIT_SUCCESS;
 }
 
+int test_language_localization() {
+    FakeRuntimeFactory runtime_factory;
+    const auto root_zh_help = run_application(
+        runtime_factory, {"onedrive-cpp", "--language", "zh_CN", "--help"}
+    );
+    if (root_zh_help.exit_code != exit_code::success ||
+        !root_zh_help.standard_output.contains("现代 C++ OneDrive 同步客户端") ||
+        !root_zh_help.standard_output.contains("onedrive-cpp [选项] SUBCOMMAND") ||
+        !root_zh_help.standard_output.contains("显示帮助信息并退出") ||
+        !root_zh_help.standard_output.contains(
+            "--language {auto,en,zh_CN} [auto]"
+        )) {
+        return fail(
+            "--language zh_CN --help did not render localized Chinese help\n" +
+            root_zh_help.standard_output
+        );
+    }
+    const auto sync_zh_help = run_application(
+        runtime_factory,
+        {"onedrive-cpp", "transfer", "sync", "--language", "zh_CN", "--help"}
+    );
+    if (sync_zh_help.exit_code != exit_code::success ||
+        !sync_zh_help.standard_output.contains("同步 OneDrive 文件") ||
+        !sync_zh_help.standard_output.contains("仅预览同步计划，不修改本地或远端文件")) {
+        return fail(
+            "transfer sync --language zh_CN --help did not localize options\n" +
+            sync_zh_help.standard_output
+        );
+    }
+    if (run_application(
+            runtime_factory,
+            {"onedrive-cpp", "inspect", "config", "--language", "invalid"}
+        )
+            .exit_code != exit_code::usage_error) {
+        return fail("invalid --language did not return usage exit code 2");
+    }
+
+    CliFixture fixture;
+    const auto inspect_zh = run_application(
+        fixture.runtime_factory,
+        {
+            "onedrive-cpp",
+            "inspect",
+            "config",
+            "--config",
+            fixture.config_path.string(),
+            "--language",
+            "zh_CN",
+            "--color",
+            "never",
+        }
+    );
+    if (inspect_zh.exit_code != exit_code::success ||
+        !inspect_zh.standard_output.contains("有效输出配置：") ||
+        !inspect_zh.standard_output.contains("语言：") ||
+        !inspect_zh.standard_output.contains("简体中文")) {
+        return fail(
+            "inspect config --language zh_CN did not localize text output:\n" +
+            inspect_zh.standard_output
+        );
+    }
+    const auto inspect_zh_json = run_application(
+        fixture.runtime_factory,
+        {
+            "onedrive-cpp",
+            "inspect",
+            "config",
+            "--config",
+            fixture.config_path.string(),
+            "--language",
+            "zh_CN",
+            "--output",
+            "json",
+        }
+    );
+    if (inspect_zh_json.exit_code != exit_code::success ||
+        !inspect_zh_json.standard_output.contains(
+            "\"event\":\"effective_output_config\""
+        ) ||
+        !inspect_zh_json.standard_output.contains("\"language\":\"zh_CN\"")) {
+        return fail(
+            "inspect config --language zh_CN --output json broke JSON "
+            "contract:\n" +
+            inspect_zh_json.standard_output
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
 } // namespace
 
 int main() {
-    onedrive::test::ScenarioProgress progress{2};
+    onedrive::test::ScenarioProgress progress{3};
     if (const auto result = progress.run("ui_option_help", test_ui_option_help);
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const auto result =
+            progress.run("language_localization", test_language_localization);
         result != EXIT_SUCCESS) {
         return result;
     }

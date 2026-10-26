@@ -18,6 +18,7 @@ public:
         ConsoleOptions options, std::ostream& output, std::ostream& error
     )
         : options_{options},
+          language_{resolve_language(options.language)},
           output_{output},
           error_{error},
           file_history_{options.file_history_limit} {
@@ -43,6 +44,10 @@ public:
 
     UiMode ui_mode() const noexcept override {
         return UiMode::console;
+    }
+
+    Language language() const noexcept override {
+        return language_;
     }
 
 private:
@@ -230,6 +235,7 @@ private:
     }
 
     ConsoleOptions options_;
+    Language language_{Language::english};
     std::ostream& output_;
     std::ostream& error_;
     events::FileHistory file_history_;

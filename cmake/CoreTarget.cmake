@@ -13,6 +13,7 @@ add_library(onedrive_cli
     src/ui/cli/format.cpp
     src/ui/cli/ftxui_backend.cpp
     src/ui/cli/json_backend.cpp
+    src/ui/cli/localization.cpp
     src/ui/cli/message.cpp
     src/ui/cli/terminal.cpp
     src/ui/cli/text_backend.cpp

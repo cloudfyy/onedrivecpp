@@ -87,6 +87,8 @@ ui = "auto"
 theme = "hacker"
 # "auto"、"always" 或 "never"
 color = "auto"
+# "auto"、"en" 或 "zh_CN"；可被 --language 或 ONEDRIVE_CPP_LANG 覆盖
+language = "auto"
 
 [history]
 # CLI/GUI 本次启动以来的已完成操作，必须大于 0，默认 10000。

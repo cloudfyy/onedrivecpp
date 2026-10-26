@@ -22,6 +22,9 @@ public:
     ) = 0;
     [[nodiscard]] virtual OutputMode output_mode() const noexcept = 0;
     [[nodiscard]] virtual UiMode ui_mode() const noexcept = 0;
+    [[nodiscard]] virtual Language language() const noexcept {
+        return Language::english;
+    }
 };
 
 }  // namespace onedrive::cli

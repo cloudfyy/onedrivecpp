@@ -1,5 +1,6 @@
 #include "ui/cli/backend_factory.hpp"
 #include "ui/cli/format.hpp"
+#include "ui/cli/localization.hpp"
 #include "ui/cli/message.hpp"
 
 #include "onedrive/ui/cli/console.hpp"
@@ -43,6 +44,7 @@ public:
         ConsoleOptions options, std::ostream& output, std::ostream& error
     )
         : options_{options},
+          language_{resolve_language(options.language)},
           output_{output},
           error_{error},
           styled_{
@@ -70,7 +72,8 @@ public:
     }
 
     bool confirm(const ConfirmationRequest& request) override {
-        output_ << request.prompt << std::flush;
+        output_ << translate_confirmation_prompt(request, language_)
+                << std::flush;
         std::string confirmation;
         return static_cast<bool>(std::getline(std::cin, confirmation)) &&
                confirmation == request.expected;
@@ -84,6 +87,10 @@ public:
         return UiMode::console;
     }
 
+    Language language() const noexcept override {
+        return language_;
+    }
+
 private:
     void render(const MessageEvent& event) {
         if (message_suppressed(options_, event.kind)) {
@@ -94,13 +101,14 @@ private:
             event.kind == MessageKind::error ||
                     event.kind == MessageKind::critical
                 ? error_ : output_;
+        const auto text = translate_message(event, language_);
         if (!styled_) {
-            stream << event.text << '\n';
+            stream << text << '\n';
             return;
         }
         const auto style = style_for(event.kind);
         stream << style.color << "\033[1m" << style.symbol << "\033[0m "
-               << event.text << '\n';
+               << text << '\n';
     }
 
     void render(const SectionEvent& event) {
@@ -108,22 +116,30 @@ private:
             return;
         }
         render(EndDownloadProgressEvent{});
+        const auto title =
+            translate_section_title(event.event, event.title, language_);
         if (styled_) {
-            output_ << "\033[1;36m" << event.title << "\033[0m\n";
+            output_ << "\033[1;36m" << title << "\033[0m\n";
         } else {
-            output_ << event.title << '\n';
+            output_ << title << '\n';
         }
+        std::vector<std::pair<std::string, std::string>> rows;
+        rows.reserve(event.fields.size());
         std::size_t width = 0;
         for (const auto& field : event.fields) {
-            width = std::max(width, field.label.size());
+            auto label =
+                translate_field_label(field.key, field.label, language_);
+            auto value =
+                translate_field_value(field.key, field.value, language_);
+            width = std::max(width, display_width(label));
+            rows.emplace_back(std::move(label), std::move(value));
         }
-        for (const auto& field : event.fields) {
-            output_ << fmt::format(
-                "  {:<{}} {}\n",
-                field.label,
-                width,
-                field.value
-            );
+        for (const auto& [label, value] : rows) {
+            const auto label_width = display_width(label);
+            const auto padding =
+                width > label_width ? width - label_width : std::size_t{0};
+            output_ << "  " << label << std::string(padding + 1, ' ') << value
+                    << '\n';
         }
     }
 
@@ -132,7 +148,8 @@ private:
             return;
         }
         if (!delta_progress_active_) {
-            output_ << "Microsoft Graph delta: ";
+            output_ << (is_chinese(language_) ? "Microsoft Graph 增量同步："
+                                              : "Microsoft Graph delta: ");
             delta_progress_active_ = true;
             delta_progress_pages_ = 0;
         }
@@ -148,41 +165,23 @@ private:
         if (options_.quiet) {
             return;
         }
-        const auto& summary = event.summary;
-        const auto items_per_page =
-            summary.pages == 0 ?
-                0.0 :
-                static_cast<double>(summary.scanned_items) /
-                    static_cast<double>(summary.pages);
         output_ << (delta_progress_active_ ? "\n" : "")
-                << fmt::format(
-                       "Microsoft Graph delta complete: {} page{}, {} items "
-                       "scanned, {} unique changes ({} files, {} folders, {} "
-                       "deletions), {:.1f} items/page\n",
-                       summary.pages,
-                       summary.pages == 1 ? "" : "s",
-                       summary.scanned_items,
-                       summary.unique_changes,
-                       summary.files,
-                       summary.directories,
-                       summary.deletions,
-                       items_per_page
-                   );
+                << format_delta_summary(event.summary, language_);
         delta_progress_pages_ = 0;
         delta_progress_active_ = false;
     }
 
     void render(const BlockedItemEvent& event) {
-        error_ << fmt::format(
-            "Blocked '{}': {} ({})\n",
-            event.path,
-            event.reason_message,
-            event.reason_code
-        );
+        error_ << format_blocked_item_line(event, language_);
     }
 
     void render(const DownloadProgressEvent& event) {
-        render_transfer(event, event.downloaded, "DL", "Done");
+        render_transfer(
+            event,
+            event.downloaded,
+            is_chinese(language_) ? "下载" : "DL",
+            is_chinese(language_) ? "完成" : "Done"
+        );
     }
 
     void render(const UploadProgressEvent& event) {
@@ -190,11 +189,18 @@ private:
             event.state == util::ProgressState::ongoing) {
             if (!options_.quiet) {
                 render(EndDownloadProgressEvent{});
-                output_ << "UL: totals unknown; percentage unavailable\n";
+                output_ << (is_chinese(language_)
+                                ? "上传：总量未知；无法计算百分比\n"
+                                : "UL: totals unknown; percentage unavailable\n");
             }
             return;
         }
-        render_transfer(event, event.uploaded, "UL", "Upload done");
+        render_transfer(
+            event,
+            event.uploaded,
+            is_chinese(language_) ? "上传" : "UL",
+            is_chinese(language_) ? "上传完成" : "Upload done"
+        );
     }
 
     template <typename Progress>
@@ -216,39 +222,53 @@ private:
             event.total,
             event.state
         );
-        auto line = fmt::format(
-            "{}: {}/{} files, {}% ({}/{})",
-            completed ? completed_label : active_label,
-            event.completed_files,
-            event.file_count,
-            percentage,
-            format_bytes(bytes),
-            format_bytes(event.total)
-        );
+        const bool chinese = is_chinese(language_);
+        auto line =
+            chinese
+                ? fmt::format(
+                      "{}：{}/{} 个文件，{}%（{}/{}）",
+                      completed ? completed_label : active_label,
+                      event.completed_files,
+                      event.file_count,
+                      percentage,
+                      format_bytes(bytes),
+                      format_bytes(event.total)
+                  )
+                : fmt::format(
+                      "{}: {}/{} files, {}% ({}/{})",
+                      completed ? completed_label : active_label,
+                      event.completed_files,
+                      event.file_count,
+                      percentage,
+                      format_bytes(bytes),
+                      format_bytes(event.total)
+                  );
         if (event.metrics.bytes_per_second != 0) {
-            line += fmt::format(
-                ", {}/s",
-                format_bytes(event.metrics.bytes_per_second)
-            );
+            line += chinese
+                ? fmt::format(
+                      "，{}/s", format_bytes(event.metrics.bytes_per_second)
+                  )
+                : fmt::format(
+                      ", {}/s", format_bytes(event.metrics.bytes_per_second)
+                  );
         }
         if (completed) {
-            line += fmt::format(
-                ", elapsed {}",
-                event.metrics.elapsed_milliseconds < 1000 ?
-                    "<1s" :
-                    format_duration(
-                        event.metrics.elapsed_milliseconds / 1000
-                    )
-            );
+            const auto elapsed =
+                event.metrics.elapsed_milliseconds < 1000
+                    ? "<1s"
+                    : format_duration(
+                          event.metrics.elapsed_milliseconds / 1000
+                      );
+            line += chinese ? fmt::format("，用时 {}", elapsed)
+                            : fmt::format(", elapsed {}", elapsed);
         } else if (
             event.metrics.estimated_seconds_remaining.has_value()
         ) {
-            line += fmt::format(
-                ", ETA {}",
-                format_duration(
-                    *event.metrics.estimated_seconds_remaining
-                )
+            const auto eta = format_duration(
+                *event.metrics.estimated_seconds_remaining
             );
+            line += chinese ? fmt::format("，预计剩余 {}", eta)
+                            : fmt::format(", ETA {}", eta);
         }
         if (interactive_) {
             output_ << '\r' << "\033[2K" << line;
@@ -273,8 +293,8 @@ private:
     void render(const SyncPhaseEvent& event) {
         render(EndDownloadProgressEvent{});
         if (!options_.quiet) {
-            output_ << "Phase: " << events::sync_phase_name(event.phase)
-                    << '\n';
+            output_ << (is_chinese(language_) ? "阶段：" : "Phase: ")
+                    << translate_sync_phase(event.phase, language_) << '\n';
         }
     }
     void render(const SyncSummaryEvent&) {
@@ -288,24 +308,35 @@ private:
         }
         render(EndDownloadProgressEvent{});
         if (!history_heading_printed_) {
-            output_ << "Completed file operations (this process):\n"
-                    << "Path  Action / details  Time (UTC)\n";
+            output_ << (is_chinese(language_)
+                            ? "已完成的文件操作（当前进程）：\n"
+                              "路径  操作 / 详情  时间 (UTC)\n"
+                            : "Completed file operations (this process):\n"
+                              "Path  Action / details  Time (UTC)\n");
             history_heading_printed_ = true;
         }
-        output_ << format_file_operation(event) << '\n' << std::flush;
+        output_ << format_file_operation(event, language_) << '\n'
+                << std::flush;
     }
     void render_history_status() {
         if (history_changed_ && !options_.quiet) {
             render(EndDownloadProgressEvent{});
-            output_ << format_file_history_status(file_history_) << '\n';
+            output_ << format_file_history_status(file_history_, language_)
+                    << '\n';
         }
         history_changed_ = false;
     }
     void render(const events::SyncContextEvent& event) {
         if (!options_.quiet) {
-            output_ << "Synchronization: "
-                    << sync::sync_mode_name(event.direction)
-                    << (event.preview ? " (preview)\n" : "\n");
+            if (is_chinese(language_)) {
+                output_ << "同步："
+                        << translate_sync_mode(event.direction, language_)
+                        << (event.preview ? "（预览）\n" : "\n");
+            } else {
+                output_ << "Synchronization: "
+                        << sync::sync_mode_name(event.direction)
+                        << (event.preview ? " (preview)\n" : "\n");
+            }
         }
     }
     void render(const EndUploadProgressEvent&) {
@@ -313,6 +344,7 @@ private:
     }
 
     ConsoleOptions options_;
+    Language language_{Language::english};
     std::ostream& output_;
     std::ostream& error_;
     bool styled_{false};
