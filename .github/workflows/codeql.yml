@@ -1,0 +1,106 @@
+name: CodeQL
+run-name: CodeQL (${{ github.ref_name }})
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '23 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: actions
+            build-mode: none
+          - language: python
+            build-mode: none
+          - language: c-cpp
+            build-mode: manual
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare Ubuntu 26.04 build image
+        if: matrix.language == 'c-cpp'
+        uses: docker/setup-buildx-action@v4
+
+      - name: Load Ubuntu 26.04 build image with Qt 6.8+
+        if: matrix.language == 'c-cpp'
+        uses: docker/build-push-action@v7
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: 'false'
+        with:
+          context: .
+          file: .github/packaging.Dockerfile
+          tags: onedrive-codeql-build
+          load: true
+          pull: true
+          build-args: |
+            UBUNTU_VERSION=26.04
+            BUILD_PROFILE=
+          cache-from: type=gha,scope=package-image-ubuntu26.04-${{ runner.arch }}
+          cache-to: type=gha,mode=max,scope=package-image-ubuntu26.04-${{ runner.arch }}
+
+      - name: Prepare verified third-party archives
+        if: matrix.language == 'c-cpp'
+        run: |
+          set -euo pipefail
+          python3 tools/prepare_source.py
+          version=$(python3 -c 'import json; print(json.load(open("vcpkg.json"))["version-semver"])')
+          tar -xf "build/source/onedrive-cpp-$version.tar.xz" \
+            --strip-components=1 -C . "onedrive-cpp-$version/third_party"
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          config: |
+            paths-ignore:
+              - build
+              - third_party
+
+      - name: Build CLI and GUI targets in Ubuntu 26.04 for CodeQL
+        if: matrix.language == 'c-cpp'
+        shell: bash
+        run: |
+          set -euo pipefail
+          env | grep -E '^(CODEQL_|SEMMLE_|ODASA_|LD_PRELOAD=)' > "$RUNNER_TEMP/codeql-tracer.env" || true
+          docker run --rm --network none \
+            --user "$(id -u):$(id -g)" \
+            --env HOME=/tmp/build-home \
+            --env-file "$RUNNER_TEMP/codeql-tracer.env" \
+            --volume "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+            --volume "$RUNNER_TEMP:$RUNNER_TEMP" \
+            --volume /opt/hostedtoolcache:/opt/hostedtoolcache:ro \
+            --workdir "$GITHUB_WORKSPACE" \
+            onedrive-codeql-build bash -euo pipefail -c '
+              mkdir -p "$HOME"
+              cmake --preset release \
+                -DBUILD_TESTING=OFF \
+                -DONEDRIVE_USE_PCH=OFF \
+                -DONEDRIVE_BUILD_GUI=ON \
+                -DONEDRIVE_OFFLINE_BUILD=ON
+              cmake --build --preset release --target onedrive-cpp onedrive-cpp-gui
+            '
+          rm -rf third_party
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:${{ matrix.language }}
