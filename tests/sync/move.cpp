@@ -5,7 +5,7 @@
 using namespace onedrive::test::sync::move_cases;
 
 int main() {
-    onedrive::test::ScenarioProgress progress{35};
+    onedrive::test::ScenarioProgress progress{36};
     if (const int result =
             progress.run("remote_move_renames", test_remote_move_renames);
         result != EXIT_SUCCESS) {
@@ -199,6 +199,13 @@ int main() {
     if (const int result = progress.run(
             "sharepoint_remote_move_enriched_file",
             test_sharepoint_remote_move_enriched_file
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "business_local_move_permission",
+            test_business_local_move_permission
         );
         result != EXIT_SUCCESS) {
         return result;

@@ -350,12 +350,17 @@ void test_about_button() {
         {},
         &localization
     };
+    const auto app_icon = gui::application_icon();
     const auto icon = window.windowIcon();
+    for (const int extent : {16, 24, 32, 48, 64, 128, 256, 512, 1024}) {
+        require(
+            app_icon.availableSizes().contains(QSize{extent, extent}) &&
+                icon.availableSizes().contains(QSize{extent, extent}),
+            "MainWindow or application_icon() omitted an embedded icon size"
+        );
+    }
     require(
-        !icon.isNull() &&
-            icon.availableSizes().contains(QSize{16, 16}) &&
-            icon.availableSizes().contains(QSize{512, 512}) &&
-            icon.availableSizes().contains(QSize{1024, 1024}) &&
+        !app_icon.isNull() && !icon.isNull() &&
             icon.pixmap(QSize{1024, 1024}).size() == QSize{1024, 1024},
         "MainWindow did not load its multi-resolution and HD application icon"
     );

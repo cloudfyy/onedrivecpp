@@ -251,4 +251,160 @@ int test_removed_upload_resource() {
     return EXIT_SUCCESS;
 }
 
+namespace {
+
+int verify_remote_upload_permission_recovery(
+    const std::string& drive_id, std::string_view label
+) {
+    const onedrive::cli::Console default_console;
+    onedrive::test::TemporaryDirectory temporary;
+    const auto root =
+        temporary.path() / ("remote-upload-permission-" + drive_id);
+    std::filesystem::create_directories(root);
+    {
+        std::ofstream output{root / "readonly.txt"};
+        output << "denied";
+    }
+    {
+        std::ofstream output{root / "writable.txt"};
+        output << "allowed";
+    }
+    FakeItemStore items;
+    items.saved_delta_link = "saved";
+    FakeGraphClient graph;
+    graph.upload_resource_error_path = "readonly.txt";
+    graph.upload_resource_error_code = "remote_permission";
+    FakeMetrics metrics;
+    auto config = config_for(root, false);
+    config.drive_id = drive_id;
+    config.sync_mode = onedrive::sync::SyncMode::bidirectional;
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != exit_code::blocked ||
+        !metrics.last_success) {
+        return fail(
+            std::string{label} + " remote upload permission error aborted sync"
+        );
+    }
+    const auto has_remote_path = [&](std::string_view remote_path) {
+        return std::ranges::any_of(
+            items.drive_items(drive_id),
+            [remote_path](const auto& state) {
+                return state.remote_path == remote_path;
+            }
+        );
+    };
+    const auto pending = items.pending_uploads(drive_id);
+    if (pending.size() != 1 || pending[0].remote_path != "readonly.txt" ||
+        pending[0].failure_code != "remote_permission" ||
+        pending[0].failure_attempt_count != 1 || items.blocked.size() != 1 ||
+        items.blocked[0].drive_id != drive_id ||
+        items.blocked[0].reason_code != "upload_remote_permission" ||
+        items.blocked[0].attempt_count != 1 ||
+        !has_remote_path("writable.txt")) {
+        return fail(
+            std::string{label} +
+            " remote upload permission failure was not recorded while "
+            "writable siblings continued"
+        );
+    }
+
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != exit_code::blocked ||
+        items.pending_uploads(drive_id).size() != 1 ||
+        items.pending_uploads(drive_id)[0].failure_attempt_count != 2 ||
+        items.blocked.size() != 1 || items.blocked[0].attempt_count != 2) {
+        return fail(
+            std::string{label} +
+            " remote upload permission retry did not increment attempt count"
+        );
+    }
+
+    graph.upload_resource_error_path.clear();
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != exit_code::success ||
+        !items.pending_uploads(drive_id).empty() || !items.blocked.empty() ||
+        !has_remote_path("readonly.txt")) {
+        return fail(
+            std::string{label} +
+            " remote upload permission failure did not recover"
+        );
+    }
+
+    std::filesystem::create_directories(root / "Continued");
+    std::filesystem::create_directories(root / "ReadOnlyDir");
+    graph.directory_resource_error_path = "ReadOnlyDir";
+    graph.directory_resource_error_code = "remote_permission";
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != exit_code::blocked) {
+        return fail(
+            std::string{label} +
+            " remote directory permission error did not report blocked"
+        );
+    }
+    const auto dir_pending = items.pending_uploads(drive_id);
+    if (dir_pending.size() != 1 ||
+        dir_pending[0].remote_path != "ReadOnlyDir" ||
+        dir_pending[0].failure_code != "remote_permission" ||
+        dir_pending[0].failure_attempt_count != 1 || !dir_pending[0].directory ||
+        items.blocked.size() != 1 ||
+        items.blocked[0].reason_code != "upload_remote_permission" ||
+        items.blocked[0].attempt_count != 1 ||
+        !has_remote_path("Continued")) {
+        return fail(
+            std::string{label} +
+            " remote directory permission failure was not persisted while "
+            "earlier directories continued"
+        );
+    }
+
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != exit_code::blocked ||
+        items.pending_uploads(drive_id).size() != 1 ||
+        items.pending_uploads(drive_id)[0].failure_attempt_count != 2 ||
+        items.blocked.size() != 1 || items.blocked[0].attempt_count != 2) {
+        return fail(
+            std::string{label} +
+            " remote directory permission retry did not increment attempt count"
+        );
+    }
+
+    graph.directory_resource_error_path.clear();
+    if (onedrive::sync::SyncEngine{
+            config, graph, items, metrics, &default_console
+        }
+                .synchronize() != exit_code::success ||
+        !items.pending_uploads(drive_id).empty() || !items.blocked.empty() ||
+        !has_remote_path("ReadOnlyDir")) {
+        return fail(
+            std::string{label} +
+            " remote directory permission failure did not recover"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int test_business_remote_upload_permission_recovery() {
+    return verify_remote_upload_permission_recovery(
+        "business-drive", "OneDrive for Business"
+    );
+}
+
+int test_sharepoint_remote_upload_permission_recovery() {
+    return verify_remote_upload_permission_recovery(
+        "b!sp-library", "SharePoint"
+    );
+}
+
 } // namespace onedrive::test::sync::upload_cases

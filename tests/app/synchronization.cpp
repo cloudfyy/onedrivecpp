@@ -64,10 +64,6 @@ int test_multiple_drives(const onedrive::events::Observer& observer) {
                     }
                     auto identity = onedrive::test::test_drive_identity(id);
                     identity.drive_id = scenario == "alias" ? "same" : id;
-                    if (id == "second") {
-                        identity.drive_type = "documentLibrary";
-                        identity.drive_name = "Shared Documents";
-                    }
                     if (id == "second" && scenario == "different_account") {
                         identity.user_id = "another-user";
                     }
@@ -150,11 +146,7 @@ int test_multiple_drives(const onedrive::events::Observer& observer) {
                  } ||
              implementation.item_store_sync_directories.size() != 2 ||
              implementation.item_store_sync_directories[0] ==
-                 implementation.item_store_sync_directories[1] ||
-             !implementation.item_store_sync_directories[1]
-                  .filename()
-                  .string()
-                  .starts_with("Shared-Documents--"))) {
+                 implementation.item_store_sync_directories[1])) {
             return fail(
                 "multi-drive synchronization was not ordered and isolated"
             );
@@ -867,10 +859,95 @@ int test_cli_pending_delta_restart() {
     return EXIT_SUCCESS;
 }
 
+int test_business_synchronization_service() {
+    TemporaryDirectory temporary;
+    auto config = onedrive::config::Config::defaults();
+    config.state_directory = temporary.path() / "state";
+    config.sync_data_directory = temporary.path() / "sync";
+    config.drive_id = "business-drive-id";
+    config.drive_ids = {"business-drive-id"};
+    config.dry_run = true;
+    std::filesystem::create_directories(config.state_directory);
+    std::filesystem::create_directories(config.sync_data_directory);
+
+    FakeRuntimeFactory implementation;
+    implementation.configured_drive_id = "business-drive-id";
+    const onedrive::app::RuntimeFactory runtime_factory{
+        onedrive::util::borrowed_proxy, implementation
+    };
+    RecordingObserver observer;
+    const auto result = onedrive::app::synchronize_account(
+        config, runtime_factory, observer
+    );
+    auto identity = onedrive::test::test_drive_identity("business-drive-id");
+    identity.drive_id = "business-drive-id";
+    identity.drive_name = "OneDrive - Contoso";
+    identity.drive_type = "business";
+    const auto expected_sync_directory =
+        onedrive::account::AccountState::drive_data_directory(
+            config.sync_data_directory, identity
+        );
+    if (result != exit_code::success || !observer.has_delta_summary() ||
+        implementation.last_item_store_sync_directory !=
+            expected_sync_directory ||
+        !expected_sync_directory.filename().string().starts_with(
+            "OneDrive---Contoso--"
+        )) {
+        return fail(
+            "OneDrive for Business synchronization did not isolate its "
+            "business Drive directory"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
+int test_sharepoint_synchronization_service() {
+    TemporaryDirectory temporary;
+    auto config = onedrive::config::Config::defaults();
+    config.state_directory = temporary.path() / "state";
+    config.sync_data_directory = temporary.path() / "sync";
+    config.drive_ids = {"business-drive-id", "b!sp-library"};
+    config.dry_run = true;
+    std::filesystem::create_directories(config.state_directory);
+    std::filesystem::create_directories(config.sync_data_directory);
+
+    FakeRuntimeFactory implementation;
+    implementation.graph_client_override = [](const auto& selected) {
+        return std::make_unique<onedrive::graph::GraphClient>(
+            std::in_place_type<FakeGraphClient>, selected.drive_id
+        );
+    };
+    const onedrive::app::RuntimeFactory runtime_factory{
+        onedrive::util::borrowed_proxy, implementation
+    };
+    RecordingObserver observer;
+    const auto result = onedrive::app::synchronize_account(
+        config, runtime_factory, observer
+    );
+    if (result != exit_code::success ||
+        implementation.item_store_sync_directories.size() != 2 ||
+        implementation.item_store_sync_directories[0] ==
+            implementation.item_store_sync_directories[1] ||
+        !implementation.item_store_sync_directories[0]
+             .filename()
+             .string()
+             .starts_with("OneDrive---Contoso--") ||
+        !implementation.item_store_sync_directories[1]
+             .filename()
+             .string()
+             .starts_with("Shared-Documents--")) {
+        return fail(
+            "SharePoint and Business multi-drive synchronization did not "
+            "isolate per-Drive directories"
+        );
+    }
+    return EXIT_SUCCESS;
+}
+
 }  // namespace
 
 int main() {
-    onedrive::test::ScenarioProgress progress{10};
+    onedrive::test::ScenarioProgress progress{12};
     RecordingObserver multi_drive_observer;
     if (progress.run("multiple_drives", [&] {
             return test_multiple_drives(multi_drive_observer);
@@ -905,6 +982,14 @@ int main() {
             EXIT_SUCCESS ||
         progress.run(
             "cli_pending_delta_restart", test_cli_pending_delta_restart
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "business_synchronization_service",
+            test_business_synchronization_service
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "sharepoint_synchronization_service",
+            test_sharepoint_synchronization_service
         ) != EXIT_SUCCESS) {
         return EXIT_FAILURE;
     }

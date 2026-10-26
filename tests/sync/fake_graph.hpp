@@ -317,7 +317,8 @@ public:
         }
         if (remote_path == directory_resource_error_path) {
             throw onedrive::graph::UploadResourceError{
-                "remote_quota", "simulated OneDrive quota exhaustion"
+                directory_resource_error_code,
+                "simulated directory resource failure"
             };
         }
         if (before_directory_return) {
@@ -462,6 +463,7 @@ public:
     std::optional<std::int64_t> upload_enriched_size;
     std::optional<onedrive::util::FileHash> upload_enriched_hash;
     std::string directory_resource_error_path;
+    std::string directory_resource_error_code{"remote_quota"};
     bool delete_conflict{false};
     std::string delete_permission_denied_id;
     bool move_conflict{false};

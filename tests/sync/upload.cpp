@@ -11,7 +11,7 @@ using namespace onedrive::test::sync;
 using namespace onedrive::test::sync::upload_cases;
 
 int main() {
-    onedrive::test::ScenarioProgress progress{26};
+    onedrive::test::ScenarioProgress progress{28};
     if (progress.run(
             "upload_progress_pipeline", test_upload_progress_pipeline
         ) != EXIT_SUCCESS) {
@@ -169,6 +169,20 @@ int main() {
     if (const int result = progress.run(
             "sharepoint_server_enriched_file_operations",
             test_sharepoint_server_enriched_file_operations
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "business_remote_upload_permission_recovery",
+            test_business_remote_upload_permission_recovery
+        );
+        result != EXIT_SUCCESS) {
+        return result;
+    }
+    if (const int result = progress.run(
+            "sharepoint_remote_upload_permission_recovery",
+            test_sharepoint_remote_upload_permission_recovery
         );
         result != EXIT_SUCCESS) {
         return result;

@@ -666,13 +666,16 @@ int test_local_move_parent_recovery() {
     return EXIT_SUCCESS;
 }
 
-int test_sharepoint_local_move_permission() {
+namespace {
+
+int verify_local_move_permission(
+    const std::string& drive_id, std::string_view label
+) {
     const onedrive::cli::Console default_console;
     TemporaryDirectory temporary;
-    const std::string sp_drive_id = "b!sp-library";
 
     const auto permission_move_root =
-        temporary.path() / "sharepoint-move-permission";
+        temporary.path() / ("move-permission-" + drive_id);
     std::filesystem::create_directories(permission_move_root);
     {
         std::ofstream output{permission_move_root / "before.txt"};
@@ -680,14 +683,14 @@ int test_sharepoint_local_move_permission() {
     }
     FakeItemStore permission_move_items;
     permission_move_items.saved_delta_link = "saved";
-    auto sp_item =
+    auto move_item =
         tracked_item(permission_move_root, "permission-move", "before.txt");
-    sp_item.drive_id = sp_drive_id;
-    permission_move_items.items.emplace("permission-move", std::move(sp_item));
+    move_item.drive_id = std::string{drive_id};
+    permission_move_items.items.emplace("permission-move", std::move(move_item));
     FakeGraphClient permission_move_graph;
     FakeMetrics permission_move_metrics;
     auto permission_move_config = config_for(permission_move_root, false);
-    permission_move_config.drive_id = sp_drive_id;
+    permission_move_config.drive_id = std::string{drive_id};
     permission_move_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
     static_cast<void>(onedrive::sync::SyncEngine{
         permission_move_config,
@@ -714,13 +717,14 @@ int test_sharepoint_local_move_permission() {
         !permission_move_graph.deleted_items.empty() ||
         permission_move_graph.upload_count != 0 ||
         permission_move_items.blocked.size() != 1 ||
-        permission_move_items.blocked.front().drive_id != sp_drive_id ||
+        permission_move_items.blocked.front().drive_id != drive_id ||
         permission_move_items.blocked.front().remote_path != "after.txt" ||
         permission_move_items.blocked.front().reason_code !=
             "upload_remote_permission") {
         return fail(
-            "SharePoint remote move permission failure deleted source or "
-            "uploaded duplicate destination"
+            std::string{label} +
+            " remote move permission failure deleted source or uploaded "
+            "duplicate destination"
         );
     }
     if (onedrive::sync::SyncEngine{
@@ -735,8 +739,8 @@ int test_sharepoint_local_move_permission() {
         permission_move_graph.upload_count != 0 ||
         permission_move_items.blocked.size() != 1) {
         return fail(
-            "subsequent sync round did not protect blocked SharePoint local "
-            "move"
+            std::string{label} +
+            " subsequent sync round did not protect blocked local move"
         );
     }
     std::filesystem::rename(
@@ -752,11 +756,120 @@ int test_sharepoint_local_move_permission() {
                 .synchronize() != onedrive::exit_code::success ||
         !permission_move_items.blocked.empty()) {
         return fail(
-            "reverting blocked SharePoint local move did not clear its "
-            "blocked item"
+            std::string{label} +
+            " reverting blocked local move did not clear its blocked item"
+        );
+    }
+
+    const auto journal_root =
+        temporary.path() / ("move-permission-journal-" + std::string{drive_id});
+    std::filesystem::create_directories(journal_root);
+    {
+        std::ofstream output{journal_root / "before.txt"};
+        output << "data";
+    }
+    FakeItemStore journal_items;
+    journal_items.saved_delta_link = "saved";
+    auto journal_item =
+        tracked_item(journal_root, "journal-move", "before.txt");
+    journal_item.drive_id = std::string{drive_id};
+    journal_items.items.emplace("journal-move", journal_item);
+    FakeGraphClient journal_graph;
+    FakeMetrics journal_metrics;
+    auto journal_config = config_for(journal_root, false);
+    journal_config.drive_id = std::string{drive_id};
+    journal_config.sync_mode = onedrive::sync::SyncMode::bidirectional;
+    static_cast<void>(onedrive::sync::SyncEngine{
+        journal_config,
+        journal_graph,
+        journal_items,
+        journal_metrics,
+        &default_console
+    }
+                          .synchronize());
+    std::filesystem::rename(
+        journal_root / "before.txt", journal_root / "after.txt"
+    );
+    const auto tracked_before = journal_items.find(drive_id, "journal-move");
+    if (!tracked_before) {
+        return fail("missing tracked item before move journal test");
+    }
+    journal_items.pending_remote_moves_by_id.emplace(
+        "journal-move",
+        onedrive::storage::PendingRemoteMove{
+            .drive_id = std::string{drive_id},
+            .remote_id = "journal-move",
+            .expected_etag = tracked_before->etag,
+            .source_remote_path = "before.txt",
+            .destination_remote_path = "after.txt",
+            .destination_local_path = journal_root / "after.txt",
+            .local_device = tracked_before->local_device,
+            .local_inode = tracked_before->local_inode,
+        }
+    );
+    journal_graph.move_permission_denied_id = "journal-move";
+    std::ostringstream journal_output;
+    std::ostringstream journal_errors;
+    const onedrive::cli::Console journal_console{
+        {.color = onedrive::cli::ColorMode::never,
+         .output = onedrive::cli::OutputMode::json},
+        journal_output,
+        journal_errors,
+    };
+    if (onedrive::sync::SyncEngine{
+            journal_config,
+            journal_graph,
+            journal_items,
+            journal_metrics,
+            &journal_console
+        }
+                .synchronize() != onedrive::exit_code::blocked ||
+        !journal_metrics.last_success ||
+        !journal_items.pending_remote_moves_by_id.empty() ||
+        !journal_graph.deleted_items.empty() ||
+        journal_graph.upload_count != 0 ||
+        journal_items.blocked.size() != 1 ||
+        journal_items.blocked.front().reason_code !=
+            "upload_remote_permission" ||
+        !(journal_output.str() + journal_errors.str())
+             .contains("pending_remote_move_resource_blocked")) {
+        return fail(
+            std::string{label} +
+            " pending remote move journal recovery did not block permission "
+            "error"
+        );
+    }
+    journal_graph.move_permission_denied_id.clear();
+    if (onedrive::sync::SyncEngine{
+            journal_config,
+            journal_graph,
+            journal_items,
+            journal_metrics,
+            &default_console
+        }
+                .synchronize() != onedrive::exit_code::success ||
+        !journal_items.blocked.empty() ||
+        !journal_items.find(drive_id, "journal-move") ||
+        journal_items.find(drive_id, "journal-move")->remote_path !=
+            "after.txt") {
+        return fail(
+            std::string{label} +
+            " pending remote move permission block did not recover after grant"
         );
     }
     return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int test_business_local_move_permission() {
+    return verify_local_move_permission(
+        "business-drive", "OneDrive for Business"
+    );
+}
+
+int test_sharepoint_local_move_permission() {
+    return verify_local_move_permission("b!sp-library", "SharePoint");
 }
 
 } // namespace onedrive::test::sync::move_cases

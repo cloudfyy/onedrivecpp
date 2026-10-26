@@ -635,9 +635,12 @@ int test_profile_photo_rejects_invalid_responses() {
     return EXIT_SUCCESS;
 }
 
-int test_sharepoint_library_permission_errors() {
-    FakeTransport denied_library_identity{std::deque<
-        onedrive::http::HttpResult>{
+namespace {
+
+int verify_non_default_drive_permission_errors(
+    std::string_view drive_id, std::string_view label
+) {
+    FakeTransport denied_identity{std::deque<onedrive::http::HttpResult>{
         onedrive::http::HttpResponse{
             .status_code = 200,
             .body = R"({"id":"user-id","displayName":"Alice Example"})",
@@ -645,29 +648,32 @@ int test_sharepoint_library_permission_errors() {
         onedrive::http::HttpResponse{
             .status_code = 403,
             .body =
-                R"json({"error":{"code":"accessDenied","message":"library denied"}})json",
+                R"json({"error":{"code":"accessDenied","message":"drive denied"}})json",
         },
     }};
-    onedrive::http::HttpTransport denied_library_proxy{
-        onedrive::util::borrowed_proxy, denied_library_identity
+    onedrive::http::HttpTransport denied_identity_proxy{
+        onedrive::util::borrowed_proxy, denied_identity
     };
     try {
         static_cast<void>(onedrive::graph::fetch_drive_identity(
-            denied_library_proxy,
+            denied_identity_proxy,
             "access-token",
             {
-                .drive_id = "b!sp-library",
+                .drive_id = std::string{drive_id},
                 .endpoint = "https://graph.example.test/v1.0",
             }
         ));
-        return fail("denied SharePoint library identity query was accepted");
+        return fail(
+            std::string{label} + " denied identity query was accepted"
+        );
     } catch (const std::runtime_error& error) {
         const std::string text = error.what();
-        if (!text.contains("library denied") ||
+        if (!text.contains("drive denied") ||
             !text.contains("Sites.Read.All") ||
             !text.contains("auth.scopes")) {
             return fail(
-                "SharePoint library 403 did not include permission guidance"
+                std::string{label} +
+                " identity 403 did not include permission guidance"
             );
         }
     }
@@ -678,6 +684,36 @@ int test_sharepoint_library_permission_errors() {
             .status_code = 200,
             .body = R"({"token_type":"Bearer","expires_in":3600,)"
                     R"("access_token":"access-secret"})",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 403,
+            .body =
+                R"json({"error":{"code":"accessDenied","message":"info denied"}})json",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 403,
+            .body =
+                R"json({"error":{"code":"accessDenied","message":"root denied"}})json",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 403,
+            .body =
+                R"json({"error":{"code":"accessDenied","message":"path denied"}})json",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 403,
+            .body =
+                R"json({"error":{"code":"accessDenied","message":"delta denied"}})json",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 403,
+            .body =
+                R"json({"error":{"code":"accessDenied","message":"mkdir denied"}})json",
+        },
+        onedrive::http::HttpResponse{
+            .status_code = 403,
+            .body =
+                R"json({"error":{"code":"accessDenied","message":"upload denied"}})json",
         },
         onedrive::http::HttpResponse{
             .status_code = 403,
@@ -697,37 +733,104 @@ int test_sharepoint_library_permission_errors() {
         ),
         auth_options(),
         {
-            .drive_id = "b!sp-library",
+            .drive_id = std::string{drive_id},
             .endpoint = "https://graph.example.test/v1.0",
         },
     };
-    try {
-        client.delete_item("readonly", "readonly-etag");
+    const auto expect_read_permission_guidance =
+        [&](const auto& operation, std::string_view expected_message) {
+            try {
+                operation();
+                return false;
+            } catch (const std::runtime_error& error) {
+                const std::string text = error.what();
+                return text.contains(expected_message) &&
+                       text.contains("Sites.Read.All") &&
+                       text.contains("Files.Read.All") &&
+                       text.contains("auth.scopes");
+            }
+        };
+    if (!expect_read_permission_guidance(
+            [&] { static_cast<void>(client.drive_info()); }, "info denied"
+        ) ||
+        !expect_read_permission_guidance(
+            [&] { static_cast<void>(client.list_root()); }, "root denied"
+        ) ||
+        !expect_read_permission_guidance(
+            [&] { static_cast<void>(client.item_by_path("Folder/doc.txt")); },
+            "path denied"
+        ) ||
+        !expect_read_permission_guidance(
+            [&] { static_cast<void>(client.list_delta(std::nullopt)); },
+            "delta denied"
+        )) {
         return fail(
-            "SharePoint library deletion permission error was accepted"
+            std::string{label} +
+            " read operations did not include permission guidance on 403"
         );
-    } catch (const onedrive::graph::UploadResourceError& error) {
-        if (error.reason_code() != "remote_permission" ||
-            !std::string{error.what()}.contains("read-only library")) {
-            return fail(
-                "SharePoint deletion permission error had unexpected reason"
-            );
-        }
     }
-    try {
-        static_cast<void>(
-            client.move_item("readonly", "readonly-etag", "Target/denied.txt")
+
+    const auto source = test_directory() / "permission-denied-upload.txt";
+    {
+        std::ofstream output{source, std::ios::binary};
+        output << "payload";
+    }
+    const auto expect_write_permission_error =
+        [&](const auto& operation, std::string_view expected_message) {
+            try {
+                operation();
+                return false;
+            } catch (const onedrive::graph::UploadResourceError& error) {
+                return error.reason_code() == "remote_permission" &&
+                       std::string_view{error.what()}.contains(
+                           expected_message
+                       );
+            }
+        };
+    if (!expect_write_permission_error(
+            [&] { static_cast<void>(client.create_directory("NewFolder")); },
+            "mkdir denied"
+        ) ||
+        !expect_write_permission_error(
+            [&] {
+                static_cast<void>(client.upload_file(
+                    "NewFolder/file.txt", std::nullopt, "", source
+                ));
+            },
+            "upload denied"
+        ) ||
+        !expect_write_permission_error(
+            [&] { client.delete_item("readonly", "readonly-etag"); },
+            "read-only library"
+        ) ||
+        !expect_write_permission_error(
+            [&] {
+                static_cast<void>(client.move_item(
+                    "readonly", "readonly-etag", "Target/denied.txt"
+                ));
+            },
+            "move denied"
+        )) {
+        return fail(
+            std::string{label} +
+            " write/delete/move permission error had unexpected reason"
         );
-        return fail("SharePoint library move permission error was accepted");
-    } catch (const onedrive::graph::UploadResourceError& error) {
-        if (error.reason_code() != "remote_permission" ||
-            !std::string{error.what()}.contains("move denied")) {
-            return fail(
-                "SharePoint move permission error had unexpected reason"
-            );
-        }
     }
     return EXIT_SUCCESS;
+}
+
+} // namespace
+
+int test_business_drive_permission_errors() {
+    return verify_non_default_drive_permission_errors(
+        "business-drive-1", "OneDrive for Business"
+    );
+}
+
+int test_sharepoint_library_permission_errors() {
+    return verify_non_default_drive_permission_errors(
+        "b!sp-library", "SharePoint"
+    );
 }
 
 } // namespace onedrive::test::graph::drive_cases

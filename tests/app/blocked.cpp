@@ -312,10 +312,78 @@ int test_query_errors() {
     return EXIT_SUCCESS;
 }
 
+int test_business_and_sharepoint_permission_blocked_items() {
+    for (const auto& [drive_id, drive_type, drive_name] : {
+             std::tuple<std::string_view, std::string_view, std::string_view>{
+                 "business-drive-id", "business", "OneDrive - Contoso"
+             },
+             std::tuple<std::string_view, std::string_view, std::string_view>{
+                 "b!sp-library", "documentLibrary", "Shared Documents"
+             },
+         }) {
+        Fixture fixture;
+        fixture.identity.configured_drive_id = std::string{drive_id};
+        fixture.identity.drive_id = std::string{drive_id};
+        fixture.identity.drive_name = std::string{drive_name};
+        fixture.identity.drive_type = std::string{drive_type};
+        fixture.write_config(drive_id);
+        {
+            const onedrive::logging::Session logging{{.level = "off"}};
+            fixture.activate();
+            onedrive::storage::ItemDatabase database{
+                fixture.paths.drive_directory, fixture.identity
+            };
+            database.open();
+            database.save_blocked_item({
+                .drive_id = fixture.identity.drive_id,
+                .remote_id = "upload:readonly.docx",
+                .remote_path = "readonly.docx",
+                .reason_code = "upload_remote_permission",
+                .reason_message = "Access denied on read-only library",
+            });
+            database.save_blocked_item({
+                .drive_id = fixture.identity.drive_id,
+                .remote_id = "upload:deleted-readonly.docx",
+                .remote_path = "deleted-readonly.docx",
+                .reason_code = "upload_delete_permission",
+                .reason_message = "Delete denied on read-only library",
+            });
+        }
+        const auto all = events(fixture.run({"--output", "json"}));
+        const auto upload_only = events(fixture.run(
+            {"--reason", "upload_remote_permission", "--output", "json"}
+        ));
+        const auto delete_only = events(fixture.run(
+            {"--reason", "upload_delete_permission", "--output", "json"}
+        ));
+        if (all.size() != 3 ||
+            all.back()["values"]["recorded"] != "2" ||
+            all.back()["values"]["shown"] != "2" ||
+            upload_only.size() != 2 ||
+            upload_only[0]["values"]["drive_id"] != drive_id ||
+            upload_only[0]["values"]["reason_code"] !=
+                "upload_remote_permission" ||
+            upload_only[0]["values"]["policy_control"] != "fixed" ||
+            upload_only[0]["values"]["recovery_allowed"] != "true" ||
+            delete_only.size() != 2 ||
+            delete_only[0]["values"]["drive_id"] != drive_id ||
+            delete_only[0]["values"]["reason_code"] !=
+                "upload_delete_permission" ||
+            delete_only[0]["values"]["policy_control"] != "fixed" ||
+            delete_only[0]["values"]["recovery_allowed"] != "true") {
+            return fail(
+                "permission blocked items were not inspected for " +
+                std::string{drive_type}
+            );
+        }
+    }
+    return EXIT_SUCCESS;
+}
+
 } // namespace
 
 int main() {
-    onedrive::test::ScenarioProgress progress{4};
+    onedrive::test::ScenarioProgress progress{5};
     try {
         if (progress.run("empty_state", test_empty_state) != EXIT_SUCCESS ||
             progress.run(
@@ -323,7 +391,11 @@ int main() {
                 test_records_and_read_only_behavior
             ) != EXIT_SUCCESS ||
             progress.run("filters", test_filters) != EXIT_SUCCESS ||
-            progress.run("query_errors", test_query_errors) != EXIT_SUCCESS) {
+            progress.run("query_errors", test_query_errors) != EXIT_SUCCESS ||
+            progress.run(
+                "business_and_sharepoint_permission_blocked_items",
+                test_business_and_sharepoint_permission_blocked_items
+            ) != EXIT_SUCCESS) {
             return EXIT_FAILURE;
         }
         return progress.finish();

@@ -20,6 +20,7 @@ int test_drive_identity_and_profile_photo();
 int test_drive_identity_types();
 int test_drive_identity_cancellation();
 int test_profile_photo_rejects_invalid_responses();
+int test_business_drive_permission_errors();
 int test_sharepoint_library_permission_errors();
 
 } // namespace onedrive::test::graph::drive_cases

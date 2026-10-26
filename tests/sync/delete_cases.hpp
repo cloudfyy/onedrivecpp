@@ -35,6 +35,7 @@ int test_local_delete_conflict();
 
 int test_business_remote_delete_enriched_unchanged();
 int test_sharepoint_remote_delete_enriched_unchanged();
+int test_business_local_delete_permission();
 int test_sharepoint_local_delete_permission();
 
 } // namespace onedrive::test::sync::delete_cases

@@ -28,5 +28,7 @@ int test_directory_changed_during_upload();
 int test_directory_upload_recovery_conflict();
 int test_business_server_enriched_file_operations();
 int test_sharepoint_server_enriched_file_operations();
+int test_business_remote_upload_permission_recovery();
+int test_sharepoint_remote_upload_permission_recovery();
 
 } // namespace onedrive::test::sync::upload_cases
