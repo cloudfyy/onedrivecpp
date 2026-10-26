@@ -98,6 +98,7 @@ void SettingsEditor::browse_sharepoint_libraries() {
     tree->setHeaderLabels(
         {tr("Site / Library"), tr("Drive ID"), tr("Type"), tr("Web URL")}
     );
+    tree->setRootIsDecorated(false);
     tree->setSelectionMode(QAbstractItemView::ExtendedSelection);
     tree->header()->setStretchLastSection(true);
     root_layout->addWidget(tree);
@@ -137,19 +138,17 @@ void SettingsEditor::browse_sharepoint_libraries() {
             }
             std::size_t library_count = 0;
             for (const auto& site : sites) {
-                auto* site_item = new QTreeWidgetItem{tree};
-                site_item->setText(
-                    0, QString::fromStdString(site.display_name)
-                );
-                site_item->setText(1, QString::fromStdString(site.id));
-                site_item->setText(2, tr("Site"));
-                site_item->setText(3, QString::fromStdString(site.web_url));
-                site_item->setFlags(Qt::ItemIsEnabled);
                 for (const auto& drive : site.drives) {
                     ++library_count;
-                    auto* drive_item = new QTreeWidgetItem{site_item};
+                    auto* drive_item = new QTreeWidgetItem{tree};
                     const auto drive_id = QString::fromStdString(drive.id);
-                    drive_item->setText(0, QString::fromStdString(drive.name));
+                    const auto site_and_library =
+                        site.display_name.empty()
+                            ? QString::fromStdString(drive.name)
+                            : QString::fromStdString(
+                                  site.display_name + " / " + drive.name
+                              );
+                    drive_item->setText(0, site_and_library);
                     drive_item->setText(1, drive_id);
                     drive_item->setText(2, QString::fromStdString(drive.type));
                     drive_item->setText(
@@ -162,7 +161,12 @@ void SettingsEditor::browse_sharepoint_libraries() {
                     );
                     drive_item->setCheckState(0, Qt::Unchecked);
                 }
-                site_item->setExpanded(true);
+            }
+            if (library_count == 0) {
+                status_label->setText(
+                    tr("No accessible SharePoint sites matched the query.")
+                );
+                return;
             }
             if (outcome.used_wildcard_fallback) {
                 status_label->setText(
@@ -194,14 +198,11 @@ void SettingsEditor::browse_sharepoint_libraries() {
 
     QStringList selected_ids;
     for (int i = 0; i < tree->topLevelItemCount(); ++i) {
-        auto* site_item = tree->topLevelItem(i);
-        for (int j = 0; j < site_item->childCount(); ++j) {
-            auto* drive_item = site_item->child(j);
-            if (drive_item->checkState(0) == Qt::Checked) {
-                selected_ids.push_back(
-                    drive_item->data(0, Qt::UserRole).toString()
-                );
-            }
+        auto* drive_item = tree->topLevelItem(i);
+        if (drive_item->checkState(0) == Qt::Checked) {
+            selected_ids.push_back(
+                drive_item->data(0, Qt::UserRole).toString()
+            );
         }
     }
     if (selected_ids.isEmpty()) {

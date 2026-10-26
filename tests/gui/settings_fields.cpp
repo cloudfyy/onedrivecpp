@@ -311,21 +311,22 @@ void test_sharepoint_library_browser() {
         search_edit->setText("missing");
         search_btn->click();
         require(
-            tree->topLevelItemCount() == 1 &&
-                tree->topLevelItem(0)->childCount() == 3 &&
+            tree->topLevelItemCount() == 3 &&
+                tree->topLevelItem(0)->text(0) ==
+                    "Engineering / Existing Default" &&
+                tree->topLevelItem(1)->text(1) == "drv-eng-docs" &&
                 status->text().contains("missing"),
             "SharePoint browser did not fall back to wildcard site listing"
         );
         search_edit->clear();
         search_btn->click();
         require(
-            tree->topLevelItemCount() == 1 &&
-                tree->topLevelItem(0)->childCount() == 3,
+            tree->topLevelItemCount() == 3,
             "SharePoint browser default wildcard search failed"
         );
-        tree->topLevelItem(0)->child(0)->setCheckState(0, Qt::Checked);
-        tree->topLevelItem(0)->child(1)->setCheckState(0, Qt::Checked);
-        tree->topLevelItem(0)->child(2)->setCheckState(0, Qt::Checked);
+        tree->topLevelItem(0)->setCheckState(0, Qt::Checked);
+        tree->topLevelItem(1)->setCheckState(0, Qt::Checked);
+        tree->topLevelItem(2)->setCheckState(0, Qt::Checked);
         QMetaObject::invokeMethod(dialog, "accept", Qt::QueuedConnection);
     });
     sp_dialogs.start(1);
@@ -355,11 +356,10 @@ void test_sharepoint_library_browser() {
         require(search_btn && tree, "SharePoint browser tree missing");
         search_btn->click();
         require(
-            tree->topLevelItemCount() == 1 &&
-                tree->topLevelItem(0)->childCount() == 3,
+            tree->topLevelItemCount() == 3,
             "SharePoint browser did not populate items for row selection"
         );
-        tree->setCurrentItem(tree->topLevelItem(0)->child(2));
+        tree->setCurrentItem(tree->topLevelItem(2));
         QMetaObject::invokeMethod(dialog, "accept", Qt::QueuedConnection);
     });
     drive_ids->setPlainText("me");

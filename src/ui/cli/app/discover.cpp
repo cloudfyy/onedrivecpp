@@ -15,12 +15,33 @@ std::string source_name(graph::SharedResourceSource source) {
                : "shortcut";
 }
 
-std::vector<cli::Field> site_fields(const graph::SiteInfo& site) {
-    return {
-        {.label = "name:", .key = "name", .value = site.display_name},
-        {.label = "site id:", .key = "site_id", .value = site.id},
-        {.label = "web URL:", .key = "web_url", .value = site.web_url},
-    };
+void emit_site_drive(
+    const cli::Console& console,
+    const graph::SiteInfo& site,
+    const graph::DriveInfo& drive
+) {
+    auto fields = drive_fields(drive);
+    fields.insert(
+        fields.begin(),
+        {
+            {
+                .label = "site:",
+                .key = "site",
+                .value = site.display_name,
+            },
+            {
+                .label = "site id:",
+                .key = "site_id",
+                .value = site.id,
+            },
+            {
+                .label = "site URL:",
+                .key = "site_web_url",
+                .value = site.web_url,
+            },
+        }
+    );
+    console.section("site_drive", "SharePoint document library:", fields);
 }
 
 } // namespace
@@ -100,45 +121,23 @@ int show_sites(
         query,
         [&](const std::string& target) { return client->search_sites(target); }
     );
-    if (outcome.sites.empty() || outcome.used_wildcard_fallback) {
+    std::size_t library_count = 0;
+    for (const auto& site : outcome.sites) {
+        library_count += site.drives.size();
+    }
+    if (library_count == 0 || outcome.used_wildcard_fallback) {
         console.message(
             cli::MessageKind::information,
             "no_sharepoint_sites",
             "No accessible SharePoint sites matched the query."
         );
-        for (const auto& site : outcome.sites) {
-            console.section(
-                "available_site",
-                "Available SharePoint site:",
-                site_fields(site)
-            );
+        if (library_count == 0) {
+            return exit_code::success;
         }
-        return exit_code::success;
     }
     for (const auto& site : outcome.sites) {
-        console.section("site", "SharePoint site:", site_fields(site));
         for (const auto& drive : site.drives) {
-            auto fields = drive_fields(drive);
-            fields.insert(
-                fields.begin(),
-                {
-                    {
-                        .label = "site:",
-                        .key = "site",
-                        .value = site.display_name,
-                    },
-                    {
-                        .label = "site id:",
-                        .key = "site_id",
-                        .value = site.id,
-                    },
-                }
-            );
-            console.section(
-                "site_drive",
-                "SharePoint document library:",
-                fields
-            );
+            emit_site_drive(console, site, drive);
         }
     }
     return exit_code::success;

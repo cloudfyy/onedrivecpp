@@ -774,10 +774,10 @@ int test_flow() {
         }
     );
     if (sites.exit_code != exit_code::success ||
-        !sites.standard_output.contains(R"("event":"site")") ||
-        !sites.standard_output.contains(R"("name":"Engineering")") ||
-        !sites.standard_output.contains(R"("site_id":)") ||
+        sites.standard_output.contains(R"("event":"site")") ||
         !sites.standard_output.contains(R"("event":"site_drive")") ||
+        !sites.standard_output.contains(R"("site":"Engineering")") ||
+        !sites.standard_output.contains(R"("site_id":)") ||
         !sites.standard_output.contains(R"("drive_id":"library-drive-id")")) {
         return fail("sites command did not report document libraries");
     }
@@ -832,9 +832,12 @@ int test_flow() {
             R"("event":"no_sharepoint_sites")"
         ) ||
         !unmatched_sites.standard_output.contains(
-            R"("event":"available_site")"
+            R"("event":"site_drive")"
         ) ||
-        !unmatched_sites.standard_output.contains(R"("name":"Engineering")") ||
+        !unmatched_sites.standard_output.contains(R"("site":"Engineering")") ||
+        !unmatched_sites.standard_output.contains(
+            R"("drive_id":"library-drive-id")"
+        ) ||
         wildcard_sites.exit_code != exit_code::success ||
         !wildcard_sites.standard_output.contains(R"("event":"site_drive")") ||
         !wildcard_sites.standard_output.contains(
@@ -863,7 +866,7 @@ int test_flow() {
         !no_sites.standard_output.contains(
             R"("event":"no_sharepoint_sites")"
         ) ||
-        no_sites.standard_output.contains(R"("event":"available_site")")) {
+        no_sites.standard_output.contains(R"("event":"site_drive")")) {
         return fail("sites command did not report an empty result");
     }
 
