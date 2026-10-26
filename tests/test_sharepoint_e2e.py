@@ -138,6 +138,7 @@ def write_fake_cli(path: Path, cloud: Path, *, drive_types: dict[str, str] | Non
                     CREATE TABLE IF NOT EXISTS pending_delta(id INTEGER PRIMARY KEY, token TEXT);
                     CREATE TABLE IF NOT EXISTS pending_delta_change(seq INTEGER PRIMARY KEY, remote_id TEXT);
                     CREATE TABLE IF NOT EXISTS partial_download(remote_id TEXT, remote_path TEXT PRIMARY KEY, local_path TEXT, temporary_path TEXT, completed_bytes INTEGER);
+                    CREATE TABLE IF NOT EXISTS blocked_item(remote_path TEXT PRIMARY KEY, reason_code TEXT);
                 """)
                 db.execute("INSERT OR IGNORE INTO drive_state VALUES (1, 'delta-1')")
                 db.commit()
@@ -180,14 +181,16 @@ def write_fake_cli(path: Path, cloud: Path, *, drive_types: dict[str, str] | Non
                     (info["id"], remote_path, local_path, info["kind"], info["etag"], info["ctag"], info["sha256"]),
                 )
 
-            def sync():
+            def sync(dry_run=False):
+                if dry_run:
+                    return 0
                 with closing(connect()) as db:
                     meta = load_cloud()
                     cloud_items = meta["items"]
                     known = tracked(db)
                     mode = config["sync"]["mode"]
                     rate = int(config["download"]["maximum_rate_bytes_per_second"])
-                    if mode == "bidirectional":
+                    if mode in ("bidirectional", "upload_only"):
                         local = scan_local()
                         removed = [path for path in list(known) if path not in local]
                         added = [path for path in local if path not in known]
@@ -254,6 +257,9 @@ def write_fake_cli(path: Path, cloud: Path, *, drive_types: dict[str, str] | Non
                                 target.write_bytes(raw)
                             record(db, path, info)
                         save_cloud(meta)
+                    if mode == "upload_only":
+                        db.commit()
+                        return 0
                     known = tracked(db)
                     for path in sorted(set(known) - set(cloud_items), reverse=True):
                         target = root / path
@@ -279,9 +285,11 @@ def write_fake_cli(path: Path, cloud: Path, *, drive_types: dict[str, str] | Non
                             and prev["sha256"] != info["sha256"]
                             and digest(target.read_bytes()) != info["sha256"]
                         ):
+                            db.execute("INSERT OR REPLACE INTO blocked_item VALUES (?,?)", (path, "local_modification_conflict"))
                             emit({{"event": "item_blocked", "level": "warning", "reason_code": "local__modification_conflict", "path": path}})
                             db.commit()
                             return 3
+                        db.execute("DELETE FROM blocked_item WHERE remote_path=?", (path,))
                         if rate > 0 and path.endswith("resume.bin") and len(raw) > 65536:
                             part = target.with_name(".onedrive-part-resume")
                             part.parent.mkdir(parents=True, exist_ok=True)
@@ -310,17 +318,130 @@ def write_fake_cli(path: Path, cloud: Path, *, drive_types: dict[str, str] | Non
                     db.commit()
                 return 0
 
+            effective_drive_id = "drive-business-1" if drive_type == "business" else configured_drive
             if args[:2] == ["inspect", "status"]:
                 emit({{
                     "event": "status",
                     "values": {{
                         "drive_type": drive_type,
-                        "drive_id": "drive-business-1" if drive_type == "business" else configured_drive,
+                        "drive_id": effective_drive_id,
                     }},
                 }})
                 sys.exit(0)
+            if args[:2] == ["inspect", "config"]:
+                emit({{
+                    "event": "effective_config",
+                    "values": {{
+                        "drive_id": effective_drive_id,
+                        "data_directory": str(data),
+                        "state_directory": str(state),
+                    }},
+                }})
+                sys.exit(0)
+            if args[:2] == ["inspect", "quota"]:
+                emit({{
+                    "event": "quota",
+                    "values": {{
+                        "drive_id": effective_drive_id,
+                        "state": "normal",
+                    }},
+                }})
+                sys.exit(0)
+            if args[:2] == ["inspect", "drives"]:
+                emit({{
+                    "event": "drive",
+                    "values": {{
+                        "drive_id": effective_drive_id,
+                        "type": drive_type,
+                    }},
+                }})
+                sys.exit(0)
+            if args[:2] == ["inspect", "sites"]:
+                emit({{
+                    "event": "site_drive",
+                    "values": {{
+                        "site_id": "site-1",
+                        "drive_id": effective_drive_id,
+                        "type": drive_type,
+                    }},
+                }})
+                sys.exit(0)
+            if args[:2] == ["inspect", "storage"]:
+                with closing(connect()) as db:
+                    file_count = sum(1 for row in tracked(db).values() if row["kind"] == "file")
+                emit({{
+                    "event": "storage",
+                    "values": {{
+                        "root_exists": "true" if root.is_dir() else "false",
+                        "tracked_files": str(file_count),
+                    }},
+                }})
+                sys.exit(0)
+            if args[:2] == ["inspect", "files"]:
+                with closing(connect()) as db:
+                    file_count = sum(1 for row in tracked(db).values() if row["kind"] == "file")
+                emit({{
+                    "event": "downloaded_file_summary",
+                    "values": {{
+                        "ok": str(file_count),
+                        "missing": "0",
+                        "modified": "0",
+                    }},
+                }})
+                sys.exit(0)
+            if args[:2] == ["inspect", "verify"]:
+                with closing(connect()) as db:
+                    file_count = sum(1 for row in tracked(db).values() if row["kind"] == "file")
+                emit({{
+                    "event": "file_verification_summary",
+                    "values": {{
+                        "verified": str(file_count),
+                        "failed": "0",
+                    }},
+                }})
+                sys.exit(0)
+            if args[:2] == ["inspect", "health"]:
+                emit({{"event": "database_integrity", "values": {{"status": "healthy"}}}})
+                emit({{"event": "database_integrity_passed", "level": "info", "message": "healthy"}})
+                sys.exit(0)
+            if args[:2] == ["inspect", "blocked"]:
+                with closing(connect()) as db:
+                    rows = db.execute("SELECT remote_path, reason_code FROM blocked_item").fetchall()
+                for remote_path, reason_code in rows:
+                    emit({{"event": "blocked_item", "values": {{"remote_path": remote_path, "reason_code": reason_code}}}})
+                emit({{"event": "blocked_item_summary", "values": {{"recorded": str(len(rows)), "shown": str(len(rows))}}}})
+                sys.exit(0)
+            if args[:2] == ["inspect", "partials"]:
+                with closing(connect()) as db:
+                    rows = db.execute("SELECT remote_path FROM partial_download").fetchall()
+                for (remote_path,) in rows:
+                    emit({{"event": "partial_download", "values": {{"remote_path": remote_path, "status": "resumable"}}}})
+                emit({{"event": "partial_download_summary", "values": {{"recorded": str(len(rows)), "resumable": str(len(rows))}}}})
+                sys.exit(0)
+            if args[:2] == ["state", "reset-cursor"]:
+                emit({{"event": "state_cursor_reset", "level": "info", "message": "reset"}})
+                sys.exit(0)
             if args[:2] == ["transfer", "sync"]:
-                sys.exit(sync())
+                sys.exit(sync(dry_run="--dry-run" in args))
+            if args[:2] == ["transfer", "download"]:
+                dry_run = "--dry-run" in args
+                remote_target = args[2]
+                target = root / remote_target
+                if dry_run:
+                    emit({{"event": "single_download_plan", "values": {{"remote_path": remote_target, "local_path": str(target)}}}})
+                    sys.exit(0)
+                raw = (cloud_files / remote_target).read_bytes()
+                with closing(connect()) as db:
+                    meta = load_cloud()
+                    info = meta["items"][remote_target]
+                    if target.is_file() and target.read_bytes() == raw:
+                        emit({{"event": "single_download_reused", "level": "info", "message": "reused"}})
+                        sys.exit(0)
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(raw)
+                    record(db, remote_target, info)
+                    db.commit()
+                sys.exit(0)
             if args[:2] == ["transfer", "restore"]:
                 for holder in (busy_file, pid_file):
                     if holder.exists():
@@ -364,6 +485,11 @@ def write_fake_cli(path: Path, cloud: Path, *, drive_types: dict[str, str] | Non
                 if not pid_file.exists():
                     sys.exit(1)
                 emit({{"event": "monitor_control", "values": {{"pid": pid_file.read_text(encoding="utf-8").strip(), "completed_rounds": "1", "last_result": "0"}}}})
+                sys.exit(0)
+            if args[:2] == ["monitor", "trigger"]:
+                if not pid_file.exists():
+                    sys.exit(1)
+                emit({{"event": "monitor_control", "values": {{"request": "monitor trigger", "acknowledgement": "queued"}}}})
                 sys.exit(0)
             if args[:2] == ["monitor", "stop"]:
                 stop_file.write_text("stop", encoding="utf-8")
@@ -482,7 +608,7 @@ class SharePointE2ERunnerTests(unittest.TestCase):
                     ]
                 )
             self.assertEqual(code, 0, stderr.getvalue())
-            self.assertIn("PASS: 10 SharePoint documentLibrary scenarios", stdout.getvalue())
+            self.assertIn("PASS: 12 SharePoint documentLibrary scenarios", stdout.getvalue())
             meta = json.loads((cloud / "meta.json").read_text(encoding="utf-8"))
             self.assertEqual(meta["items"], {})
             self.assertEqual(

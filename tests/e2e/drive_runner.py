@@ -460,6 +460,9 @@ class DualClientDriveE2E:
             "Random test subtree already exists; refusing to adopt it",
         )
 
+    def verify_discovery(self) -> None:
+        pass
+
     def roundtrip(self) -> None:
         for name, contents in self.fixture.items():
             path = self.a.path(name)
@@ -482,6 +485,68 @@ class DualClientDriveE2E:
             "Empty directory did not round-trip",
         )
 
+    def inspection_and_diagnostics(self) -> None:
+        config_info = section(self.a.run("inspect", "config"), "effective_config")
+        require(
+            config_info.get("data_directory") == str(self.a.data)
+            and config_info.get("state_directory") == str(self.a.state),
+            "inspect config did not report isolated workspace directories",
+        )
+        quota_info = section(self.a.run("inspect", "quota"), "quota")
+        require(
+            quota_info.get("drive_id") == self.drive
+            and bool(quota_info.get("state")),
+            "inspect quota did not report the selected Drive quota",
+        )
+        drives_completed = self.a.run("inspect", "drives")
+        require(
+            any(
+                event.get("event") == "drive"
+                and isinstance(event.get("values"), dict)
+                and event["values"].get("drive_id") == self.drive
+                and event["values"].get("type") == self.EXPECTED_DRIVE_TYPE
+                for event in parse_events(drives_completed)
+            ),
+            "inspect drives did not list the selected Drive with its expected type",
+        )
+        self.verify_discovery()
+        storage_info = section(self.a.run("inspect", "storage"), "storage")
+        require(
+            storage_info.get("root_exists") == "true"
+            and int(str(storage_info.get("tracked_files", "0")))
+            >= len(self.fixture),
+            "inspect storage did not report tracked files in the isolated Drive",
+        )
+        files_summary = section(
+            self.a.run("inspect", "files", self.scope),
+            "downloaded_file_summary",
+        )
+        require(
+            files_summary.get("ok") == str(len(self.fixture))
+            and files_summary.get("missing") == "0"
+            and files_summary.get("modified") == "0",
+            "inspect files did not report all fixture files as ok",
+        )
+        verify_summary = section(
+            self.a.run("inspect", "verify", self.scope, "--mode", "metadata"),
+            "file_verification_summary",
+        )
+        require(
+            verify_summary.get("verified") == str(len(self.fixture))
+            and verify_summary.get("failed") == "0",
+            "inspect verify did not validate all fixture files",
+        )
+        health_completed = self.a.run("inspect", "health")
+        require(
+            section(health_completed, "database_integrity").get("status")
+            == "healthy"
+            and any(
+                event.get("event") == "database_integrity_passed"
+                for event in parse_events(health_completed)
+            ),
+            "inspect health did not report a healthy synchronization database",
+        )
+
     def idempotence(self) -> None:
         paths = [self.a.path(name) for name in self.fixture]
         local = [(path.stat().st_ino, path.stat().st_mtime_ns) for path in paths]
@@ -496,6 +561,79 @@ class DualClientDriveE2E:
         require(
             remote == {name: self.b.remote(name) for name in self.fixture},
             "Unchanged synchronization changed remote identity/content tags",
+        )
+        reset_completed = self.a.run("state", "reset-cursor")
+        require(
+            any(
+                event.get("event") == "state_cursor_reset"
+                for event in parse_events(reset_completed)
+            ),
+            "state reset-cursor did not report cursor reset",
+        )
+        self.a.sync()
+        require(
+            local
+            == [(path.stat().st_ino, path.stat().st_mtime_ns) for path in paths],
+            "Post-cursor-reset synchronization replaced or touched a local file",
+        )
+
+    def modes_and_single_download(self) -> None:
+        self.a.path("upload-only.txt").write_bytes(b"upload-only-payload\n")
+        self.a.configure(mode="bidirectional")
+        self.a.run("transfer", "sync", "--dry-run")
+        self.b.sync("download_only")
+        require(
+            not self.b.path("upload-only.txt").exists(),
+            "Dry-run synchronization uploaded a local file",
+        )
+        self.b.path("single-download.txt").write_bytes(
+            b"single-download-payload\n"
+        )
+        self.b.sync()
+        self.a.sync("upload_only")
+        require(
+            not self.a.path("single-download.txt").exists(),
+            "upload_only synchronization downloaded a remote file",
+        )
+        self.b.pull_until(lambda: self.b.path("upload-only.txt").is_file())
+        require(
+            self.b.path("upload-only.txt").read_bytes()
+            == b"upload-only-payload\n",
+            "upload_only synchronization did not upload local file bytes",
+        )
+        remote_target = self.scope + "/single-download.txt"
+        plan = section(
+            self.a.run("transfer", "download", remote_target, "--dry-run"),
+            "single_download_plan",
+        )
+        require(
+            plan.get("remote_path") == remote_target,
+            "Single-file download plan reported the wrong remote path",
+        )
+        require(
+            not self.a.path("single-download.txt").exists(),
+            "Single-file download dry-run created the local file",
+        )
+        self.a.run("transfer", "download", remote_target)
+        require(
+            self.a.path("single-download.txt").read_bytes()
+            == b"single-download-payload\n",
+            "Single-file download bytes differ",
+        )
+        reused = self.a.run("transfer", "download", remote_target)
+        require(
+            any(
+                event.get("event") == "single_download_reused"
+                for event in parse_events(reused)
+            ),
+            "Repeated single-file download did not reuse the current local file",
+        )
+        self.a.path("upload-only.txt").unlink()
+        self.a.path("single-download.txt").unlink()
+        self.a.sync()
+        self.b.pull_until(
+            lambda: not self.b.path("upload-only.txt").exists()
+            and not self.b.path("single-download.txt").exists()
         )
 
     def moves(self) -> None:
@@ -557,6 +695,14 @@ class DualClientDriveE2E:
             self.a.path("conflict.txt").read_bytes() == b"keep-local\n",
             "Conflict overwrote local bytes",
         )
+        blocked_report = self.a.run("inspect", "blocked")
+        require(
+            section(blocked_report, "blocked_item").get("remote_path")
+            == self.scope + "/conflict.txt"
+            and section(blocked_report, "blocked_item_summary").get("recorded")
+            == "1",
+            "inspect blocked did not report the active conflict",
+        )
         self.b.sync("download_only")
         require(
             self.b.path("conflict.txt").read_bytes() == b"keep-cloud\n",
@@ -569,6 +715,12 @@ class DualClientDriveE2E:
             "Conflict recovery failed",
         )
         self.a.sync("download_only")
+        cleared_report = self.a.run("inspect", "blocked")
+        require(
+            section(cleared_report, "blocked_item_summary").get("recorded")
+            == "0",
+            "Recovered conflict remained in inspect blocked",
+        )
 
     def restore(self) -> None:
         self.a.path("moved/renamed.txt").unlink()
@@ -680,6 +832,18 @@ class DualClientDriveE2E:
             len(records) == 1 and int(records[0][1]) > 0,
             "Interrupted sync lost its checkpoint",
         )
+        partials_report = self.a.run("inspect", "partials")
+        require(
+            section(partials_report, "partial_download").get("remote_path")
+            == self.scope + "/resume.bin"
+            and section(partials_report, "partial_download").get("status")
+            == "resumable"
+            and section(
+                partials_report, "partial_download_summary"
+            ).get("resumable")
+            == "1",
+            "inspect partials did not report the resumable checkpoint",
+        )
         temporary = Path(str(records[0][0]))
         require(
             temporary.resolve().is_relative_to(self.a.root.resolve()),
@@ -703,6 +867,14 @@ class DualClientDriveE2E:
             not self.a.rows("SELECT remote_id FROM partial_download"),
             "Completed resume left a partial-download record",
         )
+        cleared_partials = self.a.run("inspect", "partials")
+        require(
+            section(cleared_partials, "partial_download_summary").get(
+                "recorded"
+            )
+            == "0",
+            "Completed resume remained in inspect partials",
+        )
 
     def watch(self, *, websocket: bool) -> None:
         self.a.configure(mode="bidirectional", websocket=websocket)
@@ -725,6 +897,11 @@ class DualClientDriveE2E:
 
         wait_for_condition(ready, self.timeout, "a successful watch round")
         self.busy_restore(process)
+        triggered = self.a.run("monitor", "trigger")
+        require(
+            bool(section(triggered, "monitor_control").get("acknowledgement")),
+            "monitor trigger did not acknowledge the request",
+        )
         name = (
             "watch-notifications.txt" if websocket else "watch-polling.txt"
         )
@@ -825,7 +1002,15 @@ class DualClientDriveE2E:
                 "upload-download-unicode-empty-files-and-directories",
                 self.roundtrip,
             ),
+            (
+                "cli-discovery-quota-inspection-and-state-diagnostics",
+                self.inspection_and_diagnostics,
+            ),
             ("unchanged-sync-is-idempotent", self.idempotence),
+            (
+                "sync-dry-run-upload-only-and-single-file-download",
+                self.modes_and_single_download,
+            ),
             ("local-file-and-remote-directory-moves", self.moves),
             ("local-conflict-and-explicit-recovery", self.conflict),
             ("restore-preview-execution-and-no-overwrite", self.restore),
@@ -898,7 +1083,7 @@ class DualClientDriveE2E:
         if interrupted:
             raise KeyboardInterrupt
         print(
-            f"PASS: 10 {self.SUITE_LABEL} scenarios; remote subtree removed and verified.",
+            f"PASS: {len(scenarios)} {self.SUITE_LABEL} scenarios; remote subtree removed and verified.",
             flush=True,
         )
 

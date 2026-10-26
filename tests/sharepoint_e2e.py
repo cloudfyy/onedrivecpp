@@ -42,6 +42,20 @@ class SharePointE2E(DualClientDriveE2E):
     IDENTITY_SCENARIO = "sharepoint-document-library-identity-and-isolation"
     SUITE_LABEL = "SharePoint documentLibrary"
 
+    def verify_discovery(self) -> None:
+        sites_completed = self.a.run("inspect", "sites")
+        require(
+            any(
+                event.get("event") == "site_drive"
+                and isinstance(event.get("values"), dict)
+                and event["values"].get("drive_id") == self.drive
+                and event["values"].get("type") == "documentLibrary"
+                and bool(event["values"].get("site_id"))
+                for event in parse_events(sites_completed)
+            ),
+            "inspect sites did not discover the selected SharePoint documentLibrary",
+        )
+
 
 def main(argv: list[str] | None = None) -> int:
     return run_drive_e2e_cli(
