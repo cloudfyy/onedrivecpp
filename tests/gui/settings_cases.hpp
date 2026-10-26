@@ -24,5 +24,6 @@ void test_array_comment_preservation();
 void test_endpoint_import_rejection();
 void test_phase_two_proxy_drafts_and_empty_save();
 void test_phase_two_patch_boundaries();
+void test_unsaved_settings_close_prompt();
 
 } // namespace onedrive::test::gui_settings

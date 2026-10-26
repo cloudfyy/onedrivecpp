@@ -1291,6 +1291,18 @@ Existing account state and credentials will remain in the old location.</source>
 现有账号状态和凭据将保留在原位置。</translation>
     </message>
     <message>
+        <location filename="../main_window_settings.cpp" line="184"/>
+        <source>Unsaved settings</source>
+        <translation>未保存的设置</translation>
+    </message>
+    <message>
+        <location filename="../main_window_settings.cpp" line="186"/>
+        <source>Configuration settings have been modified.
+Save changes before closing?</source>
+        <translation>配置已修改但尚未保存。
+是否在关闭前保存更改？</translation>
+    </message>
+    <message>
         <location filename="../main_window.cpp" line="2518"/>
         <source>Confirm directory changes</source>
         <translation>确认目录更改</translation>

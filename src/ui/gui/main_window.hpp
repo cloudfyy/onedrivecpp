@@ -128,8 +128,10 @@ private:
     void open_login_url();
     void refresh_settings(bool preserve_edits = false);
     void refresh_startup_status();
+    [[nodiscard]] bool has_unsaved_settings() const;
+    [[nodiscard]] bool confirm_unsaved_settings();
     void reload_settings();
-    void save_settings();
+    bool save_settings(bool show_confirmation = true);
     void import_settings();
     void show_about();
 

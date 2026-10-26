@@ -8,7 +8,7 @@ using namespace onedrive;
 using namespace onedrive::test::gui_settings;
 
 int main(int argc, char** argv) {
-    onedrive::test::ScenarioProgress progress{22};
+    onedrive::test::ScenarioProgress progress{23};
     QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
     QApplication application{argc, argv};
     try {
@@ -76,6 +76,9 @@ int main(int argc, char** argv) {
         );
         progress.run(
             "phase_two_patch_boundaries", test_phase_two_patch_boundaries
+        );
+        progress.run(
+            "unsaved_settings_close_prompt", test_unsaved_settings_close_prompt
         );
         return progress.finish();
     } catch (const std::exception& error) {

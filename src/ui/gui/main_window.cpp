@@ -279,6 +279,10 @@ void MainWindow::refresh_actions() {
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
+    if (!closing_ && !confirm_unsaved_settings()) {
+        event->ignore();
+        return;
+    }
     closing_ = true;
     monitor_timer_->stop();
     if (login_.running()) {

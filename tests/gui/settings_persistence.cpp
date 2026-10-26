@@ -425,4 +425,288 @@ void test_inline_removal_and_utf8() {
     );
 }
 
+void test_unsaved_settings_close_prompt() {
+    test::TemporaryDirectory fixture;
+    const auto file = fixture.path() / "config.toml";
+    const auto sync = fixture.path() / "sync";
+    const auto state = fixture.path() / "state";
+    const std::string original =
+        "config_version = 2\n"
+        "[auth]\napplication_id = 'initial-client'\n"
+        "[sync]\ndata_directory = '" +
+        sync.string() +
+        "'\n"
+        "[state]\ndirectory = '" +
+        state.string() + "'\n";
+    test::write_file(file, original);
+
+    gui::Localization localization{gui::Language::english};
+    {
+        gui::MainWindow clean_window{
+            gui::load_app_state_view_model(file), {}, &localization
+        };
+        clean_window.show();
+        require(
+            clean_window.close() && !clean_window.isVisible(),
+            "unmodified window did not close immediately"
+        );
+    }
+
+    gui::MainWindow window{
+        gui::load_app_state_view_model(file), {}, &localization
+    };
+    window.show();
+    auto* editor = window.findChild<gui::SettingsEditor*>();
+    require(
+        editor != nullptr && !editor->has_unsaved_changes(),
+        "clean editor reported unsaved changes"
+    );
+
+    // Field kind & override baseline tracking.
+    choice(window, "sync.mode", "download_only");
+    require(editor->has_unsaved_changes(), "choice edit not detected");
+    choice(window, "sync.mode", "bidirectional");
+    require(!editor->has_unsaved_changes(), "reverted choice still dirty");
+
+    checked(window, "sync.nosync_enabled", false);
+    require(editor->has_unsaved_changes(), "boolean edit not detected");
+    checked(window, "sync.nosync_enabled", true);
+    require(!editor->has_unsaved_changes(), "reverted boolean still dirty");
+
+    list(window, "sync.drive_ids", "drive-1");
+    require(editor->has_unsaved_changes(), "list edit not detected");
+    list(window, "sync.drive_ids", "me");
+    require(!editor->has_unsaved_changes(), "reverted list still dirty");
+
+    checked(window, "proxy.url.override", true);
+    require(
+        editor->has_unsaved_changes(), "enabling override checkbox not detected"
+    );
+    text(window, "proxy.url", "https://proxy.example.test:8443");
+    checked(window, "proxy.url.override", false);
+    require(
+        !editor->has_unsaved_changes(),
+        "disabled override draft falsely reported unsaved changes"
+    );
+
+    text(window, "auth.application_id", "modified-client");
+    require(
+        editor->has_unsaved_changes(),
+        "modified editor did not report unsaved changes"
+    );
+    window.findChild<QPushButton*>("reloadSettingsButton")->click();
+    require(
+        !editor->has_unsaved_changes(),
+        "reload did not clear unsaved changes state"
+    );
+    text(window, "auth.application_id", "modified-client");
+
+    // 1. Cancel close in English -> stays open and keeps draft.
+    QString prompt_title;
+    QString prompt_text;
+    QTimer cancel_timer;
+    QObject::connect(&cancel_timer, &QTimer::timeout, &window, [&] {
+        if (auto* dialog =
+                qobject_cast<QMessageBox*>(QApplication::activeModalWidget())) {
+            prompt_title = dialog->windowTitle();
+            prompt_text = dialog->text();
+            dialog->button(QMessageBox::Cancel)->click();
+        }
+    });
+    cancel_timer.start(1);
+    require(!window.close(), "cancelled close should return false");
+    cancel_timer.stop();
+    require(
+        window.isVisible() && prompt_title == "Unsaved settings" &&
+            prompt_text.contains("Save changes before closing?") &&
+            test::read_file(file) == original &&
+            window.findChild<QLineEdit*>("auth.application_id")->text() ==
+                "modified-client",
+        "cancelling unsaved settings dialog did not abort window close"
+    );
+
+    // 2. Invalid syntax + Save on close in Chinese -> shows error and aborts close.
+    localization.set_language(gui::Language::simplified_chinese);
+    QCoreApplication::processEvents();
+    text(window, "upload.concurrency", "invalid-number");
+    QString zh_title;
+    QString zh_text;
+    QString error_text;
+    QTimer invalid_save_timer;
+    QObject::connect(&invalid_save_timer, &QTimer::timeout, &window, [&] {
+        if (auto* dialog =
+                qobject_cast<QMessageBox*>(QApplication::activeModalWidget())) {
+            if (dialog->objectName() == "unsavedSettingsDialog") {
+                zh_title = dialog->windowTitle();
+                zh_text = dialog->text();
+                dialog->button(QMessageBox::Save)->click();
+            } else {
+                error_text = dialog->text();
+                dialog->accept();
+            }
+        }
+    });
+    invalid_save_timer.start(1);
+    require(!window.close(), "failed save on close should abort close");
+    invalid_save_timer.stop();
+    require(
+        window.isVisible() && zh_title == "未保存的设置" &&
+            zh_text.contains("是否在关闭前保存更改") &&
+            !error_text.isEmpty() && test::read_file(file) == original,
+        "failed save during close did not keep window open or translate prompt"
+    );
+
+    // 3. Out-of-range semantic value + Save on close -> shows error and aborts close.
+    localization.set_language(gui::Language::english);
+    QCoreApplication::processEvents();
+    text(window, "upload.concurrency", "17");
+    error_text.clear();
+    invalid_save_timer.start(1);
+    require(
+        !window.close(), "semantic save failure on close should abort close"
+    );
+    invalid_save_timer.stop();
+    require(
+        window.isVisible() && !error_text.isEmpty() &&
+            test::read_file(file) == original,
+        "semantic validation error during close did not abort close"
+    );
+
+    // 4. Directory change + Cancel directory confirmation on close -> aborts close.
+    const auto new_sync = fixture.path() / "new-sync";
+    text(window, "upload.concurrency", "8");
+    text(
+        window,
+        "sync.data_directory",
+        QString::fromStdString(new_sync.string())
+    );
+    int dir_cancel_modals = 0;
+    QTimer dir_cancel_timer;
+    QObject::connect(&dir_cancel_timer, &QTimer::timeout, &window, [&] {
+        if (auto* dialog =
+                qobject_cast<QMessageBox*>(QApplication::activeModalWidget())) {
+            ++dir_cancel_modals;
+            if (dialog->objectName() == "unsavedSettingsDialog") {
+                dialog->button(QMessageBox::Save)->click();
+            } else {
+                dialog->button(QMessageBox::Cancel)->click();
+            }
+        }
+    });
+    dir_cancel_timer.start(1);
+    require(
+        !window.close(),
+        "cancelling directory change confirmation on close should abort close"
+    );
+    dir_cancel_timer.stop();
+    require(
+        window.isVisible() && dir_cancel_modals == 2 &&
+            test::read_file(file) == original,
+        "cancelling directory confirmation on close modified file or closed window"
+    );
+
+    // 5. Valid setting (with directory change confirmed) + Save on close -> writes changes and closes window.
+    int modal_count = 0;
+    QTimer save_close_timer;
+    QObject::connect(&save_close_timer, &QTimer::timeout, &window, [&] {
+        if (auto* dialog =
+                qobject_cast<QMessageBox*>(QApplication::activeModalWidget())) {
+            ++modal_count;
+            dialog->button(QMessageBox::Save)->click();
+        }
+    });
+    save_close_timer.start(1);
+    require(window.close(), "valid save on close should close window");
+    save_close_timer.stop();
+    const auto saved_config = config::Config::load(file);
+    require(
+        !window.isVisible() && modal_count == 2 &&
+            saved_config.application_id == "modified-client" &&
+            saved_config.upload_concurrency == 8 &&
+            saved_config.sync_data_directory == new_sync,
+        "saving on close did not persist settings or showed extra dialogs"
+    );
+
+    // 6. Discard on close while login is running -> prompts once, cancels login, and closes without saving.
+    std::atomic<bool> login_started{false};
+    std::atomic<bool> login_stop_seen{false};
+    gui::MainWindow discard_window{
+        gui::load_app_state_view_model(file),
+        [&](
+            const config::Config&, const auto&, std::stop_token stop
+        ) -> auth::AuthResult<app::AuthenticationResult> {
+            login_started = true;
+            while (!stop.stop_requested()) {
+                QThread::msleep(1);
+            }
+            login_stop_seen = true;
+            return std::unexpected(
+                auth::AuthError{.code = auth::AuthErrorCode::cancelled}
+            );
+        },
+        &localization
+    };
+    discard_window.show();
+    text(discard_window, "auth.application_id", "discarded-client");
+    discard_window.findChild<QPushButton*>("signInButton")->click();
+    require(
+        wait_until([&] { return login_started.load(); }),
+        "login did not start before close test"
+    );
+    // Cancel close while login is running -> login continues running.
+    QTimer cancel_running_timer;
+    QObject::connect(
+        &cancel_running_timer, &QTimer::timeout, &discard_window, [&] {
+            if (auto* dialog = qobject_cast<QMessageBox*>(
+                    QApplication::activeModalWidget()
+                )) {
+                dialog->button(QMessageBox::Cancel)->click();
+            }
+        }
+    );
+    cancel_running_timer.start(1);
+    require(
+        !discard_window.close(),
+        "cancelling close during active login should return false"
+    );
+    cancel_running_timer.stop();
+    require(
+        discard_window.isVisible() && !login_stop_seen.load(),
+        "cancelling unsaved prompt during login stopped the active login"
+    );
+    // Now Discard close while login is running -> prompts only once, stops login, and closes.
+    int discard_prompts = 0;
+    QTimer discard_timer;
+    QObject::connect(&discard_timer, &QTimer::timeout, &discard_window, [&] {
+        if (auto* dialog =
+                qobject_cast<QMessageBox*>(QApplication::activeModalWidget())) {
+            ++discard_prompts;
+            dialog->button(QMessageBox::Discard)->click();
+        }
+    });
+    discard_timer.start(1);
+    discard_window.close();
+    require(
+        wait_until([&] { return !discard_window.isVisible(); }),
+        "discard on close during login did not finish closing"
+    );
+    discard_timer.stop();
+    require(
+        discard_prompts == 1 && login_stop_seen.load() &&
+            config::Config::load(file).application_id == "modified-client",
+        "discarding on close prompted multiple times or wrote draft changes"
+    );
+
+    // 7. Corrupt configuration file -> closes immediately without prompting.
+    test::write_file(file, "[broken TOML");
+    gui::MainWindow corrupt_window{
+        gui::load_app_state_view_model(file), {}, &localization
+    };
+    corrupt_window.show();
+    require(
+        corrupt_window.close() && !corrupt_window.isVisible(),
+        "corrupt configuration window did not close immediately"
+    );
+}
+
 } // namespace onedrive::test::gui_settings

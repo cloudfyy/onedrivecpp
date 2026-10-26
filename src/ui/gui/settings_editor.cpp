@@ -271,6 +271,23 @@ void SettingsEditor::set_site_search_function(SiteSearchFunction search) {
     site_search_ = std::move(search);
 }
 
+bool SettingsEditor::has_unsaved_changes() const {
+    return std::any_of(
+        fields_.begin(), fields_.end(), [](const Field& field) {
+            const bool present = !field.override || field.override->isChecked();
+            if (field.override) {
+                if (present != field.baseline_present) {
+                    return true;
+                }
+                if (!present) {
+                    return false;
+                }
+            }
+            return value(field) != field.baseline;
+        }
+    );
+}
+
 std::vector<config::SettingPatch> SettingsEditor::patches() const {
     std::vector<config::SettingPatch> patches;
     const auto proxy_url =

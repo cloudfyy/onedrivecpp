@@ -176,6 +176,38 @@ void MainWindow::refresh_startup_status() {
     settings_status_->setText(startup_status_->text());
 }
 
+bool MainWindow::has_unsaved_settings() const {
+    return state_.configuration_status != ConfigurationStatus::invalid &&
+           settings_editor_ && settings_editor_->has_unsaved_changes();
+}
+
+bool MainWindow::confirm_unsaved_settings() {
+    if (!has_unsaved_settings()) {
+        return true;
+    }
+    QMessageBox dialog{this};
+    dialog.setObjectName("unsavedSettingsDialog");
+    dialog.setWindowIcon(windowIcon());
+    dialog.setIcon(QMessageBox::Warning);
+    dialog.setWindowTitle(tr("Unsaved settings"));
+    dialog.setText(
+        tr("Configuration settings have been modified.\n"
+           "Save changes before closing?")
+    );
+    dialog.setStandardButtons(
+        QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel
+    );
+    dialog.setDefaultButton(QMessageBox::Save);
+    switch (dialog.exec()) {
+    case QMessageBox::Save:
+        return save_settings(false);
+    case QMessageBox::Discard:
+        return true;
+    default:
+        return false;
+    }
+}
+
 void MainWindow::reload_settings() {
     if (login_.running() || synchronization_.running() || monitor_busy()) {
         return;
@@ -192,9 +224,10 @@ void MainWindow::reload_settings() {
     log_startup_errors();
 }
 
-void MainWindow::save_settings() {
-    if (login_.running() || synchronization_.running() || monitor_busy()) {
-        return;
+bool MainWindow::save_settings(bool show_confirmation) {
+    if (show_confirmation &&
+        (login_.running() || synchronization_.running() || monitor_busy())) {
+        return false;
     }
     std::vector<config::SettingPatch> patches;
     try {
@@ -212,7 +245,7 @@ void MainWindow::save_settings() {
             tr("Settings could not be saved:\n%1")
                 .arg(QString::fromUtf8(error.what()))
         );
-        return;
+        return false;
     }
     const auto new_sync_directory =
         std::filesystem::path{sync_directory_edit_->text().toStdString()};
@@ -250,7 +283,7 @@ void MainWindow::save_settings() {
                 summary,
                 QMessageBox::Save | QMessageBox::Cancel
             ) != QMessageBox::Save) {
-            return;
+            return false;
         }
     }
 
@@ -265,13 +298,17 @@ void MainWindow::save_settings() {
                 "Settings saved. Changes take effect on the next operation."
             )
         );
-        auto message =
-            tr("Settings saved. Changes take effect on the next operation.");
-        if (backup) {
-            message += tr("\nPrevious configuration backed up to:\n%1")
-                           .arg(QString::fromStdString(backup->string()));
+        if (show_confirmation) {
+            auto message = tr(
+                "Settings saved. Changes take effect on the next operation."
+            );
+            if (backup) {
+                message += tr("\nPrevious configuration backed up to:\n%1")
+                               .arg(QString::fromStdString(backup->string()));
+            }
+            QMessageBox::information(this, tr("Settings saved"), message);
         }
-        QMessageBox::information(this, tr("Settings saved"), message);
+        return true;
     } catch (const std::exception& error) {
         log_message(
             LogOperation::configuration,
@@ -285,6 +322,7 @@ void MainWindow::save_settings() {
             tr("Settings could not be saved:\n%1")
                 .arg(QString::fromUtf8(error.what()))
         );
+        return false;
     }
 }
 

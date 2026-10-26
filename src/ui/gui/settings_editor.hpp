@@ -27,6 +27,7 @@ public:
     void load(const config::Config& config);
     void retranslate();
     void set_site_search_function(SiteSearchFunction search);
+    [[nodiscard]] bool has_unsaved_changes() const;
     [[nodiscard]] std::vector<config::SettingPatch> patches() const;
 
 private:
