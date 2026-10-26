@@ -646,13 +646,24 @@ int test_flow() {
     );
     const auto account_path =
         onedrive::account::AccountState::active_token_directory(state_path);
+    const auto final_frame_pos = authentication.standard_output.rfind("\033[2J");
+    const auto final_frame =
+        final_frame_pos == std::string::npos
+            ? std::string_view{authentication.standard_output}
+            : std::string_view{authentication.standard_output}.substr(
+                  final_frame_pos
+              );
+    constexpr std::string_view broad_warning_prefix{
+        "WARNING: Authentication requests broad organizational"
+    };
+    const auto first_warning = final_frame.find(broad_warning_prefix);
     if (authentication.exit_code != exit_code::success ||
         !authentication.standard_output.contains("\x1b[") ||
         !authentication.standard_output.contains("Authentication succeeded") ||
         !authentication.standard_output.contains("personal") ||
-        !authentication.standard_output.contains(
-            "WARNING: Authentication requests broad organizational"
-        ) ||
+        first_warning == std::string_view::npos ||
+        final_frame.find(broad_warning_prefix, first_warning + 1) !=
+            std::string_view::npos ||
         !account_path.filename().string().starts_with("Test-User--") ||
         !std::filesystem::exists(account_path / "avatar.jpg") ||
         !std::filesystem::exists(account_path / "account.json") ||

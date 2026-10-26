@@ -244,11 +244,7 @@ int authenticate(
             return report_authenticated_account(*result, console);
         }
         if (fallback_allowed && launch_failed) {
-            spdlog::warn(
-                "Browser authorization is unavailable; falling back to device "
-                "code flow"
-            );
-            console.message(
+            console.report_message(
                 cli::MessageKind::information,
                 "browser_authorization_fallback",
                 "Browser authorization is unavailable; falling back to device "
@@ -378,11 +374,8 @@ int execute_command(
                 "Sites.Read.All, and Sites.ReadWrite.All only when the "
                 "configured Drive or discovery workflow requires them."
             };
-            spdlog::warn("{}", warning);
-            console.message(
-                cli::MessageKind::warning,
-                "broad_oauth_scopes",
-                std::string{warning}
+            console.report_message(
+                cli::MessageKind::warning, "broad_oauth_scopes", warning
             );
         }
         return authenticate(
