@@ -56,7 +56,7 @@ std::vector<cli::Field>
 drive_fields(const graph::DriveInfo& drive, std::optional<bool> configured) {
     std::vector<cli::Field> fields{
         {.label = "name:", .key = "name", .value = drive.name},
-        {.label = "id:", .key = "id", .value = drive.id},
+        {.label = "drive id:", .key = "drive_id", .value = drive.id},
         {.label = "type:", .key = "type", .value = drive.type},
         {.label = "owner:", .key = "owner", .value = drive.owner},
     };

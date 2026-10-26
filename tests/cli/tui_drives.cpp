@@ -92,7 +92,7 @@ int test_drive_details(std::size_t rows, int pages) {
     }
     for (const auto* expected : {
              "reference: me",
-             "id: real-drive-id",
+             "drive id: real-drive-id",
              "total: 5.00 GiB",
              "used: 1.00 KiB",
              "remaining: 4.00 KiB",
@@ -157,8 +157,8 @@ int test_drive_pagination() {
                     {.label = "name:",
                      .key = "name",
                      .value = "Drive-name-" + std::to_string(page)},
-                    {.label = "id:",
-                     .key = "id",
+                    {.label = "drive id:",
+                     .key = "drive_id",
                      .value = std::to_string(page)},
                 }
             );

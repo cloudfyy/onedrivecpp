@@ -18,7 +18,7 @@ std::string source_name(graph::SharedResourceSource source) {
 std::vector<cli::Field> site_fields(const graph::SiteInfo& site) {
     return {
         {.label = "name:", .key = "name", .value = site.display_name},
-        {.label = "id:", .key = "id", .value = site.id},
+        {.label = "site id:", .key = "site_id", .value = site.id},
         {.label = "web URL:", .key = "web_url", .value = site.web_url},
     };
 }

@@ -729,12 +729,12 @@ int test_flow() {
     );
     if (drives.exit_code != exit_code::success ||
         !drives.standard_output.contains(R"("event":"drive")") ||
-        !drives.standard_output.contains(R"("id":"drive-id")") ||
+        !drives.standard_output.contains(R"("drive_id":"drive-id")") ||
         !drives.standard_output.contains(R"("configured":"true")") ||
-        !drives.standard_output.contains(R"("id":"shared-drive-id")") ||
+        !drives.standard_output.contains(R"("drive_id":"shared-drive-id")") ||
         drives.standard_output.find(
-            R"("id":"drive-id")",
-            drives.standard_output.find(R"("id":"drive-id")") + 1
+            R"("drive_id":"drive-id")",
+            drives.standard_output.find(R"("drive_id":"drive-id")") + 1
         ) != std::string::npos) {
         return fail("drives command did not report available drives");
     }
@@ -776,8 +776,9 @@ int test_flow() {
     if (sites.exit_code != exit_code::success ||
         !sites.standard_output.contains(R"("event":"site")") ||
         !sites.standard_output.contains(R"("name":"Engineering")") ||
+        !sites.standard_output.contains(R"("site_id":)") ||
         !sites.standard_output.contains(R"("event":"site_drive")") ||
-        !sites.standard_output.contains(R"("id":"library-drive-id")")) {
+        !sites.standard_output.contains(R"("drive_id":"library-drive-id")")) {
         return fail("sites command did not report document libraries");
     }
     runtime_factory.empty_shared = true;
@@ -837,7 +838,7 @@ int test_flow() {
         wildcard_sites.exit_code != exit_code::success ||
         !wildcard_sites.standard_output.contains(R"("event":"site_drive")") ||
         !wildcard_sites.standard_output.contains(
-            R"("id":"library-drive-id")"
+            R"("drive_id":"library-drive-id")"
         )) {
         return fail(
             "sites command did not list default sites or fallback suggestions"
