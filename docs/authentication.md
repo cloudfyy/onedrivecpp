@@ -185,13 +185,19 @@ authorization URL construction and callback validation; the desktop adapter
 only opens the browser and receives the loopback HTTP request. Custom protocol
 redirect handlers are not implemented yet.
 
-In the CLI, run the device authorization flow:
+In the CLI, run:
 
 ```bash
 onedrive-cpp account login
 ```
 
-Open the displayed URL, enter the user code, sign in with the account matching
+By default (`--auth-flow auto`), if a desktop GUI session (`DISPLAY` or
+`WAYLAND_DISPLAY` with `xdg-open`) is available on an interactive terminal,
+`account login` uses the OAuth 2.0 authorization code + PKCE flow on a local
+loopback listener and opens the system browser automatically, falling back to
+the device code flow if browser launch or loopback binding is unavailable.
+Use `--auth-flow auth-code` or `--auth-flow device-code` to select a flow
+explicitly. When using device code flow, open the displayed URL, enter the user code, sign in with the account matching
 the registration's supported account type, and review the requested
 permissions. On success, the client retrieves the stable user and Drive
 identities plus the profile photo. The refresh token and photo are atomically

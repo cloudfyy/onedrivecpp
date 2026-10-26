@@ -37,6 +37,12 @@ _onedrive_cpp_completion()
             )
             return
             ;;
+        --auth-flow)
+            mapfile -t COMPREPLY < <(
+                compgen -W "auto auth-code device-code" -- "$current"
+            )
+            return
+            ;;
         --status)
             mapfile -t COMPREPLY < <(
                 compgen -W "ok missing modified type-changed outside-root" \
@@ -121,7 +127,7 @@ _onedrive_cpp_completion()
             case "$account_action" in
                 login)
                     mapfile -t COMPREPLY < <(compgen -W \
-                        "$common_options --ui --theme" -- "$current")
+                        "$common_options --auth-flow --ui --theme" -- "$current")
                     ;;
                 logout)
                     mapfile -t COMPREPLY < <(

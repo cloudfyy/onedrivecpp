@@ -38,6 +38,11 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         {"amber", cli::TuiTheme::amber},
         {"synthwave", cli::TuiTheme::synthwave},
     };
+    const std::map<std::string, AuthFlow> auth_flows{
+        {"auto", AuthFlow::automatic},
+        {"auth-code", AuthFlow::auth_code},
+        {"device-code", AuthFlow::device_code},
+    };
 
     CLI::App application{
         "A modern C++ OneDrive synchronization client", "onedrive-cpp"
@@ -236,6 +241,15 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         static_cast<void>(operation);
         add_common_options(*command);
     }
+    account_login
+        ->add_option(
+            "--auth-flow",
+            arguments.auth_flow,
+            "Authentication flow: auto, auth-code, or device-code"
+        )
+        ->transform(CLI::CheckedTransformer(auth_flows).description(""))
+        ->type_name("{auto,auth-code,device-code}")
+        ->default_str("auto");
     clear_state->add_flag(
         "--yes",
         arguments.assume_yes,

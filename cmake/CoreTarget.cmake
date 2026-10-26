@@ -1,6 +1,7 @@
 add_library(onedrive_cli
     src/ui/cli/app/app.cpp
     src/ui/cli/app/args.cpp
+    src/ui/cli/app/browser_auth.cpp
     src/ui/cli/app/commands.cpp
     src/ui/cli/app/discover.cpp
     src/ui/cli/app/drive_fields.cpp

@@ -67,6 +67,41 @@ int test_ui_option_help() {
             );
         }
     }
+    const auto login_help = run_application(
+        runtime_factory, {"onedrive-cpp", "account", "login", "--help"}
+    );
+    if (login_help.exit_code != exit_code::success ||
+        !login_help.standard_output.contains(
+            "--auth-flow {auto,auth-code,device-code} [auto]"
+        )) {
+        return fail(
+            "account login help did not show --auth-flow choices\n" +
+            login_help.standard_output
+        );
+    }
+    using onedrive::app::detail::AuthFlow;
+    for (const auto& [name, expected] : std::array{
+             std::pair{"auto", AuthFlow::automatic},
+             std::pair{"auth-code", AuthFlow::auth_code},
+             std::pair{"device-code", AuthFlow::device_code},
+         }) {
+        const auto parsed = parse_test_arguments(
+            {"onedrive-cpp", "account", "login", "--auth-flow", name}
+        );
+        if (parsed.exit_code || parsed.arguments.auth_flow != expected) {
+            return fail(
+                std::string{"failed to parse --auth-flow "} + name
+            );
+        }
+    }
+    const auto invalid_flow = run_application(
+        runtime_factory,
+        {"onedrive-cpp", "account", "login", "--auth-flow", "invalid"}
+    );
+    if (invalid_flow.exit_code != exit_code::usage_error ||
+        !invalid_flow.standard_error.contains("--auth-flow")) {
+        return fail("account login did not reject invalid --auth-flow");
+    }
     using onedrive::cli::TuiTheme;
     using onedrive::cli::UiMode;
     constexpr std::array modes{

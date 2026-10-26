@@ -182,8 +182,14 @@ GUI 配置项位于设置／高级与日志／文件历史记录上限。
 .SH 命令
 .TP
 .B account login
-使用 OAuth 2.0 设备代码流程授权应用。成功后将 refresh token 保存到配置的状态
-目录。
+授权应用访问 Microsoft 账号。默认（
+.BR \-\-auth-flow\ auto ）
+在交互式桌面环境下优先使用带 PKCE 的 OAuth 2.0 浏览器授权码流程，无法启动浏览器
+或无图形界面时自动使用设备代码流程；也可通过
+.B \-\-auth-flow auth-code
+或
+.B \-\-auth-flow device-code
+显式指定。成功后将 refresh token 保存到配置的状态目录。
 .TP
 .B account logout
 删除本地保存的 refresh token。此操作不会撤销 Microsoft 账号上的应用授权；

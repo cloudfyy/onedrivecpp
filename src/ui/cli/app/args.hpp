@@ -9,8 +9,15 @@
 
 namespace onedrive::app::detail {
 
+enum class AuthFlow {
+    automatic,
+    auth_code,
+    device_code,
+};
+
 struct Arguments {
     std::filesystem::path config_path;
+    AuthFlow auth_flow{AuthFlow::automatic};
     bool force_dry_run{false};
     bool force_large_delete{false};
     bool assume_yes{false};

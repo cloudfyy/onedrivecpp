@@ -217,8 +217,16 @@ The GUI setting is Settings / Advanced and logs / File history limit.
 .SH COMMANDS
 .TP
 .B account login
-Authorize the application with Microsoft using the OAuth 2.0 device-code flow.
-On success, save the refresh token in the configured state directory.
+Authorize the application with Microsoft. With
+.B \-\-auth-flow auto
+(the default), an interactive desktop session uses the OAuth 2.0 browser
+authorization-code flow with PKCE and falls back to the device-code flow when
+browser launch is unavailable; use
+.B \-\-auth-flow auth-code
+or
+.B \-\-auth-flow device-code
+to select a flow explicitly. On success, save the refresh token in the
+configured state directory.
 .TP
 .B account logout
 Remove the locally stored refresh token. This does not revoke consent on the

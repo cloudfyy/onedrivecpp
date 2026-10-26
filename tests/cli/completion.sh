@@ -70,8 +70,16 @@ assert_contains logout "${COMPREPLY[@]}"
 COMP_WORDS=(onedrive-cpp account login --)
 COMP_CWORD=3
 _onedrive_cpp_completion
+assert_contains --auth-flow "${COMPREPLY[@]}"
 assert_contains --ui "${COMPREPLY[@]}"
 assert_contains --theme "${COMPREPLY[@]}"
+
+COMP_WORDS=(onedrive-cpp account login --auth-flow "")
+COMP_CWORD=4
+_onedrive_cpp_completion
+assert_contains auto "${COMPREPLY[@]}"
+assert_contains auth-code "${COMPREPLY[@]}"
+assert_contains device-code "${COMPREPLY[@]}"
 
 COMP_WORDS=(onedrive-cpp account logout --)
 COMP_CWORD=3

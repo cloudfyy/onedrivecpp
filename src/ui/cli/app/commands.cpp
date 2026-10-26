@@ -1,4 +1,5 @@
 #include "commands.hpp"
+#include "browser_auth.hpp"
 #include "discover.hpp"
 #include "info.hpp"
 #include "drive_fields.hpp"
@@ -159,7 +160,25 @@ int migrate_state(
     return exit_code::success;
 }
 
-int authenticate(
+int report_authenticated_account(
+    const AuthenticationResult& authenticated, const cli::Console& console
+) {
+    spdlog::info("Microsoft authentication succeeded");
+    console.section(
+        "account",
+        "Microsoft account:",
+        account_fields(authenticated.identity)
+    );
+    console.message(
+        cli::MessageKind::information,
+        "authentication_succeeded",
+        "Authentication succeeded. Refresh token saved to " +
+            (authenticated.token_directory / "refresh_token").string()
+    );
+    return exit_code::success;
+}
+
+int authenticate_device_code(
     const config::Config& config,
     const RuntimeFactory& runtime_factory,
     const cli::Console& console
@@ -194,19 +213,56 @@ int authenticate(
         );
         return exit_code::failure;
     }
-    spdlog::info("Microsoft authentication succeeded");
-    console.section(
-        "account",
-        "Microsoft account:",
-        account_fields(result->identity)
-    );
-    console.message(
-        cli::MessageKind::information,
-        "authentication_succeeded",
-        "Authentication succeeded. Refresh token saved to " +
-            (result->token_directory / "refresh_token").string()
-    );
-    return exit_code::success;
+    return report_authenticated_account(*result, console);
+}
+
+int authenticate(
+    const config::Config& config,
+    const RuntimeFactory& runtime_factory,
+    const cli::Console& console,
+    AuthFlow auth_flow
+) {
+    const bool try_auth_code =
+        auth_flow == AuthFlow::auth_code ||
+        (auth_flow == AuthFlow::automatic && is_gui_auth_available());
+    if (try_auth_code) {
+        const bool fallback_allowed = auth_flow == AuthFlow::automatic;
+        bool launch_failed = false;
+        const auto result = authenticate_auth_code_account(
+            config,
+            runtime_factory,
+            console,
+            [&](
+                auth::AuthCodeSession& session, const std::stop_token& token
+            ) {
+                return request_cli_browser_authorization(
+                    session, console, fallback_allowed, launch_failed, token
+                );
+            }
+        );
+        if (result) {
+            return report_authenticated_account(*result, console);
+        }
+        if (fallback_allowed && launch_failed) {
+            spdlog::warn(
+                "Browser authorization is unavailable; falling back to device "
+                "code flow"
+            );
+            console.message(
+                cli::MessageKind::information,
+                "browser_authorization_fallback",
+                "Browser authorization is unavailable; falling back to device "
+                "code flow."
+            );
+            return authenticate_device_code(config, runtime_factory, console);
+        }
+        spdlog::error(
+            "Microsoft browser authorization failed: {}",
+            auth::describe_error(result.error())
+        );
+        return exit_code::failure;
+    }
+    return authenticate_device_code(config, runtime_factory, console);
 }
 
 } // namespace
@@ -329,7 +385,9 @@ int execute_command(
                 std::string{warning}
             );
         }
-        return authenticate(config, runtime_factory, console);
+        return authenticate(
+            config, runtime_factory, console, arguments.auth_flow
+        );
     }
     if (operation == Operation::logout) {
         spdlog::info("Removing locally saved authentication");

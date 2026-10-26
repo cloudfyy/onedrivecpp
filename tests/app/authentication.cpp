@@ -3,11 +3,17 @@
 #include "onedrive/app/authentication.hpp"
 #include "onedrive/ui/common/observer.hpp"
 #include "app/preflight.hpp"
+#include "ui/cli/app/browser_auth.hpp"
 
-#include <vector>
+#include <charconv>
 #include <cerrno>
+#include <cstring>
+#include <future>
+#include <netinet/in.h>
+#include <sys/socket.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <vector>
 
 namespace {
 
@@ -776,16 +782,253 @@ int test_sharepoint_authentication() {
     }
     return EXIT_SUCCESS;
 }
+
+bool send_loopback_callback(std::string_view authorize_url) {
+    constexpr std::string_view prefix = "redirect_uri=http%3A%2F%2Flocalhost%3A";
+    const auto port_pos = authorize_url.find(prefix);
+    const auto state_pos = authorize_url.find("&state=");
+    if (port_pos == std::string_view::npos ||
+        state_pos == std::string_view::npos) {
+        return false;
+    }
+    const auto port_view =
+        authorize_url.substr(port_pos + prefix.size());
+    std::uint16_t port = 0;
+    const auto [end, ec] = std::from_chars(
+        port_view.data(), port_view.data() + port_view.size(), port
+    );
+    if (ec != std::errc{} || port == 0) {
+        return false;
+    }
+    const auto state_start = state_pos + 7;
+    const auto state_end = authorize_url.find('&', state_start);
+    const auto state = authorize_url.substr(
+        state_start, state_end - state_start
+    );
+
+    const int client_fd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (client_fd < 0) {
+        return false;
+    }
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    address.sin_port = htons(port);
+    if (::connect(
+            client_fd,
+            reinterpret_cast<const sockaddr*>(&address),
+            sizeof(address)
+        ) != 0) {
+        ::close(client_fd);
+        return false;
+    }
+    const auto request = "GET /?state=" + std::string{state} +
+                         "&code=cli-auth-code HTTP/1.1\r\nHost: localhost:" +
+                         std::to_string(port) + "\r\nConnection: close\r\n\r\n";
+    const auto written =
+        ::write(client_fd, request.data(), request.size());
+    char response[512]{};
+    const auto read_bytes = ::read(client_fd, response, sizeof(response));
+    ::close(client_fd);
+    return written == static_cast<ssize_t>(request.size()) && read_bytes > 0 &&
+           std::string_view{response, static_cast<std::size_t>(read_bytes)}
+               .contains("200 OK");
+}
+
+int test_cli_gui_detection_and_auth_flow() {
+    {
+        CliFixture fixture;
+        bool exchanged_auth_code = false;
+        fixture.runtime_factory.authentication_response_override =
+            [&](
+                const onedrive::http::HttpRequest& request
+            ) -> std::optional<onedrive::http::HttpResult> {
+            if (request.url.ends_with("/devicecode")) {
+                throw std::logic_error{
+                    "GUI auto login unexpectedly requested a device code"
+                };
+            }
+            if (request.url.ends_with("/token")) {
+                if (!request.body.contains(
+                        "grant_type=authorization_code"
+                    ) ||
+                    !request.body.contains("code=cli-auth-code")) {
+                    throw std::logic_error{
+                        "CLI browser login did not exchange cli-auth-code"
+                    };
+                }
+                exchanged_auth_code = true;
+                return onedrive::http::HttpResponse{
+                    .status_code = 200,
+                    .body =
+                        R"({"access_token":"access","refresh_token":"browser-refresh","expires_in":3600})",
+                };
+            }
+            return std::nullopt;
+        };
+        bool browser_launched = false;
+        std::future<bool> callback_delivered;
+        const onedrive::app::detail::ScopedBrowserAuthOverride override_gui{
+            true,
+            [&](std::string_view url) {
+                browser_launched = true;
+                callback_delivered = std::async(
+                    std::launch::async,
+                    [target = std::string{url}] {
+                        return send_loopback_callback(target);
+                    }
+                );
+                return true;
+            }
+        };
+        const auto result = run_application(
+            fixture.runtime_factory,
+            {"onedrive-cpp",
+             "account",
+             "login",
+             "--config",
+             fixture.config_path.string()}
+        );
+        if (result.exit_code != onedrive::exit_code::success ||
+            !browser_launched || !callback_delivered.valid() ||
+            !callback_delivered.get() || !exchanged_auth_code ||
+            !result.standard_output.contains(
+                "Opened your default browser for Microsoft sign-in."
+            )) {
+            return fail(
+                "auto auth-flow with GUI did not complete browser login:\n" +
+                result.standard_output + result.standard_error
+            );
+        }
+    }
+    {
+        CliFixture fixture;
+        bool browser_attempted = false;
+        const onedrive::app::detail::ScopedBrowserAuthOverride override_gui{
+            true,
+            [&](std::string_view) {
+                browser_attempted = true;
+                return false;
+            }
+        };
+        const auto result = run_application(
+            fixture.runtime_factory,
+            {"onedrive-cpp",
+             "account",
+             "login",
+             "--config",
+             fixture.config_path.string()}
+        );
+        if (result.exit_code != onedrive::exit_code::success ||
+            !browser_attempted ||
+            !result.standard_output.contains(
+                "Browser authorization is unavailable; falling back to device "
+                "code flow."
+            ) ||
+            !result.standard_output.contains(
+                "Authenticate the test account"
+            )) {
+            return fail(
+                "auto auth-flow did not fall back to device code when browser "
+                "launch failed:\n" +
+                result.standard_output + result.standard_error
+            );
+        }
+    }
+    {
+        CliFixture fixture;
+        const onedrive::app::detail::ScopedBrowserAuthOverride override_gui{
+            true,
+            [](std::string_view) -> bool {
+                throw std::logic_error{
+                    "--auth-flow device-code unexpectedly launched browser"
+                };
+            }
+        };
+        const auto result = run_application(
+            fixture.runtime_factory,
+            {"onedrive-cpp",
+             "account",
+             "login",
+             "--auth-flow",
+             "device-code",
+             "--config",
+             fixture.config_path.string()}
+        );
+        if (result.exit_code != onedrive::exit_code::success ||
+            !result.standard_output.contains(
+                "Authenticate the test account"
+            )) {
+            return fail(
+                "--auth-flow device-code did not use device code flow"
+            );
+        }
+    }
+    {
+        CliFixture fixture;
+        fixture.runtime_factory.authentication_response_override =
+            [](
+                const onedrive::http::HttpRequest& request
+            ) -> std::optional<onedrive::http::HttpResult> {
+            if (request.url.ends_with("/token")) {
+                return onedrive::http::HttpResponse{
+                    .status_code = 200,
+                    .body =
+                        R"({"access_token":"access","refresh_token":"explicit-browser","expires_in":3600})",
+                };
+            }
+            return std::nullopt;
+        };
+        bool browser_launched = false;
+        std::future<bool> callback_delivered;
+        const onedrive::app::detail::ScopedBrowserAuthOverride override_no_gui{
+            false,
+            [&](std::string_view url) {
+                browser_launched = true;
+                callback_delivered = std::async(
+                    std::launch::async,
+                    [target = std::string{url}] {
+                        return send_loopback_callback(target);
+                    }
+                );
+                return true;
+            }
+        };
+        const auto result = run_application(
+            fixture.runtime_factory,
+            {"onedrive-cpp",
+             "account",
+             "login",
+             "--auth-flow",
+             "auth-code",
+             "--config",
+             fixture.config_path.string()}
+        );
+        if (result.exit_code != onedrive::exit_code::success ||
+            !browser_launched || !callback_delivered.valid() ||
+            !callback_delivered.get()) {
+            return fail(
+                "--auth-flow auth-code did not run browser flow when GUI was "
+                "not auto-detected"
+            );
+        }
+    }
+    return EXIT_SUCCESS;
+}
 } // namespace
 
 int main() {
-    onedrive::test::ScenarioProgress progress{8};
+    onedrive::test::ScenarioProgress progress{9};
     if (progress.run(
             "shared_credentials_and_runtime_lock",
             test_shared_credentials_and_runtime_lock
         ) != EXIT_SUCCESS ||
         progress.run(
             "auth_code_authentication", test_auth_code_authentication
+        ) != EXIT_SUCCESS ||
+        progress.run(
+            "cli_gui_detection_and_auth_flow",
+            test_cli_gui_detection_and_auth_flow
         ) != EXIT_SUCCESS ||
         progress.run(
             "business_authentication", test_business_authentication
