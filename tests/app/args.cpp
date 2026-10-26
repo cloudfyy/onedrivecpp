@@ -394,9 +394,70 @@ int test_args() {
         return fail("state clear help did not document its confirmation");
     }
 
-    if (run_application(runtime_factory, {"onedrive-cpp", "unknown"})
-            .exit_code != exit_code::usage_error) {
-        return fail("unknown command did not return usage exit code 2");
+    if (const auto unknown = run_application(
+            runtime_factory, {"onedrive-cpp", "unknown"}
+        );
+        unknown.exit_code != exit_code::usage_error ||
+        !unknown.standard_error.contains(
+            "The following argument was not expected: unknown"
+        ) ||
+        unknown.standard_error.contains("A subcommand is required")) {
+        return fail("unknown command did not report an unexpected argument");
+    }
+    if (const auto misspelled = run_application(
+            runtime_factory,
+            {
+                "onedrive-cpp",
+                "insepct",
+                "sites",
+                "https://contoso.sharepoint.com/sites/demo1",
+            }
+        );
+        misspelled.exit_code != exit_code::usage_error ||
+        !misspelled.standard_error.contains(
+            "The following arguments were not expected: insepct sites "
+            "https://contoso.sharepoint.com/sites/demo1"
+        ) ||
+        misspelled.standard_error.contains("A subcommand is required")) {
+        return fail(
+            "misspelled top-level subcommand did not report unexpected "
+            "arguments"
+        );
+    }
+    if (const auto unknown_nested = run_application(
+            runtime_factory, {"onedrive-cpp", "inspect", "stes"}
+        );
+        unknown_nested.exit_code != exit_code::usage_error ||
+        !unknown_nested.standard_error.contains(
+            "The following argument was not expected: stes"
+        ) ||
+        unknown_nested.standard_error.contains("A subcommand is required")) {
+        return fail(
+            "unknown nested subcommand did not report an unexpected argument"
+        );
+    }
+    if (const auto missing_subcommand = run_application(
+            runtime_factory, {"onedrive-cpp", "inspect"}
+        );
+        missing_subcommand.exit_code != exit_code::usage_error ||
+        !missing_subcommand.standard_error.contains(
+            "A subcommand is required"
+        )) {
+        return fail(
+            "group command without action did not report a missing subcommand"
+        );
+    }
+    if (const auto missing_download_path = run_application(
+            runtime_factory, {"onedrive-cpp", "transfer", "download"}
+        );
+        missing_download_path.exit_code != exit_code::usage_error ||
+        !missing_download_path.standard_error.contains(
+            "REMOTE_PATH is required"
+        )) {
+        return fail(
+            "transfer download without path did not report REMOTE_PATH is "
+            "required"
+        );
     }
     if (run_application(
             runtime_factory,

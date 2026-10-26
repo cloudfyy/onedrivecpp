@@ -360,6 +360,16 @@ ParseResult parse_arguments(int argc, char* argv[]) {
     }
     try {
         application.parse(argc, argv);
+    } catch (const CLI::RequiredError& error) {
+        if (auto extras = application.remaining(true); !extras.empty()) {
+            static_cast<void>(
+                application.exit(CLI::ExtrasError{std::move(extras)})
+            );
+        } else {
+            static_cast<void>(application.exit(error));
+        }
+        result.exit_code = exit_code::usage_error;
+        return result;
     } catch (const CLI::ParseError& error) {
         const int parsed_exit_code = application.exit(error);
         result.exit_code = parsed_exit_code == exit_code::success ?
