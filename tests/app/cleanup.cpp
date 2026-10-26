@@ -27,8 +27,7 @@ extern "C" int fstatat(
         int (*)(int, const char*, struct stat*, int) noexcept>(
         ::dlsym(RTLD_NEXT, "fstatat")
     );
-    if (replace_on_delete_inspection && path != nullptr &&
-        !late_replacement_target.empty() &&
+    if (replace_on_delete_inspection && !late_replacement_target.empty() &&
         std::string_view{path} == late_replacement_target.filename().native() &&
         flags == AT_SYMLINK_NOFOLLOW) {
         replace_on_delete_inspection = false;
