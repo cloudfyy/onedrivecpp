@@ -508,27 +508,20 @@ ctest --test-dir build/e2e --output-on-failure -L boundary
 
 ## C++ Core Guidelines 检查
 
-`lint` preset 会在编译时运行较快的 Clang-Tidy 策略。bug-prone、performance、
-portability 以及选定的 C++ Core Guidelines 诊断都会作为构建错误：
+`lint` preset 会在编译时运行 Clang-Tidy 及路径敏感的 Clang 静态分析器策略。
+bug-prone、performance、portability、clang-analyzer 以及选定的
+C++ Core Guidelines 诊断都会作为构建错误：
 
 ```bash
 cmake --preset lint
 cmake --build --preset lint
 ```
 
-快速 preset 有意排除了路径敏感的 Clang 静态分析器，因为它在大量使用模板的
-翻译单元中可能非常耗时。定期检查或 CI 可使用深度检查 preset：
+针对性复查应保持相同的 GUI 设置，只构建受影响的对象目标，例如：
 
 ```bash
-cmake --preset lint-deep
-cmake --build --preset lint-deep
-```
-
-针对性复查应保持相同的 GUI 设置和深度分析策略，只构建受影响的对象目标，例如：
-
-```bash
-cmake --preset lint-deep -DONEDRIVE_BUILD_GUI=ON
-timeout 15m cmake --build --preset lint-deep --target \
+cmake --preset lint -DONEDRIVE_BUILD_GUI=ON
+timeout 15m cmake --build --preset lint --target \
   CMakeFiles/onedrive_core.dir/src/graph/discovery.cpp.o \
   CMakeFiles/onedrive_core.dir/src/monitor/socket.cpp.o
 ```

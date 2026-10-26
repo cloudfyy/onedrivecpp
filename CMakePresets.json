@@ -43,18 +43,10 @@
     },
     {
       "name": "lint",
-      "displayName": "Debug with fast Clang-Tidy checks",
+      "displayName": "Debug with Clang-Tidy and static analyzer checks",
       "inherits": "debug",
       "cacheVariables": {
         "ONEDRIVE_ENABLE_CLANG_TIDY": "ON"
-      }
-    },
-    {
-      "name": "lint-deep",
-      "displayName": "Debug with Clang-Tidy and static analyzer checks",
-      "inherits": "lint",
-      "cacheVariables": {
-        "ONEDRIVE_ENABLE_CLANG_ANALYZER": "ON"
       }
     },
     {
@@ -82,10 +74,6 @@
     {
       "name": "lint",
       "configurePreset": "lint"
-    },
-    {
-      "name": "lint-deep",
-      "configurePreset": "lint-deep"
     },
     {
       "name": "e2e",

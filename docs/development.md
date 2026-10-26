@@ -677,30 +677,22 @@ their separate build directories are not affected by the coverage preset.
 
 ## C++ Core Guidelines checks
 
-The `lint` preset runs the faster Clang-Tidy policy during compilation.
-Bug-prone, performance, portability, and selected C++ Core Guidelines
-diagnostics are treated as build errors:
+The `lint` preset runs Clang-Tidy and path-sensitive Clang Static Analyzer
+checks during compilation. Bug-prone, performance, portability, static
+analyzer, and selected C++ Core Guidelines diagnostics are treated as build
+errors:
 
 ```bash
 cmake --preset lint
 cmake --build --preset lint
 ```
 
-The path-sensitive Clang Static Analyzer is intentionally excluded from the
-fast preset because it can be expensive for template-heavy translation units.
-Use the deep preset for periodic or CI analysis:
+For focused rechecks, keep the same GUI setting and build only the affected
+object targets, for example:
 
 ```bash
-cmake --preset lint-deep
-cmake --build --preset lint-deep
-```
-
-For focused rechecks, keep the same GUI setting and deep analyzer policy, but
-build only the affected object targets, for example:
-
-```bash
-cmake --preset lint-deep -DONEDRIVE_BUILD_GUI=ON
-timeout 15m cmake --build --preset lint-deep --target \
+cmake --preset lint -DONEDRIVE_BUILD_GUI=ON
+timeout 15m cmake --build --preset lint --target \
   CMakeFiles/onedrive_core.dir/src/graph/discovery.cpp.o \
   CMakeFiles/onedrive_core.dir/src/monitor/socket.cpp.o
 ```
