@@ -3,7 +3,7 @@
 English | [简体中文](README.zh-CN.md)
 
 `onedrive-cpp` is a C++26 OneDrive synchronization client for
-Ubuntu 24.04 LTS and later. Its separation of responsibilities is inspired by
+Ubuntu 24.04 and 26.04 LTS. For Ubuntu 26.04, it has gui support. Its separation of responsibilities is inspired by
 [abraunegg/onedrive](https://github.com/abraunegg/onedrive), but it does not
 copy the reference project's D implementation.
 
