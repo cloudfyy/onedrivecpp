@@ -1,3 +1,17 @@
+onedrive-cpp (1.2.6-1~ubuntu24.04) noble; urgency=medium
+
+  * Prepare version 1.2.6.
+  * Prompt to save or discard unsaved settings when closing the GUI window and
+    display an unsaved indicator in the window title and Settings tab.
+  * Expand Business and SharePoint E2E runners to cover read-only inspection,
+    diagnostics, sync modes, single-file download, monitor control, and atomic
+    fake-cloud metadata updates.
+  * Fix CLI11 unknown-option order handling and enable compiler caching with
+    ccache across release packaging (Ubuntu 24.04/26.04) and lint workflows.
+  * Update English and Simplified Chinese documentation and manual pages.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Mon, 26 Oct 2026 18:25:00 +0800
+
 onedrive-cpp (1.2.5-1~ubuntu24.04) noble; urgency=medium
 
   * Prepare version 1.2.5.

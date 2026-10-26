@@ -2,7 +2,7 @@
 
 ## 1.2 SharePoint 文档库
 
-面向组织站点（SharePoint／Teams）文档库同步与发掘。版本已提升至 1.2.5。
+面向组织站点（SharePoint／Teams）文档库同步与发掘。版本已提升至 1.2.6。
 
 - [x] P1 增强 SharePoint 站点与文档库发现（Graph & CLI）
   - `onedrive-cpp inspect sites [query]` 支持省略查询词（或 `*`）列出可访问站点；关键字未命中时自动回退列出可访问站点提示。
