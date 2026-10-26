@@ -646,6 +646,7 @@ int test_console_events_and_output() {
             .color = ColorMode::never,
             .output = OutputMode::text,
             .language = Language::simplified_chinese,
+            .file_history_limit = 2,
         },
         zh_output,
         zh_error
@@ -661,24 +662,169 @@ int test_console_events_and_output() {
             {.label = "sync mode:", .key = "sync_mode", .value = "bidirectional"},
         }
     );
+    zh_console.sync_context(onedrive::sync::SyncMode::bidirectional, true);
+    zh_console.sync_phase(onedrive::events::SyncPhase::scanning_local);
+    zh_console.delta_progress(2, 5, ProgressState::ongoing);
     zh_console.delta_summary({
-        .pages = 1,
+        .pages = 2,
         .scanned_items = 5,
         .unique_changes = 4,
         .files = 3,
         .directories = 1,
         .deletions = 0,
     });
+    zh_console.download_progress(
+        1,
+        2,
+        512,
+        1024,
+        ProgressState::ongoing,
+        {.bytes_per_second = 256, .estimated_seconds_remaining = 2}
+    );
+    zh_console.download_progress(
+        2,
+        2,
+        1024,
+        1024,
+        ProgressState::completed,
+        {.bytes_per_second = 512, .elapsed_milliseconds = 500}
+    );
+    zh_console.upload_progress({});
+    zh_console.upload_progress(
+        {.completed_files = 1,
+         .file_count = 1,
+         .uploaded = 1024,
+         .total = 1024,
+         .state = ProgressState::completed,
+         .metrics = {.bytes_per_second = 1024, .elapsed_milliseconds = 2000}}
+    );
+    zh_console.message(
+        MessageKind::information, "sync_completed", "Sync complete."
+    );
+    zh_console.message(
+        MessageKind::information,
+        "monitor_ready",
+        "Monitoring local and Microsoft Graph changes for:\n  /tmp/sync"
+    );
+    zh_console.message(
+        MessageKind::information,
+        "device_authorization",
+        "Open https://microsoft.com/deviceloginchina and enter code ABCD-EFGH"
+    );
+    zh_console.message(
+        MessageKind::warning,
+        "cursor_reset",
+        "Reset synchronization cursor for drive 'me': saved cursor removed."
+    );
+    zh_console.file_operation({
+        .completed_at = std::chrono::system_clock::time_point{},
+        .action = onedrive::events::FileAction::downloaded,
+        .path = "folder/new.txt",
+        .previous_path = "folder/old.txt",
+        .drive_id = "drive-zh",
+        .local_path = "/tmp/sync/folder/new.txt",
+        .directory = true,
+        .recovered = true,
+    });
+    zh_console.finish();
     zh_console.blocked_item(
         "conflict.txt", "local_modification", "local file was modified"
     );
-    if (!zh_output.str().contains("有效配置：\n  语言：     简体中文\n  同步模式： bidirectional\n") ||
+    zh_console.blocked_item(
+        "large_delete",
+        "large_delete_guard",
+        "Remote deletion plan affects 15 tracked items, exceeding the "
+        "configured limit of 10."
+    );
+    {
+        std::istringstream confirm_in{"me\n"};
+        auto* old_cin = std::cin.rdbuf(confirm_in.rdbuf());
+        const bool confirmed = zh_console.confirm(
+            "clear_state",
+            "Type the configured drive reference 'me' to confirm: ",
+            "me"
+        );
+        std::cin.rdbuf(old_cin);
+        if (!confirmed) {
+            return fail("Chinese console confirmation failed");
+        }
+    }
+    if (!zh_output.str().contains(
+            "有效配置：\n  语言：     简体中文\n  同步模式： bidirectional\n"
+        ) ||
+        !zh_output.str().contains("同步：双向同步（预览）\n") ||
+        !zh_output.str().contains("阶段：扫描本地更改\n") ||
+        !zh_output.str().contains("Microsoft Graph 增量同步：..\n") ||
         !zh_output.str().contains("Microsoft Graph 增量同步完成：") ||
-        !zh_error.str().contains("已受阻 'conflict.txt'：")) {
+        !zh_output.str().contains(
+            "下载：1/2 个文件，50%（512 B/1.0 KiB），256 B/s，预计剩余 00:00:02\n"
+        ) ||
+        !zh_output.str().contains(
+            "完成：2/2 个文件，100%（1.0 KiB/1.0 KiB），512 B/s，用时 <1s\n"
+        ) ||
+        !zh_output.str().contains("上传：总量未知；无法计算百分比\n") ||
+        !zh_output.str().contains(
+            "上传完成：1/1 个文件，100%（1.0 KiB/1.0 KiB），1.0 KiB/s，用时 00:00:02\n"
+        ) ||
+        !zh_output.str().contains("同步完成。\n") ||
+        !zh_output.str().contains(
+            "正在监控本地与 Microsoft Graph 远端更改：\n  /tmp/sync\n"
+        ) ||
+        !zh_output.str().contains(
+            "请打开 https://microsoft.com/deviceloginchina 并输入验证码 ABCD-EFGH\n"
+        ) ||
+        !zh_output.str().contains(
+            "已重置驱动器 'me' 的同步游标：已保存游标已移除。\n"
+        ) ||
+        !zh_output.str().contains("已完成的文件操作（当前进程）：\n") ||
+        !zh_output.str().contains(
+            "\"folder/old.txt\" -> \"folder/new.txt\"  已下载（文件夹）（已恢复） "
+            "[本地：\"/tmp/sync/folder/new.txt\"]  1970-01-01T00:00:00Z\n"
+        ) ||
+        !zh_output.str().contains(
+            "文件历史记录：保留 1 条（上限 2）；已省略 0 条更早的操作。\n"
+            "驱动器（保留的历史记录）：\"drive-zh\"\n"
+        ) ||
+        !zh_output.str().contains("请输入配置的驱动器引用 'me' 以确认：") ||
+        !zh_error.str().contains(
+            "已受阻 'conflict.txt'：local file was modified (local_modification)"
+        ) ||
+        !zh_error.str().contains(
+            "已受阻 'large_delete'：远端删除计划涉及 15 个受跟踪项目，超过配置上限 10。 "
+            "(large_delete_guard)"
+        )) {
         return fail(
             "Chinese text console did not localize or align output:\n" +
             zh_output.str() + zh_error.str()
         );
+    }
+
+    {
+        std::ostringstream fallback_output;
+        std::ostringstream fallback_error;
+        const Console fallback_console{
+            {
+                .color = ColorMode::never,
+                .output = OutputMode::text,
+                .language = static_cast<Language>(99),
+            },
+            fallback_output,
+            fallback_error
+        };
+        fallback_console.sync_context(
+            onedrive::sync::SyncMode::upload_only, false
+        );
+        fallback_console.message(
+            MessageKind::information, "sync_completed", "Sync complete."
+        );
+        if (!fallback_output.str().contains("Synchronization: upload_only\n") ||
+            !fallback_output.str().contains("Sync complete.\n")) {
+            return fail(
+                "unregistered language value did not fall back to English "
+                "catalog:\n" +
+                fallback_output.str()
+            );
+        }
     }
     try {
         static_cast<void>(Console::parse_color_mode("invalid"));

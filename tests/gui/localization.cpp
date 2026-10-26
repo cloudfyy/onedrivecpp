@@ -48,15 +48,27 @@ int main(int argc, char* argv[]) {
                 gui::MainWindow::tr("onedrive client") == "onedrive client",
                 "destroyed translator remained installed"
             );
-            {
-                gui::Localization localization{QLocale{"zh_CN"}};
-                require(
+        {
+            gui::Localization localization{QLocale{"zh_CN"}};
+            require(
+                localization.translation_loaded() &&
                     localization.chinese_loaded() &&
-                        gui::MainWindow::tr("onedrive client") ==
-                            "OneDrive 客户端",
-                    "explicit Simplified Chinese translator did not load"
-                );
-            }
+                    gui::MainWindow::tr("onedrive client") ==
+                        "OneDrive 客户端",
+                "explicit Simplified Chinese translator did not load"
+            );
+        }
+        {
+            gui::Localization traditional{QLocale{"zh_TW"}};
+            require(
+                !traditional.translation_loaded() &&
+                    !traditional.chinese_loaded() &&
+                    traditional.language() == gui::Language::english &&
+                    gui::MainWindow::tr("onedrive client") == "onedrive client",
+                "Traditional Chinese locale unexpectedly matched Simplified "
+                "Chinese translator"
+            );
+        }
         });
         gui::Localization fallback{QLocale{"en_US"}};
         progress.run("english_fallback", [&] {

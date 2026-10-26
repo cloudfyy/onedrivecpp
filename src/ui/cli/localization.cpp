@@ -4,6 +4,7 @@
 #include <charconv>
 #include <format>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -16,8 +17,98 @@ struct TranslationEntry {
     std::string_view target;
 };
 
+struct SingleArgRule {
+    std::string_view prefix;
+    std::string_view suffix;
+    std::string_view pattern;
+};
+
+struct TwoArgRule {
+    std::string_view prefix;
+    std::string_view middle;
+    std::string_view suffix;
+    std::string_view pattern;
+};
+
+template <typename Enum>
+struct EnumTranslation {
+    Enum value;
+    std::string_view text;
+};
+
+struct LocaleTemplates {
+    std::string_view file_folder_tag;
+    std::string_view file_recovered_tag;
+    std::string_view file_local_path_pattern;
+    std::string_view file_history_status_pattern;
+    std::string_view file_history_drives_prefix;
+    std::string_view delta_summary_singular_pattern;
+    std::string_view delta_summary_plural_pattern;
+    std::string_view blocked_item_line_pattern;
+    std::string_view text_download_active_label;
+    std::string_view text_download_done_label;
+    std::string_view text_upload_active_label;
+    std::string_view text_upload_done_label;
+    std::string_view text_transfer_base_pattern;
+    std::string_view text_transfer_rate_pattern;
+    std::string_view text_transfer_elapsed_pattern;
+    std::string_view text_transfer_eta_pattern;
+    std::string_view text_sync_phase_pattern;
+    std::string_view text_sync_context_pattern;
+    std::string_view text_sync_preview_suffix;
+    std::string_view tui_blocked_item_pattern;
+    std::string_view tui_cloud_checked_pattern;
+    std::string_view tui_cloud_changes_suffix_pattern;
+    std::string_view tui_transfer_unknown_compact_pattern;
+    std::string_view tui_transfer_heading_pattern;
+    std::string_view tui_transfer_calculating_label;
+    std::string_view tui_transfer_elapsed_suffix_pattern;
+    std::string_view tui_transfer_eta_suffix_pattern;
+    std::string_view tui_context_pattern;
+    std::string_view tui_context_monitoring_label;
+    std::string_view tui_context_one_time_label;
+    std::string_view tui_context_preview_suffix;
+    std::string_view tui_phase_pattern;
+    std::string_view tui_phase_monitoring_label;
+    std::string_view tui_phase_sync_label;
+    std::string_view tui_summary_pattern;
+    std::string_view tui_summary_incomplete_suffix;
+    std::string_view tui_file_history_heading_pattern;
+    std::string_view tui_paged_section_pattern;
+    std::string_view tui_paged_drive_noun;
+    std::string_view tui_paged_item_noun;
+    std::string_view tui_partial_heading_pattern;
+    std::string_view tui_needs_attention_pattern;
+};
+
+struct LocaleCatalog {
+    Language language;
+    CliFormatterLabels cli_labels;
+    std::span<const TranslationEntry> text_entries;
+    std::span<const TranslationEntry> section_titles_by_event;
+    std::span<const TranslationEntry> field_labels_by_key;
+    std::span<const TranslationEntry> field_labels_by_text;
+    std::span<const TranslationEntry> language_value_names;
+    std::span<const TranslationEntry> exact_messages;
+    std::span<const SingleArgRule> single_arg_messages;
+    std::span<const TwoArgRule> two_arg_messages;
+    std::span<const TranslationEntry> cursor_states;
+    std::optional<TwoArgRule> cursor_reset_rule;
+    std::span<const TranslationEntry> tui_event_messages;
+    std::span<const TranslationEntry> tui_message_replacements;
+    std::span<const TranslationEntry> tui_term_replacements;
+    std::span<const TwoArgRule> blocked_reason_rules;
+    std::span<const TranslationEntry> exact_prompts;
+    std::span<const SingleArgRule> single_arg_prompts;
+    std::span<const EnumTranslation<events::FileAction>> file_actions;
+    std::span<const EnumTranslation<TuiView>> tui_view_titles;
+    std::span<const EnumTranslation<events::SyncPhase>> sync_phases;
+    std::span<const EnumTranslation<sync::SyncMode>> sync_modes;
+    LocaleTemplates templates;
+};
+
 [[nodiscard]] std::optional<std::string_view> lookup_entry(
-    const auto& table, std::string_view key
+    std::span<const TranslationEntry> table, std::string_view key
 ) noexcept {
     for (const auto& entry : table) {
         if (entry.source == key) {
@@ -25,6 +116,25 @@ struct TranslationEntry {
         }
     }
     return std::nullopt;
+}
+
+template <typename Enum>
+[[nodiscard]] std::optional<std::string_view> lookup_enum(
+    std::span<const EnumTranslation<Enum>> table, Enum value
+) noexcept {
+    for (const auto& entry : table) {
+        if (entry.value == value) {
+            return entry.text;
+        }
+    }
+    return std::nullopt;
+}
+
+template <typename... Args>
+[[nodiscard]] std::string format_runtime(
+    std::string_view pattern, const Args&... args
+) {
+    return std::vformat(pattern, std::make_format_args(args...));
 }
 
 [[nodiscard]] std::optional<std::pair<std::string_view, std::string_view>>
@@ -294,35 +404,59 @@ constexpr std::array kTextTranslations{
         "Invalid authorization callback.", "无效的授权回调请求。"
     },
 
-    // TUI chrome & labels
+    // TUI & Console chrome & labels
+    TranslationEntry{
+        "Authorization received. Return to OneDrive C++; you may close this tab.",
+        "已收到授权。请返回 OneDrive C++，可以关闭此标签页。",
+    },
+    TranslationEntry{
+        "Invalid authorization callback.", "无效的授权回调。"
+    },
+    TranslationEntry{"Microsoft Graph delta: ", "Microsoft Graph 增量同步："},
+    TranslationEntry{
+        "UL: totals unknown; percentage unavailable\n",
+        "上传：总量未知；无法计算百分比\n",
+    },
+    TranslationEntry{
+        "Completed file operations (this process):\n"
+        "Path  Action / details  Time (UTC)\n",
+        "已完成的文件操作（当前进程）：\n"
+        "路径  操作 / 详情  时间 (UTC)\n",
+    },
+    TranslationEntry{
+        "\nCompleted file operations (this process):\n"
+        "Path  Action / details  Time (UTC)\n",
+        "\n已完成的文件操作（当前进程）：\n"
+        "路径  操作 / 详情  时间 (UTC)\n",
+    },
     TranslationEntry{"DOWNLOADS", "下载"},
     TranslationEntry{"UPLOADS", "上传"},
     TranslationEntry{"MONITORING", "实时监控"},
     TranslationEntry{"SYNC", "同步"},
     TranslationEntry{
         "Totals unknown; percentage unavailable.",
-        "总量未知，暂无法计算百分比。",
+        "总量未知；无法计算百分比。",
     },
-    TranslationEntry{"calculating...", "正在计算..."},
+    TranslationEntry{"calculating...", "计算中..."},
     TranslationEntry{"  PATH", "  路径"},
     TranslationEntry{
-        "STATUS  SAVED PROGRESS / TOTAL", "状态  已保存进度 / 总大小"
+        "STATUS  SAVED PROGRESS / TOTAL", "状态  已保存进度 / 总量"
     },
     TranslationEntry{
-        "Last synchronization round incomplete.", "上一轮同步未完全完成。"
+        "Last synchronization round incomplete.", "上一轮同步未完成。"
     },
-    TranslationEntry{"ACTIVITY", "活动动态"},
+    TranslationEntry{"ACTIVITY", "动态"},
     TranslationEntry{" q / Esc  EXIT ", " q / Esc  退出 "},
     TranslationEntry{
-        " Up/Down or k/j: select file ", " 上下方向键 或 k/j：选择文件 "
+        " Up/Down or k/j: select file ", " 上/下方向键 或 k/j：选择文件 "
     },
     TranslationEntry{
         " Left/Right or n/p: previous/next Drive ",
-        " 左右方向键 或 n/p：上一个/下一个驱动器 ",
+        " 左/右方向键 或 n/p：上/下一个驱动器 ",
     },
     TranslationEntry{
         " Left/Right or n/p: previous/next item ",
-        " 左右方向键 或 n/p：上一项/下一项 ",
+        " 左/右方向键 或 n/p：上/下一个项目 ",
     },
     TranslationEntry{
         " Press Enter to exit (or q) ", " 按 Enter 退出（或按 q） "
@@ -689,11 +823,483 @@ constexpr std::array kExactMessages{
     },
 };
 
-} // namespace
+constexpr std::array kChineseLanguageValueNames{
+    TranslationEntry{"auto", "自动"},
+    TranslationEntry{"en", "英文"},
+    TranslationEntry{"zh_CN", "简体中文"},
+};
 
-bool is_chinese(Language language) noexcept {
-    return resolve_language(language) == Language::simplified_chinese;
+constexpr std::array kChineseSingleArgMessages{
+    SingleArgRule{
+        "Authentication succeeded. Refresh token saved to ",
+        "",
+        "身份认证成功。刷新令牌已保存至 {}",
+    },
+    SingleArgRule{
+        "Opened your default browser for Microsoft sign-in. If it does not open, visit ",
+        "",
+        "已打开默认浏览器进行 Microsoft 登录。如果浏览器未自动打开，请访问 {}",
+    },
+    SingleArgRule{
+        "Open ",
+        " in your browser to sign in.",
+        "请在浏览器中打开 {} 完成登录。",
+    },
+    SingleArgRule{
+        "Monitor request ",
+        ". This acknowledges the request, not synchronization or shutdown completion.",
+        "监控控制请求已响应（{}）。此响应仅确认已接收请求，不代表同步或退出已完成。",
+    },
+    SingleArgRule{
+        "WARNING: This will remove all saved item snapshots, the Delta cursor, and pending-download recovery records for drive ",
+        ".",
+        "警告：这将移除驱动器 {} 的所有已保存项目快照、增量游标及待下载恢复记录。",
+    },
+    SingleArgRule{
+        "Monitoring local and Microsoft Graph changes for:\n  ",
+        "",
+        "正在监控本地与 Microsoft Graph 远端更改：\n  {}",
+    },
+};
+
+constexpr std::array kChineseTwoArgMessages{
+    TwoArgRule{
+        "Open ",
+        " and enter code ",
+        "",
+        "请打开 {} 并输入验证码 {}",
+    },
+    TwoArgRule{
+        "Cannot upgrade '",
+        "': ",
+        "",
+        "无法升级状态数据库 '{}'：{}",
+    },
+    TwoArgRule{
+        "Could not finish cleanup for '",
+        "': ",
+        "",
+        "无法完成对 '{}' 的清理：{}",
+    },
+    TwoArgRule{
+        "Kept '",
+        "': ",
+        "",
+        "已保留 '{}'：{}",
+    },
+    TwoArgRule{
+        "Drive '",
+        "': ",
+        "",
+        "驱动器 '{}'：{}",
+    },
+    TwoArgRule{
+        "Local changes settle for ",
+        " milliseconds; remote WebSocket notifications trigger Delta synchronization, with Graph polling every ",
+        " seconds as fallback.",
+        "本地更改防抖等待 {} 毫秒；远端 WebSocket 实时通知已启用，并以每 {} 秒轮询 Graph 作为回退。",
+    },
+    TwoArgRule{
+        "Local changes settle for ",
+        " milliseconds; remote WebSocket notifications are disabled, and Graph is polled every ",
+        " seconds.",
+        "本地更改防抖等待 {} 毫秒；远端 WebSocket 实时通知已禁用，每 {} 秒轮询一次 Graph。",
+    },
+    TwoArgRule{
+        "Remote deletion plan affects ",
+        " tracked items, exceeding the configured limit of ",
+        ". Proceeding because --force-large-delete was provided.",
+        "远端删除计划涉及 {} 个受跟踪项目，超过配置上限 {}。由于指定了 --force-large-delete，将继续执行。",
+    },
+    TwoArgRule{
+        "Remote deletion plan affects ",
+        " tracked items, exceeding the configured limit of ",
+        ". A normal sync would be blocked.",
+        "远端删除计划涉及 {} 个受跟踪项目，超过配置上限 {}。常规同步将被阻止。",
+    },
+    TwoArgRule{
+        "Remote deletion plan affects ",
+        " tracked items, exceeding the configured limit of ",
+        ". Review the local filesystem and rerun sync with --force-large-delete only if the deletions are intentional.",
+        "远端删除计划涉及 {} 个受跟踪项目，超过配置上限 {}。请检查本地文件系统，仅当确认需要删除时使用 --force-large-delete 重新运行。",
+    },
+};
+
+constexpr std::array kChineseCursorStates{
+    TranslationEntry{"removed", "已移除"},
+    TranslationEntry{"not present", "不存在"},
+};
+
+constexpr std::array kEnglishTuiEventMessages{
+    TranslationEntry{
+        "delta_query_started", "Checking the cloud for changes..."
+    },
+    TranslationEntry{"delta_cursor_invalid", "Refreshing cloud history..."},
+    TranslationEntry{"sync_completed", "Sync complete."},
+    TranslationEntry{
+        "sync_completed_with_issues",
+        "Sync finished with items needing attention.",
+    },
+    TranslationEntry{
+        "initial_delta_scheduled",
+        "The next sync will perform a full cloud check.",
+    },
+};
+
+constexpr std::array kChineseTuiEventMessages{
+    TranslationEntry{"delta_query_started", "正在检查云端变更..."},
+    TranslationEntry{"delta_cursor_invalid", "正在刷新云端历史记录..."},
+    TranslationEntry{"sync_completed", "同步完成。"},
+    TranslationEntry{
+        "sync_completed_with_issues",
+        "同步已完成，但有项目需要关注。",
+    },
+    TranslationEntry{
+        "initial_delta_scheduled",
+        "下次同步将执行完整云端检查。",
+    },
+};
+
+constexpr std::array kEnglishTuiMessageReplacements{
+    TranslationEntry{"Local changes settle for ", "Local changes wait "},
+    TranslationEntry{
+        " milliseconds; remote WebSocket notifications trigger Delta "
+        "synchronization, with Graph polling every ",
+        " milliseconds to settle; live cloud updates are enabled, with a "
+        "safety check every ",
+    },
+    TranslationEntry{
+        " milliseconds; remote WebSocket notifications are disabled, and "
+        "Graph is polled every ",
+        " milliseconds to settle; live cloud updates are disabled, so "
+        "changes are checked every ",
+    },
+    TranslationEntry{" seconds as fallback.", " seconds."},
+    TranslationEntry{
+        "Monitoring local and Microsoft Graph changes for:",
+        "Watching for local and cloud changes in:",
+    },
+    TranslationEntry{"Remote delta contains", "Cloud storage has"},
+    TranslationEntry{" upserts", " new or updated"},
+    TranslationEntry{" removals", " removed"},
+    TranslationEntry{" moves", " moved"},
+    TranslationEntry{" blocked", " need attention"},
+    TranslationEntry{"the Delta cursor", "cloud change history"},
+};
+
+constexpr std::array kEnglishTuiTermReplacements{
+    TranslationEntry{"Microsoft Graph", "cloud service"},
+    TranslationEntry{"Graph", "cloud service"},
+    TranslationEntry{"WebSocket", "live cloud updates"},
+    TranslationEntry{"Delta", "cloud check"},
+    TranslationEntry{"delta", "cloud check"},
+};
+
+constexpr std::array kChineseBlockedReasonRules{
+    TwoArgRule{
+        "Remote deletion plan affects ",
+        " tracked items, exceeding the configured limit of ",
+        ".",
+        "远端删除计划涉及 {} 个受跟踪项目，超过配置上限 {}。",
+    },
+};
+
+constexpr std::array kChineseExactPrompts{
+    TranslationEntry{
+        "Back up and upgrade all listed outdated databases? Type 'migrate' to confirm: ",
+        "是否备份并升级上面列出的所有旧版本数据库？请输入 'migrate' 确认：",
+    },
+};
+
+constexpr std::array kChineseSingleArgPrompts{
+    SingleArgRule{
+        "Type the configured drive reference '",
+        "' to confirm: ",
+        "请输入配置的驱动器引用 '{}' 以确认：",
+    },
+    SingleArgRule{
+        "Type the configured drive reference '",
+        "' to confirm cleanup: ",
+        "请输入配置的驱动器引用 '{}' 以确认清理：",
+    },
+};
+
+constexpr std::array kChineseFileActions{
+    EnumTranslation<events::FileAction>{events::FileAction::downloaded, "已下载"},
+    EnumTranslation<events::FileAction>{events::FileAction::uploaded, "已上传"},
+    EnumTranslation<events::FileAction>{
+        events::FileAction::moved_locally, "本地已移动"
+    },
+    EnumTranslation<events::FileAction>{
+        events::FileAction::moved_remotely, "远端已移动"
+    },
+    EnumTranslation<events::FileAction>{
+        events::FileAction::deleted_locally, "本地已删除"
+    },
+    EnumTranslation<events::FileAction>{
+        events::FileAction::deleted_remotely, "远端已删除"
+    },
+};
+
+constexpr std::array kEnglishTuiViewTitles{
+    EnumTranslation<TuiView>{TuiView::auth, "AUTH"},
+    EnumTranslation<TuiView>{TuiView::health, "HEALTH"},
+    EnumTranslation<TuiView>{TuiView::status, "STATUS"},
+    EnumTranslation<TuiView>{TuiView::blocked, "BLOCKED"},
+    EnumTranslation<TuiView>{TuiView::drives, "DRIVES"},
+    EnumTranslation<TuiView>{TuiView::shared, "SHARED"},
+    EnumTranslation<TuiView>{TuiView::sites, "SITES"},
+    EnumTranslation<TuiView>{TuiView::quota, "QUOTA"},
+    EnumTranslation<TuiView>{TuiView::storage, "STORAGE"},
+    EnumTranslation<TuiView>{TuiView::partials, "PARTIALS"},
+    EnumTranslation<TuiView>{TuiView::files, "FILES"},
+    EnumTranslation<TuiView>{TuiView::verify, "VERIFY"},
+    EnumTranslation<TuiView>{TuiView::config, "CONFIG"},
+    EnumTranslation<TuiView>{TuiView::sync, "SYNC"},
+    EnumTranslation<TuiView>{TuiView::download, "DOWNLOAD"},
+    EnumTranslation<TuiView>{TuiView::watch, "WATCH"},
+};
+
+constexpr std::array kChineseTuiViewTitles{
+    EnumTranslation<TuiView>{TuiView::auth, "认证"},
+    EnumTranslation<TuiView>{TuiView::health, "健康检查"},
+    EnumTranslation<TuiView>{TuiView::status, "状态"},
+    EnumTranslation<TuiView>{TuiView::blocked, "受阻项目"},
+    EnumTranslation<TuiView>{TuiView::drives, "驱动器"},
+    EnumTranslation<TuiView>{TuiView::shared, "共享内容"},
+    EnumTranslation<TuiView>{TuiView::sites, "站点"},
+    EnumTranslation<TuiView>{TuiView::quota, "配额"},
+    EnumTranslation<TuiView>{TuiView::storage, "存储占用"},
+    EnumTranslation<TuiView>{TuiView::partials, "未完成下载"},
+    EnumTranslation<TuiView>{TuiView::files, "已下载文件"},
+    EnumTranslation<TuiView>{TuiView::verify, "文件校验"},
+    EnumTranslation<TuiView>{TuiView::config, "配置"},
+    EnumTranslation<TuiView>{TuiView::sync, "同步"},
+    EnumTranslation<TuiView>{TuiView::download, "下载"},
+    EnumTranslation<TuiView>{TuiView::watch, "监控"},
+};
+
+constexpr std::array kChineseSyncPhases{
+    EnumTranslation<events::SyncPhase>{events::SyncPhase::preparing, "准备中"},
+    EnumTranslation<events::SyncPhase>{events::SyncPhase::scanning, "扫描云端更改"},
+    EnumTranslation<events::SyncPhase>{
+        events::SyncPhase::scanning_local, "扫描本地更改"
+    },
+    EnumTranslation<events::SyncPhase>{events::SyncPhase::downloading, "下载中"},
+    EnumTranslation<events::SyncPhase>{events::SyncPhase::uploading, "上传中"},
+    EnumTranslation<events::SyncPhase>{events::SyncPhase::applying, "应用更改中"},
+    EnumTranslation<events::SyncPhase>{events::SyncPhase::waiting, "等待更改"},
+};
+
+constexpr std::array kChineseSyncModes{
+    EnumTranslation<sync::SyncMode>{sync::SyncMode::bidirectional, "双向同步"},
+    EnumTranslation<sync::SyncMode>{sync::SyncMode::download_only, "仅下载"},
+    EnumTranslation<sync::SyncMode>{sync::SyncMode::upload_only, "仅上传"},
+};
+
+constexpr LocaleCatalog kEnglishCatalog{
+    .language = Language::english,
+    .cli_labels =
+        CliFormatterLabels{
+            .usage = "Usage",
+            .options_upper = "OPTIONS",
+            .options = "Options",
+            .subcommands_upper = "SUBCOMMANDS",
+            .subcommands = "Subcommands",
+            .positionals = "Positionals",
+            .required = "REQUIRED",
+        },
+    .text_entries = {},
+    .section_titles_by_event = {},
+    .field_labels_by_key = {},
+    .field_labels_by_text = {},
+    .language_value_names = {},
+    .exact_messages = {},
+    .single_arg_messages = {},
+    .two_arg_messages = {},
+    .cursor_states = {},
+    .cursor_reset_rule = std::nullopt,
+    .tui_event_messages = kEnglishTuiEventMessages,
+    .tui_message_replacements = kEnglishTuiMessageReplacements,
+    .tui_term_replacements = kEnglishTuiTermReplacements,
+    .blocked_reason_rules = {},
+    .exact_prompts = {},
+    .single_arg_prompts = {},
+    .file_actions = {},
+    .tui_view_titles = kEnglishTuiViewTitles,
+    .sync_phases = {},
+    .sync_modes = {},
+    .templates =
+        LocaleTemplates{
+            .file_folder_tag = " (folder)",
+            .file_recovered_tag = " (recovered)",
+            .file_local_path_pattern = " [local: {}]",
+            .file_history_status_pattern =
+                "File history: {} retained (limit {}); {} older operations omitted.",
+            .file_history_drives_prefix = "\nDrives (retained history): ",
+            .delta_summary_singular_pattern =
+                "Microsoft Graph delta complete: {} page, {} items scanned, {} unique changes ({} files, {} folders, {} deletions), {:.1f} items/page\n",
+            .delta_summary_plural_pattern =
+                "Microsoft Graph delta complete: {} pages, {} items scanned, {} unique changes ({} files, {} folders, {} deletions), {:.1f} items/page\n",
+            .blocked_item_line_pattern = "Blocked '{}': {} ({})\n",
+            .text_download_active_label = "DL",
+            .text_download_done_label = "Done",
+            .text_upload_active_label = "UL",
+            .text_upload_done_label = "Upload done",
+            .text_transfer_base_pattern = "{}: {}/{} files, {}% ({}/{})",
+            .text_transfer_rate_pattern = ", {}/s",
+            .text_transfer_elapsed_pattern = ", elapsed {}",
+            .text_transfer_eta_pattern = ", ETA {}",
+            .text_sync_phase_pattern = "Phase: {}\n",
+            .text_sync_context_pattern = "Synchronization: {}{}\n",
+            .text_sync_preview_suffix = " (preview)",
+            .tui_blocked_item_pattern = "{}: {}",
+            .tui_cloud_checked_pattern = "CLOUD CHECK  {} items checked",
+            .tui_cloud_changes_suffix_pattern = "  //  {} changes found",
+            .tui_transfer_unknown_compact_pattern = "{} // totals unknown",
+            .tui_transfer_heading_pattern = "{}  {}/{} files",
+            .tui_transfer_calculating_label = "calculating...",
+            .tui_transfer_elapsed_suffix_pattern = "  elapsed {}",
+            .tui_transfer_eta_suffix_pattern = "  ETA {}",
+            .tui_context_pattern = "Direction: {} // {}{}",
+            .tui_context_monitoring_label = "automatic monitoring",
+            .tui_context_one_time_label = "one-time",
+            .tui_context_preview_suffix = " // preview",
+            .tui_phase_pattern = "{}: {}",
+            .tui_phase_monitoring_label = "MONITORING",
+            .tui_phase_sync_label = "SYNC",
+            .tui_summary_pattern =
+                "Last round: {} downloaded, {} uploaded, {} moved, {} deleted, {} blocked{}",
+            .tui_summary_incomplete_suffix = " // incomplete",
+            .tui_file_history_heading_pattern =
+                "FILES // {} retained // {} older omitted",
+            .tui_paged_section_pattern = "{}  [{} {}/{}]",
+            .tui_paged_drive_noun = "Drive",
+            .tui_paged_item_noun = "Item",
+            .tui_partial_heading_pattern = "Partial downloads [File {}/{}]",
+            .tui_needs_attention_pattern = "NEEDS ATTENTION  {}  //  {}",
+        },
+};
+
+constexpr LocaleCatalog kSimplifiedChineseCatalog{
+    .language = Language::simplified_chinese,
+    .cli_labels =
+        CliFormatterLabels{
+            .usage = "用法",
+            .options_upper = "选项",
+            .options = "选项",
+            .subcommands_upper = "子命令",
+            .subcommands = "子命令",
+            .positionals = "位置参数",
+            .required = "必填",
+        },
+    .text_entries = kTextTranslations,
+    .section_titles_by_event = kSectionTitlesByEvent,
+    .field_labels_by_key = kFieldLabelsByKey,
+    .field_labels_by_text = kFieldLabelsByText,
+    .language_value_names = kChineseLanguageValueNames,
+    .exact_messages = kExactMessages,
+    .single_arg_messages = kChineseSingleArgMessages,
+    .two_arg_messages = kChineseTwoArgMessages,
+    .cursor_states = kChineseCursorStates,
+    .cursor_reset_rule =
+        TwoArgRule{
+            "Reset synchronization cursor for drive ",
+            ": saved cursor ",
+            ".",
+            "已重置驱动器 {} 的同步游标：已保存游标{}。",
+        },
+    .tui_event_messages = kChineseTuiEventMessages,
+    .tui_message_replacements = {},
+    .tui_term_replacements = {},
+    .blocked_reason_rules = kChineseBlockedReasonRules,
+    .exact_prompts = kChineseExactPrompts,
+    .single_arg_prompts = kChineseSingleArgPrompts,
+    .file_actions = kChineseFileActions,
+    .tui_view_titles = kChineseTuiViewTitles,
+    .sync_phases = kChineseSyncPhases,
+    .sync_modes = kChineseSyncModes,
+    .templates =
+        LocaleTemplates{
+            .file_folder_tag = "（文件夹）",
+            .file_recovered_tag = "（已恢复）",
+            .file_local_path_pattern = " [本地：{}]",
+            .file_history_status_pattern =
+                "文件历史记录：保留 {} 条（上限 {}）；已省略 {} 条更早的操作。",
+            .file_history_drives_prefix = "\n驱动器（保留的历史记录）：",
+            .delta_summary_singular_pattern =
+                "Microsoft Graph 增量同步完成：共 {} 页，扫描 {} 个项目，{} 个唯一更改（{} 个文件、{} 个文件夹、{} 个删除），平均 {:.1f} 项/页\n",
+            .delta_summary_plural_pattern =
+                "Microsoft Graph 增量同步完成：共 {} 页，扫描 {} 个项目，{} 个唯一更改（{} 个文件、{} 个文件夹、{} 个删除），平均 {:.1f} 项/页\n",
+            .blocked_item_line_pattern = "已受阻 '{}'：{} ({})\n",
+            .text_download_active_label = "下载",
+            .text_download_done_label = "完成",
+            .text_upload_active_label = "上传",
+            .text_upload_done_label = "上传完成",
+            .text_transfer_base_pattern = "{}：{}/{} 个文件，{}%（{}/{}）",
+            .text_transfer_rate_pattern = "，{}/s",
+            .text_transfer_elapsed_pattern = "，用时 {}",
+            .text_transfer_eta_pattern = "，预计剩余 {}",
+            .text_sync_phase_pattern = "阶段：{}\n",
+            .text_sync_context_pattern = "同步：{}{}\n",
+            .text_sync_preview_suffix = "（预览）",
+            .tui_blocked_item_pattern = "{}：{}",
+            .tui_cloud_checked_pattern = "云端检查  已检查 {} 项",
+            .tui_cloud_changes_suffix_pattern = "  //  发现 {} 处变更",
+            .tui_transfer_unknown_compact_pattern = "{} // 总量未知",
+            .tui_transfer_heading_pattern = "{}  {}/{} 个文件",
+            .tui_transfer_calculating_label = "计算中...",
+            .tui_transfer_elapsed_suffix_pattern = "  用时 {}",
+            .tui_transfer_eta_suffix_pattern = "  预计剩余 {}",
+            .tui_context_pattern = "方向：{} // {}{}",
+            .tui_context_monitoring_label = "自动监控",
+            .tui_context_one_time_label = "单次执行",
+            .tui_context_preview_suffix = " // 预览",
+            .tui_phase_pattern = "{}：{}",
+            .tui_phase_monitoring_label = "监控状态",
+            .tui_phase_sync_label = "同步状态",
+            .tui_summary_pattern =
+                "上一轮：下载 {}，上传 {}，移动 {}，删除 {}，受阻 {}{}",
+            .tui_summary_incomplete_suffix = " // 未完成",
+            .tui_file_history_heading_pattern =
+                "文件记录 // 保留 {} 条 // 省略 {} 条更早记录",
+            .tui_paged_section_pattern = "{}  [{} {}/{}]",
+            .tui_paged_drive_noun = "驱动器",
+            .tui_paged_item_noun = "项目",
+            .tui_partial_heading_pattern = "未完成下载 [文件 {}/{}]",
+            .tui_needs_attention_pattern = "需要关注  {}  //  {}",
+        },
+};
+
+constexpr std::array kLocaleCatalogs{
+    kEnglishCatalog,
+    kSimplifiedChineseCatalog,
+};
+
+[[nodiscard]] const LocaleCatalog& catalog_for(Language language) noexcept {
+    const auto resolved = resolve_language(language);
+    for (const auto& catalog : kLocaleCatalogs) {
+        if (catalog.language == resolved) {
+            return catalog;
+        }
+    }
+    return kEnglishCatalog;
 }
+
+[[nodiscard]] std::string apply_replacements(
+    std::string text, std::span<const TranslationEntry> replacements
+) {
+    for (const auto& entry : replacements) {
+        std::size_t pos = 0;
+        while ((pos = text.find(entry.source, pos)) != std::string::npos) {
+            text.replace(pos, entry.source.size(), entry.target);
+            pos += entry.target.size();
+        }
+    }
+    return text;
+}
+
+} // namespace
 
 std::size_t display_width(std::string_view text) noexcept {
     std::size_t width = 0;
@@ -719,12 +1325,14 @@ std::size_t display_width(std::string_view text) noexcept {
     return width;
 }
 
+CliFormatterLabels cli_formatter_labels(Language language) noexcept {
+    return catalog_for(language).cli_labels;
+}
+
 std::string_view
 translate_text(std::string_view english, Language language) noexcept {
-    if (!is_chinese(language)) {
-        return english;
-    }
-    if (const auto translated = lookup_entry(kTextTranslations, english)) {
+    const auto& catalog = catalog_for(language);
+    if (const auto translated = lookup_entry(catalog.text_entries, english)) {
         return *translated;
     }
     return english;
@@ -733,10 +1341,9 @@ translate_text(std::string_view english, Language language) noexcept {
 std::string translate_section_title(
     std::string_view event, std::string_view title, Language language
 ) {
-    if (!is_chinese(language)) {
-        return std::string{title};
-    }
-    if (const auto translated = lookup_entry(kSectionTitlesByEvent, event)) {
+    const auto& catalog = catalog_for(language);
+    if (const auto translated =
+            lookup_entry(catalog.section_titles_by_event, event)) {
         return std::string{*translated};
     }
     return std::string{title};
@@ -745,36 +1352,49 @@ std::string translate_section_title(
 std::string translate_field_label(
     std::string_view key, std::string_view label, Language language
 ) {
-    if (!is_chinese(language)) {
-        return std::string{label};
-    }
-    if (const auto translated = lookup_entry(kFieldLabelsByText, label)) {
+    const auto& catalog = catalog_for(language);
+    if (const auto translated =
+            lookup_entry(catalog.field_labels_by_text, label)) {
         return std::string{*translated};
     }
-    if (const auto translated = lookup_entry(kFieldLabelsByKey, key)) {
+    if (const auto translated =
+            lookup_entry(catalog.field_labels_by_key, key)) {
         return std::string{*translated};
     }
     return std::string{label};
 }
 
+std::string translate_tui_section_title(
+    std::string_view event, std::string_view title, Language language
+) {
+    const auto& catalog = catalog_for(language);
+    return apply_replacements(
+        translate_section_title(event, title, language),
+        catalog.tui_term_replacements
+    );
+}
+
+std::string translate_tui_field_label(
+    std::string_view key, std::string_view label, Language language
+) {
+    const auto& catalog = catalog_for(language);
+    return apply_replacements(
+        translate_field_label(key, label, language),
+        catalog.tui_term_replacements
+    );
+}
+
 std::string translate_field_value(
     std::string_view key, std::string_view value, Language language
 ) {
-    if (!is_chinese(language)) {
-        return std::string{value};
-    }
+    const auto& catalog = catalog_for(language);
     if (key == "reason_message") {
         return translate_blocked_reason({}, value, language);
     }
     if (key == "language") {
-        if (value == "auto") {
-            return "自动";
-        }
-        if (value == "en") {
-            return "英文";
-        }
-        if (value == "zh_CN") {
-            return "简体中文";
+        if (const auto translated =
+                lookup_entry(catalog.language_value_names, value)) {
+            return std::string{*translated};
         }
     }
     return std::string{value};
@@ -782,166 +1402,37 @@ std::string translate_field_value(
 
 std::string
 translate_message(const MessageEvent& event, Language language) {
-    if (!is_chinese(language)) {
-        return event.text;
-    }
-    if (const auto exact = lookup_entry(kExactMessages, event.text)) {
+    const auto& catalog = catalog_for(language);
+    if (const auto exact = lookup_entry(catalog.exact_messages, event.text)) {
         return std::string{*exact};
     }
     const std::string_view message{event.text};
-    if (const auto token_path = extract_single(
-            message,
-            "Authentication succeeded. Refresh token saved to ",
-            ""
-        )) {
-        return std::format("身份认证成功。刷新令牌已保存至 {}", *token_path);
+    for (const auto& rule : catalog.single_arg_messages) {
+        if (const auto arg = extract_single(message, rule.prefix, rule.suffix)) {
+            return format_runtime(rule.pattern, *arg);
+        }
     }
-    if (const auto url = extract_single(
-            message,
-            "Opened your default browser for Microsoft sign-in. If it does not open, visit ",
-            ""
-        )) {
-        return std::format(
-            "已打开默认浏览器进行 Microsoft 登录。如果浏览器未自动打开，请访问 {}",
-            *url
-        );
+    if (catalog.cursor_reset_rule) {
+        if (const auto parts = extract_between(
+                message,
+                catalog.cursor_reset_rule->prefix,
+                catalog.cursor_reset_rule->middle,
+                catalog.cursor_reset_rule->suffix
+            )) {
+            const auto state =
+                lookup_entry(catalog.cursor_states, parts->second)
+                    .value_or(parts->second);
+            return format_runtime(
+                catalog.cursor_reset_rule->pattern, parts->first, state
+            );
+        }
     }
-    if (const auto url = extract_single(
-            message, "Open ", " in your browser to sign in."
-        )) {
-        return std::format("请在浏览器中打开 {} 完成登录。", *url);
-    }
-    if (const auto parts = extract_between(
-            message, "Open ", " and enter code ", ""
-        )) {
-        return std::format(
-            "请打开 {} 并输入验证码 {}", parts->first, parts->second
-        );
-    }
-    if (const auto ack = extract_single(
-            message,
-            "Monitor request ",
-            ". This acknowledges the request, not synchronization or shutdown completion."
-        )) {
-        return std::format(
-            "监控控制请求已响应（{}）。此响应仅确认已接收请求，不代表同步或退出已完成。",
-            *ack
-        );
-    }
-    if (const auto drive = extract_single(
-            message,
-            "WARNING: This will remove all saved item snapshots, the Delta cursor, and pending-download recovery records for drive ",
-            "."
-        )) {
-        return std::format(
-            "警告：这将移除驱动器 {} 的所有已保存项目快照、增量游标及待下载恢复记录。",
-            *drive
-        );
-    }
-    if (const auto parts = extract_between(
-            message,
-            "Reset synchronization cursor for drive ",
-            ": saved cursor ",
-            "."
-        )) {
-        const auto cursor_state =
-            parts->second == "removed" ? "已移除" : "不存在";
-        return std::format(
-            "已重置驱动器 {} 的同步游标：已保存游标{}。",
-            parts->first,
-            cursor_state
-        );
-    }
-    if (const auto parts = extract_between(
-            message, "Cannot upgrade '", "': ", ""
-        )) {
-        return std::format(
-            "无法升级状态数据库 '{}'：{}", parts->first, parts->second
-        );
-    }
-    if (const auto parts = extract_between(
-            message, "Could not finish cleanup for '", "': ", ""
-        )) {
-        return std::format(
-            "无法完成对 '{}' 的清理：{}", parts->first, parts->second
-        );
-    }
-    if (const auto parts = extract_between(
-            message, "Kept '", "': ", ""
-        )) {
-        return std::format("已保留 '{}'：{}", parts->first, parts->second);
-    }
-    if (const auto parts = extract_between(
-            message, "Drive '", "': ", ""
-        )) {
-        return std::format("驱动器 '{}'：{}", parts->first, parts->second);
-    }
-    if (const auto path = extract_single(
-            message,
-            "Monitoring local and Microsoft Graph changes for:\n  ",
-            ""
-        )) {
-        return std::format("正在监控本地与 Microsoft Graph 远端更改：\n  {}", *path);
-    }
-    if (const auto parts = extract_between(
-            message,
-            "Local changes settle for ",
-            " milliseconds; remote WebSocket notifications trigger Delta synchronization, with Graph polling every ",
-            " seconds as fallback."
-        )) {
-        return std::format(
-            "本地更改防抖等待 {} 毫秒；远端 WebSocket 实时通知已启用，并以每 {} 秒轮询 Graph 作为回退。",
-            parts->first,
-            parts->second
-        );
-    }
-    if (const auto parts = extract_between(
-            message,
-            "Local changes settle for ",
-            " milliseconds; remote WebSocket notifications are disabled, and Graph is polled every ",
-            " seconds."
-        )) {
-        return std::format(
-            "本地更改防抖等待 {} 毫秒；远端 WebSocket 实时通知已禁用，每 {} 秒轮询一次 Graph。",
-            parts->first,
-            parts->second
-        );
-    }
-    if (const auto parts = extract_between(
-            message,
-            "Remote deletion plan affects ",
-            " tracked items, exceeding the configured limit of ",
-            ". Proceeding because --force-large-delete was provided."
-        )) {
-        return std::format(
-            "远端删除计划涉及 {} 个受跟踪项目，超过配置上限 {}。由于指定了 --force-large-delete，将继续执行。",
-            parts->first,
-            parts->second
-        );
-    }
-    if (const auto parts = extract_between(
-            message,
-            "Remote deletion plan affects ",
-            " tracked items, exceeding the configured limit of ",
-            ". A normal sync would be blocked."
-        )) {
-        return std::format(
-            "远端删除计划涉及 {} 个受跟踪项目，超过配置上限 {}。常规同步将被阻止。",
-            parts->first,
-            parts->second
-        );
-    }
-    if (const auto parts = extract_between(
-            message,
-            "Remote deletion plan affects ",
-            " tracked items, exceeding the configured limit of ",
-            ". Review the local filesystem and rerun sync with --force-large-delete only if the deletions are intentional."
-        )) {
-        return std::format(
-            "远端删除计划涉及 {} 个受跟踪项目，超过配置上限 {}。请检查本地文件系统，仅当确认需要删除时使用 --force-large-delete 重新运行。",
-            parts->first,
-            parts->second
-        );
+    for (const auto& rule : catalog.two_arg_messages) {
+        if (const auto parts = extract_between(
+                message, rule.prefix, rule.middle, rule.suffix
+            )) {
+            return format_runtime(rule.pattern, parts->first, parts->second);
+        }
     }
     return event.text;
 }
@@ -954,74 +1445,109 @@ translate_tui_message(const MessageEvent& event, Language language) {
          event.kind == MessageKind::information)) {
         return std::nullopt;
     }
-    if (!is_chinese(language)) {
-        return std::nullopt;
+    const auto& catalog = catalog_for(language);
+    if (const auto by_event =
+            lookup_entry(catalog.tui_event_messages, event.event)) {
+        return std::string{*by_event};
     }
-    if (event.event == "delta_query_started") {
-        return "正在检查云端更改...";
-    }
-    if (event.event == "delta_cursor_invalid") {
-        return "正在刷新云端变更历史...";
-    }
-    if (event.event == "sync_completed") {
-        return "同步完成。";
-    }
-    if (event.event == "sync_completed_with_issues") {
-        return "同步已完成，但有项目需要关注。";
-    }
-    if (event.event == "initial_delta_scheduled") {
-        return "下次同步将执行完整的云端检查。";
-    }
-    return translate_message(event, language);
+    auto translated = apply_replacements(
+        translate_message(event, language), catalog.tui_message_replacements
+    );
+    return apply_replacements(
+        std::move(translated), catalog.tui_term_replacements
+    );
 }
 
 std::string translate_blocked_reason(
     std::string_view, std::string_view reason_message, Language language
 ) {
-    if (!is_chinese(language)) {
-        return std::string{reason_message};
-    }
-    if (const auto parts = extract_between(
-            reason_message,
-            "Remote deletion plan affects ",
-            " tracked items, exceeding the configured limit of ",
-            "."
-        )) {
-        return std::format(
-            "远端删除计划涉及 {} 个受跟踪项目，超过配置上限 {}。",
-            parts->first,
-            parts->second
-        );
+    const auto& catalog = catalog_for(language);
+    for (const auto& rule : catalog.blocked_reason_rules) {
+        if (const auto parts = extract_between(
+                reason_message, rule.prefix, rule.middle, rule.suffix
+            )) {
+            return format_runtime(rule.pattern, parts->first, parts->second);
+        }
     }
     return std::string{reason_message};
+}
+
+std::string format_tui_blocked_item(
+    const BlockedItemEvent& event, Language language
+) {
+    const auto& catalog = catalog_for(language);
+    const auto reason = apply_replacements(
+        translate_blocked_reason(
+            event.reason_code, event.reason_message, language
+        ),
+        catalog.tui_term_replacements
+    );
+    return format_runtime(
+        catalog.templates.tui_blocked_item_pattern, event.path, reason
+    );
+}
+
+std::string format_file_operation_line(
+    std::string_view formatted_path,
+    events::FileAction action,
+    bool directory,
+    bool recovered,
+    std::string_view local_path,
+    std::string_view completed_at,
+    Language language
+) {
+    const auto& catalog = catalog_for(language);
+    const auto local_suffix =
+        local_path.empty()
+            ? std::string{}
+            : format_runtime(
+                  catalog.templates.file_local_path_pattern, local_path
+              );
+    return format_runtime(
+        "{}  {}{}{}{}  {}",
+        formatted_path,
+        translate_file_action(action, language),
+        directory ? catalog.templates.file_folder_tag : std::string_view{},
+        recovered ? catalog.templates.file_recovered_tag : std::string_view{},
+        local_suffix,
+        completed_at
+    );
+}
+
+std::string format_file_history_summary(
+    std::size_t retained,
+    std::size_t limit,
+    std::size_t omitted,
+    std::string_view drives_csv,
+    Language language
+) {
+    const auto& catalog = catalog_for(language);
+    auto status = format_runtime(
+        catalog.templates.file_history_status_pattern, retained, limit, omitted
+    );
+    if (!drives_csv.empty()) {
+        status += catalog.templates.file_history_drives_prefix;
+        status += drives_csv;
+    }
+    return status;
 }
 
 std::string format_delta_summary(
     const events::DeltaSummary& summary, Language language
 ) {
+    const auto& catalog = catalog_for(language);
     const auto items_per_page =
         summary.pages == 0
             ? 0.0
             : static_cast<double>(summary.scanned_items) /
                   static_cast<double>(summary.pages);
-    if (is_chinese(language)) {
-        return std::format(
-            "Microsoft Graph 增量同步完成：共 {} 页，扫描 {} 个项目，{} 个唯一更改（{} 个文件、{} 个文件夹、{} 个删除），平均 {:.1f} 项/页\n",
-            summary.pages,
-            summary.scanned_items,
-            summary.unique_changes,
-            summary.files,
-            summary.directories,
-            summary.deletions,
-            items_per_page
-        );
-    }
-    return std::format(
-        "Microsoft Graph delta complete: {} page{}, {} items "
-        "scanned, {} unique changes ({} files, {} folders, {} "
-        "deletions), {:.1f} items/page\n",
+    const auto pattern =
+        summary.pages == 1
+            ? catalog.templates.delta_summary_singular_pattern
+            : catalog.templates.delta_summary_plural_pattern;
+    return format_runtime(
+        pattern,
         summary.pages,
-        summary.pages == 1 ? "" : "s",
         summary.scanned_items,
         summary.unique_changes,
         summary.files,
@@ -1034,48 +1560,264 @@ std::string format_delta_summary(
 std::string format_blocked_item_line(
     const BlockedItemEvent& event, Language language
 ) {
-    if (is_chinese(language)) {
-        return std::format(
-            "已受阻 '{}'：{} ({})\n",
-            event.path,
-            translate_blocked_reason(
-                event.reason_code, event.reason_message, language
-            ),
-            event.reason_code
+    const auto& catalog = catalog_for(language);
+    const auto reason = translate_blocked_reason(
+        event.reason_code, event.reason_message, language
+    );
+    return format_runtime(
+        catalog.templates.blocked_item_line_pattern,
+        event.path,
+        reason,
+        event.reason_code
+    );
+}
+
+std::string format_text_transfer_progress(
+    bool upload,
+    bool completed,
+    std::size_t completed_files,
+    std::size_t file_count,
+    unsigned int percentage,
+    std::string_view transferred_bytes,
+    std::string_view total_bytes,
+    std::optional<std::string_view> rate_bytes,
+    std::optional<std::string_view> duration,
+    Language language
+) {
+    const auto& catalog = catalog_for(language);
+    const auto label =
+        upload ? (completed ? catalog.templates.text_upload_done_label
+                            : catalog.templates.text_upload_active_label)
+               : (completed ? catalog.templates.text_download_done_label
+                            : catalog.templates.text_download_active_label);
+    auto line = format_runtime(
+        catalog.templates.text_transfer_base_pattern,
+        label,
+        completed_files,
+        file_count,
+        percentage,
+        transferred_bytes,
+        total_bytes
+    );
+    if (rate_bytes) {
+        line += format_runtime(
+            catalog.templates.text_transfer_rate_pattern, *rate_bytes
         );
     }
-    return std::format(
-        "Blocked '{}': {} ({})\n",
-        event.path,
-        event.reason_message,
-        event.reason_code
+    if (completed && duration) {
+        line += format_runtime(
+            catalog.templates.text_transfer_elapsed_pattern, *duration
+        );
+    } else if (!completed && duration) {
+        line += format_runtime(
+            catalog.templates.text_transfer_eta_pattern, *duration
+        );
+    }
+    return line;
+}
+
+std::string format_text_sync_phase_line(
+    events::SyncPhase phase, Language language
+) {
+    const auto& catalog = catalog_for(language);
+    return format_runtime(
+        catalog.templates.text_sync_phase_pattern,
+        translate_sync_phase(phase, language)
+    );
+}
+
+std::string format_text_sync_context_line(
+    sync::SyncMode direction, bool preview, Language language
+) {
+    const auto& catalog = catalog_for(language);
+    return format_runtime(
+        catalog.templates.text_sync_context_pattern,
+        translate_sync_mode(direction, language),
+        preview ? catalog.templates.text_sync_preview_suffix
+                : std::string_view{}
+    );
+}
+
+std::string format_tui_cloud_status(
+    std::size_t scanned_items,
+    std::optional<std::size_t> changes_found,
+    Language language
+) {
+    const auto& catalog = catalog_for(language);
+    auto status = format_runtime(
+        catalog.templates.tui_cloud_checked_pattern, scanned_items
+    );
+    if (changes_found) {
+        status += format_runtime(
+            catalog.templates.tui_cloud_changes_suffix_pattern, *changes_found
+        );
+    }
+    return status;
+}
+
+std::string format_tui_transfer_unknown_compact(
+    std::string_view title, Language language
+) {
+    const auto& catalog = catalog_for(language);
+    return format_runtime(
+        catalog.templates.tui_transfer_unknown_compact_pattern, title
+    );
+}
+
+std::string format_tui_transfer_heading(
+    std::string_view title,
+    std::size_t completed_files,
+    std::size_t file_count,
+    Language language
+) {
+    const auto& catalog = catalog_for(language);
+    return format_runtime(
+        catalog.templates.tui_transfer_heading_pattern,
+        title,
+        completed_files,
+        file_count
+    );
+}
+
+std::string format_tui_transfer_details(
+    unsigned int percentage,
+    std::string_view transferred_bytes,
+    std::string_view total_bytes,
+    std::string_view rate_bytes,
+    bool completed,
+    std::optional<std::string_view> duration,
+    Language language
+) {
+    const auto& catalog = catalog_for(language);
+    auto details = format_runtime(
+        "{}%  {} / {}  {}/s",
+        percentage,
+        transferred_bytes,
+        total_bytes,
+        rate_bytes
+    );
+    if (completed) {
+        const auto elapsed = duration.value_or("<1s");
+        details += format_runtime(
+            catalog.templates.tui_transfer_elapsed_suffix_pattern, elapsed
+        );
+    } else {
+        const auto eta =
+            duration.value_or(catalog.templates.tui_transfer_calculating_label);
+        details += format_runtime(
+            catalog.templates.tui_transfer_eta_suffix_pattern, eta
+        );
+    }
+    return details;
+}
+
+std::string format_tui_sync_context(
+    sync::SyncMode direction, bool monitoring, bool preview, Language language
+) {
+    const auto& catalog = catalog_for(language);
+    const auto run_kind =
+        monitoring ? catalog.templates.tui_context_monitoring_label
+                   : catalog.templates.tui_context_one_time_label;
+    const auto mode_text = translate_sync_mode(direction, language);
+    const auto preview_suffix =
+        preview ? catalog.templates.tui_context_preview_suffix
+                : std::string_view{};
+    return format_runtime(
+        catalog.templates.tui_context_pattern,
+        mode_text,
+        run_kind,
+        preview_suffix
+    );
+}
+
+std::string format_tui_sync_phase(
+    bool monitoring, events::SyncPhase phase, Language language
+) {
+    const auto& catalog = catalog_for(language);
+    const auto prefix =
+        monitoring ? catalog.templates.tui_phase_monitoring_label
+                   : catalog.templates.tui_phase_sync_label;
+    const auto phase_text = translate_sync_phase(phase, language);
+    return format_runtime(
+        catalog.templates.tui_phase_pattern, prefix, phase_text
+    );
+}
+
+std::string format_tui_sync_summary(
+    const events::SyncSummaryEvent& summary, Language language
+) {
+    const auto& catalog = catalog_for(language);
+    const auto incomplete_suffix =
+        summary.blocked != 0 ? catalog.templates.tui_summary_incomplete_suffix
+                             : std::string_view{};
+    return format_runtime(
+        catalog.templates.tui_summary_pattern,
+        summary.downloaded,
+        summary.uploaded,
+        summary.moved,
+        summary.deleted,
+        summary.blocked,
+        incomplete_suffix
+    );
+}
+
+std::string format_tui_file_history_heading(
+    std::size_t retained, std::size_t omitted, Language language
+) {
+    const auto& catalog = catalog_for(language);
+    return format_runtime(
+        catalog.templates.tui_file_history_heading_pattern, retained, omitted
+    );
+}
+
+std::string format_tui_paged_section_title(
+    std::string_view title,
+    TuiView view,
+    std::size_t index,
+    std::size_t total,
+    Language language
+) {
+    const auto& catalog = catalog_for(language);
+    const auto noun = view == TuiView::drives
+                          ? catalog.templates.tui_paged_drive_noun
+                          : catalog.templates.tui_paged_item_noun;
+    return format_runtime(
+        catalog.templates.tui_paged_section_pattern, title, noun, index, total
+    );
+}
+
+std::string format_tui_partial_heading(
+    std::size_t index, std::size_t total, Language language
+) {
+    const auto& catalog = catalog_for(language);
+    return format_runtime(
+        catalog.templates.tui_partial_heading_pattern, index, total
+    );
+}
+
+std::string format_tui_needs_attention(
+    std::size_t blocked_items, std::string_view last_blocked, Language language
+) {
+    const auto& catalog = catalog_for(language);
+    return format_runtime(
+        catalog.templates.tui_needs_attention_pattern,
+        blocked_items,
+        last_blocked
     );
 }
 
 std::string translate_confirmation_prompt(
     const ConfirmationRequest& request, Language language
 ) {
-    if (!is_chinese(language)) {
-        return request.prompt;
-    }
+    const auto& catalog = catalog_for(language);
     const std::string_view prompt{request.prompt};
-    if (prompt ==
-        "Back up and upgrade all listed outdated databases? Type 'migrate' to confirm: ") {
-        return "是否备份并升级上面列出的所有旧版本数据库？请输入 'migrate' 确认：";
+    if (const auto exact = lookup_entry(catalog.exact_prompts, prompt)) {
+        return std::string{*exact};
     }
-    if (const auto ref = extract_single(
-            prompt,
-            "Type the configured drive reference '",
-            "' to confirm: "
-        )) {
-        return std::format("请输入配置的驱动器引用 '{}' 以确认：", *ref);
-    }
-    if (const auto ref = extract_single(
-            prompt,
-            "Type the configured drive reference '",
-            "' to confirm cleanup: "
-        )) {
-        return std::format("请输入配置的驱动器引用 '{}' 以确认清理：", *ref);
+    for (const auto& rule : catalog.single_arg_prompts) {
+        if (const auto arg = extract_single(prompt, rule.prefix, rule.suffix)) {
+            return format_runtime(rule.pattern, *arg);
+        }
     }
     return request.prompt;
 }
@@ -1083,138 +1825,40 @@ std::string translate_confirmation_prompt(
 std::string_view translate_file_action(
     events::FileAction action, Language language
 ) noexcept {
-    if (!is_chinese(language)) {
-        return events::file_action_name(action);
-    }
-    switch (action) {
-    case events::FileAction::downloaded:
-        return "已下载";
-    case events::FileAction::uploaded:
-        return "已上传";
-    case events::FileAction::moved_locally:
-        return "本地已移动";
-    case events::FileAction::moved_remotely:
-        return "远端已移动";
-    case events::FileAction::deleted_locally:
-        return "本地已删除";
-    case events::FileAction::deleted_remotely:
-        return "远端已删除";
+    const auto& catalog = catalog_for(language);
+    if (const auto translated = lookup_enum(catalog.file_actions, action)) {
+        return *translated;
     }
     return events::file_action_name(action);
 }
 
 std::string_view
 translate_tui_view_title(TuiView view, Language language) noexcept {
-    if (!is_chinese(language)) {
-        switch (view) {
-        case TuiView::auth:
-            return "AUTH";
-        case TuiView::health:
-            return "HEALTH";
-        case TuiView::status:
-            return "STATUS";
-        case TuiView::blocked:
-            return "BLOCKED";
-        case TuiView::drives:
-            return "DRIVES";
-        case TuiView::shared:
-            return "SHARED";
-        case TuiView::sites:
-            return "SITES";
-        case TuiView::quota:
-            return "QUOTA";
-        case TuiView::storage:
-            return "STORAGE";
-        case TuiView::partials:
-            return "PARTIALS";
-        case TuiView::files:
-            return "FILES";
-        case TuiView::verify:
-            return "VERIFY";
-        case TuiView::config:
-            return "CONFIG";
-        case TuiView::sync:
-            return "SYNC";
-        case TuiView::download:
-            return "DOWNLOAD";
-        case TuiView::watch:
-            return "WATCH";
-        }
-        return "SYNC";
+    const auto& catalog = catalog_for(language);
+    if (const auto translated = lookup_enum(catalog.tui_view_titles, view)) {
+        return *translated;
     }
-    switch (view) {
-    case TuiView::auth:
-        return "认证";
-    case TuiView::health:
-        return "健康检查";
-    case TuiView::status:
-        return "同步状态";
-    case TuiView::blocked:
-        return "受阻项目";
-    case TuiView::drives:
-        return "驱动器";
-    case TuiView::shared:
-        return "共享项目";
-    case TuiView::sites:
-        return "站点";
-    case TuiView::quota:
-        return "存储配额";
-    case TuiView::storage:
-        return "本地存储";
-    case TuiView::partials:
-        return "分片下载";
-    case TuiView::files:
-        return "文件检查";
-    case TuiView::verify:
-        return "文件校验";
-    case TuiView::config:
-        return "有效配置";
-    case TuiView::sync:
-        return "同步";
-    case TuiView::download:
-        return "单文件下载";
-    case TuiView::watch:
-        return "实时监控";
+    if (const auto fallback =
+            lookup_enum(kEnglishCatalog.tui_view_titles, view)) {
+        return *fallback;
     }
-    return "同步";
+    return "SYNC";
 }
 
 std::string_view
 translate_sync_phase(events::SyncPhase phase, Language language) noexcept {
-    if (!is_chinese(language)) {
-        return events::sync_phase_name(phase);
-    }
-    switch (phase) {
-    case events::SyncPhase::preparing:
-        return "准备中";
-    case events::SyncPhase::scanning:
-        return "扫描云端更改";
-    case events::SyncPhase::scanning_local:
-        return "扫描本地更改";
-    case events::SyncPhase::downloading:
-        return "下载中";
-    case events::SyncPhase::uploading:
-        return "上传中";
-    case events::SyncPhase::applying:
-        return "应用更改中";
-    case events::SyncPhase::waiting:
-        return "等待更改";
+    const auto& catalog = catalog_for(language);
+    if (const auto translated = lookup_enum(catalog.sync_phases, phase)) {
+        return *translated;
     }
     return events::sync_phase_name(phase);
 }
 
 std::string_view
 translate_sync_mode(sync::SyncMode mode, Language language) noexcept {
-    if (!is_chinese(language)) {
-        return sync::sync_mode_name(mode);
-    }
-    switch (mode) {
-    case sync::SyncMode::bidirectional:
-        return "双向同步";
-    case sync::SyncMode::download_only:
-        return "仅下载";
-    case sync::SyncMode::upload_only:
-        return "仅上传";
+    const auto& catalog = catalog_for(language);
+    if (const auto translated = lookup_enum(catalog.sync_modes, mode)) {
+        return *translated;
     }
     return sync::sync_mode_name(mode);
 }

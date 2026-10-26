@@ -126,16 +126,15 @@ ParseResult parse_arguments(int argc, char* argv[]) {
         application_version,
         tr("Display program version information and exit")
     );
-    if (cli::detail::is_chinese(help_language)) {
-        auto formatter = application.get_formatter();
-        formatter->label("Usage", "用法");
-        formatter->label("OPTIONS", "选项");
-        formatter->label("Options", "选项");
-        formatter->label("SUBCOMMANDS", "子命令");
-        formatter->label("Subcommands", "子命令");
-        formatter->label("Positionals", "位置参数");
-        formatter->label("REQUIRED", "必填");
-    }
+    const auto labels = cli::detail::cli_formatter_labels(help_language);
+    auto formatter = application.get_formatter();
+    formatter->label("Usage", std::string{labels.usage});
+    formatter->label("OPTIONS", std::string{labels.options_upper});
+    formatter->label("Options", std::string{labels.options});
+    formatter->label("SUBCOMMANDS", std::string{labels.subcommands_upper});
+    formatter->label("Subcommands", std::string{labels.subcommands});
+    formatter->label("Positionals", std::string{labels.positionals});
+    formatter->label("REQUIRED", std::string{labels.required});
     application.formatter_fn(
         [formatter = application.get_formatter(), application_version](
             const CLI::App* command, std::string name, CLI::AppFormatMode mode

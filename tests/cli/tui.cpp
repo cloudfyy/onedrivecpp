@@ -44,20 +44,92 @@ int main() {
                         onedrive::sync::SyncMode::bidirectional, false
                     );
                     zh_console.sync_phase(onedrive::events::SyncPhase::preparing);
+                    zh_console.message(
+                        MessageKind::information,
+                        "delta_query_started",
+                        "Starting Microsoft Graph delta query"
+                    );
+                    zh_console.delta_progress(
+                        2, 350, onedrive::util::ProgressState::ongoing
+                    );
+                    zh_console.delta_summary({
+                        .pages = 2,
+                        .scanned_items = 350,
+                        .unique_changes = 340,
+                        .files = 300,
+                        .directories = 30,
+                        .deletions = 10,
+                    });
                     zh_console.download_progress(
                         0, 0, 0, 0, onedrive::util::ProgressState::ongoing
                     );
+                    zh_console.blocked_item(
+                        "conflict.txt",
+                        "local_modification",
+                        "local file was modified"
+                    );
+                    zh_console.file_operation({
+                        .completed_at = std::chrono::system_clock::time_point{},
+                        .action = onedrive::events::FileAction::downloaded,
+                        .path = "doc.txt",
+                        .drive_id = "drive-zh",
+                    });
                     const auto rendered = zh_output.str();
                     const auto frame =
                         rendered.substr(rendered.rfind("\033[H"));
                     if (!frame.contains("ONEDRIVE // 监控") ||
                         !frame.contains("方向：双向同步 // 自动监控") ||
+                        !frame.contains("云端检查  已检查 350 项  //  发现 340 处变更") ||
                         !frame.contains("下载") ||
-                        !frame.contains("总量未知；无法计算百分比。")) {
+                        !frame.contains("总量未知；无法计算百分比。") ||
+                        !frame.contains("需要关注  1  //  conflict.txt：local file was modified") ||
+                        !frame.contains("正在检查云端变更...") ||
+                        !frame.contains("文件记录 // 保留 1 条 // 省略 0 条更早记录") ||
+                        !frame.contains("已下载")) {
                         return fail(
                             "Chinese TUI did not localize status bar or "
                             "progress card\n" +
                             frame
+                        );
+                    }
+                    std::ostringstream zh_drives_out;
+                    std::ostringstream zh_drives_err;
+                    const Console zh_drives{detail::make_ftxui_console_backend(
+                        {.color = ColorMode::never,
+                         .ui = UiMode::tui,
+                         .view = TuiView::drives,
+                         .language = Language::simplified_chinese},
+                        zh_drives_out,
+                        zh_drives_err,
+                        100,
+                        24
+                    )};
+                    zh_drives.section(
+                        "drive",
+                        "OneDrive drive:",
+                        {{.label = "name:", .key = "name", .value = "OneDrive"}}
+                    );
+                    zh_drives.section(
+                        "drive",
+                        "OneDrive drive:",
+                        {{.label = "name:", .key = "name", .value = "Backup"}}
+                    );
+                    std::istringstream input{"q\n"};
+                    auto* old_cin = std::cin.rdbuf(input.rdbuf());
+                    zh_drives.finish();
+                    std::cin.rdbuf(old_cin);
+                    const auto drives_rendered = zh_drives_out.str();
+                    const auto drives_frame = drives_rendered.substr(
+                        drives_rendered.rfind("\033[H")
+                    );
+                    if (!drives_frame.contains("ONEDRIVE // 驱动器") ||
+                        !drives_frame.contains("[驱动器 1/2]") ||
+                        !drives_frame.contains("左/右方向键 或 n/p：上/下一个驱动器") ||
+                        !drives_frame.contains("按 Enter 退出（或按 q）")) {
+                        return fail(
+                            "Chinese inspection TUI did not localize paging "
+                            "controls:\n" +
+                            drives_frame
                         );
                     }
                     return EXIT_SUCCESS;

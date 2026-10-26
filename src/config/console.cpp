@@ -1,7 +1,9 @@
 #include "onedrive/config/console.hpp"
 
+#include <array>
 #include <cctype>
 #include <cstdlib>
+#include <span>
 #include <stdexcept>
 #include <string>
 
@@ -29,6 +31,55 @@ namespace {
     return value.size() >= prefix.size() &&
            equals_ignore_case(value.substr(0, prefix.size()), prefix);
 }
+
+struct LanguageSpec {
+    Language language;
+    std::string_view canonical_name;
+    std::span<const std::string_view> config_aliases;
+    std::span<const std::string_view> exact_locales;
+    std::span<const std::string_view> prefix_locales;
+};
+
+constexpr std::array<std::string_view, 1> kAutoAliases{"auto"};
+constexpr std::array<std::string_view, 3> kEnglishAliases{
+    "en", "en_US", "en-US"
+};
+constexpr std::array<std::string_view, 2> kEnglishExactLocales{"en", "C"};
+constexpr std::array<std::string_view, 2> kEnglishPrefixLocales{"en_", "en-"};
+
+constexpr std::array<std::string_view, 5> kSimplifiedChineseAliases{
+    "zh_CN", "zh-CN", "zh_Hans", "zh-Hans", "zh"
+};
+constexpr std::array<std::string_view, 6> kSimplifiedChineseExactLocales{
+    "zh_CN", "zh-CN", "zh_SG", "zh-SG", "zh_Hans", "zh-Hans"
+};
+constexpr std::array<std::string_view, 2> kSimplifiedChinesePrefixLocales{
+    "zh_Hans_", "zh-Hans-"
+};
+
+constexpr std::array kLanguageSpecs{
+    LanguageSpec{
+        .language = Language::automatic,
+        .canonical_name = "auto",
+        .config_aliases = kAutoAliases,
+        .exact_locales = {},
+        .prefix_locales = {},
+    },
+    LanguageSpec{
+        .language = Language::english,
+        .canonical_name = "en",
+        .config_aliases = kEnglishAliases,
+        .exact_locales = kEnglishExactLocales,
+        .prefix_locales = kEnglishPrefixLocales,
+    },
+    LanguageSpec{
+        .language = Language::simplified_chinese,
+        .canonical_name = "zh_CN",
+        .config_aliases = kSimplifiedChineseAliases,
+        .exact_locales = kSimplifiedChineseExactLocales,
+        .prefix_locales = kSimplifiedChinesePrefixLocales,
+    },
+};
 
 } // namespace
 
@@ -75,31 +126,21 @@ TuiTheme parse_tui_theme(std::string_view value) {
 }
 
 Language parse_language(std::string_view value) {
-    if (value == "auto") {
-        return Language::automatic;
-    }
-    if (value == "en" || equals_ignore_case(value, "en_US") ||
-        equals_ignore_case(value, "en-US")) {
-        return Language::english;
-    }
-    if (equals_ignore_case(value, "zh_CN") ||
-        equals_ignore_case(value, "zh-CN") ||
-        equals_ignore_case(value, "zh_Hans") ||
-        equals_ignore_case(value, "zh-Hans") ||
-        equals_ignore_case(value, "zh")) {
-        return Language::simplified_chinese;
+    for (const auto& spec : kLanguageSpecs) {
+        for (const auto alias : spec.config_aliases) {
+            if (equals_ignore_case(value, alias)) {
+                return spec.language;
+            }
+        }
     }
     throw std::invalid_argument("invalid language: " + std::string{value});
 }
 
 std::string_view language_name(Language language) noexcept {
-    switch (language) {
-    case Language::automatic:
-        return "auto";
-    case Language::english:
-        return "en";
-    case Language::simplified_chinese:
-        return "zh_CN";
+    for (const auto& spec : kLanguageSpecs) {
+        if (spec.language == language) {
+            return spec.canonical_name;
+        }
     }
     return "auto";
 }
@@ -116,15 +157,17 @@ Language resolve_locale_language(std::string_view locale) noexcept {
         encoding != std::string_view::npos) {
         locale = locale.substr(0, encoding);
     }
-    if (equals_ignore_case(locale, "zh_CN") ||
-        equals_ignore_case(locale, "zh-CN") ||
-        equals_ignore_case(locale, "zh_SG") ||
-        equals_ignore_case(locale, "zh-SG") ||
-        equals_ignore_case(locale, "zh_Hans") ||
-        equals_ignore_case(locale, "zh-Hans") ||
-        starts_with_ignore_case(locale, "zh_Hans_") ||
-        starts_with_ignore_case(locale, "zh-Hans-")) {
-        return Language::simplified_chinese;
+    for (const auto& spec : kLanguageSpecs) {
+        for (const auto exact : spec.exact_locales) {
+            if (equals_ignore_case(locale, exact)) {
+                return spec.language;
+            }
+        }
+        for (const auto prefix : spec.prefix_locales) {
+            if (starts_with_ignore_case(locale, prefix)) {
+                return spec.language;
+            }
+        }
     }
     return Language::english;
 }
@@ -132,6 +175,17 @@ Language resolve_locale_language(std::string_view locale) noexcept {
 Language resolve_language(Language language) noexcept {
     if (language != Language::automatic) {
         return language;
+    }
+    if (const char* override_lang = std::getenv("ONEDRIVE_CPP_LANG");
+        override_lang != nullptr && *override_lang != '\0') {
+        try {
+            const auto parsed = parse_language(override_lang);
+            if (parsed != Language::automatic) {
+                return parsed;
+            }
+        } catch (const std::invalid_argument&) {
+            return resolve_locale_language(override_lang);
+        }
     }
     for (const char* variable : {"LC_ALL", "LC_MESSAGES", "LANG", "LANGUAGE"}) {
         if (const char* value = std::getenv(variable);

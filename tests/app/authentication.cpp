@@ -788,7 +788,9 @@ int test_sharepoint_authentication() {
 }
 
 bool send_loopback_callback(
-    std::string_view authorize_url, bool declined = false
+    std::string_view authorize_url,
+    bool declined = false,
+    std::string_view expected_body = {}
 ) {
     constexpr std::string_view prefix = "redirect_uri=http%3A%2F%2Flocalhost%3A";
     const auto port_pos = authorize_url.find(prefix);
@@ -835,12 +837,16 @@ bool send_loopback_callback(
                          std::to_string(port) + "\r\nConnection: close\r\n\r\n";
     const auto written =
         ::write(client_fd, request.data(), request.size());
-    char response[512]{};
+    char response[1024]{};
     const auto read_bytes = ::read(client_fd, response, sizeof(response));
     ::close(client_fd);
+    const std::string_view response_view{
+        response,
+        read_bytes > 0 ? static_cast<std::size_t>(read_bytes) : 0U
+    };
     return written == static_cast<ssize_t>(request.size()) && read_bytes > 0 &&
-           std::string_view{response, static_cast<std::size_t>(read_bytes)}
-               .contains("200 OK");
+           response_view.contains("200 OK") &&
+           (expected_body.empty() || response_view.contains(expected_body));
 }
 
 int test_cli_gui_detection_and_auth_flow() {
@@ -905,6 +911,61 @@ int test_cli_gui_detection_and_auth_flow() {
             )) {
             return fail(
                 "auto auth-flow with GUI did not complete browser login:\n" +
+                result.standard_output + result.standard_error
+            );
+        }
+    }
+    {
+        CliFixture fixture;
+        fixture.runtime_factory.authentication_response_override =
+            [](
+                const onedrive::http::HttpRequest& request
+            ) -> std::optional<onedrive::http::HttpResult> {
+            if (request.url.ends_with("/token")) {
+                return onedrive::http::HttpResponse{
+                    .status_code = 200,
+                    .body =
+                        R"({"access_token":"access","refresh_token":"browser-zh-refresh","expires_in":3600})",
+                };
+            }
+            return std::nullopt;
+        };
+        std::future<bool> callback_delivered;
+        const onedrive::app::detail::ScopedBrowserAuthOverride override_gui{
+            true,
+            [&](std::string_view url) {
+                callback_delivered = std::async(
+                    std::launch::async,
+                    [target = std::string{url}] {
+                        return send_loopback_callback(
+                            target,
+                            false,
+                            "已收到授权。请返回 OneDrive C++，可以关闭此标签页。"
+                        );
+                    }
+                );
+                return true;
+            }
+        };
+        const auto result = run_application(
+            fixture.runtime_factory,
+            {"onedrive-cpp",
+             "account",
+             "login",
+             "--language",
+             "zh_CN",
+             "--config",
+             fixture.config_path.string()}
+        );
+        if (result.exit_code != onedrive::exit_code::success ||
+            !callback_delivered.valid() || !callback_delivered.get() ||
+            !result.standard_output.contains(
+                "已打开默认浏览器进行 Microsoft 登录。"
+            ) ||
+            !result.standard_output.contains("正在等待浏览器登录授权...")) {
+            return fail(
+                "Chinese browser login did not localize callback page or "
+                "console messages:\n" +
                 result.standard_output + result.standard_error
             );
         }

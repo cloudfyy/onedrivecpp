@@ -9,6 +9,8 @@
 #include <QStringList>
 #include <QTranslator>
 
+#include <optional>
+
 namespace onedrive::gui {
 
 enum class Language { automatic, english, simplified_chinese };
@@ -24,6 +26,7 @@ public:
     explicit Localization(const QLocale& locale);
     void set_language(Language language);
     [[nodiscard]] Language language() const noexcept;
+    [[nodiscard]] bool translation_loaded() const noexcept;
     [[nodiscard]] bool chinese_loaded() const noexcept;
 
 private:
@@ -32,7 +35,7 @@ private:
     QTranslator qt_translator_;
     QTranslator translator_;
     Language language_{Language::automatic};
-    bool chinese_loaded_{false};
+    std::optional<Language> loaded_language_;
 };
 
 [[nodiscard]] QString account_status_text(AccountStatus status);

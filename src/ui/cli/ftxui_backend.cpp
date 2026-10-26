@@ -78,105 +78,6 @@ ThemePalette palette_for(TuiTheme theme) {
     return palette_for(TuiTheme::hacker);
 }
 
-void replace_all(
-    std::string& text,
-    std::string_view search,
-    std::string_view replacement
-) {
-    std::size_t position = 0;
-    while ((position = text.find(search, position)) != std::string::npos) {
-        text.replace(position, search.size(), replacement);
-        position += replacement.size();
-    }
-}
-
-std::string friendly_text(std::string text) {
-    replace_all(text, "Microsoft Graph", "cloud service");
-    replace_all(text, "Graph", "cloud service");
-    replace_all(text, "WebSocket", "live cloud updates");
-    replace_all(text, "Delta", "cloud check");
-    replace_all(text, "delta", "cloud check");
-    return text;
-}
-
-std::optional<std::string> friendly_message(
-    const MessageEvent& event, Language language
-) {
-    if (event.event == "log" &&
-        (event.kind == MessageKind::trace ||
-         event.kind == MessageKind::debug ||
-         event.kind == MessageKind::information)) {
-        return std::nullopt;
-    }
-    if (is_chinese(language)) {
-        if (event.event == "delta_query_started") {
-            return "正在检查云端变更...";
-        }
-        if (event.event == "delta_cursor_invalid") {
-            return "正在刷新云端历史记录...";
-        }
-        if (event.event == "sync_completed") {
-            return "同步完成。";
-        }
-        if (event.event == "sync_completed_with_issues") {
-            return "同步已完成，但有项目需要关注。";
-        }
-        if (event.event == "initial_delta_scheduled") {
-            return "下次同步将执行完整云端检查。";
-        }
-        return translate_message(event, language);
-    }
-    if (event.event == "delta_query_started") {
-        return "Checking the cloud for changes...";
-    }
-    if (event.event == "delta_cursor_invalid") {
-        return "Refreshing cloud history...";
-    }
-    if (event.event == "sync_completed") {
-        return "Sync complete.";
-    }
-    if (event.event == "sync_completed_with_issues") {
-        return "Sync finished with items needing attention.";
-    }
-    if (event.event == "initial_delta_scheduled") {
-        return "The next sync will perform a full cloud check.";
-    }
-
-    auto text = event.text;
-    replace_all(
-        text,
-        "Local changes settle for ",
-        "Local changes wait "
-    );
-    replace_all(
-        text,
-        " milliseconds; remote WebSocket notifications trigger Delta "
-        "synchronization, with Graph polling every ",
-        " milliseconds to settle; live cloud updates are enabled, with a "
-        "safety check every "
-    );
-    replace_all(
-        text,
-        " milliseconds; remote WebSocket notifications are disabled, and "
-        "Graph is polled every ",
-        " milliseconds to settle; live cloud updates are disabled, so "
-        "changes are checked every "
-    );
-    replace_all(text, " seconds as fallback.", " seconds.");
-    replace_all(
-        text,
-        "Monitoring local and Microsoft Graph changes for:",
-        "Watching for local and cloud changes in:"
-    );
-    replace_all(text, "Remote delta contains", "Cloud storage has");
-    replace_all(text, " upserts", " new or updated");
-    replace_all(text, " removals", " removed");
-    replace_all(text, " moves", " moved");
-    replace_all(text, " blocked", " need attention");
-    replace_all(text, "the Delta cursor", "cloud change history");
-    return friendly_text(std::move(text));
-}
-
 const std::string&
 field_value(const SectionEvent& section, std::string_view key) {
     const auto field = std::ranges::find(section.fields, key, &Field::key);
@@ -288,11 +189,11 @@ public:
             return;
         }
         leave_fullscreen();
-        output_ << (is_chinese(language_)
-                        ? "\n已完成的文件操作（当前进程）：\n"
-                          "路径  操作 / 详情  时间 (UTC)\n"
-                        : "\nCompleted file operations (this process):\n"
-                          "Path  Action / details  Time (UTC)\n");
+        output_ << translate_text(
+            "\nCompleted file operations (this process):\n"
+            "Path  Action / details  Time (UTC)\n",
+            language_
+        );
         for (const auto& operation : file_history_.entries()) {
             output_ << format_file_operation(operation, language_) << '\n';
         }
@@ -393,7 +294,7 @@ private:
     }
 
     void update(const MessageEvent& event) {
-        auto message = friendly_message(event, language_);
+        auto message = translate_tui_message(event, language_);
         if (!message) {
             return;
         }
@@ -405,20 +306,13 @@ private:
 
     void update(const SectionEvent& event) {
         section_ = event;
-        if (is_chinese(language_)) {
-            section_.title =
-                translate_section_title(event.event, event.title, language_);
-            for (auto& field : section_.fields) {
-                field.label =
-                    translate_field_label(field.key, field.label, language_);
-                field.value =
-                    translate_field_value(field.key, field.value, language_);
-            }
-        } else {
-            section_.title = friendly_text(event.title);
-            for (auto& field : section_.fields) {
-                field.label = friendly_text(std::move(field.label));
-            }
+        section_.title =
+            translate_tui_section_title(event.event, event.title, language_);
+        for (auto& field : section_.fields) {
+            field.label =
+                translate_tui_field_label(field.key, field.label, language_);
+            field.value =
+                translate_field_value(field.key, field.value, language_);
         }
         if ((view_ == TuiView::drives && event.event == "drive") ||
             (view_ == TuiView::blocked && event.event == "blocked_item") ||
@@ -453,13 +347,7 @@ private:
 
     void update(const BlockedItemEvent& event) {
         ++blocked_items_;
-        last_blocked_ =
-            event.path + (is_chinese(language_) ? "：" : ": ") +
-            (is_chinese(language_)
-                 ? translate_blocked_reason(
-                       event.reason_code, event.reason_message, language_
-                   )
-                 : friendly_text(event.reason_message));
+        last_blocked_ = format_tui_blocked_item(event, language_);
     }
 
     void update(const DownloadProgressEvent& event) {
@@ -504,44 +392,7 @@ private:
     }
 
     Element header() const {
-        const bool chinese = is_chinese(language_);
-        const auto view_name = [&] {
-            switch (view_) {
-                case TuiView::auth:
-                    return chinese ? "认证" : "AUTH";
-                case TuiView::health:
-                    return chinese ? "健康检查" : "HEALTH";
-                case TuiView::status:
-                    return chinese ? "状态" : "STATUS";
-                case TuiView::blocked:
-                    return chinese ? "受阻项目" : "BLOCKED";
-                case TuiView::drives:
-                    return chinese ? "驱动器" : "DRIVES";
-                case TuiView::shared:
-                    return chinese ? "共享内容" : "SHARED";
-                case TuiView::sites:
-                    return chinese ? "站点" : "SITES";
-                case TuiView::quota:
-                    return chinese ? "配额" : "QUOTA";
-                case TuiView::storage:
-                    return chinese ? "存储占用" : "STORAGE";
-                case TuiView::partials:
-                    return chinese ? "未完成下载" : "PARTIALS";
-                case TuiView::files:
-                    return chinese ? "已下载文件" : "FILES";
-                case TuiView::verify:
-                    return chinese ? "文件校验" : "VERIFY";
-                case TuiView::config:
-                    return chinese ? "配置" : "CONFIG";
-                case TuiView::download:
-                    return chinese ? "下载" : "DOWNLOAD";
-                case TuiView::watch:
-                    return chinese ? "监控" : "WATCH";
-                case TuiView::sync:
-                    return chinese ? "同步" : "SYNC";
-            }
-            return chinese ? "同步" : "SYNC";
-        }();
+        const auto view_name = translate_tui_view_title(view_, language_);
         return hbox({
             with_color(
                 emphasized(text(fmt::format(
@@ -556,15 +407,12 @@ private:
     }
 
     Element cloud_status() const {
-        const bool chinese = is_chinese(language_);
-        auto status = chinese
-            ? fmt::format("云端检查  已检查 {} 项", delta_items_)
-            : fmt::format("CLOUD CHECK  {} items checked", delta_items_);
-        if (delta_complete_) {
-            status += chinese
-                ? fmt::format("  //  发现 {} 处变更", delta_changes_)
-                : fmt::format("  //  {} changes found", delta_changes_);
-        }
+        auto status = format_tui_cloud_status(
+            delta_items_,
+            delta_complete_ ? std::optional<std::size_t>{delta_changes_}
+                            : std::nullopt,
+            language_
+        );
         return with_color(
             text(std::move(status)),
             delta_complete_ ? palette_.success : palette_.accent
@@ -578,21 +426,18 @@ private:
         std::string_view title,
         bool compact = false
     ) const {
-        const bool chinese = is_chinese(language_);
         if (transfer.total == 0 && transfer.file_count == 0 &&
             transfer.state == util::ProgressState::ongoing) {
             if (compact) {
                 return text(
-                    std::string{title} +
-                    (chinese ? " // 总量未知" : " // totals unknown")
+                    format_tui_transfer_unknown_compact(title, language_)
                 );
             }
             return vbox({
                        emphasized(text(std::string{title})),
-                       text(
-                           chinese ? "总量未知；无法计算百分比。"
-                                   : "Totals unknown; percentage unavailable."
-                       ),
+                       text(std::string{translate_text(
+                           "Totals unknown; percentage unavailable.", language_
+                       )}),
                    }) |
                    border;
         }
@@ -607,45 +452,37 @@ private:
             static_cast<float>(percentage) / 100.0F
         );
         progress = with_color(std::move(progress), palette_.primary);
-        auto details = fmt::format(
-            "{}%  {} / {}  {}/s",
-            percentage,
-            format_bytes(bytes),
-            format_bytes(transfer.total),
-            format_bytes(transfer.metrics.bytes_per_second)
-        );
-        if (transfer.state == util::ProgressState::completed) {
-            const auto elapsed =
-                transfer.metrics.elapsed_milliseconds < 1000
-                    ? "<1s"
-                    : format_duration(
-                          transfer.metrics.elapsed_milliseconds / 1000
-                      );
-            details += chinese ? fmt::format("  用时 {}", elapsed)
-                               : fmt::format("  elapsed {}", elapsed);
-        } else {
-            const auto eta =
-                transfer.metrics.estimated_seconds_remaining.has_value()
-                    ? format_duration(
-                          *transfer.metrics.estimated_seconds_remaining
-                      )
-                    : (chinese ? "计算中..." : "calculating...");
-            details += chinese ? fmt::format("  预计剩余 {}", eta)
-                               : fmt::format("  ETA {}", eta);
+        const bool completed =
+            transfer.state == util::ProgressState::completed;
+        std::optional<std::string> duration;
+        if (completed) {
+            duration = transfer.metrics.elapsed_milliseconds < 1000
+                           ? "<1s"
+                           : format_duration(
+                                 transfer.metrics.elapsed_milliseconds / 1000
+                             );
+        } else if (transfer.metrics.estimated_seconds_remaining.has_value()) {
+            duration = format_duration(
+                *transfer.metrics.estimated_seconds_remaining
+            );
         }
-        const auto heading = chinese
-            ? fmt::format(
-                  "{}  {}/{} 个文件",
-                  title,
-                  transfer.completed_files,
-                  transfer.file_count
-              )
-            : fmt::format(
-                  "{}  {}/{} files",
-                  title,
-                  transfer.completed_files,
-                  transfer.file_count
-              );
+        const auto transferred_str = format_bytes(bytes);
+        const auto total_str = format_bytes(transfer.total);
+        const auto rate_str =
+            format_bytes(transfer.metrics.bytes_per_second);
+        auto details = format_tui_transfer_details(
+            percentage,
+            transferred_str,
+            total_str,
+            rate_str,
+            completed,
+            duration ? std::optional<std::string_view>{*duration}
+                     : std::nullopt,
+            language_
+        );
+        const auto heading = format_tui_transfer_heading(
+            title, transfer.completed_files, transfer.file_count, language_
+        );
         if (compact) {
             return with_color(
                 text(heading + " // " + details), palette_.primary
@@ -664,7 +501,6 @@ private:
     }
 
     Element partial_results(int rows_available) const {
-        const bool chinese = is_chinese(language_);
         Elements content;
         if (partial_summary_) {
             Elements summary;
@@ -673,22 +509,14 @@ private:
             }
             content.push_back(flexbox(std::move(summary)));
         }
-        content.push_back(emphasized(text(
-            chinese ? fmt::format(
-                          "未完成下载 [文件 {}/{}]",
-                          result_index_ + 1,
-                          result_pages_.size()
-                      )
-                    : fmt::format(
-                          "Partial downloads [File {}/{}]",
-                          result_index_ + 1,
-                          result_pages_.size()
-                      )
-        )));
+        content.push_back(emphasized(text(format_tui_partial_heading(
+            result_index_ + 1, result_pages_.size(), language_
+        ))));
         content.push_back(hbox({
-            text(chinese ? "  路径" : "  PATH") | xflex,
-            text(chinese ? "状态  已保存进度 / 总量"
-                         : "STATUS  SAVED PROGRESS / TOTAL"),
+            text(std::string{translate_text("  PATH", language_)}) | xflex,
+            text(std::string{translate_text(
+                "STATUS  SAVED PROGRESS / TOTAL", language_
+            )}),
         }));
         Elements rows;
         for (std::size_t index = 0; index < result_pages_.size(); ++index) {
@@ -778,7 +606,6 @@ private:
             separator(),
         };
 
-        const bool chinese = is_chinese(language_);
         if (show_cloud) {
             content.push_back(cloud_status());
         }
@@ -786,7 +613,7 @@ private:
             content.push_back(transfer_status(
                 *download_,
                 download_->downloaded,
-                chinese ? "下载" : "DOWNLOADS",
+                translate_text("DOWNLOADS", language_),
                 compact_transfer(
                     download_->total == 0 && download_->file_count == 0 &&
                     download_->state == util::ProgressState::ongoing
@@ -797,7 +624,7 @@ private:
             content.push_back(transfer_status(
                 *upload_,
                 upload_->uploaded,
-                chinese ? "上传" : "UPLOADS",
+                translate_text("UPLOADS", language_),
                 compact_transfer(
                     upload_->total == 0 && upload_->file_count == 0 &&
                     upload_->state == util::ProgressState::ongoing
@@ -805,82 +632,32 @@ private:
             ));
         }
         if (show_context && context_) {
-            content.push_back(text(
-                chinese
-                    ? fmt::format(
-                          "方向：{} // {}{}",
-                          translate_sync_mode(context_->direction, language_),
-                          monitoring_ ? "自动监控" : "单次执行",
-                          context_->preview ? " // 预览" : ""
-                      )
-                    : fmt::format(
-                          "Direction: {} // {}{}",
-                          sync::sync_mode_name(context_->direction),
-                          monitoring_ ? "automatic monitoring" : "one-time",
-                          context_->preview ? " // preview" : ""
-                      )
-            ));
+            content.push_back(text(format_tui_sync_context(
+                context_->direction, monitoring_, context_->preview, language_
+            )));
         }
         if (phase_) {
-            content.push_back(text(
-                chinese
-                    ? fmt::format(
-                          "{}：{}",
-                          monitoring_ ? "监控状态" : "同步状态",
-                          translate_sync_phase(*phase_, language_)
-                      )
-                    : fmt::format(
-                          "{}: {}",
-                          monitoring_ ? "MONITORING" : "SYNC",
-                          events::sync_phase_name(*phase_)
-                      )
-            ));
+            content.push_back(
+                text(format_tui_sync_phase(monitoring_, *phase_, language_))
+            );
         }
         if (show_summary && summary_) {
-            content.push_back(text(
-                chinese
-                    ? fmt::format(
-                          "上一轮：下载 {}，上传 {}，移动 {}，删除 {}，受阻 {}{}",
-                          summary_->downloaded,
-                          summary_->uploaded,
-                          summary_->moved,
-                          summary_->deleted,
-                          summary_->blocked,
-                          summary_->blocked ? " // 未完成" : ""
-                      )
-                    : fmt::format(
-                          "Last round: {} downloaded, {} uploaded, {} moved, "
-                          "{} deleted, {} blocked{}",
-                          summary_->downloaded,
-                          summary_->uploaded,
-                          summary_->moved,
-                          summary_->deleted,
-                          summary_->blocked,
-                          summary_->blocked ? " // incomplete" : ""
-                      )
-            ));
+            content.push_back(
+                text(format_tui_sync_summary(*summary_, language_))
+            );
         }
         if (show_incomplete) {
-            content.push_back(text(
-                chinese ? "上一轮同步未完成。"
-                        : "Last synchronization round incomplete."
-            ));
+            content.push_back(text(std::string{translate_text(
+                "Last synchronization round incomplete.", language_
+            )}));
         }
         if (!file_history_.entries().empty() && (!live || spare_rows >= 2)) {
             Elements files{
-                emphasized(text(
-                    chinese
-                        ? fmt::format(
-                              "文件记录 // 保留 {} 条 // 省略 {} 条更早记录",
-                              file_history_.entries().size(),
-                              file_history_.omitted()
-                          )
-                        : fmt::format(
-                              "FILES // {} retained // {} older omitted",
-                              file_history_.entries().size(),
-                              file_history_.omitted()
-                          )
-                )),
+                emphasized(text(format_tui_file_history_heading(
+                    file_history_.entries().size(),
+                    file_history_.omitted(),
+                    language_
+                ))),
             };
             const auto visible = std::min(
                 file_history_.entries().size(),
@@ -938,14 +715,12 @@ private:
                 emphasized(text(
                     !paged_list
                         ? section.title
-                        : fmt::format(
-                              "{}  [{} {}/{}]",
+                        : format_tui_paged_section_title(
                               section.title,
-                              view_ == TuiView::drives
-                                  ? (chinese ? "驱动器" : "Drive")
-                                  : (chinese ? "项目" : "Item"),
+                              view_,
                               result_index_ + 1,
-                              result_pages_.size()
+                              result_pages_.size(),
+                              language_
                           )
                 )),
             };
@@ -963,11 +738,8 @@ private:
         }
         if (blocked_items_ != 0) {
             content.push_back(with_color(
-                text(fmt::format(
-                    "{}  {}  //  {}",
-                    chinese ? "需要关注" : "NEEDS ATTENTION",
-                    blocked_items_,
-                    last_blocked_
+                text(format_tui_needs_attention(
+                    blocked_items_, last_blocked_, language_
                 )),
                 palette_.warning
             ));
@@ -979,7 +751,9 @@ private:
         if (!messages_.empty() && (!live || activity_rows > 0)) {
             if (!live || activity_rows >= 2) {
                 content.push_back(with_color(
-                    emphasized(text(chinese ? "动态" : "ACTIVITY")),
+                    emphasized(text(
+                        std::string{translate_text("ACTIVITY", language_)}
+                    )),
                     palette_.primary
                 ));
                 if (!live) {
@@ -1008,32 +782,28 @@ private:
         if (view_ == TuiView::watch) {
             content.push_back(separator());
             content.push_back(with_color(
-                text(chinese ? " q / Esc  退出 " : " q / Esc  EXIT "),
+                text(std::string{translate_text(" q / Esc  EXIT ", language_)}),
                 palette_.accent
             ));
         }
         if (finished_) {
             content.push_back(separator());
             if (result_pages_.size() > 1) {
+                const auto hint =
+                    partial_list
+                        ? " Up/Down or k/j: select file "
+                    : view_ == TuiView::drives
+                        ? " Left/Right or n/p: previous/next Drive "
+                        : " Left/Right or n/p: previous/next item ";
                 content.push_back(with_color(
-                    text(
-                        partial_list
-                            ? (chinese ? " 上/下方向键 或 k/j：选择文件 "
-                                       : " Up/Down or k/j: select file ")
-                        : view_ == TuiView::drives
-                            ? (chinese ? " 左/右方向键 或 n/p：上/下一个驱动器 "
-                                       : " Left/Right or n/p: previous/next Drive ")
-                            : (chinese ? " 左/右方向键 或 n/p：上/下一个项目 "
-                                       : " Left/Right or n/p: previous/next item ")
-                    ),
+                    text(std::string{translate_text(hint, language_)}),
                     palette_.accent
                 ));
             }
             content.push_back(with_color(
-                text(
-                    chinese ? " 按 Enter 退出（或按 q） "
-                            : " Press Enter to exit (or q) "
-                ),
+                text(std::string{translate_text(
+                    " Press Enter to exit (or q) ", language_
+                )}),
                 palette_.accent
             ));
         }

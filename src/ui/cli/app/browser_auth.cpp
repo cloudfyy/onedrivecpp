@@ -1,6 +1,7 @@
 #include "browser_auth.hpp"
 
 #include "app/browser_callback.hpp"
+#include "ui/cli/localization.hpp"
 
 #include <spdlog/spdlog.h>
 
@@ -225,16 +226,17 @@ auth::AuthResult<void> request_cli_browser_authorization(
     const std::stop_token& token
 ) {
     ChildProcessReaper browser_reaper;
-    const bool chinese =
-        console.language() == config::Language::simplified_chinese;
-    const BrowserCallbackMessages messages =
-        chinese
-            ? BrowserCallbackMessages{
-                  .received_message =
-                      "已收到授权。请返回 OneDrive C++，可以关闭此标签页。",
-                  .invalid_message = "无效的授权回调。",
-              }
-            : BrowserCallbackMessages{};
+    const auto language = console.language();
+    const BrowserCallbackMessages messages{
+        .received_message = std::string{cli::detail::translate_text(
+            "Authorization received. Return to OneDrive C++; you may close "
+            "this tab.",
+            language
+        )},
+        .invalid_message = std::string{cli::detail::translate_text(
+            "Invalid authorization callback.", language
+        )},
+    };
     return run_loopback_browser_authorization(
         session,
         [&](std::string_view url) {

@@ -174,10 +174,17 @@ int test_valid() {
     for (const auto& [raw, expected] :
          std::initializer_list<std::pair<const char*, onedrive::config::Language>>{
              {"auto", onedrive::config::Language::automatic},
+             {"AUTO", onedrive::config::Language::automatic},
              {"en", onedrive::config::Language::english},
+             {"EN", onedrive::config::Language::english},
+             {"en_US", onedrive::config::Language::english},
+             {"en-US", onedrive::config::Language::english},
              {"zh_CN", onedrive::config::Language::simplified_chinese},
              {"zh-CN", onedrive::config::Language::simplified_chinese},
+             {"zh_Hans", onedrive::config::Language::simplified_chinese},
+             {"zh-Hans", onedrive::config::Language::simplified_chinese},
              {"zh", onedrive::config::Language::simplified_chinese},
+             {"ZH", onedrive::config::Language::simplified_chinese},
          }) {
         std::ofstream output{path};
         output << "config_version = 2\n"
@@ -193,16 +200,130 @@ int test_valid() {
     }
     if (onedrive::config::resolve_locale_language("zh_CN.UTF-8") !=
             onedrive::config::Language::simplified_chinese ||
+        onedrive::config::resolve_locale_language("zh_CN.UTF-8@euro") !=
+            onedrive::config::Language::simplified_chinese ||
+        onedrive::config::resolve_locale_language("zh_SG.UTF-8") !=
+            onedrive::config::Language::simplified_chinese ||
         onedrive::config::resolve_locale_language("zh-Hans-CN") !=
             onedrive::config::Language::simplified_chinese ||
+        onedrive::config::resolve_locale_language("zh_Hans_SG.UTF-8") !=
+            onedrive::config::Language::simplified_chinese ||
+        onedrive::config::resolve_locale_language("zh_CN:en_US") !=
+            onedrive::config::Language::simplified_chinese ||
+        onedrive::config::resolve_locale_language("en_US:zh_CN") !=
+            onedrive::config::Language::english ||
+        onedrive::config::resolve_locale_language("zh_TW.UTF-8") !=
+            onedrive::config::Language::english ||
+        onedrive::config::resolve_locale_language("zh_HK.UTF-8") !=
+            onedrive::config::Language::english ||
+        onedrive::config::resolve_locale_language("zh_Hant_TW") !=
+            onedrive::config::Language::english ||
+        onedrive::config::resolve_locale_language("fr_FR.UTF-8") !=
+            onedrive::config::Language::english ||
+        onedrive::config::resolve_locale_language("C.UTF-8") !=
+            onedrive::config::Language::english ||
         onedrive::config::resolve_locale_language("en_US.UTF-8") !=
             onedrive::config::Language::english ||
+        onedrive::config::language_name(onedrive::config::Language::automatic) !=
+            "auto" ||
+        onedrive::config::language_name(onedrive::config::Language::english) !=
+            "en" ||
         onedrive::config::language_name(
             onedrive::config::Language::simplified_chinese
-        ) != "zh_CN") {
+        ) != "zh_CN" ||
+        onedrive::config::language_name(
+            static_cast<onedrive::config::Language>(99)
+        ) != "auto") {
         std::filesystem::remove(path);
         std::cerr << "locale language resolution returned the wrong language\n";
         return EXIT_FAILURE;
+    }
+    {
+        struct EnvRestore {
+            std::string name;
+            std::optional<std::string> value;
+            explicit EnvRestore(const char* var) : name{var} {
+                if (const char* current = std::getenv(var)) {
+                    value = current;
+                }
+            }
+            ~EnvRestore() {
+                if (value.has_value()) {
+                    ::setenv(name.c_str(), value->c_str(), 1);
+                } else {
+                    ::unsetenv(name.c_str());
+                }
+            }
+        };
+        const EnvRestore restore_override{"ONEDRIVE_CPP_LANG"};
+        const EnvRestore restore_lc_all{"LC_ALL"};
+        const EnvRestore restore_lc_messages{"LC_MESSAGES"};
+        const EnvRestore restore_lang{"LANG"};
+        const EnvRestore restore_language{"LANGUAGE"};
+
+        ::unsetenv("ONEDRIVE_CPP_LANG");
+        ::unsetenv("LC_ALL");
+        ::unsetenv("LC_MESSAGES");
+        ::unsetenv("LANG");
+        ::unsetenv("LANGUAGE");
+        if (onedrive::config::resolve_language(
+                onedrive::config::Language::automatic
+            ) != onedrive::config::Language::english) {
+            std::filesystem::remove(path);
+            std::cerr << "empty locale environment did not default to English\n";
+            return EXIT_FAILURE;
+        }
+        ::setenv("LANGUAGE", "zh_CN:en_US", 1);
+        if (onedrive::config::resolve_language(
+                onedrive::config::Language::automatic
+            ) != onedrive::config::Language::simplified_chinese ||
+            onedrive::config::resolve_language(
+                onedrive::config::Language::english
+            ) != onedrive::config::Language::english) {
+            std::filesystem::remove(path);
+            std::cerr << "LANGUAGE fallback or explicit override failed\n";
+            return EXIT_FAILURE;
+        }
+        ::setenv("LANG", "en_US.UTF-8", 1);
+        if (onedrive::config::resolve_language(
+                onedrive::config::Language::automatic
+            ) != onedrive::config::Language::english) {
+            std::filesystem::remove(path);
+            std::cerr << "LANG did not take precedence over LANGUAGE\n";
+            return EXIT_FAILURE;
+        }
+        ::setenv("LC_MESSAGES", "zh_CN.UTF-8", 1);
+        if (onedrive::config::resolve_language(
+                onedrive::config::Language::automatic
+            ) != onedrive::config::Language::simplified_chinese) {
+            std::filesystem::remove(path);
+            std::cerr << "LC_MESSAGES did not take precedence over LANG\n";
+            return EXIT_FAILURE;
+        }
+        ::setenv("LC_ALL", "en_GB.UTF-8", 1);
+        if (onedrive::config::resolve_language(
+                onedrive::config::Language::automatic
+            ) != onedrive::config::Language::english) {
+            std::filesystem::remove(path);
+            std::cerr << "LC_ALL did not take precedence over LC_MESSAGES\n";
+            return EXIT_FAILURE;
+        }
+        ::setenv("ONEDRIVE_CPP_LANG", "zh_CN.UTF-8", 1);
+        if (onedrive::config::resolve_language(
+                onedrive::config::Language::automatic
+            ) != onedrive::config::Language::simplified_chinese) {
+            std::filesystem::remove(path);
+            std::cerr << "ONEDRIVE_CPP_LANG locale string did not override LC_ALL\n";
+            return EXIT_FAILURE;
+        }
+        ::setenv("ONEDRIVE_CPP_LANG", "auto", 1);
+        if (onedrive::config::resolve_language(
+                onedrive::config::Language::automatic
+            ) != onedrive::config::Language::english) {
+            std::filesystem::remove(path);
+            std::cerr << "ONEDRIVE_CPP_LANG=auto did not fall through to LC_ALL\n";
+            return EXIT_FAILURE;
+        }
     }
 
     {
