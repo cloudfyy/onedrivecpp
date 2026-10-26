@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+from urllib.parse import urlsplit
 from urllib.request import urlopen
 
 
@@ -27,6 +28,9 @@ def dependency_archive(dependency, directory, offline):
         return archive
     if offline:
         raise FileNotFoundError(f"Missing dependency archive: {archive}")
+    parsed = urlsplit(str(dependency.get("url", "")))
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ValueError(f"Dependency URL must use HTTPS: {dependency.get('url')!r}")
     with tempfile.TemporaryDirectory(dir=directory) as temporary:
         downloaded = Path(temporary) / dependency["archive"]
         with urlopen(dependency["url"], timeout=60) as response, downloaded.open("wb") as output:

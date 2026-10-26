@@ -1,5 +1,6 @@
 #include "onedrive/auth/token_store.hpp"
 
+#include "onedrive/util/path_security.hpp"
 #include "util/ascii.hpp"
 #include "util/atomic_file.hpp"
 #include "util/private_file.hpp"
@@ -39,6 +40,7 @@ std::optional<std::string> FileTokenStore::load_refresh_token() const {
             .forbidden_permissions = 0,
             .permission_requirement =
                 "must be owned by the current user with 0600 permissions",
+            .require_single_link = true,
         }
     );
     token = std::string{onedrive::util::trim_ascii_whitespace(token)};
@@ -57,7 +59,17 @@ void FileTokenStore::save_refresh_token(
         throw std::runtime_error("refusing to persist an empty refresh token");
     }
 
-    std::filesystem::create_directories(path_.parent_path());
+    const auto parent = path_.parent_path();
+    onedrive::util::reject_symlink_components(
+        parent, "refresh token directory"
+    );
+    std::filesystem::create_directories(parent);
+    onedrive::util::reject_symlink_components(
+        parent, "refresh token directory"
+    );
+    onedrive::util::secure_owned_directory(
+        parent, S_IRWXU, "refresh token directory"
+    );
     onedrive::util::write_file_atomically(
         path_, refresh_token, S_IRUSR | S_IWUSR, "refresh token file"
     );

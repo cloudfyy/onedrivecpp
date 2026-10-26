@@ -16,6 +16,7 @@
 #include <spawn.h>
 #include <string>
 #include <string_view>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <thread>
 #include <unistd.h>
@@ -51,6 +52,15 @@ bool non_empty_env(const char* name) noexcept {
     return value != nullptr && *value != '\0';
 }
 
+bool is_executable_regular_file(
+    const std::filesystem::path& candidate
+) noexcept {
+    struct stat status{};
+    return ::stat(candidate.c_str(), &status) == 0 &&
+           S_ISREG(status.st_mode) &&
+           ::access(candidate.c_str(), X_OK) == 0;
+}
+
 std::optional<std::filesystem::path> find_xdg_open() noexcept {
     try {
         if (const char* path_env = std::getenv("PATH");
@@ -59,10 +69,10 @@ std::optional<std::filesystem::path> find_xdg_open() noexcept {
             while (!remaining.empty()) {
                 const auto delimiter = remaining.find(':');
                 const auto entry = remaining.substr(0, delimiter);
-                if (!entry.empty()) {
+                if (entry.starts_with('/')) {
                     auto candidate =
                         std::filesystem::path{entry} / "xdg-open";
-                    if (::access(candidate.c_str(), X_OK) == 0) {
+                    if (is_executable_regular_file(candidate)) {
                         return candidate;
                     }
                 }
@@ -73,7 +83,7 @@ std::optional<std::filesystem::path> find_xdg_open() noexcept {
             }
         }
         std::filesystem::path fallback{"/usr/bin/xdg-open"};
-        if (::access(fallback.c_str(), X_OK) == 0) {
+        if (is_executable_regular_file(fallback)) {
             return fallback;
         }
     } catch (...) {

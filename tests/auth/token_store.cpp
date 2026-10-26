@@ -25,9 +25,31 @@ int test_token_store_boundaries() {
         return fail("whitespace-only refresh token was not treated as empty");
     }
     store.save_refresh_token(" \t refresh-secret \r\n ");
+    if ((std::filesystem::status(store.path().parent_path()).permissions() &
+         std::filesystem::perms::mask) != std::filesystem::perms::owner_all) {
+        return fail("refresh token parent directory was not secured to 0700");
+    }
     if (store.load_refresh_token() !=
         std::optional<std::string>{"refresh-secret"}) {
         return fail("refresh token ASCII whitespace was not trimmed");
+    }
+    const auto hard_link = temporary.path() / "hard-linked-token";
+    std::filesystem::create_hard_link(store.path(), hard_link);
+    if (!throws_with<std::runtime_error>(
+            [&] { static_cast<void>(store.load_refresh_token()); },
+            "exactly one hard link"
+        )) {
+        return fail("refresh token reader accepted a hard-linked file");
+    }
+    std::filesystem::remove(hard_link);
+    const auto symlinked_dir = temporary.path() / "symlinked-state";
+    std::filesystem::create_symlink(store.path().parent_path(), symlinked_dir);
+    onedrive::auth::FileTokenStore symlinked_store{symlinked_dir};
+    if (!throws_with<std::runtime_error>(
+            [&] { symlinked_store.save_refresh_token("secret"); },
+            "symlink"
+        )) {
+        return fail("refresh token writer accepted a symlinked directory");
     }
     if (!store.remove_refresh_token() || store.remove_refresh_token()) {
         return fail("refresh token removal did not report presence accurately");

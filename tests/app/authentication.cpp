@@ -1275,10 +1275,44 @@ int test_cli_gui_detection_and_auth_flow() {
                 ::setenv("PATH", previous.c_str(), 1);
             }
         } const path_guard{old_path};
+        const auto dir_shadow = fixture.state_path.parent_path() / "shadow-bin";
+        std::filesystem::create_directories(dir_shadow / "xdg-open");
         const std::string new_path =
-            bin_dir.string() + (old_path.empty() ? "" : ":" + old_path);
+            ".:relative-bin:" + dir_shadow.string() + ":" + bin_dir.string() +
+            (old_path.empty() ? "" : ":" + old_path);
         // NOLINTNEXTLINE(concurrency-mt-unsafe)
         ::setenv("PATH", new_path.c_str(), 1);
+        // Also verify that when PATH contains only relative entries or a
+        // directory named xdg-open, is_gui_auth_available refuses to accept it.
+        {
+            const char* old_display_raw = std::getenv("DISPLAY");
+            const std::optional<std::string> old_display =
+                old_display_raw ? std::optional<std::string>{old_display_raw}
+                                : std::nullopt;
+            // NOLINTNEXTLINE(concurrency-mt-unsafe)
+            ::setenv("DISPLAY", ":0", 1);
+            const std::string unsafe_only_path =
+                ".:relative-bin:" + dir_shadow.string();
+            // NOLINTNEXTLINE(concurrency-mt-unsafe)
+            ::setenv("PATH", unsafe_only_path.c_str(), 1);
+            const bool unsafe_accepted =
+                onedrive::app::detail::is_gui_auth_available();
+            if (old_display) {
+                // NOLINTNEXTLINE(concurrency-mt-unsafe)
+                ::setenv("DISPLAY", old_display->c_str(), 1);
+            } else {
+                // NOLINTNEXTLINE(concurrency-mt-unsafe)
+                ::unsetenv("DISPLAY");
+            }
+            // NOLINTNEXTLINE(concurrency-mt-unsafe)
+            ::setenv("PATH", new_path.c_str(), 1);
+            if (unsafe_accepted) {
+                return fail(
+                    "is_gui_auth_available accepted relative PATH or directory "
+                    "xdg-open"
+                );
+            }
+        }
 
         auto deliver_from_file = [&] {
             return std::async(std::launch::async, [&] {
