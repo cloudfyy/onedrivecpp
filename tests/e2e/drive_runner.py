@@ -919,7 +919,9 @@ class DualClientDriveE2E:
             )
 
         wait_for_condition(received, self.timeout, "automatic watch download")
-        self.a.path(name).write_bytes(b"local-watch\n")
+        staged = self.workspace / f".{name}.staged"
+        staged.write_bytes(b"local-watch\n")
+        os.replace(staged, self.a.path(name))
         self.b.pull_until(
             lambda: self.b.path(name).read_bytes() == b"local-watch\n"
         )

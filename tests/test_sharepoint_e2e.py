@@ -13,6 +13,7 @@ import shutil
 import sqlite3
 import tempfile
 import textwrap
+import threading
 import tomllib
 import unittest
 from unittest.mock import patch
@@ -95,8 +96,8 @@ def write_fake_cli(path: Path, cloud: Path, *, drive_types: dict[str, str] | Non
         textwrap.dedent(
             f'''\
             #!/usr/bin/env python3
-            from contextlib import closing
-            import hashlib, json, os, shutil, signal, sqlite3, sys, time, tomllib
+            from contextlib import closing, contextmanager
+            import fcntl, hashlib, json, os, shutil, signal, sqlite3, sys, tempfile, time, tomllib
             from pathlib import Path
 
             CLOUD = Path({str(cloud)!r})
@@ -118,8 +119,39 @@ def write_fake_cli(path: Path, cloud: Path, *, drive_types: dict[str, str] | Non
             stop_file = state / "watch.stop"
             busy_file = state / "busy.pid"
             cloud_meta = CLOUD / "meta.json"
+            cloud_lock_file = CLOUD / "cloud.lock"
+            cloud_tmp = CLOUD / ".tmp"
             cloud_files = CLOUD / "files"
             cloud_files.mkdir(parents=True, exist_ok=True)
+            cloud_tmp.mkdir(parents=True, exist_ok=True)
+
+            def atomic_write_bytes(path, raw, mode=None):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                cloud_tmp.mkdir(parents=True, exist_ok=True)
+                fd, tmp_name = tempfile.mkstemp(prefix=f".{{path.name}}.", dir=str(cloud_tmp))
+                tmp_path = Path(tmp_name)
+                try:
+                    with os.fdopen(fd, "wb") as handle:
+                        if mode is not None:
+                            os.fchmod(handle.fileno(), mode)
+                        handle.write(raw)
+                        handle.flush()
+                    os.replace(tmp_path, path)
+                finally:
+                    tmp_path.unlink(missing_ok=True)
+
+            def atomic_write_text(path, text):
+                atomic_write_bytes(path, text.encode("utf-8"))
+
+            @contextmanager
+            def cloud_lock():
+                CLOUD.mkdir(parents=True, exist_ok=True)
+                with cloud_lock_file.open("a+b") as handle:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+                    try:
+                        yield
+                    finally:
+                        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
             def emit(payload):
                 print(json.dumps(payload), flush=True)
@@ -129,8 +161,7 @@ def write_fake_cli(path: Path, cloud: Path, *, drive_types: dict[str, str] | Non
                 state_drive.mkdir(parents=True, exist_ok=True)
                 lock_path = state / "onedrive-cpp.lock"
                 if not lock_path.exists():
-                    lock_path.write_bytes(b'{{"pid":0}}\\n')
-                    lock_path.chmod(0o600)
+                    atomic_write_bytes(lock_path, b'{{"pid":0}}\\n', mode=0o600)
                 db = sqlite3.connect(db_path)
                 db.executescript("""
                     CREATE TABLE IF NOT EXISTS item(remote_id TEXT, remote_path TEXT PRIMARY KEY, local_path TEXT, kind TEXT, etag TEXT, ctag TEXT, sha256 TEXT);
@@ -150,7 +181,7 @@ def write_fake_cli(path: Path, cloud: Path, *, drive_types: dict[str, str] | Non
                 return {{"next": 1, "items": {{}}}}
 
             def save_cloud(meta):
-                cloud_meta.write_text(json.dumps(meta, sort_keys=True), encoding="utf-8")
+                atomic_write_text(cloud_meta, json.dumps(meta, sort_keys=True))
 
             def digest(raw):
                 return hashlib.sha256(raw).hexdigest()
@@ -185,90 +216,94 @@ def write_fake_cli(path: Path, cloud: Path, *, drive_types: dict[str, str] | Non
                 if dry_run:
                     return 0
                 with closing(connect()) as db:
-                    meta = load_cloud()
-                    cloud_items = meta["items"]
-                    known = tracked(db)
-                    mode = config["sync"]["mode"]
-                    rate = int(config["download"]["maximum_rate_bytes_per_second"])
-                    if mode in ("bidirectional", "upload_only"):
-                        local = scan_local()
-                        removed = [path for path in list(known) if path not in local]
-                        added = [path for path in local if path not in known]
-                        for old in list(removed):
-                            old_row = known[old]
-                            for new in list(added):
-                                kind, raw = local[new]
-                                if kind == old_row["kind"] == "file" and digest(raw) == old_row["sha256"]:
-                                    info = cloud_items.pop(old)
-                                    (cloud_files / old).unlink(missing_ok=True)
-                                    info["etag"] = tag("etag", raw, new)
-                                    cloud_items[new] = info
-                                    target = cloud_files / new
-                                    target.parent.mkdir(parents=True, exist_ok=True)
-                                    target.write_bytes(raw)
-                                    db.execute("DELETE FROM item WHERE remote_path=?", (old,))
-                                    record(db, new, info)
-                                    removed.remove(old)
-                                    added.remove(new)
-                                    break
-                                if kind == old_row["kind"] == "directory" and old.count("/") == new.count("/"):
-                                    for path in [ key for key in list(cloud_items) if key == old or key.startswith(old + "/") ]:
-                                        moved = new + path[len(old):]
-                                        info = cloud_items.pop(path)
-                                        raw_child = (cloud_files / path).read_bytes() if info["kind"] == "file" else b""
-                                        info["etag"] = tag("etag", raw_child, moved)
-                                        cloud_items[moved] = info
-                                        if info["kind"] == "file":
-                                            target = cloud_files / moved
-                                            target.parent.mkdir(parents=True, exist_ok=True)
-                                            shutil.move(cloud_files / path, target)
-                                    for path in [ key for key in list(known) if key == old or key.startswith(old + "/") ]:
-                                        moved = new + path[len(old):]
-                                        db.execute("DELETE FROM item WHERE remote_path=?", (path,))
-                                        record(db, moved, cloud_items[moved])
-                                    removed = [path for path in removed if path != old and not path.startswith(old + "/")]
-                                    added = [path for path in added if path != new and not path.startswith(new + "/")]
-                                    break
+                    with cloud_lock():
+                        meta = load_cloud()
+                        cloud_items = meta["items"]
                         known = tracked(db)
-                        for path in sorted(removed, reverse=True):
-                            cloud_items.pop(path, None)
-                            target = cloud_files / path
-                            if target.is_file():
-                                target.unlink()
-                            db.execute("DELETE FROM item WHERE remote_path=?", (path,))
-                        for path, (kind, raw) in local.items():
-                            prev = known.get(path)
-                            if prev and prev["kind"] == kind and (kind == "directory" or prev["sha256"] == digest(raw)):
-                                continue
-                            ident = prev["remote_id"] if prev else f"id-{{meta['next']}}"
-                            if not prev:
-                                meta["next"] += 1
-                            info = {{
-                                "id": ident,
-                                "kind": kind,
-                                "sha256": digest(raw),
-                                "ctag": tag("ctag", raw, kind),
-                                "etag": tag("etag", raw, path),
-                            }}
-                            cloud_items[path] = info
-                            if kind == "file":
+                        mode = config["sync"]["mode"]
+                        rate = int(config["download"]["maximum_rate_bytes_per_second"])
+                        if mode in ("bidirectional", "upload_only"):
+                            local = scan_local()
+                            removed = [path for path in list(known) if path not in local]
+                            added = [path for path in local if path not in known]
+                            for old in list(removed):
+                                old_row = known[old]
+                                for new in list(added):
+                                    kind, raw = local[new]
+                                    if kind == old_row["kind"] == "file" and digest(raw) == old_row["sha256"]:
+                                        info = cloud_items.pop(old)
+                                        (cloud_files / old).unlink(missing_ok=True)
+                                        info["etag"] = tag("etag", raw, new)
+                                        cloud_items[new] = info
+                                        atomic_write_bytes(cloud_files / new, raw)
+                                        db.execute("DELETE FROM item WHERE remote_path=?", (old,))
+                                        record(db, new, info)
+                                        removed.remove(old)
+                                        added.remove(new)
+                                        break
+                                    if kind == old_row["kind"] == "directory" and old.count("/") == new.count("/"):
+                                        for path in [ key for key in list(cloud_items) if key == old or key.startswith(old + "/") ]:
+                                            moved = new + path[len(old):]
+                                            info = cloud_items.pop(path)
+                                            raw_child = (cloud_files / path).read_bytes() if info["kind"] == "file" else b""
+                                            info["etag"] = tag("etag", raw_child, moved)
+                                            cloud_items[moved] = info
+                                            if info["kind"] == "file":
+                                                target = cloud_files / moved
+                                                target.parent.mkdir(parents=True, exist_ok=True)
+                                                shutil.move(cloud_files / path, target)
+                                        for path in [ key for key in list(known) if key == old or key.startswith(old + "/") ]:
+                                            moved = new + path[len(old):]
+                                            db.execute("DELETE FROM item WHERE remote_path=?", (path,))
+                                            record(db, moved, cloud_items[moved])
+                                        removed = [path for path in removed if path != old and not path.startswith(old + "/")]
+                                        added = [path for path in added if path != new and not path.startswith(new + "/")]
+                                        break
+                            known = tracked(db)
+                            for path in sorted(removed, reverse=True):
+                                cloud_items.pop(path, None)
                                 target = cloud_files / path
-                                target.parent.mkdir(parents=True, exist_ok=True)
-                                target.write_bytes(raw)
-                            record(db, path, info)
-                        save_cloud(meta)
-                    if mode == "upload_only":
-                        db.commit()
-                        return 0
+                                if target.is_file():
+                                    target.unlink()
+                                db.execute("DELETE FROM item WHERE remote_path=?", (path,))
+                            for path, (kind, raw) in local.items():
+                                prev = known.get(path)
+                                if prev and prev["kind"] == kind and (kind == "directory" or prev["sha256"] == digest(raw)):
+                                    continue
+                                ident = prev["remote_id"] if prev else f"id-{{meta['next']}}"
+                                if not prev:
+                                    meta["next"] += 1
+                                info = {{
+                                    "id": ident,
+                                    "kind": kind,
+                                    "sha256": digest(raw),
+                                    "ctag": tag("ctag", raw, kind),
+                                    "etag": tag("etag", raw, path),
+                                }}
+                                cloud_items[path] = info
+                                if kind == "file":
+                                    atomic_write_bytes(cloud_files / path, raw)
+                                record(db, path, info)
+                            save_cloud(meta)
+                        if mode == "upload_only":
+                            db.commit()
+                            return 0
+                        cloud_snapshot = {{
+                            path: (
+                                dict(info),
+                                (cloud_files / path).read_bytes() if info["kind"] == "file" else b"",
+                            )
+                            for path, info in sorted(cloud_items.items())
+                        }}
                     known = tracked(db)
-                    for path in sorted(set(known) - set(cloud_items), reverse=True):
+                    for path in sorted(set(known) - set(cloud_snapshot), reverse=True):
                         target = root / path
                         if target.is_file():
                             target.unlink()
                         elif target.is_dir():
                             shutil.rmtree(target, ignore_errors=True)
                         db.execute("DELETE FROM item WHERE remote_path=?", (path,))
-                    for path, info in sorted(cloud_items.items()):
+                    for path, (info, raw) in sorted(cloud_snapshot.items()):
                         if path != scope and not path.startswith(scope + "/"):
                             continue
                         target = root / path
@@ -277,7 +312,6 @@ def write_fake_cli(path: Path, cloud: Path, *, drive_types: dict[str, str] | Non
                             target.mkdir(parents=True, exist_ok=True)
                             record(db, path, info)
                             continue
-                        raw = (cloud_files / path).read_bytes()
                         if (
                             target.exists()
                             and prev
@@ -296,7 +330,7 @@ def write_fake_cli(path: Path, cloud: Path, *, drive_types: dict[str, str] | Non
                             part.write_bytes(raw[:65536])
                             db.execute("INSERT OR REPLACE INTO partial_download VALUES (?,?,?,?,?)", (info["id"], path, str(target), str(part), 65536))
                             db.commit()
-                            busy_file.write_text(str(os.getpid()), encoding="utf-8")
+                            atomic_write_text(busy_file, str(os.getpid()))
                             def stop(_sig, _frame):
                                 busy_file.unlink(missing_ok=True)
                                 sys.exit(130)
@@ -312,8 +346,7 @@ def write_fake_cli(path: Path, cloud: Path, *, drive_types: dict[str, str] | Non
                             os.replace(part, target)
                             db.execute("DELETE FROM partial_download WHERE remote_path=?", (path,))
                         elif not target.exists() or not prev or prev["sha256"] != info["sha256"]:
-                            target.parent.mkdir(parents=True, exist_ok=True)
-                            target.write_bytes(raw)
+                            atomic_write_bytes(target, raw)
                         record(db, path, info)
                     db.commit()
                 return 0
@@ -430,15 +463,15 @@ def write_fake_cli(path: Path, cloud: Path, *, drive_types: dict[str, str] | Non
                 if dry_run:
                     emit({{"event": "single_download_plan", "values": {{"remote_path": remote_target, "local_path": str(target)}}}})
                     sys.exit(0)
-                raw = (cloud_files / remote_target).read_bytes()
-                with closing(connect()) as db:
+                with cloud_lock():
+                    raw = (cloud_files / remote_target).read_bytes()
                     meta = load_cloud()
-                    info = meta["items"][remote_target]
+                    info = dict(meta["items"][remote_target])
+                with closing(connect()) as db:
                     if target.is_file() and target.read_bytes() == raw:
                         emit({{"event": "single_download_reused", "level": "info", "message": "reused"}})
                         sys.exit(0)
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    target.write_bytes(raw)
+                    atomic_write_bytes(target, raw)
                     record(db, remote_target, info)
                     db.commit()
                 sys.exit(0)
@@ -464,19 +497,21 @@ def write_fake_cli(path: Path, cloud: Path, *, drive_types: dict[str, str] | Non
                         else:
                             files += 1
                             if not dry_run:
-                                local.parent.mkdir(parents=True, exist_ok=True)
-                                local.write_bytes((cloud_files / row["remote_path"]).read_bytes())
+                                with cloud_lock():
+                                    raw = (cloud_files / row["remote_path"]).read_bytes()
+                                atomic_write_bytes(local, raw)
                 emit({{"event": "restore_plan" if dry_run else "restore_result", "values": {{"files": str(files), "directories": str(dirs)}}}})
                 sys.exit(0)
             if args[:2] == ["transfer", "watch"]:
                 stop_file.unlink(missing_ok=True)
-                pid_file.write_text(str(os.getpid()), encoding="utf-8")
                 def stop(_sig, _frame):
                     pid_file.unlink(missing_ok=True)
                     sys.exit(0)
                 signal.signal(signal.SIGTERM, stop)
                 while not stop_file.exists():
                     sync()
+                    if not pid_file.exists():
+                        atomic_write_text(pid_file, str(os.getpid()))
                     time.sleep(0.05)
                 pid_file.unlink(missing_ok=True)
                 stop_file.unlink(missing_ok=True)
@@ -492,7 +527,7 @@ def write_fake_cli(path: Path, cloud: Path, *, drive_types: dict[str, str] | Non
                 emit({{"event": "monitor_control", "values": {{"request": "monitor trigger", "acknowledgement": "queued"}}}})
                 sys.exit(0)
             if args[:2] == ["monitor", "stop"]:
-                stop_file.write_text("stop", encoding="utf-8")
+                atomic_write_text(stop_file, "stop")
                 emit({{"event": "monitor_control", "values": {{"stopped": "true"}}}})
                 sys.exit(0)
             sys.exit(2)
@@ -595,18 +630,40 @@ class SharePointE2ERunnerTests(unittest.TestCase):
             write_fake_cli(fake, cloud)
             stdout = io.StringIO()
             stderr = io.StringIO()
-            with redirect_stdout(stdout), redirect_stderr(stderr):
-                code = sharepoint_e2e.main(
-                    [
-                        "--allow-remote-writes",
-                        "--client",
-                        str(fake),
-                        "--config",
-                        str(config),
-                        "--timeout",
-                        "15",
-                    ]
-                )
+            stop_reader = threading.Event()
+            decode_errors: list[Exception] = []
+            cloud_meta = cloud / "meta.json"
+
+            def reader() -> None:
+                while not stop_reader.is_set():
+                    try:
+                        if cloud_meta.exists():
+                            json.loads(cloud_meta.read_text(encoding="utf-8"))
+                    except FileNotFoundError:
+                        pass
+                    except Exception as error:  # pragma: no cover - failure path
+                        decode_errors.append(error)
+                        break
+
+            reader_thread = threading.Thread(target=reader, daemon=True)
+            reader_thread.start()
+            try:
+                with redirect_stdout(stdout), redirect_stderr(stderr):
+                    code = sharepoint_e2e.main(
+                        [
+                            "--allow-remote-writes",
+                            "--client",
+                            str(fake),
+                            "--config",
+                            str(config),
+                            "--timeout",
+                            "15",
+                        ]
+                    )
+            finally:
+                stop_reader.set()
+                reader_thread.join(timeout=5)
+            self.assertEqual(decode_errors, [])
             self.assertEqual(code, 0, stderr.getvalue())
             self.assertIn("PASS: 12 SharePoint documentLibrary scenarios", stdout.getvalue())
             meta = json.loads((cloud / "meta.json").read_text(encoding="utf-8"))
