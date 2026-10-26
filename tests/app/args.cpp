@@ -471,6 +471,19 @@ int test_args() {
             "unknown nested subcommand did not report an unexpected argument"
         );
     }
+    if (const auto leaf_extras = run_application(
+            runtime_factory,
+            {"onedrive-cpp", "account", "login", "extra-one", "extra-two"}
+        );
+        leaf_extras.exit_code != exit_code::usage_error ||
+        !leaf_extras.standard_error.contains(
+            "The following arguments were not expected: extra-one extra-two"
+        )) {
+        return fail(
+            "leaf subcommand with extra arguments did not preserve argument "
+            "order"
+        );
+    }
     if (const auto missing_subcommand = run_application(
             runtime_factory, {"onedrive-cpp", "inspect"}
         );

@@ -69,6 +69,15 @@ cli::Language resolve_help_language(
     return cli::resolve_language(cli::Language::automatic);
 }
 
+CLI::ExtrasError make_extras_error(const std::vector<std::string>& extras) {
+    return CLI::ExtrasError{
+        (extras.size() > 1 ? "The following arguments were not expected: "
+                           : "The following argument was not expected: ") +
+            CLI::detail::join(extras, " "),
+        CLI::ExitCodes::ExtrasError,
+    };
+}
+
 } // namespace
 
 ParseResult parse_arguments(int argc, char* argv[]) {
@@ -495,10 +504,16 @@ ParseResult parse_arguments(int argc, char* argv[]) {
     try {
         application.parse(argc, argv);
     } catch (const CLI::RequiredError& error) {
-        if (auto extras = application.remaining(true); !extras.empty()) {
-            static_cast<void>(
-                application.exit(CLI::ExtrasError{std::move(extras)})
-            );
+        if (const auto extras = application.remaining(true); !extras.empty()) {
+            static_cast<void>(application.exit(make_extras_error(extras)));
+        } else {
+            static_cast<void>(application.exit(error));
+        }
+        result.exit_code = exit_code::usage_error;
+        return result;
+    } catch (const CLI::ExtrasError& error) {
+        if (const auto extras = application.remaining(true); !extras.empty()) {
+            static_cast<void>(application.exit(make_extras_error(extras)));
         } else {
             static_cast<void>(application.exit(error));
         }
