@@ -1,0 +1,98 @@
+name: APT repository
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/apt-repository.yml
+      - tools/build_apt_repository.py
+      - tools/test_apt_repository.py
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/apt-repository.yml
+      - tools/build_apt_repository.py
+      - tools/test_apt_repository.py
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apt-repository-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install repository tools
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends apt-utils gnupg
+      - name: Check signed repository and APT client
+        run: python3 -B tools/test_apt_repository.py
+
+  publish:
+    needs: check
+    if: >-
+      (github.event_name == 'release' && !github.event.release.prerelease) ||
+      (github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+      - name: Install repository tools
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends apt-utils gnupg
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+      - name: Import signing key
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+          APT_SIGNING_KEY_FINGERPRINT: ${{ vars.APT_SIGNING_KEY_FINGERPRINT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$APT_SIGNING_KEY" || { echo "Missing APT_SIGNING_KEY secret" >&2; exit 1; }
+          [[ "$APT_SIGNING_KEY_FINGERPRINT" =~ ^([A-Fa-f0-9]{40}|[A-Fa-f0-9]{64})$ ]] || {
+            echo "Set APT_SIGNING_KEY_FINGERPRINT to the full signing-key fingerprint" >&2
+            exit 1
+          }
+          export GNUPGHOME
+          GNUPGHOME=$(mktemp -d "$RUNNER_TEMP/apt-gnupg.XXXXXX")
+          chmod 700 "$GNUPGHOME"
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+          printf '%s\n' "$APT_SIGNING_KEY" | gpg --batch --import
+          gpg --batch --list-secret-keys "$APT_SIGNING_KEY_FINGERPRINT"
+      - name: Build signed repository from published stable releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APT_SIGNING_PASSPHRASE: ${{ secrets.APT_SIGNING_PASSPHRASE }}
+          APT_SIGNING_KEY_FINGERPRINT: ${{ vars.APT_SIGNING_KEY_FINGERPRINT }}
+        run: |
+          python3 -B tools/build_apt_repository.py \
+            --github-repository "$GITHUB_REPOSITORY" \
+            --releases-dir "$RUNNER_TEMP/apt-releases" \
+            --output-dir "$RUNNER_TEMP/apt-site" \
+            --signing-key "$APT_SIGNING_KEY_FINGERPRINT"
+      - name: Remove temporary signing key
+        if: always() && env.GNUPGHOME != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          gpgconf --kill gpg-agent
+          rm -rf -- "$GNUPGHOME"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ${{ runner.temp }}/apt-site
+      - name: Deploy APT repository
+        id: deployment
+        uses: actions/deploy-pages@v4

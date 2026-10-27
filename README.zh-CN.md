@@ -350,6 +350,38 @@ Debug 程序位于 `build/debug/onedrive-cpp`。
 
 ## 安装
 
+### 从 APT 仓库安装
+
+GitHub Pages APT 仓库面向 Ubuntu 24.04（CLI/TUI）和 26.04（CLI/TUI/GUI），
+**目前仅支持 amd64**。维护者完成[仓库配置](docs/apt-repository.md)及首次部署后可用。
+
+下载签名公钥并查看指纹，先与通过独立渠道取得的维护者公钥指纹核对，再安装：
+
+```bash
+curl -fsSLo onedrive-cpp.asc https://cloudfyy.github.io/onedrivecpp/onedrive-cpp.asc
+gpg --show-keys --with-fingerprint onedrive-cpp.asc
+sudo install -d -m 0755 /etc/apt/keyrings
+sudo install -m 0644 onedrive-cpp.asc /etc/apt/keyrings/onedrive-cpp.asc
+```
+
+按当前 Ubuntu 版本添加软件源：
+
+```bash
+(
+  . /etc/os-release
+  case "$ID:$VERSION_CODENAME:$(dpkg --print-architecture)" in
+    ubuntu:noble:amd64|ubuntu:resolute:amd64) ;;
+    *) echo "Only Ubuntu 24.04/26.04 amd64 is supported" >&2; exit 1 ;;
+  esac
+  echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/onedrive-cpp.asc] https://cloudfyy.github.io/onedrivecpp $VERSION_CODENAME main" |
+    sudo tee /etc/apt/sources.list.d/onedrive-cpp.list
+) &&
+sudo apt update &&
+sudo apt install onedrive-cpp
+```
+
+后续版本通过正常的 APT 升级获取。这是项目自行维护的软件源，不属于 Ubuntu 官方仓库。
+
 ### 从 CMake 构建安装
 
 把 Release 构建安装到配置的前缀：

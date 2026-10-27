@@ -435,6 +435,41 @@ The Debug executable is generated at `build/debug/onedrive-cpp`.
 
 ## Installation
 
+### Install from the APT repository
+
+The GitHub Pages APT repository is intended for Ubuntu 24.04 (CLI/TUI) and
+26.04 (CLI/TUI/GUI), **amd64 only**. It becomes available after the maintainer
+completes the [repository setup](docs/apt-repository.md) and first deployment.
+
+Download the signing key and inspect its fingerprint before trusting it:
+
+```bash
+curl -fsSLo onedrive-cpp.asc https://cloudfyy.github.io/onedrivecpp/onedrive-cpp.asc
+gpg --show-keys --with-fingerprint onedrive-cpp.asc
+sudo install -d -m 0755 /etc/apt/keyrings
+sudo install -m 0644 onedrive-cpp.asc /etc/apt/keyrings/onedrive-cpp.asc
+```
+
+Compare the fingerprint with the maintainer's independently obtained fingerprint.
+Then add the repository for your Ubuntu release:
+
+```bash
+(
+  . /etc/os-release
+  case "$ID:$VERSION_CODENAME:$(dpkg --print-architecture)" in
+    ubuntu:noble:amd64|ubuntu:resolute:amd64) ;;
+    *) echo "Only Ubuntu 24.04/26.04 amd64 is supported" >&2; exit 1 ;;
+  esac
+  echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/onedrive-cpp.asc] https://cloudfyy.github.io/onedrivecpp $VERSION_CODENAME main" |
+    sudo tee /etc/apt/sources.list.d/onedrive-cpp.list
+) &&
+sudo apt update &&
+sudo apt install onedrive-cpp
+```
+
+Later releases are installed through normal APT upgrades. This is a
+project-maintained repository, not an official Ubuntu archive.
+
 ### Install from a CMake build
 
 Install the Release build into the configured prefix:
