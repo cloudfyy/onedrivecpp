@@ -84,6 +84,12 @@ Language parse_startup_language(
     parser.addVersionOption();
     parser.addOption(
         QCommandLineOption{
+            "start-in-tray",
+            "Start in the system tray; show the window if no tray is available."
+        }
+    );
+    parser.addOption(
+        QCommandLineOption{
             "language",
             "GUI language: auto (system locale), en (English), or zh_CN "
             "(Simplified Chinese).",
@@ -110,8 +116,7 @@ Language parse_startup_language(
         }
     }
     throw std::invalid_argument{
-        "Invalid GUI language '" + language +
-        "'. Expected auto, en, or zh_CN."
+        "Invalid GUI language '" + language + "'. Expected auto, en, or zh_CN."
     };
 }
 

@@ -219,6 +219,8 @@ target_link_libraries(onedrive-cpp PRIVATE onedrive_cli)
 
 if(ONEDRIVE_BUILD_GUI)
     set(ONEDRIVE_GUI_WINDOW_SOURCES
+        ${PROJECT_SOURCE_DIR}/src/ui/gui/autostart.cpp
+        ${PROJECT_SOURCE_DIR}/src/ui/gui/autostart.hpp
         ${PROJECT_SOURCE_DIR}/src/ui/gui/main_window.cpp
         ${PROJECT_SOURCE_DIR}/src/ui/gui/main_window.hpp
         ${PROJECT_SOURCE_DIR}/src/ui/gui/main_window_account.cpp
@@ -229,6 +231,7 @@ if(ONEDRIVE_BUILD_GUI)
         ${PROJECT_SOURCE_DIR}/src/ui/gui/main_window_pages.cpp
         ${PROJECT_SOURCE_DIR}/src/ui/gui/main_window_settings.cpp
         ${PROJECT_SOURCE_DIR}/src/ui/gui/main_window_sync.cpp
+        ${PROJECT_SOURCE_DIR}/src/ui/gui/main_window_tray.cpp
         ${PROJECT_SOURCE_DIR}/src/ui/gui/settings_editor.cpp
         ${PROJECT_SOURCE_DIR}/src/ui/gui/settings_editor.hpp
         ${PROJECT_SOURCE_DIR}/src/ui/gui/settings_account.cpp

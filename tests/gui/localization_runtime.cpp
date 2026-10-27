@@ -1,6 +1,11 @@
 #include "localization_support.hpp"
 #include "localization_cases.hpp"
 
+#include <QAction>
+#include <QCheckBox>
+#include <QMenu>
+#include <QSystemTrayIcon>
+
 namespace onedrive::test::gui_localization {
 
 void test_runtime_language(bool system_chinese) {
@@ -46,6 +51,25 @@ void test_runtime_language(bool system_chinese) {
         "header controls were missing or a menu bar remained"
     );
     const auto check_ui = [&](bool chinese, gui::Language language) {
+        auto* tray = window.findChild<QSystemTrayIcon*>("systemTray");
+        const auto actions = tray->contextMenu()->actions();
+        require(
+            tray->toolTip() ==
+                    expected(chinese, "onedrive client", "OneDrive 客户端") &&
+                actions.at(0)->text() ==
+                    expected(chinese, "Open window", "打开窗口") &&
+                actions.at(1)->text() ==
+                    expected(chinese, "Open sync folder", "打开同步文件夹") &&
+                actions.at(2)->text() == expected(
+                                             chinese,
+                                             "Start automatically at login",
+                                             "登录后自动启动"
+                                         ) &&
+                window.findChild<QCheckBox*>("startAtLogin")->text() ==
+                    actions.at(2)->text() &&
+                actions.at(4)->text() == expected(chinese, "Quit", "退出"),
+            "tray menu or tooltip did not retranslate"
+        );
         require(
             window.windowTitle() ==
                     expected(
@@ -56,8 +80,7 @@ void test_runtime_language(bool system_chinese) {
                 tabs->tabText(0) == expected(chinese, "Overview", "概览") &&
                 tabs->tabText(1) == expected(chinese, "Sync", "同步") &&
                 tabs->tabText(2) == expected(chinese, "Files", "文件") &&
-                tabs->tabText(3) ==
-                    expected(chinese, "Settings *", "设置 *") &&
+                tabs->tabText(3) == expected(chinese, "Settings *", "设置 *") &&
                 tabs->tabText(4) == expected(chinese, "Logs", "日志") &&
                 sign_in->text() == expected(chinese, "Sign in", "登录账号") &&
                 has_label(window, expected(chinese, "Account", "账号")) &&
@@ -185,9 +208,9 @@ void test_runtime_language(bool system_chinese) {
 
     gui::MainWindow failed_window{
         gui::load_app_state_view_model(file),
-        [](const auto&,
-           const auto&,
-           const std::stop_token&) -> auth::AuthResult<app::AuthenticationResult> {
+        [](
+            const auto&, const auto&, const std::stop_token&
+        ) -> auth::AuthResult<app::AuthenticationResult> {
             throw std::runtime_error{"raw server detail: /中文/%1"};
         },
         &localization

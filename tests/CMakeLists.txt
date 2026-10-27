@@ -266,6 +266,7 @@ if(ONEDRIVE_BUILD_GUI)
             tests/gui/synchronization_log_view.cpp
             tests/gui/synchronization_progress.cpp
             tests/gui/synchronization_window.cpp
+            tests/gui/synchronization_tray.cpp
             src/ui/gui/sync_controller.cpp
             src/ui/gui/sync_controller.hpp
             src/ui/gui/login_controller.cpp
@@ -278,6 +279,10 @@ if(ONEDRIVE_BUILD_GUI)
             onedrive_gui_localization spdlog::spdlog
     )
     set_target_properties(gui_synchronization_tests PROPERTIES AUTOMOC ON)
+    target_link_options(gui_synchronization_tests PRIVATE
+        -Wl,--wrap=_ZN15QSystemTrayIcon21isSystemTrayAvailableEv
+        -Wl,--wrap=_ZN16QDesktopServices7openUrlERK4QUrl
+    )
     set_tests_properties(gui_synchronization_tests PROPERTIES
         TIMEOUT 30 ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     )

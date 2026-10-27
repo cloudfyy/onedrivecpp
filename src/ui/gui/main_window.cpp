@@ -22,6 +22,8 @@
 #include <QTreeWidget>
 #include <QSignalBlocker>
 #include <QTimer>
+#include <QAction>
+#include <QSystemTrayIcon>
 
 #include <utility>
 
@@ -55,6 +57,7 @@ MainWindow::MainWindow(
     create_logs_page();
     setCentralWidget(tabs_);
     create_header_controls();
+    create_system_tray();
     connect_sync_controller();
     connect_login_controller();
     refresh_settings();
@@ -84,6 +87,16 @@ void MainWindow::changeEvent(QEvent* event) {
 }
 
 void MainWindow::retranslate_ui() {
+    tray_->setToolTip(tr("onedrive client"));
+    tray_open_window_->setText(tr("Open window"));
+    tray_open_folder_->setText(tr("Open sync folder"));
+    tray_quit_->setText(tr("Quit"));
+    tray_autostart_->setText(tr("Start automatically at login"));
+    autostart_checkbox_->setText(tr("Start automatically at login"));
+    autostart_checkbox_->setToolTip(
+        tr("Applies immediately. Start in the system tray after desktop login; "
+           "show the window if no tray is available.")
+    );
     about_button_->setText(tr("About"));
     tabs_->setTabText(0, tr("Overview"));
     tabs_->setTabText(1, tr("Sync"));
@@ -157,8 +170,8 @@ void MainWindow::retranslate_ui() {
         tr("Use saved settings; files may be uploaded, downloaded or deleted.")
     );
     monitor_button_->setToolTip(
-        tr("Start a GUI-owned Monitor using saved settings. Closing this "
-           "window stops only its own task.")
+        tr("Start a GUI-owned Monitor using saved settings. Quitting the "
+           "application stops only its own task.")
     );
     monitor_button_->setAccessibleDescription(monitor_button_->toolTip());
     stop_sync_button_->setToolTip(
@@ -207,7 +220,9 @@ void MainWindow::retranslate_ui() {
                 language_selector_->setItemText(index, tr("English"));
                 break;
             case Language::simplified_chinese:
-                language_selector_->setItemText(index, tr("Simplified Chinese"));
+                language_selector_->setItemText(
+                    index, tr("Simplified Chinese")
+                );
                 break;
             }
             if (localization_->language() == language) {
@@ -277,7 +292,14 @@ void MainWindow::refresh_actions() {
 }
 
 void MainWindow::closeEvent(QCloseEvent* event) {
+    refresh_tray_availability();
+    if (!closing_ && !quit_requested_ && tray_available_) {
+        hide();
+        event->ignore();
+        return;
+    }
     if (!closing_ && !confirm_unsaved_settings()) {
+        quit_requested_ = false;
         event->ignore();
         return;
     }
@@ -296,6 +318,12 @@ void MainWindow::closeEvent(QCloseEvent* event) {
         return;
     }
     QMainWindow::closeEvent(event);
+    if (event->isAccepted()) {
+        tray_->hide();
+        if (quit_requested_) {
+            QApplication::quit();
+        }
+    }
 }
 
 } // namespace onedrive::gui

@@ -4,6 +4,7 @@
 #include "localization.hpp"
 #include "settings_editor.hpp"
 #include <QApplication>
+#include <QCheckBox>
 #include <QFileDialog>
 #include <QFormLayout>
 #include <QHBoxLayout>
@@ -43,6 +44,15 @@ void MainWindow::create_settings_page() {
     auto* theme = make_value_label(tr("Follow system light/dark appearance"));
     theme_value_ = theme;
     settings_layout->addRow(tr("Appearance"), theme);
+    autostart_checkbox_ = new QCheckBox{settings};
+    autostart_checkbox_->setObjectName("startAtLogin");
+    settings_layout->addRow(autostart_checkbox_);
+    connect(
+        autostart_checkbox_,
+        &QCheckBox::toggled,
+        this,
+        &MainWindow::set_start_at_login
+    );
 
     auto* actions = new QHBoxLayout;
     auto* import_button = new QPushButton{tr("Import TOML…"), settings};
@@ -77,6 +87,7 @@ void MainWindow::create_settings_page() {
 }
 
 void MainWindow::refresh_settings(bool preserve_edits) {
+    refresh_autostart();
     synchronization_.set_file_history_limit(state_.file_history_limit);
     monitor_.set_state_directory(
         state_.configuration_status == ConfigurationStatus::valid &&

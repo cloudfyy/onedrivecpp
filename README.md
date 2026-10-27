@@ -244,7 +244,22 @@ Scanning and other phases without measurable totals display an explanatory
 message instead of a full-looking indeterminate bar. Overall 100% appears only
 after successful task completion.
 **Stop** requests cancellation and waits for cleanup. Login, logout and settings
-changes are disabled during a task; closing the window cancels and joins it.
+changes are disabled during a task; quitting the application cancels and joins it.
+
+When a system tray is available, closing the window hides it while synchronization
+continues. Left-click the tray icon to open/raise the window; its context menu
+always offers **Open window**, **Open sync folder**, and **Quit**. Quit confirms
+unsaved settings and waits for active login/synchronization cleanup. Without a
+usable tray, closing the window exits as before. If the tray disappears while the
+window is hidden, the window reopens so the application remains accessible.
+
+**Start automatically at login** is available in Settings and the tray menu.
+Both switches apply immediately and share the user desktop autostart entry at
+`$XDG_CONFIG_HOME/autostart/onedrive-cpp-gui.desktop` (normally
+`~/.config/autostart/onedrive-cpp-gui.desktop`), independently of TOML settings.
+On desktop login, the GUI starts in the tray without opening its window; without
+a usable tray it shows the window. Manual launches still show the window.
+This starts the GUI, not a synchronization task.
 
 The **Blocked items** list below synchronization status reads the active Drive's
 saved database without contacting Graph. Preview, synchronization and CLI Monitor
@@ -303,7 +318,7 @@ or persist an additional log.
 **Start monitoring** uses the shared Monitor worker with saved settings. While
 monitoring, **Sync now** requests that Monitor rather than launching a second
 engine. The GUI also discovers and can trigger/stop an external CLI or service
-Monitor; stopping it requires confirmation. Closing the GUI stops only its own
+Monitor; stopping it requires confirmation. Quitting the GUI stops only its own
 task, not an external Monitor. Direct systemd unit start/restart controls are not
 provided. See [Monitor ownership and controls](docs/usage.md#gui-monitoring-and-external-ownership).
 
@@ -335,8 +350,8 @@ Import and reload replace the draft; switching tabs or language preserves it.
 When any field or override differs from the loaded configuration, the window
 title (`onedrive client *` / `OneDrive 客户端 *`) and Settings tab
 (`Settings *` / `设置 *`) show a `" *"` indicator; saving, reloading, or
-reverting edits clears it. Closing the window with unsaved changes prompts to
-**Save**, **Discard**, or **Cancel** before exiting.
+reverting edits clears it. Quitting (or closing without a usable tray) with
+unsaved changes prompts to **Save**, **Discard**, or **Cancel** before exiting.
 Directory changes do not migrate files or credentials. Changes apply to the next
 operation; settings are disabled during login or synchronization.
 

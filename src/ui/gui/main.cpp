@@ -54,7 +54,7 @@ int main(int argc, char* argv[]) {
             {},
             &localization
         };
-        window.show();
+        window.show_at_startup(parser.isSet("start-in-tray"));
         return application.exec();
     } catch (const std::exception& error) {
         QMessageBox::critical(

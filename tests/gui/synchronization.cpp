@@ -2,17 +2,25 @@
 #include "synchronization_cases.hpp"
 #include "localization.hpp"
 #include "support/common.hpp"
+#include "autostart.hpp"
 #include <QApplication>
 
 using namespace onedrive;
 using namespace onedrive::test::gui_sync;
 
 int main(int argc, char* argv[]) {
-    onedrive::test::ScenarioProgress progress{28};
+    onedrive::test::ScenarioProgress progress{36};
     QApplication application{argc, argv};
     application.setQuitOnLastWindowClosed(false);
     gui::Localization localization{gui::Language::english};
     try {
+        if (application.arguments() ==
+            QStringList{
+                application.arguments().front(), "--write-autostart-entry"
+            }) {
+            gui::set_autostart_enabled(true);
+            return EXIT_SUCCESS;
+        }
         progress.run("controller", test_controller);
         progress.run("controller_file_history", test_controller_file_history);
         progress.run("window_file_history", test_window_file_history);
@@ -64,6 +72,16 @@ int main(int argc, char* argv[]) {
         progress.run("results_and_preflight", test_results_and_preflight);
         progress.run("shared_root_busy", test_shared_root_busy);
         progress.run("close_and_availability", test_close_and_availability);
+        progress.run("tray_window_lifecycle", test_tray_window_lifecycle);
+        progress.run("tray_unsaved_settings", test_tray_unsaved_settings);
+        progress.run("tray_graceful_quit", test_tray_graceful_quit);
+        progress.run("tray_startup_visibility", test_tray_startup_visibility);
+        progress.run("autostart_settings", test_autostart_settings);
+        progress.run("autostart_entry_failures", test_autostart_entry_failures);
+        progress.run(
+            "autostart_executable_quoting", test_autostart_executable_quoting
+        );
+        progress.run("tray_folder_failures", test_tray_folder_failures);
     } catch (const std::exception& error) {
         return test::fail(error.what());
     }

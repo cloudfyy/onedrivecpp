@@ -154,9 +154,11 @@ In the GUI, click **Sign in**. Complete sign-in and consent in the system
 browser, then return to the application. No device code is shown. The GUI
 validates a fresh random state and exchanges the code using a fresh PKCE
 verifier. It waits up to five minutes; during login, **Log out** changes to
-**Cancel login**. That button or closing the window cancels the wait and joins
-the login worker. The browser opens automatically; if opening fails, copy the
-displayed authorization URL into your browser. Settings are disabled during login.
+**Cancel login**. That button or quitting the application cancels the wait and
+joins the login worker. Closing the window only hides it when a system tray is
+available; without a usable tray it cancels login and exits. The browser opens
+automatically; if opening fails, copy the displayed authorization URL into your
+browser. Settings are disabled during login.
 Existing credentials are not replaced if authorization fails or is cancelled
 before account activation. Once account activation starts, it is allowed to
 complete its atomic writes.

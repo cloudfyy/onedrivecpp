@@ -30,5 +30,13 @@ void test_progress_and_stop();
 void test_results_and_preflight();
 void test_close_and_availability();
 void test_shared_root_busy();
+void test_tray_window_lifecycle();
+void test_tray_unsaved_settings();
+void test_tray_graceful_quit();
+void test_tray_startup_visibility();
+void test_autostart_settings();
+void test_autostart_entry_failures();
+void test_autostart_executable_quoting();
+void test_tray_folder_failures();
 
 } // namespace onedrive::test::gui_sync

@@ -111,6 +111,52 @@
 <context>
     <name>onedrive::gui::MainWindow</name>
     <message>
+        <source>Start automatically at login</source>
+        <translation>登录后自动启动</translation>
+    </message>
+    <message>
+        <source>Applies immediately. Start in the system tray after desktop login; show the window if no tray is available.</source>
+        <translation>立即生效。登录桌面后启动并驻留托盘；无托盘时显示窗口。</translation>
+    </message>
+    <message>
+        <source>Cannot read automatic startup settings:
+%1</source>
+        <translation>无法读取自动启动设置：
+%1</translation>
+    </message>
+    <message>
+        <source>Cannot change automatic startup settings:
+%1</source>
+        <translation>无法更改自动启动设置：
+%1</translation>
+    </message>
+    <message>
+        <source>Cannot change automatic startup</source>
+        <translation>无法更改自动启动</translation>
+    </message>
+    <message>
+        <source>Open window</source>
+        <translation>打开窗口</translation>
+    </message>
+    <message>
+        <source>Open sync folder</source>
+        <translation>打开同步文件夹</translation>
+    </message>
+    <message>
+        <source>Quit</source>
+        <translation>退出</translation>
+    </message>
+    <message>
+        <source>Cannot open sync folder</source>
+        <translation>无法打开同步文件夹</translation>
+    </message>
+    <message>
+        <source>Cannot open the sync folder:
+%1</source>
+        <translation>无法打开同步文件夹：
+%1</translation>
+    </message>
+    <message>
         <source>Drive type</source>
         <translation>云盘类型</translation>
     </message>
@@ -1036,8 +1082,8 @@ Repair the state directory or select another one in Settings, then reload.</sour
     </message>
     <message>
         <location filename="../main_window.cpp" line="969"/>
-        <source>Start a GUI-owned Monitor using saved settings. Closing this window stops only its own task.</source>
-        <translation>使用已保存设置启动 GUI 自有 Monitor。关闭窗口只会停止其自有任务。</translation>
+        <source>Start a GUI-owned Monitor using saved settings. Quitting the application stops only its own task.</source>
+        <translation>使用已保存设置启动 GUI 自有 Monitor。退出应用只会停止其自有任务。</translation>
     </message>
     <message>
         <location filename="../main_window.cpp" line="1008"/>

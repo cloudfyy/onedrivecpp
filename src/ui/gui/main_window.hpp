@@ -26,6 +26,8 @@ class QCheckBox;
 class QTreeWidget;
 class QTreeWidgetItem;
 class QTimer;
+class QAction;
+class QSystemTrayIcon;
 
 namespace onedrive::gui {
 
@@ -45,8 +47,17 @@ public:
         SynchronizationFunction synchronize = {},
         MonitoringFunction monitor = {}
     );
+    ~MainWindow() override;
+    void show_at_startup(bool start_in_tray);
 
 private:
+    void refresh_autostart();
+    void set_start_at_login(bool enabled);
+    void create_system_tray();
+    void refresh_tray_availability();
+    void show_main_window();
+    void open_sync_folder();
+    void request_quit();
     void create_overview_page();
     void create_sync_page();
     void create_logs_page();
@@ -184,6 +195,16 @@ private:
     QString authorization_url_;
     bool cancelling_{false};
     bool closing_{false};
+    QSystemTrayIcon* tray_{};
+    QTimer* tray_timer_{};
+    QAction* tray_open_window_{};
+    QAction* tray_open_folder_{};
+    QAction* tray_quit_{};
+    QAction* tray_autostart_{};
+    QCheckBox* autostart_checkbox_{};
+    bool tray_available_{false};
+    bool quit_requested_{false};
+    bool quit_on_last_window_closed_{true};
 
     enum class SyncPhase {
         idle,

@@ -49,6 +49,7 @@ void test_locales() {
     }
     require(
         parse({}) == QLocale::system() &&
+            parse({"--start-in-tray"}) == QLocale::system() &&
             parse({"--language", "auto"}) == QLocale::system() &&
             parse({"--language=auto"}) == QLocale::system(),
         "default or explicit auto did not preserve the system locale"
@@ -65,6 +66,39 @@ void test_locales() {
                         "onedrive::gui::MainWindow", "onedrive client"
                     ) == (chinese ? "OneDrive 客户端" : "onedrive client"),
                 "language override did not select the correct translator"
+            );
+        }
+    }
+}
+
+void test_tray_options() {
+    QCommandLineParser defaults;
+    static_cast<void>(
+        gui::parse_startup_language(defaults, {"onedrive-cpp-gui"})
+    );
+    require(
+        !defaults.isSet("start-in-tray"), "normal launch requested tray startup"
+    );
+    for (const auto& language : {"auto", "en", "zh_CN"}) {
+        for (const bool flag_first : {false, true}) {
+            QCommandLineParser parser;
+            const QStringList arguments =
+                flag_first
+                    ? QStringList{"onedrive-cpp-gui", "--start-in-tray", "--language", language}
+                    : QStringList{
+                          "onedrive-cpp-gui",
+                          "--language",
+                          language,
+                          "--start-in-tray"
+                      };
+            const auto selected =
+                gui::parse_startup_language(parser, arguments);
+            require(
+                parser.isSet("start-in-tray") &&
+                    gui::locale_for_language(selected) ==
+                        parse({"--language", language}),
+                "tray startup was lost or changed language selection with "
+                "reordered options"
             );
         }
     }
@@ -88,6 +122,7 @@ void test_invalid_options() {
     }
     for (const auto& options :
          {QStringList{"--unknown"},
+          QStringList{"--start-in-tray=yes"},
           QStringList{"--language"},
           QStringList{"unexpected"},
           QStringList{"--", "unexpected"},
@@ -134,10 +169,11 @@ void test_process(
 } // namespace
 
 int main(int argc, char* argv[]) {
-    onedrive::test::ScenarioProgress progress{17};
+    onedrive::test::ScenarioProgress progress{18};
     QCoreApplication application{argc, argv};
     try {
         progress.run("locales", test_locales);
+        progress.run("tray_options", test_tray_options);
         progress.run("invalid_options", test_invalid_options);
         for (const auto& language : {"auto", "en", "zh_CN"}) {
             progress.run(
@@ -152,7 +188,7 @@ int main(int argc, char* argv[]) {
             );
         }
         progress.run("process (-h)", [&] {
-            return test_process({"-h"}, true, "--language");
+            return test_process({"-h"}, true, "--start-in-tray");
         });
         progress.run("process (--help-all)", [&] {
             return test_process({"--help-all"}, true, "--language");

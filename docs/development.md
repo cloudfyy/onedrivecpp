@@ -178,7 +178,8 @@ and uncertain ownership fails closed. Invalid IPC blocks new synchronization tas
 settings/account recovery is allowed only when lock inspection establishes free
 resources. An empty state-directory setting is not probed as the working directory.
 
-Closing the GUI cancels/waits only for its own worker. External stops require
+Quitting the GUI cancels/waits only for its own worker; closing hides it when a
+system tray is available. External stops require
 confirmation; external snapshots never fabricate direction, progress or round
 timestamps. Offscreen and exec'd subprocess regressions cover owned rounds,
 blocked results, trigger/stop/close, external ownership, read-only lock inspection,
@@ -272,7 +273,8 @@ reset all draft fields; language switches and login completion do not. When any
 field or override differs from the loaded configuration, the window title
 (`onedrive client *` / `OneDrive 客户端 *`) and Settings tab (`Settings *` /
 `设置 *`) display `" *"`; saving, reloading, or reverting edits clears it, and
-closing the window with unsaved edits prompts to Save, Discard, or Cancel.
+quitting (or closing without a usable tray) with unsaved edits prompts to Save,
+Discard, or Cancel.
 
 `gui_settings_tests` exercises real offscreen controls and saved TOML for every
 exposed setting, 64-bit boundaries, parser constraints, comments/unrelated fields,
