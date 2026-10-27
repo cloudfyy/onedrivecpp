@@ -1,3 +1,18 @@
+onedrive-cpp (1.2.7-1~ubuntu24.04) noble; urgency=medium
+
+  * Prepare version 1.2.7.
+  * Add a persistent GUI system tray with window and folder actions, graceful
+    shutdown, and safe fallback when the tray is unavailable or disappears.
+  * Add desktop login autostart with immediately applied Settings and tray menu
+    switches; start in the tray when available without automatically syncing.
+  * Expand GUI regressions for tray lifecycle, autostart persistence and
+    failures, executable quoting, localization, and startup options.
+  * Harden browser launcher lookup, token-store permissions, and dependency
+    URLs; add GitHub CodeQL analysis.
+  * Update English and Simplified Chinese documentation.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Tue, 27 Oct 2026 10:36:00 +0800
+
 onedrive-cpp (1.2.6-1~ubuntu24.04) noble; urgency=medium
 
   * Prepare version 1.2.6.

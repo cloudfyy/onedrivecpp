@@ -7,7 +7,7 @@
 [abraunegg/onedrive](https://github.com/abraunegg/onedrive) 的职责划分，但未
 复制其 D 语言实现。
 
-当前开发版本为 **1.2.6**。CLI、TUI、GUI、User-Agent 和 CPack 版本统一从
+当前开发版本为 **1.2.7**。CLI、TUI、GUI、User-Agent 和 CPack 版本统一从
 `vcpkg.json` 的 `version-semver` 生成；Debian 源码打包的发行版版本另记于
 `debian/changelog`。
 
@@ -447,8 +447,8 @@ arm64 不在本轮发布验证范围内。
 
 ```bash
 python3 tools/prepare_source.py
-tar -xf build/source/onedrive-cpp-1.2.6.tar.xz -C build/source
-cd build/source/onedrive-cpp-1.2.6
+tar -xf build/source/onedrive-cpp-1.2.7.tar.xz -C build/source
+cd build/source/onedrive-cpp-1.2.7
 ```
 
 归档包含 Git 已跟踪文件的当前工作区内容，以及 `third_party/` 下经过
@@ -505,7 +505,7 @@ dpkg-buildpackage --build=binary --no-sign
 目录的上一级，例如：
 
 ```text
-../onedrive-cpp_1.2.6-1~ubuntu24.04_amd64.deb
+../onedrive-cpp_1.2.7-1~ubuntu24.04_amd64.deb
 ```
 
 Debian 规则覆盖 debhelper 的 `FETCHCONTENT_FULLY_DISCONNECTED` 设置，
@@ -523,7 +523,7 @@ CMake 要求 changelog 的完整版本与应用版本、修订号及实际构建
 （`noble`）；在 Ubuntu 26.04（`resolute`）构建前应更新对应条目，例如：
 
 ```bash
-dch --newversion 1.2.6-1~ubuntu26.04 --distribution resolute
+dch --newversion 1.2.7-1~ubuntu26.04 --distribution resolute
 ```
 
 Ubuntu 24.04 使用 `noble` 和 `ubuntu24.04` 后缀。仅修改打包流程时，
@@ -585,13 +585,13 @@ Actions artifacts 保留。只有成功的**标签推送**才会创建 GitHub Re
 构建任务只读仓库。
 
 Debian revision 为 1 时，标签使用 `v<应用版本>`；后续打包修订使用
-`v<应用版本>-<修订号>`。当前 `1.2.6-1~ubuntu24.04` 元数据对应 **`v1.2.6`**，
+`v<应用版本>-<修订号>`。当前 `1.2.7-1~ubuntu24.04` 元数据对应 **`v1.2.7`**，
 不移动已有的发布标签。标签与 `vcpkg.json` 或 changelog 不一致时，
 流水线会失败。提交并推送发行改动后，执行：
 
 ```bash
-git tag -a v1.2.6 -m "onedrive-cpp 1.2.6"
-git push origin v1.2.6
+git tag -a v1.2.7 -m "onedrive-cpp 1.2.7"
+git push origin v1.2.7
 ```
 
 仓库需启用 GitHub Actions，并允许工作流创建 Release；无需个人访问令牌，
