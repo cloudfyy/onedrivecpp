@@ -50,11 +50,16 @@ config::Config SettingsEditor::effective_account_config() const {
             config.graph_endpoint = text.toStdString();
         }
     }
-    if (auto* scopes = findChild<QPlainTextEdit*>("auth.scopes")) {
-        const auto joined =
-            scopes->toPlainText()
-                .split(QRegularExpression{"\\s+"}, Qt::SkipEmptyParts)
-                .join(' ');
+    if (auto* scopes = findChild<QListWidget*>("auth.scopes")) {
+        QStringList items;
+        for (int i = 0; i < scopes->count(); ++i) {
+            for (const auto& token : scopes->item(i)->text().split(
+                     QRegularExpression{"\\s+"}, Qt::SkipEmptyParts
+                 )) {
+                items.push_back(token);
+            }
+        }
+        const auto joined = items.join(' ');
         if (!joined.isEmpty()) {
             config.auth_scope = joined.toStdString();
         }

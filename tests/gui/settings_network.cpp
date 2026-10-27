@@ -190,9 +190,7 @@ void test_phase_two_round_trip() {
     window.findChild<QPushButton*>("reloadSettingsButton")->click();
     require(
         editor->patches().empty() &&
-            window.findChild<QPlainTextEdit*>("proxy.no_proxy")
-                ->toPlainText()
-                .contains("127.0.0.0/8"),
+            list_text(window, "proxy.no_proxy").contains("127.0.0.0/8"),
         "global reload did not restore phase two fields"
     );
     for (const auto* name :

@@ -42,21 +42,18 @@ void test_tooltips_and_language_switching() {
             remember(browse, tip);
             remember(input->parentWidget(), tip);
         }
-        if (auto* browse_sp = input->parentWidget()->findChild<QPushButton*>(
-                "browseSharePointButton", Qt::FindDirectChildrenOnly
-            )) {
-            remember(browse_sp, tip);
-            remember(input->parentWidget(), tip);
-        }
-        if (auto* add_btn = input->parentWidget()->findChild<QPushButton*>(
-                "addDriveIdButton", Qt::FindDirectChildrenOnly
-            )) {
-            remember(add_btn, tip);
-        }
-        if (auto* remove_btn = input->parentWidget()->findChild<QPushButton*>(
-                "removeDriveIdButton", Qt::FindDirectChildrenOnly
-            )) {
-            remember(remove_btn, tip);
+        for (const auto* btn_name :
+             {"browseSharePointButton",
+              "addDriveIdButton",
+              "removeDriveIdButton",
+              "addListItemButton",
+              "removeListItemButton"}) {
+            if (auto* btn = input->parentWidget()->findChild<QPushButton*>(
+                    btn_name, Qt::FindDirectChildrenOnly
+                )) {
+                remember(btn, tip);
+                remember(input->parentWidget(), tip);
+            }
         }
         if (auto* override = editor->findChild<QCheckBox*>(
                 input->objectName() + ".override"
@@ -371,8 +368,8 @@ void test_tooltips_expanded_groups_and_disabled_drafts() {
                 !editor->findChild<QWidget*>("proxy.no_proxy")->isEnabled() &&
                 editor->findChild<QLineEdit*>("proxy.url")->text() ==
                     "https://draft.example.test" &&
-                editor->findChild<QPlainTextEdit*>("proxy.no_proxy")
-                        ->toPlainText() == "localhost\n.example.test",
+                list_text(*editor, "proxy.no_proxy") ==
+                    "localhost\n.example.test",
             "language switch enabled or discarded an inactive proxy draft"
         );
     }
