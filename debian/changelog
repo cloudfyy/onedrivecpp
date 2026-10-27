@@ -1,3 +1,16 @@
+onedrive-cpp (1.2.8-1~ubuntu24.04) noble; urgency=medium
+
+  * Prepare version 1.2.8.
+  * Replace multi-line settings list inputs (Drive IDs, authentication scopes,
+    and proxy bypass entries) with interactive editable QListWidget controls.
+  * Add dynamic system tray icon tooltips showing the application name, live
+    synchronization status, and sync directory.
+  * Prompt to save or discard unsaved settings when closing the GUI window to
+    the system tray and remove redundant application display name suffixes from
+    the window title.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Tue, 27 Oct 2026 16:55:00 +0800
+
 onedrive-cpp (1.2.7-1~ubuntu24.04) noble; urgency=medium
 
   * Prepare version 1.2.7.
