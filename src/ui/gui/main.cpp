@@ -39,11 +39,6 @@ int main(int argc, char* argv[]) {
         parser.showVersion();
     }
     onedrive::gui::Localization localization{language};
-    QApplication::setApplicationDisplayName(
-        QCoreApplication::translate(
-            "onedrive::gui::MainWindow", "onedrive client"
-        )
-    );
     onedrive::gui::SystemAppearance system_appearance{&application};
 
     try {
@@ -59,7 +54,9 @@ int main(int argc, char* argv[]) {
     } catch (const std::exception& error) {
         QMessageBox::critical(
             nullptr,
-            QApplication::applicationDisplayName(),
+            QCoreApplication::translate(
+                "onedrive::gui::MainWindow", "onedrive client"
+            ),
             QCoreApplication::translate(
                 "Application", "Cannot start OneDrive client:\n%1"
             )

@@ -76,7 +76,7 @@ void test_runtime_language(bool system_chinese) {
                         chinese, "onedrive client *", "OneDrive 客户端 *"
                     ) &&
                 QApplication::applicationDisplayName() ==
-                    window.windowTitle() &&
+                    QCoreApplication::applicationName() &&
                 tabs->tabText(0) == expected(chinese, "Overview", "概览") &&
                 tabs->tabText(1) == expected(chinese, "Sync", "同步") &&
                 tabs->tabText(2) == expected(chinese, "Files", "文件") &&

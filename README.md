@@ -248,10 +248,11 @@ changes are disabled during a task; quitting the application cancels and joins i
 
 When a system tray is available, closing the window hides it while synchronization
 continues. Left-click the tray icon to open/raise the window; its context menu
-always offers **Open window**, **Open sync folder**, and **Quit**. Quit confirms
-unsaved settings and waits for active login/synchronization cleanup. Without a
-usable tray, closing the window exits as before. If the tray disappears while the
-window is hidden, the window reopens so the application remains accessible.
+always offers **Open window**, **Open sync folder**, and **Quit**. Closing the
+window or choosing **Quit** confirms unsaved settings; **Quit** also waits for
+active login/synchronization cleanup. Without a usable tray, closing the window
+exits as before. If the tray disappears while the window is hidden, the window
+reopens so the application remains accessible.
 
 **Start automatically at login** is available in Settings and the tray menu.
 Both switches apply immediately and share the user desktop autostart entry at
@@ -350,8 +351,8 @@ Import and reload replace the draft; switching tabs or language preserves it.
 When any field or override differs from the loaded configuration, the window
 title (`onedrive client *` / `OneDrive 客户端 *`) and Settings tab
 (`Settings *` / `设置 *`) show a `" *"` indicator; saving, reloading, or
-reverting edits clears it. Quitting (or closing without a usable tray) with
-unsaved changes prompts to **Save**, **Discard**, or **Cancel** before exiting.
+reverting edits clears it. Closing the window or quitting with
+unsaved changes prompts to **Save**, **Discard**, or **Cancel**.
 Directory changes do not migrate files or credentials. Changes apply to the next
 operation; settings are disabled during login or synchronization.
 

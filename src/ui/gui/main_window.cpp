@@ -293,13 +293,13 @@ void MainWindow::refresh_actions() {
 
 void MainWindow::closeEvent(QCloseEvent* event) {
     refresh_tray_availability();
-    if (!closing_ && !quit_requested_ && tray_available_) {
-        hide();
+    if (!closing_ && !confirm_unsaved_settings()) {
+        quit_requested_ = false;
         event->ignore();
         return;
     }
-    if (!closing_ && !confirm_unsaved_settings()) {
-        quit_requested_ = false;
+    if (!closing_ && !quit_requested_ && tray_available_) {
+        hide();
         event->ignore();
         return;
     }

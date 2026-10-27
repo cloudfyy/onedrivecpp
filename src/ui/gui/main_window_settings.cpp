@@ -199,7 +199,6 @@ void MainWindow::update_unsaved_indicator() {
     const bool dirty = has_unsaved_settings();
     const QString base_title = tr("onedrive client");
     setWindowTitle(dirty ? base_title + " *" : base_title);
-    QApplication::setApplicationDisplayName(windowTitle());
     if (tabs_ && settings_) {
         const int index = tabs_->indexOf(settings_);
         if (index >= 0) {
@@ -235,6 +234,7 @@ bool MainWindow::confirm_unsaved_settings() {
     case QMessageBox::Save:
         return save_settings(false);
     case QMessageBox::Discard:
+        refresh_settings();
         return true;
     default:
         return false;

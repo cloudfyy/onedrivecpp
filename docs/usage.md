@@ -435,8 +435,9 @@ cancellation and upload/download events. Waiting retains the last round's totals
 and completion time; a completed round or 100% transfer does not end monitoring.
 With a usable system tray, closing the window hides it and monitoring continues.
 Left-click the tray icon or choose **Open window** to restore it; the context menu
-also offers **Open sync folder** and **Quit**. Quit confirms unsaved settings,
-cancels only the GUI's own task and waits for cleanup. Without a usable tray,
+also offers **Open sync folder** and **Quit**. Closing the window or choosing
+**Quit** confirms unsaved settings; **Quit** cancels only the GUI's own task and
+waits for cleanup. Without a usable tray,
 closing the window performs the same graceful shutdown. A disappearing tray
 reopens the hidden window.
 

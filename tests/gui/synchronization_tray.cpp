@@ -470,9 +470,22 @@ void test_tray_unsaved_settings() {
     window.close();
     QCoreApplication::processEvents();
     require(
-        !prompted && !window.isVisible() && field->text() == "edited-client",
-        "hide-to-tray prompted or discarded unsaved settings"
+        prompted && window.isVisible() && field->text() == "edited-client",
+        "hide-to-tray bypassed unsaved-settings cancellation"
     );
+    prompted = false;
+    answer(QMessageBox::Discard);
+    window.close();
+    QCoreApplication::processEvents();
+    require(
+        prompted && !window.isVisible() && field->text() == "test-client" &&
+            !window.windowTitle().endsWith(" *") &&
+            config::Config::load(fixture.file).application_id == "test-client",
+        "discard on hide-to-tray did not revert edits and hide the window"
+    );
+    window.show();
+    field->setText("edited-client");
+    prompted = false;
     answer(QMessageBox::Cancel);
     tray_action(window, "Quit")->trigger();
     require(
@@ -480,17 +493,26 @@ void test_tray_unsaved_settings() {
             config::Config::load(fixture.file).application_id == "test-client",
         "Quit bypassed unsaved-settings cancellation"
     );
+    prompted = false;
+    answer(QMessageBox::Save);
     window.close();
+    QCoreApplication::processEvents();
     require(
-        !window.isVisible(), "cancelled Quit changed subsequent close behavior"
+        prompted && !window.isVisible() &&
+            !window.windowTitle().endsWith(" *") &&
+            config::Config::load(fixture.file).application_id ==
+                "edited-client",
+        "save on hide-to-tray did not save settings and hide the window"
     );
+    window.show();
+    field->setText("quit-saved-client");
     prompted = false;
     answer(QMessageBox::Save);
     tray_action(window, "Quit")->trigger();
     require(
         prompted && !window.isVisible() && !tray(window)->isVisible() &&
             config::Config::load(fixture.file).application_id ==
-                "edited-client",
+                "quit-saved-client",
         "Quit did not save settings before shutting down"
     );
 }

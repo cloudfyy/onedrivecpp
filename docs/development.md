@@ -273,7 +273,7 @@ reset all draft fields; language switches and login completion do not. When any
 field or override differs from the loaded configuration, the window title
 (`onedrive client *` / `OneDrive 客户端 *`) and Settings tab (`Settings *` /
 `设置 *`) display `" *"`; saving, reloading, or reverting edits clears it, and
-quitting (or closing without a usable tray) with unsaved edits prompts to Save,
+closing the window or quitting with unsaved edits prompts to Save,
 Discard, or Cancel.
 
 `gui_settings_tests` exercises real offscreen controls and saved TOML for every
