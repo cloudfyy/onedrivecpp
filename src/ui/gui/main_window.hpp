@@ -48,6 +48,7 @@ public:
         MonitoringFunction monitor = {}
     );
     ~MainWindow() override;
+    Q_DISABLE_COPY_MOVE(MainWindow)
     void show_at_startup(bool start_in_tray);
 
 private:
