@@ -55,7 +55,18 @@ void test_runtime_language(bool system_chinese) {
         const auto actions = tray->contextMenu()->actions();
         require(
             tray->toolTip() ==
-                    expected(chinese, "onedrive client", "OneDrive 客户端") &&
+                    expected(
+                        chinese,
+                        "onedrive client\n"
+                        "Sign in and save valid settings to synchronize.\n"
+                        "Sync directory: ",
+                        "OneDrive 客户端\n"
+                        "请登录并保存有效设置后同步。\n"
+                        "同步目录："
+                    ) +
+                        QString::fromStdString(
+                            (fixture.path() / "sync-%2-中文").string()
+                        ) &&
                 actions.at(0)->text() ==
                     expected(chinese, "Open window", "打开窗口") &&
                 actions.at(1)->text() ==

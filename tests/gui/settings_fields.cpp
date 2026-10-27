@@ -263,12 +263,17 @@ void test_sharepoint_library_browser() {
         "removing added Drive ID item did not restore baseline"
     );
     text(editor, "auth.application_id", "sp-client-id");
+    auto* scopes_list = editor.findChild<QListWidget*>("auth.scopes");
+    require(scopes_list != nullptr, "auth.scopes list widget missing");
+    list(editor, "auth.scopes", "User.Read  Files.ReadWrite\noffline_access");
     std::vector<std::string> queries;
     std::string observed_app_id;
+    std::string observed_scopes;
     editor.set_site_search_function(
         [&](const config::Config& cfg,
             const std::string& query) -> std::vector<graph::SiteInfo> {
             observed_app_id = cfg.application_id;
+            observed_scopes = cfg.auth_scope;
             queries.push_back(query);
             if (query == "error") {
                 throw std::runtime_error{"simulated 403 Sites.Read.All"};
@@ -361,6 +366,7 @@ void test_sharepoint_library_browser() {
     sp_dialogs.stop();
     require(
         sp_handled && observed_app_id == "sp-client-id" &&
+            observed_scopes == "User.Read Files.ReadWrite offline_access" &&
             queries == std::vector<std::string>{"error", "missing", "*", "*"} &&
             list_text(editor, "sync.drive_ids") ==
                 "me\ndrv-eng-docs\ndrv-eng-specs",

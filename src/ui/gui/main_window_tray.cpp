@@ -5,8 +5,10 @@
 #include <QApplication>
 #include <QCheckBox>
 #include <QDesktopServices>
+#include <QLabel>
 #include <QMenu>
 #include <QMessageBox>
+#include <QStringList>
 #include <QSystemTrayIcon>
 #include <QSignalBlocker>
 #include <QTimer>
@@ -80,6 +82,23 @@ void MainWindow::create_system_tray() {
     );
     tray_timer_->start();
     refresh_tray_availability();
+}
+
+void MainWindow::update_tray_tooltip() {
+    if (!tray_) {
+        return;
+    }
+    QStringList lines{tr("onedrive client")};
+    if (sync_status_ && !sync_status_->text().isEmpty()) {
+        lines << sync_status_->text();
+    }
+    if (!state_.sync_directory.empty()) {
+        lines << tr("Sync directory: %1")
+                     .arg(
+                         QString::fromStdString(state_.sync_directory.string())
+                     );
+    }
+    tray_->setToolTip(lines.join('\n'));
 }
 
 void MainWindow::show_at_startup(bool start_in_tray) {

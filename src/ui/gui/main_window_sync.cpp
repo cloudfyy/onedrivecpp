@@ -620,16 +620,15 @@ void MainWindow::render_sync_status(const QLocale& locale) {
         break;
     case SyncPhase::scanning:
         if (sync_delta_) {
-            status =
-                tr("Scanning remote changes: %1 pages, %2 items.")
-                    .arg(
-                        locale.toString(
-                            static_cast<qulonglong>(sync_delta_->pages)
-                        ),
-                        locale.toString(
-                            static_cast<qulonglong>(sync_delta_->items)
-                        )
-                    );
+            status = tr("Scanning remote changes: %1 pages, %2 items.")
+                         .arg(
+                             locale.toString(
+                                 static_cast<qulonglong>(sync_delta_->pages)
+                             ),
+                             locale.toString(
+                                 static_cast<qulonglong>(sync_delta_->items)
+                             )
+                         );
         } else {
             status = tr("Scanning remote changes...");
         }
@@ -707,6 +706,7 @@ void MainWindow::render_sync_status(const QLocale& locale) {
     }
     sync_status_->setText(status);
     overview_sync_status_->setText(status);
+    update_tray_tooltip();
 }
 
 int MainWindow::render_download_status(const QLocale& locale) {

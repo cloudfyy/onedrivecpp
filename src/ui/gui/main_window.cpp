@@ -87,7 +87,6 @@ void MainWindow::changeEvent(QEvent* event) {
 }
 
 void MainWindow::retranslate_ui() {
-    tray_->setToolTip(tr("onedrive client"));
     tray_open_window_->setText(tr("Open window"));
     tray_open_folder_->setText(tr("Open sync folder"));
     tray_quit_->setText(tr("Quit"));

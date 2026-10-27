@@ -307,6 +307,63 @@ void test_tooltips_initial_locale_and_reload() {
             "reloading defaults changed a setting's help text"
         );
     }
+
+    // Verify Add/Remove buttons on override_list (proxy.no_proxy) and regular
+    // list (auth.scopes) follow override state and item selection.
+    {
+        gui::SettingsEditor editor;
+        editor.load(config::Config::defaults());
+        auto* no_proxy = editor.findChild<QListWidget*>("proxy.no_proxy");
+        auto* no_proxy_override =
+            editor.findChild<QCheckBox*>("proxy.no_proxy.override");
+        auto* no_proxy_add = no_proxy->parentWidget()->findChild<QPushButton*>(
+            "addListItemButton"
+        );
+        auto* no_proxy_remove =
+            no_proxy->parentWidget()->findChild<QPushButton*>(
+                "removeListItemButton"
+            );
+        require(
+            no_proxy && no_proxy_override && no_proxy_add && no_proxy_remove &&
+                !no_proxy_override->isChecked() && !no_proxy->isEnabled() &&
+                !no_proxy_add->isEnabled() && !no_proxy_remove->isEnabled(),
+            "override_list buttons should start disabled when not overriding"
+        );
+        no_proxy_override->setChecked(true);
+        require(
+            no_proxy->isEnabled() && no_proxy_add->isEnabled() &&
+                !no_proxy_remove->isEnabled(),
+            "enabling override on empty list should enable Add and keep Remove "
+            "disabled"
+        );
+        no_proxy_add->click();
+        require(
+            no_proxy->count() == 1 && no_proxy_remove->isEnabled(),
+            "clicking Add on override_list did not add item or enable Remove"
+        );
+        no_proxy->item(0)->setText("localhost");
+        no_proxy->setCurrentItem(nullptr);
+        require(
+            !no_proxy_remove->isEnabled(),
+            "clearing list selection did not disable Remove button"
+        );
+        no_proxy->setCurrentRow(0);
+        require(
+            no_proxy_remove->isEnabled(),
+            "selecting list item did not re-enable Remove button"
+        );
+        no_proxy_override->setChecked(false);
+        require(
+            !no_proxy_add->isEnabled() && !no_proxy_remove->isEnabled(),
+            "disabling override did not disable Add/Remove buttons"
+        );
+        no_proxy_override->setChecked(true);
+        no_proxy_remove->click();
+        require(
+            no_proxy->count() == 0 && !no_proxy_remove->isEnabled(),
+            "removing last override_list item did not disable Remove button"
+        );
+    }
 }
 
 void test_tooltips_expanded_groups_and_disabled_drafts() {

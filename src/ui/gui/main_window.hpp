@@ -51,6 +51,7 @@ public:
     void show_at_startup(bool start_in_tray);
 
 private:
+    void update_tray_tooltip();
     void refresh_autostart();
     void set_start_at_login(bool enabled);
     void create_system_tray();

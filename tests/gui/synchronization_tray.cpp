@@ -105,7 +105,12 @@ void test_tray_window_lifecycle() {
     refresh_tray(window);
     require(
         !QApplication::quitOnLastWindowClosed() && tray(window)->isVisible() &&
-            tray(window)->icon().cacheKey() == window.windowIcon().cacheKey(),
+            tray(window)->icon().cacheKey() == window.windowIcon().cacheKey() &&
+            tray(window)->toolTip().contains("onedrive client\n") &&
+            tray(window)->toolTip().contains(
+                "Sync directory: " +
+                QString::fromStdString(state.sync_directory.string())
+            ),
         "late tray availability did not keep the application accessible"
     );
     window.close();
@@ -120,10 +125,10 @@ void test_tray_window_lifecycle() {
     tray(window)->activated(QSystemTrayIcon::Trigger);
     require(window.isVisible(), "left click toggled the window closed");
     window.showMinimized();
-    tray(window)->activated(QSystemTrayIcon::Trigger);
+    tray(window)->activated(QSystemTrayIcon::DoubleClick);
     require(
         window.isVisible() && !window.isMinimized(),
-        "left click did not restore a minimized window"
+        "double click did not restore a minimized window"
     );
     window.close();
     tray_action(window, "Open window")->trigger();
@@ -413,7 +418,9 @@ void test_tray_folder_failures() {
         );
         auto* action = tray_action(window, "Open sync folder");
         require(
-            !action->isEnabled(), "empty sync directory action was enabled"
+            !action->isEnabled() &&
+                !tray(window)->toolTip().contains("Sync directory:"),
+            "empty sync directory action was enabled or shown in tray tooltip"
         );
         action->trigger();
         require(opened_folder.isEmpty(), "empty sync directory was opened");
@@ -505,12 +512,35 @@ void test_tray_unsaved_settings() {
         "save on hide-to-tray did not save settings and hide the window"
     );
     window.show();
-    field->setText("quit-saved-client");
+    field->setText("discard-quit-client");
     prompted = false;
-    answer(QMessageBox::Save);
+    answer(QMessageBox::Discard);
     tray_action(window, "Quit")->trigger();
     require(
         prompted && !window.isVisible() && !tray(window)->isVisible() &&
+            config::Config::load(fixture.file).application_id ==
+                "edited-client",
+        "Quit with Discard did not revert draft edits and exit"
+    );
+    gui::MainWindow quit_save_window{
+        gui::load_app_state_view_model(fixture.file)
+    };
+    quit_save_window.show();
+    quit_save_window.findChild<QLineEdit*>("auth.application_id")
+        ->setText("quit-saved-client");
+    prompted = false;
+    QTimer::singleShot(0, &quit_save_window, [&] {
+        auto* dialog =
+            qobject_cast<QMessageBox*>(QApplication::activeModalWidget());
+        if (dialog && dialog->objectName() == "unsavedSettingsDialog") {
+            prompted = true;
+            dialog->button(QMessageBox::Save)->click();
+        }
+    });
+    tray_action(quit_save_window, "Quit")->trigger();
+    require(
+        prompted && !quit_save_window.isVisible() &&
+            !tray(quit_save_window)->isVisible() &&
             config::Config::load(fixture.file).application_id ==
                 "quit-saved-client",
         "Quit did not save settings before shutting down"
@@ -571,13 +601,22 @@ void test_tray_graceful_quit() {
         window.close();
         QCoreApplication::processEvents();
         require(
-            !window.isVisible() && !cancelled,
-            "hiding the window cancelled its background worker"
+            !window.isVisible() && !cancelled &&
+                tray(window)->toolTip().contains(
+                    signing_in
+                        ? "Sign in and save valid settings to synchronize."
+                        : "Synchronizing..."
+                ),
+            "hiding the window cancelled its background worker or missed "
+            "dynamic tray tooltip status"
         );
         tray_action(window, "Quit")->trigger();
         require(
             wait_until([&] { return cancelled.load(); }) &&
-                window.isVisible() && tray(window)->isVisible(),
+                window.isVisible() && tray(window)->isVisible() &&
+                (signing_in || tray(window)->toolTip().contains(
+                                   "Stopping; waiting for the task to finish..."
+                               )),
             "Quit did not request cancellation and wait for cleanup"
         );
         finish = true;

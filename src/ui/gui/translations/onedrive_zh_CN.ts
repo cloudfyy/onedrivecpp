@@ -1337,6 +1337,10 @@ Existing account state and credentials will remain in the old location.</source>
 现有账号状态和凭据将保留在原位置。</translation>
     </message>
     <message>
+        <source>Sync directory: %1</source>
+        <translation>同步目录：%1</translation>
+    </message>
+    <message>
         <location filename="../main_window_settings.cpp" line="184"/>
         <source>Unsaved settings</source>
         <translation>未保存的设置</translation>
