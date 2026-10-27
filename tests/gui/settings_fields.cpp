@@ -229,13 +229,40 @@ void test_sharepoint_library_browser() {
     auto* tabs = editor.findChild<QTabWidget*>("settingsTabs");
     require(tabs != nullptr, "settings tabs missing");
     tabs->setCurrentIndex(0);
-    text(editor, "auth.application_id", "sp-client-id");
-    auto* drive_ids = editor.findChild<QPlainTextEdit*>("sync.drive_ids");
+    auto* drive_ids = editor.findChild<QListWidget*>("sync.drive_ids");
+    auto* add_drive_id = editor.findChild<QPushButton*>("addDriveIdButton");
+    auto* remove_drive_id =
+        editor.findChild<QPushButton*>("removeDriveIdButton");
     auto* browse_sp = editor.findChild<QPushButton*>("browseSharePointButton");
     require(
-        drive_ids != nullptr && browse_sp != nullptr,
-        "SharePoint library browser button missing"
+        drive_ids != nullptr && add_drive_id != nullptr &&
+            remove_drive_id != nullptr && browse_sp != nullptr,
+        "SharePoint library browser or Drive ID list buttons missing"
     );
+    require(
+        drive_ids->count() == 1 && drive_ids->item(0)->text() == "me" &&
+            drive_ids->item(0)->flags().testFlag(Qt::ItemIsEditable),
+        "Drive ID list did not initialize with editable default 'me' item"
+    );
+    add_drive_id->click();
+    require(
+        drive_ids->count() == 2 && drive_ids->currentRow() == 1 &&
+            drive_ids->item(1)->flags().testFlag(Qt::ItemIsEditable),
+        "Add Drive ID button did not append and select an editable item"
+    );
+    drive_ids->item(1)->setText("drv-custom");
+    require(
+        list_text(editor, "sync.drive_ids") == "me\ndrv-custom" &&
+            editor.has_unsaved_changes(),
+        "editing Drive ID list item did not mark settings dirty"
+    );
+    remove_drive_id->click();
+    require(
+        list_text(editor, "sync.drive_ids") == "me" &&
+            !editor.has_unsaved_changes(),
+        "removing added Drive ID item did not restore baseline"
+    );
+    text(editor, "auth.application_id", "sp-client-id");
     std::vector<std::string> queries;
     std::string observed_app_id;
     editor.set_site_search_function(
@@ -335,7 +362,8 @@ void test_sharepoint_library_browser() {
     require(
         sp_handled && observed_app_id == "sp-client-id" &&
             queries == std::vector<std::string>{"error", "missing", "*", "*"} &&
-            drive_ids->toPlainText() == "me\ndrv-eng-docs\ndrv-eng-specs",
+            list_text(editor, "sync.drive_ids") ==
+                "me\ndrv-eng-docs\ndrv-eng-specs",
         "SharePoint browser did not deduplicate and append selected Drive IDs"
     );
 
@@ -362,12 +390,13 @@ void test_sharepoint_library_browser() {
         tree->setCurrentItem(tree->topLevelItem(2));
         QMetaObject::invokeMethod(dialog, "accept", Qt::QueuedConnection);
     });
-    drive_ids->setPlainText("me");
+    list(editor, "sync.drive_ids", "me");
     sp_dialogs.start(1);
     browse_sp->click();
     sp_dialogs.stop();
     require(
-        sp_row_selected && drive_ids->toPlainText() == "me\ndrv-eng-specs",
+        sp_row_selected &&
+            list_text(editor, "sync.drive_ids") == "me\ndrv-eng-specs",
         "SharePoint browser did not fall back to selected tree row Drive ID"
     );
 }

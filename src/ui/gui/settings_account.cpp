@@ -7,9 +7,12 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
+#include <QListWidgetItem>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QSignalBlocker>
 #include <QStringList>
 #include <QTreeWidget>
 #include <QTreeWidgetItem>
@@ -60,8 +63,8 @@ config::Config SettingsEditor::effective_account_config() const {
 }
 
 void SettingsEditor::browse_sharepoint_libraries() {
-    auto* drive_ids_edit = findChild<QPlainTextEdit*>("sync.drive_ids");
-    if (!drive_ids_edit) {
+    auto* drive_ids_list = findChild<QListWidget*>("sync.drive_ids");
+    if (!drive_ids_list) {
         return;
     }
 
@@ -218,9 +221,8 @@ void SettingsEditor::browse_sharepoint_libraries() {
     }
 
     QStringList lines;
-    for (const auto& line :
-         drive_ids_edit->toPlainText().split('\n', Qt::SkipEmptyParts)) {
-        const auto trimmed = line.trimmed();
+    for (int i = 0; i < drive_ids_list->count(); ++i) {
+        const auto trimmed = drive_ids_list->item(i)->text().trimmed();
         if (!trimmed.isEmpty() && !lines.contains(trimmed)) {
             lines.push_back(trimmed);
         }
@@ -230,7 +232,21 @@ void SettingsEditor::browse_sharepoint_libraries() {
             lines.push_back(id);
         }
     }
-    drive_ids_edit->setPlainText(lines.join('\n'));
+    {
+        const QSignalBlocker blocker{drive_ids_list};
+        drive_ids_list->clear();
+        for (const auto& line : lines) {
+            auto* item = new QListWidgetItem{line, drive_ids_list};
+            item->setFlags(item->flags() | Qt::ItemIsEditable);
+        }
+        if (drive_ids_list->count() > 0) {
+            drive_ids_list->setCurrentRow(drive_ids_list->count() - 1);
+        }
+    }
+    if (auto* remove_button = findChild<QPushButton*>("removeDriveIdButton")) {
+        remove_button->setEnabled(drive_ids_list->currentItem() != nullptr);
+    }
+    Q_EMIT changed();
 }
 
 void SettingsEditor::add_account_page() {

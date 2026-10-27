@@ -1473,6 +1473,14 @@ Relative file references will be resolved from the active configuration director
         <translation>驱动器 ID（每行一个）</translation>
     </message>
     <message>
+        <source>Add</source>
+        <translation>添加</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>移除</translation>
+    </message>
+    <message>
         <location filename="../settings_editor.cpp" line="135"/>
         <source>Directory changes do not migrate files, account state or credentials. Settings take effect on the next operation; running operations are not changed.</source>
         <translation>更改目录不会迁移文件、账号状态或凭据。设置将在下次操作时生效，不影响正在运行的操作。</translation>

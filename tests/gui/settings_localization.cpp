@@ -48,6 +48,16 @@ void test_tooltips_and_language_switching() {
             remember(browse_sp, tip);
             remember(input->parentWidget(), tip);
         }
+        if (auto* add_btn = input->parentWidget()->findChild<QPushButton*>(
+                "addDriveIdButton", Qt::FindDirectChildrenOnly
+            )) {
+            remember(add_btn, tip);
+        }
+        if (auto* remove_btn = input->parentWidget()->findChild<QPushButton*>(
+                "removeDriveIdButton", Qt::FindDirectChildrenOnly
+            )) {
+            remember(remove_btn, tip);
+        }
         if (auto* override = editor->findChild<QCheckBox*>(
                 input->objectName() + ".override"
             )) {
@@ -61,6 +71,7 @@ void test_tooltips_and_language_switching() {
         if (widget->objectName().contains('.') &&
             (qobject_cast<QLineEdit*>(widget) ||
              qobject_cast<QPlainTextEdit*>(widget) ||
+             qobject_cast<QListWidget*>(widget) ||
              qobject_cast<QComboBox*>(widget) ||
              qobject_cast<QCheckBox*>(widget))) {
             ++controls;

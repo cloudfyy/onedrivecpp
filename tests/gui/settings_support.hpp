@@ -14,9 +14,12 @@
 #include <QFileDialog>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
+#include <QListWidgetItem>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QPlainTextEdit>
+#include <QSignalBlocker>
 #include <QTabWidget>
 #include <QThread>
 #include <QTimer>
@@ -61,9 +64,46 @@ inline void choice(QWidget& window, const char* name, const char* value) {
 }
 
 inline void list(QWidget& window, const char* name, const QString& value) {
+    if (auto* list_widget = window.findChild<QListWidget*>(name)) {
+        {
+            const QSignalBlocker blocker{list_widget};
+            list_widget->clear();
+            if (!value.isEmpty()) {
+                for (const auto& entry : value.split('\n')) {
+                    auto* item = new QListWidgetItem{entry, list_widget};
+                    item->setFlags(item->flags() | Qt::ItemIsEditable);
+                }
+            }
+            if (list_widget->count() > 0) {
+                list_widget->setCurrentRow(0);
+            }
+        }
+        if (list_widget->count() > 0) {
+            Q_EMIT list_widget->itemChanged(list_widget->item(0));
+        } else if (auto* editor = window.findChild<gui::SettingsEditor*>()) {
+            Q_EMIT editor->changed();
+        } else if (auto* self_editor =
+                       qobject_cast<gui::SettingsEditor*>(&window)) {
+            Q_EMIT self_editor->changed();
+        }
+        return;
+    }
     auto* field = window.findChild<QPlainTextEdit*>(name);
     require(field != nullptr, "list field missing");
     field->setPlainText(value);
+}
+
+inline QString list_text(QWidget& window, const char* name) {
+    if (auto* list_widget = window.findChild<QListWidget*>(name)) {
+        QStringList items;
+        for (int i = 0; i < list_widget->count(); ++i) {
+            items.push_back(list_widget->item(i)->text());
+        }
+        return items.join('\n');
+    }
+    auto* field = window.findChild<QPlainTextEdit*>(name);
+    require(field != nullptr, "list field missing");
+    return field->toPlainText();
 }
 
 inline void checked(QWidget& window, const char* name, bool value) {

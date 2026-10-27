@@ -7,9 +7,12 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
+#include <QListWidget>
+#include <QListWidgetItem>
 #include <QPushButton>
 #include <QPlainTextEdit>
 #include <QScrollArea>
+#include <QSignalBlocker>
 #include <QTabWidget>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -93,12 +96,9 @@ void SettingsEditor::add(
         for (const auto& choice : choices) {
             combo->addItem(QString{}, QString::fromUtf8(choice.first));
         }
-        connect(
-            combo,
-            &QComboBox::currentIndexChanged,
-            this,
-            [this](int) { Q_EMIT changed(); }
-        );
+        connect(combo, &QComboBox::currentIndexChanged, this, [this](int) {
+            Q_EMIT changed();
+        });
         widget = combo;
     } else if (kind == Kind::boolean) {
         auto* checkbox = new QCheckBox;
@@ -106,6 +106,23 @@ void SettingsEditor::add(
             Q_EMIT changed();
         });
         widget = checkbox;
+    } else if (std::string_view{table} == "sync" &&
+               std::string_view{key} == "drive_ids") {
+        auto* list_widget = new QListWidget;
+        list_widget->setMaximumHeight(96);
+        list_widget->setSelectionMode(QAbstractItemView::SingleSelection);
+        list_widget->setEditTriggers(
+            QAbstractItemView::DoubleClicked |
+            QAbstractItemView::SelectedClicked |
+            QAbstractItemView::EditKeyPressed
+        );
+        connect(
+            list_widget,
+            &QListWidget::itemChanged,
+            this,
+            [this](QListWidgetItem*) { Q_EMIT changed(); }
+        );
+        widget = list_widget;
     } else if (kind == Kind::list || kind == Kind::override_list) {
         auto* edit = new QPlainTextEdit;
         edit->setMaximumHeight(90);
@@ -167,16 +184,63 @@ void SettingsEditor::add(
     }
     if (std::string_view{table} == "sync" &&
         std::string_view{key} == "drive_ids") {
+        auto* list_widget = qobject_cast<QListWidget*>(widget);
         container = new QWidget;
         auto* layout = new QVBoxLayout{container};
         layout->setContentsMargins(0, 0, 0, 0);
+        layout->addWidget(widget);
+        auto* actions = new QHBoxLayout;
+        actions->setContentsMargins(0, 0, 0, 0);
+        auto* add_button = new QPushButton{tr("Add")};
+        add_button->setObjectName("addDriveIdButton");
+        auto* remove_button = new QPushButton{tr("Remove")};
+        remove_button->setObjectName("removeDriveIdButton");
         auto* browse = new QPushButton{tr("Browse SharePoint libraries…")};
         browse->setObjectName("browseSharePointButton");
-        layout->addWidget(widget);
-        layout->addWidget(browse);
+        actions->addWidget(add_button);
+        actions->addWidget(remove_button);
+        actions->addWidget(browse, 1);
+        layout->addLayout(actions);
+        const auto refresh_remove = [list_widget, remove_button] {
+            remove_button->setEnabled(list_widget->currentItem() != nullptr);
+        };
+        connect(
+            list_widget,
+            &QListWidget::currentItemChanged,
+            this,
+            [refresh_remove](QListWidgetItem*, QListWidgetItem*) {
+                refresh_remove();
+            }
+        );
+        connect(
+            add_button,
+            &QPushButton::clicked,
+            this,
+            [this, list_widget, refresh_remove] {
+                auto* item = new QListWidgetItem{list_widget};
+                item->setFlags(item->flags() | Qt::ItemIsEditable);
+                list_widget->setCurrentItem(item);
+                list_widget->editItem(item);
+                refresh_remove();
+                Q_EMIT changed();
+            }
+        );
+        connect(
+            remove_button,
+            &QPushButton::clicked,
+            this,
+            [this, list_widget, refresh_remove] {
+                if (auto* current = list_widget->currentItem()) {
+                    delete list_widget->takeItem(list_widget->row(current));
+                    refresh_remove();
+                    Q_EMIT changed();
+                }
+            }
+        );
         connect(browse, &QPushButton::clicked, this, [this] {
             browse_sharepoint_libraries();
         });
+        refresh_remove();
     }
     form->addRow(label_widget, container);
     fields_.push_back(
@@ -205,6 +269,13 @@ QString SettingsEditor::value(const Field& field) {
         return qobject_cast<QCheckBox*>(field.widget)->isChecked() ? "true"
                                                                    : "false";
     }
+    if (auto* list_widget = qobject_cast<QListWidget*>(field.widget)) {
+        QStringList items;
+        for (int i = 0; i < list_widget->count(); ++i) {
+            items.push_back(list_widget->item(i)->text());
+        }
+        return items.join('\n');
+    }
     if (field.kind == Kind::list || field.kind == Kind::override_list) {
         return qobject_cast<QPlainTextEdit*>(field.widget)->toPlainText();
     }
@@ -226,6 +297,26 @@ void SettingsEditor::load(const config::Config& config) {
         } else if (field.kind == Kind::boolean) {
             qobject_cast<QCheckBox*>(field.widget)
                 ->setChecked(field.baseline == "true");
+        } else if (auto* list_widget =
+                       qobject_cast<QListWidget*>(field.widget)) {
+            const QSignalBlocker blocker{list_widget};
+            list_widget->clear();
+            if (!field.baseline.isEmpty()) {
+                for (const auto& entry : field.baseline.split('\n')) {
+                    auto* item = new QListWidgetItem{entry, list_widget};
+                    item->setFlags(item->flags() | Qt::ItemIsEditable);
+                }
+            }
+            if (list_widget->count() > 0) {
+                list_widget->setCurrentRow(0);
+            }
+            if (auto* remove_button = field.container->findChild<QPushButton*>(
+                    "removeDriveIdButton"
+                )) {
+                remove_button->setEnabled(
+                    list_widget->currentItem() != nullptr
+                );
+            }
         } else if (field.kind == Kind::list ||
                    field.kind == Kind::override_list) {
             qobject_cast<QPlainTextEdit*>(field.widget)
@@ -282,6 +373,12 @@ void SettingsEditor::retranslate() {
     for (auto* button : findChildren<QPushButton*>("browseButton")) {
         button->setText(tr("Browse…"));
     }
+    for (auto* button : findChildren<QPushButton*>("addDriveIdButton")) {
+        button->setText(tr("Add"));
+    }
+    for (auto* button : findChildren<QPushButton*>("removeDriveIdButton")) {
+        button->setText(tr("Remove"));
+    }
     for (auto* button : findChildren<QPushButton*>("browseSharePointButton")) {
         button->setText(tr("Browse SharePoint libraries…"));
     }
@@ -292,20 +389,18 @@ void SettingsEditor::set_site_search_function(SiteSearchFunction search) {
 }
 
 bool SettingsEditor::has_unsaved_changes() const {
-    return std::any_of(
-        fields_.begin(), fields_.end(), [](const Field& field) {
-            const bool present = !field.override || field.override->isChecked();
-            if (field.override) {
-                if (present != field.baseline_present) {
-                    return true;
-                }
-                if (!present) {
-                    return false;
-                }
+    return std::any_of(fields_.begin(), fields_.end(), [](const Field& field) {
+        const bool present = !field.override || field.override->isChecked();
+        if (field.override) {
+            if (present != field.baseline_present) {
+                return true;
             }
-            return value(field) != field.baseline;
+            if (!present) {
+                return false;
+            }
         }
-    );
+        return value(field) != field.baseline;
+    });
 }
 
 std::vector<config::SettingPatch> SettingsEditor::patches() const {
