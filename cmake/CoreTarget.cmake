@@ -254,7 +254,7 @@ if(ONEDRIVE_BUILD_GUI)
         "${CMAKE_INSTALL_FULL_BINDIR}"
         "${CMAKE_INSTALL_FULL_DATADIR}/onedrive-cpp/translations"
     )
-    target_compile_definitions(onedrive_gui_localization PRIVATE
+    target_compile_definitions(onedrive_gui_localization PUBLIC
         ONEDRIVE_GUI_TRANSLATIONS_RELATIVE_DIR="${ONEDRIVE_GUI_TRANSLATIONS_RELATIVE_DIR}"
     )
     file(GLOB ONEDRIVE_TS_FILES CONFIGURE_DEPENDS

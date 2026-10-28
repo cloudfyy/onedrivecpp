@@ -122,10 +122,10 @@ void test_external_catalogs() {
     test::TemporaryDirectory fixture;
     const auto directory = QString::fromStdString(fixture.path().string());
     gui::Localization localization{gui::Language::english, directory};
-    const auto english = [&] {
+    const auto english = [&](const gui::Localization& instance) {
         require(
-            localization.language() == gui::Language::english &&
-                !localization.translation_loaded() &&
+            instance.language() == gui::Language::english &&
+                !instance.translation_loaded() && !instance.chinese_loaded() &&
                 QCoreApplication::translate(
                     "onedrive::gui::MainWindow", "onedrive client"
                 ) == "onedrive client" &&
@@ -134,22 +134,45 @@ void test_external_catalogs() {
             "missing or invalid catalogs did not restore complete English"
         );
     };
-    english();
+    english(localization);
     localization.set_language(gui::Language::simplified_chinese);
-    english();
+    english(localization);
+    {
+        const gui::Localization explicit_missing{
+            gui::Language::simplified_chinese, directory
+        };
+        english(explicit_missing);
+        const gui::Localization locale_missing{QLocale{"zh_CN"}, directory};
+        english(locale_missing);
+    }
 
     const QDir source{QCoreApplication::applicationDirPath() + "/translations"};
     const QDir target{directory};
+    const auto qt_catalog = target.filePath("qtbase_zh_CN.qm");
+    const auto app_catalog = target.filePath("onedrive_zh_CN.qm");
     require(
-        QFile::copy(
-            source.filePath("qtbase_zh_CN.qm"),
-            target.filePath("qtbase_zh_CN.qm")
-        ),
+        QFile::copy(source.filePath("onedrive_zh_CN.qm"), app_catalog),
+        "could not prepare external application catalog without Qt catalog"
+    );
+    localization.set_language(gui::Language::simplified_chinese);
+    english(localization);
+    {
+        QFile corrupt_qt{qt_catalog};
+        require(
+            corrupt_qt.open(QIODevice::WriteOnly) &&
+                corrupt_qt.write("not a Qt translation catalog") > 0,
+            "could not prepare corrupt Qt catalog"
+        );
+    }
+    localization.set_language(gui::Language::simplified_chinese);
+    english(localization);
+    require(
+        QFile::remove(qt_catalog) && QFile::remove(app_catalog) &&
+            QFile::copy(source.filePath("qtbase_zh_CN.qm"), qt_catalog),
         "could not prepare external Qt catalog"
     );
     localization.set_language(gui::Language::simplified_chinese);
-    english();
-    const auto app_catalog = target.filePath("onedrive_zh_CN.qm");
+    english(localization);
     {
         QFile corrupt{app_catalog};
         require(
@@ -159,7 +182,7 @@ void test_external_catalogs() {
         );
     }
     localization.set_language(gui::Language::simplified_chinese);
-    english();
+    english(localization);
     require(
         QFile::remove(app_catalog) &&
             QFile::copy(source.filePath("onedrive_zh_CN.qm"), app_catalog),
@@ -175,10 +198,61 @@ void test_external_catalogs() {
         "external application and Qt catalogs did not load on demand"
     );
     localization.set_language(gui::Language::english);
-    english();
+    english(localization);
+    {
+        const gui::Localization locale_loaded{QLocale{"zh_CN"}, directory};
+        require(
+            locale_loaded.chinese_loaded() &&
+                QCoreApplication::translate(
+                    "onedrive::gui::MainWindow", "onedrive client"
+                ) == "OneDrive 客户端",
+            "locale constructor did not load external Chinese catalogs"
+        );
+    }
+    localization.set_language(gui::Language::simplified_chinese);
     require(QFile::remove(app_catalog), "could not remove external catalog");
     localization.set_language(gui::Language::simplified_chinese);
-    english();
+    english(localization);
+
+    test::TemporaryDirectory install_prefix;
+    const QDir prefix_dir{
+        QString::fromStdString(install_prefix.path().string())
+    };
+    const auto bin_dir = prefix_dir.filePath("bin");
+    require(prefix_dir.mkpath("bin"), "could not create staged bin directory");
+    const auto relocated_binary =
+        QDir{bin_dir}.filePath("gui_startup_options_tests");
+    require(
+        QFile::copy(QCoreApplication::applicationFilePath(), relocated_binary),
+        "could not stage relocated test executable"
+    );
+    const auto run_relocated = [&](const QString& mode) {
+        QProcess process;
+        process.start(relocated_binary, {"--verify-installed-layout", mode});
+        require(
+            process.waitForStarted(5000) && process.waitForFinished(5000) &&
+                process.exitStatus() == QProcess::NormalExit &&
+                process.exitCode() == 0,
+            "relocated installed-layout translation check failed"
+        );
+    };
+    run_relocated("missing");
+    const QDir installed_translations{QDir{bin_dir}.filePath(
+        QStringLiteral(ONEDRIVE_GUI_TRANSLATIONS_RELATIVE_DIR)
+    )};
+    require(
+        installed_translations.mkpath(".") &&
+            QFile::copy(
+                source.filePath("qtbase_zh_CN.qm"),
+                installed_translations.filePath("qtbase_zh_CN.qm")
+            ) &&
+            QFile::copy(
+                source.filePath("onedrive_zh_CN.qm"),
+                installed_translations.filePath("onedrive_zh_CN.qm")
+            ),
+        "could not stage installed translation catalogs"
+    );
+    run_relocated("loaded");
 }
 
 void test_invalid_options() {
@@ -246,8 +320,30 @@ void test_process(
 } // namespace
 
 int main(int argc, char* argv[]) {
-    onedrive::test::ScenarioProgress progress{19};
     QCoreApplication application{argc, argv};
+    if (argc == 3 && std::string_view{argv[1]} == "--verify-installed-layout") {
+        try {
+            const bool expect_loaded = std::string_view{argv[2]} == "loaded";
+            gui::Localization localization{gui::Language::simplified_chinese};
+            require(
+                localization.chinese_loaded() == expect_loaded &&
+                    localization.language() ==
+                        (expect_loaded ? gui::Language::simplified_chinese
+                                       : gui::Language::english) &&
+                    QCoreApplication::translate(
+                        "onedrive::gui::MainWindow", "onedrive client"
+                    ) == (expect_loaded ? "OneDrive 客户端"
+                                        : "onedrive client") &&
+                    QCoreApplication::translate("QPlatformTheme", "Cancel") ==
+                        (expect_loaded ? "取消" : "Cancel"),
+                "installed-layout catalog resolution did not match expectation"
+            );
+            return 0;
+        } catch (const std::exception& error) {
+            return test::fail(error.what());
+        }
+    }
+    onedrive::test::ScenarioProgress progress{19};
     try {
         progress.run("locales", test_locales);
         progress.run("tray_options", test_tray_options);

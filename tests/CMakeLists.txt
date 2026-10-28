@@ -356,9 +356,19 @@ if(ONEDRIVE_BUILD_GUI)
         ENVIRONMENT "QT_QPA_PLATFORM=offscreen;LC_ALL=en_US.UTF-8;LANG=en_US.UTF-8;LANGUAGE=en_US"
     )
     foreach(LOCALE IN ITEMS zh_CN zh_SG fr_FR zh_TW)
+        if(LOCALE STREQUAL "zh_CN")
+            set(EXPECTED_LANGUAGE english)
+            set(LOCALE_ARGS)
+        elseif(LOCALE STREQUAL "zh_SG")
+            set(EXPECTED_LANGUAGE chinese)
+            set(LOCALE_ARGS --language=auto)
+        else()
+            set(EXPECTED_LANGUAGE english)
+            set(LOCALE_ARGS --language=auto)
+        endif()
         add_test(
             NAME gui_localization_${LOCALE}_tests
-            COMMAND gui_localization_tests english
+            COMMAND gui_localization_tests ${EXPECTED_LANGUAGE} ${LOCALE_ARGS}
         )
         set_tests_properties(gui_localization_${LOCALE}_tests PROPERTIES
             TIMEOUT 20

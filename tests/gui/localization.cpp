@@ -27,6 +27,13 @@ int main(int argc, char* argv[]) {
                 gui::parse_startup_language(parser, arguments)
             };
             progress.run("startup_language", [&] {
+                QCommandLineParser default_parser;
+                require(
+                    gui::parse_startup_language(
+                        default_parser, {"onedrive-cpp-gui"}
+                    ) == gui::Language::english,
+                    "default startup language was not English"
+                );
                 require(
                     localization.chinese_loaded() == chinese,
                     "startup locale selected the wrong translation"

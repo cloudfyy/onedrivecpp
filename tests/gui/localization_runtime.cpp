@@ -246,6 +246,29 @@ void test_runtime_language(bool system_chinese) {
         failed_status->text() == "Login failed: raw server detail: /中文/%1",
         "failure status did not restore English with its backend detail"
     );
+
+    test::TemporaryDirectory missing_catalogs;
+    gui::Localization missing_localization{
+        gui::Language::english,
+        QString::fromStdString(missing_catalogs.path().string())
+    };
+    gui::MainWindow missing_window{
+        gui::load_app_state_view_model(file), {}, &missing_localization
+    };
+    auto* missing_selector =
+        missing_window.findChild<QComboBox*>("languageSelector");
+    missing_selector->setCurrentIndex(missing_selector->findData(
+        static_cast<int>(gui::Language::simplified_chinese)
+    ));
+    QCoreApplication::processEvents();
+    require(
+        !missing_localization.translation_loaded() &&
+            missing_localization.language() == gui::Language::english &&
+            missing_selector->currentData().toInt() ==
+                static_cast<int>(gui::Language::english) &&
+            missing_window.windowTitle() == "onedrive client",
+        "missing catalog selection did not keep window and selector in English"
+    );
 }
 
 } // namespace onedrive::test::gui_localization
