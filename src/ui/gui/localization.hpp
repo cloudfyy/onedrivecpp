@@ -9,6 +9,7 @@
 #include <QStringList>
 #include <QTranslator>
 
+#include <memory>
 #include <optional>
 
 namespace onedrive::gui {
@@ -22,19 +23,25 @@ enum class Language { automatic, english, simplified_chinese };
 
 class Localization {
 public:
-    explicit Localization(Language language = Language::automatic);
-    explicit Localization(const QLocale& locale);
+    explicit Localization(
+        Language language = Language::english,
+        const QString& translation_directory = {}
+    );
+    explicit Localization(
+        const QLocale& locale, const QString& translation_directory = {}
+    );
     void set_language(Language language);
     [[nodiscard]] Language language() const noexcept;
     [[nodiscard]] bool translation_loaded() const noexcept;
     [[nodiscard]] bool chinese_loaded() const noexcept;
 
 private:
-    void apply_locale(const QLocale& locale);
+    bool apply_locale(const QLocale& locale);
 
-    QTranslator qt_translator_;
-    QTranslator translator_;
-    Language language_{Language::automatic};
+    QString translation_directory_;
+    std::unique_ptr<QTranslator> qt_translator_;
+    std::unique_ptr<QTranslator> translator_;
+    Language language_{Language::english};
     std::optional<Language> loaded_language_;
 };
 

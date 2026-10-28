@@ -201,9 +201,12 @@ entry can point to its matching catalog.
 GUI strings use `tr()` or `QCoreApplication::translate()`; account and
 configuration view models expose enums rather than translated strings, so
 their headless tests remain Qt-independent. `Localization` installs the
-resource-bundled translators before constructing widgets and keeps them alive
-for the application's lifetime. Simplified Chinese system locales use the
-`zh_CN` catalog; all other locales fall back to the English source strings.
+external translators before constructing widgets when requested. English source
+strings are the default and require no catalog. Selecting Simplified Chinese
+loads the `zh_CN` catalogs on demand; selecting English removes and releases
+the translators. Explicit `auto` follows the system locale, with unsupported
+locales falling back to English. Missing or invalid catalogs produce a warning
+and restore English without installing a partial translation.
 The GUI-only `QCommandLineParser` accepts `--language auto|en|zh_CN` before
 installing translators or creating the window. `--help`/`--version` exit early;
 invalid values/options fail explicitly. There is no startup selection dialog.
@@ -235,11 +238,17 @@ cmake --build build/debug --target onedrive-cpp-gui gui_settings_tests gui_start
 ctest --test-dir build/debug -R '^(gui_.*|browser_request_tests)$' --output-on-failure
 ```
 
-`lrelease -nounfinished` compiles the catalog into `.qm`; Qt resources embed
-both application and Qt catalogs in the GUI and its tests. Do not hand-edit
-generated `.qm` files. Offscreen tests run in separate English, `zh_CN`,
+`lrelease -nounfinished` compiles catalogs into external `.qm` files under the
+build directory's `translations/`. Installation ships both application and Qt
+catalogs in `${CMAKE_INSTALL_DATADIR}/onedrive-cpp/translations`; runtime lookup
+is relative to the executable, so relocated installation prefixes work. A
+`translations/` directory next to the executable takes precedence for development
+and portable layouts. No translation catalogs are embedded in the executable.
+New languages need a catalog, a matching Qt catalog, and registration in the
+language descriptors and selector; CMake discovers `onedrive_*.ts` catalogs.
+Do not hand-edit generated `.qm` files. Offscreen tests run in separate English, `zh_CN`,
 `zh_SG`, French, and Traditional Chinese locale environments. They verify
-resource loading, English fallback, translator lifetime, actual window
+external catalog loading, missing/corrupt catalog fallback, translator lifetime, actual window
 labels, account/configuration enums, login results, settings dialogs and Qt
 buttons, placeholder substitutions, and UTF-8 loopback replies. Startup tests
 exercise the real Qt parser and translators in English/Chinese environments,

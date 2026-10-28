@@ -4,6 +4,8 @@
 #include "support/common.hpp"
 
 #include <QCoreApplication>
+#include <QDir>
+#include <QFile>
 #include <QProcess>
 
 #include <stdexcept>
@@ -29,6 +31,14 @@ QLocale parse(const QStringList& options) {
 }
 
 void test_locales() {
+    {
+        gui::Localization defaults;
+        require(
+            defaults.language() == gui::Language::english &&
+                !defaults.translation_loaded(),
+            "default localization loaded a non-English catalog"
+        );
+    }
     for (const auto& [option, expected_language] : {
              std::pair{"auto", gui::Language::automatic},
              std::pair{"en", gui::Language::english},
@@ -48,11 +58,15 @@ void test_locales() {
         );
     }
     require(
-        parse({}) == QLocale::system() &&
-            parse({"--start-in-tray"}) == QLocale::system() &&
-            parse({"--language", "auto"}) == QLocale::system() &&
+        parse({}) == gui::locale_for_language(gui::Language::english) &&
+            parse({"--start-in-tray"}) ==
+                gui::locale_for_language(gui::Language::english),
+        "default startup did not use English"
+    );
+    require(
+        parse({"--language", "auto"}) == QLocale::system() &&
             parse({"--language=auto"}) == QLocale::system(),
-        "default or explicit auto did not preserve the system locale"
+        "explicit auto did not preserve the system locale"
     );
     for (const auto& language : {QString{"en"}, QString{"zh_CN"}}) {
         for (const bool equals : {false, true}) {
@@ -102,6 +116,69 @@ void test_tray_options() {
             );
         }
     }
+}
+
+void test_external_catalogs() {
+    test::TemporaryDirectory fixture;
+    const auto directory = QString::fromStdString(fixture.path().string());
+    gui::Localization localization{gui::Language::english, directory};
+    const auto english = [&] {
+        require(
+            localization.language() == gui::Language::english &&
+                !localization.translation_loaded() &&
+                QCoreApplication::translate(
+                    "onedrive::gui::MainWindow", "onedrive client"
+                ) == "onedrive client" &&
+                QCoreApplication::translate("QPlatformTheme", "Cancel") ==
+                    "Cancel",
+            "missing or invalid catalogs did not restore complete English"
+        );
+    };
+    english();
+    localization.set_language(gui::Language::simplified_chinese);
+    english();
+
+    const QDir source{QCoreApplication::applicationDirPath() + "/translations"};
+    const QDir target{directory};
+    require(
+        QFile::copy(
+            source.filePath("qtbase_zh_CN.qm"),
+            target.filePath("qtbase_zh_CN.qm")
+        ),
+        "could not prepare external Qt catalog"
+    );
+    localization.set_language(gui::Language::simplified_chinese);
+    english();
+    const auto app_catalog = target.filePath("onedrive_zh_CN.qm");
+    {
+        QFile corrupt{app_catalog};
+        require(
+            corrupt.open(QIODevice::WriteOnly) &&
+                corrupt.write("not a translation catalog") > 0,
+            "could not prepare corrupt application catalog"
+        );
+    }
+    localization.set_language(gui::Language::simplified_chinese);
+    english();
+    require(
+        QFile::remove(app_catalog) &&
+            QFile::copy(source.filePath("onedrive_zh_CN.qm"), app_catalog),
+        "could not prepare external application catalog"
+    );
+    localization.set_language(gui::Language::simplified_chinese);
+    require(
+        localization.chinese_loaded() &&
+            QCoreApplication::translate(
+                "onedrive::gui::MainWindow", "onedrive client"
+            ) == "OneDrive 客户端" &&
+            QCoreApplication::translate("QPlatformTheme", "Cancel") == "取消",
+        "external application and Qt catalogs did not load on demand"
+    );
+    localization.set_language(gui::Language::english);
+    english();
+    require(QFile::remove(app_catalog), "could not remove external catalog");
+    localization.set_language(gui::Language::simplified_chinese);
+    english();
 }
 
 void test_invalid_options() {
@@ -169,11 +246,12 @@ void test_process(
 } // namespace
 
 int main(int argc, char* argv[]) {
-    onedrive::test::ScenarioProgress progress{18};
+    onedrive::test::ScenarioProgress progress{19};
     QCoreApplication application{argc, argv};
     try {
         progress.run("locales", test_locales);
         progress.run("tray_options", test_tray_options);
+        progress.run("external_catalogs", test_external_catalogs);
         progress.run("invalid_options", test_invalid_options);
         for (const auto& language : {"auto", "en", "zh_CN"}) {
             progress.run(

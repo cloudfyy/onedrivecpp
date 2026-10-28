@@ -22,7 +22,7 @@ int main(int argc, char* argv[]) {
     QCoreApplication::setApplicationVersion(onedrive::build_info::version);
     QApplication::setWindowIcon(onedrive::gui::application_icon());
     QCommandLineParser parser;
-    onedrive::gui::Language language{onedrive::gui::Language::automatic};
+    onedrive::gui::Language language{onedrive::gui::Language::english};
     try {
         language = onedrive::gui::parse_startup_language(
             parser, application.arguments()

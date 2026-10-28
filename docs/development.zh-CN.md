@@ -152,8 +152,10 @@ systemd unit 管理与通过 IPC 停止已运行 Monitor 分开处理。
 
 GUI 文本使用 `tr()` 或 `QCoreApplication::translate()`；账号与配置视图模型
 使用枚举而非已翻译字符串，其无界面测试仍不依赖 Qt。`Localization` 在构建
-控件前安装资源内嵌的翻译器，并保持到应用退出。简体中文系统语言使用 `zh_CN`
-翻译包；其他语言回退到英语源文本。后端原始错误详情保留，不进行翻译。
+控件前按需安装外部翻译器。默认使用英语源文本，无需翻译包；选择简体中文时动态
+加载 `zh_CN` 翻译包，切回英语时卸载并释放翻译器。显式选择 `auto` 才跟随系统
+语言，不支持的语言回退到英语。翻译包缺失或损坏时记录警告并恢复英语，不安装
+不完整的翻译。后端原始错误详情保留，不进行翻译。
 GUI 专用的 `QCommandLineParser` 在安装翻译器、创建窗口前解析
 `--language auto|en|zh_CN`；`--help`／`--version` 提前退出，非法值或未知参数
 明确报错。启动时不弹出语言选择框。运行时页签栏右侧的语言下拉框调用应用持有的
@@ -178,9 +180,15 @@ cmake --build build/debug --target onedrive-cpp-gui gui_settings_tests gui_start
 ctest --test-dir build/debug -R '^(gui_.*|browser_request_tests)$' --output-on-failure
 ```
 
-`lrelease -nounfinished` 将翻译编译成 `.qm`；Qt 资源将应用和 Qt 翻译包内嵌到
-GUI 及测试程序。不要手动编辑生成的 `.qm` 文件。离屏测试分别在英语、
-`zh_CN`、`zh_SG`、法语和繁体中文环境运行，验证资源加载、英语回退、翻译器
+`lrelease -nounfinished` 将翻译编译为构建目录 `translations/` 下的独立 `.qm`
+文件，应用和 Qt 翻译包随安装包放入
+`${CMAKE_INSTALL_DATADIR}/onedrive-cpp/translations`。运行时相对于可执行文件
+定位，支持安装前缀迁移；可执行文件旁的 `translations/` 目录优先，用于开发和
+便携目录布局。翻译包不再内嵌到程序中。新增语言需要提供应用及对应 Qt 翻译包，
+并在语言描述表和选择器中注册；CMake 自动发现 `onedrive_*.ts`。
+不要手动编辑生成的 `.qm` 文件。离屏测试分别在英语、
+`zh_CN`、`zh_SG`、法语和繁体中文环境运行，验证外部翻译加载、缺失／损坏翻译包
+回退、翻译器
 生命周期、真实窗口标签、账号／配置枚举、登录结果、设置对话框和 Qt 按钮、
 占位符替换及 UTF-8 loopback 回复。启动参数测试在中英文环境使用真实 Qt
 解析器和翻译器，覆盖语言覆盖、`--language value` 与 `--language=value`。

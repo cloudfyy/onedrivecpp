@@ -185,12 +185,14 @@ cmake --build --preset release --target onedrive-cpp-gui
 ./build/release/onedrive-cpp-gui --language auto
 ```
 
-By default (`--language auto`), the GUI follows the system locale at startup:
-Simplified Chinese locales
-display **OneDrive 客户端**, and English or unsupported locales display
-**onedrive client**. The overview, settings, login statuses, dialogs, and
-browser callback messages are translated. Application and Qt translations are
-embedded in the executable; no separate translation files are needed at runtime.
+By default (`--language en`), the GUI uses English source text without loading
+translation files. Choose `--language zh_CN` to display **OneDrive 客户端**,
+or `--language auto` to follow the system locale (unsupported locales use English).
+The overview, settings, login statuses, dialogs, and browser callback messages
+are translated. Application and Qt `.qm` catalogs are loaded on demand from
+`translations/` next to the development executable, or
+`share/onedrive-cpp/translations` under the installation prefix. Keep these
+files with the application; missing or invalid catalogs warn and fall back to English.
 The exact accepted `--language` values are `auto`, `en`, and `zh_CN`; unsupported
 values or unknown options exit with an error. `--help` and `--version` print
 information without opening a window.

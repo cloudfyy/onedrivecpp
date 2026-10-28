@@ -1,18 +1,28 @@
 #include "localization.hpp"
 
 #include <QCoreApplication>
+#include <QDebug>
+#include <QDir>
 #include <QEvent>
 
 #include <array>
 #include <stdexcept>
 #include <string_view>
 
-static void initialize_translation_resources() {
-    Q_INIT_RESOURCE(onedrive_translations);
-}
-
 namespace onedrive::gui {
 namespace {
+
+QString default_translation_directory() {
+    const QDir application_directory{QCoreApplication::applicationDirPath()};
+    auto local_directory =
+        application_directory.filePath(QStringLiteral("translations"));
+    if (QDir{local_directory}.exists()) {
+        return local_directory;
+    }
+    return application_directory.filePath(
+        QStringLiteral(ONEDRIVE_GUI_TRANSLATIONS_RELATIVE_DIR)
+    );
+}
 
 struct GuiLanguageSpec {
     Language language;
@@ -40,8 +50,8 @@ constexpr std::array kGuiLanguageSpecs{
         .qt_language = QLocale::Chinese,
         .qt_script = QLocale::SimplifiedChineseScript,
         .locale_name = "zh_CN",
-        .qtbase_qm = ":/i18n/qtbase_zh_CN.qm",
-        .app_qm = ":/i18n/onedrive_zh_CN.qm",
+        .qtbase_qm = "qtbase_zh_CN.qm",
+        .app_qm = "onedrive_zh_CN.qm",
     },
 };
 
@@ -94,7 +104,7 @@ Language parse_startup_language(
             "GUI language: auto (system locale), en (English), or zh_CN "
             "(Simplified Chinese).",
             "language",
-            "auto"
+            "en"
         }
     );
     if (!parser.parse(arguments)) {
@@ -120,24 +130,30 @@ Language parse_startup_language(
     };
 }
 
-Localization::Localization(Language language) {
-    initialize_translation_resources();
+Localization::Localization(
+    Language language, const QString& translation_directory
+)
+    : translation_directory_{
+          translation_directory.isEmpty() ? default_translation_directory()
+                                          : translation_directory
+      } {
     set_language(language);
 }
 
-Localization::Localization(const QLocale& locale)
-    : language_{
+Localization::Localization(
+    const QLocale& locale, const QString& translation_directory
+)
+    : Localization{
           match_locale_spec(locale) != nullptr
               ? match_locale_spec(locale)->language
-              : Language::english
+              : Language::english,
+          translation_directory
       } {
-    initialize_translation_resources();
-    apply_locale(locale);
 }
 
 void Localization::set_language(Language language) {
-    apply_locale(locale_for_language(language));
-    language_ = language;
+    language_ = apply_locale(locale_for_language(language)) ? language
+                                                            : Language::english;
     // Also notify widgets when auto and English use the same source strings.
     if (auto* application = QCoreApplication::instance()) {
         QEvent event{QEvent::LanguageChange};
@@ -149,24 +165,44 @@ Language Localization::language() const noexcept {
     return language_;
 }
 
-void Localization::apply_locale(const QLocale& locale) {
-    if (loaded_language_.has_value()) {
-        QCoreApplication::removeTranslator(&translator_);
-        QCoreApplication::removeTranslator(&qt_translator_);
-        loaded_language_.reset();
+bool Localization::apply_locale(const QLocale& locale) {
+    if (translator_) {
+        QCoreApplication::removeTranslator(translator_.get());
     }
+    if (qt_translator_) {
+        QCoreApplication::removeTranslator(qt_translator_.get());
+    }
+    translator_.reset();
+    qt_translator_.reset();
+    loaded_language_.reset();
     const auto* spec = match_locale_spec(locale);
     if (spec == nullptr || spec->qtbase_qm == nullptr ||
         spec->app_qm == nullptr) {
-        return;
+        return true;
     }
-    if (!qt_translator_.load(QString::fromLatin1(spec->qtbase_qm)) ||
-        !translator_.load(QString::fromLatin1(spec->app_qm))) {
-        return;
+    const QDir directory{translation_directory_};
+    auto qt_translator = std::make_unique<QTranslator>();
+    auto translator = std::make_unique<QTranslator>();
+    const auto qt_catalog =
+        directory.filePath(QString::fromLatin1(spec->qtbase_qm));
+    const auto app_catalog =
+        directory.filePath(QString::fromLatin1(spec->app_qm));
+    if (!qt_translator->load(qt_catalog)) {
+        qWarning().noquote() << "Cannot load GUI translation:" << qt_catalog
+                             << "; using English.";
+        return false;
     }
-    QCoreApplication::installTranslator(&qt_translator_);
-    QCoreApplication::installTranslator(&translator_);
+    if (!translator->load(app_catalog)) {
+        qWarning().noquote() << "Cannot load GUI translation:" << app_catalog
+                             << "; using English.";
+        return false;
+    }
+    qt_translator_ = std::move(qt_translator);
+    translator_ = std::move(translator);
+    QCoreApplication::installTranslator(qt_translator_.get());
+    QCoreApplication::installTranslator(translator_.get());
     loaded_language_ = spec->language;
+    return true;
 }
 
 bool Localization::translation_loaded() const noexcept {

@@ -247,10 +247,24 @@ if(ONEDRIVE_BUILD_GUI)
         ${PROJECT_SOURCE_DIR}/src/ui/gui
     )
     target_link_libraries(onedrive_gui_localization PUBLIC onedrive_core Qt6::Core)
+    set(ONEDRIVE_GUI_TRANSLATIONS_DIR
+        "${CMAKE_INSTALL_DATADIR}/onedrive-cpp/translations"
+    )
+    file(RELATIVE_PATH ONEDRIVE_GUI_TRANSLATIONS_RELATIVE_DIR
+        "${CMAKE_INSTALL_FULL_BINDIR}"
+        "${CMAKE_INSTALL_FULL_DATADIR}/onedrive-cpp/translations"
+    )
+    target_compile_definitions(onedrive_gui_localization PRIVATE
+        ONEDRIVE_GUI_TRANSLATIONS_RELATIVE_DIR="${ONEDRIVE_GUI_TRANSLATIONS_RELATIVE_DIR}"
+    )
+    file(GLOB ONEDRIVE_TS_FILES CONFIGURE_DEPENDS
+        "${PROJECT_SOURCE_DIR}/src/ui/gui/translations/onedrive_*.ts"
+    )
     qt_add_lrelease(onedrive_gui_localization
         LRELEASE_TARGET onedrive_gui_lrelease
-        TS_FILES ${PROJECT_SOURCE_DIR}/src/ui/gui/translations/onedrive_zh_CN.ts
+        TS_FILES ${ONEDRIVE_TS_FILES}
         QM_FILES_OUTPUT_VARIABLE ONEDRIVE_QM_FILES
+        QM_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/translations"
         OPTIONS -nounfinished
     )
     qt_add_lupdate(onedrive_gui_localization
@@ -265,7 +279,7 @@ if(ONEDRIVE_BUILD_GUI)
             ${PROJECT_SOURCE_DIR}/src/ui/gui/sync_controller.hpp
             ${PROJECT_SOURCE_DIR}/src/ui/gui/monitor_controller.cpp
             ${PROJECT_SOURCE_DIR}/src/ui/gui/monitor_controller.hpp
-        TS_FILES ${PROJECT_SOURCE_DIR}/src/ui/gui/translations/onedrive_zh_CN.ts
+        TS_FILES ${ONEDRIVE_TS_FILES}
         OPTIONS -no-obsolete
     )
     get_target_property(ONEDRIVE_QMAKE Qt6::qmake IMPORTED_LOCATION)
@@ -275,17 +289,26 @@ if(ONEDRIVE_BUILD_GUI)
         OUTPUT_STRIP_TRAILING_WHITESPACE
         COMMAND_ERROR_IS_FATAL ANY
     )
-    find_file(ONEDRIVE_QTBASE_ZH_CN qtbase_zh_CN.qm
-        PATHS "${ONEDRIVE_QT_TRANSLATIONS}" NO_DEFAULT_PATH REQUIRED
-    )
-    set_source_files_properties("${ONEDRIVE_QTBASE_ZH_CN}"
-        PROPERTIES QT_RESOURCE_ALIAS qtbase_zh_CN.qm
-    )
-    qt_add_resources(onedrive_gui_localization onedrive_translations
-        PREFIX "/i18n"
-        BASE "${CMAKE_CURRENT_BINARY_DIR}"
-        FILES ${ONEDRIVE_QM_FILES} "${ONEDRIVE_QTBASE_ZH_CN}"
-    )
+    set(ONEDRIVE_QT_QM_FILES)
+    foreach(ONEDRIVE_TS_FILE IN LISTS ONEDRIVE_TS_FILES)
+        get_filename_component(ONEDRIVE_TRANSLATION_NAME "${ONEDRIVE_TS_FILE}" NAME_WE)
+        string(REGEX REPLACE "^onedrive_" "" ONEDRIVE_TRANSLATION_LOCALE
+            "${ONEDRIVE_TRANSLATION_NAME}"
+        )
+        string(TOUPPER "${ONEDRIVE_TRANSLATION_LOCALE}" ONEDRIVE_TRANSLATION_KEY)
+        find_file(ONEDRIVE_QTBASE_${ONEDRIVE_TRANSLATION_KEY}
+            "qtbase_${ONEDRIVE_TRANSLATION_LOCALE}.qm"
+            PATHS "${ONEDRIVE_QT_TRANSLATIONS}" NO_DEFAULT_PATH REQUIRED
+        )
+        list(APPEND ONEDRIVE_QT_QM_FILES
+            "${ONEDRIVE_QTBASE_${ONEDRIVE_TRANSLATION_KEY}}"
+        )
+        configure_file("${ONEDRIVE_QTBASE_${ONEDRIVE_TRANSLATION_KEY}}"
+            "${CMAKE_CURRENT_BINARY_DIR}/translations/qtbase_${ONEDRIVE_TRANSLATION_LOCALE}.qm"
+            COPYONLY
+        )
+    endforeach()
+    add_dependencies(onedrive_gui_localization onedrive_gui_lrelease)
     set(ONEDRIVE_ICON_RESOURCES
         "${PROJECT_SOURCE_DIR}/assets/onedrive-cpp-logo.svg"
         "${PROJECT_SOURCE_DIR}/assets/onedrive-cpp-logo-16.png"

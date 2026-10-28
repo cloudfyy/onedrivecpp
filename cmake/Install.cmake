@@ -3,6 +3,9 @@ if(ONEDRIVE_BUILD_GUI)
     install(TARGETS onedrive-cpp-gui
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     )
+    install(FILES ${ONEDRIVE_QM_FILES} ${ONEDRIVE_QT_QM_FILES}
+        DESTINATION "${ONEDRIVE_GUI_TRANSLATIONS_DIR}"
+    )
     install(FILES packaging/desktop/onedrive-cpp-gui.desktop
         DESTINATION ${CMAKE_INSTALL_DATADIR}/applications
     )

@@ -5,8 +5,8 @@ namespace onedrive::test::gui_localization {
 
 void test_states_and_messages(bool chinese) {
     require(
-        QFile::exists(":/i18n/onedrive_zh_CN.qm") &&
-            QFile::exists(":/i18n/qtbase_zh_CN.qm") &&
+        !QFile::exists(":/i18n/onedrive_zh_CN.qm") &&
+            !QFile::exists(":/i18n/qtbase_zh_CN.qm") &&
             QFile::exists(":/icons/onedrive-cpp.svg") &&
             QFile::exists(":/icons/onedrive-cpp-16.png") &&
             QFile::exists(":/icons/onedrive-cpp-24.png") &&
@@ -17,7 +17,7 @@ void test_states_and_messages(bool chinese) {
             QFile::exists(":/icons/onedrive-cpp-256.png") &&
             QFile::exists(":/icons/onedrive-cpp-512.png") &&
             QFile::exists(":/icons/onedrive-cpp-1024.png"),
-        "translations or icons were not embedded in the executable"
+        "translations remained embedded or embedded icons were missing"
     );
     require(
         gui::account_status_text(gui::AccountStatus::no_account) ==

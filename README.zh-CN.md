@@ -161,10 +161,13 @@ cmake --build --preset release --target onedrive-cpp-gui
 ./build/release/onedrive-cpp-gui --language auto
 ```
 
-GUI 默认（`--language auto`）启动时跟随系统语言：简体中文环境显示 **OneDrive 客户端**，英语或其他
-不支持的语言环境显示 **onedrive client**。概览、设置、登录状态、对话框和
-浏览器回调消息均有翻译。应用与 Qt 翻译内嵌在可执行文件中，运行时不需要额外
-翻译文件。`--language` 仅接受 `auto`、`en` 和 `zh_CN`；不支持的值或未知参数
+GUI 默认（`--language en`）使用英语源文本，不加载翻译文件。选择
+`--language zh_CN` 显示 **OneDrive 客户端**；显式选择 `--language auto`
+才跟随系统语言，不支持的语言使用英语。概览、设置、登录状态、对话框和
+浏览器回调消息均有翻译。应用及 Qt 的独立 `.qm` 翻译包按需从开发程序旁的
+`translations/` 或安装前缀下的 `share/onedrive-cpp/translations` 加载。
+请随程序保留这些文件；缺失或损坏时记录警告并回退英语。
+`--language` 仅接受 `auto`、`en` 和 `zh_CN`；不支持的值或未知参数
 会明确报错并退出。`--help` 和 `--version` 输出信息后退出，不会打开窗口。
 
 运行时可通过页签栏右侧的 **语言** 下拉框选择 **系统语言**、**英语** 或 **简体中文**，
