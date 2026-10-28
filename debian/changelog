@@ -1,3 +1,15 @@
+onedrive-cpp (1.2.9-1~ubuntu24.04) noble; urgency=medium
+
+  * Prepare version 1.2.9.
+  * Load GUI translation catalogs dynamically on demand with English as the
+    default startup language, and fall back to English when external catalogs
+    are missing or invalid.
+  * Add signed APT repository publishing via GitHub Pages.
+  * Expand GUI localization and startup option regressions for external catalog
+    lookup and fallback behavior.
+
+ -- cloudfyy <cloudfyy@hotmail.com>  Wed, 28 Oct 2026 20:02:00 +0800
+
 onedrive-cpp (1.2.8-1~ubuntu24.04) noble; urgency=medium
 
   * Prepare version 1.2.8.
